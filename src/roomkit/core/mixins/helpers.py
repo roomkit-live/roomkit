@@ -122,6 +122,12 @@ class HelpersMixin:
     # (the planned variant, LaneExecutionMixin) are therefore the ONLY paths
     # to ``store.commit_event`` in the framework; a static guard test
     # enforces it.
+    #
+    # The two here are for events with NO delivery set. An event that gets
+    # delivered belongs to ``_commit_to_lane`` / ``_commit_and_deliver``,
+    # because accounting it here publishes its index on the cursor at commit
+    # time — which is precisely what releases the lane to execute the *next*
+    # index while this one is still undelivered.
 
     async def _persist_committed(self, room_id: str, event: RoomEvent) -> RoomEvent | None:
         """Atomically commit an event (index + insert + room counters, RFC
@@ -151,7 +157,12 @@ class HelpersMixin:
         return committed
 
     async def _note_committed_index(self, room_id: str, index: int) -> None:
-        """Account a committed index that carries no laned delivery set.
+        """Account a committed index that carries NO delivery set.
+
+        Only ever for an event nobody receives — a BLOCKED event, a system
+        or trace event, a greeting the voice path speaks itself. An index
+        accounted here is declared delivered, so routing a real delivery
+        through it would let the lane run the next index first.
 
         Opportunistic strict CAS first — the common case for inline paths
         (greeting, child rooms, streamed segments) where the cursor already

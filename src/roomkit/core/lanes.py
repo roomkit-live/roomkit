@@ -99,6 +99,11 @@ class DeliveryPlan:
     # fire after its set executes. False preserves the paths that never fired
     # them: injected events and a trigger without a source binding.
     fire_after_broadcast: bool = True
+    # Whether response events collected during execution start their own
+    # commit passes. False for a plan whose caller owns the responses (a
+    # streamed segment, a greeting): the trigger already produced the turn,
+    # and re-entering on its own output would answer the answer.
+    allow_reentry: bool = True
     # Trace continuity across the lane boundary: the caller's current span
     # (and its backend context), captured at plan time. The lane executor
     # runs on a fresh contextvars context, so without these the broadcast

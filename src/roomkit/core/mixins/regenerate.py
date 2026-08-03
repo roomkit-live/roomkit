@@ -6,10 +6,9 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
-from roomkit.core.mixins.helpers import _RECENT_EVENTS_LIMIT, HelpersMixin
-from roomkit.models.context import RoomContext
+from roomkit.core.mixins.helpers import HelpersMixin
 from roomkit.models.delivery import InboundResult
-from roomkit.models.enums import ChannelCategory, EventStatus, HookTrigger
+from roomkit.models.enums import ChannelCategory, EventStatus
 from roomkit.models.event import EventSource, RoomEvent
 
 if TYPE_CHECKING:
@@ -30,7 +29,7 @@ class RegenerateHost(Protocol):
 
     Cross-mixin methods (provided by other mixins in the MRO):
         _get_router: From :class:`InboundLockedMixin`.
-        _run_deferred_async_hooks: From :class:`InboundLockedMixin`.
+        _commit_and_deliver: From :class:`LaneExecutionMixin`.
         _process_streaming_responses: From :class:`InboundStreamingMixin`.
     """
 
@@ -51,8 +50,7 @@ class RegenerateMixin(HelpersMixin):
 
     # Cross-mixin methods — attribute annotations avoid MRO shadowing
     _get_router: Any  # see RegenerateHost
-    _commit_event: Any  # see RegenerateHost
-    _run_deferred_async_hooks: Any  # see RegenerateHost
+    _commit_and_deliver: Any  # see RegenerateHost
     _process_streaming_responses: Any  # see RegenerateHost
 
     async def regenerate_response(self, room_id: str) -> InboundResult | None:
@@ -80,7 +78,7 @@ class RegenerateMixin(HelpersMixin):
         BEFORE_BROADCAST hooks) are not re-routed here.
         """
         pending_streams: list[Any] = []
-        pending_async_hooks: list[tuple[HookTrigger, RoomEvent, RoomContext]] = []
+        regenerated: list[RoomEvent] = []
         trigger: RoomEvent | None = None
         broadcast_error: Exception | None = None
         error_source: EventSource | None = None
@@ -133,31 +131,21 @@ class RegenerateMixin(HelpersMixin):
                     )
                     break
 
-            # Non-streaming providers return the response as reentry events;
-            # persist and broadcast them so transports receive the new answer.
-            for reentry in broadcast_result.reentry_events:
-                # Commit the regenerated response atomically as DELIVERED
-                # (RFC §10.1 step 13) — same atomic commit as the inbound path.
-                reentry = await self._commit_event(
-                    room_id, reentry.model_copy(update={"status": EventStatus.DELIVERED})
-                )
-                reentry_binding = await self._store.get_binding(room_id, reentry.source.channel_id)
-                if reentry_binding is None:
-                    continue
-                reentry_ctx = context.model_copy(
-                    update={
-                        "recent_events": [
-                            *context.recent_events[-(_RECENT_EVENTS_LIMIT - 1) :],
-                            reentry,
-                        ]
-                    }
-                )
-                await router.broadcast(reentry, reentry_binding, reentry_ctx)
-                pending_async_hooks.append((HookTrigger.AFTER_BROADCAST, reentry, reentry_ctx))
+            # Non-streaming providers return the response as reentry events.
+            # They commit and deliver after the lock (below): the delivery
+            # cursor must not reach a regenerated answer before the room's
+            # lane has actually delivered it (RFC §10.2).
+            regenerated = [
+                r.model_copy(update={"status": EventStatus.DELIVERED})
+                for r in broadcast_result.reentry_events
+            ]
 
-        # Outside the room lock (RFC §10.1): AFTER_BROADCAST hooks for the new
-        # response, then streaming delivery (which can take seconds).
-        await self._run_deferred_async_hooks(room_id, pending_async_hooks)
+        # Outside the room lock (RFC §10.1): the regenerated answers reach
+        # transports through the room's delivery lane — which also fires their
+        # AFTER_BROADCAST hooks once each delivery set completes (step 16) —
+        # then streaming delivery (which can take seconds).
+        for reentry in regenerated:
+            await self._commit_and_deliver(room_id, reentry, reentry.source.channel_id)
         # A non-streaming regeneration failure fires ON_ERROR here (the streaming
         # path fires its own inside _process_streaming_responses), so the host
         # renders an error card for a failed regenerate on either path.

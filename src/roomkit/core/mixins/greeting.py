@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from roomkit.core.mixins.helpers import HelpersMixin
 from roomkit.models.enums import (
@@ -17,7 +17,6 @@ from roomkit.models.event import EventSource, RoomEvent, TextContent
 
 if TYPE_CHECKING:
     from roomkit.channels.base import Channel
-    from roomkit.core.event_router import EventRouter
     from roomkit.store.base import ConversationStore
     from roomkit.voice.base import VoiceSession
 
@@ -35,16 +34,14 @@ class GreetingHost(Protocol):
             until greeting delivery completes.
         _greeting_gate_counts: Reference counts for multi-agent gates.
 
-    Methods provided by the host class (RoomKit):
-        _get_router: Lazily create / return the ``EventRouter`` for broadcast.
+    Cross-mixin methods (provided by other mixins in the MRO):
+        _commit_and_deliver: From :class:`LaneExecutionMixin`.
     """
 
     _store: ConversationStore
     _channels: dict[str, Channel]
     _greeting_gates: dict[str, asyncio.Event]
     _greeting_gate_counts: dict[str, int]
-
-    def _get_router(self) -> EventRouter: ...
 
 
 class GreetingMixin(HelpersMixin):
@@ -58,8 +55,8 @@ class GreetingMixin(HelpersMixin):
     _greeting_gates: dict[str, asyncio.Event]
     _greeting_gate_counts: dict[str, int]
 
-    # Stub for cross-mixin call — implemented by RoomKit._get_router().
-    def _get_router(self) -> EventRouter: ...
+    # Cross-mixin method — attribute annotation avoids MRO shadowing
+    _commit_and_deliver: Any  # LaneExecutionMixin
 
     async def send_greeting(
         self,
@@ -140,21 +137,19 @@ class GreetingMixin(HelpersMixin):
                 await voice_ch.say(session, text, voice=voice)
             return
 
-        # Text path: store greeting and broadcast to transport channels
-        greeting_event = await self._store_greeting_event(room_id, agent.channel_id, text)
-        if greeting_event is None:
-            return
-        source_binding = await self._store.get_binding(room_id, agent.channel_id)
-        if source_binding is not None:
-            router = self._get_router()
-            context = await self._build_context(room_id)
-            await router.broadcast(greeting_event, source_binding, context)
+        # Text path: commit the greeting and deliver it through the room's
+        # lane, which is what keeps its index and its delivery in the same
+        # order as every other event's (RFC §10.2).
+        await self._commit_and_deliver(
+            room_id,
+            self._make_greeting_event(room_id, agent.channel_id, text),
+            agent.channel_id,
+        )
 
-    async def _store_greeting_event(
-        self, room_id: str, agent_channel_id: str, text: str
-    ) -> RoomEvent | None:
-        """Store a greeting as an assistant event in conversation history."""
-        event = RoomEvent(
+    @staticmethod
+    def _make_greeting_event(room_id: str, agent_channel_id: str, text: str) -> RoomEvent:
+        """Build the greeting as an assistant event."""
+        return RoomEvent(
             room_id=room_id,
             type=EventType.MESSAGE,
             source=EventSource(
@@ -166,9 +161,22 @@ class GreetingMixin(HelpersMixin):
             status=EventStatus.DELIVERED,
             metadata={"auto_greeting": True},
         )
+
+    async def _store_greeting_event(
+        self, room_id: str, agent_channel_id: str, text: str
+    ) -> RoomEvent | None:
+        """Store a greeting the voice paths speak themselves.
+
+        Storage only: the greeting reaches the caller as TTS audio or as an
+        injected realtime turn, never as a broadcast, so it carries no
+        delivery set and its index is a plain cursor entry. The text path
+        goes through :meth:`_commit_and_deliver` instead.
+        """
         # Commit atomically (index + room counters, §14.3): the greeting is a
         # DELIVERED timeline event and must be reflected in the counters.
-        return await self._persist_committed(room_id, event)
+        return await self._persist_committed(
+            room_id, self._make_greeting_event(room_id, agent_channel_id, text)
+        )
 
     def _set_greeting_gate(self, room_id: str) -> None:
         """Increment the reference-counted gate for *room_id*.

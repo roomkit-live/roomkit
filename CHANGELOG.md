@@ -39,6 +39,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (pre-lane deployments delivered under the lock, so everything stored is
   delivered).
 
+  The lane is the room's *only* delivery primitive: every committed event
+  with recipients goes through it, because a commit publishes its index on
+  the cursor and that is exactly what releases the lane to execute the next
+  one — broadcasting inline right after committing would let index N+1 be
+  delivered before N. Two paths visibly change as a result. A greeting now
+  fires its AFTER_BROADCAST hooks like any other delivered event. And a
+  streamed answer's segments reach the non-streaming channels **as they are
+  produced** rather than in one batch after the stream, each firing its own
+  AFTER_BROADCAST once its delivery set completes (RFC §10.1 step 16) — so
+  an SMS participant follows the answer at the pace the web one does. A
+  stream that fails part-way now sends only the text produced *after* the
+  failure to the streaming channel, instead of re-delivering every segment
+  it had already rendered.
+
 ### Added
 
 - **Event addressing — `RoomEvent.addressed_to` / `InboundMessage.addressed_to`

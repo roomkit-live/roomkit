@@ -116,6 +116,85 @@ class LaneExecutionMixin(HelpersMixin):
         self._enqueue_exec(room_id, plan, cascade, index=committed.index)
         return committed
 
+    async def _commit_and_deliver(
+        self,
+        room_id: str,
+        event: RoomEvent,
+        source_channel_id: str,
+        *,
+        exclude_delivery: set[str] | None = None,
+        allow_reentry: bool = False,
+        policy_aware: bool = True,
+        cascade: DeliveryCascade | None = None,
+    ) -> RoomEvent | None:
+        """Commit an event and hand its delivery to the room's lane.
+
+        The one entry point for a caller that owns an event end to end —
+        a greeting, a streamed segment, a regenerated answer — and that
+        used to commit it and then broadcast it where it stood. Inline
+        execution satisfies per-room order only while nothing else can
+        deliver for the room (RFC §10.2), and committing publishes the
+        index on the delivery cursor, which is precisely what releases the
+        lane to execute the *next* one. Going through the lane keeps the
+        single ordering authority: the cursor advances after this event's
+        delivery set has run, never before it.
+
+        Responses are not re-entered by default: these callers already own
+        the turn's output (they read it off the ``BroadcastResult`` or, for
+        a stream, produced it), and the inline broadcast they replace
+        discarded ``reentry_events`` too.
+
+        Pass ``cascade`` to enqueue without waiting — for a caller emitting
+        a run of events (a stream's segments) that must not block on each
+        one's delivery; that caller owns the single wait at the end.
+
+        Returns the committed event, or ``None`` when the persistence
+        policy excluded it (delivered, unstored — RFC §14.3).
+        """
+        from roomkit.core.lanes import DeliveryCascade
+
+        own_cascade = cascade is None
+        if cascade is None:
+            cascade = DeliveryCascade(room_id, reentry_budget=self._max_chain_depth * 10)
+        router = self._get_router()
+
+        async with self._lock_manager.locked(room_id):
+            source_binding = await self._store.get_binding(room_id, source_channel_id)
+            if source_binding is None:
+                # Nothing to broadcast from — the event is still part of the
+                # timeline, so it commits as a plain cursor entry.
+                return await self._commit_to_lane(
+                    room_id, event, cascade, None, policy_aware=policy_aware
+                )
+            context = await self._build_context(room_id)
+
+            def factory(committed: RoomEvent) -> DeliveryPlan:
+                plan = router.plan(
+                    committed,
+                    source_binding,
+                    context.model_copy(
+                        update={
+                            "recent_events": [
+                                *context.recent_events[-(_RECENT_EVENTS_LIMIT - 1) :],
+                                committed,
+                            ]
+                        }
+                    ),
+                    exclude_delivery=exclude_delivery,
+                )
+                plan.allow_reentry = allow_reentry
+                return plan
+
+            committed = await self._commit_to_lane(
+                room_id, event, cascade, factory, policy_aware=policy_aware
+            )
+
+        # Off the lock: waiting under it would deadlock the lane against its
+        # own caller, and ``wait()`` short-circuits rather than hang.
+        if own_cascade:
+            await cascade.wait()
+        return committed
+
     def _enqueue_exec(
         self,
         room_id: str,
@@ -376,7 +455,7 @@ class LaneExecutionMixin(HelpersMixin):
         the RFC's explicit relaxation (index monotonicity and parent
         linkage, never adjacency).
         """
-        if plan.injected or not result.reentry_events:
+        if plan.injected or not plan.allow_reentry or not result.reentry_events:
             return
 
         # Stamp response_visibility from the root trigger onto reentry

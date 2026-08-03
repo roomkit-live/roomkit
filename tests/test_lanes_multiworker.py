@@ -243,3 +243,32 @@ def test_store_commit_event_stays_behind_the_choke_points() -> None:
         "store.commit_event outside the commit gates (helpers._persist_committed, "
         f"helpers._commit_indexed, lane_execution._commit_to_lane): {offenders}"
     )
+
+
+def test_inline_broadcast_stays_behind_the_delivery_lane() -> None:
+    """A committed event's delivery belongs to the room's lane (RFC §10.2).
+
+    ``router.broadcast`` plans and executes where the caller stands, which
+    preserves per-room order only while nothing else can deliver for that
+    room — and a commit publishes its index on the cursor, which is exactly
+    what releases the lane to run the next one. Committing and then
+    broadcasting inline therefore inverts delivery order. The two survivors
+    each escape that: a child room has a single deliverer and never enqueues
+    a plan, and regenerate re-solicits an *already delivered* event without
+    committing anything. Use ``_commit_and_deliver`` for anything else.
+    """
+    from pathlib import Path
+
+    core = Path(__file__).parent.parent / "src" / "roomkit" / "core"
+    allowed = {"_child_execution.py": 1, "regenerate.py": 1}
+    offenders: list[str] = []
+    for path in core.rglob("*.py"):
+        count = path.read_text().count("router.broadcast(")
+        if count == 0:
+            continue
+        if path.name not in allowed or count > allowed[path.name]:
+            offenders.append(f"{path.relative_to(core)}: {count} call(s)")
+    assert not offenders, (
+        "inline router.broadcast after a commit inverts per-room delivery order — "
+        f"use lane_execution._commit_and_deliver instead: {offenders}"
+    )
