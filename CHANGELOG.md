@@ -111,6 +111,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   from the column default, the behaviour it was already running under. An
   explicit address wins under either policy.
 
+- **`CLIChannel.run(visibility=...)` — a submission can scope itself.** The
+  twin of `addressed_to`: addressing says who is *asked*, visibility says who
+  may *see*, and the two are not interchangeable — "everyone sees, one agent
+  answers" cannot be written with visibility alone, whose comma form matches
+  channel ids only (`"transport,codex"` looks like a category plus an agent
+  and is neither). The hook returns a keyword, a sequence of channel ids, or
+  `None`; ids are joined for you, which is the form that avoids the trap. It
+  sets **both** the message's `visibility` and its `response_visibility` —
+  scoping the question while publishing the answer would be worse than not
+  scoping at all. `InboundMessage` gains `response_visibility` for that,
+  stamped centrally beside `addressed_to`. Default unchanged: no hook, no
+  restriction.
+
+- **The console transcript names people, not the wire.** A speaker with a
+  participant behind them shows as `@marie · sms` — their display name and
+  the *kind* of channel they reach you through. Two colleagues texting into
+  one room used to share a single handle, and neither had a name. No new API:
+  `RoomContext` already carried the participants and `deliver()` already
+  received it. `source.participant_id` holds a `Participant.id` or an
+  `Identity.id` depending on the path, so both are looked up. Events with no
+  participant — every agent — keep the channel-derived label.
+
+- **`examples/sms_and_agents.py` — a colleague on SMS in your agent's room.**
+  Her message does not wake the agent (the SMS binding is `"transport"`), the
+  agent's answers do not reach her phone (its binding is your console), and
+  `/dm` scopes a line to her alone. Runs with no credentials: the mock SMS
+  provider prints what it would have sent, and `/sms` fakes one coming back.
+
 - **Esc interrupts the turn in flight, and keeps what it already said.** In
   console mode, Escape cancels the running `process_inbound` — not Ctrl-C,
   which still ends the session: interrupting a long answer and leaving are
