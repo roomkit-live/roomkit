@@ -240,7 +240,7 @@ class LaneConfig:
 
     gap_timeout: float = 30.0
     gap_backoff_initial: float = 0.05
-    gap_backoff_max: float = 1.0
+    gap_backoff_max: float = 0.25
     idle_ttl: float = 30.0
     close_grace: float = 5.0
 
@@ -339,7 +339,7 @@ class RoomDeliveryLane:
     def enqueue(self, entry: ExecEntry | CursorEntry) -> None:
         """Accept an entry. Synchronous — runs under the room lock."""
         if self._closed:
-            self._drop(entry, "lane_closed")
+            self._drop_entry(entry, "lane_closed")
             return
         if isinstance(entry, CursorEntry):
             self._indexed[entry.index] = entry
@@ -378,7 +378,7 @@ class RoomDeliveryLane:
                 await asyncio.wait({task}, timeout=1.0)
         self._abort_pending("kit_closed")
 
-    def _drop(self, entry: ExecEntry | CursorEntry, reason: str) -> None:
+    def _drop_entry(self, entry: ExecEntry | CursorEntry, reason: str) -> None:
         if isinstance(entry, ExecEntry):
             logger.warning(
                 "Delivery dropped (%s) for room %s index %s",
@@ -391,10 +391,10 @@ class RoomDeliveryLane:
 
     def _abort_pending(self, reason: str) -> None:
         for entry in list(self._indexed.values()):
-            self._drop(entry, reason)
+            self._drop_entry(entry, reason)
         self._indexed.clear()
         while self._unindexed:
-            self._drop(self._unindexed.popleft(), reason)
+            self._drop_entry(self._unindexed.popleft(), reason)
 
     async def _run(self) -> None:
         # Belt and braces with start(): this task must hold no inherited lock
@@ -444,18 +444,32 @@ class RoomDeliveryLane:
             backoff = min(backoff * 2, self._config.gap_backoff_max)
 
     async def _process_ready(self, *, force_skip: bool) -> bool:
-        """One claim tenure: execute everything the cursor allows.
+        """One round: a cursor pre-check, then a claim tenure if warranted.
+
+        The pre-check runs OFF the claim: when the cursor says none of this
+        lane's entries are up next, entering the claim queue would only add
+        churn — with N workers holding plans for one room, every wrong-turn
+        acquisition delays the right worker's grant behind grant-check-release
+        cycles that do nothing. A lane therefore polls the cheap cursor read
+        and only queues for the claim when it has work the cursor allows —
+        or when its gap clock expired, because the skip decision must be
+        made under the claim: acquiring it blocks behind a live owner, so a
+        slow delivery is re-checked, never skipped.
 
         Post-plan effects and reentry passes run AFTER the claim is
         released — the reentry pass takes the room lock, and holding claim
         and room lock together is the two-connection deadlock this design
         forbids (a lane never holds both).
         """
+        delivered = await self._read_cursor()
+        progressed = self._drop_stale(delivered)
+        if not force_skip and not self._has_turn(delivered):
+            return progressed
+
         executed: list[tuple[ExecEntry, Any]] = []
-        progressed = False
         self._busy = True
         try:
-            progressed = await self._claimed_round(executed, force_skip=force_skip)
+            progressed |= await self._claimed_round(executed, force_skip=force_skip)
             while executed:
                 entry, result = executed.pop(0)
                 await self._finish(entry, result)
@@ -464,7 +478,25 @@ class RoomDeliveryLane:
             # A cancellation mid-round must not leak cascade units: every
             # entry pulled off the queues but not finished is aborted here.
             for entry, _ in executed:
-                self._drop(entry, "lane_cancelled")
+                self._drop_entry(entry, "lane_cancelled")
+        return progressed
+
+    def _has_turn(self, delivered: int) -> bool:
+        """Whether the cursor allows any of this lane's entries to run."""
+        if delivered + 1 in self._indexed:
+            return True
+        return bool(self._unindexed) and self._unindexed[0].after_index <= delivered
+
+    def _drop_stale(self, delivered: int) -> bool:
+        """Drop entries another worker's gap-skip declared lost: their
+        delivery was skipped past, executing them now would break the
+        per-room order. Needs no claim — nothing is written."""
+        progressed = False
+        for idx in [i for i in self._indexed if i <= delivered]:
+            stale = self._indexed.pop(idx)
+            if isinstance(stale, ExecEntry):
+                self._drop_entry(stale, "delivery_stale")
+            progressed = True
         return progressed
 
     async def _claimed_round(
@@ -474,14 +506,7 @@ class RoomDeliveryLane:
         async with self._claims.locked(delivery_claim_key(self.room_id)):
             delivered = await self._read_cursor()
             while not self._closed:
-                # Entries another worker's gap-skip declared lost: their
-                # delivery was skipped past, executing them now would break
-                # the per-room order. Drop and move on.
-                for idx in [i for i in self._indexed if i <= delivered]:
-                    stale = self._indexed.pop(idx)
-                    if isinstance(stale, ExecEntry):
-                        self._drop(stale, "delivery_stale")
-                    progressed = True
+                progressed |= self._drop_stale(delivered)
 
                 while self._unindexed and self._unindexed[0].after_index <= delivered:
                     entry = self._unindexed.popleft()
