@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import collections
+import os
+import traceback
 from collections.abc import Callable, Coroutine
 from typing import Any
 
@@ -48,6 +51,64 @@ def store() -> InMemoryStore:
 @pytest.fixture
 def room() -> Room:
     return Room(id="test-room")
+
+
+class PoolCheckoutRecorder:
+    """Stand-in for a store's connection pool that records every checkout.
+
+    Substitute it for ``PostgresStore._ensure_pool()`` to count how many pooled
+    connections a piece of work costs. A connection lent from an open
+    ``store.connection()`` block never reaches the pool, so it is invisible
+    here — which is exactly the quantity worth measuring: asyncpg resets a
+    connection on release, so a checkout is a full extra round trip.
+
+    Everything other than ``acquire`` is delegated to the real pool.
+    """
+
+    def __init__(self, pool: Any) -> None:
+        self._pool = pool
+        self.by_call_site: collections.Counter[str] = collections.Counter()
+
+    @property
+    def total(self) -> int:
+        return sum(self.by_call_site.values())
+
+    def reset(self) -> None:
+        """Forget what was recorded — e.g. after a warm-up phase."""
+        self.by_call_site.clear()
+
+    def breakdown(self, per: int = 1) -> str:
+        """The recorded checkouts per call site, divided by *per*."""
+        return "\n".join(
+            f"  {count / per:5.2f}  {site}" for site, count in self.by_call_site.most_common()
+        )
+
+    def acquire(self, *args: Any, **kwargs: Any) -> Any:
+        self.by_call_site[_store_call_site()] += 1
+        return self._pool.acquire(*args, **kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._pool, name)
+
+
+def _store_call_site() -> str:
+    """The innermost store method, plus the frame that asked it for a connection."""
+    stack = traceback.extract_stack()[:-2]
+    store_frame = next((f for f in reversed(stack) if "roomkit/store/" in f.filename), None)
+    caller = next(
+        (
+            f
+            for f in reversed(stack)
+            if "roomkit/" in f.filename and "roomkit/store/" not in f.filename
+        ),
+        None,
+    )
+    return "{} <- {}:{} {}".format(
+        store_frame.name if store_frame else "?",
+        os.path.basename(caller.filename) if caller else "?",
+        caller.lineno if caller else "?",
+        caller.name if caller else "?",
+    )
 
 
 def make_event(

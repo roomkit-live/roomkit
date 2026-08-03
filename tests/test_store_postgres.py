@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import asyncio
 import os
+from collections.abc import Callable
+from typing import Any
 
 import pytest
 
@@ -19,6 +21,7 @@ from roomkit.models.identity import Identity
 from roomkit.models.participant import Participant
 from roomkit.models.room import Room
 from roomkit.models.task import Observation, Task
+from tests.conftest import PoolCheckoutRecorder
 
 POSTGRES_DSN = os.environ.get("POSTGRES_DSN")
 
@@ -655,40 +658,20 @@ class TestDeleteRoomCleanup:
         assert await store.list_participants("r1") == []
 
 
-class _CheckoutCounter:
-    """Proxy over the asyncpg pool that records every real checkout.
-
-    A connection the store lends from an open ``connection()`` block never
-    reaches the pool, so it is invisible here — which is exactly the quantity
-    these tests are about.
-    """
-
-    def __init__(self, pool) -> None:  # noqa: ANN001
-        self._pool = pool
-        self.count = 0
-
-    def acquire(self, *args, **kwargs):  # noqa: ANN002, ANN003, ANN201
-        self.count += 1
-        return self._pool.acquire(*args, **kwargs)
-
-    def __getattr__(self, name: str):  # noqa: ANN204
-        return getattr(self._pool, name)
-
-
 @pytest.fixture
-def checkouts(monkeypatch):  # noqa: ANN001, ANN201
-    """Return ``counter_for(store)`` — real pool checkouts, per store instance."""
+def checkouts(monkeypatch) -> Callable[[Any], PoolCheckoutRecorder]:
+    """Return ``recorder_for(store)`` — real pool checkouts, per store instance."""
     from roomkit.store.postgres import PostgresStore
 
-    counters: dict[int, _CheckoutCounter] = {}
+    recorders: dict[int, PoolCheckoutRecorder] = {}
 
-    def counter_for(s: PostgresStore) -> _CheckoutCounter:
-        if id(s) not in counters:
-            counters[id(s)] = _CheckoutCounter(s._pool)  # noqa: SLF001
-        return counters[id(s)]
+    def recorder_for(s: Any) -> PoolCheckoutRecorder:
+        if id(s) not in recorders:
+            recorders[id(s)] = PoolCheckoutRecorder(s._pool)
+        return recorders[id(s)]
 
-    monkeypatch.setattr(PostgresStore, "_ensure_pool", counter_for)
-    return counter_for
+    monkeypatch.setattr(PostgresStore, "_ensure_pool", recorder_for)
+    return recorder_for
 
 
 class TestConnectionTenure:
@@ -701,31 +684,31 @@ class TestConnectionTenure:
 
     async def test_the_block_pays_one_checkout_for_every_call(self, store, checkouts) -> None:
         await store.create_room(Room(id="r1"))
-        counter = checkouts(store)
-        counter.count = 0
+        recorder = checkouts(store)
+        recorder.reset()
 
         async with store.connection():
             await store.get_room("r1")
             await store.list_bindings("r1")
             await store.list_participants("r1")
 
-        assert counter.count == 1
+        assert recorder.total == 1
 
     async def test_the_same_calls_outside_pay_one_checkout_each(self, store, checkouts) -> None:
         await store.create_room(Room(id="r1"))
-        counter = checkouts(store)
-        counter.count = 0
+        recorder = checkouts(store)
+        recorder.reset()
 
         await store.get_room("r1")
         await store.list_bindings("r1")
         await store.list_participants("r1")
 
-        assert counter.count == 3
+        assert recorder.total == 3
 
     async def test_a_nested_block_joins_the_outer_one(self, store, checkouts) -> None:
         await store.create_room(Room(id="r1"))
-        counter = checkouts(store)
-        counter.count = 0
+        recorder = checkouts(store)
+        recorder.reset()
 
         async with store.connection():
             await store.get_room("r1")
@@ -733,7 +716,7 @@ class TestConnectionTenure:
                 await store.list_bindings("r1")
             await store.list_participants("r1")
 
-        assert counter.count == 1
+        assert recorder.total == 1
 
     async def test_the_default_load_room_context_rides_the_block(self, store, checkouts) -> None:
         """The ABC default composes three getters and brackets them itself.
@@ -745,14 +728,14 @@ class TestConnectionTenure:
         from roomkit.store.base import ConversationStore
 
         await store.create_room(Room(id="r1"))
-        counter = checkouts(store)
-        counter.count = 0
+        recorder = checkouts(store)
+        recorder.reset()
 
         room, bindings, participants = await ConversationStore.load_room_context(store, "r1")
 
         assert room is not None
         assert (bindings, participants) == ([], [])
-        assert counter.count == 1
+        assert recorder.total == 1
 
     async def test_a_failure_inside_the_block_returns_the_connection(self, store) -> None:
         await store.get_room("warm-the-pool")
@@ -792,13 +775,13 @@ class TestConnectionTenure:
         await other.init(min_size=1, max_size=2)
         try:
             await store.create_room(Room(id="r1"))
-            counter = checkouts(other)
-            counter.count = 0
+            recorder = checkouts(other)
+            recorder.reset()
 
             async with store.connection():
                 assert await other.get_room("r1") is not None
 
-            assert counter.count == 1
+            assert recorder.total == 1
         finally:
             await other.close()
 

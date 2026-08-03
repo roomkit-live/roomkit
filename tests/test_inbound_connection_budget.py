@@ -20,9 +20,7 @@ has none. Set POSTGRES_DSN to run it:
 
 from __future__ import annotations
 
-import collections
 import os
-import traceback
 
 import pytest
 
@@ -33,6 +31,7 @@ from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundMessage
 from roomkit.models.enums import ChannelType
 from roomkit.models.event import EventSource, RoomEvent, TextContent
+from tests.conftest import PoolCheckoutRecorder
 
 POSTGRES_DSN = os.environ.get("POSTGRES_DSN")
 
@@ -58,47 +57,6 @@ pytestmark = [
 BUDGET_PER_MESSAGE = 8
 
 
-class _CountingPool:
-    """Proxy over the asyncpg pool, recording each checkout with its call site."""
-
-    def __init__(self, pool) -> None:  # noqa: ANN001
-        self._pool = pool
-        self.recording = False
-        self.by_call_site: collections.Counter[str] = collections.Counter()
-
-    @property
-    def total(self) -> int:
-        return sum(self.by_call_site.values())
-
-    def acquire(self, *args, **kwargs):  # noqa: ANN002, ANN003, ANN201
-        if self.recording:
-            self.by_call_site[_call_site()] += 1
-        return self._pool.acquire(*args, **kwargs)
-
-    def __getattr__(self, name: str):  # noqa: ANN204
-        return getattr(self._pool, name)
-
-
-def _call_site() -> str:
-    """The innermost store method, plus the framework frame that asked for it."""
-    stack = traceback.extract_stack()[:-2]
-    store_frame = next((f for f in reversed(stack) if "roomkit/store/" in f.filename), None)
-    caller = next(
-        (
-            f
-            for f in reversed(stack)
-            if "roomkit/" in f.filename and "roomkit/store/" not in f.filename
-        ),
-        None,
-    )
-    return "{} <- {}:{} {}".format(
-        store_frame.name if store_frame else "?",
-        os.path.basename(caller.filename) if caller else "?",
-        caller.lineno if caller else "?",
-        caller.name if caller else "?",
-    )
-
-
 class BudgetChannel(Channel):
     """A transport channel that reads no history and answers nothing."""
 
@@ -122,14 +80,14 @@ async def test_an_inbound_message_stays_within_its_connection_budget() -> None:
 
     store = PostgresStore(dsn=POSTGRES_DSN)
     await store.init(min_size=2, max_size=8)
-    async with store._pool.acquire() as conn:  # noqa: SLF001
+    async with store._pool.acquire() as conn:
         await conn.execute(
             "TRUNCATE rooms, events, bindings, participants, "
             "identities, identity_addresses, tasks, observations, read_markers CASCADE"
         )
 
-    counting = _CountingPool(store._pool)  # noqa: SLF001
-    store._ensure_pool = lambda: counting  # type: ignore[method-assign]  # noqa: SLF001
+    recorder = PoolCheckoutRecorder(store._pool)
+    store._ensure_pool = lambda: recorder  # type: ignore[method-assign]
 
     kit = RoomKit(store=store)
     kit.register_channel(BudgetChannel("sms"))
@@ -147,22 +105,21 @@ async def test_an_inbound_message_stays_within_its_connection_budget() -> None:
                 room_id=room.id,
             )
 
+    messages = 10
     try:
         # Room creation and first attach are one-off costs, not per-message ones.
         await send(3)
+        recorder.reset()
 
-        counting.recording = True
-        messages = 10
         await send(messages)
-        counting.recording = False
+        # Read the tally before the teardown below, whose own store calls are
+        # not part of what a message costs.
+        per_message = recorder.total / messages
+        breakdown = recorder.breakdown(per=messages)
     finally:
         await kit.close()
         await store.close()
 
-    per_message = counting.total / messages
-    breakdown = "\n".join(
-        f"  {count / messages:5.2f}  {site}" for site, count in counting.by_call_site.most_common()
-    )
     assert per_message <= BUDGET_PER_MESSAGE, (
         f"inbound now costs {per_message:.2f} pooled connections per message, "
         f"budget is {BUDGET_PER_MESSAGE}:\n{breakdown}"

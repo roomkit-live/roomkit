@@ -151,6 +151,11 @@ class PostgresStore(ConversationStore):
             raise RuntimeError("PostgresStore.init() must be called before use")
         return self._pool
 
+    def _bound(self) -> Any | None:
+        """The connection :meth:`connection` bound for this store, if any."""
+        bound = _bound_connection.get()
+        return bound[1] if bound is not None and bound[0] is self else None
+
     def _acquire(self) -> Any:
         """The connection this store's queries run on.
 
@@ -158,9 +163,9 @@ class PostgresStore(ConversationStore):
         current context — then that one, lent for the call and NOT released
         back to the pool here; the block that bound it releases it.
         """
-        bound = _bound_connection.get()
-        if bound is not None and bound[0] is self:
-            return _lend(bound[1])
+        bound = self._bound()
+        if bound is not None:
+            return _lend(bound)
         return self._ensure_pool().acquire(timeout=self._acquire_timeout)
 
     @asynccontextmanager
@@ -176,8 +181,7 @@ class PostgresStore(ConversationStore):
         One checkout for the whole block instead of one per call, and asyncpg
         emits its connection reset once instead of once per call.
         """
-        bound = _bound_connection.get()
-        if bound is not None and bound[0] is self:
+        if self._bound() is not None:
             # Reentrant: the outer block owns the connection and releases it.
             yield
             return
