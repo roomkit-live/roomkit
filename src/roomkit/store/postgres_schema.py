@@ -147,6 +147,10 @@ CREATE TABLE IF NOT EXISTS events (
     source_extra        JSONB NOT NULL DEFAULT '{}',
     status              TEXT NOT NULL DEFAULT 'pending',
     visibility          TEXT NOT NULL DEFAULT 'all',
+    -- Intelligence channels asked to act (RFC §19.3). NULL = unaddressed,
+    -- which is not the same as the empty array (addressed to nobody), so the
+    -- column is nullable rather than defaulting to '{}'.
+    addressed_to        TEXT[],
     response_visibility TEXT,
     index               INTEGER NOT NULL DEFAULT 0,
     chain_depth         INTEGER NOT NULL DEFAULT 0,
@@ -158,6 +162,10 @@ CREATE TABLE IF NOT EXISTS events (
     channel_data        JSONB NOT NULL DEFAULT '{}',
     created_at          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+-- Addressing arrived after events existed. Additive and unguarded: an
+-- existing row is unaddressed (NULL), which is exactly the behaviour it was
+-- stored under, so there is nothing to backfill and re-running is a no-op.
+ALTER TABLE events ADD COLUMN IF NOT EXISTS addressed_to TEXT[];
 CREATE UNIQUE INDEX IF NOT EXISTS idx_events_room_index ON events(room_id, index);
 CREATE INDEX IF NOT EXISTS idx_events_room_created ON events(room_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_events_room_type ON events(room_id, type);

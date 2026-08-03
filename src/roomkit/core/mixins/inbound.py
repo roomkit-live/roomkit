@@ -196,6 +196,12 @@ class InboundMixin(HelpersMixin):
         if message.parent_event_id is not None and event.parent_event_id is None:
             event = event.model_copy(update={"parent_event_id": message.parent_event_id})
 
+        # Addressing (RFC §19.3), applied centrally for the same reason. A
+        # channel that reads an address off its own wire format sets it in
+        # handle_inbound and keeps it — the caller's address only fills a gap.
+        if message.addressed_to is not None and event.addressed_to is None:
+            event = event.model_copy(update={"addressed_to": list(message.addressed_to)})
+
         # Identity resolution pipeline (RFC §11)
         try:
             event, resolved_identity, pending_id_result = await self._resolve_identity(

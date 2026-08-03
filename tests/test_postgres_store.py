@@ -149,6 +149,7 @@ def _event_row(event: RoomEvent) -> dict:
         "source_extra": {},
         "status": event.status.value,
         "visibility": event.visibility,
+        "addressed_to": event.addressed_to,
         "response_visibility": event.response_visibility,
         "index": event.index,
         "chain_depth": event.chain_depth,

@@ -41,6 +41,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Event addressing — `RoomEvent.addressed_to` / `InboundMessage.addressed_to`
+  (RFC §19.3).** Names the intelligence channels *asked to act* on an event.
+  It is **not** visibility: `visibility` is configured on a binding and says
+  who may *see*; an address is set on an event by its sender and says who is
+  *solicited*. The two are independent — addressing one agent hides the event
+  from nobody, and transport delivery is never narrowed, so the humans in the
+  room still get the message. `None` means unaddressed (every eligible agent
+  acts, or the router decides, exactly as before); an empty list addresses
+  nobody, which is a decision rather than an absence. An address outranks a
+  router's stamp: a router cannot override what the sender asked for. The
+  address is stored with the event, so a transcript can show who was asked
+  and a replay reproduces the same solicitation. RoomKit takes the decision,
+  never the syntax — `@mentions`, a `/agent` command or a picker all live in
+  the application. PostgresStore gains a nullable `addressed_to TEXT[]`,
+  added additively: an existing row is unaddressed, which is what it was
+  stored under, so nothing is backfilled.
+
 - **`ExternalToolHandler.channel_id` — a handler can say who it serves.** The
   framework already wired the channel id in privately; it is now readable, so
   a permission prompt can answer the question a human must be asked when

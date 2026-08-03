@@ -50,6 +50,12 @@ class InboundMessage(BaseModel):
     # WITHOUT triggering its intelligence channel — e.g. a proactive
     # notification the agent should not react to.
     visibility: str = Visibility.ALL
+    # Which intelligence channels this message asks to act (RFC §19.3), by
+    # channel id. ``None`` addresses nobody in particular — every eligible
+    # agent is solicited, or the router decides. How a caller *chooses* the
+    # ids is its own business: a slash command, a picker, a mention syntax
+    # parsed at the edge. RoomKit takes the decision, never the syntax.
+    addressed_to: list[str] | None = None
 
 
 class InboundResult(BaseModel):

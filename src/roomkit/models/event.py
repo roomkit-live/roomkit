@@ -235,6 +235,12 @@ class RoomEvent(BaseModel):
     status: EventStatus = EventStatus.PENDING
     blocked_by: str | None = None
     visibility: str = Visibility.ALL
+    # Which intelligence channels are ASKED TO ACT on this event (RFC §19.3).
+    # Not visibility: ``visibility`` says who may see, this says who is
+    # solicited, and the two are independent — addressing one agent hides
+    # nothing from another, and transport delivery is never affected.
+    # ``None`` means unaddressed: the router decides, as before.
+    addressed_to: list[str] | None = None
     response_visibility: str | None = None
     index: int = Field(default=0, ge=0)
     chain_depth: int = Field(default=0, ge=0)

@@ -56,11 +56,11 @@ async def _insert_event(conn: Any, event: RoomEvent) -> None:
         "INSERT INTO events"
         " (id, room_id, type, content, source_channel_id, source_channel_type,"
         "  source_direction, source_participant_id, source_provider, source_extra,"
-        "  status, visibility, response_visibility, index, chain_depth,"
+        "  status, visibility, addressed_to, response_visibility, index, chain_depth,"
         "  correlation_id, parent_event_id, idempotency_key, blocked_by,"
         "  metadata, channel_data, created_at)"
         " VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,"
-        "         $16,$17,$18,$19,$20,$21,$22)",
+        "         $16,$17,$18,$19,$20,$21,$22,$23)",
         event.id,
         event.room_id,
         event.type.value,
@@ -73,6 +73,7 @@ async def _insert_event(conn: Any, event: RoomEvent) -> None:
         _source_extra(event.source),
         event.status.value,
         event.visibility,
+        event.addressed_to,
         event.response_visibility,
         event.index,
         event.chain_depth,

@@ -71,6 +71,27 @@ async def _aclose_stream(stream: Any) -> None:
         await aclose()
 
 
+def _solicits(event: RoomEvent, channel_id: str) -> bool:
+    """Is this intelligence channel asked to act on *event*? (RFC §19.3)
+
+    An explicit address decides, ahead of any routing decision (§19.4 step
+    0): a router cannot override what the sender asked for. With no address,
+    the router's stamp decides as before, and with neither, everyone acts.
+
+    Solicitation only — the caller has already resolved *visibility*, which
+    is a separate question this must not re-answer.
+    """
+    addressed = event.addressed_to
+    if addressed is not None:
+        return channel_id in addressed
+
+    metadata = event.metadata or {}
+    routed_to = metadata.get("_routed_to")
+    if routed_to is None:
+        return True
+    return channel_id == routed_to or channel_id in metadata.get("_always_process", [])
+
+
 @dataclass
 class StreamingResponse:
     """A streaming response from an intelligence channel."""
@@ -299,17 +320,13 @@ class EventRouter:
                     if (transcoded_event.metadata or {}).get("_orchestration_internal"):
                         target_results.append(tr)
                         return
-                    routed_to = (transcoded_event.metadata or {}).get("_routed_to")
-                    if routed_to is not None:
-                        always_process = (transcoded_event.metadata or {}).get(
-                            "_always_process", []
-                        )
-                        if (
-                            binding.channel_id != routed_to
-                            and binding.channel_id not in always_process
-                        ):
-                            target_results.append(tr)
-                            return
+                    # An explicit address decides who acts, ahead of any
+                    # routing decision (RFC §19.3, §19.4 step 0). Transport
+                    # delivery above is untouched: addressing narrows who is
+                    # asked, never who may see.
+                    if not _solicits(transcoded_event, binding.channel_id):
+                        target_results.append(tr)
+                        return
 
                     # Greeting gate: wait for greeting to be stored before AI processes
                     if self._greeting_gate_fn is not None:

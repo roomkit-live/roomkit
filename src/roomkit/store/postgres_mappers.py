@@ -68,6 +68,9 @@ def _row_to_event(row: Any) -> RoomEvent:
         ),
         status=row["status"],
         visibility=row["visibility"],
+        # NULL and [] mean different things (unaddressed vs addressed to
+        # nobody), so the list is rebuilt only when the column has one.
+        addressed_to=(list(addressed) if (addressed := row["addressed_to"]) is not None else None),
         response_visibility=row["response_visibility"],
         index=row["index"],
         chain_depth=row["chain_depth"],
