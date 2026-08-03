@@ -143,8 +143,11 @@ async def _broadcast_and_collect(
     msg_event = await kit._commit_indexed(child_room_id, msg_event)
 
     # Build context AFTER storing so the agent's memory provider
-    # can see the message in recent_events.
-    recent = await kit.store.list_events(child_room_id, offset=0, limit=50)
+    # can see the message in recent_events — which is the message just
+    # committed, so this read must be the room's tail (``newest_first``),
+    # not its head. A delegated room that outlives 50 events would
+    # otherwise hand the agent the opening turns and never the new one.
+    recent = await kit.store.list_events(child_room_id, offset=0, limit=50, newest_first=True)
     context = RoomContext(room=room, bindings=bindings, recent_events=recent)
 
     router = kit._get_router()

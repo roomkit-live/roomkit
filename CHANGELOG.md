@@ -298,6 +298,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`RoomContext.recent_events` holds the room's most recent messages, not its
+  first ones.** `ConversationStore.get_conversation()` delegated to
+  `list_events()` without `newest_first`, so a call with no cursor returned the
+  *oldest* `limit` messages — the head of the room, frozen. That is the read
+  behind `_build_context()`, which means every hook and every AI channel on a
+  room whose history outgrew the channel's window saw the opening of the
+  conversation and never what had just been said; a sliding-window memory
+  provider slicing `recent_events[-N:]` only took the last of the oldest. Both
+  shipped stores were affected (the in-memory slice and the Postgres
+  `ORDER BY created_at LIMIT n OFFSET 0`). Without a cursor `get_conversation`
+  now returns the newest `limit` messages in ascending order — the last element
+  is the newest. With `after_index` it stays a forward keyset cursor ("what
+  arrived since I last looked"), unchanged. The delegated-agent room context
+  (`_child_execution`) was reading its head the same way and is fixed too.
+  This is an observable semantic change for a caller that used
+  `get_conversation()` without a cursor to read a room's *opening* messages —
+  ask `list_events()` / `get_timeline()` for those. A third-party store that
+  implements `list_events` while ignoring the `newest_first` argument (already
+  part of the ABC) keeps the old behaviour silently.
+
 - **`PostgresStore.init()` serializes its DDL across processes.** Idempotent
   DDL is not concurrent DDL: PostgreSQL resolves `IF NOT EXISTS` *before*
   taking the lock the statement needs, so a fleet restarting together had
@@ -362,6 +382,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (two-terminal cross-process demo). The `redis` extra floor moves to
   `>=5.0.1` — the delivery backend already called `Redis.aclose()`, which
   only exists from that release.
+
+- **`RoomKit.get_timeline(newest_first=True)`.** The store-level read has
+  offered it since the tool-usage hydration work; the framework method did
+  not, so the one thing a reconnecting client actually wants — the last N
+  events, ascending — was only reachable through cursor gymnastics. Default
+  stays `False` (page 1 of a log reads from the beginning).
 
 ## [0.39.0] — 2026-08-02
 

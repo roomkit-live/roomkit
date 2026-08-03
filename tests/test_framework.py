@@ -134,6 +134,40 @@ class TestRoomLifecycle:
         assert room.metadata["key"] == "val"
 
 
+class TestTimelineQuery:
+    """``RoomKit.get_timeline`` pages a log from its head, or snapshots its tail."""
+
+    @staticmethod
+    async def _seed(kit: RoomKit, room_id: str, count: int) -> None:
+        for i in range(count):
+            await kit.store.commit_event(
+                room_id,
+                RoomEvent(
+                    room_id=room_id,
+                    type=EventType.MESSAGE,
+                    source=EventSource(channel_id="sms1", channel_type=ChannelType.SMS),
+                    content=TextContent(body=f"msg-{i}"),
+                ),
+            )
+
+    async def test_default_pages_from_the_head(self, kit: RoomKit) -> None:
+        await kit.create_room(room_id="r1")
+        await self._seed(kit, "r1", 10)
+
+        events = await kit.get_timeline("r1", limit=3)
+
+        assert [e.index for e in events] == [0, 1, 2]
+
+    async def test_newest_first_snapshots_the_tail(self, kit: RoomKit) -> None:
+        """A reconnecting client wants what was just said, not the room's opening."""
+        await kit.create_room(room_id="r1")
+        await self._seed(kit, "r1", 10)
+
+        events = await kit.get_timeline("r1", limit=3, newest_first=True)
+
+        assert [e.index for e in events] == [7, 8, 9]
+
+
 class TestChannelManagement:
     async def test_register_and_attach(self, kit: RoomKit) -> None:
         ch = SimpleChannel("sms1")

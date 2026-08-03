@@ -608,6 +608,29 @@ class TestCursorPagination:
         assert events == []
 
 
+class TestConversationRecency:
+    """RMK-99 — against a real database, since the bug lived in the SQL."""
+
+    async def test_get_conversation_returns_the_tail(self, store) -> None:
+        await store.create_room(Room(id="r1"))
+        for i in range(10):
+            await store.add_event_auto_index("r1", _make_event(room_id="r1", body=f"msg{i}"))
+
+        convo = await store.get_conversation("r1", limit=3)
+
+        assert [e.index for e in convo] == [7, 8, 9]
+        assert convo[-1].content.body == "msg9"
+
+    async def test_get_conversation_with_cursor_reads_forward(self, store) -> None:
+        await store.create_room(Room(id="r1"))
+        for i in range(10):
+            await store.add_event_auto_index("r1", _make_event(room_id="r1", body=f"msg{i}"))
+
+        page = await store.get_conversation("r1", limit=3, after_index=5)
+
+        assert [e.index for e in page] == [6, 7, 8]
+
+
 class TestDeleteRoomCleanup:
     async def test_cascading_delete(self, store) -> None:
         """ON DELETE CASCADE removes all child rows."""

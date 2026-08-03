@@ -399,6 +399,19 @@ class ConversationStore(ABC):
         Use :meth:`get_timeline` to retrieve the full activity log
         including tool calls.
 
+        Without a cursor this returns the **most recent** ``limit`` messages,
+        in ascending order — the last element is the newest message in the
+        room. That is what "the conversation" means for a context rebuild:
+        the head of a room whose history outgrew ``limit`` is history no
+        model should be answering from. Callers who do want the opening
+        messages ask for them explicitly via :meth:`list_events` /
+        :meth:`get_timeline`.
+
+        With ``after_index`` it stays a forward cursor — the first ``limit``
+        messages *after* that index, ascending — so keyset pagination
+        ("give me what arrived since I last looked") reads in order and
+        resumes where it stopped.
+
         Returned events are immutable snapshots (RFC §14.4): treat them
         as frozen. A store may share objects between reads or return
         fresh ones — rely on neither.
@@ -408,6 +421,9 @@ class ConversationStore(ABC):
             limit=limit,
             after_index=after_index,
             event_filter=EventFilter(event_types=[EventType.MESSAGE]),
+            # Ignored when a cursor is supplied; spelled out so the no-cursor
+            # read is unambiguously the tail of the room, not its head.
+            newest_first=after_index is None,
         )
 
     async def get_timeline(

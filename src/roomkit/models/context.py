@@ -12,7 +12,15 @@ from roomkit.models.room import Room
 
 
 class RoomContext(BaseModel):
-    """Contextual information about a room for hook and channel processing."""
+    """Contextual information about a room for hook and channel processing.
+
+    ``recent_events`` is the room's **tail** in ascending order: its last
+    element is the most recent event the context knows about. Every consumer
+    reads it that way — memory providers slice ``[-N:]``, the inbound pipeline
+    appends the freshly committed event at the end, and hooks scanning for
+    "the latest X" iterate it reversed. A producer building a ``RoomContext``
+    by hand owes it the same shape.
+    """
 
     room: Room
     bindings: list[ChannelBinding] = Field(default_factory=list)

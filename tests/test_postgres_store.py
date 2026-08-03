@@ -846,6 +846,38 @@ class TestPostgresStore:
         result = await store.list_events("room-1", limit=3, newest_first=True)
         assert [e.index for e in result] == [7, 8, 9]
 
+    async def test_get_conversation_queries_the_rooms_tail(self) -> None:
+        """No cursor → the newest ``limit`` messages (RMK-99).
+
+        The head of a room whose history outgrew ``limit`` is exactly what an
+        AI context rebuild must not be handed.
+        """
+        store, mock_conn = _make_store_with_pool()
+        rows = [
+            _event_row(_make_event(event_id=f"evt-{i}").model_copy(update={"index": i}))
+            for i in (9, 8, 7)
+        ]
+        mock_conn.fetch.return_value = rows
+
+        result = await store.get_conversation("room-1", limit=3)
+
+        sql = mock_conn.fetch.call_args[0][0]
+        assert "ORDER BY index DESC" in sql
+        assert "type = ANY" in sql  # still messages only
+        assert [e.index for e in result] == [7, 8, 9]  # reversed to ascending
+
+    async def test_get_conversation_with_cursor_reads_forward(self) -> None:
+        """``after_index`` stays a forward keyset cursor, ascending, no OFFSET."""
+        store, mock_conn = _make_store_with_pool()
+        mock_conn.fetch.return_value = []
+
+        await store.get_conversation("room-1", limit=3, after_index=5)
+
+        sql = mock_conn.fetch.call_args[0][0]
+        assert "ORDER BY index DESC" not in sql
+        assert "ORDER BY index" in sql
+        assert "OFFSET" not in sql
+
     async def test_check_idempotency_exists(self) -> None:
         store, mock_conn = _make_store_with_pool()
         mock_conn.fetchrow.return_value = {"?column?": 1}

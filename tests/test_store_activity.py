@@ -447,3 +447,101 @@ class TestConvenienceMethods:
             event_filter=EventFilter(correlation_id="resp-1"),
         )
         assert len(timeline) == 1
+
+
+# ---------------------------------------------------------------------------
+# Conversation recency — what "recent" has to mean (RMK-99)
+# ---------------------------------------------------------------------------
+
+
+async def _seed_messages(store: InMemoryStore, room_id: str, count: int) -> None:
+    for i in range(count):
+        await store.add_event_auto_index(
+            room_id,
+            RoomEvent(
+                room_id=room_id,
+                source=_source(),
+                type=EventType.MESSAGE,
+                content=TextContent(body=f"msg-{i}"),
+            ),
+        )
+
+
+class TestConversationRecency:
+    """A room longer than ``limit`` must yield its tail, never its head.
+
+    ``get_conversation`` feeds ``RoomContext.recent_events``, which every
+    consumer reads tail-first (memory providers slice ``[-N:]``, the pipeline
+    appends the committed event at the end). Returning the room's opening
+    messages made an AI answer from frozen history it should have forgotten —
+    and nothing asserted otherwise, which is how it shipped.
+    """
+
+    async def test_get_conversation_returns_the_tail(self, store: InMemoryStore) -> None:
+        room_id = await _seed_room(store)
+        await _seed_messages(store, room_id, 10)
+
+        convo = await store.get_conversation(room_id, limit=3)
+
+        assert [e.index for e in convo] == [7, 8, 9]
+
+    async def test_get_conversation_ends_on_the_newest_event(self, store: InMemoryStore) -> None:
+        room_id = await _seed_room(store)
+        await _seed_messages(store, room_id, 10)
+
+        convo = await store.get_conversation(room_id, limit=4)
+
+        assert convo[-1].content.body == "msg-9"  # type: ignore[union-attr]
+        assert [e.index for e in convo] == sorted(e.index for e in convo)
+
+    async def test_get_conversation_returns_everything_below_the_limit(
+        self, store: InMemoryStore
+    ) -> None:
+        room_id = await _seed_room(store)
+        await _seed_messages(store, room_id, 3)
+
+        convo = await store.get_conversation(room_id, limit=50)
+
+        assert [e.index for e in convo] == [0, 1, 2]
+
+    async def test_get_conversation_with_cursor_reads_forward(self, store: InMemoryStore) -> None:
+        """``after_index`` stays a forward cursor: the first ``limit`` after it.
+
+        This is the mode that pages through what arrived since the last read,
+        so it must resume at the cursor — not jump to the newest events and
+        skip the middle.
+        """
+        room_id = await _seed_room(store)
+        await _seed_messages(store, room_id, 10)
+
+        page = await store.get_conversation(room_id, limit=3, after_index=5)
+
+        assert [e.index for e in page] == [6, 7, 8]
+
+    async def test_get_conversation_still_excludes_non_messages(
+        self, store: InMemoryStore
+    ) -> None:
+        """The tail is a tail of *messages* — tool-call noise never counts."""
+        room_id = await _seed_room(store)
+        await _seed_messages(store, room_id, 4)
+        for i in range(6):
+            await store.add_event_auto_index(
+                room_id,
+                RoomEvent(
+                    room_id=room_id,
+                    source=_source(),
+                    type=EventType.TOOL_CALL_END,
+                    content=ToolCallContent(
+                        tool_name="t", tool_id=f"c{i}", result="ok", status="completed"
+                    ),
+                ),
+            )
+
+        convo = await store.get_conversation(room_id, limit=3)
+
+        assert all(e.type == EventType.MESSAGE for e in convo)
+        assert [e.content.body for e in convo] == [  # type: ignore[union-attr]
+            "msg-1",
+            "msg-2",
+            "msg-3",
+        ]

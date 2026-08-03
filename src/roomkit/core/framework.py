@@ -648,12 +648,18 @@ class RoomKit(
         *,
         after_index: int | None = None,
         before_index: int | None = None,
+        newest_first: bool = False,
     ) -> list[RoomEvent]:
         """Query the event timeline for a room.
 
         Supports offset-based (``offset``/``limit``) and cursor-based
         (``after_index``/``before_index``) pagination.  When a cursor
         parameter is set, ``offset`` is ignored.
+
+        The offset-based default is the *oldest* ``limit`` events — page 1 of
+        a log reads from the beginning. Pass ``newest_first=True`` for the most
+        recent ``limit`` instead (still ascending), which is the shape a
+        reconnect snapshot wants: what was just said, not how the room opened.
 
         Args:
             room_id: Room to query.
@@ -662,6 +668,9 @@ class RoomKit(
             visibility_filter: Optional visibility value to filter by.
             after_index: Return events with ``index > after_index``.
             before_index: Return events with ``index < before_index``.
+            newest_first: In offset-based mode, return the most recent
+                ``limit`` events instead of the oldest. Ignored when a cursor
+                is supplied.
         """
         await self.get_room(room_id)
         return await self._store.list_events(
@@ -671,6 +680,7 @@ class RoomKit(
             visibility_filter=visibility_filter,
             after_index=after_index,
             before_index=before_index,
+            newest_first=newest_first,
         )
 
     async def list_tasks(self, room_id: str, status: str | None = None) -> list[Task]:

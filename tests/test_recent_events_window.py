@@ -13,6 +13,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from roomkit.channels.base import Channel
+from roomkit.core.framework import RoomKit
 from roomkit.core.mixins.helpers import (
     _RECENT_EVENTS_FLOOR,
     _RECENT_EVENTS_LIMIT,
@@ -20,6 +21,8 @@ from roomkit.core.mixins.helpers import (
 )
 from roomkit.memory.base import DEFAULT_RECENT_EVENTS_WINDOW, MemoryProvider
 from roomkit.memory.sliding_window import SlidingWindowMemory
+from roomkit.models.enums import ChannelType, EventType
+from roomkit.models.event import EventSource, RoomEvent, TextContent
 
 
 def _resolve(channels: dict, channel_ids: list[str]) -> int:
@@ -81,3 +84,54 @@ def test_small_window_still_floored() -> None:
 def test_window_capped_at_ceiling() -> None:
     channels = {"text": SimpleNamespace(recent_events_window=10_000_000)}
     assert _resolve(channels, ["text"]) == _RECENT_EVENTS_LIMIT
+
+
+# ── What the window contains ──────────────────────────────────────
+
+
+async def _seed(kit: RoomKit, room_id: str, count: int) -> None:
+    for i in range(count):
+        await kit.store.commit_event(
+            room_id,
+            RoomEvent(
+                room_id=room_id,
+                type=EventType.MESSAGE,
+                source=EventSource(channel_id="sms", channel_type=ChannelType.SMS),
+                content=TextContent(body=f"msg-{i}"),
+            ),
+        )
+
+
+async def test_window_holds_the_rooms_tail() -> None:
+    """A window that doesn't move is not a window (RMK-99).
+
+    A room whose history outgrew the window used to hand every hook and every
+    AI channel its *opening* messages, frozen — so an agent quoted the start of
+    the conversation and never saw what had just been said.
+    """
+    kit = RoomKit()
+    room = await kit.create_room()
+    await _seed(kit, room.id, _RECENT_EVENTS_FLOOR + 10)
+
+    context = await kit._build_context(room.id)
+
+    assert len(context.recent_events) == _RECENT_EVENTS_FLOOR
+    newest = f"msg-{_RECENT_EVENTS_FLOOR + 9}"
+    assert context.recent_events[-1].content.body == newest  # type: ignore[union-attr]
+    assert [e.index for e in context.recent_events] == sorted(
+        e.index for e in context.recent_events
+    )
+
+
+async def test_window_advances_with_the_conversation() -> None:
+    """Two contexts built either side of a new message differ by that message."""
+    kit = RoomKit()
+    room = await kit.create_room()
+    await _seed(kit, room.id, _RECENT_EVENTS_FLOOR + 1)
+
+    before = await kit._build_context(room.id)
+    await _seed(kit, room.id, 1)
+    after = await kit._build_context(room.id)
+
+    assert after.recent_events[-1].index == before.recent_events[-1].index + 1
+    assert after.recent_events[0].index == before.recent_events[0].index + 1
