@@ -13,8 +13,13 @@ Room, and the point of this example is that neither drowns the other:
   is your console, so its prose, its thinking and its tool activity stay
   where you are reading them.
 - **You choose, per line, who sees what.** By default everything you type is
-  visible to the whole room, colleague included. ``/dm`` scopes a line to
+  visible to the whole room, colleague included. ``@marie`` scopes a line to
   her alone — question *and* the answer it might get.
+
+A leading ``@`` names someone, and what it *does* follows from who they are:
+an agent is **asked** to act (``addressed_to``), a person is **written to**
+(``visibility``). You do not solicit a colleague, and no agent should answer
+in her place — so a line to Marie addresses nobody.
 - **The transcript names people.** She shows as ``@marie · sms``, not as the
   channel that carried her words.
 
@@ -31,7 +36,8 @@ Run with:
 
 At the prompt:
     what does this project do?     to the agent — Marie sees it too
-    /dm running 10 minutes late    to Marie alone, and only her
+    @marie running 10 minutes late  to Marie alone — she sees it, no agent does
+    @assistant summarise that        ask the agent explicitly
     /sms can you review my PR?     pretend Marie just texted you
     quit
 """
@@ -63,7 +69,11 @@ from roomkit.providers.sms.mock import MockSMSProvider
 
 COLLEAGUE_NUMBER = "+15551234567"
 COLLEAGUE_NAME = "Marie"
-DM = "/dm "
+
+# Who a leading @handle can name. A person is written *to*; an agent is
+# *asked*. Same syntax, and the meaning follows from which side you are on.
+PEOPLE = {"marie": "sms"}
+AGENTS = {"assistant"}
 
 
 class PrintingSMSProvider(MockSMSProvider):
@@ -130,21 +140,40 @@ async def main(args: argparse.Namespace) -> None:
         )
     )
 
-    def strip_dm(line: str) -> TextContent | None:
-        """``/dm text`` is a prefix, not a command — it still enters the room."""
-        if line.startswith(DM):
-            return TextContent(body=line[len(DM) :].strip())
-        return TextContent(body=line)
+    def mention(line: str) -> tuple[str, str] | None:
+        """Split a leading ``@handle`` off the line, if it names someone here."""
+        if not line.startswith("@"):
+            return None
+        handle, _, rest = line[1:].partition(" ")
+        handle = handle.strip().casefold()
+        if handle not in PEOPLE and handle not in AGENTS:
+            return None
+        return handle, rest.strip()
+
+    def strip_mention(line: str) -> TextContent | None:
+        """The handle addresses; it is not part of what you said."""
+        named = mention(line)
+        return TextContent(body=named[1] if named else line)
+
+    def asked(line: str) -> list[str] | None:
+        """@ names someone — what it *means* follows from who they are.
+
+        An agent is asked to act. A person is not: you do not solicit a
+        colleague, you write to them, and no agent should answer in their
+        place either.
+        """
+        named = mention(line)
+        if named is None:
+            return None  # unaddressed: every agent in the room may answer
+        handle, _ = named
+        return [] if handle in PEOPLE else [handle]
 
     def scope(line: str) -> list[str] | None:
         """Who may see this line, and whatever answer it draws."""
-        if line.startswith(DM):
-            return ["you", "sms"]
-        return None  # the default: the whole room, colleague included
-
-    def asked(line: str) -> list[str] | None:
-        """A note to a person asks no agent to answer it."""
-        return [] if line.startswith(DM) else None
+        named = mention(line)
+        if named is None or named[0] not in PEOPLE:
+            return None  # the default: the whole room, colleague included
+        return ["you", PEOPLE[named[0]]]
 
     async def incoming_sms(text: str) -> None:
         """``/sms`` — pretend Marie just texted, to see where it lands."""
@@ -164,15 +193,15 @@ async def main(args: argparse.Namespace) -> None:
             kit,
             room_id=room_id,
             sender_id="you",
-            content_factory=strip_dm,
+            content_factory=strip_mention,
             addressed_to=asked,
             visibility=scope,
             commands={"/sms": incoming_sms},
             welcome=(
                 f"{COLLEAGUE_NAME} ({COLLEAGUE_NUMBER}) is in this room, on SMS.\n"
-                "Type to the assistant — she sees it too.\n"
-                "'/dm <text>' writes to her alone, '/sms <text>' fakes one from her,\n"
-                "'quit' to exit."
+                "Type freely — the assistant answers, and she sees it too.\n"
+                "'@marie <text>' writes to her alone; '@assistant <text>' asks the\n"
+                "agent explicitly. '/sms <text>' fakes a text from her, 'quit' exits."
             ),
         )
     finally:
