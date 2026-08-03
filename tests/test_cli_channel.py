@@ -8,7 +8,8 @@ from unittest.mock import AsyncMock, call, patch
 import pytest
 
 from roomkit.channels._cli_markdown import MarkdownStreamRenderer
-from roomkit.channels.cli import CLIChannel, _default_agent_label, _speaker_label
+from roomkit.channels._speaker import speaker_label
+from roomkit.channels.cli import CLIChannel, _default_agent_label
 from roomkit.core.framework import RoomKit
 from roomkit.models.channel import ChannelBinding, ChannelCapabilities
 from roomkit.models.context import RoomContext
@@ -444,9 +445,7 @@ class TestSpeakerLabel:
 
     def test_a_person_is_named_with_the_channel_they_speak_through(self) -> None:
         marie = Participant(id="p-1", room_id="room-1", channel_id="sms", display_name="Marie")
-        label = _speaker_label(
-            self._from("sms", "p-1"), self._context(marie), _default_agent_label
-        )
+        label = speaker_label(self._from("sms", "p-1"), self._context(marie), _default_agent_label)
         assert label == "Marie · sms"
 
     def test_two_people_on_one_channel_are_told_apart(self) -> None:
@@ -454,8 +453,8 @@ class TestSpeakerLabel:
         marie = Participant(id="p-1", room_id="room-1", channel_id="sms", display_name="Marie")
         jean = Participant(id="p-2", room_id="room-1", channel_id="sms", display_name="Jean")
         ctx = self._context(marie, jean)
-        assert _speaker_label(self._from("sms", "p-1"), ctx, _default_agent_label) == "Marie · sms"
-        assert _speaker_label(self._from("sms", "p-2"), ctx, _default_agent_label) == "Jean · sms"
+        assert speaker_label(self._from("sms", "p-1"), ctx, _default_agent_label) == "Marie · sms"
+        assert speaker_label(self._from("sms", "p-2"), ctx, _default_agent_label) == "Jean · sms"
 
     def test_resolution_also_works_through_the_identity_id(self) -> None:
         # The identity pipeline stamps an Identity.id, not a Participant.id.
@@ -466,25 +465,25 @@ class TestSpeakerLabel:
             display_name="Marie",
             identity_id="identity-9",
         )
-        label = _speaker_label(
+        label = speaker_label(
             self._from("sms", "identity-9"), self._context(marie), _default_agent_label
         )
         assert label == "Marie · sms"
 
     def test_an_unnamed_participant_shows_what_is_known(self) -> None:
         unknown = Participant(id="+15551234567", room_id="room-1", channel_id="sms")
-        label = _speaker_label(
+        label = speaker_label(
             self._from("sms", "+15551234567"), self._context(unknown), _default_agent_label
         )
         assert label == "+15551234567 · sms"
 
     def test_an_agent_keeps_its_channel_label(self) -> None:
         # No participant, nothing changes — this is every room that works today.
-        label = _speaker_label(self._from("claude-code"), self._context(), _default_agent_label)
+        label = speaker_label(self._from("claude-code"), self._context(), _default_agent_label)
         assert label == "Claude Code"
 
     def test_an_unknown_participant_id_falls_back(self) -> None:
-        label = _speaker_label(self._from("sms", "ghost"), self._context(), _default_agent_label)
+        label = speaker_label(self._from("sms", "ghost"), self._context(), _default_agent_label)
         assert label == "Sms"
 
 
