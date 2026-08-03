@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator
-from types import SimpleNamespace
 
 import pytest
 
@@ -27,6 +26,7 @@ from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundMessage
 from roomkit.models.enums import ChannelCategory, ChannelMediaType, ChannelType
 from roomkit.models.event import EventSource, RoomEvent, TextContent
+from roomkit.models.room import Room
 from roomkit.models.streaming import ThinkingDeltaMarker
 from roomkit.providers.ai.base import (
     AIContext,
@@ -40,6 +40,23 @@ from roomkit.providers.ai.base import (
 from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.realtime.base import EphemeralEvent, EphemeralEventType
 from tests.test_framework import SimpleChannel
+
+
+def _agent_event() -> RoomEvent:
+    """A minimal but real event from an agent — no participant behind it."""
+    return RoomEvent(
+        room_id="room-1",
+        source=EventSource(channel_id="ai1", channel_type=ChannelType.AI),
+        content=TextContent(body=""),
+    )
+
+
+def _binding() -> ChannelBinding:
+    return ChannelBinding(channel_id="cli", room_id="room-1", channel_type=ChannelType.CLI)
+
+
+def _context() -> RoomContext:
+    return RoomContext(room=Room(id="room-1"))
 
 
 class _CollectingStreamChannel(Channel):
@@ -391,8 +408,7 @@ async def test_cli_thinking_icon_shares_line_with_text(
         yield ThinkingDeltaMarker(thinking=" Step two.")
         yield "The answer is 42."
 
-    event = SimpleNamespace(source=SimpleNamespace(channel_id="ai1"))
-    await cli.deliver_stream(stream(), event, None, None)  # type: ignore[arg-type]
+    await cli.deliver_stream(stream(), _agent_event(), _binding(), _context())
 
     out = capsys.readouterr().out
     assert "💭 Let me reason. Step two." in out
@@ -417,8 +433,7 @@ async def test_cli_no_dangling_icon_for_empty_thinking_after_tool_round(
         yield ThinkingDeltaMarker(thinking="\n\n")  # round 2: empty reasoning
         yield "Answer two."
 
-    event = SimpleNamespace(source=SimpleNamespace(channel_id="ai1"))
-    await cli.deliver_stream(stream(), event, None, None)  # type: ignore[arg-type]
+    await cli.deliver_stream(stream(), _agent_event(), _binding(), _context())
 
     out = capsys.readouterr().out
     assert out.count("💭") == 1  # only the real first block got an icon
@@ -444,8 +459,7 @@ async def test_cli_defers_agent_prefix_until_real_answer(
         yield ThinkingDeltaMarker(thinking="\nNow summarizing.")
         yield "The answer."
 
-    event = SimpleNamespace(source=SimpleNamespace(channel_id="ai1"))
-    await cli.deliver_stream(stream(), event, None, None)  # type: ignore[arg-type]
+    await cli.deliver_stream(stream(), _agent_event(), _binding(), _context())
 
     out = capsys.readouterr().out
     assert out.count("Bot:") == 1  # exactly one prefix, not one per round

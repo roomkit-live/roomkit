@@ -214,7 +214,7 @@ class CLIChannel(Channel):
         if not text:
             return ChannelOutput.empty()
 
-        label = self._agent_label(event.source.channel_id)
+        label = _speaker_label(event, context, self._agent_label)
         if self._console:
             from roomkit.console._chat import print_message
 
@@ -258,7 +258,7 @@ class CLIChannel(Channel):
         if event.source.channel_id == self.channel_id:
             return ChannelOutput.empty()
 
-        label = self._agent_label(event.source.channel_id)
+        label = _speaker_label(event, context, self._agent_label)
         if self._console or self._markdown:
             return await self._deliver_rendered_stream(text_stream, label, event.source.channel_id)
 
@@ -592,6 +592,39 @@ class CLIChannel(Channel):
             )
             sys.stdout.write(f"\n{symbol} {content.tool_name}{duration}\n")
         sys.stdout.flush()
+
+
+def _speaker_label(
+    event: RoomEvent,
+    context: RoomContext,
+    agent_label: Callable[[str], str],
+) -> str:
+    """Who is speaking, as the transcript should name them.
+
+    A person gets their own name and the channel they speak through —
+    ``"Marie · sms"`` — because in a room holding several humans, the channel
+    id names none of them: two colleagues texting in would otherwise share
+    one handle. Anything without a participant (an agent, a system event)
+    keeps the channel-derived label, so nothing that works today changes.
+
+    ``source.participant_id`` holds a ``Participant.id`` when the channel
+    names its own sender, and an ``Identity.id`` when the identity pipeline
+    resolved one (RFC §11) — two namespaces in one field, so both are tried.
+    """
+    participant_id = event.source.participant_id
+    if not participant_id:
+        return agent_label(event.source.channel_id)
+
+    person = next(
+        (p for p in context.participants if p.id == participant_id),
+        None,
+    ) or next(
+        (p for p in context.participants if p.identity_id == participant_id),
+        None,
+    )
+    if person is None:
+        return agent_label(event.source.channel_id)
+    return f"{person.display_name or person.id} · {event.source.channel_id}"
 
 
 def _default_agent_label(channel_id: str) -> str:
