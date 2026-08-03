@@ -18,10 +18,10 @@ same room across processes, so gap decisions and "one event's set completes
 before the next begins" hold deployment-wide. A crashed process releases its
 claim with its connection; the events it committed but never delivered are a
 cursor hole, and the waiting lane skips over it after ``gap_timeout``
-(framework event ``delivery_skipped``) — the same bounded loss as today's
-crash-between-commit-and-POST window, but observable and without wedging the
-room. The durable outbox that turns that loss into recovery is deliberately a
-separate step (RFC §13.6).
+(framework event ``delivery_skipped``) — the loss stays bounded to the crash
+window, but it is observable and the room never wedges. The durable outbox
+that turns that loss into recovery is deliberately a separate step (RFC
+§13.6).
 """
 
 from __future__ import annotations
@@ -574,8 +574,11 @@ class RoomDeliveryLane:
                 )
         except asyncio.CancelledError:
             raise
-        except Exception:
+        except Exception as exc:
+            # Post-plan effects include a real write (side-effect persistence):
+            # the failure must reach the caller, not just the log.
             logger.exception("Post-delivery effects failed for room %s", self.room_id)
+            entry.cascade.record_error(exc)
         finally:
             entry.cascade.release()
 
@@ -589,10 +592,6 @@ class RoomLaneRegistry:
         self._config = config
         self._lanes: dict[str, RoomDeliveryLane] = {}
         self._sealed = False
-
-    @property
-    def sealed(self) -> bool:
-        return self._sealed
 
     def lane(self, room_id: str) -> RoomDeliveryLane:
         """Get or create (and start) the room's lane."""
