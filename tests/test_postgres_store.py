@@ -46,6 +46,15 @@ def _make_mock_conn() -> AsyncMock:
     return conn
 
 
+def _schema_statements(conn: AsyncMock) -> int:
+    """How many DDL batches ``conn`` was asked to run.
+
+    ``init()`` also executes the advisory lock that serializes the DDL across
+    processes; that is a lock acquisition, not schema work.
+    """
+    return sum(1 for c in conn.execute.await_args_list if "pg_advisory_xact_lock" not in c.args[0])
+
+
 def _make_store_with_pool():
     """Create a PostgresStore with a mocked pool and connection.
 
@@ -348,13 +357,29 @@ class TestPostgresStore:
 
             mock_asyncpg.create_pool.assert_awaited_once()
             # Schema SQL was executed
-            mock_conn.execute.assert_awaited_once()
+            assert _schema_statements(mock_conn) == 1
 
     async def test_init_with_existing_pool_only_runs_schema(self) -> None:
         store, mock_conn = _make_store_with_pool()
         # init() should NOT create a new pool, just run schema
         await store.init()
-        mock_conn.execute.assert_awaited_once()
+        assert _schema_statements(mock_conn) == 1
+
+    async def test_init_serializes_its_ddl_under_the_migration_advisory_lock(self) -> None:
+        """Concurrent boots must not race into the schema.
+
+        ``IF NOT EXISTS`` is resolved before PostgreSQL takes the lock the DDL
+        needs, so two workers starting together both see an object missing and
+        the loser raises — ``duplicate_column`` on the guarded delivered_index
+        migration, ``duplicate_object`` on a table or index. The advisory lock
+        (the one ``migrate()`` takes, so the two also exclude each other) is
+        what makes a fleet restart safe, and it must be taken BEFORE any DDL.
+        """
+        store, mock_conn = _make_store_with_pool()
+        await store.init()
+        executed = [c.args[0] for c in mock_conn.execute.await_args_list]
+        assert "pg_advisory_xact_lock" in executed[0]
+        mock_conn.transaction.assert_called_once()  # ...and held for the whole DDL
 
     # ── Migration safety (P0: no destructive DDL on connect) ─────
 
@@ -388,8 +413,9 @@ class TestPostgresStore:
         mod = sys.modules["roomkit.store.postgres"]
         with pytest.raises(mod.PostgresSchemaError, match="v1"):
             await store.init()
-        # No DDL executed at all when v1 is detected.
-        mock_conn.execute.assert_not_awaited()
+        # No DDL executed at all when v1 is detected (the advisory lock the
+        # detection runs under is not DDL).
+        assert _schema_statements(mock_conn) == 0
 
     async def test_init_runs_additive_schema_on_v2(self) -> None:
         store, mock_conn = _make_store_with_pool()

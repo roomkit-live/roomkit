@@ -230,6 +230,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`PostgresStore.init()` serializes its DDL across processes.** Idempotent
+  DDL is not concurrent DDL: PostgreSQL resolves `IF NOT EXISTS` *before*
+  taking the lock the statement needs, so a fleet restarting together had
+  every worker see the same object missing and the losers raise
+  (`duplicate_object` on a table or index, `duplicate_column` on an additive
+  column migration) — a failed boot on exactly the deploy that touches the
+  schema. `init()` now runs as one transaction behind the same advisory lock
+  `migrate()` takes, so the two also exclude each other. The additive column
+  guards are additionally scoped to `current_schema()`: `information_schema`
+  spans every schema the role can see, and a namesake `rooms` table in
+  another one would have skipped a migration our tables needed.
+
 - **`ACPChannel.close()` is bounded and always tears the process down.** The
   graceful half (cancel the turns, close the sessions) now shares a 5-second
   budget, and the subprocess teardown runs in a `finally` — so an agent that

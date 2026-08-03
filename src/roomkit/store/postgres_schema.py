@@ -121,11 +121,20 @@ CREATE TABLE IF NOT EXISTS rooms (
 -- re-applying it against a live multi-worker deployment would declare
 -- an in-flight first delivery lost. Empty rooms keep -1 (latest_index
 -- defaults to 0 with no event behind it).
+--
+-- The lookup is scoped to the schema this session actually writes to:
+-- information_schema.columns spans every schema the role can see, so an
+-- unqualified match would read a namesake `rooms` table from another
+-- schema and skip the migration our tables need. The guard is safe against
+-- a concurrent boot because PostgresStore.init() runs this DDL under the
+-- migration advisory lock.
 DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM information_schema.columns
-        WHERE table_name = 'rooms' AND column_name = 'delivered_index'
+        WHERE table_schema = current_schema()
+          AND table_name = 'rooms'
+          AND column_name = 'delivered_index'
     ) THEN
         ALTER TABLE rooms ADD COLUMN delivered_index INTEGER NOT NULL DEFAULT -1;
         UPDATE rooms SET delivered_index = latest_index WHERE event_count > 0;

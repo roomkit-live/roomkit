@@ -173,6 +173,15 @@ class PostgresStore(ConversationStore):
         It never drops a table, so calling ``init()`` after a library upgrade
         cannot destroy data.
 
+        Serialized across processes by the same advisory lock :meth:`migrate`
+        takes, and run as one transaction. Idempotent DDL is not the same as
+        *concurrent* DDL: PostgreSQL resolves ``IF NOT EXISTS`` before taking
+        the lock it needs, so two workers booting together both see a missing
+        object and the loser raises (``duplicate_column`` on the guarded
+        ``delivered_index`` migration, ``duplicate_object`` /
+        ``unique_violation`` on a table or index). A deploy that restarts a
+        fleet at once is exactly that case.
+
         If a v1 (JSONB-blob) schema is detected, ``init()`` refuses to
         touch it and raises :class:`PostgresSchemaError`. Back up your data,
         then run the explicit :meth:`migrate` to move v1 → v2.
@@ -184,7 +193,8 @@ class PostgresStore(ConversationStore):
                 max_size=max_size,
                 init=self._init_connection,
             )
-        async with self._acquire() as conn:
+        async with self._acquire() as conn, conn.transaction():
+            await conn.execute("SELECT pg_advisory_xact_lock($1)", _MIGRATION_LOCK_KEY)
             if await conn.fetchval(V1_DETECT):
                 raise PostgresSchemaError(
                     "Legacy v1 (JSONB-blob) schema detected. init() will not "
