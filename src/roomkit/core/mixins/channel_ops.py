@@ -188,6 +188,17 @@ class ChannelOpsMixin(HelpersMixin):
 
     def _wire_external_tool_handler(self, channel_id: str, handler: ExternalToolHandler) -> None:
         """Inject hook callbacks so external tool calls fire RoomKit tool hooks."""
+        if handler._channel_id and handler._channel_id != channel_id:
+            # The injected callbacks are per-channel, so the second wiring
+            # silently re-attributes the first channel's tool hooks — and
+            # anything reading handler.channel_id then names the wrong agent.
+            logger.warning(
+                "External tool handler %s was already wired to channel %r; "
+                "re-wiring to %r. Give each channel its own handler instance.",
+                type(handler).__name__,
+                handler._channel_id,
+                channel_id,
+            )
         handler._channel_id = channel_id
         handler._before_tool_hook = self._build_before_tool_call_hook(channel_id)
         handler._on_tool_hook = self._build_tool_call_hook(channel_id)

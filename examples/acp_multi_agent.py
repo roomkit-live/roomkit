@@ -78,11 +78,6 @@ class AgentSpec:
     channel_id: str
     package: str
 
-    @property
-    def label(self) -> str:
-        """Display name — the same derivation the CLI channel uses."""
-        return self.channel_id.replace("-", " ").title()
-
 
 AGENTS = (
     AgentSpec(channel_id="claude-code", package=CLAUDE_ACP),
@@ -107,12 +102,11 @@ class Addressed:
 class TerminalPermissionHandler(ExternalToolHandler):
     """Ask the console user to approve each tool call, naming who asks.
 
-    One handler per agent: with two agents sharing a terminal, a prompt that
-    does not say who wants to run ``rm`` is a prompt you cannot answer.
+    One handler instance per agent — the framework wires each to its channel,
+    so ``self.channel_id`` answers "who wants to run this?". With two agents
+    sharing one terminal, a prompt that cannot say that is a prompt you
+    cannot answer.
     """
-
-    def __init__(self, agent_label: str) -> None:
-        self._agent = agent_label
 
     async def process_tool_call(
         self,
@@ -135,9 +129,9 @@ class TerminalPermissionHandler(ExternalToolHandler):
             return ToolDecision(approved=False, reason="Denied by a BEFORE_TOOL_USE hook")
 
         arguments = json.dumps(tool_input, indent=2, ensure_ascii=False, default=str)
-        prompt = (
-            f"\n{self._agent} requests permission: {tool_name}\n{arguments}\nAllow once? [y/N] "
-        )
+        # The channel id is what you type to address it — say it the same way.
+        who = f"@{self.channel_id}" if self.channel_id else "The agent"
+        prompt = f"\n{who} requests permission: {tool_name}\n{arguments}\nAllow once? [y/N] "
         try:
             answer = await terminal_input(prompt)
         except (EOFError, KeyboardInterrupt):
@@ -232,7 +226,7 @@ async def main(args: argparse.Namespace) -> None:
             # Both agents keep their credentials under $HOME (which the SDK
             # already passes); SSH_AUTH_SOCK is what git-over-SSH needs.
             inherit_env=["SSH_AUTH_SOCK"],
-            external_tool_handler=TerminalPermissionHandler(spec.label),
+            external_tool_handler=TerminalPermissionHandler(),
         )
         kit.register_channel(channel)
         agents[spec.channel_id] = channel

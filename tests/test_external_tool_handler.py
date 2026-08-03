@@ -344,6 +344,30 @@ class TestBeforeToolUseHook:
         assert handler._before_tool_hook is not None
         assert handler._on_tool_hook is not None
         assert handler._channel_id == "ai-ext"
+        # And it can say so publicly — "who is asking?" for a permission UI.
+        assert handler.channel_id == "ai-ext"
+
+    async def test_channel_id_is_empty_before_registration(self) -> None:
+        # Handlers are built before the channel that owns them, so a caller
+        # must read this when a tool call arrives, not in __init__.
+        handler = PolicyExternalToolHandler(policy=ToolPolicy())
+        assert handler.channel_id == ""
+
+    async def test_sharing_one_handler_across_channels_warns(self, caplog: Any) -> None:
+        # The injected callbacks are per-channel: the second wiring silently
+        # re-attributes the first channel's tool hooks.
+        handler = PolicyExternalToolHandler(policy=ToolPolicy())
+        kit = RoomKit()
+        kit.register_channel(
+            AIChannel("ai-one", provider=MockAIProvider(), external_tool_handler=handler)
+        )
+        with caplog.at_level("WARNING", logger="roomkit.framework"):
+            kit.register_channel(
+                AIChannel("ai-two", provider=MockAIProvider(), external_tool_handler=handler)
+            )
+
+        assert "already wired to channel 'ai-one'" in caplog.text
+        assert handler.channel_id == "ai-two"
 
     async def test_multiple_hooks_priority_order(self) -> None:
         """Multiple BEFORE_TOOL_USE hooks run in priority order; first block wins."""

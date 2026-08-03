@@ -41,6 +41,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`ExternalToolHandler.channel_id` — a handler can say who it serves.** The
+  framework already wired the channel id in privately; it is now readable, so
+  a permission prompt can answer the question a human must be asked when
+  several agents share one terminal: *who wants to run this?* Empty until the
+  channel is registered (handlers are built first), so read it when a tool
+  call arrives. Wiring the same handler instance to a second channel now logs
+  a warning — the injected hook callbacks are per-channel, so the second
+  wiring silently re-attributed the first channel's tool events.
+
 - **`CLIChannel.run(commands={...})` — local commands the loop awaits.** A
   line whose first word matches a key never reaches `content_factory` or the
   room; its async handler runs with the rest of the line as its argument,

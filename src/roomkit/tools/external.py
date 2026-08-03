@@ -159,6 +159,19 @@ class ExternalToolHandler(ABC):
             room_id: RoomKit room ID.
         """
 
+    @property
+    def channel_id(self) -> str:
+        """The channel this handler serves, or ``""`` before registration.
+
+        A handler is wired to one channel (``register_channel`` injects that
+        channel's hook callbacks), so this is the answer to "who is asking?"
+        — the question a permission prompt must put to a human when several
+        agents share one terminal. Empty until the channel is registered:
+        handlers are usually constructed before that, so read it when a tool
+        call arrives, not in ``__init__``.
+        """
+        return self._channel_id
+
     async def start(self) -> None:  # noqa: B027
         """Start receiving tool events.
 
