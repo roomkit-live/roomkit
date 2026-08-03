@@ -47,6 +47,20 @@ class ConversationStore(ABC):
         """
         ...
 
+    async def get_delivered_index(self, room_id: str) -> int:
+        """Read a room's delivery cursor, and nothing else.
+
+        The delivery lane consults this on every turn — twice per event on the
+        Postgres path, once outside the claim and once under it. Going through
+        :meth:`get_room` for it means selecting every column and rebuilding the
+        whole ``Room`` model, JSONB fields decoded and validated, to reach one
+        integer. Backends SHOULD override this with a single-column read.
+
+        Returns ``-1`` for an unknown room, matching the cursor's initial value.
+        """
+        room = await self.get_room(room_id)
+        return -1 if room is None else room.delivered_index
+
     async def advance_delivered_index(
         self, room_id: str, index: int, *, force: bool = False
     ) -> bool:

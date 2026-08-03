@@ -553,8 +553,7 @@ class RoomDeliveryLane:
         return progressed
 
     async def _read_cursor(self) -> int:
-        room = await self._host._store.get_room(self.room_id)
-        return -1 if room is None else room.delivered_index
+        return await self._host._store.get_delivered_index(self.room_id)
 
     def _skip_target(self, delivered: int) -> int:
         """The smallest cursor value that unblocks the earliest local entry.

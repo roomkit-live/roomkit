@@ -424,6 +424,21 @@ class PostgresStore(ConversationStore):
                 )
         return room
 
+    async def get_delivered_index(self, room_id: str) -> int:
+        """One column, not the whole room.
+
+        The lane reads this twice per event — once outside the claim to check
+        whether it is its turn, once under it. Through get_room() that is two
+        full-row SELECTs and two Room models rebuilt per event, JSONB metadata
+        and timers decoded and validated, all to reach a single integer.
+        """
+        with self._query_span("get_delivered_index", "rooms"):
+            async with self._acquire() as conn:
+                value = await conn.fetchval(
+                    "SELECT delivered_index FROM rooms WHERE id = $1", room_id
+                )
+        return -1 if value is None else int(value)
+
     async def advance_delivered_index(
         self, room_id: str, index: int, *, force: bool = False
     ) -> bool:

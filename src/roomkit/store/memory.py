@@ -110,6 +110,10 @@ class InMemoryStore(ConversationStore):
         self._rooms[room.id] = room
         return room
 
+    async def get_delivered_index(self, room_id: str) -> int:
+        room = self._rooms.get(room_id)
+        return -1 if room is None else room.delivered_index
+
     async def advance_delivered_index(
         self, room_id: str, index: int, *, force: bool = False
     ) -> bool:
