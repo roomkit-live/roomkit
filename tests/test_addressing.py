@@ -312,3 +312,54 @@ class TestAgentResponsePolicy:
         assert talkers["a"].solicited == ["go"]
         assert talkers["b"].solicited == []
         await kit.close()
+
+
+class TestResponseVisibility:
+    """A private question must not publish the answer it gets."""
+
+    async def test_scope_reaches_the_stored_event(self) -> None:
+        kit, human, agents = await _room("codex")
+
+        await kit.process_inbound(
+            InboundMessage(
+                channel_id="human",
+                sender_id="user",
+                content=TextContent(body="between us"),
+                addressed_to=["codex"],
+                visibility="human,codex",
+                response_visibility="human,codex",
+            )
+        )
+
+        events = await kit.store.list_events("room-1")
+        inbound = next(e for e in events if e.source.channel_id == "human")
+        assert inbound.visibility == "human,codex"
+        assert inbound.response_visibility == "human,codex"
+        await kit.close()
+
+    async def test_a_channel_that_resolved_one_keeps_it(self) -> None:
+        # Same rule as addressed_to: the caller's value only fills a gap.
+        kit, human, agents = await _room("codex")
+
+        class _Opinionated(SimpleChannel):
+            async def handle_inbound(self, message, context):
+                event = await super().handle_inbound(message, context)
+                return event.model_copy(update={"response_visibility": "human"})
+
+        opinionated = _Opinionated("opinionated")
+        kit.register_channel(opinionated)
+        await kit.attach_channel("room-1", "opinionated")
+
+        await kit.process_inbound(
+            InboundMessage(
+                channel_id="opinionated",
+                sender_id="user",
+                content=TextContent(body="x"),
+                response_visibility="human,codex",
+            )
+        )
+
+        events = await kit.store.list_events("room-1")
+        stored = next(e for e in events if e.source.channel_id == "opinionated")
+        assert stored.response_visibility == "human"
+        await kit.close()

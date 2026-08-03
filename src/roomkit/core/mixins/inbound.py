@@ -202,6 +202,11 @@ class InboundMixin(HelpersMixin):
         if message.addressed_to is not None and event.addressed_to is None:
             event = event.model_copy(update={"addressed_to": list(message.addressed_to)})
 
+        # Where this message's answer may go — same central application, same
+        # rule: a channel that resolved one itself keeps it.
+        if message.response_visibility is not None and event.response_visibility is None:
+            event = event.model_copy(update={"response_visibility": message.response_visibility})
+
         # Identity resolution pipeline (RFC §11)
         try:
             event, resolved_identity, pending_id_result = await self._resolve_identity(

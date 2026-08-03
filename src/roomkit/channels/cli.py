@@ -32,7 +32,7 @@ from roomkit.channels.base import Channel
 from roomkit.models.channel import ChannelBinding, ChannelCapabilities, ChannelOutput
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundMessage
-from roomkit.models.enums import ChannelMediaType, ChannelType, EventType
+from roomkit.models.enums import ChannelMediaType, ChannelType, EventType, Visibility
 from roomkit.models.event import EventContent, EventSource, RoomEvent, TextContent, ToolCallContent
 from roomkit.models.streaming import ThinkingDeltaMarker
 
@@ -52,6 +52,29 @@ AddressFactory = Callable[[str], Sequence[str] | None]
 
 StatusFactory = Callable[[], str | None]
 """The application's own status-bar segment, asked fresh on every render."""
+
+VisibilityFactory = Callable[[str], str | Sequence[str] | None]
+"""Scopes a submitted line: a keyword, channel ids, or None for no restriction."""
+
+
+def resolve_visibility(factory: VisibilityFactory | None, line: str) -> str | None:
+    """Turn what *factory* returns into a visibility spec.
+
+    A string is a spec verbatim — a keyword (``"transport"``) or an already
+    written id list. A sequence is joined into an id list, which is the form
+    worth encouraging: ``"transport,codex"`` looks like "the transports plus
+    codex" and means nothing of the sort, because the comma form matches
+    channel ids only. Handing ids avoids inventing that sentence at all.
+    """
+    if factory is None:
+        return None
+    scope = factory(line)
+    if scope is None:
+        return None
+    if isinstance(scope, str):
+        return scope or None
+    ids = [str(item).strip() for item in scope if str(item).strip()]
+    return ",".join(ids) if ids else None
 
 
 def resolve_address(factory: AddressFactory | None, line: str) -> list[str] | None:
@@ -369,6 +392,7 @@ class CLIChannel(Channel):
         content_factory: Callable[[str], EventContent | None] | None = None,
         commands: Mapping[str, CommandHandler] | None = None,
         addressed_to: AddressFactory | None = None,
+        visibility: VisibilityFactory | None = None,
         status_extra: StatusFactory | None = None,
     ) -> None:
         """Run an interactive input loop.
@@ -409,6 +433,15 @@ class CLIChannel(Channel):
                 already reflected. RoomKit wants ids, never a syntax — how a
                 user names an agent (``@codex``, ``/agent codex``, a picker)
                 is yours to decide.
+            visibility: Hook scoping each submission — who may see it, and
+                where its answer may go. Returns a visibility keyword, a
+                sequence of channel ids, or ``None`` for no restriction (the
+                default: everything is visible to the whole room). It sets
+                both the message's ``visibility`` and its
+                ``response_visibility``, so a private question does not
+                publish the answer it gets — the scope covers the whole turn,
+                tool activity included. Called after ``content_factory``, like
+                ``addressed_to``.
             status_extra: A segment for the pinned status bar, asked fresh on
                 every render — who the next message addresses, a mode, a
                 counter. Console mode on a real terminal only; the classic
@@ -437,6 +470,7 @@ class CLIChannel(Channel):
                     content_factory=content_factory,
                     commands=commands,
                     addressed_to=addressed_to,
+                    visibility=visibility,
                     status_extra=status_extra,
                 )
                 return
@@ -449,6 +483,7 @@ class CLIChannel(Channel):
             content_factory=content_factory,
             commands=commands,
             addressed_to=addressed_to,
+            visibility=visibility,
         )
 
     async def _run_classic(
@@ -459,6 +494,7 @@ class CLIChannel(Channel):
         content_factory: Callable[[str], EventContent | None] | None,
         commands: Mapping[str, CommandHandler] | None = None,
         addressed_to: AddressFactory | None = None,
+        visibility: VisibilityFactory | None = None,
     ) -> None:
         """Blocking-input sequential loop (classic mode and non-TTY fallback)."""
         loop = asyncio.get_running_loop()
@@ -491,6 +527,7 @@ class CLIChannel(Channel):
             if stripped.lower() in ("quit", "exit", "q"):
                 break
 
+            scope = resolve_visibility(visibility, stripped)
             match = match_command(commands, stripped)
             if match is not None:
                 handler, argument = match
@@ -515,6 +552,11 @@ class CLIChannel(Channel):
                         sender_id=sender_id,
                         content=content,
                         addressed_to=resolve_address(addressed_to, stripped),
+                        # A scope that hid the question and published the
+                        # answer would be worse than none, so both move
+                        # together.
+                        visibility=scope or Visibility.ALL,
+                        response_visibility=scope,
                     )
                 )
             except asyncio.CancelledError:

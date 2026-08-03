@@ -529,6 +529,58 @@ class TestRun:
         assert message.content.body == "go"
         assert message.addressed_to == ["codex"]
 
+    async def test_visibility_scopes_the_question_and_its_answer(self) -> None:
+        # A scope that hid the question and published the answer would be
+        # worse than none, so the hook sets both.
+        cli = CLIChannel("cli", use_color=False)
+        kit = AsyncMock()
+        kit.process_inbound = AsyncMock()
+
+        with patch("builtins.input", side_effect=iter(["private", "quit"])):
+            await cli.run(kit, room_id="room-1", visibility=lambda _l: ["cli", "codex"])
+
+        message = kit.process_inbound.call_args[0][0]
+        assert message.visibility == "cli,codex"
+        assert message.response_visibility == "cli,codex"
+
+    async def test_visibility_accepts_a_keyword(self) -> None:
+        cli = CLIChannel("cli", use_color=False)
+        kit = AsyncMock()
+        kit.process_inbound = AsyncMock()
+
+        with patch("builtins.input", side_effect=iter(["hey", "quit"])):
+            await cli.run(kit, room_id="room-1", visibility=lambda _l: "transport")
+
+        assert kit.process_inbound.call_args[0][0].visibility == "transport"
+
+    async def test_no_visibility_hook_leaves_everything_visible(self) -> None:
+        cli = CLIChannel("cli", use_color=False)
+        kit = AsyncMock()
+        kit.process_inbound = AsyncMock()
+
+        with patch("builtins.input", side_effect=iter(["hey", "quit"])):
+            await cli.run(kit, room_id="room-1")
+
+        message = kit.process_inbound.call_args[0][0]
+        assert message.visibility == "all"
+        assert message.response_visibility is None
+
+    async def test_visibility_can_decline_per_line(self) -> None:
+        cli = CLIChannel("cli", use_color=False)
+        kit = AsyncMock()
+        kit.process_inbound = AsyncMock()
+        seen: list[str] = []
+
+        def scope(line: str):
+            seen.append(line)
+            return ["cli", "codex"] if line.startswith("/private") else None
+
+        with patch("builtins.input", side_effect=iter(["public one", "quit"])):
+            await cli.run(kit, room_id="room-1", visibility=scope)
+
+        assert seen == ["public one"]
+        assert kit.process_inbound.call_args[0][0].visibility == "all"
+
     async def test_skips_empty_lines(self) -> None:
         cli = CLIChannel("cli", use_color=False)
         kit = AsyncMock()

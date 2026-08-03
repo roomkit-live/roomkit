@@ -56,6 +56,12 @@ class InboundMessage(BaseModel):
     # ids is its own business: a slash command, a picker, a mention syntax
     # parsed at the edge. RoomKit takes the decision, never the syntax.
     addressed_to: list[str] | None = None
+    # Where the answer to this message may go, in the same vocabulary as
+    # ``visibility``. ``None`` leaves it unrestricted. Set it when the reply
+    # must stay as narrow as the question: a scope on the question alone
+    # would hide what you asked and publish what you were told. Covers the
+    # whole turn — text segments and tool activity alike.
+    response_visibility: str | None = None
 
 
 class InboundResult(BaseModel):

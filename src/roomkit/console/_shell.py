@@ -30,8 +30,10 @@ from roomkit.channels.cli import (
     AddressFactory,
     CommandHandler,
     StatusFactory,
+    VisibilityFactory,
     match_command,
     resolve_address,
+    resolve_visibility,
 )
 from roomkit.console._activity import (
     FRAME_SECONDS,
@@ -42,6 +44,7 @@ from roomkit.console._activity import (
 )
 from roomkit.console._chat import print_user_line
 from roomkit.models.delivery import InboundMessage
+from roomkit.models.enums import Visibility
 from roomkit.models.event import TextContent
 from roomkit.realtime.base import EphemeralEvent, EphemeralEventType
 
@@ -130,6 +133,7 @@ async def run_console_shell(
     content_factory: Callable[[str], EventContent | None] | None = None,
     commands: Mapping[str, CommandHandler] | None = None,
     addressed_to: AddressFactory | None = None,
+    visibility: VisibilityFactory | None = None,
     status_extra: StatusFactory | None = None,
     input: Input | None = None,
     output: Output | None = None,
@@ -242,6 +246,7 @@ async def run_console_shell(
                 if stripped.lower() in _QUIT_COMMANDS:
                     break
 
+                scope = resolve_visibility(visibility, stripped)
                 match = match_command(commands, stripped)
                 if match is not None:
                     handler, argument = match
@@ -262,6 +267,10 @@ async def run_console_shell(
                         sender_id=sender_id,
                         content=content,
                         addressed_to=resolve_address(addressed_to, stripped),
+                        # Both together: a scope that hid the question and
+                        # published the answer would be worse than none.
+                        visibility=scope or Visibility.ALL,
+                        response_visibility=scope,
                     )
                 )
                 session.app.invalidate()
