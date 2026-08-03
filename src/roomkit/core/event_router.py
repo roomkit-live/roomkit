@@ -341,8 +341,7 @@ class EventRouter:
                     if not _solicits(
                         transcoded_event,
                         binding.channel_id,
-                        source_is_agent=source_binding.category
-                        == ChannelCategory.INTELLIGENCE,
+                        source_is_agent=source_binding.category == ChannelCategory.INTELLIGENCE,
                         policy=context.room.agent_response_policy,
                     ):
                         target_results.append(tr)
