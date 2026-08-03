@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from roomkit.console._terminal import terminal_input
+from roomkit.console._terminal import Choice, terminal_input, terminal_select
 
 try:
     from roomkit.console._display import RoomKitConsole as RoomKitConsole
@@ -33,4 +33,4 @@ except ImportError as _exc:
             ) from _import_error
 
 
-__all__ = ["RoomKitConsole", "terminal_input"]
+__all__ = ["Choice", "RoomKitConsole", "terminal_input", "terminal_select"]

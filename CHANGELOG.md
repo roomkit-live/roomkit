@@ -41,6 +41,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`roomkit.console.terminal_select()` — an inline keyboard menu, the twin
+  of `terminal_input()`.** Ask the user to pick one option mid-session:
+  ↑/↓ to move, Enter to choose, Esc to cancel. Under the pinned-bar shell it
+  renders where the bar sits (no alternate screen, transcript untouched) and
+  erases itself once answered, borrowing the shell's own input and output so
+  nothing competes for the keys. Without a shell it falls back to a numbered
+  list read from stdin, so piped and CI runs still work. Options are
+  `(value, label)` pairs or bare strings; the return is the chosen value, or
+  `None` on cancel. The new multi-agent ACP example uses it for `/agents`.
+
+- **`examples/acp_multi_agent.py` — Claude Code and Codex in one Room.**
+  Two ACP agents, one console, addressed by mention (`@codex review
+  hello.py`): a `ConversationRouter` rule sends each message to the addressed
+  agent alone, and agent output never triggers another agent. Built
+  deliberately on the existing public API only — it is the measurement of
+  what multi-agent rooms still need, not a workaround.
+
 - **Console transcript: a quiet handle, a marked answer, and what the turn
   cost.** A turn now opens with `@claude code` (dim italic — it names the
   speaker without shouting), the prose leads with `●` on its own first line
