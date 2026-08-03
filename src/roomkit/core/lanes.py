@@ -73,10 +73,9 @@ class DeliveryPlan:
     Immutable once enqueued. ``targets`` is the delivery set (RFC §10.1 step
     12): eligible bindings resolved against state consistent with the
     committed timeline. ``injected`` marks a hook-injected event, whose
-    delivery keeps its historical bare shape — direct ``on_event`` /
-    ``deliver`` to the named channels, no transcoding and no response
-    collection (an injected event has never been able to trigger an AI
-    reply, and moving it off the lock must not change that).
+    delivery is deliberately bare — direct ``on_event`` / ``deliver`` to the
+    named channels, no transcoding and no response collection: an injected
+    event must not be able to trigger an AI reply.
     """
 
     event: RoomEvent

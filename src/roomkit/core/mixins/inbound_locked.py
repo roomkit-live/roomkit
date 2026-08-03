@@ -467,8 +467,8 @@ class InboundLockedMixin(HelpersMixin):
                     return None  # nothing to broadcast, nothing to fire
                 # No source binding: no broadcast, but the RFC §10.3 mutation
                 # trigger must still fire once the commit is visible — an
-                # empty plan carries it (no AFTER_BROADCAST, matching the
-                # pre-lane pipeline's early return).
+                # empty plan carries it. A binding-less trigger fires no
+                # AFTER_BROADCAST and persists no hook side effects.
                 return DeliveryPlan(
                     event=committed,
                     source_binding=None,

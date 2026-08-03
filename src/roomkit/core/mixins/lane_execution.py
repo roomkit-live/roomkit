@@ -218,10 +218,9 @@ class LaneExecutionMixin(HelpersMixin):
     async def _execute_injected_plan(self, plan: DeliveryPlan) -> BroadcastResult:
         """Deliver an injected event to its named channels.
 
-        Deliberately the historical bare shape — direct ``on_event`` and,
-        for transports, ``deliver``; no transcoding, no response collection.
-        An injected event has never been able to trigger an AI reply, and
-        moving its delivery off the lock must not change that.
+        Deliberately bare — direct ``on_event`` and, for transports,
+        ``deliver``; no transcoding, no response collection. An injected
+        event must not be able to trigger an AI reply.
         """
         from roomkit.core.event_router import BroadcastResult
 
@@ -264,9 +263,9 @@ class LaneExecutionMixin(HelpersMixin):
             return
 
         if plan.emit_processed:
-            # Root pass only, matching the pre-lane pipeline: delivery
-            # tracking, partial-failure reporting and the caller-facing
-            # error all describe the trigger's own delivery set.
+            # Root pass only: delivery tracking, partial-failure
+            # reporting and the caller-facing error all describe the
+            # trigger's own delivery set, never a reentry's.
             if result.errors:
                 total = len(result.delivery_outputs) + len(result.errors)
                 logger.warning(
@@ -382,7 +381,7 @@ class LaneExecutionMixin(HelpersMixin):
 
         # Stamp response_visibility from the root trigger onto reentry
         # events' *visibility* field — the router's visibility check reads
-        # ``visibility`` (the pre-lane pipeline did the same).
+        # ``visibility``, so the caller's response scope rides the event.
         reentries = result.reentry_events
         if plan.response_visibility:
             reentries = [
