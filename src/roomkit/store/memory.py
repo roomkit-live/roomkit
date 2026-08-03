@@ -411,7 +411,12 @@ class InMemoryStore(ConversationStore):
                 timers = room.timers.model_copy(update={"last_activity_at": datetime.now(UTC)})
                 self._rooms[room_id] = room.model_copy(
                     update={
-                        "event_count": len(events),
+                        # "event_count += 1" (RFC §10.1 step 12), not a recount.
+                        # len(events) would be free here, but it would make this
+                        # store disagree with a persistent one after a deletion:
+                        # the counter is best-effort and the two must drift the
+                        # same way, or a test passing on one fails on the other.
+                        "event_count": room.event_count + 1,
                         "latest_index": index,
                         "timers": timers,
                     }

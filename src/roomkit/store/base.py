@@ -277,7 +277,17 @@ class ConversationStore(ABC):
 
     @abstractmethod
     async def get_event_count(self, room_id: str) -> int:
-        """Return the total number of events in a room."""
+        """Count the events a room currently holds, exactly, on demand.
+
+        This is the authoritative count and the only one that survives
+        deletions. ``Room.event_count`` is a *maintained tally* incremented at
+        each commit (RFC §10.1 step 12) and never decremented, so the two
+        diverge once events are deleted — deliberately: an exact count is a
+        scan of the room's whole timeline, and no commit should pay for one.
+
+        Call this when the number has to be right. Read ``Room.event_count``
+        when a cheap, monotonically-growing hint is enough.
+        """
         ...
 
     async def add_event_auto_index(self, room_id: str, event: RoomEvent) -> RoomEvent:
@@ -298,8 +308,16 @@ class ConversationStore(ABC):
         authoritative index, persisting the event, and updating the room's
         ``event_count`` / ``latest_index`` / ``timers.last_activity_at`` form a
         **single logical transaction**. An observer MUST never see a stored
-        event that the room counters do not reflect, nor counters that count an
-        event absent from the timeline.
+        event the room counters do not reflect.
+
+        The converse does not hold, and that is deliberate. ``event_count`` is
+        the running tally RFC §10.1 step 12 describes — ``event_count += 1``,
+        never a recount — and deletion adjusts no counter (the RFC prescribes
+        none), so after events are deleted the tally overstates the timeline.
+        Keeping it exact would mean scanning every event on every commit, which
+        makes the hot path cost grow with a room's history. Callers who need
+        the real number call :meth:`get_event_count`, which is exact and
+        separate on purpose.
 
         The authoritative index is (re)computed inside the commit (RFC §8.1) so
         a persistent store shared across processes serializes concurrent
@@ -321,7 +339,10 @@ class ConversationStore(ABC):
             await self.update_room(
                 room.model_copy(
                     update={
-                        "event_count": await self.get_event_count(room_id),
+                        # The tally, incremented — same contract as the shipped
+                        # stores, so a custom backend inheriting this default
+                        # does not silently behave differently after deletions.
+                        "event_count": room.event_count + 1,
                         "latest_index": indexed.index,
                         "timers": timers,
                     }

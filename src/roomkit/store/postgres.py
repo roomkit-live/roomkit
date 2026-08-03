@@ -900,15 +900,19 @@ class PostgresStore(ConversationStore):
                 if room_row is not None:
                     room = _row_to_room(room_row)
                     timers = room.timers.model_copy(update={"last_activity_at": datetime.now(UTC)})
-                    count_row = await conn.fetchrow(
-                        "SELECT count(*) AS cnt FROM events WHERE room_id = $1",
-                        room_id,
-                    )
                     await conn.execute(
                         "UPDATE rooms SET event_count = $2, latest_index = $3, timers = $4"
                         " WHERE id = $1",
                         room_id,
-                        count_row["cnt"],
+                        # RFC §10.1 step 12 spells this "event_count += 1", and
+                        # that is what it is: the room row is already held FOR
+                        # UPDATE above, so the increment is free. Recomputing it
+                        # with COUNT(*) instead scanned the room's entire
+                        # timeline on every single inbound — a per-message cost
+                        # that grew with the room's history. The counter is a
+                        # best-effort tally (see the ABC); get_event_count() is
+                        # the exact count, on demand, for callers who need one.
+                        room.event_count + 1,
                         next_idx,
                         # Pass the dict directly — the registered jsonb codec
                         # encodes it; json.dumps() here would double-encode.
