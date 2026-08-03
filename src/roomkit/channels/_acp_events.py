@@ -221,12 +221,17 @@ class ACPEventsMixin:
             return
         tool.finished = True
         duration_ms = max(0, int((time.monotonic() - tool.started_at) * 1000))
+        content_dump = _model_dump(tool.content) if tool.content is not None else None
         result = tool.raw_output
-        if result is None and tool.content is not None:
-            result = _model_dump(tool.content)
+        if result is None and content_dump is not None:
+            result = content_dump
         marker_status = "failed" if status == "failed" else "completed"
         error = _result_text(result) if marker_status == "failed" and result is not None else None
         if turn is not None:
+            # ACP's tool content is the display-intended payload (diffs,
+            # formatted text); carry it beside the raw result so UI surfaces
+            # can render it — structured_content is the field they read.
+            structured = {"acp_content": content_dump} if content_dump is not None else None
             turn.queue.put_nowait(
                 ToolCallEndMarker(
                     tool_name=tool.name,
@@ -236,6 +241,7 @@ class ACPEventsMixin:
                     status=marker_status,
                     duration_ms=duration_ms,
                     error=error,
+                    structured_content=structured,
                 )
             )
         if room_id is not None:

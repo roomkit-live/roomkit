@@ -66,6 +66,14 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
             ACP session declaration.
         env: Environment variables added to the SDK's restricted inherited
             environment.
+        inherit_env: Names of parent-process environment variables to forward
+            to the agent. The ACP SDK strips the environment down to
+            ``HOME/LOGNAME/PATH/SHELL/TERM/USER`` (MCP practice), which
+            silently breaks tooling a coding agent relies on — e.g. without
+            ``SSH_AUTH_SOCK``, every git-over-SSH operation prompts for key
+            passphrases on the controlling terminal. Values are read at each
+            process spawn; unset names are skipped; explicit ``env`` entries
+            win over inherited ones. Nothing is forwarded by default.
         mcp_servers: ACP MCP-server descriptors accepted by the official SDK.
         authentication_method: Optional ACP authentication method identifier.
         external_tool_handler: Permission policy and tool observability bridge.
@@ -84,6 +92,7 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
         cwd: str | Path,
         additional_directories: Sequence[str | Path] | None = None,
         env: Mapping[str, str] | None = None,
+        inherit_env: Sequence[str] | None = None,
         mcp_servers: Sequence[Any] | None = None,
         authentication_method: str | None = None,
         external_tool_handler: ExternalToolHandler | None = None,
@@ -97,6 +106,11 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
             not isinstance(key, str) or not isinstance(value, str) for key, value in env.items()
         ):
             raise ValueError("env keys and values must be strings")
+        if inherit_env is not None and (
+            isinstance(inherit_env, str)
+            or any(not isinstance(name, str) or not name for name in inherit_env)
+        ):
+            raise ValueError("inherit_env must be a sequence of non-empty variable names")
 
         self._command = tuple(command)
         self._cwd = _absolute_path(cwd, field_name="cwd")
@@ -105,6 +119,7 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
             for path in (additional_directories or ())
         ]
         self._env = dict(env) if env is not None else None
+        self._inherit_env = tuple(inherit_env or ())
         self._mcp_servers = list(mcp_servers or ())
         self._authentication_method = authentication_method
         self._external_tool_handler = external_tool_handler

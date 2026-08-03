@@ -7,7 +7,10 @@ full-screen layout, so history stays scrollable and copy-pastable.
 
 from __future__ import annotations
 
+import difflib
+import json
 import sys
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import IO, TYPE_CHECKING, Any
 
@@ -174,20 +177,153 @@ def print_message(
     console.print()
 
 
-def format_tool_line(event: RoomEvent, content: ToolCallContent) -> str | None:
-    """Claude Code-style tool activity line (``⏺ tool(args)`` / ``  ⎿ ✓ 42 ms``)."""
-    if event.type == EventType.TOOL_CALL_START:
+def format_tool_start_line(content: ToolCallContent) -> str:
+    """``⏺ tool(args)``, or just ``⏺ tool`` when no arguments are known yet.
+
+    ACP agents announce a tool before its title/arguments arrive, so an
+    empty-parens render would be pure noise — the enriched name shows on
+    the completion line instead.
+    """
+    if content.arguments:
         arguments = _format_arguments(content.arguments, max_length=120)
         return f"⏺ {content.tool_name}({arguments.strip()})"
+    return f"⏺ {content.tool_name}"
+
+
+def format_tool_end_line(content: ToolCallContent) -> str:
+    """``  ⎿ ✓ tool · 3.0s`` / ``  ⎿ ✗ tool failed``."""
+    if content.status == "failed":
+        return f"  ⎿ ✗ {content.tool_name} failed"
+    duration = (
+        f" · {_format_duration(content.duration_ms)}"
+        if content.duration_ms is not None and content.duration_ms > 0
+        else ""
+    )
+    return f"  ⎿ ✓ {content.tool_name}{duration}"
+
+
+def _format_duration(ms: int) -> str:
+    if ms < 1000:
+        return f"{ms} ms"
+    if ms < 60_000:
+        return f"{ms / 1000:.1f}s"
+    minutes, rest = divmod(ms, 60_000)
+    return f"{minutes}m {rest // 1000}s"
+
+
+_PREVIEW_MAX_LINES = 5
+_PREVIEW_HARD_CAP = 200  # lines collected before slicing — bounds huge diffs
+
+
+def tool_result_preview(
+    content: ToolCallContent,
+    *,
+    max_lines: int = _PREVIEW_MAX_LINES,
+) -> list[tuple[str, str]]:
+    """Extract display lines from a tool result — what Claude Code shows.
+
+    Returns ``(kind, line)`` pairs, kind one of ``"dim"`` (plain output),
+    ``"add"``/``"del"`` (diff lines), capped at *max_lines* with a trailing
+    ``… +N lines`` marker. Understands ACP content blocks (text, ``diff``
+    with old/new text), MCP-style ``{"content": [...]}`` payloads, plain
+    strings, and falls back to compact JSON for anything else.
+
+    ACP's display-intended payload (``structured_content["acp_content"]``,
+    where file diffs live) wins over the raw result; the error text wins on
+    failure.
+    """
+    source: Any = None
+    if content.status == "failed" and content.error:
+        source = content.error
+    else:
+        if isinstance(content.structured_content, Mapping):
+            source = content.structured_content.get("acp_content")
+        if source is None:
+            source = content.result
+    collected: list[tuple[str, str]] = []
+    _collect_preview(source, collected)
+    if not collected:
+        return []
+    if len(collected) > max_lines:
+        hidden = len(collected) - max_lines
+        collected = collected[:max_lines]
+        collected.append(("dim", f"… +{hidden} lines"))
+    return collected
+
+
+def _collect_preview(value: Any, out: list[tuple[str, str]]) -> None:
+    if value is None or len(out) >= _PREVIEW_HARD_CAP:
+        return
+    if isinstance(value, str):
+        out.extend(("dim", line) for line in value.splitlines() if line.strip())
+        return
+    if isinstance(value, Mapping):
+        block_type = value.get("type")
+        if block_type == "diff":
+            _collect_diff_preview(value, out)
+            return
+        if block_type == "content":
+            _collect_preview(value.get("content"), out)
+            return
+        if block_type == "text":
+            _collect_preview(value.get("text"), out)
+            return
+        if block_type == "terminal":
+            return  # terminal blocks carry no inline output
+        for key in ("output", "text", "content"):
+            if key in value:
+                _collect_preview(value[key], out)
+                return
+        rendered = json.dumps(value, ensure_ascii=False, default=str)
+        out.append(("dim", rendered[:200]))
+        return
+    if isinstance(value, list):
+        for item in value:
+            if len(out) >= _PREVIEW_HARD_CAP:
+                return
+            _collect_preview(item, out)
+        return
+    out.append(("dim", str(value)[:200]))
+
+
+def _collect_diff_preview(block: Mapping[str, Any], out: list[tuple[str, str]]) -> None:
+    path = block.get("path")
+    if path:
+        out.append(("dim", str(path)))
+    # ACP dumps use camelCase aliases (oldText/newText); tolerate snake_case.
+    old_text = block.get("oldText", block.get("old_text")) or ""
+    new_text = block.get("newText", block.get("new_text")) or ""
+    diff = difflib.unified_diff(
+        str(old_text).splitlines(),
+        str(new_text).splitlines(),
+        lineterm="",
+        n=1,
+    )
+    for line in diff:
+        if len(out) >= _PREVIEW_HARD_CAP:
+            return
+        if line.startswith(("---", "+++", "@@")):
+            continue
+        if line.startswith("+"):
+            out.append(("add", line))
+        elif line.startswith("-"):
+            out.append(("del", line))
+        else:
+            out.append(("dim", line))
+
+
+def format_tool_line(event: RoomEvent, content: ToolCallContent) -> str | None:
+    """Single-string tool render for the Live console renderer.
+
+    START is one line; END is the status line plus indented result preview
+    lines (monochrome — the pinned renderer does the colored version).
+    """
+    if event.type == EventType.TOOL_CALL_START:
+        return format_tool_start_line(content)
     if event.type == EventType.TOOL_CALL_END:
-        if content.status == "failed":
-            return f"  ⎿ ✗ {content.tool_name} failed"
-        duration = (
-            f" · {content.duration_ms} ms"
-            if content.duration_ms is not None and content.duration_ms > 0
-            else ""
-        )
-        return f"  ⎿ ✓ {content.tool_name}{duration}"
+        parts = [format_tool_end_line(content)]
+        parts.extend(f"    {line}" for _kind, line in tool_result_preview(content))
+        return "\n".join(parts)
     return None
 
 
@@ -244,6 +380,7 @@ def print_user_line(
     if pad:
         text.append(" " * pad, style=f"on {SURFACE}")
     console.print(text)
+    console.print()  # breathing room before the agent's response
 
 
 class PinnedStreamRenderer:
@@ -280,6 +417,10 @@ class PinnedStreamRenderer:
         self._label_printed = False
         self._closed = False
         self._update_count = 0
+        # Claude Code-style block spacing: one blank line between sections
+        # (label, tool activity, thinking, text resuming after either).
+        self._last_was_gap = True  # start of turn: no leading blank needed
+        self._text_gap_pending = False
 
     # -- Duck interface (MarkdownStreamRenderer-compatible) -------------------
 
@@ -301,19 +442,25 @@ class PinnedStreamRenderer:
         self._flush_thinking()
 
     def add_tool_event(self, event: RoomEvent) -> None:
-        """Print a tool start/completion line immediately."""
+        """Print tool activity immediately — status line plus result preview."""
         content = event.content
         if not isinstance(content, ToolCallContent):
             return
-        line = format_tool_line(event, content)
-        if line is None:
+        if event.type not in (EventType.TOOL_CALL_START, EventType.TOOL_CALL_END):
             return
         self._update_count += 1
         # Ordering beats typography: everything pending renders first.
         self._flush_thinking(force=True)
         self._flush_text(force=True)
-        style = MUTED if line.startswith("  ⎿") else ACCENT
-        self._console().print(Text(line, style=style))
+        if event.type == EventType.TOOL_CALL_START:
+            self._gap()
+            self._print(Text(format_tool_start_line(content), style=ACCENT))
+            return
+        self._print(Text(format_tool_end_line(content), style=MUTED))
+        for kind, line in tool_result_preview(content):
+            style = {"add": "green", "del": "red"}.get(kind, f"dim {MUTED}")
+            self._print(Text(f"    {line}", style=style))
+        self._text_gap_pending = True
 
     def close(self) -> None:
         """Flush the tails and end the turn with a blank line."""
@@ -340,11 +487,23 @@ class PinnedStreamRenderer:
             width=self._width,
         )
 
+    def _print(self, renderable: Any) -> None:
+        self._console().print(renderable)
+        self._last_was_gap = False
+
+    def _gap(self) -> None:
+        """One blank line between sections; never two in a row."""
+        if self._last_was_gap:
+            return
+        self._console().print()
+        self._last_was_gap = True
+
     def _ensure_label(self) -> None:
         if self._label_printed:
             return
         self._label_printed = True
-        self._console().print(Text(f"● {self._label}", style=f"bold {PRIMARY}"))
+        self._gap()
+        self._print(Text(f"● {self._label}", style=f"bold {PRIMARY}"))
 
     def _flush_text(self, *, force: bool = False) -> None:
         if force:
@@ -354,7 +513,10 @@ class PinnedStreamRenderer:
         if not head.strip():
             return
         self._ensure_label()
-        self._console().print(Markdown(head))
+        if self._text_gap_pending:
+            self._gap()
+            self._text_gap_pending = False
+        self._print(Markdown(head))
 
     def _flush_thinking(self, *, force: bool = False) -> None:
         if force:
@@ -367,15 +529,22 @@ class PinnedStreamRenderer:
             reset_prefix = False
         else:
             return
+        printed = False
         for raw_line in pending.split("\n"):
             line = raw_line.lstrip() if self._thinking_prefix_pending else raw_line
             if not line:
                 continue
+            if self._thinking_prefix_pending:
+                self._gap()
             prefix = "💭 " if self._thinking_prefix_pending else ""
             self._thinking_prefix_pending = False
-            self._console().print(Text(f"{prefix}{line}", style=f"dim italic {MUTED}"))
+            self._print(Text(f"{prefix}{line}", style=f"dim italic {MUTED}"))
+            printed = True
         if reset_prefix:
             self._thinking_prefix_pending = True
+            if printed:
+                # Text resuming after a thinking block gets its own gap.
+                self._text_gap_pending = True
 
 
 def _split_flushable(buffer: str) -> tuple[str, str]:
@@ -407,8 +576,11 @@ __all__ = [
     "PinnedStreamRenderer",
     "build_banner",
     "collect_banner_data",
+    "format_tool_end_line",
     "format_tool_line",
+    "format_tool_start_line",
     "print_banner",
     "print_message",
     "print_user_line",
+    "tool_result_preview",
 ]

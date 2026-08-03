@@ -137,6 +137,10 @@ async def main(args: argparse.Namespace) -> None:
         command=["npx", "-y", CLAUDE_AGENT_ACP_PACKAGE],
         cwd=workspace,
         env=agent_env or None,
+        # The ACP SDK strips the environment to a minimal set; forward the
+        # ssh-agent socket so the agent's git-over-SSH doesn't prompt for
+        # key passphrases in this terminal.
+        inherit_env=["SSH_AUTH_SOCK"],
         external_tool_handler=TerminalPermissionHandler(),
     )
 

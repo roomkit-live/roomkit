@@ -20,6 +20,7 @@ from acp.schema import (
 )
 
 from roomkit import ACPChannel, CLIChannel, RoomKit
+from roomkit.channels._acp_client import _resolve_spawn_env
 from roomkit.models.channel import ChannelBinding
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundMessage
@@ -206,6 +207,14 @@ class _FakeACPConnection:
                     "tool-1",
                     status="completed",
                     raw_output={"content": "RoomKit"},
+                    content=[
+                        {
+                            "type": "diff",
+                            "path": "/tmp/README.md",
+                            "old_text": "old",
+                            "new_text": "new",
+                        }
+                    ],
                 ),
             )
             await self.client.session_update(session_id, acp.update_agent_message_text("done"))
@@ -265,6 +274,56 @@ class TestACPChannel:
             ACPChannel("acp", "agent --acp", cwd=tmp_path)
         with pytest.raises(ValueError, match="absolute"):
             ACPChannel("acp", ["agent"], cwd="relative")
+
+    def test_inherit_env_validation(self, tmp_path: Any) -> None:
+        with pytest.raises(ValueError, match="inherit_env"):
+            ACPChannel("acp", ["agent"], cwd=tmp_path, inherit_env="SSH_AUTH_SOCK")
+        with pytest.raises(ValueError, match="inherit_env"):
+            ACPChannel("acp", ["agent"], cwd=tmp_path, inherit_env=["SSH_AUTH_SOCK", ""])
+        channel = ACPChannel("acp", ["agent"], cwd=tmp_path, inherit_env=["SSH_AUTH_SOCK"])
+        assert channel._inherit_env == ("SSH_AUTH_SOCK",)
+        assert ACPChannel("acp", ["agent"], cwd=tmp_path)._inherit_env == ()
+
+    def test_resolve_spawn_env(self) -> None:
+        environ = {"SSH_AUTH_SOCK": "/run/agent.sock", "LANG": "fr_CA.UTF-8"}
+
+        # Named vars are read from the parent environment; unset names skip.
+        assert _resolve_spawn_env(("SSH_AUTH_SOCK", "MISSING"), None, environ) == {
+            "SSH_AUTH_SOCK": "/run/agent.sock"
+        }
+        # Explicit env entries win over inherited ones.
+        assert _resolve_spawn_env(
+            ("SSH_AUTH_SOCK",), {"SSH_AUTH_SOCK": "/custom.sock", "X": "1"}, environ
+        ) == {"SSH_AUTH_SOCK": "/custom.sock", "X": "1"}
+        # Nothing to add -> None, so the SDK keeps its trimmed default.
+        assert _resolve_spawn_env((), None, environ) is None
+        assert _resolve_spawn_env(("MISSING",), None, environ) is None
+
+    def test_spawn_receives_resolved_env(self, tmp_path: Any) -> None:
+        channel = ACPChannel(
+            "acp",
+            ["agent"],
+            cwd=tmp_path,
+            env={"MAX_THINKING_TOKENS": "1024"},
+            inherit_env=["SSH_AUTH_SOCK"],
+        )
+        captured: dict[str, Any] = {}
+
+        def spawn(client: Any, *args: Any, **kwargs: Any) -> Any:
+            captured.update(kwargs)
+            return SimpleNamespace()
+
+        sdk = SimpleNamespace(
+            acp=SimpleNamespace(spawn_agent_process=spawn),
+            task=SimpleNamespace(InMemoryMessageQueue=lambda: None),
+        )
+        with patch.dict("os.environ", {"SSH_AUTH_SOCK": "/run/agent.sock"}):
+            channel._create_process_context(sdk)  # type: ignore[arg-type]
+
+        assert captured["env"] == {
+            "SSH_AUTH_SOCK": "/run/agent.sock",
+            "MAX_THINKING_TOKENS": "1024",
+        }
 
     async def test_streams_updates_and_reuses_room_session(self, tmp_path: Any) -> None:
         handler = _RecordingToolHandler(approved=True)
@@ -429,6 +488,18 @@ class TestACPChannel:
         assert result.error is None
         assert [event.type for event in timeline].count(EventType.TOOL_CALL_START) == 1
         assert [event.type for event in timeline].count(EventType.TOOL_CALL_END) == 1
+        tool_end = next(
+            event
+            for event in timeline
+            if event.type == EventType.TOOL_CALL_END and isinstance(event.content, ToolCallContent)
+        )
+        # The raw result stays the raw output; the ACP display payload
+        # (diff blocks) travels in structured_content for UI surfaces.
+        assert tool_end.content.result == {"content": "RoomKit"}
+        acp_content = (tool_end.content.structured_content or {}).get("acp_content")
+        assert acp_content is not None
+        assert acp_content[0]["type"] == "diff"
+        assert acp_content[0]["path"] == "/tmp/README.md"
         text = [event.content.body for event in timeline if isinstance(event.content, TextContent)]
         assert "Working " in text
         assert "done" in text

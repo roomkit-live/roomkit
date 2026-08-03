@@ -41,13 +41,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`ACPChannel(inherit_env=[...])` — forward named parent-env variables to
+  the agent.** The ACP SDK strips the agent's environment down to
+  `HOME/LOGNAME/PATH/SHELL/TERM/USER` (MCP practice), which silently breaks
+  tooling a coding agent depends on — without `SSH_AUTH_SOCK`, every
+  git-over-SSH operation prompts for key passphrases on the controlling
+  terminal (and steals keystrokes from the CLI input loop). Named variables
+  are read at each spawn, unset names are skipped, explicit `env=` entries
+  win, and nothing is forwarded by default. The Claude Code example forwards
+  `SSH_AUTH_SOCK`.
+
 - **`CLIChannel(console=True)` — branded console mode with a pinned input
   bar.** The classic REPL stays the default; console mode renders inline
   (normal scrollback, no alt-screen, unlike the voice `RoomKitConsole`
   dashboard) with a startup banner — RoomKit logo, version, AI model(s)
   discovered from the room's intelligence bindings, room id, attached
   channels — plus brand-palette styling, progressive Markdown, and
-  Claude-Code-style tool activity lines (`⏺ tool(args)` / `⎿ ✓ 42 ms`).
+  Claude-Code-style tool activity lines (`⏺ tool(args)` / `⎿ ✓ 42 ms`)
+  **with result previews**: command output and colored ± diffs (ACP diff
+  blocks, MCP-style payloads) render under the completion line, capped
+  with a `… +N lines` marker; a start renders without parentheses when
+  arguments are not yet known (ACP enriches titles mid-run).
   On a real terminal the input bar stays pinned at the bottom (with a
   status toolbar: room, model, idle/working + queued count) and the user
   keeps typing while the agent streams; submissions queue and process

@@ -16,7 +16,9 @@ from roomkit.console._chat import (
     ConsoleStreamRenderer,
     PinnedStreamRenderer,
     collect_banner_data,
+    format_tool_start_line,
     print_banner,
+    tool_result_preview,
 )
 from roomkit.core.framework import RoomKit
 from roomkit.models.enums import ChannelCategory, EventType
@@ -197,6 +199,155 @@ def _tool_events() -> tuple[RoomEvent, RoomEvent]:
         }
     )
     return start, end
+
+
+class TestToolRendering:
+    def test_start_line_without_arguments_has_no_parens(self) -> None:
+        content = ToolCallContent(tool_name="Write", tool_id="t1", arguments={})
+        assert format_tool_start_line(content) == "⏺ Write"
+
+    def test_start_line_with_arguments_keeps_parens(self) -> None:
+        content = ToolCallContent(tool_name="search", tool_id="t1", arguments={"q": "x"})
+        assert format_tool_start_line(content) == '⏺ search({"q": "x"})'
+
+    def test_preview_from_string_result(self) -> None:
+        content = ToolCallContent(
+            tool_name="Terminal",
+            tool_id="t1",
+            status="completed",
+            result="Hello, world!\n",
+        )
+        assert tool_result_preview(content) == [("dim", "Hello, world!")]
+
+    def test_preview_from_acp_diff_block(self) -> None:
+        # The real ACP dump uses camelCase aliases (oldText/newText).
+        content = ToolCallContent(
+            tool_name="Edit",
+            tool_id="t1",
+            status="completed",
+            result=[
+                {
+                    "type": "diff",
+                    "path": "/tmp/hello.c",
+                    "oldText": "int main() { return 1; }\n",
+                    "newText": "int main() { return 0; }\n",
+                }
+            ],
+        )
+        preview = tool_result_preview(content)
+        kinds = [kind for kind, _line in preview]
+        assert preview[0] == ("dim", "/tmp/hello.c")
+        assert "del" in kinds
+        assert "add" in kinds
+        assert any(line.startswith("+") and "return 0" in line for _k, line in preview)
+
+    def test_preview_diff_tolerates_snake_case_keys(self) -> None:
+        content = ToolCallContent(
+            tool_name="Edit",
+            tool_id="t1",
+            status="completed",
+            result=[{"type": "diff", "path": "/f", "old_text": "a\n", "new_text": "b\n"}],
+        )
+        kinds = [kind for kind, _line in tool_result_preview(content)]
+        assert "add" in kinds
+        assert "del" in kinds
+
+    def test_preview_from_acp_text_content_block(self) -> None:
+        content = ToolCallContent(
+            tool_name="Read",
+            tool_id="t1",
+            status="completed",
+            result=[{"type": "content", "content": {"type": "text", "text": "line one"}}],
+        )
+        assert tool_result_preview(content) == [("dim", "line one")]
+
+    def test_preview_caps_lines_with_marker(self) -> None:
+        content = ToolCallContent(
+            tool_name="Terminal",
+            tool_id="t1",
+            status="completed",
+            result="\n".join(f"line {i}" for i in range(12)),
+        )
+        preview = tool_result_preview(content)
+        assert len(preview) == 6  # 5 lines + the marker
+        assert preview[-1] == ("dim", "… +7 lines")
+
+    def test_preview_uses_error_on_failure(self) -> None:
+        content = ToolCallContent(
+            tool_name="Terminal",
+            tool_id="t1",
+            status="failed",
+            error="command not found: cc",
+            result={"ignored": True},
+        )
+        assert tool_result_preview(content) == [("dim", "command not found: cc")]
+
+    def test_preview_none_result_is_empty(self) -> None:
+        content = ToolCallContent(tool_name="x", tool_id="t1", status="completed")
+        assert tool_result_preview(content) == []
+
+    def test_preview_prefers_acp_display_content_over_raw_result(self) -> None:
+        # claude-agent-acp sends BOTH a raw text confirmation and the diff
+        # blocks; the diff is the display payload and must win.
+        content = ToolCallContent(
+            tool_name="Write",
+            tool_id="t1",
+            status="completed",
+            result="File created successfully at: /tmp/hello.rs",
+            structured_content={
+                "acp_content": [
+                    {
+                        "type": "diff",
+                        "path": "/tmp/hello.rs",
+                        "newText": 'fn main() { println!("Hello"); }\n',
+                    }
+                ]
+            },
+        )
+        preview = tool_result_preview(content)
+        assert preview[0] == ("dim", "/tmp/hello.rs")
+        assert any(kind == "add" for kind, _line in preview)
+        assert all("File created successfully" not in line for _k, line in preview)
+
+    def test_sections_separated_by_blank_lines(self) -> None:
+        output = StringIO()
+        renderer = PinnedStreamRenderer("Bot", file=output, use_color=False)
+        start, end_event = _tool_events()
+
+        renderer.add_text("Intro paragraph.\n\n")
+        renderer.add_tool_event(start)
+        renderer.add_tool_event(end_event)
+        renderer.add_text("After the tools.\n\n")
+        renderer.close()
+
+        lines = output.getvalue().splitlines()
+        tool_index = next(i for i, line in enumerate(lines) if line.startswith("⏺ search"))
+        assert lines[tool_index - 1] == ""  # blank before the tool block
+        resumed_index = next(i for i, line in enumerate(lines) if "After the tools." in line)
+        assert lines[resumed_index - 1] == ""  # blank before resumed text
+        assert lines[0].startswith("● Bot")  # no leading blank at turn start
+
+    def test_pinned_renderer_shows_result_preview(self) -> None:
+        source = EventSource(channel_id="ai", channel_type="ai")
+        end = RoomEvent(
+            room_id="room-1",
+            type=EventType.TOOL_CALL_END,
+            source=source,
+            content=ToolCallContent(
+                tool_name="Terminal",
+                tool_id="t1",
+                status="completed",
+                duration_ms=5179,
+                result="Hello, world!",
+            ),
+        )
+        output = StringIO()
+        renderer = PinnedStreamRenderer("Bot", file=output, use_color=False)
+        renderer.add_tool_event(end)
+        renderer.close()
+        rendered = output.getvalue()
+        assert "⎿ ✓ Terminal · 5.2s" in rendered
+        assert "Hello, world!" in rendered
 
 
 class TestPinnedStreamRenderer:

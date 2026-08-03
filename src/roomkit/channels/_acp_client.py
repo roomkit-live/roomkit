@@ -6,6 +6,7 @@ import asyncio
 import contextlib
 import json
 import logging
+import os
 import sys
 import time
 from collections.abc import Mapping
@@ -24,6 +25,25 @@ if TYPE_CHECKING:
 logger = logging.getLogger("roomkit.channels.acp")
 
 _STABLE_PROTOCOL_VERSION = 1
+
+
+def _resolve_spawn_env(
+    inherit_env: tuple[str, ...],
+    env: Mapping[str, str] | None,
+    environ: Mapping[str, str],
+) -> dict[str, str] | None:
+    """Build the env mapping handed to the ACP SDK's restricted spawn.
+
+    ``inherit_env`` names are read from *environ* at spawn time (so a
+    reconnect picks up a rotated value, e.g. a new SSH agent socket); unset
+    names are skipped. Explicit ``env`` entries override inherited ones.
+    Returns ``None`` when there is nothing to add — the SDK then uses its
+    trimmed default environment unchanged.
+    """
+    merged = {name: environ[name] for name in inherit_env if name in environ}
+    if env:
+        merged.update(env)
+    return merged or None
 
 
 @dataclass(frozen=True, slots=True)
@@ -202,6 +222,7 @@ class ACPConnectionMixin:
     _command: tuple[str, ...]
     _cwd: str
     _env: dict[str, str] | None
+    _inherit_env: tuple[str, ...]
     _authentication_method: str | None
     _external_tool_handler: ExternalToolHandler | None
     _loaded_sdk: _SDK | None
@@ -228,7 +249,7 @@ class ACPConnectionMixin:
             self._client,
             self._command[0],
             *self._command[1:],
-            env=self._env,
+            env=_resolve_spawn_env(self._inherit_env, self._env, os.environ),
             cwd=self._cwd,
             queue=self._message_queue,
         )
