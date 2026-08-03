@@ -45,7 +45,12 @@ pytestmark = [
 #
 # Measured breakdown at the time of writing (8.00):
 #   2  _build_context      — runs twice, unlocked then under the room lock;
-#                            each pass groups its reads on one connection
+#                            each pass groups its reads on one connection. The
+#                            locked pass re-reads room/bindings/participants —
+#                            the lock exists for that (RFC §10.1 steps 6 and
+#                            12) — but carries the history the first pass
+#                            deserialised (RMK-105): same checkout, one query
+#                            fewer
 #   2  lane delivery cursor — read outside the claim, read again under it
 #   1  routing             — room_exists + binding_exists, grouped
 #   1  the §7.5 source-binding read, after the sync hooks

@@ -53,6 +53,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   failure to the streaming channel, instead of re-delivering every segment
   it had already rendered.
 
+- **An inbound message deserialises the room's history once, not twice**
+  (RMK-105). Every message built two complete `RoomContext`: one before the
+  room lock, for the channel and the identity resolver (RFC §10.1 steps 3-5),
+  and one under the lock whose first statement overwrote the parameter it had
+  just been handed — the signature promised a reuse that never happened, across
+  two call levels. A context deserialises up to 50 stored events into pydantic
+  models; on the measured bench (1 worker, 1 room, sequential, 2000 messages)
+  that history was 1574 µs of the 3852 µs of worker CPU a message costs, half
+  of it for a copy nobody read. The locked pass still re-reads room, bindings
+  and participants — the lock exists so the status gate and the delivery plan
+  read fresh state (RFC §10.1 steps 6 and 12) — but it now carries the history
+  it was handed, and only when the room's `event_count` proves nothing
+  committed in between: the timeline is append-only (§8.1), so an unmoved
+  counter means the carried window is *exactly* what a fresh read would return.
+  An edit or a delete is itself a committed event, so it moves the counter and
+  sends the pass back to a full read. Nothing a hook or an AI channel sees
+  changes. `send_event` stops building a context under the lock for the locked
+  pass to rebuild a line later, and passes none.
+
 ### Added
 
 - **`ConversationStore.connection()` — a store call no longer has to pay for
@@ -347,6 +366,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `BuzzClient.verified_owner_hex` these features are built on).
 
 ### Fixed
+
+- **An event visibility hid from a channel no longer comes back to it as
+  context on the next turn** (RFC §7.5 rule 8, new in `roomkit-specs`).
+  Broadcast kept `visibility`'s promise; the turn after broke it. A channel the
+  visibility hid an event from was correctly not called at broadcast, but the
+  event stayed in `RoomContext.recent_events`, which the memory provider re-read
+  verbatim and handed to the model. Measured on all eight combinations — scope
+  `transport` / `none` / `internal` / a specific channel id, set on the event
+  *or* on the source binding: every one leaked. The `internal` case is the
+  starkest: those are the events the framework produces itself (delegation,
+  handoff, system) and documents as living only in stored room history — they
+  were arriving in a model's prompt one turn later.
+
+  The filter runs per reader, in `AIChannel`, on the way *into* the memory
+  provider: one `RoomContext` serves every channel of a broadcast, so filtering
+  it once at load would give the same wrong answer to everyone, and filtering
+  the provider's *output* would still let a summarizing provider re-emit hidden
+  content as a summary. No `MemoryProvider` signature changed — every provider,
+  shipped or third-party, inherits the rule. Two deliberate exemptions: a
+  channel always keeps its **own** events (dropping them would erase an
+  assistant's own turns from its own prompt whenever it is bound with a narrow
+  visibility — the RFC §7.4 assistant pattern), and hooks keep the whole
+  timeline (host code, in the integrator's process, holding the store anyway).
+
+  Two consequences to know about. **This narrows what an AI sees**: an
+  application that set `visibility="transport"` believing it only delayed
+  delivery will find its model's context smaller. And because the source
+  binding's scope is resolved at read time — the router stamps it onto a copy
+  made *after* the commit, so storage keeps `"all"` — **visibility is a live
+  policy**: widening a binding widens its past too. A source whose channel has
+  since been detached leaves the event's own `visibility` as the whole answer,
+  so ordinary history survives a detach while framework-internal events, which
+  carry their scope on the event, stay hidden. New:
+  `roomkit.core.visibility.visible_events(context, channel_id)` and
+  `effective_visibility(event, source_binding)`, the latter now also backing
+  `EventRouter._check_visibility` so delivery and re-read cannot drift.
 
 - **`RoomContext.recent_events` holds the room's most recent messages, not its
   first ones.** `ConversationStore.get_conversation()` delegated to

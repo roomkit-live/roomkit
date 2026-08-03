@@ -785,8 +785,9 @@ class RoomKit(
 
             cascade = DeliveryCascade(room_id, reentry_budget=self._max_chain_depth * 10)
             async with self._lock_manager.locked(room_id):
-                context = await self._build_context(room_id)
-                result = await self._process_locked(event, room_id, context, cascade)
+                # No pre-lock context to carry: this entry point takes the lock
+                # first, so the locked pass builds the one context of the call.
+                result = await self._process_locked(event, room_id, None, cascade)
             # A room that refuses events (RFC §5.1) is the one block this API
             # cannot report by returning: its contract is the committed event,
             # and handing back one marked DELIVERED for a write that never
