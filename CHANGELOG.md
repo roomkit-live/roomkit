@@ -246,6 +246,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   spans every schema the role can see, and a namesake `rooms` table in
   another one would have skipped a migration our tables needed.
 
+- **`ACPChannel.close_session()` frees everything the session owned.** It
+  dropped the session and its room mapping but kept the agent's reported
+  config options and the room's turn lock until the channel itself closed —
+  so a long-lived channel cycling sessions (one per conversation, one per
+  reconnect) accumulated one dead entry per cycle. Both go with the session
+  now; a coroutine queued on a retired turn lock re-checks and retries on
+  the current one, so retiring it cannot hand two callers the same critical
+  section.
+
 - **`ACPChannel.close()` is bounded and always tears the process down.** The
   graceful half (cancel the turns, close the sessions) now shares a 5-second
   budget, and the subprocess teardown runs in a `finally` — so an agent that

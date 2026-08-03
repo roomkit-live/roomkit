@@ -623,6 +623,62 @@ class TestACPChannel:
         assert set(connection.closed_sessions) == {"session-1", "session-2"}
         assert process_context.exited is True
 
+    async def test_closing_a_session_frees_everything_keyed_by_it(self, tmp_path: Any) -> None:
+        """A channel that outlives its sessions must not accumulate them.
+
+        Each new session takes a fresh id, so config options kept past a
+        close pile up one dead entry per cycle — and the room's turn lock
+        outlives the room. Both go when the session does.
+        """
+        channel, _, _ = _channel(tmp_path, emit_updates=False)
+        for _ in range(3):
+            output = await channel.on_event(
+                make_event(room_id="room-1", body="hi"),
+                _binding("room-1"),
+                RoomContext(room=Room(id="room-1")),
+            )
+            _ = [chunk async for chunk in output.response_stream]
+            assert await channel.close_session("room-1") is True
+
+        assert channel._sessions == {}
+        assert channel._session_rooms == {}
+        assert channel._session_options == {}
+        assert channel._room_locks == {}
+        await channel.close()
+
+    async def test_a_waiter_on_a_retired_room_lock_does_not_race_a_new_caller(
+        self, tmp_path: Any
+    ) -> None:
+        """Retiring the lock must not hand two callers the critical section.
+
+        A coroutine queued on the lock while ``close_session`` retires it
+        wakes owning an object no longer in the map; it has to retry on the
+        current lock rather than run alongside whoever took that one.
+        """
+        channel, _, _ = _channel(tmp_path, emit_updates=False)
+        output = await channel.on_event(
+            make_event(room_id="room-1", body="hi"),
+            _binding("room-1"),
+            RoomContext(room=Room(id="room-1")),
+        )
+        _ = [chunk async for chunk in output.response_stream]
+
+        inside: list[str] = []
+
+        async def critical(name: str) -> None:
+            async with channel._room_turn_lock("room-1"):
+                inside.append(name)
+                await asyncio.sleep(0.02)  # overlap is observable here
+                assert inside[-1] == name, f"{name} ran alongside {inside[-1]}"
+
+        retired = asyncio.create_task(critical("queued-on-the-old-lock"))
+        await asyncio.sleep(0)  # let it queue behind nothing yet
+        await channel.close_session("room-1")
+        fresh = asyncio.create_task(critical("took-the-new-lock"))
+        await asyncio.gather(retired, fresh)
+        assert len(inside) == 2
+        await channel.close()
+
     async def test_skips_own_and_tool_activity_events(self, tmp_path: Any) -> None:
         channel, _, _ = _channel(tmp_path, emit_updates=False)
         context = RoomContext(room=Room(id="room-1"))

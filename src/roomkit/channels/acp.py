@@ -210,8 +210,7 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
             # existing session skips the lock deliberately: an in-flight turn
             # holds it for its whole duration, and waiting for that would
             # deadlock a caller running inside the turn (a tool handler).
-            lock = self._room_locks.setdefault(room_id, asyncio.Lock())
-            async with lock:
+            async with self._room_turn_lock(room_id):
                 session_id = await self._session_for(room_id, connection)
         response = await connection.set_config_option(
             config_id=config_id,
@@ -277,16 +276,47 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
         await connection.cancel(session_id)
         return True
 
+    @contextlib.asynccontextmanager
+    async def _room_turn_lock(self, room_id: str) -> AsyncIterator[None]:
+        """Hold the room's turn lock, tolerating its retirement.
+
+        ``close_session`` drops the entry while still holding the lock, so
+        the map does not keep one lock per room the channel ever served. A
+        coroutine that was queued on the retired lock therefore wakes owning
+        an object nobody else can reach: it releases and retries on the
+        current one. Without that re-check a fresh caller would take a
+        brand-new lock and run the critical section alongside the waiter —
+        which is how a room ends up with two sessions.
+        """
+        while True:
+            lock = self._room_locks.setdefault(room_id, asyncio.Lock())
+            await lock.acquire()
+            if self._room_locks.get(room_id) is lock:
+                break
+            lock.release()
+        try:
+            yield
+        finally:
+            lock.release()
+
     async def close_session(self, room_id: str) -> bool:
-        """Close and forget one Room's ACP session."""
-        lock = self._room_locks.setdefault(room_id, asyncio.Lock())
-        async with lock:
+        """Close and forget one Room's ACP session.
+
+        *Forget* is the whole of it: every map keyed by the session, and the
+        room's turn lock once no session is left behind it, is dropped here.
+        A long-lived channel cycling sessions (one per conversation, one per
+        reconnect) would otherwise carry every dead session's config options
+        until the channel itself closed.
+        """
+        async with self._room_turn_lock(room_id):
             session_id = self._sessions.pop(room_id, None)
             if session_id is None:
                 return False
             self._session_rooms.pop(session_id, None)
+            self._session_options.pop(session_id, None)
             if self._connection is not None:
                 await self._connection.close_session(session_id)
+            self._room_locks.pop(room_id, None)
             return True
 
     async def close(self) -> None:
@@ -376,8 +406,7 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
         event_id: str,
         text: str,
     ) -> AsyncIterator[StreamDelta]:
-        lock = self._room_locks.setdefault(room_id, asyncio.Lock())
-        async with lock:
+        async with self._room_turn_lock(room_id):
             connection = await self._ensure_connection()
             session_id = await self._session_for(room_id, connection)
             turn = _TurnState(room_id=room_id)
