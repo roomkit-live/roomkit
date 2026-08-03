@@ -352,14 +352,18 @@ def _channel(
     *,
     handler: ExternalToolHandler | None = None,
     emit_updates: bool = True,
+    room_history: int | None = None,
 ) -> tuple[ACPChannel, _FakeACPConnection, _FakeTransport]:
     connection = _FakeACPConnection(None, emit_updates=emit_updates)
     transport = _FakeTransport(connection)
+    # Omitted rather than repeated, so the channel's own default stays under test.
+    window = {} if room_history is None else {"room_history": room_history}
     channel = ACPChannel(
         "acp-agent",
         transport=transport,
         cwd=tmp_path,
         external_tool_handler=handler,
+        **window,  # type: ignore[arg-type]
     )
     connection.client = channel._client
     return channel, connection, transport
@@ -1037,26 +1041,30 @@ class TestRoomCatchUp:
         )
 
     @staticmethod
-    async def _prompt(channel: ACPChannel, event: RoomEvent, context: Any) -> str:
-        """Run one turn to completion and return the text the agent received."""
+    async def _prompt(channel: ACPChannel, event: RoomEvent, context: Any) -> None:
+        """Run one turn to completion, the way the router consumes it."""
         output = await channel.on_event(event, _binding(), context)
         assert output.response_stream is not None
         [chunk async for chunk in output.response_stream]
         await asyncio.sleep(0)
-        return ""
 
     @staticmethod
     def _sent(connection: _FakeACPConnection, turn: int = 0) -> str:
         return str(connection.prompt_calls[turn]["prompt"][0].text)
 
-    async def test_window_is_declared_so_the_framework_loads_history(self, tmp_path: Any) -> None:
-        # The wiring the whole feature rests on: a room whose only readers are
-        # ACP sessions loads no tail at all unless one of them asks for it.
-        channel, _, _ = _channel(tmp_path, emit_updates=False)
-        assert channel.recent_events_window == 20
-        muted, _, _ = _channel(tmp_path, emit_updates=False)
-        muted._room_history = 0
-        assert muted.recent_events_window == 0
+    async def test_the_window_follows_room_history(self, tmp_path: Any) -> None:
+        # What the framework loads is the largest window any bound channel
+        # declares (over a floor it keeps for hooks), so the two must agree.
+        default, _, _ = _channel(tmp_path, emit_updates=False)
+        assert default.recent_events_window == 20
+        wide, _, _ = _channel(tmp_path, emit_updates=False, room_history=120)
+        assert wide.recent_events_window == 120
+        off, _, _ = _channel(tmp_path, emit_updates=False, room_history=0)
+        assert off.recent_events_window == 0
+
+    async def test_a_negative_window_is_a_mistake_not_an_off_switch(self, tmp_path: Any) -> None:
+        with pytest.raises(ValueError, match="room_history"):
+            _channel(tmp_path, room_history=-1)
 
     async def test_cold_start_carries_the_room(self, tmp_path: Any) -> None:
         # The session opens on the first prompt, so it was born after the
@@ -1141,8 +1149,7 @@ class TestRoomCatchUp:
 
     async def test_the_bound_says_what_it_hides(self, tmp_path: Any) -> None:
         # §19.3.2: an agent that knows it was truncated can ask for the rest.
-        channel, connection, _ = _channel(tmp_path, emit_updates=False)
-        channel._room_history = 2
+        channel, connection, _ = _channel(tmp_path, emit_updates=False, room_history=2)
         missed = [make_event(room_id="room-1", body=f"m{i}", index=i) for i in range(5)]
         trigger = make_event(room_id="room-1", body="go", index=5)
         await self._prompt(channel, trigger, self._context(*missed, trigger))
@@ -1166,15 +1173,13 @@ class TestRoomCatchUp:
         heard = make_event(room_id="room-1", body="heard request", index=2)
         await self._prompt(channel, heard, self._context(missed, silenced, heard))
 
-        assert connection.prompt_calls != []
         sent = self._sent(connection)
         assert "said while you were away" in sent
         assert "silenced request" in sent
         await channel.close()
 
     async def test_disabled_never_catches_up(self, tmp_path: Any) -> None:
-        channel, connection, _ = _channel(tmp_path, emit_updates=False)
-        channel._room_history = 0
+        channel, connection, _ = _channel(tmp_path, emit_updates=False, room_history=0)
         missed = make_event(room_id="room-1", body="you missed this", index=0)
         trigger = make_event(room_id="room-1", body="go", index=1)
         await self._prompt(channel, trigger, self._context(missed, trigger))

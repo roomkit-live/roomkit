@@ -165,7 +165,12 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
         self._mcp_servers = list(mcp_servers or ())
         self._authentication_method = authentication_method
         self._external_tool_handler = external_tool_handler
-        self._room_history = max(0, room_history)
+        if room_history < 0:
+            raise ValueError(
+                "room_history is a count of messages to catch up on: pass 0 to turn "
+                "the catch-up off"
+            )
+        self._room_history = room_history
 
         self._loaded_sdk: _SDK | None = None
         self._client = _ACPClient(self)
@@ -269,9 +274,11 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
     def recent_events_window(self) -> int:
         """Room tail this channel reads — the catch-up window (RFC §19.3.2).
 
-        Declaring it is what makes the framework load any history at all into
-        ``RoomContext.recent_events`` for a room whose only readers are ACP
-        sessions.
+        The framework sizes ``RoomContext.recent_events`` to the largest window
+        any bound channel declares, under a floor it keeps for hooks (50
+        events). So a ``room_history`` under that floor reads a tail that was
+        loaded anyway, and one above it grows the tail to match: declaring the
+        window is what keeps the two in step.
         """
         return self._room_history
 
