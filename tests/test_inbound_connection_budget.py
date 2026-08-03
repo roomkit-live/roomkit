@@ -48,9 +48,9 @@ pytestmark = [
 #                            each pass groups its reads on one connection. The
 #                            locked pass re-reads room/bindings/participants —
 #                            the lock exists for that (RFC §10.1 steps 6 and
-#                            12) — but carries the history the first pass
-#                            deserialised (RMK-105): same checkout, one query
-#                            fewer
+#                            12) — and carries the history the first pass
+#                            deserialised (RMK-105), so it pays a checkout for
+#                            one query, not two
 #   2  lane delivery cursor — read outside the claim, read again under it
 #   1  routing             — room_exists + binding_exists, grouped
 #   1  the §7.5 source-binding read, after the sync hooks

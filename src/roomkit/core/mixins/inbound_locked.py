@@ -248,9 +248,9 @@ class InboundLockedMixin(HelpersMixin):
 
         *context* is the context the caller built BEFORE taking the lock — the
         inbound pipeline builds one for the channel and the identity resolver
-        (RFC §10.1 steps 3-5). It is carried into the locked rebuild rather
-        than thrown away. A caller that already holds the lock has no such
-        context and passes ``None``.
+        (RFC §10.1 steps 3-5) — and it is carried into the locked rebuild
+        (:meth:`_build_context`). A caller that already holds the lock has no
+        such context and passes ``None``.
         """
         try:
             outcome = await asyncio.wait_for(
@@ -309,9 +309,9 @@ class InboundLockedMixin(HelpersMixin):
         """
         # Re-read under the lock: the status gate must not act on an answer
         # taken before it (§10.1 step 6), and planning reads bindings under the
-        # lock (step 12). The pre-lock context is carried in rather than
-        # discarded — its history is the expensive half of a context, and it is
-        # reused only when the room's counter proves nothing committed since.
+        # lock (step 12). The pre-lock context comes along: its history is the
+        # expensive half of a context, and it is carried whenever the room's
+        # counter proves nothing committed since it was read.
         context = await self._build_context(room_id, carrying=context)
 
         # RFC §5.1 / §10.1 step 6 — a room whose status refuses new events

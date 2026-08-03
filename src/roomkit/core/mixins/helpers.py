@@ -56,6 +56,7 @@ if TYPE_CHECKING:
     from roomkit.channels.base import Channel
     from roomkit.core.hooks import HookEngine, IdentityHookRegistration
     from roomkit.models.channel import ChannelBinding
+    from roomkit.models.room import Room
     from roomkit.store.base import ConversationStore
 
 logger = logging.getLogger("roomkit.framework")
@@ -460,10 +461,13 @@ class HelpersMixin:
 
         ``carrying`` hands over a context an earlier pass of the same message
         already built, so its history is not deserialised twice — see
-        :meth:`_carried_history` for when it can be honoured. Room, bindings and
-        participants are always re-read: the room lock exists to make the status
-        gate and the delivery plan read fresh state (RFC §10.1 steps 6 and 12),
-        and the history is the one part of a context the lock does not protect.
+        :meth:`_carried_history` for when it can be honoured. It must be a
+        context of the same room built with the derived window (no explicit
+        ``recent_limit``), which is what the inbound pipeline builds. Room,
+        bindings and participants are always re-read: the room lock exists to
+        make the status gate and the delivery plan read fresh state (RFC §10.1
+        steps 6 and 12), and the history is the one part of a context the lock
+        does not protect.
 
         Runs whole under the framework's resource lease: it is store reads and
         nothing else, and ``close()`` promises not to release the store while
@@ -482,7 +486,7 @@ class HelpersMixin:
                     raise RoomNotFoundError(f"Room {room_id} not found")
                 if recent_limit is None:
                     recent_limit = self._resolve_recent_events_limit(bindings)
-                recent = self._carried_history(carrying, room.event_count, recent_limit)
+                recent = self._carried_history(carrying, room, recent_limit)
                 if recent is None:
                     recent = await self._store.get_conversation(room_id, limit=recent_limit)
         return RoomContext(
@@ -493,27 +497,34 @@ class HelpersMixin:
         )
 
     def _carried_history(
-        self, carrying: RoomContext | None, event_count: int, recent_limit: int
+        self, carrying: RoomContext | None, room: Room, recent_limit: int
     ) -> list[RoomEvent] | None:
         """The history *carrying* may hand over as-is, or ``None`` to read it.
 
         The window is carried only when it is provably identical to what a fresh
-        read would return, so a hook and an AI channel see exactly what they saw
-        before: the room's counter has not moved since *carrying* was built, so
-        nothing committed in between — and the timeline is append-only (RFC §8.1),
-        so nothing else could have changed it. An edit or a delete is itself a
-        committed event (RFC §10.3), which moves the counter and sends this back
-        to a fresh read; the one case the counter cannot see is a host calling
-        ``update_event`` / hard ``delete_event`` in that window, and RFC §14.4
-        already calls a read event a snapshot.
+        read returns, so a hook and an AI channel see exactly the history they
+        would otherwise be given: *room*'s counter has not moved since
+        *carrying* was built, so nothing committed in between — and the timeline
+        is append-only (RFC §8.1), so nothing else could have changed it. An
+        edit or a delete is itself a committed event (RFC §10.3), which moves
+        the counter and sends this back to a fresh read; the one thing the
+        counter cannot see is a host calling ``update_event`` / hard
+        ``delete_event`` in that window, and RFC §14.4 already calls a read
+        event a snapshot.
 
-        The second guard is the window itself: a channel bound since *carrying*
-        was built may need a wider one (``recent_events_window``) than the
-        carried events can cover, and a wider window has to be read.
+        The window itself is the second question: a channel bound since
+        *carrying* was built may declare a wider ``recent_events_window`` than
+        the carried events can cover, and a wider window has to be read. This
+        compares against the window *carrying*'s own bindings derive, which is
+        why it must have been built without an explicit ``recent_limit``.
+
+        The room check is not paranoia: handing one room's history to another
+        room's hooks would leak a conversation, and a mismatch is a caller bug
+        no read would catch.
         """
         if carrying is None or recent_limit <= 0:
             return None
-        if carrying.room.event_count != event_count:
+        if carrying.room.id != room.id or carrying.room.event_count != room.event_count:
             return None
         if recent_limit > self._resolve_recent_events_limit(carrying.bindings):
             return None

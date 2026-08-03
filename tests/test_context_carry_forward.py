@@ -1,15 +1,15 @@
 """RMK-105 — the locked pass carries the history it was handed.
 
-Every inbound message used to build TWO complete ``RoomContext``: one before the
-room lock, for the channel and the identity resolver (RFC §10.1 steps 3-5), and
-one under the lock whose first statement overwrote the parameter it had just
-been handed. A context deserialises up to 50 stored events into pydantic
-models, so the second build paid for a second copy of the same history — 41% of
-the worker CPU per message on the measured bench, half of it for nothing.
+An inbound message builds a ``RoomContext`` before the room lock, for the
+channel and the identity resolver (RFC §10.1 steps 3-5), then re-reads room,
+bindings and participants under the lock — that is what the lock is for
+(steps 6 and 12). The history is the one part it does not re-read: a context
+deserialises up to 50 stored events into pydantic models, 41% of the worker CPU
+a message costs on the measured bench, and a second copy of it buys nothing.
 
-What is asserted here is the number of history reads (deterministic, and the
-thing that regresses silently) together with what that number must not cost: a
-hook and a broadcast MUST see the history a fresh read would have given them.
+What is asserted here is the number of history reads — deterministic, where a
+second copy regresses silently — together with what that number must not cost:
+a hook and a broadcast MUST see the history a fresh read would give them.
 """
 
 from __future__ import annotations
@@ -255,6 +255,29 @@ async def test_a_carried_window_narrower_than_asked_for_is_read_in_full() -> Non
     assert store.history_reads == 1
     assert len(widened.recent_events) == 3
     assert [e.id for e in trimmed.recent_events] == [e.id for e in carrying.recent_events[-2:]]
+
+
+async def test_a_context_from_another_room_is_never_carried() -> None:
+    """Two rooms at the same event count still have different conversations."""
+    store = CountingStore()
+    kit, room_id = await _room_with(PlainChannel(), store)
+    try:
+        elsewhere = await kit.create_room(room_id="elsewhere")
+        await kit.attach_channel(elsewhere.id, "sms")
+        await _send(kit, room_id, "sms", 2)
+        await _send(kit, elsewhere.id, "sms", 2)
+
+        # Same counter, so only the room itself can refuse this carry.
+        other_context = await kit._build_context(elsewhere.id)
+        here = await kit._build_context(room_id)
+        assert other_context.room.event_count == here.room.event_count
+        store.history_reads = 0
+        context = await kit._build_context(room_id, carrying=other_context)
+    finally:
+        await kit.close()
+
+    assert store.history_reads == 1
+    assert [e.room_id for e in context.recent_events] == [room_id, room_id]
 
 
 async def test_a_carried_context_never_outlives_its_room_state() -> None:
