@@ -472,9 +472,9 @@ class TestConversationRecency:
 
     ``get_conversation`` feeds ``RoomContext.recent_events``, which every
     consumer reads tail-first (memory providers slice ``[-N:]``, the pipeline
-    appends the committed event at the end). Returning the room's opening
-    messages made an AI answer from frozen history it should have forgotten —
-    and nothing asserted otherwise, which is how it shipped.
+    appends the committed event at the end). Hand it the room's opening
+    messages instead and an AI answers from history it should have forgotten,
+    silently — nothing else in the suite would notice.
     """
 
     async def test_get_conversation_returns_the_tail(self, store: InMemoryStore) -> None:

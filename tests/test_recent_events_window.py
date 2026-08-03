@@ -89,8 +89,8 @@ def test_window_capped_at_ceiling() -> None:
 # ── What the window contains ──────────────────────────────────────
 
 
-async def _seed(kit: RoomKit, room_id: str, count: int) -> None:
-    for i in range(count):
+async def _seed(kit: RoomKit, room_id: str, count: int, start: int = 0) -> None:
+    for i in range(start, start + count):
         await kit.store.commit_event(
             room_id,
             RoomEvent(
@@ -103,11 +103,11 @@ async def _seed(kit: RoomKit, room_id: str, count: int) -> None:
 
 
 async def test_window_holds_the_rooms_tail() -> None:
-    """A window that doesn't move is not a window (RMK-99).
+    """A room longer than the window is represented by its tail (RMK-99).
 
-    A room whose history outgrew the window used to hand every hook and every
-    AI channel its *opening* messages, frozen — so an agent quoted the start of
-    the conversation and never saw what had just been said.
+    What every hook and every AI channel reads is the current conversation, not
+    the room's opening — an agent that quotes the start of a long room and
+    misses what was just said is this assertion failing.
     """
     kit = RoomKit()
     room = await kit.create_room()
@@ -130,7 +130,7 @@ async def test_window_advances_with_the_conversation() -> None:
     await _seed(kit, room.id, _RECENT_EVENTS_FLOOR + 1)
 
     before = await kit._build_context(room.id)
-    await _seed(kit, room.id, 1)
+    await _seed(kit, room.id, 1, start=_RECENT_EVENTS_FLOOR + 1)
     after = await kit._build_context(room.id)
 
     assert after.recent_events[-1].index == before.recent_events[-1].index + 1

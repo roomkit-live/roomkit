@@ -609,7 +609,7 @@ class TestCursorPagination:
 
 
 class TestConversationRecency:
-    """RMK-99 — against a real database, since the bug lived in the SQL."""
+    """RMK-99 — against a real database: SQL decides this ordering, not Python."""
 
     async def test_get_conversation_returns_the_tail(self, store) -> None:
         await store.create_room(Room(id="r1"))
