@@ -14,7 +14,7 @@ from roomkit.core.lanes import DeliveryPlan
 from roomkit.core.rate_limiter import TokenBucketRateLimiter
 from roomkit.core.retry import retry_with_backoff
 from roomkit.core.transcoder import DefaultContentTranscoder
-from roomkit.core.visibility import visibility_allows
+from roomkit.core.visibility import effective_visibility, visibility_allows
 from roomkit.models.channel import ChannelBinding, ChannelOutput
 from roomkit.models.context import RoomContext
 from roomkit.models.enums import (
@@ -621,9 +621,14 @@ class EventRouter:
         Uses the event's visibility field which already incorporates the source
         binding's visibility (merged in broadcast() before this is called).
         This allows callers of send_event() to override visibility per-event.
+
+        Delegates the resolution to :func:`effective_visibility` so delivery and
+        the history rebuilt for a channel (RFC §7.5 rule 8) answer the same
+        question the same way. The stamp makes the two indistinguishable here:
+        by the time this runs, a non-default binding scope is already on the
+        event.
         """
-        vis = event.visibility or source_binding.visibility
-        return visibility_allows(vis, target_binding)
+        return visibility_allows(effective_visibility(event, source_binding), target_binding)
 
     @staticmethod
     def _content_media_type(content: Any) -> ChannelMediaType | None:

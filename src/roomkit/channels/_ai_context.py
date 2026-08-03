@@ -16,6 +16,7 @@ from roomkit.channels._task_planner import TaskPlanner
 from roomkit.channels._tool_eviction import ToolEviction
 from roomkit.channels._tool_search import search_tool_defs, should_activate_tool_search
 from roomkit.channels._tool_search_constants import TOOL_SEARCH_PREAMBLE
+from roomkit.core.visibility import visible_events
 from roomkit.models.channel import ChannelCapabilities
 from roomkit.models.enums import ChannelCategory
 from roomkit.models.event import CompositeContent, MediaContent, TextContent
@@ -316,11 +317,18 @@ class AIContextMixin:
         # Apply tool policy + skill gating visibility filters
         tools = self._apply_tool_filters(tools)
 
-        # Retrieve memory
+        # Retrieve memory from this channel's view of the room, never the
+        # room's whole timeline (RFC §7.5 rule 8): an event visibility kept
+        # from this channel at broadcast must not reach the model as history
+        # one turn later. Filtered here rather than inside the providers —
+        # one shared ``RoomContext`` serves every channel of a broadcast, so
+        # the filter can only run where the reader is known, and running it on
+        # the way *in* is what stops a summarizing provider from re-emitting
+        # hidden content as a summary.
         memory_result = await self._memory.retrieve(
             event.room_id,
             event,
-            context,
+            context.model_copy(update={"recent_events": visible_events(context, self.channel_id)}),
             channel_id=self.channel_id,
         )
 

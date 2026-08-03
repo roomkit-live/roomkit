@@ -1,0 +1,227 @@
+"""Visibility holds on the next turn too (RFC §7.5 rule 8).
+
+The broadcast keeps `visibility`'s promise; for a long time the turn after
+broke it. A channel the visibility hid an event from was not called at
+broadcast — correct — but the event stayed in ``RoomContext.recent_events``,
+which the memory provider re-read verbatim on the next turn and handed to the
+model. These tests are that leak, closed and kept closed.
+"""
+
+from __future__ import annotations
+
+import pytest
+
+from roomkit.channels.ai import AIChannel
+from roomkit.channels.websocket import WebSocketChannel
+from roomkit.core.framework import RoomKit
+from roomkit.core.visibility import effective_visibility, visible_events
+from roomkit.models.channel import ChannelBinding
+from roomkit.models.context import RoomContext
+from roomkit.models.delivery import InboundMessage
+from roomkit.models.enums import (
+    ChannelCategory,
+    ChannelType,
+    HookTrigger,
+    Visibility,
+)
+from roomkit.models.event import EventSource, RoomEvent, TextContent
+from roomkit.models.hook import HookResult
+from roomkit.models.room import Room
+from roomkit.providers.ai.mock import MockAIProvider
+
+MARKER = "SECRET-MARKER"
+
+
+def _prompted(provider: MockAIProvider) -> str:
+    """Everything the model was ever shown, flattened."""
+    return " ".join(str(m.content) for call in provider.calls for m in call.messages)
+
+
+async def _room(
+    *, source_visibility: str = Visibility.ALL, ai_visibility: str = Visibility.ALL
+) -> tuple[RoomKit, MockAIProvider]:
+    """ws1 (the source under test) + ws2 (a plainly visible second transport) + ai1."""
+    kit = RoomKit()
+    provider = MockAIProvider(responses=["ok"])
+    kit.register_channel(WebSocketChannel("ws1"))
+    kit.register_channel(WebSocketChannel("ws2"))
+    kit.register_channel(AIChannel("ai1", provider=provider))
+    await kit.create_room(room_id="r1")
+    await kit.attach_channel("r1", "ws1", visibility=source_visibility)
+    await kit.attach_channel("r1", "ws2")
+    await kit.attach_channel(
+        "r1", "ai1", category=ChannelCategory.INTELLIGENCE, visibility=ai_visibility
+    )
+    return kit, provider
+
+
+class TestHiddenEventsStayHidden:
+    """The card's success criterion: four scopes x set on the event / on the binding."""
+
+    @pytest.mark.parametrize("scope", ["transport", "none", "internal", "ws2"])
+    @pytest.mark.parametrize("on_binding", [False, True])
+    async def test_hidden_event_never_reaches_the_model(
+        self, scope: str, on_binding: bool
+    ) -> None:
+        kit, provider = await _room(source_visibility=scope if on_binding else Visibility.ALL)
+
+        await kit.process_inbound(
+            InboundMessage(
+                channel_id="ws1",
+                sender_id="u1",
+                content=TextContent(body=MARKER),
+                **({} if on_binding else {"visibility": scope}),
+            )
+        )
+        # The AI is correctly skipped at broadcast — that half already worked.
+        assert provider.calls == []
+
+        # A second turn on a plainly visible channel, so ws1's binding keeps
+        # its scope throughout: the next turn is what used to leak.
+        await kit.process_inbound(
+            InboundMessage(channel_id="ws2", sender_id="u2", content=TextContent(body="hello"))
+        )
+
+        assert provider.calls, "the second turn must reach the model"
+        assert MARKER not in _prompted(provider)
+        await kit.close()
+
+    async def test_ordinary_history_still_reaches_the_model(self) -> None:
+        # The guard against over-filtering: "all" is the common case and must
+        # arrive, or the fix would have traded a leak for amnesia.
+        kit, provider = await _room()
+
+        await kit.process_inbound(
+            InboundMessage(channel_id="ws1", sender_id="u1", content=TextContent(body=MARKER))
+        )
+        await kit.process_inbound(
+            InboundMessage(channel_id="ws2", sender_id="u2", content=TextContent(body="hello"))
+        )
+
+        assert MARKER in _prompted(provider)
+        await kit.close()
+
+    async def test_an_agent_still_recalls_its_own_whispers(self) -> None:
+        # RFC §7.4 assistant pattern: an AI bound visibility="ws1" produces
+        # events whose scope excludes itself. Filtering without the source
+        # exemption would erase its own turns from its own prompt.
+        kit, provider = await _room(ai_visibility="ws1")
+        provider.responses = ["MY-OWN-ANSWER"]
+
+        for body in ("first", "second"):
+            await kit.process_inbound(
+                InboundMessage(channel_id="ws1", sender_id="u1", content=TextContent(body=body))
+            )
+
+        assert "MY-OWN-ANSWER" in _prompted(provider)
+        await kit.close()
+
+    async def test_a_detached_source_does_not_erase_its_history(self) -> None:
+        # No binding left to resolve: the event's own scope is the whole
+        # answer. Ordinary history survives the detach; an internal event
+        # stays hidden because it says so on the event itself.
+        kit, provider = await _room()
+
+        await kit.process_inbound(
+            InboundMessage(channel_id="ws1", sender_id="u1", content=TextContent(body=MARKER))
+        )
+        await kit.send_event(
+            "r1", "ws1", TextContent(body="INTERNAL-MARKER"), visibility=Visibility.INTERNAL
+        )
+        assert await kit.detach_channel("r1", "ws1")
+
+        await kit.process_inbound(
+            InboundMessage(channel_id="ws2", sender_id="u2", content=TextContent(body="hello"))
+        )
+
+        prompted = _prompted(provider)
+        assert MARKER in prompted
+        assert "INTERNAL-MARKER" not in prompted
+        await kit.close()
+
+    async def test_hooks_still_see_the_whole_timeline(self) -> None:
+        # Host code, in the integrator's process, holding the store anyway:
+        # filtering it would forbid nothing and break legitimate readers.
+        kit, _ = await _room()
+        seen: list[str] = []
+
+        @kit.hook(HookTrigger.BEFORE_BROADCAST)
+        async def capture(event: RoomEvent, ctx: RoomContext) -> HookResult:
+            seen.extend(
+                str(e.content.body) for e in ctx.recent_events if hasattr(e.content, "body")
+            )
+            return HookResult.allow()
+
+        await kit.process_inbound(
+            InboundMessage(
+                channel_id="ws1",
+                sender_id="u1",
+                content=TextContent(body=MARKER),
+                visibility=Visibility.NONE,
+            )
+        )
+        await kit.process_inbound(
+            InboundMessage(channel_id="ws2", sender_id="u2", content=TextContent(body="hello"))
+        )
+
+        assert MARKER in seen
+        await kit.close()
+
+
+def _binding(channel_id: str, **kwargs: object) -> ChannelBinding:
+    return ChannelBinding(
+        channel_id=channel_id, room_id="r1", channel_type=ChannelType.WEBSOCKET, **kwargs
+    )
+
+
+def _event(source: str, body: str, visibility: str = Visibility.ALL) -> RoomEvent:
+    return RoomEvent(
+        room_id="r1",
+        source=EventSource(channel_id=source, channel_type=ChannelType.WEBSOCKET),
+        content=TextContent(body=body),
+        visibility=visibility,
+    )
+
+
+class TestEffectiveVisibility:
+    """The event's own scope wins; the binding answers for the default."""
+
+    def test_a_non_default_event_scope_wins(self) -> None:
+        event = _event("ws1", "x", visibility=Visibility.NONE)
+        assert effective_visibility(event, _binding("ws1", visibility="all")) == Visibility.NONE
+
+    def test_the_binding_answers_for_the_default(self) -> None:
+        # The stored event keeps "all": the router's stamp lands on a copy made
+        # after the commit, so storage never sees the binding's scope.
+        event = _event("ws1", "x")
+        assert effective_visibility(event, _binding("ws1", visibility="transport")) == "transport"
+
+    def test_a_detached_source_leaves_the_event_speaking_for_itself(self) -> None:
+        assert effective_visibility(_event("ws1", "x"), None) == Visibility.ALL
+        assert (
+            effective_visibility(_event("ws1", "x", visibility=Visibility.INTERNAL), None)
+            == Visibility.INTERNAL
+        )
+
+
+class TestVisibleEvents:
+    def _context(self, *events: RoomEvent, **bindings: str) -> RoomContext:
+        return RoomContext(
+            room=Room(id="r1"),
+            bindings=[_binding(cid, visibility=vis) for cid, vis in bindings.items()],
+            recent_events=list(events),
+        )
+
+    def test_a_binding_scope_hides_the_event_from_a_later_reader(self) -> None:
+        ctx = self._context(
+            _event("ws1", "hidden"), _event("ws2", "shown"), ws1="ws2", ws2="all", reader="all"
+        )
+        assert [str(e.content.body) for e in visible_events(ctx, "reader")] == ["shown"]
+
+    def test_a_channel_always_keeps_its_own_events(self) -> None:
+        ctx = self._context(_event("reader", "mine"), reader="ws1", ws1="all")
+        assert [str(e.content.body) for e in visible_events(ctx, "reader")] == ["mine"]
+
+    def test_an_unbound_reader_sees_only_what_it_produced(self) -> None:
+        ctx = self._context(_event("ws1", "theirs"), _event("ghost", "mine"), ws1="all")
+        assert [str(e.content.body) for e in visible_events(ctx, "ghost")] == ["mine"]
