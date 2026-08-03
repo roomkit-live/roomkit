@@ -476,6 +476,59 @@ class TestRun:
 
         assert kit.process_inbound.call_args[0][0].content.body == "hello"
 
+    async def test_addressed_to_names_the_recipient(self) -> None:
+        cli = CLIChannel("cli", use_color=False)
+        kit = AsyncMock()
+        kit.process_inbound = AsyncMock()
+        seen: list[str] = []
+
+        def address(line: str) -> list[str]:
+            seen.append(line)
+            return ["codex"]
+
+        with patch("builtins.input", side_effect=iter(["review it", "quit"])):
+            await cli.run(kit, room_id="room-1", addressed_to=address)
+
+        assert seen == ["review it"]  # the hook sees the submitted line
+        assert kit.process_inbound.call_args[0][0].addressed_to == ["codex"]
+
+    async def test_no_hook_leaves_the_message_unaddressed(self) -> None:
+        cli = CLIChannel("cli", use_color=False)
+        kit = AsyncMock()
+        kit.process_inbound = AsyncMock()
+
+        with patch("builtins.input", side_effect=iter(["hello", "quit"])):
+            await cli.run(kit, room_id="room-1")
+
+        assert kit.process_inbound.call_args[0][0].addressed_to is None
+
+    async def test_address_hook_runs_after_content_factory(self) -> None:
+        # An "@agent ..." line moves the focus in content_factory; the
+        # address must reflect that, so ordering is part of the contract.
+        cli = CLIChannel("cli", use_color=False)
+        kit = AsyncMock()
+        kit.process_inbound = AsyncMock()
+        focus = {"agent": "claude-code"}
+
+        def factory(line: str):
+            if line.startswith("@"):
+                target, _, rest = line[1:].partition(" ")
+                focus["agent"] = target
+                return TextContent(body=rest)
+            return TextContent(body=line)
+
+        with patch("builtins.input", side_effect=iter(["@codex go", "quit"])):
+            await cli.run(
+                kit,
+                room_id="room-1",
+                content_factory=factory,
+                addressed_to=lambda _line: [focus["agent"]],
+            )
+
+        message = kit.process_inbound.call_args[0][0]
+        assert message.content.body == "go"
+        assert message.addressed_to == ["codex"]
+
     async def test_skips_empty_lines(self) -> None:
         cli = CLIChannel("cli", use_color=False)
         kit = AsyncMock()

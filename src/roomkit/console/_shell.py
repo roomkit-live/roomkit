@@ -25,7 +25,7 @@ from prompt_toolkit.application import Application
 from prompt_toolkit.patch_stdout import patch_stdout
 from prompt_toolkit.styles import Style
 
-from roomkit.channels.cli import CommandHandler, match_command
+from roomkit.channels.cli import AddressFactory, CommandHandler, match_command, resolve_address
 from roomkit.console._activity import (
     FRAME_SECONDS,
     ActivityTracker,
@@ -118,6 +118,7 @@ async def run_console_shell(
     banner: ConsoleBannerData,
     content_factory: Callable[[str], EventContent | None] | None = None,
     commands: Mapping[str, CommandHandler] | None = None,
+    addressed_to: AddressFactory | None = None,
     input: Input | None = None,
     output: Output | None = None,
 ) -> None:
@@ -242,6 +243,7 @@ async def run_console_shell(
                         channel_id=channel.channel_id,
                         sender_id=sender_id,
                         content=content,
+                        addressed_to=resolve_address(addressed_to, stripped),
                     )
                 )
                 session.app.invalidate()

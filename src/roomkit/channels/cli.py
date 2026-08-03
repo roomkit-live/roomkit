@@ -25,7 +25,7 @@ import concurrent.futures
 import json
 import logging
 import sys
-from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
 from roomkit.channels.base import Channel
@@ -46,6 +46,17 @@ logger = logging.getLogger("roomkit.channels.cli")
 
 CommandHandler = Callable[[str], Awaitable[None]]
 """A local console command. Receives the rest of the line; awaited by the loop."""
+
+AddressFactory = Callable[[str], Sequence[str] | None]
+"""Names the intelligence channels a submitted line asks to act (RFC §19.3)."""
+
+
+def resolve_address(factory: AddressFactory | None, line: str) -> list[str] | None:
+    """Ask *factory* who this line addresses, tolerating no factory at all."""
+    if factory is None:
+        return None
+    addressed = factory(line)
+    return None if addressed is None else list(addressed)
 
 
 def match_command(
@@ -354,6 +365,7 @@ class CLIChannel(Channel):
         welcome: str | None = None,
         content_factory: Callable[[str], EventContent | None] | None = None,
         commands: Mapping[str, CommandHandler] | None = None,
+        addressed_to: AddressFactory | None = None,
     ) -> None:
         """Run an interactive input loop.
 
@@ -385,6 +397,14 @@ class CLIChannel(Channel):
                 :func:`~roomkit.console.terminal_select`) without racing the
                 loop for stdin, and a command queued behind a message runs
                 after that message's turn, never inside it.
+            addressed_to: Hook naming the intelligence channels each
+                submission asks to act (RFC §19.3). Receives the submitted
+                line and returns channel ids, or ``None`` to leave the
+                message unaddressed. Called **after** ``content_factory``, so
+                a factory that switched which agent you are talking to is
+                already reflected. RoomKit wants ids, never a syntax — how a
+                user names an agent (``@codex``, ``/agent codex``, a picker)
+                is yours to decide.
 
         In console mode on a real terminal, this runs the pinned-bar shell:
         the input bar stays at the bottom, responses stream above it, and the
@@ -408,6 +428,7 @@ class CLIChannel(Channel):
                     banner=banner,
                     content_factory=content_factory,
                     commands=commands,
+                    addressed_to=addressed_to,
                 )
                 return
         elif welcome:
@@ -418,6 +439,7 @@ class CLIChannel(Channel):
             sender_id=sender_id,
             content_factory=content_factory,
             commands=commands,
+            addressed_to=addressed_to,
         )
 
     async def _run_classic(
@@ -427,6 +449,7 @@ class CLIChannel(Channel):
         sender_id: str,
         content_factory: Callable[[str], EventContent | None] | None,
         commands: Mapping[str, CommandHandler] | None = None,
+        addressed_to: AddressFactory | None = None,
     ) -> None:
         """Blocking-input sequential loop (classic mode and non-TTY fallback)."""
         loop = asyncio.get_running_loop()
@@ -482,6 +505,7 @@ class CLIChannel(Channel):
                         channel_id=self.channel_id,
                         sender_id=sender_id,
                         content=content,
+                        addressed_to=resolve_address(addressed_to, stripped),
                     )
                 )
             except asyncio.CancelledError:

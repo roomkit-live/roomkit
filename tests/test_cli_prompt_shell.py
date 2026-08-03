@@ -222,6 +222,32 @@ class TestShellShutdown:
         assert active_shell_app() is None
 
 
+class TestAddressing:
+    async def test_submission_carries_the_address(self) -> None:
+        cli = CLIChannel("cli", console=True)
+        kit = AsyncMock()
+        kit.process_inbound = AsyncMock()
+
+        with create_pipe_input() as pipe:
+            pipe.send_text("review it\n")
+            pipe.send_text("quit\n")
+            await _run_shell(cli, kit, pipe, addressed_to=lambda _line: ["codex"])
+
+        assert kit.process_inbound.call_args[0][0].addressed_to == ["codex"]
+
+    async def test_without_the_hook_nothing_is_addressed(self) -> None:
+        cli = CLIChannel("cli", console=True)
+        kit = AsyncMock()
+        kit.process_inbound = AsyncMock()
+
+        with create_pipe_input() as pipe:
+            pipe.send_text("hello\n")
+            pipe.send_text("quit\n")
+            await _run_shell(cli, kit, pipe)
+
+        assert kit.process_inbound.call_args[0][0].addressed_to is None
+
+
 class TestCommands:
     async def test_command_runs_and_never_reaches_the_room(self) -> None:
         cli = CLIChannel("cli", console=True)

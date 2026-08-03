@@ -5,14 +5,17 @@
 
 Both agents run in the same working directory, so the interesting flow needs
 no shared conversation at all: ask one to write code, ask the other to review
-what landed on disk. You address an agent with a mention, and **only the
-addressed agent runs** — a ``ConversationRouter`` stamps the routing decision
-and RoomKit skips every other intelligence channel for that event.
+what landed on disk.
 
-Agents do not see each other's messages here (see ``_addressed_to`` below for
-the single line that decides it). That is deliberate: it keeps each agent's
-session to what you asked it, and it keeps two agents from answering each
-other in a loop until the chain-depth limit stops them.
+Every submission names its recipient (``addressed_to``), so **only the
+addressed agent runs** — and the room is created ``ADDRESSED_ONLY``, so an
+agent's own output solicits nobody either. Two settings, no routing rules:
+each agent's session holds what you asked *it*, and the two never answer
+each other down to the chain-depth limit.
+
+How you name an agent is this example's business, not RoomKit's: it accepts
+``@codex review hello.py`` and ``/agent`` for a picker, and passes channel
+ids.
 
 Requires:
     pip install "roomkit[acp,console]"
@@ -30,7 +33,8 @@ Run with:
 At the prompt:
     @codex what does this project do?     address an agent (and keep talking to it)
     @claude-code write hello.py           address the other one
-    /agents                               keyboard menu: pick the addressed agent
+    /agent                                keyboard menu: pick the addressed agent
+    /agent codex                          switch without the menu
     /model sonnet                         switch the addressed agent's model
     quit                                  leave
 """
@@ -52,19 +56,13 @@ from shared import console_enabled, existing_directory, setup_logging
 
 from roomkit import (
     ACPChannel,
+    AgentResponsePolicy,
     ChannelCategory,
     CLIChannel,
-    ConversationRouter,
-    HookExecution,
-    HookTrigger,
     RoomKit,
-    RoutingConditions,
-    RoutingRule,
 )
 from roomkit.console import terminal_input, terminal_select
-from roomkit.models.context import RoomContext
-from roomkit.models.event import RoomEvent, TextContent
-from roomkit.orchestration import ConversationState
+from roomkit.models.event import TextContent
 from roomkit.tools import ExternalToolHandler, ToolDecision
 
 CLAUDE_ACP = "@agentclientprotocol/claude-agent-acp@0.61.0"
@@ -86,13 +84,10 @@ AGENTS = (
 
 
 class Addressed:
-    """The agent the next message goes to.
+    """Who the next message is for — this console's own notion of focus.
 
-    A mutable cell rather than ``ConversationState.active_agent_id``: the
-    router consults ``active_agent_id`` *before* its rules (sticky affinity),
-    so setting it would make every rule below unreachable — including the one
-    that reads this cell. Switching it also means a store round trip, which
-    cannot happen synchronously while a line is being submitted.
+    Plain application state: RoomKit is told the decision (a channel id, on
+    every submission), never the syntax that produced it.
     """
 
     def __init__(self, agent_id: str) -> None:
@@ -162,29 +157,6 @@ class TerminalPermissionHandler(ExternalToolHandler):
         )
 
 
-def _addressed_to(addressed: Addressed, agent_id: str) -> Any:
-    """Routing predicate: does *agent_id* handle this event?
-
-    Two decisions live here, and they are the whole orchestration policy of
-    this example:
-
-    1. An agent's own output never triggers another agent. Without this, the
-       first answer would be delivered to the other agent, which would answer
-       it, and so on until ``max_chain_depth`` (5) stopped the ping-pong.
-       Returning False for intelligence-sourced events makes the router
-       select nobody, which blocks every agent for that event.
-    2. Everything a human types goes to the addressed agent, and only to it.
-    """
-
-    def predicate(event: RoomEvent, context: RoomContext, state: ConversationState) -> bool:
-        source = context.get_binding(event.source.channel_id)
-        if source is not None and source.category == ChannelCategory.INTELLIGENCE:
-            return False
-        return addressed.agent_id == agent_id
-
-    return predicate
-
-
 def _resolve_agent(name: str) -> str | None:
     """Match a typed mention against the agents in the room."""
     wanted = name.strip().casefold().replace(" ", "-")
@@ -202,7 +174,10 @@ async def main(args: argparse.Namespace) -> None:
     workspace = args.workspace
     addressed = Addressed(AGENTS[0].channel_id)
 
-    kit = RoomKit()
+    # ADDRESSED_ONLY: an agent's output solicits nobody it did not address.
+    # Under the default (AGENT_CHAIN) the first answer would reach the other
+    # agent, whose answer would come back, down to max_chain_depth.
+    kit = RoomKit(agent_response_policy=AgentResponsePolicy.ADDRESSED_ONLY)
     cli = CLIChannel(
         "you",
         show_thinking=args.thinking_tokens > 0,
@@ -231,24 +206,6 @@ async def main(args: argparse.Namespace) -> None:
         kit.register_channel(channel)
         agents[spec.channel_id] = channel
 
-    # One rule per agent. No default_agent_id: when no rule matches (an
-    # agent's own output), the router blocks every intelligence channel
-    # instead of falling back to somebody.
-    router = ConversationRouter(
-        rules=[
-            RoutingRule(
-                agent_id=spec.channel_id,
-                conditions=RoutingConditions(custom=_addressed_to(addressed, spec.channel_id)),
-            )
-            for spec in AGENTS
-        ]
-    )
-    kit.hook(
-        HookTrigger.BEFORE_BROADCAST,
-        execution=HookExecution.SYNC,
-        priority=-100,
-    )(router.as_hook())
-
     room_id = "coding-agents"
     await kit.create_room(room_id=room_id)
     await kit.attach_channel(room_id, cli.channel_id)
@@ -263,8 +220,16 @@ async def main(args: argparse.Namespace) -> None:
             options.append((spec.channel_id, f"@{spec.channel_id}{state}"))
         return options
 
-    async def pick_agent(_argument: str = "") -> None:
-        """Choose the addressed agent from a keyboard menu."""
+    async def pick_agent(argument: str = "") -> None:
+        """``/agent`` opens the menu; ``/agent codex`` switches directly."""
+        if argument:
+            target = _resolve_agent(argument)
+            if target is None:
+                print(f"\nNo such agent: {argument}. Try /agent for the list.\n")
+                return
+            addressed.agent_id = target
+            print(f"\nNow talking to @{target}.\n")
+            return
         chosen = await terminal_select(
             agent_options(),
             title="Address which agent?",
@@ -300,7 +265,7 @@ async def main(args: argparse.Namespace) -> None:
             mention, _, rest = line[1:].partition(" ")
             target = _resolve_agent(mention)
             if target is None:
-                print(f"\nNo such agent: @{mention}. Try /agents.\n")
+                print(f"\nNo such agent: @{mention}. Try /agent.\n")
                 return None
             # Addressing is sticky: follow-ups stay with that agent until you
             # address another one, the way talking to a person works.
@@ -318,14 +283,17 @@ async def main(args: argparse.Namespace) -> None:
             room_id=room_id,
             sender_id="you",
             content_factory=handle_line,
+            # Evaluated after content_factory, so an "@agent ..." line has
+            # already moved the focus by the time we name the recipient.
+            addressed_to=lambda _line: [addressed.agent_id],
             # Awaited by the loop, in submission order — which is what lets
             # pick_agent() open a menu without racing the loop for stdin.
-            commands={"/agents": pick_agent, "/model": switch_model},
+            commands={"/agent": pick_agent, "/model": switch_model},
             welcome=(
                 f"Two coding agents in one room: {', '.join(f'@{s.channel_id}' for s in AGENTS)}\n"
                 f"Workspace: {workspace}\n"
                 f"Addressing @{addressed.agent_id} — only the addressed agent runs.\n"
-                "'@agent your request' to address one, '/agents' for the picker,\n"
+                "'@agent your request' to address one, '/agent' for the picker,\n"
                 "'/model [name]' for the addressed one, 'quit' to exit."
             ),
         )
