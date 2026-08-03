@@ -25,6 +25,7 @@ from prompt_toolkit.application import Application
 from prompt_toolkit.patch_stdout import patch_stdout
 from prompt_toolkit.styles import Style
 
+from roomkit.channels.cli import CommandHandler, match_command
 from roomkit.console._activity import (
     FRAME_SECONDS,
     ActivityTracker,
@@ -82,6 +83,14 @@ def active_shell_app() -> Application[Any] | None:
     return _active_app
 
 
+@dataclass(slots=True)
+class _QueuedCommand:
+    """A local command waiting its turn in the submission queue."""
+
+    handler: CommandHandler
+    argument: str
+
+
 @dataclass
 class _ShellState:
     room_id: str
@@ -108,6 +117,7 @@ async def run_console_shell(
     sender_id: str,
     banner: ConsoleBannerData,
     content_factory: Callable[[str], EventContent | None] | None = None,
+    commands: Mapping[str, CommandHandler] | None = None,
     input: Input | None = None,
     output: Output | None = None,
 ) -> None:
@@ -115,9 +125,12 @@ async def run_console_shell(
 
     Submissions land in a queue consumed strictly one at a time — the
     framework does not serialize concurrent ``deliver_stream`` calls to one
-    channel, so the shell must. On exit, the in-flight turn is cancelled and
-    queued submissions are dropped; a turn cancelled mid-stream does not
-    persist its partial text (graceful interruption is phase 2b).
+    channel, so the shell must. Local commands ride the same queue, so a
+    command typed behind a message runs after that message's turn, and runs
+    while the bar is up — which is what lets a handler prompt through
+    ``terminal_input``/``terminal_select``. On exit, the in-flight turn is
+    cancelled and queued submissions are dropped; a turn cancelled mid-stream
+    does not persist its partial text (graceful interruption is phase 2b).
 
     ``input``/``output`` inject prompt_toolkit pipe/dummy IO for tests.
     """
@@ -132,7 +145,7 @@ async def run_console_shell(
     tracker = ActivityTracker()
     state = _ShellState(room_id=room_id, model_label=model_label, activity=tracker)
 
-    queue: asyncio.Queue[InboundMessage] = asyncio.Queue()
+    queue: asyncio.Queue[InboundMessage | _QueuedCommand] = asyncio.Queue()
 
     # The input zone is framed Claude Code-style: a rule above the input
     # line (part of the prompt message) and one below it (first line of the
@@ -209,6 +222,13 @@ async def run_console_shell(
                 )
                 if stripped.lower() in _QUIT_COMMANDS:
                     break
+
+                match = match_command(commands, stripped)
+                if match is not None:
+                    handler, argument = match
+                    queue.put_nowait(_QueuedCommand(handler=handler, argument=argument))
+                    session.app.invalidate()
+                    continue
 
                 if content_factory:
                     content = content_factory(stripped)
@@ -320,7 +340,7 @@ async def _subscribe_agent_telemetry(
 
 
 async def _consume(
-    queue: asyncio.Queue[InboundMessage],
+    queue: asyncio.Queue[InboundMessage | _QueuedCommand],
     kit: RoomKit,
     state: _ShellState,
     invalidate: Callable[[], None],
@@ -328,6 +348,17 @@ async def _consume(
     """Process queued submissions strictly sequentially."""
     while True:
         message = await queue.get()
+        if isinstance(message, _QueuedCommand):
+            # Commands run here, not in the prompt loop: the bar is up, so a
+            # handler that prompts can suspend it, and the command lands
+            # between turns instead of inside one.
+            try:
+                await message.handler(message.argument)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("Console command failed")
+            continue
         state.working = True
         state.working_since = state.activity.clock()
         invalidate()

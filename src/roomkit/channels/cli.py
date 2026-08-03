@@ -23,8 +23,9 @@ from __future__ import annotations
 import asyncio
 import concurrent.futures
 import json
+import logging
 import sys
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from typing import TYPE_CHECKING, Any
 
 from roomkit.channels.base import Channel
@@ -40,6 +41,29 @@ if TYPE_CHECKING:
     from roomkit.console._activity import ActivityTracker
     from roomkit.console._chat import PinnedStreamRenderer
     from roomkit.core.framework import RoomKit
+
+logger = logging.getLogger("roomkit.channels.cli")
+
+CommandHandler = Callable[[str], Awaitable[None]]
+"""A local console command. Receives the rest of the line; awaited by the loop."""
+
+
+def match_command(
+    commands: Mapping[str, CommandHandler] | None,
+    line: str,
+) -> tuple[CommandHandler, str] | None:
+    """Match *line* against *commands* on its first word.
+
+    Returns the handler and the remaining argument, or ``None`` when the line
+    is not a command and should travel to the room as a message.
+    """
+    if not commands:
+        return None
+    name, _, argument = line.partition(" ")
+    handler = commands.get(name)
+    if handler is None:
+        return None
+    return handler, argument.strip()
 
 
 class CLIChannel(Channel):
@@ -329,6 +353,7 @@ class CLIChannel(Channel):
         sender_id: str = "user",
         welcome: str | None = None,
         content_factory: Callable[[str], EventContent | None] | None = None,
+        commands: Mapping[str, CommandHandler] | None = None,
     ) -> None:
         """Run an interactive input loop.
 
@@ -351,6 +376,15 @@ class CLIChannel(Channel):
                 example can return richer content (e.g. an image attachment)
                 without reimplementing this loop. Returning ``None`` skips the
                 line (e.g. a local slash-command already handled by the hook).
+            commands: Local commands keyed by their first word (``"/model"``,
+                ``":q"`` — the prefix is yours). A matching line never reaches
+                ``content_factory`` or the room; its handler is **awaited by
+                the loop**, in submission order, with the rest of the line as
+                its argument. That ordering is the point: a handler may prompt
+                (:func:`roomkit.console.terminal_input`,
+                :func:`~roomkit.console.terminal_select`) without racing the
+                loop for stdin, and a command queued behind a message runs
+                after that message's turn, never inside it.
 
         In console mode on a real terminal, this runs the pinned-bar shell:
         the input bar stays at the bottom, responses stream above it, and the
@@ -373,12 +407,18 @@ class CLIChannel(Channel):
                     sender_id=sender_id,
                     banner=banner,
                     content_factory=content_factory,
+                    commands=commands,
                 )
                 return
         elif welcome:
             print(welcome)
 
-        await self._run_classic(kit, sender_id=sender_id, content_factory=content_factory)
+        await self._run_classic(
+            kit,
+            sender_id=sender_id,
+            content_factory=content_factory,
+            commands=commands,
+        )
 
     async def _run_classic(
         self,
@@ -386,6 +426,7 @@ class CLIChannel(Channel):
         *,
         sender_id: str,
         content_factory: Callable[[str], EventContent | None] | None,
+        commands: Mapping[str, CommandHandler] | None = None,
     ) -> None:
         """Blocking-input sequential loop (classic mode and non-TTY fallback)."""
         loop = asyncio.get_running_loop()
@@ -417,6 +458,17 @@ class CLIChannel(Channel):
                 continue
             if stripped.lower() in ("quit", "exit", "q"):
                 break
+
+            match = match_command(commands, stripped)
+            if match is not None:
+                handler, argument = match
+                try:
+                    await handler(argument)
+                except asyncio.CancelledError:
+                    break
+                except Exception:
+                    logger.exception("Console command failed: %s", stripped)
+                continue
 
             if content_factory:
                 content = content_factory(stripped)

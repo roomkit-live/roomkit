@@ -440,6 +440,42 @@ class TestRun:
         assert call_args.sender_id == "user"
         assert call_args.content.body == "hello world"
 
+    async def test_command_is_awaited_by_the_loop(self) -> None:
+        # The classic loop reads stdin itself, so a command that prompts must
+        # run *between* reads — awaited here, never spawned beside the loop.
+        cli = CLIChannel("cli", use_color=False)
+        kit = AsyncMock()
+        kit.process_inbound = AsyncMock()
+        order: list[str] = []
+
+        async def agents(argument: str) -> None:
+            order.append(f"command:{argument}")
+
+        def reader(_prompt: str = "") -> str:
+            order.append("read")
+            return next(inputs)
+
+        inputs = iter(["/agents pick", "hello", "quit"])
+
+        with patch("builtins.input", side_effect=reader):
+            await cli.run(kit, room_id="room-1", commands={"/agents": agents})
+
+        assert order == ["read", "command:pick", "read", "read"]
+        assert kit.process_inbound.call_args[0][0].content.body == "hello"
+
+    async def test_command_failure_does_not_end_the_loop(self) -> None:
+        cli = CLIChannel("cli", use_color=False)
+        kit = AsyncMock()
+        kit.process_inbound = AsyncMock()
+
+        async def boom(_argument: str) -> None:
+            raise RuntimeError("nope")
+
+        with patch("builtins.input", side_effect=iter(["/boom", "hello", "quit"])):
+            await cli.run(kit, room_id="room-1", commands={"/boom": boom})
+
+        assert kit.process_inbound.call_args[0][0].content.body == "hello"
+
     async def test_skips_empty_lines(self) -> None:
         cli = CLIChannel("cli", use_color=False)
         kit = AsyncMock()

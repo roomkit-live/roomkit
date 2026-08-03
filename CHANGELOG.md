@@ -41,6 +41,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`CLIChannel.run(commands={...})` — local commands the loop awaits.** A
+  line whose first word matches a key never reaches `content_factory` or the
+  room; its async handler runs with the rest of the line as its argument,
+  **in submission order**. That ordering is the feature: a handler may prompt
+  (`terminal_input`, `terminal_select`) without racing the loop for stdin,
+  and a command typed behind a message runs after that message's turn rather
+  than inside it. Under the pinned bar commands ride the submission queue (so
+  the bar is up and can be suspended for a prompt); in the classic loop they
+  are awaited between reads. Previously an example had to spawn such work as
+  a detached task, which raced the classic loop's own `input()` — both ACP
+  examples now use `commands=`. The prefix is yours: `"/model"`, `":q"`,
+  anything.
+
 - **`roomkit.console.terminal_select()` — an inline keyboard menu, the twin
   of `terminal_input()`.** Ask the user to pick one option mid-session:
   ↑/↓ to move, Enter to choose, Esc to cancel. Under the pinned-bar shell it

@@ -269,14 +269,7 @@ async def main(args: argparse.Namespace) -> None:
             options.append((spec.channel_id, f"@{spec.channel_id}{state}"))
         return options
 
-    def show_agents() -> None:
-        lines = ["", "Agents in the room:"]
-        for value, label in agent_options():
-            lines.append(f"  {'▸' if value == addressed.agent_id else ' '} {label}")
-        lines.append("")
-        print("\n".join(lines))
-
-    async def pick_agent() -> None:
+    async def pick_agent(_argument: str = "") -> None:
         """Choose the addressed agent from a keyboard menu."""
         chosen = await terminal_select(
             agent_options(),
@@ -308,21 +301,7 @@ async def main(args: argparse.Namespace) -> None:
         print(f"\n@{addressed.agent_id} model: {values.get('model')}\n")
 
     def handle_line(line: str) -> TextContent | None:
-        """Console commands and @mentions, before anything reaches a Room."""
-        if line == "/agents":
-            # The keyboard menu needs the pinned shell: it is the only mode
-            # where the bar can be suspended so the picker alone reads the
-            # keys. The classic loop reads stdin itself, and a picker spawned
-            # beside it would race for the same line — so print instead.
-            if console_enabled():
-                asyncio.get_running_loop().create_task(pick_agent())
-            else:
-                show_agents()
-            return None
-        if line.startswith("/model"):
-            _, _, requested = line.partition(" ")
-            asyncio.get_running_loop().create_task(switch_model(requested.strip()))
-            return None
+        """@mentions, before anything reaches a Room. Commands are separate."""
         if line.startswith("@"):
             mention, _, rest = line[1:].partition(" ")
             target = _resolve_agent(mention)
@@ -345,6 +324,9 @@ async def main(args: argparse.Namespace) -> None:
             room_id=room_id,
             sender_id="you",
             content_factory=handle_line,
+            # Awaited by the loop, in submission order — which is what lets
+            # pick_agent() open a menu without racing the loop for stdin.
+            commands={"/agents": pick_agent, "/model": switch_model},
             welcome=(
                 f"Two coding agents in one room: {', '.join(f'@{s.channel_id}' for s in AGENTS)}\n"
                 f"Workspace: {workspace}\n"

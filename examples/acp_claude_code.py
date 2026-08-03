@@ -50,7 +50,6 @@ from shared import console_enabled, existing_directory, non_negative_int, setup_
 
 from roomkit import ACPChannel, ChannelCategory, CLIChannel, RoomKit
 from roomkit.console import terminal_input
-from roomkit.models.event import TextContent
 from roomkit.tools import ExternalToolHandler, ToolDecision
 
 CLAUDE_AGENT_ACP_VERSION = "0.61.0"
@@ -162,20 +161,13 @@ async def main(args: argparse.Namespace) -> None:
         category=ChannelCategory.INTELLIGENCE,
     )
 
-    def handle_line(line: str) -> TextContent | None:
-        """Intercept ``/model`` before it reaches the agent as a prompt.
+    async def switch_model(requested: str) -> None:
+        """Handle ``/model`` here instead of letting it reach the agent.
 
         Claude Code answers its own ``/model`` locally and tells nobody, so
         the session config RoomKit tracks (and the status bar reading it)
         would go stale. Routing the switch through ACP keeps both honest.
         """
-        if not line.startswith("/model"):
-            return TextContent(body=line)
-        _, _, requested = line.partition(" ")
-        asyncio.get_running_loop().create_task(switch_model(requested.strip()))
-        return None
-
-    async def switch_model(requested: str) -> None:
         options = next(
             (item for item in claude.config_options(room_id) if item.get("id") == "model"),
             None,
@@ -196,7 +188,9 @@ async def main(args: argparse.Namespace) -> None:
         await cli.run(
             kit,
             room_id=room_id,
-            content_factory=handle_line,
+            # Awaited by the loop, in submission order: the switch lands
+            # between turns instead of racing the one it would affect.
+            commands={"/model": switch_model},
             welcome=(
                 f"Claude Code via ACP {CLAUDE_AGENT_ACP_VERSION}\n"
                 f"Workspace: {workspace}\n"

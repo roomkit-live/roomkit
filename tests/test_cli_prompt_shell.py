@@ -222,6 +222,92 @@ class TestShellShutdown:
         assert active_shell_app() is None
 
 
+class TestCommands:
+    async def test_command_runs_and_never_reaches_the_room(self) -> None:
+        cli = CLIChannel("cli", console=True)
+        kit = AsyncMock()
+        kit.process_inbound = AsyncMock()
+        seen: list[str] = []
+
+        async def model(argument: str) -> None:
+            seen.append(argument)
+
+        with create_pipe_input() as pipe:
+            pipe.send_text("/model sonnet\n")
+            pipe.send_text("quit\n")
+            await _run_shell(cli, kit, pipe, commands={"/model": model})
+
+        assert seen == ["sonnet"]
+        kit.process_inbound.assert_not_called()
+
+    async def test_unmatched_line_still_reaches_the_room(self) -> None:
+        cli = CLIChannel("cli", console=True)
+        kit = AsyncMock()
+        kit.process_inbound = AsyncMock()
+
+        async def never(argument: str) -> None:
+            raise AssertionError("must not run")
+
+        with create_pipe_input() as pipe:
+            pipe.send_text("/modelling clay\n")  # not the /model command
+            pipe.send_text("quit\n")
+            await _run_shell(cli, kit, pipe, commands={"/model": never})
+
+        assert kit.process_inbound.call_args[0][0].content.body == "/modelling clay"
+
+    async def test_command_waits_for_the_turn_queued_before_it(self) -> None:
+        # The ordering that removes the race: a command lands between turns,
+        # never inside one.
+        cli = CLIChannel("cli", console=True)
+        order: list[str] = []
+        turn_started = asyncio.Event()
+
+        async def process(_message) -> None:
+            order.append("turn-start")
+            turn_started.set()
+            await asyncio.sleep(0.05)
+            order.append("turn-end")
+
+        async def command(_argument: str) -> None:
+            order.append("command")
+
+        kit = AsyncMock()
+        kit.process_inbound = AsyncMock(side_effect=process)
+
+        with create_pipe_input() as pipe:
+            pipe.send_text("hello\n")
+            pipe.send_text("/after\n")
+
+            async def quit_when_done() -> None:
+                for _ in range(200):
+                    await asyncio.sleep(0.01)
+                    if "command" in order:
+                        break
+                pipe.send_text("quit\n")
+
+            quitter = asyncio.create_task(quit_when_done())
+            await _run_shell(cli, kit, pipe, commands={"/after": command})
+            await quitter
+
+        assert order == ["turn-start", "turn-end", "command"]
+
+    async def test_failing_command_does_not_kill_the_shell(self) -> None:
+        cli = CLIChannel("cli", console=True)
+        kit = AsyncMock()
+        kit.process_inbound = AsyncMock()
+
+        async def boom(_argument: str) -> None:
+            raise RuntimeError("nope")
+
+        with create_pipe_input() as pipe:
+            pipe.send_text("/boom\n")
+            pipe.send_text("still here\n")
+            pipe.send_text("quit\n")
+            await _run_shell(cli, kit, pipe, commands={"/boom": boom})
+
+        assert kit.process_inbound.call_args[0][0].content.body == "still here"
+
+
 class TestStatusBar:
     def _state(self, **kwargs) -> _ShellState:
         tracker = ActivityTracker(clock=lambda: 100.0)
