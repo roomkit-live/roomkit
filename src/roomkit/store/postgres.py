@@ -382,8 +382,9 @@ class PostgresStore(ConversationStore):
                 await conn.execute(
                     "INSERT INTO rooms "
                     "(id, organization_id, status, event_count, latest_index,"
-                    " metadata, timers, created_at, updated_at, closed_at)"
-                    " VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
+                    " metadata, timers, agent_response_policy,"
+                    " created_at, updated_at, closed_at)"
+                    " VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
                     room.id,
                     room.organization_id,
                     room.status.value,
@@ -391,6 +392,7 @@ class PostgresStore(ConversationStore):
                     room.latest_index,
                     room.metadata,
                     room.timers.model_dump(mode="json"),
+                    room.agent_response_policy.value,
                     room.created_at,
                     room.updated_at,
                     room.closed_at,
@@ -410,7 +412,8 @@ class PostgresStore(ConversationStore):
             async with self._acquire() as conn:
                 await conn.execute(
                     "UPDATE rooms SET organization_id=$2, status=$3, event_count=$4,"
-                    " latest_index=$5, metadata=$6, timers=$7, updated_at=$8, closed_at=$9"
+                    " latest_index=$5, metadata=$6, timers=$7, agent_response_policy=$8,"
+                    " updated_at=$9, closed_at=$10"
                     " WHERE id=$1",
                     room.id,
                     room.organization_id,
@@ -419,6 +422,7 @@ class PostgresStore(ConversationStore):
                     room.latest_index,
                     room.metadata,
                     room.timers.model_dump(mode="json"),
+                    room.agent_response_policy.value,
                     room.updated_at,
                     room.closed_at,
                 )

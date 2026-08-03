@@ -14,6 +14,7 @@ from roomkit.core.exceptions import (
 )
 from roomkit.core.mixins.helpers import HelpersMixin
 from roomkit.models.enums import (
+    AgentResponsePolicy,
     ChannelCategory,
     EventType,
     HookTrigger,
@@ -56,6 +57,7 @@ class RoomLifecycleHost(Protocol):
     _lock_manager: RoomLockManager
     _room_recorder_mgr: RoomRecorderManager
     _default_orchestration: Orchestration | None
+    _default_agent_response_policy: AgentResponsePolicy
     _channels: dict[str, Channel]
 
 
@@ -69,6 +71,7 @@ class RoomLifecycleMixin(HelpersMixin):
     _lock_manager: RoomLockManager
     _room_recorder_mgr: RoomRecorderManager
     _default_orchestration: Orchestration | None
+    _default_agent_response_policy: AgentResponsePolicy
     _channels: dict[str, Channel]
 
     # Cross-mixin methods — attribute annotations avoid MRO shadowing
@@ -83,6 +86,7 @@ class RoomLifecycleMixin(HelpersMixin):
         orchestration: Orchestration | None | Any = _ORCHESTRATION_UNSET,
         organization_id: str | None = None,
         timers: RoomTimers | None = None,
+        agent_response_policy: AgentResponsePolicy | None = None,
     ) -> Room:
         """Create a new room.
 
@@ -108,6 +112,11 @@ class RoomLifecycleMixin(HelpersMixin):
             organization_id=organization_id,
             metadata=metadata or {},
             timers=timers or RoomTimers(),
+            agent_response_policy=(
+                agent_response_policy
+                if agent_response_policy is not None
+                else self._default_agent_response_policy
+            ),
         )
         result = await self._store.create_room(room)
         # Start room-level media recorders

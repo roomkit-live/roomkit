@@ -105,6 +105,7 @@ from roomkit.models.delivery import (
 )
 from roomkit.models.enums import (
     Access,
+    AgentResponsePolicy,
     ChannelCategory,
     ChannelType,
     EventStatus,
@@ -262,6 +263,7 @@ __all__ = [
     "WhatsAppPersonalChannel",
     # Enums (core)
     "Access",
+    "AgentResponsePolicy",
     "ChannelCategory",
     "ChannelType",
     "EventStatus",

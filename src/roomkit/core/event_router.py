@@ -19,6 +19,7 @@ from roomkit.models.channel import ChannelBinding, ChannelOutput
 from roomkit.models.context import RoomContext
 from roomkit.models.enums import (
     Access,
+    AgentResponsePolicy,
     ChannelCategory,
     ChannelDirection,
     ChannelMediaType,
@@ -71,12 +72,22 @@ async def _aclose_stream(stream: Any) -> None:
         await aclose()
 
 
-def _solicits(event: RoomEvent, channel_id: str) -> bool:
+def _solicits(
+    event: RoomEvent,
+    channel_id: str,
+    *,
+    source_is_agent: bool = False,
+    policy: AgentResponsePolicy = AgentResponsePolicy.AGENT_CHAIN,
+) -> bool:
     """Is this intelligence channel asked to act on *event*? (RFC §19.3)
 
     An explicit address decides, ahead of any routing decision (§19.4 step
     0): a router cannot override what the sender asked for. With no address,
-    the router's stamp decides as before, and with neither, everyone acts.
+    the room's policy governs an agent's own output — under
+    ``ADDRESSED_ONLY`` it solicits nobody, which is what keeps a room of
+    independent agents from answering each other down to the chain-depth
+    limit. Otherwise the router's stamp decides, and with neither, everyone
+    acts.
 
     Solicitation only — the caller has already resolved *visibility*, which
     is a separate question this must not re-answer.
@@ -84,6 +95,9 @@ def _solicits(event: RoomEvent, channel_id: str) -> bool:
     addressed = event.addressed_to
     if addressed is not None:
         return channel_id in addressed
+
+    if source_is_agent and policy is AgentResponsePolicy.ADDRESSED_ONLY:
+        return False
 
     metadata = event.metadata or {}
     routed_to = metadata.get("_routed_to")
@@ -324,7 +338,13 @@ class EventRouter:
                     # routing decision (RFC §19.3, §19.4 step 0). Transport
                     # delivery above is untouched: addressing narrows who is
                     # asked, never who may see.
-                    if not _solicits(transcoded_event, binding.channel_id):
+                    if not _solicits(
+                        transcoded_event,
+                        binding.channel_id,
+                        source_is_agent=source_binding.category
+                        == ChannelCategory.INTELLIGENCE,
+                        policy=context.room.agent_response_policy,
+                    ):
                         target_results.append(tr)
                         return
 

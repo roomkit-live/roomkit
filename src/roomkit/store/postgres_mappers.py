@@ -32,6 +32,7 @@ def _row_to_room(row: Any) -> Room:
         timers=RoomTimers.model_validate(
             json.loads(row["timers"]) if isinstance(row["timers"], str) else row["timers"]
         ),
+        agent_response_policy=row["agent_response_policy"],
         created_at=row["created_at"],
         updated_at=row["updated_at"],
         closed_at=row["closed_at"],

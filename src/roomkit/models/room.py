@@ -7,7 +7,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from roomkit.models.enums import RoomStatus
+from roomkit.models.enums import AgentResponsePolicy, RoomStatus
 
 
 class RoomTimers(BaseModel):
@@ -28,6 +28,10 @@ class Room(BaseModel):
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     closed_at: datetime | None = None
     timers: RoomTimers = Field(default_factory=RoomTimers)
+    # What an agent's own output solicits here (RFC §19.3.1). Room state, not
+    # a construction option: broadcast happens in whichever worker owns the
+    # delivery lane, and it must reach the same verdict as every other.
+    agent_response_policy: AgentResponsePolicy = AgentResponsePolicy.AGENT_CHAIN
     metadata: dict[str, Any] = Field(default_factory=dict)
     event_count: int = Field(default=0, ge=0)
     latest_index: int = Field(default=0, ge=0)

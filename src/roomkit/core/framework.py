@@ -69,6 +69,7 @@ from roomkit.core.transcoder import DefaultContentTranscoder
 from roomkit.identity.base import IdentityResolver
 from roomkit.models.channel import RateLimit
 from roomkit.models.enums import (
+    AgentResponsePolicy,
     ChannelType,
     EventStatus,
     EventType,
@@ -143,6 +144,7 @@ class RoomKit(
         lock_manager: RoomLockManager | None = None,
         realtime: RealtimeBackend | None = None,
         max_chain_depth: int = 5,
+        agent_response_policy: AgentResponsePolicy = AgentResponsePolicy.AGENT_CHAIN,
         identity_timeout: float = 10.0,
         process_timeout: float = 30.0,
         stt: STTProvider | None = None,
@@ -239,6 +241,7 @@ class RoomKit(
         self._identity_resolver = identity_resolver
         self._identity_channel_types = identity_channel_types
         self._max_chain_depth = max_chain_depth
+        self._default_agent_response_policy = agent_response_policy
         self._identity_timeout = identity_timeout
         self._process_timeout = process_timeout
         self._channels: dict[str, Channel] = {}

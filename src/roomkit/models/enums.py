@@ -117,6 +117,20 @@ class Access(StrEnum):
 
 
 @unique
+class AgentResponsePolicy(StrEnum):
+    """What an agent's own output solicits in a room (RFC §19.3.1)."""
+
+    AGENT_CHAIN = "agent_chain"
+    """Every eligible intelligence channel — agents answer each other,
+    bounded by ``max_chain_depth``. The default, and the behaviour of every
+    release before addressing existed."""
+
+    ADDRESSED_ONLY = "addressed_only"
+    """Only the channels an agent explicitly addressed. A room of
+    independent agents, each answering the human and none the others."""
+
+
+@unique
 class Visibility(StrEnum):
     """Known scope keywords for an event's ``visibility`` field.
 

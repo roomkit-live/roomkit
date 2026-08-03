@@ -104,6 +104,8 @@ CREATE TABLE IF NOT EXISTS rooms (
     delivered_index INTEGER NOT NULL DEFAULT -1,
     metadata        JSONB NOT NULL DEFAULT '{}',
     timers          JSONB NOT NULL DEFAULT '{}',
+    -- What an agent's own output solicits here (RFC §19.3.1).
+    agent_response_policy TEXT NOT NULL DEFAULT 'agent_chain',
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     closed_at       TIMESTAMPTZ
@@ -129,6 +131,10 @@ BEGIN
         UPDATE rooms SET delivered_index = latest_index WHERE event_count > 0;
     END IF;
 END $$;
+-- Additive: the default IS the behaviour every existing room ran under, so
+-- there is nothing to backfill and re-running is a no-op.
+ALTER TABLE rooms ADD COLUMN IF NOT EXISTS agent_response_policy
+    TEXT NOT NULL DEFAULT 'agent_chain';
 CREATE INDEX IF NOT EXISTS idx_rooms_org ON rooms(organization_id);
 CREATE INDEX IF NOT EXISTS idx_rooms_status ON rooms(status);
 CREATE INDEX IF NOT EXISTS idx_rooms_updated ON rooms(updated_at DESC);

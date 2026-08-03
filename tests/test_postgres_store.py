@@ -128,6 +128,7 @@ def _room_row(room: Room) -> dict:
         "delivered_index": room.delivered_index,
         "metadata": room.metadata,
         "timers": room.timers.model_dump(mode="json"),
+        "agent_response_policy": room.agent_response_policy.value,
         "created_at": room.created_at,
         "updated_at": room.updated_at,
         "closed_at": room.closed_at,
