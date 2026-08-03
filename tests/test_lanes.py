@@ -266,6 +266,28 @@ async def test_close_aborts_pending_work_and_wakes_waiters() -> None:
     await asyncio.wait_for(cascade.wait(), timeout=1.0)
     assert cascade.cancelled is not None
     assert host.executed == []
+    assert cascade._pending == 0  # no unit left behind by the aborted round
+
+
+@pytest.mark.asyncio
+async def test_close_releases_the_delivery_it_cancelled_mid_execution() -> None:
+    """One in-flight delivery and nothing else queued.
+
+    The entry is off the queues while it executes, so ``_abort_pending`` can
+    no longer see it — only the round's own cleanup can release its unit.
+    With a sibling entry still queued the bug hides: aborting the sibling
+    sets the cascade's event for everyone.
+    """
+    store, host, registry, _ = await make_rig(close_grace=0.05)
+    host.execute_gate = asyncio.Event()  # never set: execution hangs
+    cascade = DeliveryCascade(ROOM, reentry_budget=10)
+    enqueue_exec(registry, cascade, "e0", 0)
+    await asyncio.sleep(0.05)  # let the lane dequeue it and enter _execute
+    await asyncio.wait_for(registry.aclose(), timeout=2.0)
+    await asyncio.wait_for(cascade.wait(), timeout=1.0)
+    assert cascade.cancelled == "lane_cancelled"
+    assert cascade._pending == 0
+    assert host.executed == []
 
 
 @pytest.mark.asyncio

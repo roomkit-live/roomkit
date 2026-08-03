@@ -235,6 +235,19 @@ class CursorEntry:
 
 
 @dataclass(slots=True)
+class _Executed:
+    """A dequeued entry and, once it returns, its execution outcome.
+
+    The record is what *owns* an entry between the queues and ``_finish``:
+    an entry pulled off ``_indexed`` / ``_unindexed`` belongs to no queue any
+    more, so this is the only place a cancelled round can find it again.
+    """
+
+    entry: ExecEntry
+    result: Any = None
+
+
+@dataclass(slots=True)
 class LaneConfig:
     """Tuning for the delivery lanes (see ``RoomKit.__init__``)."""
 
@@ -466,19 +479,19 @@ class RoomDeliveryLane:
         if not force_skip and not self._has_turn(delivered):
             return progressed
 
-        executed: list[tuple[ExecEntry, Any]] = []
+        executed: list[_Executed] = []
         self._busy = True
         try:
             progressed |= await self._claimed_round(executed, force_skip=force_skip)
             while executed:
-                entry, result = executed.pop(0)
-                await self._finish(entry, result)
+                run = executed.pop(0)
+                await self._finish(run.entry, run.result)
         finally:
             self._busy = False
             # A cancellation mid-round must not leak cascade units: every
             # entry pulled off the queues but not finished is aborted here.
-            for entry, _ in executed:
-                self._drop_entry(entry, "lane_cancelled")
+            for run in executed:
+                self._drop_entry(run.entry, "lane_cancelled")
         return progressed
 
     def _has_turn(self, delivered: int) -> bool:
@@ -499,9 +512,7 @@ class RoomDeliveryLane:
             progressed = True
         return progressed
 
-    async def _claimed_round(
-        self, executed: list[tuple[ExecEntry, Any]], *, force_skip: bool
-    ) -> bool:
+    async def _claimed_round(self, executed: list[_Executed], *, force_skip: bool) -> bool:
         progressed = False
         async with self._claims.locked(delivery_claim_key(self.room_id)):
             delivered = await self._read_cursor()
@@ -509,14 +520,13 @@ class RoomDeliveryLane:
                 progressed |= self._drop_stale(delivered)
 
                 while self._unindexed and self._unindexed[0].after_index <= delivered:
-                    entry = self._unindexed.popleft()
-                    executed.append((entry, await self._execute(entry)))
+                    await self._execute_owned(self._unindexed.popleft(), executed)
                     progressed = True
 
                 nxt = self._indexed.pop(delivered + 1, None)
                 if nxt is not None:
                     if isinstance(nxt, ExecEntry):
-                        executed.append((nxt, await self._execute(nxt)))
+                        await self._execute_owned(nxt, executed)
                     await self._host._store.advance_delivered_index(self.room_id, delivered + 1)
                     delivered += 1
                     progressed = True
@@ -568,6 +578,18 @@ class RoomDeliveryLane:
             needs.append(min(e.after_index for e in self._unindexed))
         candidates = [n for n in needs if n > delivered]
         return min(candidates) if candidates else delivered
+
+    async def _execute_owned(self, entry: ExecEntry, executed: list[_Executed]) -> None:
+        """Execute a dequeued entry, recorded in ``executed`` BEFORE the await.
+
+        Recording after the call would evaluate the await first: a
+        cancellation there (``aclose`` cancelling the executor) leaves the
+        entry in no queue and in no record, its cascade unit forever
+        unreleased and every waiter on that cascade hung.
+        """
+        run = _Executed(entry)
+        executed.append(run)
+        run.result = await self._execute(entry)
 
     async def _execute(self, entry: ExecEntry) -> Any:
         """Run one plan's delivery set; a failure is recorded, never raised.
