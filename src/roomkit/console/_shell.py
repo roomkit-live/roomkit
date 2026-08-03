@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Any
 
 from prompt_toolkit import PromptSession
 from prompt_toolkit.application import Application
+from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.patch_stdout import patch_stdout
 from prompt_toolkit.styles import Style
 
@@ -179,6 +180,7 @@ async def run_console_shell(
             ("class:toolbar-text", _toolbar_text(state, queue.qsize())),
         ],
         style=_PT_STYLE if channel._use_color else _PT_STYLE_PLAIN,
+        key_bindings=_interrupt_binding(state),
         erase_when_done=True,
         input=input,
         output=output,
@@ -402,6 +404,31 @@ async def _consume(
             state.working = False
             state.working_since = None
             invalidate()
+
+
+def _interrupt_binding(state: _ShellState) -> KeyBindings:
+    """Esc stops the turn in flight, and only that.
+
+    Not Ctrl-C, which already ends the session: interrupting a long answer
+    and leaving are different intentions and deserve different keys. What the
+    agent had already said stays — it is on screen, and the pipeline persists
+    the partial segment on cancellation. The queue keeps draining, so a
+    message typed behind the interrupted turn still runs.
+
+    ``eager`` because a bare Escape is otherwise held as the prefix of a meta
+    sequence: without it the interrupt waits for a key that never comes.
+    """
+    keys = KeyBindings()
+
+    @keys.add("escape", eager=True)
+    def _interrupt(event: Any) -> None:
+        task = state.in_flight
+        if task is None or task.done():
+            return
+        logger.debug("Console interrupt: cancelling the in-flight turn")
+        task.cancel()
+
+    return keys
 
 
 def _toolbar_text(state: _ShellState, queued: int) -> str:

@@ -68,6 +68,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   from the column default, the behaviour it was already running under. An
   explicit address wins under either policy.
 
+- **Esc interrupts the turn in flight, and keeps what it already said.** In
+  console mode, Escape cancels the running `process_inbound` — not Ctrl-C,
+  which still ends the session: interrupting a long answer and leaving are
+  different intentions. The queue keeps draining, so a message typed behind
+  the interrupted turn still runs. What the agent had streamed is persisted
+  rather than lost: it is on the user's screen, so the timeline must hold it
+  too, or the room disagrees with what the human read and the agent's next
+  context is missing what it already said. The segment carries
+  `metadata["cancelled"] = True` so a reader can tell a finished answer from
+  a stopped one. Cancellation is **not** an error — nobody failed — so
+  ON_ERROR stays silent and the `CancelledError` propagates untouched.
+  Previously `CancelledError`, a `BaseException`, slipped past the streaming
+  path's `except Exception` and took the partial text with it.
+
 - **`CLIChannel.run(status_extra=...)` — the application's own status-bar
   segment.** Asked fresh on every render, it sits between the model and the
   live status: the multi-agent example shows `→ @codex`, so the bar answers

@@ -222,6 +222,63 @@ class TestShellShutdown:
         assert active_shell_app() is None
 
 
+class TestInterrupt:
+    async def test_escape_cancels_the_turn_and_keeps_the_session(self) -> None:
+        cli = CLIChannel("cli", console=True)
+        started = asyncio.Event()
+        cancelled = asyncio.Event()
+        processed: list[str] = []
+
+        async def process(message) -> None:
+            processed.append(message.content.body)
+            if message.content.body != "long task":
+                return
+            started.set()
+            try:
+                await asyncio.sleep(3600)
+            except asyncio.CancelledError:
+                cancelled.set()
+                raise
+
+        kit = AsyncMock()
+        kit.process_inbound = AsyncMock(side_effect=process)
+
+        with create_pipe_input() as pipe:
+            pipe.send_text("long task\n")
+
+            async def interrupt_then_continue() -> None:
+                await asyncio.wait_for(started.wait(), 5)
+                pipe.send_text("\x1b")  # Esc — stop this turn, stay in session
+                await asyncio.wait_for(cancelled.wait(), 5)
+                pipe.send_text("still here\n")
+                for _ in range(200):
+                    await asyncio.sleep(0.01)
+                    if "still here" in processed:
+                        break
+                pipe.send_text("quit\n")
+
+            driver = asyncio.create_task(interrupt_then_continue())
+            await _run_shell(cli, kit, pipe)
+            await driver
+
+        assert cancelled.is_set()
+        # The queue keeps draining: Esc stopped a turn, not the session.
+        assert processed == ["long task", "still here"]
+
+    async def test_escape_with_nothing_running_is_harmless(self) -> None:
+        cli = CLIChannel("cli", console=True)
+        kit = AsyncMock()
+        kit.process_inbound = AsyncMock()
+
+        with create_pipe_input() as pipe:
+            pipe.send_text("\x1b")  # nothing in flight
+            pipe.send_text("hello\n")
+            pipe.send_text("quit\n")
+            await _run_shell(cli, kit, pipe)
+
+        assert kit.process_inbound.call_args[0][0].content.body == "hello"
+
+
 class TestAddressing:
     async def test_submission_carries_the_address(self) -> None:
         cli = CLIChannel("cli", console=True)

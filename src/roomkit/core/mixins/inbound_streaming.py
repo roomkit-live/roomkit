@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
@@ -173,18 +174,24 @@ class InboundStreamingMixin(HelpersMixin):
             if stored is not None:
                 persisted_events.append(stored)
 
-        async def _persist_text_segment() -> None:
+        async def _persist_text_segment(*, cancelled: bool = False) -> None:
             """Persist the accumulated text as a MESSAGE event.
 
             ``sr.response_metadata`` (AIContext.response_metadata captured at
             stream start) rides every MESSAGE segment — persisted before
             broadcast, so turn-level attribution lands in the stored row
             and in the stream_end frame without any post-hoc rewrite.
+
+            ``cancelled`` marks a segment cut short by an interrupted turn, so
+            a reader can tell a finished answer from one the user stopped.
             """
             if not accumulated_text:
                 return
             text = "".join(accumulated_text)
             accumulated_text.clear()
+            metadata = dict(sr.response_metadata or {})
+            if cancelled:
+                metadata["cancelled"] = True
             event = RoomEvent(
                 room_id=room_id,
                 source=_make_source(),
@@ -195,7 +202,7 @@ class InboundStreamingMixin(HelpersMixin):
                 visibility=visibility,
                 correlation_id=correlation_id,
                 parent_event_id=parent_event_id,
-                metadata=dict(sr.response_metadata or {}),
+                metadata=metadata,
             )
             # Run BEFORE_BROADCAST sync hooks on the assembled segment before it
             # is stored and re-broadcast, mirroring the locked path. The live
@@ -329,6 +336,16 @@ class InboundStreamingMixin(HelpersMixin):
             )
             try:
                 await channel.deliver_stream(segment_stream(), placeholder, binding, context)
+            except asyncio.CancelledError:
+                # A turn interrupted on purpose (the console's Esc). What was
+                # already streamed is on the user's screen, so the timeline
+                # MUST hold it too: dropping it would leave the room
+                # disagreeing with what the human read, and the agent's next
+                # context missing what it already said. Not an error — nobody
+                # failed — so ON_ERROR stays silent and the cancellation
+                # propagates untouched.
+                await _persist_text_segment(cancelled=True)
+                raise
             except Exception as exc:
                 stream_error = exc
                 self._log_stream_failure(
@@ -363,6 +380,9 @@ class InboundStreamingMixin(HelpersMixin):
             try:
                 async for _ in segment_stream():
                     pass
+            except asyncio.CancelledError:
+                await _persist_text_segment(cancelled=True)
+                raise
             except Exception as exc:
                 stream_error = exc
                 self._log_stream_failure(
