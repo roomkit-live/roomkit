@@ -55,6 +55,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`RoomKit(agent_response_policy=...)` / `create_room(...)` — a room says
+  whether its agents answer each other (RFC §19.3.1).** `AGENT_CHAIN` (the
+  default, unchanged) lets an agent's output solicit every eligible agent —
+  the chaining Appendix B.4 describes, bounded by `max_chain_depth`.
+  `ADDRESSED_ONLY` lets it solicit only the channels it addressed, which is
+  what a room of independent agents needs: without it, two agents answer each
+  other until the depth limit stops them. It lives on the `Room` and is
+  persisted, because a policy consulted on every broadcast must reach the
+  same verdict in whichever worker owns the delivery lane — `update_room()`
+  can change it later, and a room created before this reads `agent_chain`
+  from the column default, the behaviour it was already running under. An
+  explicit address wins under either policy.
+
+- **`CLIChannel.run(addressed_to=...)` — a submission can name who it asks.**
+  Given the submitted line, return channel ids (or `None` to leave the
+  message unaddressed). Evaluated after `content_factory`, so a line that
+  switched which agent you are talking to is already reflected. The
+  multi-agent example uses it with `@codex review hello.py` and a `/agent`
+  picker — and lost its `ConversationRouter`, its two routing rules and its
+  routing predicate in the process, 69 lines out for 37 in.
+
 - **Event addressing — `RoomEvent.addressed_to` / `InboundMessage.addressed_to`
   (RFC §19.3).** Names the intelligence channels *asked to act* on an event.
   It is **not** visibility: `visibility` is configured on a binding and says
