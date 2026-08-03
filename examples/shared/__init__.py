@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from .args import existing_directory, non_negative_int
 from .audio import (
     build_aec,
     build_debug_taps,
@@ -28,7 +29,9 @@ __all__ = [
     "build_vad",
     "console_enabled",
     "env_bool",
+    "existing_directory",
     "log_tool_call",
+    "non_negative_int",
     "os_info",
     "require_env",
     "run_until_stopped",

@@ -26,9 +26,12 @@ Run with:
     uv run python examples/acp_claude_code.py
     uv run python examples/acp_claude_code.py --workspace /path/to/project
     uv run python examples/acp_claude_code.py --thinking-tokens 0  # faster, no reasoning
+    uv run python examples/acp_claude_code.py --model sonnet       # pin at startup
     CONSOLE=1 uv run python examples/acp_claude_code.py  # branded console mode
 
-Type a coding request at the prompt. Type ``quit`` (or Ctrl+D) to exit.
+Type a coding request at the prompt. ``/model`` shows the running model and
+the available ones, ``/model sonnet`` switches. Type ``quit`` (or Ctrl+D) to
+exit.
 """
 
 from __future__ import annotations
@@ -43,10 +46,11 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from shared import console_enabled, setup_logging
+from shared import console_enabled, existing_directory, non_negative_int, setup_logging
 
 from roomkit import ACPChannel, ChannelCategory, CLIChannel, RoomKit
 from roomkit.console import terminal_input
+from roomkit.models.event import TextContent
 from roomkit.tools import ExternalToolHandler, ToolDecision
 
 CLAUDE_AGENT_ACP_VERSION = "0.61.0"
@@ -114,14 +118,16 @@ class TerminalPermissionHandler(ExternalToolHandler):
 
 
 async def main(args: argparse.Namespace) -> None:
-    workspace = args.workspace.expanduser().resolve()
-    if not workspace.is_dir():
-        raise ValueError(f"Workspace does not exist or is not a directory: {workspace}")
+    workspace = args.workspace
 
     agent_env: dict[str, str] = {}
     if api_key := os.environ.get("ANTHROPIC_API_KEY"):
         agent_env["ANTHROPIC_API_KEY"] = api_key
     agent_env["MAX_THINKING_TOKENS"] = str(args.thinking_tokens)
+    if args.model:
+        # Highest-priority model pin for claude-agent-acp, read when the
+        # session opens; /model switches it afterwards.
+        agent_env["ANTHROPIC_MODEL"] = args.model
 
     kit = RoomKit()
     # console mode subsumes markdown; CONSOLE=1 adds the branded banner.
@@ -156,16 +162,48 @@ async def main(args: argparse.Namespace) -> None:
         category=ChannelCategory.INTELLIGENCE,
     )
 
+    def handle_line(line: str) -> TextContent | None:
+        """Intercept ``/model`` before it reaches the agent as a prompt.
+
+        Claude Code answers its own ``/model`` locally and tells nobody, so
+        the session config RoomKit tracks (and the status bar reading it)
+        would go stale. Routing the switch through ACP keeps both honest.
+        """
+        if not line.startswith("/model"):
+            return TextContent(body=line)
+        _, _, requested = line.partition(" ")
+        asyncio.get_running_loop().create_task(switch_model(requested.strip()))
+        return None
+
+    async def switch_model(requested: str) -> None:
+        options = next(
+            (item for item in claude.config_options(room_id) if item.get("id") == "model"),
+            None,
+        )
+        if not requested:
+            current = claude.session_config(room_id).get("model", "unknown")
+            choices = ", ".join(entry["value"] for entry in (options or {}).get("options", []))
+            print(f"\nModel: {current}\nAvailable: {choices or 'unknown until the first turn'}\n")
+            return
+        try:
+            values = await claude.set_config_option(room_id, "model", requested)
+        except Exception as exc:  # the agent rejects unknown values
+            print(f"\nCould not switch model: {exc}\n")
+            return
+        print(f"\nModel: {values.get('model')}\n")
+
     try:
         await cli.run(
             kit,
             room_id=room_id,
+            content_factory=handle_line,
             welcome=(
                 f"Claude Code via ACP {CLAUDE_AGENT_ACP_VERSION}\n"
                 f"Workspace: {workspace}\n"
                 f"Thinking budget: {args.thinking_tokens} tokens\n"
                 "Tool permissions are requested in this terminal.\n"
-                "Type a request, or 'quit' to exit."
+                "Type a request, '/model [name]' to see or switch models, "
+                "or 'quit' to exit."
             ),
         )
     finally:
@@ -178,26 +216,28 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--workspace",
-        type=Path,
+        type=existing_directory,
         default=Path.cwd(),
         help="Project directory exposed to Claude Code (default: current directory).",
     )
     parser.add_argument(
+        "--model",
+        default=None,
+        help="Model the agent starts on (alias or id, e.g. 'sonnet'); /model switches it.",
+    )
+    parser.add_argument(
         "--thinking-tokens",
-        type=_non_negative_int,
+        type=non_negative_int,
         default=1024,
         help="Visible Claude reasoning budget; 0 disables it (default: 1024).",
     )
     return parser.parse_args()
 
 
-def _non_negative_int(value: str) -> int:
-    parsed = int(value)
-    if parsed < 0:
-        raise argparse.ArgumentTypeError("must be zero or greater")
-    return parsed
-
-
 if __name__ == "__main__":
     setup_logging("acp_claude_code")
-    asyncio.run(main(_parse_args()))
+    try:
+        asyncio.run(main(_parse_args()))
+    except KeyboardInterrupt:
+        # Ctrl-C is how you leave; a traceback is not a goodbye.
+        pass

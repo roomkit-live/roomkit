@@ -23,6 +23,8 @@ from roomkit.channels._acp_client import (
     ACPConnectionMixin,
     _absolute_path,
     _ACPClient,
+    _config_values,
+    _model_dump,
     _TurnDone,
     _TurnState,
 )
@@ -48,6 +50,9 @@ if TYPE_CHECKING:
     from roomkit.tools.external import ExternalToolHandler
 
 logger = logging.getLogger("roomkit.channels.acp")
+
+_SHUTDOWN_TIMEOUT = 5.0
+"""Seconds the agent gets to acknowledge cancellation and session closes."""
 
 
 class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
@@ -135,6 +140,7 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
         self._room_locks: dict[str, asyncio.Lock] = {}
         self._sessions: dict[str, str] = {}
         self._session_rooms: dict[str, str] = {}
+        self._session_options: dict[str, list[Any]] = {}
         self._turns: dict[str, _TurnState] = {}
         self._agent_info: dict[str, Any] | None = None
         self._handler_started = False
@@ -152,6 +158,71 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
             "agent": self._agent_info,
             "session_count": len(self._sessions),
         }
+
+    def session_config(self, room_id: str) -> dict[str, str | bool]:
+        """Current ACP session config values for *room_id*, keyed by config id.
+
+        Agents publish their tunables through this one list — ``model``,
+        ``mode``, ``effort``, vendor switches. Empty until the room's session
+        exists (sessions open on the first prompt).
+
+        Tracks what the agent announces. A switch made *inside* the agent
+        with its own slash command may not be announced at all — the ACP
+        bridge for Claude Code relays ``/model`` output as plain text and
+        sends no config update — so drive changes through
+        :meth:`set_config_option` when the value must stay observable.
+        """
+        return _config_values(self._options_for(room_id))
+
+    def config_options(self, room_id: str) -> list[dict[str, Any]]:
+        """The agent's session tunables for *room_id*, as ACP describes them.
+
+        Full descriptors — id, name, current value, available choices — for
+        surfaces that let a user pick one (a model picker). Empty until the
+        session exists. :meth:`session_config` is the values-only shortcut.
+        """
+        return [dict(option) for option in self._options_for(room_id)]
+
+    def _options_for(self, room_id: str) -> list[Any]:
+        session_id = self._sessions.get(room_id)
+        if session_id is None:
+            return []
+        return self._session_options.get(session_id, [])
+
+    async def set_config_option(
+        self,
+        room_id: str,
+        config_id: str,
+        value: str | bool,
+    ) -> dict[str, str | bool]:
+        """Set one session config option — ``set_config_option(room, "model", "opus")``.
+
+        Returns the full config mapping the agent reports back, so the caller
+        sees the value it landed on (agents resolve aliases) plus any option
+        the change invalidated. Opens the room's session if the first prompt
+        has not yet done so, which starts the agent process.
+        """
+        connection = await self._ensure_connection()
+        session_id = self._sessions.get(room_id)
+        if session_id is None:
+            # Session creation is serialized on the room's turn lock so a
+            # concurrent first prompt cannot open a second session. An
+            # existing session skips the lock deliberately: an in-flight turn
+            # holds it for its whole duration, and waiting for that would
+            # deadlock a caller running inside the turn (a tool handler).
+            lock = self._room_locks.setdefault(room_id, asyncio.Lock())
+            async with lock:
+                session_id = await self._session_for(room_id, connection)
+        response = await connection.set_config_option(
+            config_id=config_id,
+            session_id=session_id,
+            value=value,
+        )
+        options = _model_dump(getattr(response, "config_options", None))
+        self._session_options[session_id] = options if isinstance(options, list) else []
+        values = _config_values(self._session_options[session_id])
+        await self._publish_config_options(session_id, self._session_options[session_id], values)
+        return values
 
     def capabilities(self) -> ChannelCapabilities:
         return ChannelCapabilities(
@@ -219,11 +290,28 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
             return True
 
     async def close(self) -> None:
-        """Cancel turns, close sessions, and stop the ACP subprocess."""
+        """Cancel turns, close sessions, and stop the ACP subprocess.
+
+        Shutdown is bounded: the graceful ACP round trips share
+        ``_SHUTDOWN_TIMEOUT``, and the subprocess teardown runs even when
+        they time out, fail, or the caller is cancelled mid-close (a second
+        Ctrl-C landing on ``close_session``). An agent that has stopped
+        answering must not outlive — or hang — the process that spawned it.
+        """
         if self._closed:
             return
         self._closed = True
+        try:
+            await asyncio.wait_for(self._say_goodbye(), _SHUTDOWN_TIMEOUT)
+        except TimeoutError:
+            logger.debug("ACP agent did not acknowledge shutdown in time; forcing teardown")
+        except Exception:
+            logger.debug("ACP graceful shutdown failed; forcing teardown", exc_info=True)
+        finally:
+            await self._teardown()
 
+    async def _say_goodbye(self) -> None:
+        """Best-effort graceful half: stop the turns, close the sessions."""
         connection = self._connection
         if connection is not None:
             await asyncio.gather(
@@ -242,16 +330,23 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
                 return_exceptions=True,
             )
 
-        async with self._connect_lock:
-            await self._close_process()
+    async def _teardown(self) -> None:
+        """Stop the process and drop the session state. Never raises."""
+        try:
+            async with self._connect_lock:
+                await self._close_process()
+        except Exception:
+            logger.debug("ACP process teardown failed", exc_info=True)
 
         if self._external_tool_handler is not None and self._handler_started:
-            await self._external_tool_handler.stop()
             self._handler_started = False
+            with contextlib.suppress(Exception):
+                await self._external_tool_handler.stop()
 
         self._turns.clear()
         self._sessions.clear()
         self._session_rooms.clear()
+        self._session_options.clear()
 
     async def _session_for(self, room_id: str, connection: Any) -> str:
         session_id = self._sessions.get(room_id)
@@ -266,6 +361,13 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
         session_id = response.session_id
         self._sessions[room_id] = session_id
         self._session_rooms[session_id] = room_id
+        options = _model_dump(getattr(response, "config_options", None))
+        self._session_options[session_id] = options if isinstance(options, list) else []
+        await self._publish_config_options(
+            session_id,
+            self._session_options[session_id],
+            _config_values(self._session_options[session_id]),
+        )
         return session_id
 
     async def _prompt_stream(

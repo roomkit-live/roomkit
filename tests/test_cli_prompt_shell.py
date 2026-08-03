@@ -14,8 +14,16 @@ from prompt_toolkit.output import DummyOutput
 
 from roomkit.channels.cli import CLIChannel
 from roomkit.console import terminal_input
+from roomkit.console._activity import ActivityTracker
 from roomkit.console._chat import BannerModel, ConsoleBannerData
-from roomkit.console._shell import active_shell_app, run_console_shell
+from roomkit.console._shell import (
+    _ShellState,
+    _toolbar_text,
+    active_shell_app,
+    run_console_shell,
+)
+from roomkit.realtime.base import EphemeralEvent, EphemeralEventType
+from roomkit.realtime.memory import InMemoryRealtime
 
 
 def _banner(models: list[BannerModel] | None = None) -> ConsoleBannerData:
@@ -212,6 +220,126 @@ class TestShellShutdown:
         assert seen["app"] is not None
         assert cli._pinned_shell_active is False
         assert active_shell_app() is None
+
+
+class TestStatusBar:
+    def _state(self, **kwargs) -> _ShellState:
+        tracker = ActivityTracker(clock=lambda: 100.0)
+        return _ShellState(room_id="room-1", model_label=None, activity=tracker, **kwargs)
+
+    def test_idle_says_idle(self) -> None:
+        assert _toolbar_text(self._state(), 0) == " room-1 · idle"
+
+    def test_working_before_any_agent_streams(self) -> None:
+        # Submitted, still routing: spin on the submission clock so the bar
+        # never sits on "idle" while the user waits.
+        state = self._state(working=True, working_since=88.0)
+        text = _toolbar_text(state, 0)
+        assert "working 12s" in text
+        assert text[len(" room-1 · ")] in "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+
+    def test_streaming_agent_names_itself(self) -> None:
+        state = self._state(working=True, working_since=88.0)
+        state.activity.start("acp-agent", "Claude Code")
+        assert "Claude Code working 0s" in _toolbar_text(state, 0)
+
+    def test_queued_count_rides_along(self) -> None:
+        state = self._state(working=True, working_since=100.0)
+        state.activity.start("acp-agent", "Claude Code")
+        assert _toolbar_text(state, 2).endswith("(2 queued)")
+
+    def test_reported_model_replaces_the_banner_label(self) -> None:
+        state = self._state()
+        state.model_label = "claude-code"
+        assert _toolbar_text(state, 0) == " room-1 · claude-code · idle"
+        state.activity.set_model("acp-agent", "opus")
+        assert _toolbar_text(state, 0) == " room-1 · opus · idle"
+        state.activity.set_model("reviewer", "sonnet")
+        assert _toolbar_text(state, 0) == " room-1 · 2 models · idle"
+
+
+class TestAgentTelemetry:
+    async def test_model_and_usage_follow_the_agent(self) -> None:
+        cli = CLIChannel("cli", console=True)
+        kit = AsyncMock()
+        realtime = InMemoryRealtime()
+        kit.realtime = realtime
+        captured: dict[str, object] = {}
+
+        async def process(_message) -> None:
+            tracker = cli._activity
+            assert tracker is not None
+            tracker.start("acp-agent", "Claude Code")
+            await realtime.publish_to_room(
+                "room-1",
+                EphemeralEvent(
+                    room_id="room-1",
+                    type=EphemeralEventType.CUSTOM,
+                    user_id="acp-agent",
+                    channel_id="acp-agent",
+                    data={"type": "acp_config_options", "values": {"model": "sonnet"}},
+                ),
+            )
+            await realtime.publish_to_room(
+                "room-1",
+                EphemeralEvent(
+                    room_id="room-1",
+                    type=EphemeralEventType.CUSTOM,
+                    user_id="acp-agent",
+                    channel_id="acp-agent",
+                    data={"type": "acp_usage", "usage": {"used": 12_345, "size": 200_000}},
+                ),
+            )
+            for _ in range(50):  # let the subscription's queue drain
+                await asyncio.sleep(0.01)
+                if tracker.models and tracker.active[0].context_used:
+                    break
+            captured["toolbar"] = _toolbar_text(
+                _ShellState(room_id="room-1", model_label=None, activity=tracker), 0
+            )
+            tracker.finish("acp-agent")
+
+        kit.process_inbound = AsyncMock(side_effect=process)
+
+        with create_pipe_input() as pipe:
+            pipe.send_text("go\n")
+
+            async def quit_when_done() -> None:
+                # Quit cancels the in-flight turn, so let it finish first.
+                for _ in range(200):
+                    await asyncio.sleep(0.01)
+                    if "toolbar" in captured:
+                        break
+                pipe.send_text("quit\n")
+
+            quitter = asyncio.create_task(quit_when_done())
+            await _run_shell(cli, kit, pipe)
+            await quitter
+
+        toolbar = captured["toolbar"]
+        assert isinstance(toolbar, str)
+        assert "sonnet" in toolbar  # the model the agent reports, live
+        assert "Claude Code working" in toolbar
+        assert "12.3k ctx" in toolbar
+        await realtime.close()
+
+    async def test_shell_attaches_and_detaches_the_tracker(self) -> None:
+        cli = CLIChannel("cli", console=True)
+        kit = AsyncMock()
+        seen: list[object] = []
+
+        async def process(_message) -> None:
+            seen.append(cli._activity)
+
+        kit.process_inbound = AsyncMock(side_effect=process)
+
+        with create_pipe_input() as pipe:
+            pipe.send_text("go\n")
+            pipe.send_text("quit\n")
+            await _run_shell(cli, kit, pipe)
+
+        assert isinstance(seen[0], ActivityTracker)
+        assert cli._activity is None
 
 
 class TestTerminalInput:

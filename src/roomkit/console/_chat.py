@@ -10,6 +10,7 @@ from __future__ import annotations
 import difflib
 import json
 import sys
+import time
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import IO, TYPE_CHECKING, Any
@@ -172,9 +173,38 @@ def print_message(
         force_terminal=force_terminal or None,
         width=width,
     )
-    console.print(Text(f"\n● {label}", style=f"bold {PRIMARY}"))
-    console.print(Markdown(text))
     console.print()
+    console.print(agent_handle(label))
+    console.print(answer_block(text))
+    console.print()
+
+
+def agent_handle(label: str) -> Text:
+    """``@claude code`` — who is speaking, stated quietly above the answer."""
+    return Text(f"@{label.lower()}", style=f"dim italic {MUTED}")
+
+
+def answer_block(markdown: str, *, bullet: bool = True) -> RenderableType:
+    """The agent's prose with the turn marker in front of its first line.
+
+    A two-column grid rather than a prefixed string: the body stays real
+    Markdown (headings, lists, fenced code keep their formatting) while its
+    continuation lines align under the text, not under the marker.
+    """
+    grid = Table.grid(padding=(0, 1))
+    grid.add_column(width=1, no_wrap=True)
+    grid.add_column(overflow="fold")
+    marker = Text("●", style=f"bold {PRIMARY}") if bullet else Text(" ")
+    grid.add_row(marker, Markdown(markdown))
+    return grid
+
+
+def format_turn_footer(duration_ms: int, tool_calls: int) -> str:
+    """``⎿ took 2m 30s · 3 tools`` — what the wait cost, once it is over."""
+    parts = [f"took {_format_duration(duration_ms)}"]
+    if tool_calls:
+        parts.append(f"{tool_calls} tool{'s' if tool_calls > 1 else ''}")
+    return f"  ⎿ {' · '.join(parts)}"
 
 
 def format_tool_start_line(content: ToolCallContent) -> str:
@@ -335,7 +365,10 @@ class ConsoleStreamRenderer(MarkdownStreamRenderer):
     """
 
     def _render_label(self) -> Any:
-        return Text(f"● {self._label}", style=f"bold {PRIMARY}")
+        return agent_handle(self._label)
+
+    def _render_answer(self, markdown_text: str) -> Any:
+        return answer_block(markdown_text)
 
     def _render_thinking(self, text: str) -> Any | None:
         thinking = text.lstrip()
@@ -421,6 +454,11 @@ class PinnedStreamRenderer:
         # (label, tool activity, thinking, text resuming after either).
         self._last_was_gap = True  # start of turn: no leading blank needed
         self._text_gap_pending = False
+        # The turn marker leads each stretch of prose — a fresh one after
+        # every tool round or thinking block, as an agent CLI transcript does.
+        self._bullet_pending = True
+        self._tool_calls = 0
+        self._started_at = time.monotonic()
 
     # -- Duck interface (MarkdownStreamRenderer-compatible) -------------------
 
@@ -452,23 +490,35 @@ class PinnedStreamRenderer:
         # Ordering beats typography: everything pending renders first.
         self._flush_thinking(force=True)
         self._flush_text(force=True)
+        just_labelled = self._ensure_label()
         if event.type == EventType.TOOL_CALL_START:
-            self._gap()
+            if not just_labelled:
+                self._gap()
             self._print(Text(format_tool_start_line(content), style=ACCENT))
             return
+        self._tool_calls += 1
         self._print(Text(format_tool_end_line(content), style=MUTED))
         for kind, line in tool_result_preview(content):
             style = {"add": "green", "del": "red"}.get(kind, f"dim {MUTED}")
             self._print(Text(f"    {line}", style=style))
         self._text_gap_pending = True
+        self._bullet_pending = True  # prose resuming after a tool leads again
 
     def close(self) -> None:
-        """Flush the tails and end the turn with a blank line."""
+        """Flush the tails, report what the turn cost, end with a blank line."""
         if self._closed:
             return
         self._closed = True
         self._flush_thinking(force=True)
         self._flush_text(force=True)
+        if self._label_printed:
+            elapsed_ms = int((time.monotonic() - self._started_at) * 1000)
+            self._print(
+                Text(
+                    format_turn_footer(elapsed_ms, self._tool_calls),
+                    style=f"dim italic {MUTED}",
+                )
+            )
         self._console().print()
 
     @property
@@ -498,12 +548,19 @@ class PinnedStreamRenderer:
         self._console().print()
         self._last_was_gap = True
 
-    def _ensure_label(self) -> None:
+    def _ensure_label(self) -> bool:
+        """Print the handle once per turn. True when this call printed it.
+
+        Callers use the answer to skip their own separator: the handle
+        already opens the section, and a blank line under it would detach
+        the agent's name from what it introduces.
+        """
         if self._label_printed:
-            return
+            return False
         self._label_printed = True
         self._gap()
-        self._print(Text(f"● {self._label}", style=f"bold {PRIMARY}"))
+        self._print(agent_handle(self._label))
+        return True
 
     def _flush_text(self, *, force: bool = False) -> None:
         if force:
@@ -516,7 +573,8 @@ class PinnedStreamRenderer:
         if self._text_gap_pending:
             self._gap()
             self._text_gap_pending = False
-        self._print(Markdown(head))
+        self._print(answer_block(head, bullet=self._bullet_pending))
+        self._bullet_pending = False
 
     def _flush_thinking(self, *, force: bool = False) -> None:
         if force:
@@ -534,7 +592,7 @@ class PinnedStreamRenderer:
             line = raw_line.lstrip() if self._thinking_prefix_pending else raw_line
             if not line:
                 continue
-            if self._thinking_prefix_pending:
+            if self._thinking_prefix_pending and not self._ensure_label():
                 self._gap()
             prefix = "💭 " if self._thinking_prefix_pending else ""
             self._thinking_prefix_pending = False
@@ -543,8 +601,10 @@ class PinnedStreamRenderer:
         if reset_prefix:
             self._thinking_prefix_pending = True
             if printed:
-                # Text resuming after a thinking block gets its own gap.
+                # Text resuming after a thinking block gets its own gap and
+                # leads with the turn marker again.
                 self._text_gap_pending = True
+                self._bullet_pending = True
 
 
 def _split_flushable(buffer: str) -> tuple[str, str]:
@@ -576,9 +636,12 @@ __all__ = [
     "PinnedStreamRenderer",
     "build_banner",
     "collect_banner_data",
+    "agent_handle",
+    "answer_block",
     "format_tool_end_line",
     "format_tool_line",
     "format_tool_start_line",
+    "format_turn_footer",
     "print_banner",
     "print_message",
     "print_user_line",

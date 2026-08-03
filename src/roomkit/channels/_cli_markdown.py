@@ -164,11 +164,15 @@ class MarkdownStreamRenderer:
                 renderables.append(self._render_activity(segment.content))
             else:
                 renderables.append(self._render_label())
-                renderables.append(self._markdown_type(segment.content))
+                renderables.append(self._render_answer(segment.content))
         return Group(*renderables)
 
     def _render_label(self) -> Any:
         return self._text_type(f"{self._label}:", style="bold cyan")
+
+    def _render_answer(self, markdown_text: str) -> Any:
+        """The agent's prose. Overridden by console mode to add its marker."""
+        return self._markdown_type(markdown_text)
 
     def _render_thinking(self, text: str) -> Any | None:
         thinking = text.lstrip()

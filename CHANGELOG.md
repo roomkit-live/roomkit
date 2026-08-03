@@ -41,6 +41,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Console transcript: a quiet handle, a marked answer, and what the turn
+  cost.** A turn now opens with `@claude code` (dim italic — it names the
+  speaker without shouting), the prose leads with `●` on its own first line
+  with continuations aligned under the text, and the turn closes with
+  `⎿ took 2m 30s · 3 tools`. The marker leads each stretch of prose, so an
+  answer resuming after a tool round starts a fresh one. Replaces the
+  `● Label` header above an unmarked body.
+
+- **The console status bar says who is working, and for how long.** While a
+  turn is in flight the pinned bar shows a spinner, the agent's own label,
+  the elapsed wait and what it is doing right now — `⠹ Claude Code working
+  32s · Edit · 12.3k ctx`. Activity is tracked per source channel, not as
+  one global flag, so a room running several intelligence channels reads
+  `⠹ 2 agents working 32s · Planner, Coder` (the oldest turn owns the clock
+  — that is the wait being lived). The spinner runs only while work is in
+  flight; an idle console never repaints. The bar also carries the model
+  each agent reports for itself, replacing the banner's startup guess as
+  soon as a session exists.
+
+- **`ACPChannel.session_config()` / `.config_options()` /
+  `.set_config_option()` — the agent's session tunables.** ACP agents
+  advertise `model`, `mode`, `effort` and vendor switches as session config
+  options; RoomKit now records them when a session opens, follows the
+  agent's `config_option_update` notifications, and can set one:
+  `await channel.set_config_option(room_id, "model", "sonnet")` (opening the
+  session if the first prompt has not). Each change publishes an ephemeral
+  `acp_config_options` CUSTOM event carrying values, human labels and the
+  full descriptors — which is how the console bar tracks the live model.
+  **Caveat, verified against `claude-agent-acp` 0.61.0:** a model switched
+  from *inside* the agent with its own `/model` slash command is handled
+  locally by the Claude SDK and announced to nobody, so the client's view
+  goes stale; drive switches through `set_config_option()` when the value
+  must stay observable. The example wires exactly that as its own `/model`
+  command (and `--model` pins the startup model through `ANTHROPIC_MODEL`).
+
 - **`ACPChannel(inherit_env=[...])` — forward named parent-env variables to
   the agent.** The ACP SDK strips the agent's environment down to
   `HOME/LOGNAME/PATH/SHELL/TERM/USER` (MCP practice), which silently breaks
@@ -124,6 +159,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `BuzzClient.verified_owner_hex` these features are built on).
 
 ### Fixed
+
+- **`ACPChannel.close()` is bounded and always tears the process down.** The
+  graceful half (cancel the turns, close the sessions) now shares a 5-second
+  budget, and the subprocess teardown runs in a `finally` — so an agent that
+  has stopped answering, or a second Ctrl-C landing on `close_session`, can
+  no longer hang `RoomKit.close()` nor leave the agent process orphaned. The
+  Claude Code example also exits quietly on Ctrl-C instead of printing a
+  cancellation traceback.
 
 - **Buzz presence heartbeat no longer dies on a transient failure.**
   `BuzzRelaySource._presence_loop` returned (silently, DEBUG-only) on the

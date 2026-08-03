@@ -419,8 +419,8 @@ class TestConsoleMode:
             await cli.deliver(event, _make_binding(), _make_context())
             output = mock_out.getvalue()
 
-        assert "Concierge" in output
-        assert "All set." in output
+        assert "@concierge" in output  # handle above the answer
+        assert "● All set." in output  # marker in front of the answer
 
 
 class TestRun:

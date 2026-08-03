@@ -9,6 +9,8 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 from roomkit.channels._acp_client import (
     _SDK,
+    _config_labels,
+    _config_values,
     _model_dump,
     _option_kind,
     _result_text,
@@ -35,6 +37,7 @@ class ACPEventsMixin:
     channel_id: str
     _turns: dict[str, _TurnState]
     _session_rooms: dict[str, str]
+    _session_options: dict[str, list[Any]]
     _external_tool_handler: ExternalToolHandler | None
     _realtime: RealtimeBackend | None
 
@@ -107,6 +110,48 @@ class ACPEventsMixin:
             },
         )
 
+    async def _on_config_option_update(self, session_id: str, update: Any) -> None:
+        """Track a config change the agent reports — the model, most visibly.
+
+        Agents send this whenever a tunable moves, including changes the user
+        made from inside the agent (``/model`` is handled locally by the
+        agent, never reaching RoomKit as a prompt) and ones it made itself (a
+        refusal fallback switching model). Recording it keeps
+        :meth:`ACPChannel.session_config` truthful; the ephemeral event lets
+        UI surfaces follow along live.
+        """
+        options = _model_dump(getattr(update, "config_options", None))
+        if isinstance(options, list):
+            self._session_options[session_id] = options
+        await self._publish_config_options(session_id, options, _config_values(options))
+
+    async def _publish_config_options(
+        self,
+        session_id: str,
+        options: Any,
+        values: dict[str, str | bool],
+    ) -> None:
+        """Announce a session's tunables — the state, not the delta.
+
+        Emitted for a new session too, not only on change: a surface that
+        shows the running model has nothing to show otherwise until the
+        first change happens to occur.
+        """
+        room_id = self._session_rooms.get(session_id)
+        if room_id is None:
+            return
+        await self._publish(
+            room_id,
+            EphemeralEventType.CUSTOM,
+            {
+                "type": "acp_config_options",
+                "session_id": session_id,
+                "values": values,
+                "labels": _config_labels(options),
+                "config_options": _model_dump(options),
+            },
+        )
+
     async def _tool_start(self, session_id: str, update: Any) -> None:
         turn = self._turns.get(session_id)
         room_id = self._session_rooms.get(session_id)
@@ -148,6 +193,7 @@ class ACPEventsMixin:
         "plan_update": _on_plan_update,
         "plan_removed": _on_plan_update,
         "usage_update": _on_usage_update,
+        "config_option_update": _on_config_option_update,
     }
 
     @staticmethod

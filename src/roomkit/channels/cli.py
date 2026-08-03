@@ -37,6 +37,7 @@ from roomkit.models.streaming import ThinkingDeltaMarker
 
 if TYPE_CHECKING:
     from roomkit.channels._cli_markdown import MarkdownStreamRenderer
+    from roomkit.console._activity import ActivityTracker
     from roomkit.console._chat import PinnedStreamRenderer
     from roomkit.core.framework import RoomKit
 
@@ -122,6 +123,7 @@ class CLIChannel(Channel):
         # Set by the pinned-bar shell while it owns the terminal.
         self._pinned_shell_active = False
         self._shell_width: int | None = None
+        self._activity: ActivityTracker | None = None
 
     # -- Channel interface ----------------------------------------------------
 
@@ -197,7 +199,7 @@ class CLIChannel(Channel):
 
         label = self._agent_label(event.source.channel_id)
         if self._console or self._markdown:
-            return await self._deliver_rendered_stream(text_stream, label)
+            return await self._deliver_rendered_stream(text_stream, label, event.source.channel_id)
 
         agent_prefix = self._colorize(self._agent_color, f"{label}: ")
 
@@ -260,6 +262,7 @@ class CLIChannel(Channel):
         self,
         stream: AsyncIterator[Any],
         label: str,
+        source_channel_id: str,
     ) -> ChannelOutput:
         renderer: MarkdownStreamRenderer | PinnedStreamRenderer
         if self._console and self._pinned_shell_active:
@@ -286,16 +289,31 @@ class CLIChannel(Channel):
                 file=sys.stdout,
                 use_color=self._use_color,
             )
+        # The status bar names who is working: the stream tells us what the
+        # agent is doing, and the tracker times it. Absent outside the pinned
+        # shell, where there is no status bar to feed.
+        activity = self._activity
+        if activity is not None:
+            activity.start(source_channel_id, label)
         try:
             async for chunk in stream:
                 if isinstance(chunk, str):
                     renderer.add_text(chunk)
-                elif self._show_thinking and isinstance(chunk, ThinkingDeltaMarker):
-                    renderer.add_thinking(chunk.thinking)
+                    if activity is not None and chunk.strip():
+                        activity.note(source_channel_id, "responding")
+                elif isinstance(chunk, ThinkingDeltaMarker):
+                    if activity is not None:
+                        activity.note(source_channel_id, "thinking")
+                    if self._show_thinking:
+                        renderer.add_thinking(chunk.thinking)
                 elif isinstance(chunk, RoomEvent) and isinstance(chunk.content, ToolCallContent):
                     renderer.add_tool_event(chunk)
+                    if activity is not None:
+                        activity.note(source_channel_id, _tool_detail(chunk.content))
         finally:
             renderer.close()
+            if activity is not None:
+                activity.finish(source_channel_id)
         return ChannelOutput.empty()
 
     def capabilities(self) -> ChannelCapabilities:
@@ -453,6 +471,17 @@ def _default_agent_label(channel_id: str) -> str:
     """Convert ``agent-researcher`` to ``Researcher``."""
     name = channel_id.removeprefix("agent-")
     return name.replace("-", " ").replace("_", " ").title()
+
+
+def _tool_detail(content: ToolCallContent) -> str | None:
+    """What the status bar says while a tool runs — its name, then nothing.
+
+    A finished tool is no longer what the agent is doing, and the next chunk
+    (thinking, text, another tool) says what took its place.
+    """
+    if content.status in ("completed", "failed"):
+        return None
+    return content.tool_name or None
 
 
 def _is_tty() -> bool:

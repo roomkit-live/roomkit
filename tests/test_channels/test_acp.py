@@ -12,15 +12,23 @@ from unittest.mock import patch
 import acp
 import pytest
 from acp.schema import (
+    ConfigOptionUpdate,
     Implementation,
     InitializeResponse,
     NewSessionResponse,
     PermissionOption,
     PromptResponse,
+    SessionConfigOptionSelect,
+    SessionConfigSelectOption,
+    SetSessionConfigOptionResponse,
 )
 
 from roomkit import ACPChannel, CLIChannel, RoomKit
-from roomkit.channels._acp_client import _resolve_spawn_env
+from roomkit.channels._acp_client import (
+    _config_labels,
+    _config_values,
+    _resolve_spawn_env,
+)
 from roomkit.models.channel import ChannelBinding
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundMessage
@@ -104,10 +112,26 @@ class _RecordingToolHandler(ExternalToolHandler):
         self.results.append({"name": tool_name, "input": tool_input, "result": result, **kwargs})
 
 
+def _model_option(current: str) -> SessionConfigOptionSelect:
+    """The model picker an ACP agent advertises on its session."""
+    return SessionConfigOptionSelect(
+        id="model",
+        name="Model",
+        type="select",
+        current_value=current,
+        options=[
+            SessionConfigSelectOption(value="opus", name="Opus"),
+            SessionConfigSelectOption(value="sonnet", name="Sonnet"),
+        ],
+    )
+
+
 class _FakeACPConnection:
     def __init__(self, client: Any, *, emit_updates: bool = True) -> None:
         self.client = client
         self.emit_updates = emit_updates
+        self.config_options: list[Any] = [_model_option("opus")]
+        self.set_config_calls: list[dict[str, Any]] = []
         self.initialize_calls: list[dict[str, Any]] = []
         self.new_session_calls: list[dict[str, Any]] = []
         self.prompt_calls: list[dict[str, Any]] = []
@@ -146,7 +170,24 @@ class _FakeACPConnection:
     async def new_session(self, **kwargs: Any) -> NewSessionResponse:
         self._session_counter += 1
         self.new_session_calls.append(kwargs)
-        return NewSessionResponse(session_id=f"session-{self._session_counter}")
+        return NewSessionResponse(
+            session_id=f"session-{self._session_counter}",
+            config_options=list(self.config_options),
+        )
+
+    async def set_config_option(
+        self,
+        *,
+        config_id: str,
+        session_id: str,
+        value: str | bool,
+    ) -> SetSessionConfigOptionResponse:
+        self.set_config_calls.append(
+            {"config_id": config_id, "session_id": session_id, "value": value}
+        )
+        if config_id == "model" and isinstance(value, str):
+            self.config_options = [_model_option(value)]
+        return SetSessionConfigOptionResponse(config_options=list(self.config_options))
 
     async def prompt(
         self,
@@ -324,6 +365,141 @@ class TestACPChannel:
             "SSH_AUTH_SOCK": "/run/agent.sock",
             "MAX_THINKING_TOKENS": "1024",
         }
+
+    def test_config_values_reads_current_values(self) -> None:
+        assert _config_values([_model_option("sonnet")]) == {"model": "sonnet"}
+        # Dumped payloads use camelCase; hand-built snake_case is tolerated.
+        assert _config_values(
+            [
+                {"id": "model", "currentValue": "opus"},
+                {"id": "fast", "current_value": True},
+            ]
+        ) == {"model": "opus", "fast": True}
+        # Anything without a usable id/value pair is skipped, not guessed at.
+        junk = [{"id": "", "currentValue": "x"}, {"currentValue": "y"}, "junk"]
+        assert _config_values(junk) == {}
+        assert _config_values(None) == {}
+
+    def test_config_labels_name_the_current_value(self) -> None:
+        # The real agent's default entry is the opaque value "default".
+        assert _config_labels([_model_option("sonnet")]) == {"model": "Sonnet"}
+        # Grouped selects are searched too.
+        grouped = [
+            {
+                "id": "model",
+                "currentValue": "haiku",
+                "options": [
+                    {
+                        "group": "anthropic",
+                        "name": "Anthropic",
+                        "options": [{"value": "haiku", "name": "Haiku"}],
+                    }
+                ],
+            }
+        ]
+        assert _config_labels(grouped) == {"model": "Haiku"}
+        # An unknown or unlabelled current value yields no label to show.
+        assert _config_labels([{"id": "model", "currentValue": "ghost", "options": []}]) == {}
+        assert _config_labels([{"id": "fast", "currentValue": True}]) == {}
+
+    async def test_session_config_follows_the_agent(self, tmp_path: Any) -> None:
+        channel, connection, _ = _channel(tmp_path)
+        realtime = InMemoryRealtime()
+        channel._realtime = realtime
+        ephemeral: list[EphemeralEvent] = []
+
+        async def capture(event: EphemeralEvent) -> None:
+            ephemeral.append(event)
+
+        await realtime.subscribe_to_room("room-1", capture)
+        assert channel.session_config("room-1") == {}  # no session yet
+
+        context = RoomContext(room=Room(id="room-1"))
+        output = await channel.on_event(make_event(body="Inspect it"), _binding(), context)
+        _ = [chunk async for chunk in output.response_stream]
+        await asyncio.sleep(0)
+        assert channel.session_config("room-1") == {"model": "opus"}
+        # The opening state is announced too — a status bar has nothing to
+        # show otherwise until a change happens to occur.
+        opening = [e for e in ephemeral if e.data.get("type") == "acp_config_options"]
+        assert opening[0].data["values"] == {"model": "opus"}
+        # Labels ride along: "opus" is an id, "Opus" is what a bar shows.
+        assert opening[0].data["labels"] == {"model": "Opus"}
+
+        # The agent reports a switch the user made inside it (`/model` is
+        # handled locally by the agent and never reaches RoomKit).
+        await channel._receive_update(
+            "session-1",
+            ConfigOptionUpdate(
+                session_update="config_option_update",
+                config_options=[_model_option("sonnet")],
+            ),
+        )
+        await asyncio.sleep(0)
+
+        assert channel.session_config("room-1") == {"model": "sonnet"}
+        published = [e for e in ephemeral if e.data.get("type") == "acp_config_options"]
+        assert published[-1].data["values"] == {"model": "sonnet"}
+        assert published[-1].data["config_options"][0]["currentValue"] == "sonnet"
+        await channel.close()
+        await realtime.close()
+
+    async def test_set_config_option_opens_a_session_when_needed(self, tmp_path: Any) -> None:
+        channel, connection, _ = _channel(tmp_path)
+        realtime = InMemoryRealtime()
+        channel._realtime = realtime
+        ephemeral: list[EphemeralEvent] = []
+
+        async def capture(event: EphemeralEvent) -> None:
+            ephemeral.append(event)
+
+        await realtime.subscribe_to_room("room-1", capture)
+
+        values = await channel.set_config_option("room-1", "model", "sonnet")
+        await asyncio.sleep(0)
+
+        assert values == {"model": "sonnet"}
+        # Our own switch is announced like the agent's own would be.
+        announced = [e for e in ephemeral if e.data.get("type") == "acp_config_options"]
+        assert announced[-1].data["values"] == {"model": "sonnet"}
+        # Descriptors stay available for a picker to render.
+        options = channel.config_options("room-1")
+        assert options[0]["id"] == "model"
+        assert [entry["value"] for entry in options[0]["options"]] == ["opus", "sonnet"]
+        assert connection.set_config_calls == [
+            {"config_id": "model", "session_id": "session-1", "value": "sonnet"}
+        ]
+        assert channel.session_config("room-1") == {"model": "sonnet"}
+        # The session opened for the switch is the one the first prompt uses.
+        context = RoomContext(room=Room(id="room-1"))
+        output = await channel.on_event(make_event(body="Go"), _binding(), context)
+        _ = [chunk async for chunk in output.response_stream]
+        assert len(connection.new_session_calls) == 1
+        await channel.close()
+
+    async def test_close_forgets_session_config(self, tmp_path: Any) -> None:
+        channel, _connection, _ = _channel(tmp_path)
+        await channel.set_config_option("room-1", "model", "sonnet")
+        await channel.close()
+        assert channel.session_config("room-1") == {}
+
+    async def test_close_survives_an_agent_that_stopped_answering(self, tmp_path: Any) -> None:
+        # A hung close_session must not hang the caller: shutdown is bounded
+        # and the subprocess is torn down regardless.
+        channel, connection, process_context = _channel(tmp_path)
+        context = RoomContext(room=Room(id="room-1"))
+        output = await channel.on_event(make_event(body="Go"), _binding(), context)
+        _ = [chunk async for chunk in output.response_stream]
+
+        async def never_answers(session_id: str) -> None:
+            await asyncio.sleep(3600)
+
+        connection.close_session = never_answers  # type: ignore[method-assign]
+        with patch("roomkit.channels.acp._SHUTDOWN_TIMEOUT", 0.05):
+            await asyncio.wait_for(channel.close(), timeout=5)
+
+        assert process_context.exited is True
+        assert channel.session_config("room-1") == {}
 
     async def test_streams_updates_and_reuses_room_session(self, tmp_path: Any) -> None:
         handler = _RecordingToolHandler(approved=True)

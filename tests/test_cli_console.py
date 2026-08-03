@@ -17,6 +17,7 @@ from roomkit.console._chat import (
     PinnedStreamRenderer,
     collect_banner_data,
     format_tool_start_line,
+    format_turn_footer,
     print_banner,
     tool_result_preview,
 )
@@ -151,7 +152,7 @@ class TestConsoleStreamRenderer:
 
         rendered = output.getvalue()
         assert renderer.update_count == 5
-        assert "● Bot" in rendered
+        assert "@bot" in rendered  # the quiet handle, not a shouted label
         assert "💭 Weighing options" in rendered
         assert "Heading" in rendered
         assert "⏺ search" in rendered
@@ -325,7 +326,10 @@ class TestToolRendering:
         assert lines[tool_index - 1] == ""  # blank before the tool block
         resumed_index = next(i for i, line in enumerate(lines) if "After the tools." in line)
         assert lines[resumed_index - 1] == ""  # blank before resumed text
-        assert lines[0].startswith("● Bot")  # no leading blank at turn start
+        assert lines[0].startswith("@bot")  # no leading blank at turn start
+        # Prose leads with the marker, before and after the tool round.
+        assert lines[1].startswith("● Intro paragraph.")
+        assert lines[resumed_index].startswith("● After the tools.")
 
     def test_pinned_renderer_shows_result_preview(self) -> None:
         source = EventSource(channel_id="ai", channel_type="ai")
@@ -350,6 +354,66 @@ class TestToolRendering:
         assert "Hello, world!" in rendered
 
 
+class TestTurnLayout:
+    def test_handle_then_marked_answer(self) -> None:
+        output = StringIO()
+        renderer = PinnedStreamRenderer("Claude Code", file=output, use_color=False)
+        renderer.add_text("Salut !\n\n")
+        renderer.close()
+
+        lines = output.getvalue().splitlines()
+        assert lines[0] == "@claude code"  # a handle, not a shouted name
+        assert lines[1].startswith("● Salut !")
+
+    def test_handle_is_not_detached_from_what_it_introduces(self) -> None:
+        # The turn opens on a tool, not on prose: still no blank line
+        # between the handle and the block it names.
+        output = StringIO()
+        renderer = PinnedStreamRenderer("Bot", file=output, use_color=False)
+        start, _end = _tool_events()
+        renderer.add_tool_event(start)
+        renderer.close()
+
+        lines = output.getvalue().splitlines()
+        assert lines[0] == "@bot"
+        assert lines[1].startswith("⏺ search")
+
+    def test_continuation_lines_align_under_the_text(self) -> None:
+        output = StringIO()
+        renderer = PinnedStreamRenderer("Bot", file=output, use_color=False, width=30)
+        renderer.add_text("one two three four five six seven eight nine\n\n")
+        renderer.close()
+
+        body = [line for line in output.getvalue().splitlines() if line.strip()]
+        wrapped = next(line for line in body[2:] if not line.startswith(("@", "●", "  ⎿")))
+        assert wrapped.startswith("  ")  # under the prose, not under the marker
+
+    def test_footer_reports_what_the_turn_cost(self) -> None:
+        output = StringIO()
+        renderer = PinnedStreamRenderer("Bot", file=output, use_color=False)
+        start, end_event = _tool_events()
+        renderer.add_text("Done.\n\n")
+        renderer.add_tool_event(start)
+        renderer.add_tool_event(end_event)
+        renderer.close()
+
+        footer = [line for line in output.getvalue().splitlines() if line.strip()][-1]
+        assert footer.startswith("  ⎿ took ")
+        assert footer.endswith("· 1 tool")
+
+    def test_silent_turn_has_no_footer(self) -> None:
+        # Nothing was said; a duration line alone would be noise.
+        output = StringIO()
+        renderer = PinnedStreamRenderer("Bot", file=output, use_color=False)
+        renderer.close()
+        assert "took" not in output.getvalue()
+
+    def test_footer_formatting(self) -> None:
+        assert format_turn_footer(842, 0) == "  ⎿ took 842 ms"
+        assert format_turn_footer(3000, 1) == "  ⎿ took 3.0s · 1 tool"
+        assert format_turn_footer(150_000, 4) == "  ⎿ took 2m 30s · 4 tools"
+
+
 class TestPinnedStreamRenderer:
     def test_flushes_completed_blocks_on_blank_line(self) -> None:
         output = StringIO()
@@ -357,8 +421,8 @@ class TestPinnedStreamRenderer:
 
         renderer.add_text("Para one.\n\nPar")
         rendered = output.getvalue()
-        assert "● Bot" in rendered
-        assert "Para one." in rendered
+        assert "@bot" in rendered
+        assert "● Para one." in rendered
         assert "Par" == "Par" and "Par\n" not in rendered  # tail retained
 
         renderer.close()

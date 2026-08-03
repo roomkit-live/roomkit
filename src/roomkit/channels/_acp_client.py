@@ -122,6 +122,68 @@ def _model_dump(value: Any) -> Any:
     return value
 
 
+def _config_values(options: Any) -> dict[str, str | bool]:
+    """Map ACP session config options onto ``{config_id: current value}``.
+
+    Agents expose their tunables through this one list — ``model``, ``mode``,
+    ``effort``, vendor-specific switches — as select (str) or boolean
+    options. Dumps use camelCase aliases, so ``currentValue`` is the key;
+    the snake_case spelling is tolerated for hand-built payloads.
+    """
+    values: dict[str, str | bool] = {}
+    dumped = _model_dump(options)
+    if not isinstance(dumped, list):
+        return values
+    for option in dumped:
+        if not isinstance(option, Mapping):
+            continue
+        config_id = option.get("id")
+        value = option.get("currentValue", option.get("current_value"))
+        if isinstance(config_id, str) and config_id and isinstance(value, (str, bool)):
+            values[config_id] = value
+    return values
+
+
+def _config_labels(options: Any) -> dict[str, str]:
+    """Map config options onto ``{config_id: display name of current value}``.
+
+    Values are identifiers, and an agent's default entry can be as opaque as
+    ``"default"`` while its name reads ``"Default (recommended)"`` — a status
+    bar wants the name. Options come flat or in groups; both are searched.
+    Config ids without a matching entry are left out rather than guessed.
+    """
+    labels: dict[str, str] = {}
+    dumped = _model_dump(options)
+    if not isinstance(dumped, list):
+        return labels
+    for option in dumped:
+        if not isinstance(option, Mapping):
+            continue
+        config_id = option.get("id")
+        current = option.get("currentValue", option.get("current_value"))
+        if not isinstance(config_id, str) or not isinstance(current, str):
+            continue
+        name = _entry_name(option.get("options"), current)
+        if name:
+            labels[config_id] = name
+    return labels
+
+
+def _entry_name(entries: Any, value: str) -> str | None:
+    if not isinstance(entries, list):
+        return None
+    for entry in entries:
+        if not isinstance(entry, Mapping):
+            continue
+        if entry.get("value") == value:
+            name = entry.get("name")
+            return name if isinstance(name, str) and name else None
+        nested = _entry_name(entry.get("options"), value)  # a select group
+        if nested:
+            return nested
+    return None
+
+
 def _result_text(value: Any) -> str:
     value = _model_dump(value)
     if isinstance(value, str):
@@ -234,6 +296,7 @@ class ACPConnectionMixin:
     _connect_lock: asyncio.Lock
     _sessions: dict[str, str]
     _session_rooms: dict[str, str]
+    _session_options: dict[str, list[Any]]
     _agent_info: dict[str, Any] | None
     _handler_started: bool
     _closed: bool
@@ -281,6 +344,7 @@ class ACPConnectionMixin:
                 await self._close_process()
                 self._sessions.clear()
                 self._session_rooms.clear()
+                self._session_options.clear()
 
             sdk = self._sdk()
             if sdk.acp.PROTOCOL_VERSION != _STABLE_PROTOCOL_VERSION:

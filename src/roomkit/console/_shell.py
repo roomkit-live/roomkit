@@ -16,6 +16,7 @@ import contextlib
 import logging
 import os
 import sys
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -24,9 +25,17 @@ from prompt_toolkit.application import Application
 from prompt_toolkit.patch_stdout import patch_stdout
 from prompt_toolkit.styles import Style
 
+from roomkit.console._activity import (
+    FRAME_SECONDS,
+    ActivityTracker,
+    format_activity,
+    format_elapsed,
+    spinner_frame,
+)
 from roomkit.console._chat import print_user_line
 from roomkit.models.delivery import InboundMessage
 from roomkit.models.event import TextContent
+from roomkit.realtime.base import EphemeralEvent, EphemeralEventType
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -77,9 +86,18 @@ def active_shell_app() -> Application[Any] | None:
 class _ShellState:
     room_id: str
     model_label: str | None
+    activity: ActivityTracker
     working: bool = False
+    working_since: float | None = None
+    """When the current turn was submitted — the wait the user is living."""
+
     in_flight: asyncio.Task[Any] | None = None
     """The current ``process_inbound`` task — the phase-2b interrupt hook."""
+
+    @property
+    def busy(self) -> bool:
+        """A turn is in flight — routing, or an agent actually streaming."""
+        return self.working or bool(self.activity)
 
 
 async def run_console_shell(
@@ -111,7 +129,8 @@ async def run_console_shell(
         model_label = entry.model or entry.channel_id
         if entry.provider:
             model_label = f"{model_label} ({entry.provider})"
-    state = _ShellState(room_id=room_id, model_label=model_label)
+    tracker = ActivityTracker()
+    state = _ShellState(room_id=room_id, model_label=model_label, activity=tracker)
 
     queue: asyncio.Queue[InboundMessage] = asyncio.Queue()
 
@@ -140,6 +159,16 @@ async def run_console_shell(
         logger.warning("A console shell is already active; replacing the registration")
     _active_app = session.app
     channel._pinned_shell_active = True
+    # The channel reports who is streaming; the tracker times it and the
+    # toolbar spins on it.
+    channel._activity = tracker
+    spin_wake = asyncio.Event()
+
+    def _activity_changed() -> None:
+        session.app.invalidate()
+        spin_wake.set()
+
+    tracker.on_change = _activity_changed
 
     if output is None:
         # Real terminal: start the bar at the BOTTOM of the screen, Claude
@@ -151,11 +180,17 @@ async def run_console_shell(
         _pin_to_bottom(session)
 
     consumer: asyncio.Task[None] | None = None
+    spinner: asyncio.Task[None] | None = None
+    subscription = await _subscribe_agent_telemetry(kit, room_id, state, _activity_changed)
     try:
         with patch_stdout(raw=True):
             consumer = asyncio.create_task(
-                _consume(queue, kit, state, session.app.invalidate),
+                _consume(queue, kit, state, _activity_changed),
                 name="roomkit-cli-shell-consumer",
+            )
+            spinner = asyncio.create_task(
+                _spin(state, session.app.invalidate, spin_wake),
+                name="roomkit-cli-shell-spinner",
             )
             while True:
                 try:
@@ -202,8 +237,86 @@ async def run_console_shell(
             consumer.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await consumer
+        if spinner is not None:
+            spinner.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await spinner
+        if subscription is not None:
+            with contextlib.suppress(Exception):
+                await kit.realtime.unsubscribe(subscription)
         _active_app = None
         channel._pinned_shell_active = False
+        channel._activity = None
+        tracker.on_change = None
+        tracker.clear()
+
+
+async def _spin(
+    state: _ShellState,
+    invalidate: Callable[[], None],
+    wake: asyncio.Event,
+) -> None:
+    """Repaint the toolbar while work is in flight, and only then.
+
+    An idle console must not redraw: the animation exists to show that the
+    wait is alive, and a spinner turning over an idle prompt is noise (and
+    wasted wakeups on a laptop).
+    """
+    while True:
+        if not state.busy:
+            await wake.wait()
+            wake.clear()
+            continue
+        invalidate()
+        await asyncio.sleep(FRAME_SECONDS)
+
+
+async def _subscribe_agent_telemetry(
+    kit: RoomKit,
+    room_id: str,
+    state: _ShellState,
+    changed: Callable[[], None],
+) -> str | None:
+    """Follow what agents report about themselves — model, context usage.
+
+    Ephemeral events, not the delivery stream: an agent's model can change
+    without producing a single token (the user running ``/model`` inside a
+    coding agent), and context usage is reported between turns too.
+    """
+
+    async def _on_event(event: EphemeralEvent) -> None:
+        if event.type is not EphemeralEventType.CUSTOM:
+            return
+        data = event.data
+        channel_id = event.channel_id or str(data.get("channel_id") or "")
+        if not channel_id:
+            return
+        kind = data.get("type")
+        if kind == "acp_config_options":
+            # The label reads for humans ("Opus"); the raw value can be as
+            # opaque as "default". Fall back to it when unlabelled.
+            for key in ("labels", "values"):
+                mapping = data.get(key)
+                model = mapping.get("model") if isinstance(mapping, Mapping) else None
+                if isinstance(model, str) and model:
+                    state.activity.set_model(channel_id, model)
+                    break
+        elif kind == "acp_usage":
+            usage = data.get("usage")
+            if isinstance(usage, Mapping):
+                used = usage.get("used")
+                size = usage.get("size")
+                state.activity.observe_usage(
+                    channel_id,
+                    used=used if isinstance(used, int) else None,
+                    size=size if isinstance(size, int) else None,
+                )
+
+    try:
+        return await kit.realtime.subscribe_to_room(room_id, _on_event)
+    except Exception:  # telemetry is a nicety — never fail the shell over it
+        logger.debug("Console telemetry subscription failed", exc_info=True)
+        return None
 
 
 async def _consume(
@@ -216,6 +329,7 @@ async def _consume(
     while True:
         message = await queue.get()
         state.working = True
+        state.working_since = state.activity.clock()
         invalidate()
         task = asyncio.create_task(kit.process_inbound(message))
         state.in_flight = task
@@ -237,19 +351,46 @@ async def _consume(
         finally:
             state.in_flight = None
             state.working = False
+            state.working_since = None
             invalidate()
 
 
 def _toolbar_text(state: _ShellState, queued: int) -> str:
     parts = [state.room_id]
-    if state.model_label:
-        parts.append(state.model_label)
-    if state.working:
-        status = "working" if queued == 0 else f"working ({queued} queued)"
-    else:
-        status = "idle"
-    parts.append(status)
+    model = _model_text(state)
+    if model:
+        parts.append(model)
+    parts.append(_status_text(state, queued))
     return " " + " · ".join(parts)
+
+
+def _model_text(state: _ShellState) -> str | None:
+    """The model to show: what the agents report, else the banner's guess.
+
+    Agents report their model only once a session exists, so the banner
+    label (a provider's configured model, or nothing for an ACP agent)
+    carries the bar until the first turn — then the live value takes over,
+    including a model the user switched from inside the agent.
+    """
+    reported = {model for model in state.activity.models.values() if model}
+    if len(reported) == 1:
+        return next(iter(reported))
+    if len(reported) > 1:
+        return f"{len(reported)} models"
+    return state.model_label
+
+
+def _status_text(state: _ShellState, queued: int) -> str:
+    suffix = f" ({queued} queued)" if queued else ""
+    activity = format_activity(state.activity)
+    if activity is not None:
+        return f"{activity}{suffix}"
+    if state.working:
+        # Submitted, but no agent is streaming yet — routing, hooks, or an
+        # agent still thinking before its first token.
+        elapsed = state.activity.clock() - (state.working_since or state.activity.clock())
+        return f"{spinner_frame(elapsed)} working {format_elapsed(elapsed)}{suffix}"
+    return f"idle{suffix}"
 
 
 def _terminal_width(session: PromptSession[str]) -> int | None:
