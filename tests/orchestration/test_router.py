@@ -109,6 +109,62 @@ class TestAgentAffinity:
         assert router.select_agent(event, ctx, state) == "agent-fallback"
 
 
+# -- as_hook: addressing takes precedence (RFC §19.4, step 0) -----------------
+
+
+class TestAddressedEvents:
+    async def test_addressed_event_is_left_alone(self):
+        router = ConversationRouter(default_agent_id="agent-default")
+        hook = router.as_hook()
+        event = make_event(room_id="r1", channel_id="sms1").model_copy(
+            update={"addressed_to": ["agent-b"]}
+        )
+        ctx = _context(bindings=[_transport_binding("sms1"), _ai_binding("agent-b")])
+
+        result = await hook(event, ctx)
+
+        assert result.action == "allow"
+        assert result.event is None  # nothing stamped
+
+    async def test_address_beats_sticky_affinity(self):
+        # The case that motivated step 0: with affinity consulted first, an
+        # address would be unreachable for as long as an agent held the
+        # conversation, and the two mechanisms could not coexist.
+        router = ConversationRouter(default_agent_id="agent-default")
+        hook = router.as_hook()
+        room = set_conversation_state(Room(id="r1"), ConversationState(active_agent_id="agent-a"))
+        ctx = _context(
+            room=room,
+            bindings=[
+                _transport_binding("sms1"),
+                _ai_binding("agent-a"),
+                _ai_binding("agent-b"),
+            ],
+        )
+        event = make_event(room_id="r1", channel_id="sms1").model_copy(
+            update={"addressed_to": ["agent-b"]}
+        )
+
+        result = await hook(event, ctx)
+
+        assert result.event is None
+        # Unaddressed, the same event would have gone to the sticky agent.
+        assert router.select_agent(event, ctx, ConversationState(active_agent_id="agent-a")) == (
+            "agent-a"
+        )
+
+    async def test_unaddressed_event_still_routes(self):
+        router = ConversationRouter(default_agent_id="agent-default")
+        hook = router.as_hook()
+        event = make_event(room_id="r1", channel_id="sms1")
+        ctx = _context(bindings=[_transport_binding("sms1"), _ai_binding("agent-default")])
+
+        result = await hook(event, ctx)
+
+        assert result.event is not None
+        assert result.event.metadata["_routed_to"] == "agent-default"
+
+
 # -- select_agent: rule matching ----------------------------------------------
 
 

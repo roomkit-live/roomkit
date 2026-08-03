@@ -108,6 +108,10 @@ class ConversationRouter:
     ) -> str | None:
         """Determine which agent should handle this event.
 
+        Answers for *unaddressed* events only. An addressed event never
+        reaches here — :meth:`as_hook` returns before calling this, because
+        an address outranks every rule below (RFC §19.4, step 0).
+
         Priority order:
         1. If active_agent_id is set and the agent is still in the room
            -> sticky affinity (agent keeps handling)
@@ -166,7 +170,8 @@ class ConversationRouter:
         """Return a BEFORE_BROADCAST sync hook function.
 
         The hook stamps ``event.metadata`` with routing information
-        that EventRouter uses to filter intelligence channels.
+        that EventRouter uses to filter intelligence channels — except on an
+        addressed event, which the router leaves alone (RFC §19.4, step 0).
         """
 
         async def conversation_router(event: RoomEvent, context: RoomContext) -> HookResult:
@@ -175,6 +180,18 @@ class ConversationRouter:
             from roomkit.orchestration.handoff import _room_id_var
 
             _room_id_var.set(event.room_id)
+
+            if event.addressed_to is not None:
+                # Step 0: the sender named its recipients, and a router does
+                # not overrule the sender. Stamping here would be dead
+                # metadata at best — solicitation reads the address first —
+                # and misleading to anyone reading the stored event.
+                logger.debug(
+                    "Event %s is addressed to %s; routing skipped",
+                    event.id,
+                    event.addressed_to,
+                )
+                return HookResult.allow()
 
             state = get_conversation_state(context.room)
             selected = self.select_agent(event, context, state)
