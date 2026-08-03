@@ -96,6 +96,16 @@ class DeliveryPlan:
     # with the execution results (they always persisted post-broadcast).
     hook_tasks: list[Task] = field(default_factory=list)
     hook_observations: list[Observation] = field(default_factory=list)
+    # Whether the event's AFTER_BROADCAST hooks (and side-effect persistence)
+    # fire after its set executes. False preserves the paths that never fired
+    # them: injected events and a trigger without a source binding.
+    fire_after_broadcast: bool = True
+    # Trace continuity across the lane boundary: the caller's current span
+    # (and its backend context), captured at plan time. The lane executor
+    # runs on a fresh contextvars context, so without these the broadcast
+    # span would be an orphan instead of a child of the inbound span.
+    parent_span_id: str | None = None
+    parent_span_ctx: Any = None
     # True on the root pass of an inbound/send_event call: emits
     # ``event_processed`` once the delivery set has executed.
     emit_processed: bool = False
@@ -169,19 +179,30 @@ class DeliveryCascade:
         self.cancelled = reason
         self._done.set()
 
-    async def wait(self) -> None:
+    async def wait(self) -> bool:
         """Wait for the cascade to complete.
 
-        Short-circuits when the current task is the room's own lane executor
-        or holds the room lock: in both cases waiting would deadlock (the
-        lane cannot progress past the caller), so the call returns with the
-        event committed and its delivery following in lane order — the
-        detached completion RFC §10.1 step 18 permits.
+        Short-circuits (returning ``False``) when the current task is the
+        room's own lane executor or holds the room lock: in both cases
+        waiting would deadlock (the lane cannot progress past the caller),
+        so the call returns with the event committed and its delivery
+        following in lane order — the detached completion RFC §10.1 step 18
+        permits. Returns ``True`` when the cascade actually completed; a
+        detached caller must arrange for ``streams`` to be consumed later.
         """
         if self._pending <= 0:
-            return
+            return True
         if _active_lane_room.get() == self.room_id or self.room_id in _held_rooms.get():
-            return
+            return False
+        await self._done.wait()
+        return True
+
+    async def wait_detached(self) -> None:
+        """Wait for true completion, without the short-circuit guards.
+
+        For the background consumer a detached caller schedules — it runs on
+        its own clean task, where waiting cannot deadlock.
+        """
         await self._done.wait()
 
 

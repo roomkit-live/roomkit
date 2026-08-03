@@ -727,10 +727,10 @@ class TestTimeouts:
         original = kit._run_precommit
 
         async def slow_precommit(
-            event: RoomEvent, room_id: str, context: RoomContext, **kwargs: object
+            event: RoomEvent, room_id: str, context: RoomContext, *args: object, **kwargs: object
         ) -> object:
             await asyncio.sleep(5.0)
-            return await original(event, room_id, context, **kwargs)
+            return await original(event, room_id, context, *args, **kwargs)
 
         kit._run_precommit = slow_precommit  # type: ignore[assignment]
 
@@ -764,16 +764,15 @@ class TestTimeouts:
         await kit.create_room(room_id="r1")
         await kit.attach_channel("r1", "sms1")
 
-        # Broadcast (post-commit) takes far longer than process_timeout.
-        original = kit._process_broadcast
+        # Delivery execution (post-commit, in the lane) takes far longer
+        # than process_timeout.
+        original = kit._execute_plan
 
-        async def slow_broadcast(
-            event: RoomEvent, room_id: str, *args: object, **kwargs: object
-        ) -> InboundResult:
+        async def slow_execute(plan: object) -> object:
             await asyncio.sleep(0.1)
-            return await original(event, room_id, *args, **kwargs)
+            return await original(plan)
 
-        kit._process_broadcast = slow_broadcast  # type: ignore[assignment]
+        kit._execute_plan = slow_execute  # type: ignore[assignment]
 
         base_timeline = len(await kit.get_timeline("r1"))
 

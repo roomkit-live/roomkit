@@ -51,7 +51,7 @@ async def _persist_child_stream(
             return
         body = "".join(segment)
         segment.clear()
-        await kit.store.commit_event(
+        await kit._commit_indexed(
             child_room_id,
             RoomEvent(
                 room_id=child_room_id,
@@ -69,7 +69,7 @@ async def _persist_child_stream(
             segment.append(delta)
         elif isinstance(delta, ToolCallStartMarker):
             await _flush_segment()
-            await kit.store.commit_event(
+            await kit._commit_indexed(
                 child_room_id,
                 RoomEvent(
                     room_id=child_room_id,
@@ -86,7 +86,7 @@ async def _persist_child_stream(
                 ),
             )
         elif isinstance(delta, ToolCallEndMarker):
-            await kit.store.commit_event(
+            await kit._commit_indexed(
                 child_room_id,
                 RoomEvent(
                     room_id=child_room_id,
@@ -117,7 +117,7 @@ async def _persist_response_events(
     return the last message text, so the child room keeps the full trace."""
     final_text: str | None = None
     for resp in response_events:
-        await kit.store.commit_event(
+        await kit._commit_indexed(
             child_room_id, resp.model_copy(update={"status": EventStatus.DELIVERED})
         )
         if isinstance(resp.content, TextContent) and resp.content.body:
@@ -140,7 +140,7 @@ async def _broadcast_and_collect(
         content=TextContent(body=message_body),
         status=EventStatus.DELIVERED,
     )
-    msg_event = await kit.store.commit_event(child_room_id, msg_event)
+    msg_event = await kit._commit_indexed(child_room_id, msg_event)
 
     # Build context AFTER storing so the agent's memory provider
     # can see the message in recent_events.

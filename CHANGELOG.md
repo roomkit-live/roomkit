@@ -7,6 +7,79 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The room lock ends at broadcast planning — external delivery moved to
+  per-room delivery lanes** (RFC §10.1 steps 12-14, §10.2, §13.5; the
+  roomkit-specs amendment `e0aabcc`). Measured on the scale bench: with
+  `channel.on_event`/`deliver` (provider round trips, AI generation) inside
+  the room's critical section, adding workers made rooms *slower* — 74
+  backends parked on advisory locks while 3-4 worked. Now the lock covers
+  the pre-commit gates, the atomic commit and the *planning* of the
+  delivery set; execution runs off the lock, ordered per room by the
+  `Room.delivered_index` cursor (strict CAS) under a delivery claim — a
+  derived `__delivery__:{room_id}` key on the existing lock manager. One
+  lane per room and per process executes only the plans its process
+  enqueued; the shared cursor forces the global order. Observable
+  semantics preserved: `process_inbound`/`send_event` still return after
+  the full delivery cascade (trigger set + every reentry pass it spawned),
+  so "the AI response is committed when the call returns" holds. Response
+  events re-enter as their own commit passes (fresh room lock) instead of
+  being drained inside the trigger's lock tenure — a concurrent inbound
+  MAY now commit between a trigger and its response (the RFC's explicit
+  relaxation: index monotonicity and parent linkage, never adjacency).
+  AFTER_BROADCAST keeps its contract (fires after the event's delivery
+  set completes); its relative order across trigger/reentries follows
+  execution order. A worker that commits and crashes before delivering
+  leaves a cursor hole: the waiting lane skips it after
+  `delivery_gap_timeout` with a `delivery_skipped` framework event —
+  the same bounded loss as the previous crash window, now observable and
+  without wedging the room. The Postgres store backfills
+  `delivered_index = latest_index` once, when the column is first created
+  (pre-lane deployments delivered under the lock, so everything stored is
+  delivered).
+
+### Added
+
+- **`RoomKit(delivery_gap_timeout=30.0)`** — how long a lane waits on a
+  cursor hole owned by an absent worker before skipping it, and
+  **`RoomKit(delivery_claim_lock_manager=...)`** — a dedicated lock manager
+  (own pool) for delivery claims, so claim tenures (which span provider
+  round trips) cannot starve the room-lock pool commits depend on. New
+  framework event: **`delivery_skipped`** (`{from_index, to_index}`).
+
+- **First-class Buzz agents: owner commands + `BuzzAgent` lifecycle runner.**
+  A RoomKit process can now honor the full lifecycle contract Buzz expects
+  of *every* agent, however launched (the platform's remote-agents spec,
+  layer L1):
+  - **Owner control commands.** `BuzzRelaySource` intercepts the platform's
+    `!shutdown` / `!cancel` / `!rotate` — kind-9, exact content, mentioning
+    the agent — when authored by the **proven** owner: the NIP-OA auth tag's
+    attester (Schnorr-verified by buzzkit against the agent's own pubkey),
+    else the new `BuzzConfig.owner_pubkey`. Commands are consumed before the
+    pipeline, so the AI can no longer answer its own stop command;
+    `!shutdown` stops the source gracefully (or defers to the new
+    `on_owner_command` callback). Fail-closed: no provable owner → commands
+    stay regular messages, as does any command from a non-owner. Governed by
+    `BuzzConfig.obey_owner_commands` (default on — a bot with an auth tag now
+    obeys its owner; set it to `False` to keep the old answer-everything
+    behavior).
+  - **`BuzzAgent`** (`roomkit.providers.buzz`): the runner that owns waiting
+    and dying — attaches the sources, installs SIGTERM/SIGINT handlers, arms
+    an opt-in `exit_after_inactivity` bound (default off; reaper on its own
+    timer), and exits every cause through the same graceful path
+    (`kit.close()` → presence `offline` → sockets closed), returning a
+    `BuzzAgentStopCause`. Intentional stops are final: the source supervisor
+    only restarts sources that *raise*, never a clean stop.
+  - **`BuzzConfig.from_env()`** reads the reserved identity triplet
+    (`BUZZ_PRIVATE_KEY`/`NOSTR_PRIVATE_KEY`, `BUZZ_RELAY_URL`,
+    `BUZZ_AUTH_TAG`), fail-closed — a RoomKit agent is launchable by the
+    same script/unit/entrypoint as any other Buzz agent. New example:
+    `examples/buzz_agent.py`.
+  - The `buzz` extra floor moves to `buzzkit>=0.3.0` (adds
+    `parse_owner_command` and the Schnorr-verified
+    `BuzzClient.verified_owner_hex` these features are built on).
+
 ### Fixed
 
 - **Buzz presence heartbeat no longer dies on a transient failure.**

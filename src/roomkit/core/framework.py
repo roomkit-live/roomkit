@@ -56,6 +56,7 @@ from roomkit.core.mixins import (
     InboundLockedMixin,
     InboundMixin,
     InboundStreamingMixin,
+    LaneExecutionMixin,
     MembershipMixin,
     RealtimeOpsMixin,
     RecordingMixin,
@@ -67,7 +68,6 @@ from roomkit.core.mixins import (
 from roomkit.core.transcoder import DefaultContentTranscoder
 from roomkit.identity.base import IdentityResolver
 from roomkit.models.channel import RateLimit
-from roomkit.models.context import RoomContext
 from roomkit.models.enums import (
     ChannelType,
     EventStatus,
@@ -116,6 +116,7 @@ class RoomKit(
     InboundIdentityMixin,
     InboundLockedMixin,
     InboundStreamingMixin,
+    LaneExecutionMixin,
     RegenerateMixin,
     ChannelOpsMixin,
     RoomLifecycleMixin,
@@ -155,6 +156,8 @@ class RoomKit(
         inbound_rate_limit: RateLimit | None = None,
         orchestration: Orchestration | None = None,
         persistence_policy: PersistencePolicy | None = None,
+        delivery_gap_timeout: float = 30.0,
+        delivery_claim_lock_manager: RoomLockManager | None = None,
     ) -> None:
         """Initialise the RoomKit orchestrator.
 
@@ -214,6 +217,18 @@ class RoomKit(
                 ``PersistencePolicy(exclude_types={...})`` to skip specific
                 types or ``PersistencePolicy(persist_types={...})`` to
                 whitelist.
+            delivery_gap_timeout: Seconds a delivery lane waits on a cursor
+                hole owned by an absent worker (one that committed events and
+                crashed before delivering them) before skipping over it with
+                a ``delivery_skipped`` framework event (RFC §10.2). The skip
+                bounds the loss to the crash window; it never covers an
+                index this process holds a plan for.
+            delivery_claim_lock_manager: Lock manager used for the per-room
+                delivery claims. Defaults to ``lock_manager``. Supply a
+                separate ``PostgresAdvisoryLockManager`` (own pool) in
+                multi-process deployments: a claim is held for the length of
+                a delivery set — provider round trips included — and must
+                not starve the room-lock pool that commits depend on.
         """
         from roomkit.telemetry.base import TelemetryProvider as _TelemetryProviderCls
         from roomkit.telemetry.config import TelemetryConfig as _TelemetryConfigCls
@@ -246,6 +261,16 @@ class RoomKit(
                 "as PostgresAdvisoryLockManager to avoid duplicate event indices.",
                 type(self._store).__name__,
             )
+        # Delivery lanes (RFC §10.2): broadcast planned under the room lock,
+        # executed per room in index order off it. The claim defaults to the
+        # room lock manager (derived key space); a dedicated manager keeps
+        # long claim tenures off the commit pool in multi-process setups.
+        from roomkit.core.lanes import LaneConfig, RoomLaneRegistry
+
+        self._claim_locks = delivery_claim_lock_manager or self._lock_manager
+        self._lanes = RoomLaneRegistry(
+            self, self._claim_locks, LaneConfig(gap_timeout=delivery_gap_timeout)
+        )
         self._realtime = realtime or InMemoryRealtime()
         self._transcoder = DefaultContentTranscoder()
         self._event_handlers: list[tuple[str, FrameworkEventHandler]] = []
@@ -468,6 +493,12 @@ class RoomKit(
         # Stop all event sources
         for channel_id in list(self._sources.keys()):
             await self.detach_source(channel_id)
+        # Drain and seal the delivery lanes BEFORE the channels close: lane
+        # executors call channel.on_event/deliver, and a bounded drain gives
+        # queued deliveries their chance while the channels still accept
+        # them. Whatever outlives the budget is aborted with its cascade
+        # cancelled — no waiter hangs.
+        await self._lanes.aclose()
         # Then close the channels. In sequence, but shielded from one another:
         # they close one at a time, so a close that raises would leave every
         # channel behind it holding its media — for a conference channel, a
@@ -500,8 +531,11 @@ class RoomKit(
         # Close the conversation store (e.g. release a PostgreSQL pool). The
         # store's close() is idempotent and a no-op for a caller-owned pool.
         await self._store.close()
-        # Close the lock manager (e.g. release an advisory-lock pool).
+        # Close the lock manager (e.g. release an advisory-lock pool), and
+        # the delivery-claim manager when the host supplied a dedicated one.
         await self._lock_manager.close()
+        if self._claim_locks is not self._lock_manager:
+            await self._claim_locks.close()
         # Close status bus
         await self._status_bus.close()
         # Flush telemetry (ends active spans, flushes exporter)
@@ -727,24 +761,19 @@ class RoomKit(
         )
         token = set_current_span(span_id, telemetry_ctx=telemetry.get_span_context(span_id))
         try:
-            # Direct injection traverses the SAME locked pipeline as inbound
-            # (RFC §10.5): index assignment, BEFORE_BROADCAST hooks, edit/delete
-            # handling, source write-permission gate, persistence, broadcast,
-            # reentry drain and AFTER_BROADCAST hooks. This keeps a single
-            # validation/hooks/indexing/persistence model across entry points.
-            pending_async_hooks: list[tuple[HookTrigger, RoomEvent, RoomContext]] = []
-            pending_error_hooks: list[tuple[RoomContext, Any, dict[str, Any]]] = []
-            pending_streams: list[Any] = []
+            # Direct injection traverses the SAME pipeline as an inbound
+            # message (RFC §10.5): index assignment, BEFORE_BROADCAST hooks,
+            # edit/delete handling, source write-permission gate, persistence
+            # and broadcast planning under the room lock, then its delivery
+            # lane, reentry passes, and AFTER_BROADCAST hooks. This keeps a
+            # single validation/hooks/indexing/persistence model across entry
+            # points.
+            from roomkit.core.lanes import DeliveryCascade
+
+            cascade = DeliveryCascade(room_id, reentry_budget=self._max_chain_depth * 10)
             async with self._lock_manager.locked(room_id):
                 context = await self._build_context(room_id)
-                result = await self._process_locked(
-                    event,
-                    room_id,
-                    context,
-                    pending_after_broadcast_out=pending_async_hooks,
-                    pending_error_hooks_out=pending_error_hooks,
-                    pending_streams_out=pending_streams,
-                )
+                result = await self._process_locked(event, room_id, context, cascade)
             # A room that refuses events (RFC §5.1) is the one block this API
             # cannot report by returning: its contract is the committed event,
             # and handing back one marked DELIVERED for a write that never
@@ -754,14 +783,20 @@ class RoomKit(
                 raise RoomClosedError(f"Room {room_id} does not accept new events")
             if isinstance(result.event, RoomEvent):
                 event = result.event
-            # AFTER_BROADCAST/mutation and ON_ERROR run outside the room lock (RFC §10.1)
-            await self._run_deferred_async_hooks(room_id, pending_async_hooks)
-            await self._run_deferred_error_hooks(room_id, pending_error_hooks)
+            # The caller observes its event's delivery-set completion (RFC
+            # §10.1 step 18) — the wait short-circuits when this call was made
+            # from inside the room's own lane or under its lock, where waiting
+            # would deadlock; delivery then follows in lane order.
+            completed = await cascade.wait()
             # Streaming AI responses to a directly-injected event are consumed
-            # outside the lock, exactly like the inbound path — without this a
-            # streaming provider's reply is generated and then silently dropped.
-            if pending_streams:
-                await self._process_streaming_responses(pending_streams, room_id)
+            # outside the lane, exactly like the inbound path — without this a
+            # streaming provider's reply is generated and then silently
+            # dropped. A detached caller hands the consumption to a
+            # background task once the cascade truly completes.
+            if not completed:
+                self._consume_streams_when_cascade_completes(cascade, room_id)
+            elif cascade.streams:
+                await self._process_streaming_responses(cascade.streams, room_id)
 
             telemetry.end_span(span_id)
         except Exception as exc:

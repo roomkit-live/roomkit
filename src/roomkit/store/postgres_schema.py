@@ -110,8 +110,25 @@ CREATE TABLE IF NOT EXISTS rooms (
 );
 
 -- Additive migration for pre-existing deployments: the delivery-lane
--- cursor (RFC §10.1 step 14). -1 = no delivery set executed yet.
-ALTER TABLE rooms ADD COLUMN IF NOT EXISTS delivered_index INTEGER NOT NULL DEFAULT -1;
+-- cursor (RFC §10.1 step 14). -1 = no delivery set executed yet. The
+-- backfill runs ONLY when the column is first created: a pre-lane
+-- deployment delivered under the room lock, so every stored event is
+-- delivered and the cursor starts at latest_index — without it, a busy
+-- room's first laned delivery would wait out a delivery_gap_timeout
+-- against a purely historical hole. Guarded (not re-run per boot):
+-- re-applying it against a live multi-worker deployment would declare
+-- an in-flight first delivery lost. Empty rooms keep -1 (latest_index
+-- defaults to 0 with no event behind it).
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'rooms' AND column_name = 'delivered_index'
+    ) THEN
+        ALTER TABLE rooms ADD COLUMN delivered_index INTEGER NOT NULL DEFAULT -1;
+        UPDATE rooms SET delivered_index = latest_index WHERE event_count > 0;
+    END IF;
+END $$;
 CREATE INDEX IF NOT EXISTS idx_rooms_org ON rooms(organization_id);
 CREATE INDEX IF NOT EXISTS idx_rooms_status ON rooms(status);
 CREATE INDEX IF NOT EXISTS idx_rooms_updated ON rooms(updated_at DESC);

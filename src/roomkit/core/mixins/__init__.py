@@ -13,6 +13,7 @@ from roomkit.core.mixins.inbound import InboundMixin
 from roomkit.core.mixins.inbound_identity import InboundIdentityMixin
 from roomkit.core.mixins.inbound_locked import InboundLockedMixin
 from roomkit.core.mixins.inbound_streaming import InboundStreamingMixin
+from roomkit.core.mixins.lane_execution import LaneExecutionMixin
 from roomkit.core.mixins.membership import MembershipMixin
 from roomkit.core.mixins.realtime_ops import RealtimeOpsMixin
 from roomkit.core.mixins.recording import RecordingMixin
@@ -35,6 +36,7 @@ __all__ = [
     "InboundLockedMixin",
     "InboundMixin",
     "InboundStreamingMixin",
+    "LaneExecutionMixin",
     "MembershipMixin",
     "RealtimeOpsMixin",
     "RecordingMixin",

@@ -165,6 +165,8 @@ class EventRouter:
         direct broadcast callers; inbound events from non-writable sources
         are blocked before broadcast) yields an empty delivery set.
         """
+        from roomkit.telemetry.context import get_current_span
+
         if not source_binding.can_write:
             logger.debug(
                 "Source %s cannot write (access=%s, muted=%s) — not broadcasting",
@@ -180,12 +182,22 @@ class EventRouter:
                 event = event.model_copy(update={"visibility": source_binding.visibility})
             # Target bindings include muted channels — they can still read.
             targets = self._filter_targets(event, source_binding, context.bindings)
+        # The caller's span, carried across the lane boundary so the
+        # broadcast span stays a child of the inbound/send_event span.
+        parent_span_id = get_current_span()
+        parent_span_ctx = (
+            self._telemetry.get_span_context(parent_span_id)
+            if self._telemetry is not None and parent_span_id is not None
+            else None
+        )
         return DeliveryPlan(
             event=event,
             source_binding=source_binding,
             context=context,
             targets=targets,
             exclude_delivery=exclude_delivery,
+            parent_span_id=parent_span_id,
+            parent_span_ctx=parent_span_ctx,
         )
 
     async def execute_plan(self, plan: DeliveryPlan) -> BroadcastResult:
@@ -210,6 +222,14 @@ class EventRouter:
 
         telemetry = self._telemetry or NoopTelemetryProvider()
         session_id = (event.metadata or {}).get("voice_session_id")
+        # Restore the planner's span context first: a lane executor runs on a
+        # fresh contextvars context, and the broadcast span must stay a child
+        # of the span that planned it (inline callers see their own span).
+        parent_token = None
+        if plan.parent_span_id is not None:
+            parent_token = set_current_span(
+                plan.parent_span_id, telemetry_ctx=plan.parent_span_ctx
+            )
         span_id = telemetry.start_span(
             SpanKind.BROADCAST,
             "framework.broadcast",
@@ -231,6 +251,8 @@ class EventRouter:
         # source binding has nothing to transcode from either way.
         if not targets or source_binding is None:
             reset_span(broadcast_token)
+            if parent_token is not None:
+                reset_span(parent_token)
             telemetry.end_span(span_id, attributes={"target_count": 0})
             return result
 
@@ -478,6 +500,8 @@ class EventRouter:
             result.observations.extend(tr.observations)
 
         reset_span(broadcast_token)
+        if parent_token is not None:
+            reset_span(parent_token)
         telemetry.end_span(
             span_id,
             attributes={

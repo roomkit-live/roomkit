@@ -112,12 +112,21 @@ class HelpersMixin:
     _pending_hook_tasks: set[asyncio.Task[Any]]
     _persistence_policy: Any  # PersistencePolicy | None — set by RoomKit.__init__
     _resource_lease: Any  # RoomKit._resource_lease — the close()-ordering hold on the store
+    _lanes: Any  # RoomLaneRegistry — set by RoomKit.__init__
 
     # -- Persistence helpers (policy-aware) --
+    #
+    # Every committed index must be accounted on the room's delivery cursor
+    # exactly once (RFC §10.2 — a missing entry is a permanent hole the gap
+    # policy eventually skips). These two methods and ``_commit_to_lane``
+    # (the planned variant, LaneExecutionMixin) are therefore the ONLY paths
+    # to ``store.commit_event`` in the framework; a static guard test
+    # enforces it.
 
     async def _persist_committed(self, room_id: str, event: RoomEvent) -> RoomEvent | None:
         """Atomically commit an event (index + insert + room counters, RFC
-        §10.1 step 12 / §14.3) if the policy allows it.
+        §10.1 step 12 / §14.3) if the policy allows it, and account its
+        index on the room's delivery cursor.
 
         Returns the committed event, or ``None`` if the policy excluded it.
         """
@@ -125,7 +134,34 @@ class HelpersMixin:
             event.type
         ):
             return None
-        return await self._store.commit_event(room_id, event)
+        committed = await self._store.commit_event(room_id, event)
+        await self._note_committed_index(room_id, committed.index)
+        return committed
+
+    async def _commit_indexed(self, room_id: str, event: RoomEvent) -> RoomEvent:
+        """Commit an event unconditionally (policy-exempt) and account its
+        index on the delivery cursor.
+
+        For commits that must always be stored regardless of the persistence
+        policy: BLOCKED events (part of the timeline, they consume an index —
+        RFC §8.3), injected events, child-room traces.
+        """
+        committed = await self._store.commit_event(room_id, event)
+        await self._note_committed_index(room_id, committed.index)
+        return committed
+
+    async def _note_committed_index(self, room_id: str, index: int) -> None:
+        """Account a committed index that carries no laned delivery set.
+
+        Opportunistic strict CAS first — the common case for inline paths
+        (greeting, child rooms, streamed segments) where the cursor already
+        sits at ``index - 1``. When it does not (a lane is in flight for the
+        room), the index becomes a cursor entry the lane advances at its
+        turn.
+        """
+        if await self._store.advance_delivered_index(room_id, index):
+            return
+        self._lanes.note_committed(room_id, index)
 
     # -- Error surfacing --
 

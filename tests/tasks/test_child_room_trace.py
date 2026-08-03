@@ -45,6 +45,7 @@ class TestPersistChildStream:
     async def test_persists_tool_calls_and_text_segments_in_order(self) -> None:
         kit = MagicMock()
         kit.store = _recording_store()
+        kit._commit_indexed = kit.store.commit_event
 
         async def _stream() -> Any:
             yield "Let me search. "
@@ -85,6 +86,7 @@ class TestPersistChildStream:
     async def test_thinking_markers_are_not_persisted(self) -> None:
         kit = MagicMock()
         kit.store = _recording_store()
+        kit._commit_indexed = kit.store.commit_event
 
         async def _stream() -> Any:
             yield ThinkingDeltaMarker(thinking="hmm")
@@ -98,6 +100,7 @@ class TestPersistChildStream:
     async def test_text_only_stream_persists_single_message(self) -> None:
         kit = MagicMock()
         kit.store = _recording_store()
+        kit._commit_indexed = kit.store.commit_event
 
         async def _stream() -> Any:
             yield "just "
@@ -113,6 +116,7 @@ class TestRunAgentNonStreaming:
     async def test_persists_all_response_events_not_just_final_text(self) -> None:
         kit = MagicMock()
         kit.store = _recording_store()
+        kit._commit_indexed = kit.store.commit_event
         kit.get_room = AsyncMock(
             return_value=Room(id="parent::task-1", metadata={"parent_room_id": "parent"})
         )

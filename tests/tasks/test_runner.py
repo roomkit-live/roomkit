@@ -66,6 +66,7 @@ def _make_mock_kit(
     kit.store.add_event = AsyncMock()
     kit.store.add_event_auto_index = AsyncMock(side_effect=lambda room_id, event: event)
     kit.store.commit_event = AsyncMock(side_effect=lambda room_id, event: event)
+    kit._commit_indexed = AsyncMock(side_effect=lambda room_id, event: event)
     kit.store.update_room = AsyncMock()
 
     router = MagicMock()
@@ -203,7 +204,7 @@ class TestInMemoryTaskRunner:
         await task.wait(timeout=5.0)
 
         # commit_event should have been called (task message + response event)
-        assert kit.store.commit_event.call_count >= 2
+        assert kit._commit_indexed.call_count >= 2
         # The non-atomic write paths must NOT be used from _run_agent
         kit.store.add_event.assert_not_called()
         kit.store.add_event_auto_index.assert_not_called()

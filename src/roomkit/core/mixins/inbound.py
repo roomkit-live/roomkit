@@ -10,14 +10,12 @@ from roomkit.core.exceptions import ChannelNotRegisteredError
 from roomkit.core.mixins.channel_ops import is_channel_detached
 from roomkit.core.mixins.helpers import HelpersMixin
 from roomkit.core.mixins.inbound_identity import _IdentityBlockedError
-from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundMessage, InboundResult
 from roomkit.models.enums import (
     ChannelType,
     HookTrigger,
     Visibility,
 )
-from roomkit.models.event import RoomEvent
 
 if TYPE_CHECKING:
     from roomkit.channels.base import Channel
@@ -51,7 +49,6 @@ class InboundHost(Protocol):
     Cross-mixin methods (provided by other mixins in the MRO):
         _resolve_identity: From :class:`InboundIdentityMixin`.
         _process_locked: From :class:`InboundLockedMixin`.
-        _run_deferred_async_hooks: From :class:`InboundLockedMixin`.
         _process_streaming_responses: From :class:`InboundStreamingMixin`.
         create_room: From :class:`RoomLifecycleMixin`.
         attach_channel: From :class:`ChannelOpsMixin`.
@@ -93,9 +90,8 @@ class InboundMixin(HelpersMixin):
     # Cross-mixin methods — attribute annotations avoid MRO shadowing
     _resolve_identity: Any  # see InboundHost
     _process_locked: Any  # see InboundHost
-    _run_deferred_async_hooks: Any  # see InboundHost
-    _run_deferred_error_hooks: Any  # see InboundHost
     _process_streaming_responses: Any  # see InboundHost
+    _consume_streams_when_cascade_completes: Any  # see LaneExecutionMixin
     create_room: Any  # see InboundHost
     attach_channel: Any  # see InboundHost
 
@@ -208,38 +204,45 @@ class InboundMixin(HelpersMixin):
         except _IdentityBlockedError as exc:
             return InboundResult(blocked=True, reason=exc.reason)
 
-        # Process under room lock
-        pending_streams: list[Any] = []
-        pending_async_hooks: list[tuple[HookTrigger, RoomEvent, RoomContext]] = []
-        pending_error_hooks: list[tuple[RoomContext, Any, dict[str, Any]]] = []
+        # Process under room lock. The lock covers the pre-commit gates, the
+        # commit and the broadcast PLANNING (RFC §10.1 steps 6-12); execution
+        # runs in the room's delivery lane after release, tracked by the
+        # cascade. ``process_timeout`` is applied inside _process_locked,
+        # scoped to the pre-commit phase only (RFC §13.6).
+        from roomkit.core.lanes import DeliveryCascade
+
+        cascade = DeliveryCascade(room_id, reentry_budget=self._max_chain_depth * 10)
         async with self._lock_manager.locked(room_id):
-            # ``process_timeout`` is applied inside _process_locked, scoped to
-            # the pre-commit phase only (RFC §13.6) — once an event commits, its
-            # broadcast runs unbounded and is never cancelled.
             result: InboundResult = await self._process_locked(
                 event,
                 room_id,
                 context,
+                cascade,
                 resolved_identity=resolved_identity,
                 pending_id_result=pending_id_result,
-                pending_streams_out=pending_streams,
-                pending_after_broadcast_out=pending_async_hooks,
-                pending_error_hooks_out=pending_error_hooks,
             )
 
-        # Run AFTER_BROADCAST/mutation and ON_ERROR async hooks now that the
-        # room lock is released (RFC §10.1) — a slow observer or error hook no
-        # longer blocks concurrent process_inbound calls for the same room.
-        await self._run_deferred_async_hooks(room_id, pending_async_hooks)
-        await self._run_deferred_error_hooks(room_id, pending_error_hooks)
+        # The caller observes its event's delivery-set completion (RFC §10.1
+        # step 18): wait for the cascade — the trigger's delivery set plus
+        # every reentry pass it transitively spawned. AFTER_BROADCAST,
+        # mutation and ON_ERROR hooks fire from the lane executor, off this
+        # room's lock.
+        completed = await cascade.wait()
+        if cascade.error is not None and result.error is None:
+            result.error = cascade.error
 
-        # Handle streaming responses outside lock (TTS delivery can take seconds;
-        # holding the lock would block concurrent process_inbound calls). A
-        # failure while consuming the response stream is surfaced on the result
-        # so a headless caller can react (interactive callers ignore it — the
-        # ON_ERROR hooks already fired an error card).
-        if pending_streams:
-            stream_error = await self._process_streaming_responses(pending_streams, room_id)
+        # Handle streaming responses outside the lane (TTS delivery can take
+        # seconds; the lane must not stall behind it). A failure while
+        # consuming the response stream is surfaced on the result so a
+        # headless caller can react (interactive callers ignore it — the
+        # ON_ERROR hooks already fired an error card). A detached caller (a
+        # reentrant process_inbound issued from a hook or a tool handler)
+        # hands the consumption to a background task instead — a streaming
+        # reply is only generated when its stream is consumed.
+        if not completed:
+            self._consume_streams_when_cascade_completes(cascade, room_id)
+        elif cascade.streams:
+            stream_error = await self._process_streaming_responses(cascade.streams, room_id)
             if stream_error is not None and result.error is None:
                 result.error = stream_error
 
