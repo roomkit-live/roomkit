@@ -13,6 +13,7 @@ import contextlib
 import inspect
 import json
 import logging
+import time
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
@@ -100,6 +101,10 @@ def parse_buzz_event(
     metadata: dict[str, Any] = {
         "nostr_event_id": event_id,
         "nostr_kind": event.get("kind"),
+        # The Nostr timestamp (unix seconds) — lets apps tell live traffic
+        # from relay-history replay (the relay replays recent stored events
+        # on every subscribe; see examples/buzz_agent.py's echo guard).
+        "nostr_created_at": int(event.get("created_at") or 0),
         "buzz_channel_id": relay_channel,
     }
     # NIP-10 threading: a direct reply carries one ["e", <root>, "", "reply"]
@@ -255,6 +260,7 @@ class BuzzRelaySource(BaseSourceProvider):
         self._on_event = on_event
         self._on_owner_command = on_owner_command
         self._owner_hex: str | None = None  # resolved at start()
+        self._started_at: int = 0  # unix seconds, set at start(); the staleness gate
         self._parser = parser or default_message_parser(channel_id, ignore_own=config.ignore_own)
         self._client: Any = BuzzClient(
             config.relay_url,
@@ -341,6 +347,22 @@ class BuzzRelaySource(BaseSourceProvider):
         command = parse_owner_command(event, self._client.pubkey_hex)
         if command is None or str(event.get("pubkey", "")) != self._owner_hex:
             return False
+        # Staleness gate: the relay replays recent stored events on every
+        # (re)subscribe, and an owner command is an imperative, not state — a
+        # ``!shutdown`` issued before this source started must not kill the
+        # fresh instance the owner just restarted (it would make every
+        # restart die instantly until the command ages out of replay).
+        # Commands issued *while disconnected* have created_at >= _started_at
+        # and are still honored when the reconnect replays them. Stale ones
+        # are consumed, not forwarded: replaying them into the pipeline would
+        # have the AI answering old stop commands on every restart.
+        if int(event.get("created_at") or 0) < self._started_at:
+            logger.info(
+                "Ignoring stale owner command !%s on %s (issued before this start)",
+                command,
+                self._channel_id,
+            )
+            return True
         logger.info(
             "Buzz owner command !%s on %s (owner %s…)",
             command,
@@ -384,6 +406,7 @@ class BuzzRelaySource(BaseSourceProvider):
     async def start(self, emit: EmitCallback) -> None:
         self._reset_stop()
         self._set_status(SourceStatus.CONNECTING)
+        self._started_at = int(time.time())
         self._owner_hex = self._resolve_owner()
         if self._owner_hex is not None:
             logger.info(

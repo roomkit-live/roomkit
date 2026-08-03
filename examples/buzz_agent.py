@@ -45,6 +45,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import asyncio
 import os
+import time
 
 from shared import setup_logging
 
@@ -84,8 +85,14 @@ async def main() -> int:
         "buzz-agent", channel_id, metadata={"buzz_channel_id": relay_channel_id}
     )
 
+    started_at = int(time.time())
+
     @kit.hook(HookTrigger.AFTER_BROADCAST, execution=HookExecution.ASYNC, name="echo_reply")
     async def echo_reply(event: RoomEvent, ctx: RoomContext) -> HookResult:
+        # The relay replays recent channel history on every subscribe; only
+        # answer live traffic, not messages that predate this process.
+        if int(event.metadata.get("nostr_created_at") or 0) < started_at:
+            return HookResult.allow()
         content = event.content
         if isinstance(content, TextContent):
             nostr_id = event.source.external_id

@@ -8,6 +8,7 @@ without a live relay.
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -525,8 +526,19 @@ class TestBuzzRelaySourceLifecycle:
 OWNER = "a" * 64
 
 
-def _owner_event(content: str, *, pubkey: str = OWNER, id: str = "cmd1") -> dict[str, Any]:
-    return _event(id=id, kind=9, pubkey=pubkey, content=content, tags=[["p", "bot_pubkey"]])
+def _owner_event(
+    content: str, *, pubkey: str = OWNER, id: str = "cmd1", created_at: int | None = None
+) -> dict[str, Any]:
+    # Fresh by default: commands older than the source's start are stale
+    # (replay protection) and deliberately ignored.
+    return _event(
+        id=id,
+        kind=9,
+        pubkey=pubkey,
+        content=content,
+        tags=[["p", "bot_pubkey"]],
+        created_at=created_at if created_at is not None else int(time.time()) + 5,
+    )
 
 
 class TestOwnerCommands:
@@ -609,6 +621,38 @@ class TestOwnerCommands:
         ]
         emitted = await _run_source_once(source)
         assert [m.external_id for m in emitted] == ["msg1"]
+
+    async def test_replayed_stale_shutdown_is_ignored(self, buzz_source, caplog) -> None:
+        """A !shutdown replayed from relay history must not kill a fresh start.
+
+        The relay replays recent stored events on every (re)subscribe; an
+        owner command issued before this start is consumed without action —
+        neither obeyed nor forwarded to the pipeline (live-found bug: every
+        restart died instantly until the command aged out of replay).
+        """
+        source = self._owned(buzz_source)
+        source.client.events = [
+            _owner_event("!shutdown", id="old", created_at=int(time.time()) - 300),
+            _event(id="msg1", kind=9, content="still alive"),
+        ]
+        with caplog.at_level("INFO", logger="roomkit.sources.buzz"):
+            emitted = await _run_source_once(source)
+        assert [m.external_id for m in emitted] == ["msg1"]
+        assert "stale owner command" in caplog.text
+        assert source.client.presence[-1] == "offline"  # stopped by the test, not the command
+
+    async def test_command_issued_after_start_is_honored_on_replay(self, buzz_source) -> None:
+        """A !shutdown issued while disconnected still stops the agent when
+        the reconnect replays it: created_at >= the source's start time."""
+        source = self._owned(buzz_source)
+        source.client.events = [_owner_event("!shutdown", created_at=int(time.time()) + 30)]
+        emitted: list[Any] = []
+
+        async def emit(message: Any) -> Any:
+            emitted.append(message)
+
+        await asyncio.wait_for(source.start(emit), timeout=2)
+        assert emitted == []
 
 
 class TestBuzzConfigFromEnv:

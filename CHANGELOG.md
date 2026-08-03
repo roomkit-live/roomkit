@@ -60,7 +60,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     pipeline, so the AI can no longer answer its own stop command;
     `!shutdown` stops the source gracefully (or defers to the new
     `on_owner_command` callback). Fail-closed: no provable owner → commands
-    stay regular messages, as does any command from a non-owner. Governed by
+    stay regular messages, as does any command from a non-owner. Replay-safe
+    (live-tested): the relay replays recent history on every subscribe, so a
+    command issued *before the source started* is stale — consumed without
+    action, never obeyed, never forwarded — while one issued during a
+    disconnection is still honored when the reconnect replays it. Inbound
+    metadata gains `nostr_created_at` so apps can likewise tell live traffic
+    from replay (see the example's echo guard). Governed by
     `BuzzConfig.obey_owner_commands` (default on — a bot with an auth tag now
     obeys its owner; set it to `False` to keep the old answer-everything
     behavior).
