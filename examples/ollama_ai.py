@@ -15,6 +15,11 @@ Run with:
     OLLAMA_HOST=http://localhost:11434 OLLAMA_MODEL=qwen3:8b \\
         uv run python examples/ollama_ai.py
 
+Set ``CONSOLE=1`` for the branded console mode (startup banner with the
+RoomKit version and model, progressive Markdown, styled tool activity)::
+
+    CONSOLE=1 uv run python examples/ollama_ai.py
+
 Set ``OLLAMA_API_KEY`` to authenticate against a protected endpoint
 (Ollama Cloud/Turbo, or a self-hosted server behind a Bearer-checking
 reverse proxy); it is forwarded as ``Authorization: Bearer <key>``.
@@ -35,7 +40,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from shared import env_bool, setup_logging  # noqa: E402
+from shared import console_enabled, env_bool, setup_logging  # noqa: E402
 
 from roomkit import (
     ChannelCategory,
@@ -76,7 +81,8 @@ async def main() -> None:
 
     kit = RoomKit()
 
-    cli = CLIChannel("cli", show_thinking=think_on)
+    console = console_enabled()
+    cli = CLIChannel("cli", show_thinking=think_on, console=console)
     ai = AIChannel(
         "ai-assistant",
         provider=provider,
@@ -90,17 +96,24 @@ async def main() -> None:
     await kit.attach_channel("demo-room", "cli")
     await kit.attach_channel("demo-room", "ai-assistant", category=ChannelCategory.INTELLIGENCE)
 
-    try:
-        await cli.run(
-            kit,
-            room_id="demo-room",
-            welcome=(
-                f"\nOllama AI demo — model={model} host={host}\n"
-                f"Thinking: {_describe_thinking(think_on, effort)}"
-                " — OLLAMA_THINK=0|low|medium|high\n"
-                "Type a message and press Enter. Use 'quit' or Ctrl+D to exit.\n"
-            ),
+    # In console mode the banner already shows the model, so the welcome
+    # keeps only what the banner cannot know.
+    if console:
+        welcome = (
+            f"Thinking: {_describe_thinking(think_on, effort)}"
+            " — OLLAMA_THINK=0|low|medium|high\n"
+            "Type a message and press Enter. Use 'quit' or Ctrl+D to exit."
         )
+    else:
+        welcome = (
+            f"\nOllama AI demo — model={model} host={host}\n"
+            f"Thinking: {_describe_thinking(think_on, effort)}"
+            " — OLLAMA_THINK=0|low|medium|high\n"
+            "Type a message and press Enter. Use 'quit' or Ctrl+D to exit.\n"
+        )
+
+    try:
+        await cli.run(kit, room_id="demo-room", welcome=welcome)
     finally:
         await provider.close()
         await kit.close()

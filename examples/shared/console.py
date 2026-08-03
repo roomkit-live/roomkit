@@ -1,10 +1,14 @@
-"""Optional console dashboard for RoomKit examples.
+"""Optional console rendering for RoomKit examples.
 
-Enable the dashboard by setting ``CONSOLE=1``::
+Enable it by setting ``CONSOLE=1``::
 
-    CONSOLE=1 uv run python examples/realtime_voice_local_gemini.py
+    CONSOLE=1 uv run python examples/realtime_voice_local_gemini.py   # voice dashboard
+    CONSOLE=1 uv run python examples/ollama_ai.py                     # CLI console mode
 
-When ``CONSOLE`` is not set (or ``0``), ``setup_console`` is a no-op.
+Voice examples call ``setup_console(kit)`` (full-screen dashboard); CLI
+examples pass ``console=console_enabled()`` to :class:`roomkit.CLIChannel`
+(inline branded rendering). When ``CONSOLE`` is not set (or ``0``), both
+are no-ops.
 """
 
 from __future__ import annotations
@@ -13,6 +17,13 @@ import os
 from collections.abc import Awaitable, Callable
 
 from roomkit import RoomKit
+
+_TRUTHY = ("1", "true", "yes")
+
+
+def console_enabled() -> bool:
+    """Whether ``CONSOLE=1`` (or ``true``/``yes``) is set."""
+    return os.environ.get("CONSOLE", "0") in _TRUTHY
 
 
 def setup_console(kit: RoomKit) -> Callable[[], Awaitable[None]] | None:
@@ -28,7 +39,7 @@ def setup_console(kit: RoomKit) -> Callable[[], Awaitable[None]] | None:
         console_cleanup = setup_console(kit)
         await run_until_stopped(kit, cleanup=console_cleanup)
     """
-    if os.environ.get("CONSOLE", "0") not in ("1", "true", "yes"):
+    if not console_enabled():
         return None
 
     from roomkit.console import RoomKitConsole

@@ -99,7 +99,7 @@ postgres = ["asyncpg>=0.29"]
 redis = ["redis>=5.0.1"]
 mcp = ["mcp>=1.23.0"]
 acp = ["agent-client-protocol>=0.11.0,<0.12"]
-console = ["rich>=13.0"]
+console = ["rich>=13.0", "prompt-toolkit>=3.0.36"]
 sources = [
     "roomkit[websocket]",
     "roomkit[sse]",

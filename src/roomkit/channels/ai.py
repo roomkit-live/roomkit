@@ -352,6 +352,11 @@ class AIChannel(
         self._tool_handler = value
 
     @property
+    def provider(self) -> AIProvider:
+        """The underlying AI provider."""
+        return self._provider
+
+    @property
     def system_prompt(self) -> str | None:
         """The system prompt used to build request context each turn."""
         return self._system_prompt

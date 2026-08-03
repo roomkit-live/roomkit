@@ -82,6 +82,25 @@ class TestCLIChannelBasics:
         ):
             CLIChannel("cli", markdown=True)
 
+    def test_console_requires_optional_renderer(self) -> None:
+        with (
+            patch(
+                "roomkit.channels._cli_markdown.require_console_support",
+                side_effect=ImportError("missing"),
+            ),
+            pytest.raises(ImportError, match="missing"),
+        ):
+            CLIChannel("cli", console=True)
+
+    def test_console_swaps_default_prompt(self) -> None:
+        assert CLIChannel("cli", console=True)._prompt == "❯ "
+
+    def test_console_keeps_custom_prompt(self) -> None:
+        assert CLIChannel("cli", console=True, prompt=">> ")._prompt == ">> "
+
+    def test_classic_mode_keeps_default_prompt(self) -> None:
+        assert CLIChannel("cli")._prompt == "You: "
+
 
 class TestHandleInbound:
     async def test_creates_room_event(self) -> None:
@@ -299,6 +318,111 @@ class TestDeliverStream:
         assert "Considering tools" in rendered
 
 
+class TestConsoleMode:
+    async def test_console_renderer_receives_every_stream_delta(self) -> None:
+        cli = CLIChannel(
+            "cli",
+            use_color=False,
+            show_thinking=True,
+            console=True,
+            agent_label=lambda _channel_id: "Bot",
+        )
+        event = _make_event(body="")
+        tool_start = RoomEvent(
+            room_id="room-1",
+            type=EventType.TOOL_CALL_START,
+            source=event.source,
+            content=ToolCallContent(
+                tool_name="Search",
+                tool_id="tool-1",
+                arguments={"query": "streaming"},
+                status="pending",
+            ),
+        )
+
+        async def chunks() -> None:
+            yield ThinkingDeltaMarker(thinking="Checking")  # type: ignore[misc]
+            yield "# Head"  # type: ignore[misc]
+            yield "ing\n\n"  # type: ignore[misc]
+            yield tool_start  # type: ignore[misc]
+            yield "Done."  # type: ignore[misc]
+
+        with patch("roomkit.console._chat.ConsoleStreamRenderer") as renderer_type:
+            renderer = renderer_type.return_value
+            await cli.deliver_stream(
+                chunks(),
+                event,
+                _make_binding(),
+                _make_context(),
+            )  # type: ignore[arg-type]
+
+        assert renderer.add_text.call_args_list == [
+            call("# Head"),
+            call("ing\n\n"),
+            call("Done."),
+        ]
+        renderer.add_thinking.assert_called_once_with("Checking")
+        renderer.add_tool_event.assert_called_once_with(tool_start)
+        renderer.close.assert_called_once_with()
+
+    async def test_console_hides_thinking_when_disabled(self) -> None:
+        cli = CLIChannel("cli", use_color=False, console=True)
+
+        async def chunks() -> None:
+            yield ThinkingDeltaMarker(thinking="Secret")  # type: ignore[misc]
+            yield "Answer"  # type: ignore[misc]
+
+        with patch("roomkit.console._chat.ConsoleStreamRenderer") as renderer_type:
+            renderer = renderer_type.return_value
+            await cli.deliver_stream(
+                chunks(),
+                _make_event(body=""),
+                _make_binding(),
+                _make_context(),
+            )  # type: ignore[arg-type]
+
+        renderer.add_thinking.assert_not_called()
+        renderer.add_text.assert_called_once_with("Answer")
+
+    async def test_pinned_shell_selects_pinned_renderer(self) -> None:
+        cli = CLIChannel("cli", use_color=False, console=True)
+        cli._pinned_shell_active = True
+        cli._shell_width = 100
+
+        async def chunks() -> None:
+            yield "Answer"  # type: ignore[misc]
+
+        with patch("roomkit.console._chat.PinnedStreamRenderer") as renderer_type:
+            renderer = renderer_type.return_value
+            await cli.deliver_stream(
+                chunks(),
+                _make_event(body=""),
+                _make_binding(),
+                _make_context(),
+            )  # type: ignore[arg-type]
+
+        renderer_type.assert_called_once()
+        assert renderer_type.call_args.kwargs["width"] == 100
+        renderer.add_text.assert_called_once_with("Answer")
+        renderer.close.assert_called_once_with()
+
+    async def test_console_deliver_renders_message(self) -> None:
+        cli = CLIChannel(
+            "cli",
+            use_color=False,
+            console=True,
+            agent_label=lambda _channel_id: "Concierge",
+        )
+        event = _make_event(body="All set.")
+
+        with patch("sys.stdout", new_callable=StringIO) as mock_out:
+            await cli.deliver(event, _make_binding(), _make_context())
+            output = mock_out.getvalue()
+
+        assert "Concierge" in output
+        assert "All set." in output
+
+
 class TestRun:
     async def test_processes_input_and_exits_on_quit(self) -> None:
         cli = CLIChannel("cli", use_color=False)
@@ -366,6 +490,26 @@ class TestRun:
             await cli.run(kit, room_id="room-1", welcome="Welcome!")
 
         mock_print.assert_any_call("Welcome!")
+
+    async def test_console_run_prints_banner_and_notes(self) -> None:
+        cli = CLIChannel("cli", use_color=False, console=True)
+        kit = AsyncMock()
+        kit.list_bindings = AsyncMock(return_value=[])
+        kit.channels = {}
+
+        with (
+            patch("builtins.input", side_effect=EOFError),
+            patch("sys.stdout", new_callable=StringIO) as mock_out,
+            patch("roomkit.console._shell.run_console_shell") as mock_shell,
+        ):
+            await cli.run(kit, room_id="room-1", welcome="Type 'quit' to exit.")
+            output = mock_out.getvalue()
+
+        assert "RoomKit v" in output
+        assert "room-1" in output
+        assert "Type 'quit' to exit." in output
+        # Non-TTY stdout (StringIO) → classic fallback, never the shell.
+        mock_shell.assert_not_called()
 
 
 class TestTheTerminalNamesItsOwnSender:

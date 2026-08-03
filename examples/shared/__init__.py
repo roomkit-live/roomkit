@@ -10,7 +10,7 @@ from .audio import (
     build_turn_detector,
     build_vad,
 )
-from .console import setup_console
+from .console import console_enabled, setup_console
 from .env import auto_select_provider, env_bool, os_info, require_env
 from .hooks import log_tool_call
 from .lifecycle import run_until_stopped
@@ -26,6 +26,7 @@ __all__ = [
     "build_pipeline",
     "build_turn_detector",
     "build_vad",
+    "console_enabled",
     "env_bool",
     "log_tool_call",
     "os_info",

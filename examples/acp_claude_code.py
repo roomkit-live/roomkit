@@ -26,6 +26,7 @@ Run with:
     uv run python examples/acp_claude_code.py
     uv run python examples/acp_claude_code.py --workspace /path/to/project
     uv run python examples/acp_claude_code.py --thinking-tokens 0  # faster, no reasoning
+    CONSOLE=1 uv run python examples/acp_claude_code.py  # branded console mode
 
 Type a coding request at the prompt. Type ``quit`` (or Ctrl+D) to exit.
 """
@@ -42,9 +43,10 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from shared import setup_logging
+from shared import console_enabled, setup_logging
 
 from roomkit import ACPChannel, ChannelCategory, CLIChannel, RoomKit
+from roomkit.console import terminal_input
 from roomkit.tools import ExternalToolHandler, ToolDecision
 
 CLAUDE_AGENT_ACP_VERSION = "0.61.0"
@@ -80,7 +82,8 @@ class TerminalPermissionHandler(ExternalToolHandler):
         arguments = json.dumps(tool_input, indent=2, ensure_ascii=False, default=str)
         prompt = f"\nClaude Code requests permission: {tool_name}\n{arguments}\nAllow once? [y/N] "
         try:
-            answer = await asyncio.to_thread(input, prompt)
+            # Suspends the pinned input bar (CONSOLE=1) for the read.
+            answer = await terminal_input(prompt)
         except (EOFError, KeyboardInterrupt):
             return ToolDecision(approved=False, reason="No terminal approval")
 
@@ -121,11 +124,13 @@ async def main(args: argparse.Namespace) -> None:
     agent_env["MAX_THINKING_TOKENS"] = str(args.thinking_tokens)
 
     kit = RoomKit()
+    # console mode subsumes markdown; CONSOLE=1 adds the branded banner.
     cli = CLIChannel(
         "you",
         show_thinking=args.thinking_tokens > 0,
         agent_label=lambda _channel_id: "Claude Code",
         markdown=True,
+        console=console_enabled(),
     )
     claude = ACPChannel(
         "claude-code",

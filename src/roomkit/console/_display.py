@@ -19,6 +19,11 @@ from rich.segment import Segment
 from rich.table import Table
 from rich.text import Text
 
+from roomkit.console._brand import ACCENT as _ACCENT
+from roomkit.console._brand import MUTED as _MUTED
+from roomkit.console._brand import PRIMARY as _PRIMARY
+from roomkit.console._brand import PRIMARY_LIGHT as _PRIMARY_LIGHT
+from roomkit.console._brand import logo_lines
 from roomkit.console._hooks import register_console_hooks, unregister_console_hooks
 from roomkit.console._state import ConsoleState, LogRingBuffer
 
@@ -26,16 +31,6 @@ if TYPE_CHECKING:
     from roomkit.core.framework import RoomKit
 
 logger = logging.getLogger("roomkit.console")
-
-# ---------------------------------------------------------------------------
-# Brand palette (from roomkit.live website)
-# ---------------------------------------------------------------------------
-
-_PRIMARY = "rgb(99,102,241)"
-_PRIMARY_LIGHT = "rgb(129,140,248)"
-_PRIMARY_DIM = "rgb(55,58,130)"
-_ACCENT = "rgb(6,182,212)"
-_MUTED = "rgb(100,116,139)"
 
 # Block characters for audio meter (index 0 = silence, 8 = max).
 _BLOCKS = " ▁▂▃▄▅▆▇█"
@@ -166,15 +161,7 @@ def _build_header(state: ConsoleState) -> Table:
     table.add_column(width=6)
     table.add_column()
 
-    logo_top = Text()
-    logo_top.append("██", style=_PRIMARY)
-    logo_top.append(" ", style="")
-    logo_top.append("██", style=_PRIMARY_LIGHT)
-
-    logo_bot = Text()
-    logo_bot.append("██", style=_PRIMARY_LIGHT)
-    logo_bot.append(" ", style="")
-    logo_bot.append("██", style=_PRIMARY_DIM)
+    logo_top, logo_bot = logo_lines()
 
     info_top = Text()
     info_top.append("RoomKit", style=f"bold {_PRIMARY}")

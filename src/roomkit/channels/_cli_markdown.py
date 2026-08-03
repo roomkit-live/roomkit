@@ -32,6 +32,18 @@ def require_markdown_support() -> None:
         ) from exc
 
 
+def require_console_support() -> None:
+    """Raise an actionable error when an optional console dependency is absent."""
+    try:
+        import prompt_toolkit  # noqa: F401
+        import rich  # noqa: F401
+    except ImportError as exc:
+        raise ImportError(
+            "CLIChannel(console=True) requires Rich and prompt_toolkit. "
+            "Install them with `pip install roomkit[console]`."
+        ) from exc
+
+
 def print_markdown(
     label: str,
     text: str,
@@ -89,21 +101,25 @@ class MarkdownStreamRenderer:
         content = event.content
         if not isinstance(content, ToolCallContent):
             return
+        line = self._format_tool_line(event, content)
+        if line is None:
+            return
+        self._segments.append(_Segment(kind="activity", content=line))
+        self._refresh()
+
+    def _format_tool_line(self, event: RoomEvent, content: ToolCallContent) -> str | None:
         if event.type == EventType.TOOL_CALL_START:
             arguments = _format_arguments(content.arguments)
-            line = f"🔧 {content.tool_name}{arguments}"
-        elif event.type == EventType.TOOL_CALL_END:
+            return f"🔧 {content.tool_name}{arguments}"
+        if event.type == EventType.TOOL_CALL_END:
             symbol = "✗" if content.status == "failed" else "✓"
             duration = (
                 f" ({content.duration_ms} ms)"
                 if content.duration_ms is not None and content.duration_ms > 0
                 else ""
             )
-            line = f"{symbol} {content.tool_name}{duration}"
-        else:
-            return
-        self._segments.append(_Segment(kind="activity", content=line))
-        self._refresh()
+            return f"{symbol} {content.tool_name}{duration}"
+        return None
 
     def close(self) -> None:
         """Stop the live display and leave its final render in the terminal."""
@@ -141,15 +157,27 @@ class MarkdownStreamRenderer:
         renderables: list[Any] = []
         for segment in self._segments:
             if segment.kind == "thinking":
-                thinking = segment.content.lstrip()
-                if thinking:
-                    renderables.append(self._text_type(f"💭 {thinking}", style="dim italic"))
+                rendered = self._render_thinking(segment.content)
+                if rendered is not None:
+                    renderables.append(rendered)
             elif segment.kind == "activity":
-                renderables.append(self._text_type(segment.content, style="magenta"))
+                renderables.append(self._render_activity(segment.content))
             else:
-                renderables.append(self._text_type(f"{self._label}:", style="bold cyan"))
+                renderables.append(self._render_label())
                 renderables.append(self._markdown_type(segment.content))
         return Group(*renderables)
+
+    def _render_label(self) -> Any:
+        return self._text_type(f"{self._label}:", style="bold cyan")
+
+    def _render_thinking(self, text: str) -> Any | None:
+        thinking = text.lstrip()
+        if not thinking:
+            return None
+        return self._text_type(f"💭 {thinking}", style="dim italic")
+
+    def _render_activity(self, line: str) -> Any:
+        return self._text_type(line, style="magenta")
 
 
 def _rich_types() -> tuple[Any, Any, Any, Any]:

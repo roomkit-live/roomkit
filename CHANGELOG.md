@@ -41,6 +41,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`CLIChannel(console=True)` — branded console mode with a pinned input
+  bar.** The classic REPL stays the default; console mode renders inline
+  (normal scrollback, no alt-screen, unlike the voice `RoomKitConsole`
+  dashboard) with a startup banner — RoomKit logo, version, AI model(s)
+  discovered from the room's intelligence bindings, room id, attached
+  channels — plus brand-palette styling, progressive Markdown, and
+  Claude-Code-style tool activity lines (`⏺ tool(args)` / `⎿ ✓ 42 ms`).
+  On a real terminal the input bar stays pinned at the bottom (with a
+  status toolbar: room, model, idle/working + queued count) and the user
+  keeps typing while the agent streams; submissions queue and process
+  strictly one at a time. Under the bar the stream flushes append-only per
+  completed Markdown block (fence-aware — code blocks are never split);
+  non-TTY sessions (pipes, CI) fall back to the sequential loop with the
+  phase-agnostic inline renderer. Subsumes `markdown=True`; requires the
+  `console` extra, which now ships `prompt-toolkit>=3.0.36` alongside
+  rich. Examples opt in via `CONSOLE=1` (`shared.console_enabled()`),
+  mirroring the voice-console convention. New public API:
+  **`AIChannel.provider`** (read-only, mirrors
+  `RealtimeVoiceChannel.provider`; used by the banner) and
+  **`roomkit.console.terminal_input()`** — a terminal read that suspends
+  the pinned bar for the duration (used by the ACP example's tool
+  permission prompt; plain `input()` when no shell is active).
+
 - **`RoomKit(delivery_gap_timeout=30.0)`** — how long a lane waits on a
   cursor hole owned by an absent worker before skipping it, and
   **`RoomKit(delivery_claim_lock_manager=...)`** — a dedicated lock manager

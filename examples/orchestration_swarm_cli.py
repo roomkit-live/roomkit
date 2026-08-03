@@ -11,6 +11,11 @@ Requires ``ANTHROPIC_API_KEY`` environment variable.
 
 Run with:
     ANTHROPIC_API_KEY=sk-... uv run python examples/orchestration_swarm_cli.py
+
+Set ``CONSOLE=1`` for the branded console mode (startup banner, progressive
+Markdown, styled tool activity)::
+
+    CONSOLE=1 ANTHROPIC_API_KEY=sk-... uv run python examples/orchestration_swarm_cli.py
 """
 
 from __future__ import annotations
@@ -21,7 +26,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from shared import require_env, setup_logging
+from shared import console_enabled, require_env, setup_logging
 
 from roomkit import Agent, CLIChannel, HookExecution, HookTrigger, RoomKit, Swarm
 from roomkit.memory.sliding_window import SlidingWindowMemory
@@ -102,7 +107,7 @@ async def main() -> None:
         state = get_conversation_state(room)
         print(f"\n\033[35m[handoff] Active agent: {state.active_agent_id}\033[0m")
 
-    cli = CLIChannel("cli")
+    cli = CLIChannel("cli", console=console_enabled())
     kit.register_channel(cli)
 
     await kit.create_room(room_id="swarm-room")

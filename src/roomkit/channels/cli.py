@@ -36,6 +36,8 @@ from roomkit.models.event import EventContent, EventSource, RoomEvent, TextConte
 from roomkit.models.streaming import ThinkingDeltaMarker
 
 if TYPE_CHECKING:
+    from roomkit.channels._cli_markdown import MarkdownStreamRenderer
+    from roomkit.console._chat import PinnedStreamRenderer
     from roomkit.core.framework import RoomKit
 
 
@@ -55,6 +57,10 @@ class CLIChannel(Channel):
             for agent responses.  Defaults to the raw channel ID.
         markdown: Render agent output as progressively updated Markdown.
             Requires the ``console`` extra.
+        console: Full branded console mode — startup banner (logo, RoomKit
+            version, AI models, room, channels), brand-palette styling and
+            progressive Markdown, rendered inline in the normal scrollback.
+            Subsumes ``markdown``. Requires the ``console`` extra.
     """
 
     channel_type = ChannelType.CLI
@@ -87,9 +93,19 @@ class CLIChannel(Channel):
         agent_label: Callable[[str], str] | None = None,
         show_thinking: bool = False,
         markdown: bool = False,
+        console: bool = False,
     ) -> None:
         super().__init__(channel_id)
-        if markdown:
+        if console:
+            from roomkit.channels._cli_markdown import require_console_support
+
+            require_console_support()
+            # Branded defaults; explicit values always win.
+            if prompt == "You: ":
+                prompt = "❯ "
+            if user_color == "\033[33m":
+                user_color = "\033[38;2;99;102;241m"
+        elif markdown:
             from roomkit.channels._cli_markdown import require_markdown_support
 
             require_markdown_support()
@@ -101,7 +117,11 @@ class CLIChannel(Channel):
         self._agent_label = agent_label or _default_agent_label
         self._show_thinking = show_thinking
         self._markdown = markdown
+        self._console = console
         self._reset = "\033[0m"
+        # Set by the pinned-bar shell while it owns the terminal.
+        self._pinned_shell_active = False
+        self._shell_width: int | None = None
 
     # -- Channel interface ----------------------------------------------------
 
@@ -132,7 +152,19 @@ class CLIChannel(Channel):
             return ChannelOutput.empty()
 
         label = self._agent_label(event.source.channel_id)
-        if self._markdown:
+        if self._console:
+            from roomkit.console._chat import print_message
+
+            print_message(
+                label,
+                text,
+                file=sys.stdout,
+                use_color=self._use_color,
+                # Under the shell, stdout is a proxy: not a TTY, no size.
+                force_terminal=self._pinned_shell_active and self._use_color,
+                width=self._shell_width if self._pinned_shell_active else None,
+            )
+        elif self._markdown:
             from roomkit.channels._cli_markdown import print_markdown
 
             print_markdown(label, text, file=sys.stdout, use_color=self._use_color)
@@ -164,8 +196,8 @@ class CLIChannel(Channel):
             return ChannelOutput.empty()
 
         label = self._agent_label(event.source.channel_id)
-        if self._markdown:
-            return await self._deliver_markdown_stream(text_stream, label)
+        if self._console or self._markdown:
+            return await self._deliver_rendered_stream(text_stream, label)
 
         agent_prefix = self._colorize(self._agent_color, f"{label}: ")
 
@@ -224,18 +256,36 @@ class CLIChannel(Channel):
         sys.stdout.flush()
         return ChannelOutput.empty()
 
-    async def _deliver_markdown_stream(
+    async def _deliver_rendered_stream(
         self,
         stream: AsyncIterator[Any],
         label: str,
     ) -> ChannelOutput:
-        from roomkit.channels._cli_markdown import MarkdownStreamRenderer
+        renderer: MarkdownStreamRenderer | PinnedStreamRenderer
+        if self._console and self._pinned_shell_active:
+            from roomkit.console._chat import PinnedStreamRenderer as _Pinned
 
-        renderer = MarkdownStreamRenderer(
-            label,
-            file=sys.stdout,
-            use_color=self._use_color,
-        )
+            renderer = _Pinned(
+                label,
+                use_color=self._use_color,
+                width=self._shell_width,
+            )
+        elif self._console:
+            from roomkit.console._chat import ConsoleStreamRenderer
+
+            renderer = ConsoleStreamRenderer(
+                label,
+                file=sys.stdout,
+                use_color=self._use_color,
+            )
+        else:
+            from roomkit.channels._cli_markdown import MarkdownStreamRenderer as _Renderer
+
+            renderer = _Renderer(
+                label,
+                file=sys.stdout,
+                use_color=self._use_color,
+            )
         try:
             async for chunk in stream:
                 if isinstance(chunk, str):
@@ -276,16 +326,50 @@ class CLIChannel(Channel):
                 such (``sender_is_participant``), so identity resolution never
                 runs on it; passing an address here would leave that address
                 unresolved.
-            welcome: Optional welcome message printed before the loop.
+            welcome: Optional welcome message printed before the loop. In
+                console mode it becomes the notes line under the banner.
             content_factory: Optional hook mapping a raw input line to the
                 inbound content. Defaults to ``TextContent(body=line)``; an
                 example can return richer content (e.g. an image attachment)
                 without reimplementing this loop. Returning ``None`` skips the
                 line (e.g. a local slash-command already handled by the hook).
+
+        In console mode on a real terminal, this runs the pinned-bar shell:
+        the input bar stays at the bottom, responses stream above it, and the
+        user can keep typing while a turn is in flight (submissions queue and
+        process one at a time). Non-TTY sessions (pipes, CI) fall back to
+        this plain sequential loop.
         """
-        if welcome:
+        if self._console:
+            from roomkit.console._chat import collect_banner_data, print_banner
+
+            banner = await collect_banner_data(kit, room_id)
+            print_banner(banner, file=sys.stdout, use_color=self._use_color, notes=welcome)
+            if _is_tty() and _stdin_is_tty():
+                from roomkit.console._shell import run_console_shell
+
+                await run_console_shell(
+                    self,
+                    kit,
+                    room_id,
+                    sender_id=sender_id,
+                    banner=banner,
+                    content_factory=content_factory,
+                )
+                return
+        elif welcome:
             print(welcome)
 
+        await self._run_classic(kit, sender_id=sender_id, content_factory=content_factory)
+
+    async def _run_classic(
+        self,
+        kit: RoomKit,
+        *,
+        sender_id: str,
+        content_factory: Callable[[str], EventContent | None] | None,
+    ) -> None:
+        """Blocking-input sequential loop (classic mode and non-TTY fallback)."""
         loop = asyncio.get_running_loop()
         prompt = self._colorize(self._user_color, self._prompt)
 
@@ -374,6 +458,11 @@ def _default_agent_label(channel_id: str) -> str:
 def _is_tty() -> bool:
     """Check if stdout is connected to a terminal."""
     return hasattr(sys.stdout, "isatty") and sys.stdout.isatty()
+
+
+def _stdin_is_tty() -> bool:
+    """Check if stdin is connected to a terminal."""
+    return hasattr(sys.stdin, "isatty") and sys.stdin.isatty()
 
 
 def _format_tool_arguments(arguments: dict[str, Any], *, max_length: int = 240) -> str:
