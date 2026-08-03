@@ -360,6 +360,34 @@ class TestStatusBar:
         state.activity.start("acp-agent", "Claude Code")
         assert _toolbar_text(state, 2).endswith("(2 queued)")
 
+    def test_application_segment_sits_before_the_status(self) -> None:
+        state = self._state()
+        state.status_extra = lambda: "→ @codex"
+        assert _toolbar_text(state, 0) == " room-1 · → @codex · idle"
+
+    def test_empty_segment_is_omitted(self) -> None:
+        state = self._state()
+        state.status_extra = lambda: None
+        assert _toolbar_text(state, 0) == " room-1 · idle"
+        state.status_extra = lambda: "   "
+        assert _toolbar_text(state, 0) == " room-1 · idle"
+
+    def test_a_failing_segment_costs_only_itself(self) -> None:
+        # Rendering must not be a place an application can crash.
+        def boom() -> str:
+            raise RuntimeError("nope")
+
+        state = self._state()
+        state.status_extra = boom
+        assert _toolbar_text(state, 0) == " room-1 · idle"
+
+    def test_segment_is_asked_fresh_on_every_render(self) -> None:
+        state = self._state()
+        seen = iter(["→ @claude-code", "→ @codex"])
+        state.status_extra = lambda: next(seen)
+        assert "→ @claude-code" in _toolbar_text(state, 0)
+        assert "→ @codex" in _toolbar_text(state, 0)
+
     def test_reported_model_replaces_the_banner_label(self) -> None:
         state = self._state()
         state.model_label = "claude-code"

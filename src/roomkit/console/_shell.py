@@ -25,7 +25,13 @@ from prompt_toolkit.application import Application
 from prompt_toolkit.patch_stdout import patch_stdout
 from prompt_toolkit.styles import Style
 
-from roomkit.channels.cli import AddressFactory, CommandHandler, match_command, resolve_address
+from roomkit.channels.cli import (
+    AddressFactory,
+    CommandHandler,
+    StatusFactory,
+    match_command,
+    resolve_address,
+)
 from roomkit.console._activity import (
     FRAME_SECONDS,
     ActivityTracker,
@@ -103,6 +109,10 @@ class _ShellState:
     in_flight: asyncio.Task[Any] | None = None
     """The current ``process_inbound`` task — the phase-2b interrupt hook."""
 
+    status_extra: StatusFactory | None = None
+    """The application's own segment — who the next message addresses, a mode,
+    anything the shell cannot know."""
+
     @property
     def busy(self) -> bool:
         """A turn is in flight — routing, or an agent actually streaming."""
@@ -119,6 +129,7 @@ async def run_console_shell(
     content_factory: Callable[[str], EventContent | None] | None = None,
     commands: Mapping[str, CommandHandler] | None = None,
     addressed_to: AddressFactory | None = None,
+    status_extra: StatusFactory | None = None,
     input: Input | None = None,
     output: Output | None = None,
 ) -> None:
@@ -144,7 +155,12 @@ async def run_console_shell(
         if entry.provider:
             model_label = f"{model_label} ({entry.provider})"
     tracker = ActivityTracker()
-    state = _ShellState(room_id=room_id, model_label=model_label, activity=tracker)
+    state = _ShellState(
+        room_id=room_id,
+        model_label=model_label,
+        activity=tracker,
+        status_extra=status_extra,
+    )
 
     queue: asyncio.Queue[InboundMessage | _QueuedCommand] = asyncio.Queue()
 
@@ -393,8 +409,27 @@ def _toolbar_text(state: _ShellState, queued: int) -> str:
     model = _model_text(state)
     if model:
         parts.append(model)
+    extra = _extra_text(state)
+    if extra:
+        parts.append(extra)
     parts.append(_status_text(state, queued))
     return " " + " · ".join(parts)
+
+
+def _extra_text(state: _ShellState) -> str | None:
+    """The application's segment, asked fresh on every render.
+
+    Rendering must not be a place an application can crash: a bad segment
+    costs its own line, never the bar.
+    """
+    if state.status_extra is None:
+        return None
+    try:
+        extra = state.status_extra()
+    except Exception:
+        logger.debug("Console status segment failed", exc_info=True)
+        return None
+    return extra.strip() if extra else None
 
 
 def _model_text(state: _ShellState) -> str | None:

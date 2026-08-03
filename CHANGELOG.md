@@ -68,6 +68,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   from the column default, the behaviour it was already running under. An
   explicit address wins under either policy.
 
+- **`CLIChannel.run(status_extra=...)` — the application's own status-bar
+  segment.** Asked fresh on every render, it sits between the model and the
+  live status: the multi-agent example shows `→ @codex`, so the bar answers
+  *where does my next line go?* before you type it. The shell cannot know
+  that — the address comes from the application — so the segment is a hook
+  rather than a built-in. A segment that raises costs its own line, never the
+  bar. Console mode on a real terminal only; the classic loop has no bar.
+
 - **`CLIChannel.run(addressed_to=...)` — a submission can name who it asks.**
   Given the submitted line, return channel ids (or `None` to leave the
   message unaddressed). Evaluated after `content_factory`, so a line that

@@ -50,6 +50,9 @@ CommandHandler = Callable[[str], Awaitable[None]]
 AddressFactory = Callable[[str], Sequence[str] | None]
 """Names the intelligence channels a submitted line asks to act (RFC §19.3)."""
 
+StatusFactory = Callable[[], str | None]
+"""The application's own status-bar segment, asked fresh on every render."""
+
 
 def resolve_address(factory: AddressFactory | None, line: str) -> list[str] | None:
     """Ask *factory* who this line addresses, tolerating no factory at all."""
@@ -366,6 +369,7 @@ class CLIChannel(Channel):
         content_factory: Callable[[str], EventContent | None] | None = None,
         commands: Mapping[str, CommandHandler] | None = None,
         addressed_to: AddressFactory | None = None,
+        status_extra: StatusFactory | None = None,
     ) -> None:
         """Run an interactive input loop.
 
@@ -405,6 +409,10 @@ class CLIChannel(Channel):
                 already reflected. RoomKit wants ids, never a syntax — how a
                 user names an agent (``@codex``, ``/agent codex``, a picker)
                 is yours to decide.
+            status_extra: A segment for the pinned status bar, asked fresh on
+                every render — who the next message addresses, a mode, a
+                counter. Console mode on a real terminal only; the classic
+                loop has no bar. Return ``None`` to show nothing.
 
         In console mode on a real terminal, this runs the pinned-bar shell:
         the input bar stays at the bottom, responses stream above it, and the
@@ -429,6 +437,7 @@ class CLIChannel(Channel):
                     content_factory=content_factory,
                     commands=commands,
                     addressed_to=addressed_to,
+                    status_extra=status_extra,
                 )
                 return
         elif welcome:

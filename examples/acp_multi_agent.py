@@ -286,6 +286,8 @@ async def main(args: argparse.Namespace) -> None:
             # Evaluated after content_factory, so an "@agent ..." line has
             # already moved the focus by the time we name the recipient.
             addressed_to=lambda _line: [addressed.agent_id],
+            # The bar answers "where does my next line go?" before you type.
+            status_extra=lambda: f"→ @{addressed.agent_id}",
             # Awaited by the loop, in submission order — which is what lets
             # pick_agent() open a menu without racing the loop for stdin.
             commands={"/agent": pick_agent, "/model": switch_model},
