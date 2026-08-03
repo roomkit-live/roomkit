@@ -757,19 +757,19 @@ wheels = [
 
 [[package]]
 name = "buzzkit"
-version = "0.2.1"
+version = "0.3.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "httpx" },
     { name = "websockets" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/ab/e3/a8fe8ec289b6b010245e928dda0a606a2f9061b14cbac7a5f7556d8291be/buzzkit-0.2.1.tar.gz", hash = "sha256:f975c804935b4ea671aaa4a98c316933661cef6329377defd60904c39c8af121", size = 63773, upload-time = "2026-07-31T21:03:52.352Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/73/24/569fa9fd1e68321a6be7cbef5c5004220882250f7d0ecf5e68cc081a2384/buzzkit-0.3.0.tar.gz", hash = "sha256:a2651d63c779c5a1082c8b9459419d5d057498c8a97094799d68e2d4346de1b9", size = 66014, upload-time = "2026-08-03T01:51:36.566Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/29/a3/52e7a7383f567eba06971425992efd7dfab7db93b674d04e560578e91c49/buzzkit-0.2.1-cp312-abi3-macosx_10_12_x86_64.whl", hash = "sha256:f381365eeea908462bc29f1b68cb2482ae0d6abe25c319804086790a28a40471", size = 2126583, upload-time = "2026-07-31T21:03:45.944Z" },
-    { url = "https://files.pythonhosted.org/packages/83/04/f055129896725703440cbbe903621db7315d183c0d7c7360166b1ee4d120/buzzkit-0.2.1-cp312-abi3-macosx_11_0_arm64.whl", hash = "sha256:9cc76e61317ec77aedc986c42e9baed0474552a35db2ad232c44aa789f540bb8", size = 2112093, upload-time = "2026-07-31T21:03:47.381Z" },
-    { url = "https://files.pythonhosted.org/packages/84/9a/c8642ef7a4c248ce9658b4fa026203f25c3268fe235d086960899294c9e2/buzzkit-0.2.1-cp312-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:9d7ce00463f24f6937391e1623be397bd8947b4068806b606088d50e22824f59", size = 2180472, upload-time = "2026-07-31T21:03:48.673Z" },
-    { url = "https://files.pythonhosted.org/packages/37/fa/979c20ce27c3fcb3b5048817ad675758c82e1500af30043d5e8d3150248c/buzzkit-0.2.1-cp312-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:5f6cacf7531e34c9fd251b7ae5c14ae8054f6c4e16627f89b1e24655b4c76852", size = 2198006, upload-time = "2026-07-31T21:03:49.965Z" },
-    { url = "https://files.pythonhosted.org/packages/61/70/a7767161baf75245f772e7b3e0e9d933327aae963eac5014ceb53db99986/buzzkit-0.2.1-cp312-abi3-win_amd64.whl", hash = "sha256:aa319a31959313c86e4fecd3992eceaecaa94c05893b89346086838b6aec698d", size = 1912392, upload-time = "2026-07-31T21:03:51.129Z" },
+    { url = "https://files.pythonhosted.org/packages/f6/45/85023ba7324b2c1dbf1b30502b0e5940825926f5e4e0a294e77bd3ada54c/buzzkit-0.3.0-cp312-abi3-macosx_10_12_x86_64.whl", hash = "sha256:0056179d89194b14aef84de77d7b14373312f134aa7f8f7d60c9ad4b30164782", size = 2127803, upload-time = "2026-08-03T01:51:28.833Z" },
+    { url = "https://files.pythonhosted.org/packages/61/c8/b726ff62ef605db4db95969e8cad535a61ab69913387b82d954e21dab854/buzzkit-0.3.0-cp312-abi3-macosx_11_0_arm64.whl", hash = "sha256:ad5d8d84f6f2eec4717b58e7176555f61ab5b809799b7809dadce6bf3a701185", size = 2113271, upload-time = "2026-08-03T01:51:30.644Z" },
+    { url = "https://files.pythonhosted.org/packages/63/c8/ccbaa3ee78064b8525c30d70dbd96a42af4140dadd2f8f8be505e00b9884/buzzkit-0.3.0-cp312-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:e3dc42ff0f52bd70ea17a8424cc12af5a27c163c2d2a9124639b66ccc1dd7390", size = 2181975, upload-time = "2026-08-03T01:51:32.497Z" },
+    { url = "https://files.pythonhosted.org/packages/6c/05/18186ed5882dcfd791aea9b48c1c7860b11e27d8663058b0c3f185171bcd/buzzkit-0.3.0-cp312-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:7d39da19e11d2fc5c04302b2ea30d077c7e47267bf5527893d88eed7298ff11f", size = 2199305, upload-time = "2026-08-03T01:51:33.999Z" },
+    { url = "https://files.pythonhosted.org/packages/58/af/33c0160d2d948a77eb617853196a11c59e4d5fe4dbef3348a44772ec7d82/buzzkit-0.3.0-cp312-abi3-win_amd64.whl", hash = "sha256:bce8bf38bbe266d6164a1593fc11f7402eabd196eb60a9d301c55bb551d729c3", size = 1913662, upload-time = "2026-08-03T01:51:35.383Z" },
 ]
 
 [[package]]
@@ -5412,7 +5412,7 @@ requires-dist = [
     { name = "botbuilder-core", marker = "extra == 'dev'", specifier = ">=4.17" },
     { name = "botbuilder-core", marker = "extra == 'providers'", specifier = ">=4.17" },
     { name = "botbuilder-core", marker = "extra == 'teams'", specifier = ">=4.17" },
-    { name = "buzzkit", marker = "extra == 'buzz'", specifier = ">=0.2.1" },
+    { name = "buzzkit", marker = "extra == 'buzz'", specifier = ">=0.3.0" },
     { name = "deepgram-sdk", marker = "extra == 'all'", specifier = ">=6.0.0" },
     { name = "deepgram-sdk", marker = "extra == 'deepgram'", specifier = ">=6.0.0" },
     { name = "discord-py", marker = "extra == 'all'", specifier = ">=2.4" },

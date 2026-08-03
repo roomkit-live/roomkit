@@ -86,6 +86,17 @@ class TestBuzzConfig:
         assert cfg.relay_url == "wss://relay"
         assert cfg.private_key.get_secret_value() == "nsec1secret"
         assert cfg.ignore_own is True
+        assert cfg.owner_pubkey is None
+        assert cfg.obey_owner_commands is True
+
+    def test_owner_pubkey_is_normalized_and_validated(self) -> None:
+        cfg = BuzzConfig(
+            relay_url="wss://relay", private_key="nsec1x", owner_pubkey=" " + "A" * 64 + " "
+        )
+        assert cfg.owner_pubkey == "a" * 64
+        for bad in ("a" * 63, "z" * 64, "npub1abc"):
+            with pytest.raises(ValueError):
+                BuzzConfig(relay_url="wss://relay", private_key="nsec1x", owner_pubkey=bad)
 
 
 # =============================================================================
@@ -307,9 +318,14 @@ class TestBuzzInboundIntegration:
 class FakeBuzzClient:
     """Duck-typed ``buzzkit.BuzzClient`` driving the source's relay loop."""
 
+    #: Class-level so the fixture factory can arm a verified owner before the
+    #: source constructs its own client instance.
+    verified_owner: str | None = None
+
     def __init__(self, relay_url: str, secret: str, *, auth_tag: Any = None) -> None:
         self.pubkey_hex = "bot_pubkey"
         self.npub = "npub_bot"
+        self.verified_owner_hex: str | None = type(self).verified_owner
         self.close_code: int | None = None
         self.events: list[dict[str, Any]] = []
         self.raise_after: Exception | None = None
@@ -350,6 +366,20 @@ class FakeBuzzClient:
         self.released.set()
 
 
+def _stand_in_parse_owner_command(event: dict[str, Any], agent_pubkey_hex: str) -> str | None:
+    """Faithful stand-in for ``buzzkit.parse_owner_command`` (tested there)."""
+    if event.get("kind") != 9:
+        return None
+    content = str(event.get("content", "") or "").strip()
+    if not content.startswith("!") or content[1:] not in ("shutdown", "cancel", "rotate"):
+        return None
+    tags = event.get("tags") or []
+    mentioned = any(
+        isinstance(t, list) and len(t) >= 2 and t[:2] == ["p", agent_pubkey_hex] for t in tags
+    )
+    return content[1:] if mentioned else None
+
+
 @pytest.fixture
 def buzz_source(monkeypatch):
     """Factory building a BuzzRelaySource wired to a FakeBuzzClient."""
@@ -357,7 +387,9 @@ def buzz_source(monkeypatch):
 
     monkeypatch.setattr(buzz_module, "HAS_BUZZKIT", True)
     monkeypatch.setattr(buzz_module, "BuzzClient", FakeBuzzClient)
+    monkeypatch.setattr(buzz_module, "parse_owner_command", _stand_in_parse_owner_command)
     monkeypatch.setattr(buzz_module, "_INITIAL_BACKOFF", 0.01)
+    monkeypatch.setattr(FakeBuzzClient, "verified_owner", None)
 
     def factory(**kwargs):
         config = kwargs.pop(
@@ -488,6 +520,196 @@ class TestBuzzRelaySourceLifecycle:
         source = buzz_source(config=config)
         await _run_source_once(source)
         assert source.client.presence == []
+
+
+OWNER = "a" * 64
+
+
+def _owner_event(content: str, *, pubkey: str = OWNER, id: str = "cmd1") -> dict[str, Any]:
+    return _event(id=id, kind=9, pubkey=pubkey, content=content, tags=[["p", "bot_pubkey"]])
+
+
+class TestOwnerCommands:
+    def _owned(self, buzz_source, **kwargs):
+        config = BuzzConfig(relay_url="wss://relay", private_key="nsec1x", owner_pubkey=OWNER)
+        return buzz_source(config=config, **kwargs)
+
+    async def test_owner_shutdown_stops_the_source_and_never_reaches_the_pipeline(
+        self, buzz_source
+    ) -> None:
+        source = self._owned(buzz_source)
+        source.client.events = [_owner_event("!shutdown")]
+        emitted: list[Any] = []
+
+        async def emit(message: Any) -> Any:
+            emitted.append(message)
+
+        # No external stop(): the source must terminate ITSELF on the command.
+        await asyncio.wait_for(source.start(emit), timeout=2)
+        assert emitted == []
+        assert source.client.presence[-1] == "offline"
+
+    async def test_non_owner_shutdown_is_a_regular_message(self, buzz_source) -> None:
+        source = self._owned(buzz_source)
+        source.client.events = [_owner_event("!shutdown", pubkey="c" * 64)]
+        emitted = await _run_source_once(source)
+        assert [m.external_id for m in emitted] == ["cmd1"]
+
+    async def test_commands_are_inert_without_a_provable_owner(self, buzz_source) -> None:
+        source = buzz_source()  # no auth_tag, no owner_pubkey
+        source.client.events = [_owner_event("!shutdown")]
+        emitted = await _run_source_once(source)
+        assert [m.external_id for m in emitted] == ["cmd1"]
+
+    async def test_commands_are_inert_when_disabled(self, buzz_source) -> None:
+        config = BuzzConfig(
+            relay_url="wss://relay",
+            private_key="nsec1x",
+            owner_pubkey=OWNER,
+            obey_owner_commands=False,
+        )
+        source = buzz_source(config=config)
+        source.client.events = [_owner_event("!shutdown")]
+        emitted = await _run_source_once(source)
+        assert [m.external_id for m in emitted] == ["cmd1"]
+
+    async def test_verified_auth_tag_owner_wins_over_config(
+        self, buzz_source, monkeypatch
+    ) -> None:
+        monkeypatch.setattr(FakeBuzzClient, "verified_owner", "b" * 64)
+        source = self._owned(buzz_source)  # config says OWNER, attestation says b*64
+        source.client.events = [_owner_event("!shutdown")]  # from OWNER: not the proven owner
+        emitted = await _run_source_once(source)
+        assert [m.external_id for m in emitted] == ["cmd1"]
+
+    async def test_callback_owns_every_command_including_shutdown(self, buzz_source) -> None:
+        seen: list[str] = []
+
+        async def on_cmd(command: str, event: dict[str, Any]) -> None:
+            seen.append(command)
+
+        source = self._owned(buzz_source, on_owner_command=on_cmd)
+        source.client.events = [
+            _owner_event("!cancel", id="c1"),
+            _owner_event("!rotate", id="c2"),
+            _owner_event("!shutdown", id="c3"),
+            _event(id="msg1", kind=9, content="hello"),
+        ]
+        # The callback replaces the self-stop, so the source keeps running
+        # until _run_source_once stops it — and the plain message still flows.
+        emitted = await _run_source_once(source)
+        assert seen == ["cancel", "rotate", "shutdown"]
+        assert [m.external_id for m in emitted] == ["msg1"]
+
+    async def test_cancel_and_rotate_are_consumed_without_callback(self, buzz_source) -> None:
+        source = self._owned(buzz_source)
+        source.client.events = [
+            _owner_event("!cancel", id="c1"),
+            _event(id="msg1", kind=9, content="still here"),
+        ]
+        emitted = await _run_source_once(source)
+        assert [m.external_id for m in emitted] == ["msg1"]
+
+
+class TestBuzzConfigFromEnv:
+    def test_reads_the_reserved_triplet(self, monkeypatch) -> None:
+        monkeypatch.setenv("BUZZ_PRIVATE_KEY", "nsec1fromenv")
+        monkeypatch.setenv("BUZZ_RELAY_URL", "wss://relay.env")
+        monkeypatch.setenv("BUZZ_AUTH_TAG", '["auth","o","",""]')
+        cfg = BuzzConfig.from_env(owner_pubkey="b" * 64)
+        assert cfg.private_key.get_secret_value() == "nsec1fromenv"
+        assert cfg.relay_url == "wss://relay.env"
+        assert cfg.auth_tag == '["auth","o","",""]'
+        assert cfg.owner_pubkey == "b" * 64
+
+    def test_nostr_private_key_alias(self, monkeypatch) -> None:
+        monkeypatch.delenv("BUZZ_PRIVATE_KEY", raising=False)
+        monkeypatch.setenv("NOSTR_PRIVATE_KEY", "nsec1alias")
+        monkeypatch.setenv("BUZZ_RELAY_URL", "wss://relay.env")
+        monkeypatch.delenv("BUZZ_AUTH_TAG", raising=False)
+        cfg = BuzzConfig.from_env()
+        assert cfg.private_key.get_secret_value() == "nsec1alias"
+        assert cfg.auth_tag is None
+
+    def test_identity_is_fail_closed(self, monkeypatch) -> None:
+        monkeypatch.setenv("BUZZ_PRIVATE_KEY", "")
+        monkeypatch.delenv("NOSTR_PRIVATE_KEY", raising=False)
+        monkeypatch.setenv("BUZZ_RELAY_URL", "wss://relay.env")
+        with pytest.raises(ValueError, match="identityless"):
+            BuzzConfig.from_env()
+        monkeypatch.setenv("BUZZ_PRIVATE_KEY", "nsec1x")
+        monkeypatch.delenv("BUZZ_RELAY_URL")
+        with pytest.raises(ValueError, match="BUZZ_RELAY_URL"):
+            BuzzConfig.from_env()
+
+
+class TestBuzzAgent:
+    def _agent(self, buzz_source, **agent_kwargs):
+        from roomkit import RoomKit
+        from roomkit.providers.buzz import BuzzAgent
+
+        config = BuzzConfig(relay_url="wss://relay", private_key="nsec1x", owner_pubkey=OWNER)
+        source = buzz_source(config=config)
+        kit = RoomKit()
+        return kit, source, BuzzAgent(kit, [source], **agent_kwargs)
+
+    def test_constructor_validates(self, buzz_source) -> None:
+        from roomkit import RoomKit
+        from roomkit.providers.buzz import BuzzAgent
+
+        with pytest.raises(ValueError, match="at least one source"):
+            BuzzAgent(RoomKit(), [])
+        source = buzz_source()
+        with pytest.raises(ValueError, match="positive"):
+            BuzzAgent(RoomKit(), [source], exit_after_inactivity=0)
+
+    async def test_owner_shutdown_closes_everything(self, buzz_source) -> None:
+        from roomkit.providers.buzz import BuzzAgentStopCause
+
+        kit, source, agent = self._agent(buzz_source)
+        source.client.events = [_owner_event("!shutdown")]
+        cause = await asyncio.wait_for(agent.run(), timeout=2)
+        assert cause is BuzzAgentStopCause.OWNER_SHUTDOWN
+        assert kit._closed is True
+        assert source.client.presence[-1] == "offline"
+        with pytest.raises(RuntimeError, match="single-shot"):
+            await agent.run()
+
+    async def test_inactivity_reaps_a_quiet_agent(self, buzz_source, monkeypatch) -> None:
+        import roomkit.providers.buzz.agent as agent_module
+        from roomkit.providers.buzz import BuzzAgentStopCause
+
+        monkeypatch.setattr(agent_module, "_INACTIVITY_CHECK_CAP", 0.02)
+        kit, source, agent = self._agent(buzz_source, exit_after_inactivity=0.1)
+        cause = await asyncio.wait_for(agent.run(), timeout=2)
+        assert cause is BuzzAgentStopCause.INACTIVITY
+        assert kit._closed is True
+
+    async def test_cancel_and_rotate_pass_through_and_shutdown_stays_ours(
+        self, buzz_source
+    ) -> None:
+        from roomkit.providers.buzz import BuzzAgentStopCause
+
+        seen: list[str] = []
+        kit, source, agent = self._agent(buzz_source, on_owner_command=lambda c, e: seen.append(c))
+        source.client.events = [
+            _owner_event("!cancel", id="c1"),
+            _owner_event("!rotate", id="c2"),
+            _owner_event("!shutdown", id="c3"),
+        ]
+        cause = await asyncio.wait_for(agent.run(), timeout=2)
+        assert seen == ["cancel", "rotate"]
+        assert cause is BuzzAgentStopCause.OWNER_SHUTDOWN
+
+    async def test_takes_over_an_existing_callback_with_a_warning(
+        self, buzz_source, caplog
+    ) -> None:
+        kit, source, agent = self._agent(buzz_source)
+        source.on_owner_command = lambda c, e: None
+        source.client.events = [_owner_event("!shutdown")]
+        with caplog.at_level("WARNING", logger="roomkit.providers.buzz.agent"):
+            await asyncio.wait_for(agent.run(), timeout=2)
+        assert "takes over on_owner_command" in caplog.text
 
 
 class TestHuddleAnnouncementParser:

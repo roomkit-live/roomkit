@@ -238,8 +238,24 @@ Requires `pip install roomkit[buzz]` (installs `buzzkit`, a compiled wheel kept 
 - Inbound parsing: `parse_buzz_event(event, channel_id, own_pubkey=..., ignore_own=True)` converts a kind-9 Nostr event dict to an `InboundMessage` — sender pubkey becomes `sender_id`, the Nostr event id becomes `external_id` and `idempotency_key`, metadata carries `nostr_event_id`, `nostr_kind`, `buzz_channel_id`. Subscribe to other event kinds with `BuzzRelaySource(..., kinds=[...], parser=...)`.
 - `provider.send(event, to=channel_uuid)` publishes a kind-9 channel message signed with the agent's key; the returned `ProviderResult.provider_message_id` is the Nostr event id. HTTP-bridge sends succeed even while the inbound WebSocket is mid-reconnect; the source reconnects with exponential backoff (1 s doubling to a 30 s cap).
 - Testing: `MockBuzzProvider` records `sent` without the `buzzkit` dependency. ABC: `BuzzRelayProvider`.
+- Presence: with `announce_presence=True` the source publishes kind-20001 `"online"` on connect, heartbeats every 30 s (surviving transient publish failures), and publishes `"offline"` on a deliberate `stop()` so the agent's dot flips immediately instead of lapsing by relay TTL.
+- Owner control commands (`buzzkit>=0.3.0`): with `obey_owner_commands=True` (default), a kind-9 message whose trimmed content is exactly `!shutdown` / `!cancel` / `!rotate`, mentioning the agent and authored by the **proven** owner — the NIP-OA auth tag's Schnorr-verified attester, else `BuzzConfig.owner_pubkey` — is consumed before the pipeline (the AI never answers its own stop command). `!shutdown` stops the source gracefully; all commands reach the optional `on_owner_command` callback, which takes over the response when provided. No provable owner, or a non-owner author → the message flows normally (fail-closed).
 
 Runnable example: `examples/buzz_bot.py`.
+
+### BuzzAgent — the lifecycle runner
+
+`BuzzAgent` (`roomkit.providers.buzz`) turns a configured RoomKit app into a first-class Buzz agent: it attaches the sources (taking over their `on_owner_command`), installs SIGTERM/SIGINT handlers, optionally arms an `exit_after_inactivity` bound (seconds; default off; reaper on its own timer), and exits every stop cause — owner `!shutdown`, signal, inactivity — through one graceful path: `kit.close()` (presence `offline`, sockets closed). `run()` is single-shot, consumes the kit, and returns a `BuzzAgentStopCause` (`owner_shutdown` / `signal` / `inactivity`); exit the process with code 0 so supervisors never restart an intentional stop.
+
+```python
+from roomkit.providers.buzz import BuzzAgent, BuzzConfig
+
+config = BuzzConfig.from_env()   # BUZZ_PRIVATE_KEY (or NOSTR_PRIVATE_KEY) / BUZZ_RELAY_URL / BUZZ_AUTH_TAG — fail-closed
+agent = BuzzAgent(kit, [source], exit_after_inactivity=7200)
+cause = await agent.run()        # blocks until the owner, a signal, or idleness stops it
+```
+
+Runnable example: `examples/buzz_agent.py`.
 
 Buzz huddles (live voice calls in ephemeral channels) are handled by the voice subsystem, not this transport: `BuzzHuddleBackend` (`roomkit.voice.backends.buzz_huddle`) is a `VoiceBackend` carrying huddle Opus audio for a `RealtimeVoiceChannel`, and `BuzzHuddleWatcher` owns the announcement-to-call lifecycle, watching the parent channel for kind-48100 announcements (`KIND_HUDDLE_STARTED` / `huddle_announcement_parser` in `roomkit.sources.buzz`) and bridging each huddle. See `examples/buzz_voice_agent.py`.
 

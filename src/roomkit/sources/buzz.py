@@ -27,14 +27,16 @@ from roomkit.sources.base import BaseSourceProvider, EmitCallback, SourceStatus
 # whether or not the package is resolvable; the runtime guard handles absence.
 if TYPE_CHECKING:
     BuzzClient: Any = None
+    parse_owner_command: Any = None
     HAS_BUZZKIT = True
 else:
     try:
-        from buzzkit import BuzzClient
+        from buzzkit import BuzzClient, parse_owner_command
 
         HAS_BUZZKIT = True
     except ImportError:
         BuzzClient = None
+        parse_owner_command = None
         HAS_BUZZKIT = False
 
 logger = logging.getLogger("roomkit.sources.buzz")
@@ -47,6 +49,12 @@ BuzzMessageParser = Callable[[dict[str, Any], str | None], InboundMessage | None
 # dict and may be sync or async — matching how Discord and WhatsApp-personal
 # surface reaction lifecycle events outside the message pipeline.
 BuzzEventCallback = Callable[[dict[str, Any]], Awaitable[None] | None]
+
+# Owner control command callback: receives the bare command name
+# ("shutdown" | "cancel" | "rotate") and the raw Nostr event, may be sync or
+# async. When provided it OWNS the response to every owner command —
+# including "shutdown", for which the source otherwise stops itself.
+BuzzOwnerCommandCallback = Callable[[str, dict[str, Any]], Awaitable[None] | None]
 
 #: Nostr kind for Buzz channel chat messages.
 KIND_STREAM_MESSAGE = 9
@@ -213,6 +221,7 @@ class BuzzRelaySource(BaseSourceProvider):
         parser: BuzzMessageParser | None = None,
         kinds: list[int] | None = None,
         on_event: BuzzEventCallback | None = None,
+        on_owner_command: BuzzOwnerCommandCallback | None = None,
     ) -> None:
         """``kinds`` selects the Nostr event kinds to subscribe to (default:
         chat messages, kind 9). Pass other kinds — e.g. huddle announcements,
@@ -223,7 +232,14 @@ class BuzzRelaySource(BaseSourceProvider):
         remove) as normalised dicts, outside the message pipeline — matching
         how Discord and WhatsApp-personal handle reactions. Providing it
         widens the default subscription to kinds 9, 7 and 5; requires a relay
-        that scopes reactions to their target's channel (buzzkit>=0.2.0)."""
+        that scopes reactions to their target's channel (buzzkit>=0.2.0).
+
+        ``on_owner_command`` receives the owner's control commands
+        (``"shutdown"``, ``"cancel"``, ``"rotate"``) when
+        ``config.obey_owner_commands`` is armed; when provided it owns the
+        response to every command — including ``"shutdown"``, for which the
+        source otherwise stops itself. See :class:`BuzzAgent`, which wires
+        this to a whole-process graceful shutdown."""
         super().__init__()
         if not HAS_BUZZKIT:
             raise ImportError(
@@ -237,6 +253,8 @@ class BuzzRelaySource(BaseSourceProvider):
             kinds = [KIND_STREAM_MESSAGE, KIND_REACTION, KIND_DELETION]
         self._kinds = kinds
         self._on_event = on_event
+        self._on_owner_command = on_owner_command
+        self._owner_hex: str | None = None  # resolved at start()
         self._parser = parser or default_message_parser(channel_id, ignore_own=config.ignore_own)
         self._client: Any = BuzzClient(
             config.relay_url,
@@ -248,6 +266,20 @@ class BuzzRelaySource(BaseSourceProvider):
     def client(self) -> Any:
         """Expose the underlying BuzzClient for outbound use."""
         return self._client
+
+    @property
+    def channel_id(self) -> str:
+        """The RoomKit channel id this source feeds (``attach_source`` key)."""
+        return self._channel_id
+
+    @property
+    def on_owner_command(self) -> BuzzOwnerCommandCallback | None:
+        """The owner-command callback; settable so a runner can take over."""
+        return self._on_owner_command
+
+    @on_owner_command.setter
+    def on_owner_command(self, callback: BuzzOwnerCommandCallback | None) -> None:
+        self._on_owner_command = callback
 
     @property
     def name(self) -> str:
@@ -286,6 +318,53 @@ class BuzzRelaySource(BaseSourceProvider):
         except Exception:
             logger.exception("Buzz on_event callback failed")
 
+    def _resolve_owner(self) -> str | None:
+        """The pubkey allowed to command this agent, or ``None`` (inert).
+
+        The VERIFIED auth-tag attester wins (Schnorr-checked by buzzkit
+        against the agent's own pubkey); ``config.owner_pubkey`` is the
+        explicit fallback — the same order buzz-acp resolves its owner in.
+        """
+        if not self._config.obey_owner_commands:
+            return None
+        return self._client.verified_owner_hex or self._config.owner_pubkey
+
+    async def _handle_owner_command(self, event: dict[str, Any]) -> bool:
+        """Intercept an owner control command. ``True`` = consumed.
+
+        A command from anyone but the proven owner is NOT consumed — it falls
+        through to the parser as the regular message it is, exactly like
+        buzz-acp treats a non-owner ``!shutdown``.
+        """
+        if self._owner_hex is None:
+            return False
+        command = parse_owner_command(event, self._client.pubkey_hex)
+        if command is None or str(event.get("pubkey", "")) != self._owner_hex:
+            return False
+        logger.info(
+            "Buzz owner command !%s on %s (owner %s…)",
+            command,
+            self._channel_id,
+            self._owner_hex[:8],
+        )
+        if self._on_owner_command is not None:
+            # The callback owns the response — shutdown included (BuzzAgent
+            # turns it into a whole-process graceful stop).
+            try:
+                result = self._on_owner_command(command, event)
+                if inspect.isawaitable(result):
+                    await result
+            except Exception:
+                logger.exception("Buzz on_owner_command callback failed")
+        elif command == "shutdown":
+            # Default: stop this source — presence "offline", socket closed,
+            # start() returns cleanly. The framework's auto_restart only
+            # revives sources that RAISE, so an intentional stop is final.
+            await self.stop()
+        # "cancel"/"rotate" have no default action yet: consumed (owner
+        # intent must never reach the AI), surfaced via the callback.
+        return True
+
     async def _presence_loop(self) -> None:
         """Announce presence (kind 20001) on connect, then heartbeat within TTL."""
         while not self._should_stop():
@@ -305,6 +384,13 @@ class BuzzRelaySource(BaseSourceProvider):
     async def start(self, emit: EmitCallback) -> None:
         self._reset_stop()
         self._set_status(SourceStatus.CONNECTING)
+        self._owner_hex = self._resolve_owner()
+        if self._owner_hex is not None:
+            logger.info(
+                "Buzz owner commands armed on %s (owner %s…)",
+                self._channel_id,
+                self._owner_hex[:8],
+            )
         backoff = _INITIAL_BACKOFF
         while not self._should_stop():
             presence_task: asyncio.Task | None = None
@@ -323,6 +409,8 @@ class BuzzRelaySource(BaseSourceProvider):
                         break
                     if event.get("kind") in (KIND_REACTION, KIND_DELETION):
                         await self._dispatch_reaction(event)
+                        continue
+                    if await self._handle_owner_command(event):
                         continue
                     parsed = self._parser(event, self._client.pubkey_hex)
                     if parsed is not None:
