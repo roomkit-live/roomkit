@@ -16,7 +16,7 @@ from roomkit.core.framework import (
 )
 from roomkit.models.channel import ChannelBinding, ChannelOutput
 from roomkit.models.context import RoomContext
-from roomkit.models.delivery import InboundMessage, InboundResult
+from roomkit.models.delivery import InboundMessage
 from roomkit.models.enums import (
     Access,
     ChannelCategory,
