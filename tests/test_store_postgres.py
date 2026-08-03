@@ -655,6 +655,154 @@ class TestDeleteRoomCleanup:
         assert await store.list_participants("r1") == []
 
 
+class _CheckoutCounter:
+    """Proxy over the asyncpg pool that records every real checkout.
+
+    A connection the store lends from an open ``connection()`` block never
+    reaches the pool, so it is invisible here — which is exactly the quantity
+    these tests are about.
+    """
+
+    def __init__(self, pool) -> None:  # noqa: ANN001
+        self._pool = pool
+        self.count = 0
+
+    def acquire(self, *args, **kwargs):  # noqa: ANN002, ANN003, ANN201
+        self.count += 1
+        return self._pool.acquire(*args, **kwargs)
+
+    def __getattr__(self, name: str):  # noqa: ANN204
+        return getattr(self._pool, name)
+
+
+@pytest.fixture
+def checkouts(monkeypatch):  # noqa: ANN001, ANN201
+    """Return ``counter_for(store)`` — real pool checkouts, per store instance."""
+    from roomkit.store.postgres import PostgresStore
+
+    counters: dict[int, _CheckoutCounter] = {}
+
+    def counter_for(s: PostgresStore) -> _CheckoutCounter:
+        if id(s) not in counters:
+            counters[id(s)] = _CheckoutCounter(s._pool)  # noqa: SLF001
+        return counters[id(s)]
+
+    monkeypatch.setattr(PostgresStore, "_ensure_pool", counter_for)
+    return counter_for
+
+
+class TestConnectionTenure:
+    """RMK-97 — ``connection()`` bounds how long a pooled connection is held.
+
+    asyncpg resets a connection on release, so every checkout is a full extra
+    round trip; on the inbound path that overhead is the same order as the
+    reads it brackets.
+    """
+
+    async def test_the_block_pays_one_checkout_for_every_call(self, store, checkouts) -> None:
+        await store.create_room(Room(id="r1"))
+        counter = checkouts(store)
+        counter.count = 0
+
+        async with store.connection():
+            await store.get_room("r1")
+            await store.list_bindings("r1")
+            await store.list_participants("r1")
+
+        assert counter.count == 1
+
+    async def test_the_same_calls_outside_pay_one_checkout_each(self, store, checkouts) -> None:
+        await store.create_room(Room(id="r1"))
+        counter = checkouts(store)
+        counter.count = 0
+
+        await store.get_room("r1")
+        await store.list_bindings("r1")
+        await store.list_participants("r1")
+
+        assert counter.count == 3
+
+    async def test_a_nested_block_joins_the_outer_one(self, store, checkouts) -> None:
+        await store.create_room(Room(id="r1"))
+        counter = checkouts(store)
+        counter.count = 0
+
+        async with store.connection():
+            await store.get_room("r1")
+            async with store.connection():
+                await store.list_bindings("r1")
+            await store.list_participants("r1")
+
+        assert counter.count == 1
+
+    async def test_the_default_load_room_context_rides_the_block(self, store, checkouts) -> None:
+        """The ABC default composes three getters and brackets them itself.
+
+        ``PostgresStore`` overrides the method, so call the default explicitly:
+        this is what a third-party pooled backend inherits without writing any
+        SQL of its own.
+        """
+        from roomkit.store.base import ConversationStore
+
+        await store.create_room(Room(id="r1"))
+        counter = checkouts(store)
+        counter.count = 0
+
+        room, bindings, participants = await ConversationStore.load_room_context(store, "r1")
+
+        assert room is not None
+        assert (bindings, participants) == ([], [])
+        assert counter.count == 1
+
+    async def test_a_failure_inside_the_block_returns_the_connection(self, store) -> None:
+        await store.get_room("warm-the-pool")
+        idle_before = store._pool.get_idle_size()
+
+        with pytest.raises(RuntimeError, match="boom"):
+            async with store.connection():
+                await store.get_room("r1")
+                raise RuntimeError("boom")
+
+        assert store._pool.get_idle_size() == idle_before
+        assert await store.get_room("r1") is None
+
+    async def test_concurrent_blocks_do_not_share_one_connection(self, store) -> None:
+        """Two tasks, two connections — a shared one would raise on the second
+        query ("another operation is in progress")."""
+        await store.create_room(Room(id="r1"))
+        seen: list[int] = []
+
+        async def read_twice() -> None:
+            async with store.connection():
+                seen.append(await store.get_event_count("r1"))
+                await asyncio.sleep(0)  # hand over inside the block
+                seen.append(await store.get_event_count("r1"))
+
+        await asyncio.gather(read_twice(), read_twice())
+
+        assert seen == [0, 0, 0, 0]
+
+    async def test_another_store_is_not_lent_this_one_s_connection(self, store, checkouts) -> None:
+        """The binding carries its owner: two stores may hold two pools onto
+        two different databases, and lending across them would query the wrong
+        one."""
+        from roomkit.store.postgres import PostgresStore
+
+        other = PostgresStore(dsn=POSTGRES_DSN)
+        await other.init(min_size=1, max_size=2)
+        try:
+            await store.create_room(Room(id="r1"))
+            counter = checkouts(other)
+            counter.count = 0
+
+            async with store.connection():
+                assert await other.get_room("r1") is not None
+
+            assert counter.count == 1
+        finally:
+            await other.close()
+
+
 class TestContextManager:
     async def test_async_context_manager(self) -> None:
         from roomkit.store.postgres import PostgresStore

@@ -310,18 +310,24 @@ class InboundMixin(HelpersMixin):
                 # Existence checks only — neither the room nor the binding is
                 # used beyond the yes/no, so materialising either would decode
                 # its JSONB columns and validate a whole model per message for
-                # nothing.
-                if not await self._store.room_exists(room_id):
+                # nothing. Asked together on one connection; what they decide
+                # (create, attach, lock) happens outside it, because a pooled
+                # connection must never be held across a lock or a write path.
+                async with self._store.connection():
+                    room_present = await self._store.room_exists(room_id)
+                    binding_present = room_present and await self._store.binding_exists(
+                        room_id, message.channel_id
+                    )
+                if not room_present:
                     await self.create_room(room_id=room_id)
                     await self.attach_channel(room_id, message.channel_id)
                     room_just_created = True
-                else:
-                    # Room exists — ensure channel is attached, unless the
+                elif not binding_present:
+                    # Room exists but the channel is not attached — unless the
                     # integrator detached it (RFC §7.5-7). The unlocked read
                     # keeps the common case (already bound) free; the actual
                     # decision runs under the room lock in _maybe_auto_attach.
-                    if not await self._store.binding_exists(room_id, message.channel_id):
-                        await self._maybe_auto_attach(room_id, message.channel_id)
+                    await self._maybe_auto_attach(room_id, message.channel_id)
             telemetry.end_span(route_span, attributes={"room_id": room_id or ""})
         except Exception as exc:
             telemetry.end_span(route_span, status="error", error_message=str(exc))

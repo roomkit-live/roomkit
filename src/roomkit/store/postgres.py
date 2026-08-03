@@ -7,10 +7,11 @@ storage for core fields.
 
 from __future__ import annotations
 
+import contextvars
 import json
 import logging
-from collections.abc import Generator, Sequence
-from contextlib import contextmanager
+from collections.abc import AsyncIterator, Generator, Sequence
+from contextlib import asynccontextmanager, contextmanager
 from datetime import UTC, datetime
 from typing import Any
 
@@ -43,6 +44,28 @@ logger = logging.getLogger("roomkit.store.postgres")
 # Advisory-lock key serializing schema migrations across processes.
 # Arbitrary constant; "room" in ASCII hex.
 _MIGRATION_LOCK_KEY = 0x726F6F6D
+
+# The connection ``PostgresStore.connection()`` bound to the current execution
+# context, with the store that owns it — two stores in one process must not lend
+# each other a connection from the wrong pool. Same ContextVar-plus-token shape
+# as ``core.locks._held_rooms``, and for the same reentrancy reason.
+#
+# One difference matters: a child task inherits this binding, and a connection —
+# unlike a held lock — cannot serve two coroutines at once. That is why
+# ``connection()`` forbids spawning tasks inside its block.
+_bound_connection: contextvars.ContextVar[tuple[object, Any] | None] = contextvars.ContextVar(
+    "_store_bound_connection", default=None
+)
+
+
+@asynccontextmanager
+async def _lend(conn: Any) -> AsyncIterator[Any]:
+    """Yield an already-checked-out connection without releasing it.
+
+    Lets a call site written as ``async with self._acquire() as conn`` run on a
+    borrowed connection unchanged.
+    """
+    yield conn
 
 
 async def _insert_event(conn: Any, event: RoomEvent) -> None:
@@ -129,8 +152,41 @@ class PostgresStore(ConversationStore):
         return self._pool
 
     def _acquire(self) -> Any:
-        """Acquire a connection from the pool with a timeout."""
+        """The connection this store's queries run on.
+
+        A checkout from the pool, unless :meth:`connection` bound one to the
+        current context — then that one, lent for the call and NOT released
+        back to the pool here; the block that bound it releases it.
+        """
+        bound = _bound_connection.get()
+        if bound is not None and bound[0] is self:
+            return _lend(bound[1])
         return self._ensure_pool().acquire(timeout=self._acquire_timeout)
+
+    @asynccontextmanager
+    async def connection(self) -> AsyncIterator[None]:
+        """Run this block's queries on ONE pooled connection.
+
+        Implements :meth:`ConversationStore.connection` — read its contract
+        before using it, in particular that the block takes store calls only,
+        sequentially. Every query in ``PostgresStore`` goes through
+        :meth:`_acquire`, so binding there covers them all without any of them
+        knowing about it.
+
+        One checkout for the whole block instead of one per call, and asyncpg
+        emits its connection reset once instead of once per call.
+        """
+        bound = _bound_connection.get()
+        if bound is not None and bound[0] is self:
+            # Reentrant: the outer block owns the connection and releases it.
+            yield
+            return
+        async with self._ensure_pool().acquire(timeout=self._acquire_timeout) as conn:
+            token = _bound_connection.set((self, conn))
+            try:
+                yield
+            finally:
+                _bound_connection.reset(token)
 
     @contextmanager
     def _query_span(self, operation: str, table: str) -> Generator[str, None, None]:

@@ -475,6 +475,42 @@ class TestObservationOperations:
         assert len(r2_obs) == 1
 
 
+class TestConnectionTenure:
+    """RMK-97 — a store with no pool inherits ``connection()`` as a no-op."""
+
+    async def test_the_block_changes_nothing(self, store: InMemoryStore) -> None:
+        await store.create_room(Room(id="r1"))
+        await store.add_binding(
+            ChannelBinding(channel_id="ch1", room_id="r1", channel_type=ChannelType.SMS)
+        )
+
+        async with store.connection():
+            room = await store.get_room("r1")
+            bindings = await store.list_bindings("r1")
+
+        assert room is not None
+        assert [b.channel_id for b in bindings] == ["ch1"]
+        assert (room, bindings) == (await store.get_room("r1"), await store.list_bindings("r1"))
+
+    async def test_it_is_not_a_transaction(self, store: InMemoryStore) -> None:
+        """No rollback: what the block wrote before failing stays written.
+
+        Stated as a test because the name invites the opposite assumption.
+        """
+        with pytest.raises(RuntimeError, match="boom"):
+            async with store.connection():
+                await store.create_room(Room(id="r1"))
+                raise RuntimeError("boom")
+
+        assert await store.get_room("r1") is not None
+
+    async def test_a_nested_block_is_allowed(self, store: InMemoryStore) -> None:
+        await store.create_room(Room(id="r1"))
+
+        async with store.connection(), store.connection():
+            assert await store.get_room("r1") is not None
+
+
 class TestFindRooms:
     async def test_find_by_status(self, store: InMemoryStore) -> None:
         await store.create_room(Room(id="r1", status=RoomStatus.ACTIVE))

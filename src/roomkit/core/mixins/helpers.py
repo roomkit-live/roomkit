@@ -458,14 +458,20 @@ class HelpersMixin:
         nothing else, and ``close()`` promises not to release the store while
         an operation it was given is still in flight — a context built for a
         hook announcement is one of the reads that promise covers.
+
+        "Store reads and nothing else" is also what lets the reads share one
+        connection (``store.connection()``): the recent-events limit is derived
+        from the bindings just read, so the two reads cannot be merged into one
+        round trip, but they need not pay two checkouts either.
         """
         with self._resource_lease():
-            room, bindings, participants = await self._store.load_room_context(room_id)
-            if room is None:
-                raise RoomNotFoundError(f"Room {room_id} not found")
-            if recent_limit is None:
-                recent_limit = self._resolve_recent_events_limit(bindings)
-            recent = await self._store.get_conversation(room_id, limit=recent_limit)
+            async with self._store.connection():
+                room, bindings, participants = await self._store.load_room_context(room_id)
+                if room is None:
+                    raise RoomNotFoundError(f"Room {room_id} not found")
+                if recent_limit is None:
+                    recent_limit = self._resolve_recent_events_limit(bindings)
+                recent = await self._store.get_conversation(room_id, limit=recent_limit)
         return RoomContext(
             room=room,
             bindings=bindings,

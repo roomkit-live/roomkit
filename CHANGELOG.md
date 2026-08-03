@@ -55,6 +55,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`ConversationStore.connection()` — a store call no longer has to pay for
+  its own connection** (RMK-97). Every call into `PostgresStore` took a
+  connection from the pool and gave it back, and asyncpg resets a connection on
+  release (`pg_advisory_unlock_all(); CLOSE ALL; UNLISTEN *; RESET ALL;`) — a
+  full extra round trip per call, ~36% of the SQL statements an inbound message
+  issued on the scale bench. `connection()` is an async context manager on the
+  ABC: the calls inside the block are served from one connection instead of one
+  each. The default binds nothing and yields, so `InMemoryStore` and any
+  third-party backend behave exactly as before; `PostgresStore` overrides it,
+  binding through the single `_acquire()` choke point every one of its queries
+  already goes through. It is deliberately **not** a transaction — no
+  atomicity, no isolation, no rollback, no snapshot; it bounds connection
+  *tenure* and nothing else, and the block must hold store calls only, awaited
+  sequentially (a hook, a provider call or a lock inside it would park a pooled
+  connection behind foreign code — the failure mode the delivery lanes were
+  built to remove). Reentrant. Applied to the two stretches of the inbound path
+  that are pure store reads: building a room's context, and asking whether a
+  room and a binding exist during routing. Measured against a real PostgreSQL
+  on the simplest room: **11 → 8 pooled connections per inbound message**, i.e.
+  three fewer round trips, held there by a new deterministic guard
+  (`tests/test_inbound_connection_budget.py`).
+
 - **`ACPChannel(transport=...)` — the agent connection is injectable, so the
   agent no longer has to be a subprocess of this process.** `ACPChannel` spoke
   ACP only over the stdio of an agent it spawned itself, which rules out an

@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Sequence
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import Any
 
@@ -23,6 +24,43 @@ class ConversationStore(ABC):
     Implement this ABC to plug in any storage backend (SQL, Redis, etc.).
     The library ships with `InMemoryStore` for development and testing.
     """
+
+    # Connection tenure
+
+    @asynccontextmanager
+    async def connection(self) -> AsyncIterator[None]:
+        """Serve the store calls in this block from one backend connection.
+
+        A pooled backend MAY bind a single connection for the duration of the
+        block, so a stretch of calls pays one checkout instead of one per call.
+        That checkout is not free: asyncpg, for one, resets a connection on
+        release (``pg_advisory_unlock_all(); CLOSE ALL; UNLISTEN *;
+        RESET ALL;``), a full round trip whose cost rivals the reads it brackets.
+
+        The default binds nothing and yields: a store with no connection pool
+        has none to bind, and behaves exactly as it did without the block.
+
+        **This is not a transaction.** No atomicity, no isolation, no rollback,
+        no snapshot — a failure midway leaves the earlier calls applied, exactly
+        as it would outside the block. It bounds *connection tenure*, nothing
+        else. A caller needing atomicity asks for it explicitly (see
+        :meth:`commit_event`).
+
+        The block MUST contain store calls and nothing else, awaited
+        **sequentially**: no hook, no provider call, no lock acquisition, no
+        ``gather``/``create_task`` over store calls. Two reasons, both learned
+        the hard way — holding a pooled connection across foreign code is how a
+        fleet parks its backends behind someone else's HTTP request, and a child
+        task inherits this context, so it would use the bound connection
+        concurrently with its parent.
+
+        Reentrant: a nested block joins the outer one rather than taking a
+        second connection.
+
+        Yields nothing on purpose. The bound connection is the backend's
+        business; callers keep calling the store's ordinary methods.
+        """
+        yield
 
     # Room operations
 
@@ -509,10 +547,11 @@ class ConversationStore(ABC):
 
         These three reads always travel together when a room's context is
         assembled, and that happens on every inbound message. The default
-        implementation issues them as three separate calls; a pooled backend
-        SHOULD override it to serve them over a single connection, because
-        there each separate call also pays a connection checkout whose cost
-        rivals the queries themselves.
+        implementation issues them as three separate calls, inside
+        :meth:`connection` so a pooled backend that binds one there already
+        pays a single checkout for all three; overriding this method too buys
+        the queries themselves in one place, which is what ``PostgresStore``
+        does.
 
         This is a convenience, NOT a consistent snapshot: the reads carry no
         more cross-read atomicity than calling the three methods in sequence
@@ -521,10 +560,11 @@ class ConversationStore(ABC):
         Returns ``(None, [], [])`` for a room that does not exist, mirroring
         :meth:`get_room` rather than raising.
         """
-        room = await self.get_room(room_id)
-        if room is None:
-            return None, [], []
-        return room, await self.list_bindings(room_id), await self.list_participants(room_id)
+        async with self.connection():
+            room = await self.get_room(room_id)
+            if room is None:
+                return None, [], []
+            return room, await self.list_bindings(room_id), await self.list_participants(room_id)
 
     # Identity operations
 
