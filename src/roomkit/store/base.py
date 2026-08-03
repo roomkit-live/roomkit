@@ -433,6 +433,30 @@ class ConversationStore(ABC):
         """List all participants in a room."""
         ...
 
+    async def load_room_context(
+        self, room_id: str
+    ) -> tuple[Room | None, list[ChannelBinding], list[Participant]]:
+        """Read a room together with its bindings and participants.
+
+        These three reads always travel together when a room's context is
+        assembled, and that happens on every inbound message. The default
+        implementation issues them as three separate calls; a pooled backend
+        SHOULD override it to serve them over a single connection, because
+        there each separate call also pays a connection checkout whose cost
+        rivals the queries themselves.
+
+        This is a convenience, NOT a consistent snapshot: the reads carry no
+        more cross-read atomicity than calling the three methods in sequence
+        would. A backend needing that must take it explicitly.
+
+        Returns ``(None, [], [])`` for a room that does not exist, mirroring
+        :meth:`get_room` rather than raising.
+        """
+        room = await self.get_room(room_id)
+        if room is None:
+            return None, [], []
+        return room, await self.list_bindings(room_id), await self.list_participants(room_id)
+
     # Identity operations
 
     @abstractmethod

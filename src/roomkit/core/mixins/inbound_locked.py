@@ -345,9 +345,11 @@ class InboundLockedMixin(HelpersMixin):
             )
             return InboundResult(blocked=True, reason="duplicate")
 
-        # Assign index
-        count = await self._store.get_event_count(room_id)
-        event = event.model_copy(update={"index": count})
+        # Provisional index for the hooks. The authoritative one is (re)assigned
+        # inside the commit (§8.1), so this reads the counter the context
+        # already carries under the lock rather than paying a COUNT(*) over the
+        # room's whole timeline on every single inbound.
+        event = event.model_copy(update={"index": context.room.event_count})
 
         # Normalize the in-app thread parent to the thread ROOT (flat two-level
         # model). This is the single choke point for every entry point — direct

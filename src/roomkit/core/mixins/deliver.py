@@ -108,21 +108,24 @@ class DeliverMixin(HelpersMixin):
         strategy_name = serialize_strategy(resolved).get("type", "immediate")
         extra_meta = dict(metadata) if metadata else {}
 
-        # BEFORE_DELIVER
-        hook_event = build_delivery_hook_event(
-            room_id,
-            content,
-            channel_id=channel_id,
-            strategy_name=strategy_name,
-            extra_meta=extra_meta,
-        )
-        try:
-            room_context = await self._build_context(room_id)
-            await self._hook_engine.run_async_hooks(
-                room_id, HookTrigger.BEFORE_DELIVER, hook_event, room_context
+        # BEFORE_DELIVER. The announcement costs four store reads to build the
+        # context, so it is skipped outright when nothing is listening —
+        # has_hooks() is an O(1) set lookup covering global and room hooks.
+        if self._hook_engine.has_hooks(HookTrigger.BEFORE_DELIVER):
+            hook_event = build_delivery_hook_event(
+                room_id,
+                content,
+                channel_id=channel_id,
+                strategy_name=strategy_name,
+                extra_meta=extra_meta,
             )
-        except Exception:
-            logger.debug("BEFORE_DELIVER hook failed", exc_info=True)
+            try:
+                room_context = await self._build_context(room_id)
+                await self._hook_engine.run_async_hooks(
+                    room_id, HookTrigger.BEFORE_DELIVER, hook_event, room_context
+                )
+            except Exception:
+                logger.debug("BEFORE_DELIVER hook failed", exc_info=True)
 
         # Execute delivery strategy
         error: str | None = None
@@ -132,20 +135,21 @@ class DeliverMixin(HelpersMixin):
             error = str(exc)
             logger.exception("Delivery failed in room %s", room_id)
 
-        # AFTER_DELIVER
-        after_extra = {**extra_meta, "error": error}
-        after_event = build_delivery_hook_event(
-            room_id,
-            content,
-            channel_id=channel_id,
-            strategy_name=strategy_name,
-            status=EventStatus.FAILED if error else EventStatus.DELIVERED,
-            extra_meta=after_extra,
-        )
-        try:
-            room_context = await self._build_context(room_id)
-            await self._hook_engine.run_async_hooks(
-                room_id, HookTrigger.AFTER_DELIVER, after_event, room_context
+        # AFTER_DELIVER — same guard, same reason.
+        if self._hook_engine.has_hooks(HookTrigger.AFTER_DELIVER):
+            after_extra = {**extra_meta, "error": error}
+            after_event = build_delivery_hook_event(
+                room_id,
+                content,
+                channel_id=channel_id,
+                strategy_name=strategy_name,
+                status=EventStatus.FAILED if error else EventStatus.DELIVERED,
+                extra_meta=after_extra,
             )
-        except Exception:
-            logger.debug("AFTER_DELIVER hook failed", exc_info=True)
+            try:
+                room_context = await self._build_context(room_id)
+                await self._hook_engine.run_async_hooks(
+                    room_id, HookTrigger.AFTER_DELIVER, after_event, room_context
+                )
+            except Exception:
+                logger.debug("AFTER_DELIVER hook failed", exc_info=True)

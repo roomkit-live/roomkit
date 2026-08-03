@@ -449,11 +449,9 @@ class HelpersMixin:
         hook announcement is one of the reads that promise covers.
         """
         with self._resource_lease():
-            room = await self._store.get_room(room_id)
+            room, bindings, participants = await self._store.load_room_context(room_id)
             if room is None:
                 raise RoomNotFoundError(f"Room {room_id} not found")
-            bindings = await self._store.list_bindings(room_id)
-            participants = await self._store.list_participants(room_id)
             if recent_limit is None:
                 recent_limit = self._resolve_recent_events_limit(bindings)
             recent = await self._store.get_conversation(room_id, limit=recent_limit)

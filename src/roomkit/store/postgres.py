@@ -1077,6 +1077,34 @@ class PostgresStore(ConversationStore):
                 )
         return [_row_to_participant(r) for r in rows]
 
+    async def load_room_context(
+        self, room_id: str
+    ) -> tuple[Room | None, list[ChannelBinding], list[Participant]]:
+        """The three room-scoped reads over ONE pooled connection.
+
+        Same queries as the default implementation, one checkout instead of
+        three. asyncpg resets a connection on release
+        (``pg_advisory_unlock_all(); CLOSE ALL; UNLISTEN *; RESET ALL;``), so
+        each checkout costs a full extra round trip — on the inbound path that
+        overhead is the same order as the reads it wraps.
+        """
+        with self._query_span("load_room_context", "rooms"):
+            async with self._acquire() as conn:
+                room_row = await conn.fetchrow("SELECT * FROM rooms WHERE id = $1", room_id)
+                if room_row is None:
+                    return None, [], []
+                binding_rows = await conn.fetch(
+                    "SELECT * FROM bindings WHERE room_id = $1", room_id
+                )
+                participant_rows = await conn.fetch(
+                    "SELECT * FROM participants WHERE room_id = $1", room_id
+                )
+        return (
+            _row_to_room(room_row),
+            [_row_to_binding(r) for r in binding_rows],
+            [_row_to_participant(r) for r in participant_rows],
+        )
+
     # ── Read tracking ────────────────────────────────────────────
 
     async def mark_read(self, room_id: str, channel_id: str, event_id: str) -> None:

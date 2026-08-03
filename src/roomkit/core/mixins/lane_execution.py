@@ -433,9 +433,7 @@ class LaneExecutionMixin(HelpersMixin):
 
             # Provisional index for the hook, mirroring the main inbound
             # path; the authoritative index is (re)assigned at commit.
-            reentry = reentry.model_copy(
-                update={"index": await self._store.get_event_count(room_id)}
-            )
+            reentry = reentry.model_copy(update={"index": context.room.event_count})
             reentry_ctx = context.model_copy(
                 update={
                     "recent_events": [
