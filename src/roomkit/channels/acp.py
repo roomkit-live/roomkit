@@ -31,6 +31,7 @@ from roomkit.channels._acp_client import (
     _TurnDone,
     _TurnState,
 )
+from roomkit.channels._acp_context import event_text, room_context_block
 from roomkit.channels._acp_events import ACPEventsMixin
 from roomkit.channels.acp_transport import ACPTransport, StdioACPTransport
 from roomkit.channels.base import Channel
@@ -44,7 +45,7 @@ from roomkit.models.enums import (
     ChannelType,
     EventType,
 )
-from roomkit.models.event import RichContent, RoomEvent, TextContent
+from roomkit.models.event import RoomEvent
 from roomkit.models.streaming import StreamDelta
 from roomkit.providers.ai.base import ProviderError
 from roomkit.realtime.base import EphemeralEventType
@@ -57,6 +58,12 @@ logger = logging.getLogger("roomkit.channels.acp")
 
 _SHUTDOWN_TIMEOUT = 5.0
 """Seconds the agent gets to acknowledge cancellation and session closes."""
+
+_DEFAULT_ROOM_HISTORY = 20
+"""Room messages an agent catches up on when it is asked to act (RFC §19.3.2)."""
+
+_UNSEEN = -1
+"""No prompt has left for this room yet — event indices start at 0."""
 
 
 class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
@@ -99,6 +106,13 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
         authentication_method: Optional ACP authentication method identifier.
         external_tool_handler: Permission policy and tool observability bridge.
             Without a handler, every permission request is rejected.
+        room_history: How many room messages the agent catches up on when it is
+            asked to act, having been skipped while it was not (RFC §19.3.2).
+            An ACP session holds its history in the agent's process, so a room
+            where two agents are addressed in turn would otherwise leave each
+            one with a private thread and no way to know it. ``0`` turns the
+            catch-up off. Only what the agent missed is sent, and only what
+            visibility would have delivered to it (RFC §7.5 rule 8).
     """
 
     channel_type = ChannelType.AI
@@ -118,6 +132,7 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
         mcp_servers: Sequence[Any] | None = None,
         authentication_method: str | None = None,
         external_tool_handler: ExternalToolHandler | None = None,
+        room_history: int = _DEFAULT_ROOM_HISTORY,
     ) -> None:
         super().__init__(channel_id)
         if command is not None and transport is not None:
@@ -150,6 +165,7 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
         self._mcp_servers = list(mcp_servers or ())
         self._authentication_method = authentication_method
         self._external_tool_handler = external_tool_handler
+        self._room_history = max(0, room_history)
 
         self._loaded_sdk: _SDK | None = None
         self._client = _ACPClient(self)
@@ -160,6 +176,7 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
         self._sessions: dict[str, str] = {}
         self._session_rooms: dict[str, str] = {}
         self._session_options: dict[str, list[Any]] = {}
+        self._prompted_index: dict[str, int] = {}
         self._turns: dict[str, _TurnState] = {}
         self._agent_info: dict[str, Any] | None = None
         self._handler_started = False
@@ -248,6 +265,16 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
             supports_rich_text=True,
         )
 
+    @property
+    def recent_events_window(self) -> int:
+        """Room tail this channel reads — the catch-up window (RFC §19.3.2).
+
+        Declaring it is what makes the framework load any history at all into
+        ``RoomContext.recent_events`` for a room whose only readers are ACP
+        sessions.
+        """
+        return self._room_history
+
     async def handle_inbound(self, message: InboundMessage, context: RoomContext) -> RoomEvent:
         raise NotImplementedError("ACP intelligence channels do not accept inbound messages")
 
@@ -271,14 +298,28 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
         if event.type in (EventType.TOOL_CALL_START, EventType.TOOL_CALL_END):
             return ChannelOutput.empty()
 
-        text = self._event_text(event)
+        text = event_text(event)
         if not text:
             return ChannelOutput.empty()
 
         room_id = context.room.id if context.room is not None else event.room_id
+        # What the room said while this agent was not being asked. Built here,
+        # where the context is, and prefixed to the request it precedes.
+        catch_up = room_context_block(
+            context,
+            self.channel_id,
+            after_index=self._prompted_index.get(room_id, _UNSEEN),
+            trigger=event,
+            limit=self._room_history,
+        )
         return ChannelOutput(
             responded=True,
-            response_stream=self._prompt_stream(room_id, event.id, text),
+            response_stream=self._prompt_stream(
+                room_id,
+                event.id,
+                f"{catch_up}\n\n{text}" if catch_up else text,
+                event.index,
+            ),
             response_metadata={"acp": {"protocol_version": _STABLE_PROTOCOL_VERSION}},
         )
 
@@ -333,6 +374,10 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
                 return False
             self._session_rooms.pop(session_id, None)
             self._session_options.pop(session_id, None)
+            # The catch-up mark tracks what *this session* was told. A room
+            # whose session is gone starts over: the next one opens empty and
+            # has missed everything.
+            self._prompted_index.pop(room_id, None)
             if self._connection is not None:
                 await self._connection.close_session(session_id)
             self._room_locks.pop(room_id, None)
@@ -396,6 +441,7 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
         self._sessions.clear()
         self._session_rooms.clear()
         self._session_options.clear()
+        self._prompted_index.clear()
 
     async def _session_for(self, room_id: str, connection: Any) -> str:
         session_id = self._sessions.get(room_id)
@@ -424,6 +470,7 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
         room_id: str,
         event_id: str,
         text: str,
+        event_index: int,
     ) -> AsyncIterator[StreamDelta]:
         async with self._room_turn_lock(room_id):
             connection = await self._ensure_connection()
@@ -431,6 +478,13 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
             turn = _TurnState(room_id=room_id)
             self._turns[session_id] = turn
             prompt = [self._sdk().acp.text_block(text)]
+            # The room is caught up only once the prompt carrying it is on its
+            # way. A generator body that never runs — a muted binding has its
+            # stream closed unconsumed — leaves the mark where it was, so the
+            # next prompt still carries what the silenced turn would have said.
+            self._prompted_index[room_id] = max(
+                event_index, self._prompted_index.get(room_id, _UNSEEN)
+            )
             turn.runner = asyncio.create_task(
                 self._run_prompt(connection, session_id, event_id, prompt, turn)
             )
@@ -484,12 +538,3 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
             turn.queue.put_nowait(_TurnDone(error=exc))
         else:
             turn.queue.put_nowait(_TurnDone())
-
-    @staticmethod
-    def _event_text(event: RoomEvent) -> str:
-        content = event.content
-        if isinstance(content, TextContent):
-            return content.body
-        if isinstance(content, RichContent):
-            return content.plain_text or content.body
-        return Channel.extract_text(event)

@@ -34,8 +34,9 @@ from roomkit.channels.acp_transport import _resolve_spawn_env
 from roomkit.models.channel import ChannelBinding
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundMessage
-from roomkit.models.enums import ChannelCategory, ChannelType, EventType
+from roomkit.models.enums import ChannelCategory, ChannelType, EventType, Visibility
 from roomkit.models.event import EventSource, RoomEvent, TextContent, ToolCallContent
+from roomkit.models.participant import Participant
 from roomkit.models.room import Room
 from roomkit.models.streaming import (
     ThinkingDeltaMarker,
@@ -1009,3 +1010,207 @@ class TestACPChannel:
         assert handler._before_tool_hook is not None
         assert handler._on_tool_hook is not None
         await kit.close()
+
+
+class TestRoomCatchUp:
+    """RFC §19.3.2 — an agent skipped while unaddressed catches up from the timeline.
+
+    An ACP session holds its history inside the agent's process, so what it was
+    not told is gone for good. It reads the room's tail at the moment it *is*
+    asked to act, bounded, and never past what visibility would have delivered.
+    """
+
+    @staticmethod
+    def _context(*recent: RoomEvent, extra_bindings: list[ChannelBinding] | None = None) -> Any:
+        return RoomContext(
+            room=Room(id="room-1"),
+            bindings=[
+                _binding(),
+                ChannelBinding(
+                    channel_id="ch1",
+                    room_id="room-1",
+                    channel_type=ChannelType.SMS,
+                ),
+                *(extra_bindings or []),
+            ],
+            recent_events=list(recent),
+        )
+
+    @staticmethod
+    async def _prompt(channel: ACPChannel, event: RoomEvent, context: Any) -> str:
+        """Run one turn to completion and return the text the agent received."""
+        output = await channel.on_event(event, _binding(), context)
+        assert output.response_stream is not None
+        [chunk async for chunk in output.response_stream]
+        await asyncio.sleep(0)
+        return ""
+
+    @staticmethod
+    def _sent(connection: _FakeACPConnection, turn: int = 0) -> str:
+        return str(connection.prompt_calls[turn]["prompt"][0].text)
+
+    async def test_window_is_declared_so_the_framework_loads_history(self, tmp_path: Any) -> None:
+        # The wiring the whole feature rests on: a room whose only readers are
+        # ACP sessions loads no tail at all unless one of them asks for it.
+        channel, _, _ = _channel(tmp_path, emit_updates=False)
+        assert channel.recent_events_window == 20
+        muted, _, _ = _channel(tmp_path, emit_updates=False)
+        muted._room_history = 0
+        assert muted.recent_events_window == 0
+
+    async def test_cold_start_carries_the_room(self, tmp_path: Any) -> None:
+        # The session opens on the first prompt, so it was born after the
+        # conversation: everything visible is new to it.
+        channel, connection, _ = _channel(tmp_path, emit_updates=False)
+        missed = [
+            make_event(room_id="room-1", body="on part sur quoi ?", index=0),
+            make_event(room_id="room-1", body="j'ai ecrit hello.py", index=1),
+        ]
+        trigger = make_event(room_id="room-1", body="what did the others do?", index=2)
+        await self._prompt(channel, trigger, self._context(*missed, trigger))
+
+        sent = self._sent(connection)
+        assert "[Room context — 2 messages you did not receive." in sent
+        assert "[1] ch1: on part sur quoi ?" in sent
+        assert "[2] ch1: j'ai ecrit hello.py" in sent
+        assert sent.endswith("what did the others do?")
+        await channel.close()
+
+    async def test_second_turn_carries_only_the_gap(self, tmp_path: Any) -> None:
+        channel, connection, _ = _channel(tmp_path, emit_updates=False)
+        first = make_event(room_id="room-1", body="first request", index=0)
+        await self._prompt(channel, first, self._context(first))
+
+        missed = make_event(room_id="room-1", body="said while you were away", index=1)
+        second = make_event(room_id="room-1", body="second request", index=2)
+        await self._prompt(channel, second, self._context(first, missed, second))
+
+        sent = self._sent(connection, turn=1)
+        assert "said while you were away" in sent
+        assert "first request" not in sent
+        assert sent.endswith("second request")
+        await channel.close()
+
+    async def test_nothing_missed_sends_the_request_alone(self, tmp_path: Any) -> None:
+        # An ordinary back-and-forth pays nothing for the catch-up.
+        channel, connection, _ = _channel(tmp_path, emit_updates=False)
+        trigger = make_event(room_id="room-1", body="just this", index=0)
+        await self._prompt(channel, trigger, self._context(trigger))
+
+        assert self._sent(connection) == "just this"
+        await channel.close()
+
+    async def test_visibility_withheld_stays_withheld(self, tmp_path: Any) -> None:
+        # RFC §7.5 rule 8 — catching up is not a second door into the room.
+        channel, connection, _ = _channel(tmp_path, emit_updates=False)
+        hidden = make_event(
+            room_id="room-1",
+            body="SECRET",
+            index=0,
+            visibility=Visibility.TRANSPORT,
+        )
+        shown = make_event(room_id="room-1", body="ordinary", index=1)
+        trigger = make_event(room_id="room-1", body="go", index=2)
+        await self._prompt(channel, trigger, self._context(hidden, shown, trigger))
+
+        sent = self._sent(connection)
+        assert "SECRET" not in sent
+        assert "ordinary" in sent
+        assert "1 message you did not receive" in sent
+        await channel.close()
+
+    async def test_its_own_words_are_not_quoted_back(self, tmp_path: Any) -> None:
+        # The session already holds what it said; a block headed "you did not
+        # receive" is the wrong place to return it.
+        channel, connection, _ = _channel(tmp_path, emit_updates=False)
+        mine = make_event(
+            room_id="room-1",
+            channel_id="acp-agent",
+            channel_type=ChannelType.AI,
+            body="what I answered",
+            index=0,
+        )
+        theirs = make_event(room_id="room-1", body="what they said", index=1)
+        trigger = make_event(room_id="room-1", body="go", index=2)
+        await self._prompt(channel, trigger, self._context(mine, theirs, trigger))
+
+        sent = self._sent(connection)
+        assert "what I answered" not in sent
+        assert "what they said" in sent
+        await channel.close()
+
+    async def test_the_bound_says_what_it_hides(self, tmp_path: Any) -> None:
+        # §19.3.2: an agent that knows it was truncated can ask for the rest.
+        channel, connection, _ = _channel(tmp_path, emit_updates=False)
+        channel._room_history = 2
+        missed = [make_event(room_id="room-1", body=f"m{i}", index=i) for i in range(5)]
+        trigger = make_event(room_id="room-1", body="go", index=5)
+        await self._prompt(channel, trigger, self._context(*missed, trigger))
+
+        sent = self._sent(connection)
+        assert "the 2 most recent of 5 messages you did not receive" in sent
+        assert "[1] ch1: m3" in sent
+        assert "[2] ch1: m4" in sent
+        assert "m2" not in sent
+        await channel.close()
+
+    async def test_a_silenced_turn_keeps_the_catch_up_for_the_next(self, tmp_path: Any) -> None:
+        # A muted binding has its stream closed unconsumed, so the agent was
+        # told nothing — the mark must not move.
+        channel, connection, _ = _channel(tmp_path, emit_updates=False)
+        missed = make_event(room_id="room-1", body="said while you were away", index=0)
+        silenced = make_event(room_id="room-1", body="silenced request", index=1)
+        output = await channel.on_event(silenced, _binding(), self._context(missed, silenced))
+        await output.response_stream.aclose()
+
+        heard = make_event(room_id="room-1", body="heard request", index=2)
+        await self._prompt(channel, heard, self._context(missed, silenced, heard))
+
+        assert connection.prompt_calls != []
+        sent = self._sent(connection)
+        assert "said while you were away" in sent
+        assert "silenced request" in sent
+        await channel.close()
+
+    async def test_disabled_never_catches_up(self, tmp_path: Any) -> None:
+        channel, connection, _ = _channel(tmp_path, emit_updates=False)
+        channel._room_history = 0
+        missed = make_event(room_id="room-1", body="you missed this", index=0)
+        trigger = make_event(room_id="room-1", body="go", index=1)
+        await self._prompt(channel, trigger, self._context(missed, trigger))
+
+        assert self._sent(connection) == "go"
+        await channel.close()
+
+    async def test_people_are_named_not_the_channel_they_arrived_on(self, tmp_path: Any) -> None:
+        channel, connection, _ = _channel(tmp_path, emit_updates=False)
+        marie = Participant(id="p-1", room_id="room-1", channel_id="ch1", display_name="Marie")
+        missed = make_event(room_id="room-1", body="bonjour", index=0)
+        missed = missed.model_copy(
+            update={
+                "source": EventSource(
+                    channel_id="ch1", channel_type=ChannelType.SMS, participant_id="p-1"
+                )
+            }
+        )
+        trigger = make_event(room_id="room-1", body="go", index=1)
+        context = self._context(missed, trigger)
+        context.participants = [marie]
+        await self._prompt(channel, trigger, context)
+
+        assert "[1] Marie · ch1: bonjour" in self._sent(connection)
+        await channel.close()
+
+    async def test_a_closed_session_starts_over(self, tmp_path: Any) -> None:
+        # The mark tracks what *this session* was told. A new session opens
+        # empty and has missed everything.
+        channel, connection, _ = _channel(tmp_path, emit_updates=False)
+        first = make_event(room_id="room-1", body="first request", index=0)
+        await self._prompt(channel, first, self._context(first))
+        assert await channel.close_session("room-1") is True
+
+        second = make_event(room_id="room-1", body="second request", index=1)
+        await self._prompt(channel, second, self._context(first, second))
+
+        assert "first request" in self._sent(connection, turn=1)
+        await channel.close()

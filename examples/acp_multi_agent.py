@@ -3,15 +3,27 @@
     terminal ──▶ CLIChannel ──▶ Room ──┬──▶ ACPChannel "claude-code"
                                        └──▶ ACPChannel "codex"
 
-Both agents run in the same working directory, so the interesting flow needs
-no shared conversation at all: ask one to write code, ask the other to review
-what landed on disk.
+Both agents run in the same working directory, so one can write code and the
+other review what landed on disk.
 
 Every submission names its recipient (``addressed_to``), so **only the
 addressed agent runs** — and the room is created ``ADDRESSED_ONLY``, so an
 agent's own output solicits nobody either. Two settings, no routing rules:
-each agent's session holds what you asked *it*, and the two never answer
-each other down to the chain-depth limit.
+the two never answer each other down to the chain-depth limit.
+
+An agent that is not addressed is skipped entirely — not asked, and not told
+(RFC §19.3.2). Its session would therefore be missing everything said while
+you were talking to the other one, which is why ``ACPChannel`` catches up
+from the room's timeline the moment you *do* address it::
+
+    ❯ @claude-code write hello.py
+    ❯ @codex what did claude just do?
+      → Codex answers about Claude's message, not about its own session preamble.
+
+The catch-up carries only what that agent missed, and only what visibility
+would have delivered to it (RFC §7.5 rule 8) — so a message scoped away from
+the agents stays out of both sessions. ``ACPChannel(..., room_history=0)``
+turns it off.
 
 How you name an agent is this example's business, not RoomKit's: it accepts
 ``@codex review hello.py`` and ``/agent`` for a picker, and passes channel
@@ -202,6 +214,10 @@ async def main(args: argparse.Namespace) -> None:
             # already passes); SSH_AUTH_SOCK is what git-over-SSH needs.
             inherit_env=["SSH_AUTH_SOCK"],
             external_tool_handler=TerminalPermissionHandler(),
+            # Addressing the other agent skips this one entirely, so its
+            # session misses what was said meanwhile. It catches up from the
+            # room's timeline on its next turn — the default; room_history=0
+            # opts out (RFC §19.3.2).
         )
         kit.register_channel(channel)
         agents[spec.channel_id] = channel
@@ -294,7 +310,8 @@ async def main(args: argparse.Namespace) -> None:
             welcome=(
                 f"Two coding agents in one room: {', '.join(f'@{s.channel_id}' for s in AGENTS)}\n"
                 f"Workspace: {workspace}\n"
-                f"Addressing @{addressed.agent_id} — only the addressed agent runs.\n"
+                f"Addressing @{addressed.agent_id} — only the addressed agent runs,\n"
+                "and it catches up on what it missed when you come back to it.\n"
                 "'@agent your request' to address one, '/agent' for the picker,\n"
                 "'/model [name]' for the addressed one, 'quit' to exit."
             ),

@@ -74,6 +74,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **An ACP agent catches up on the room it was not asked about** (RMK-102, RFC
+  §19.3.2). §19.3.2 was left open on purpose — build the addressing machinery,
+  run a room of real agents, decide after — and the room answered: Claude Code
+  and Codex under `ADDRESSED_ONLY`, and "@codex do you see the previous
+  message?" gets a confident "yes" about Codex's own session preamble. An
+  unsolicited channel is skipped entirely, which costs an `AIChannel` nothing
+  (its context is rebuilt from the store each turn) and costs an ACP session
+  everything (its history lives in the agent's process). The RFC now says so:
+  not asked, and not told, with the counterpart made normative — the timeline
+  MUST be available to a channel at the moment it *is* solicited. `ACPChannel`
+  therefore declares `recent_events_window` (new `room_history`, default 20,
+  `0` opts out) and prefixes what it missed to the next prompt it sends: only
+  the gap since its last prompt, never its own words, filtered per reader by
+  `visible_events` so catching up is not a second door into the room (RFC §7.5
+  rule 8), and honest about its bound — *"the 20 most recent of 47 messages you
+  did not receive"* — because an agent that knows it was truncated can ask for
+  the rest and one that believes it holds the whole room cannot. The mark
+  advances only when a prompt is actually dispatched, so a muted turn leaves
+  the catch-up for the next one, and a closed session starts over. No change to
+  the event router.
+
 - **`ConversationStore.connection()` — a store call no longer has to pay for
   its own connection** (RMK-97). Every call into `PostgresStore` took a
   connection from the pool and gave it back, and asyncpg resets a connection on
