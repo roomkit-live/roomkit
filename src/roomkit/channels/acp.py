@@ -120,10 +120,10 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
         external_tool_handler: ExternalToolHandler | None = None,
     ) -> None:
         super().__init__(channel_id)
-        if (command is None) == (transport is None):
+        if command is not None and transport is not None:
             raise ValueError(
-                "pass either command (the agent is spawned locally) or transport "
-                "(it is reached some other way), not both"
+                "command spawns the agent here and transport reaches one that is "
+                "already running: pass one, not both"
             )
         # Validated here, not in the transport: ``cwd`` is a session/new field
         # first — with a remote transport it names a directory on the agent's
@@ -133,14 +133,15 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
             self._transport: ACPTransport = StdioACPTransport(
                 command, cwd=self._cwd, env=env, inherit_env=inherit_env
             )
-        else:
+        elif transport is not None:
             if env is not None or inherit_env is not None:
                 raise ValueError(
                     "env and inherit_env configure the default subprocess spawn; "
                     "a custom transport carries its own environment"
                 )
-            assert transport is not None  # narrowed by the exclusivity check above
             self._transport = transport
+        else:
+            raise ValueError("pass command to spawn the agent, or transport to reach one")
 
         self._additional_directories = [
             _absolute_path(path, field_name="additional_directories")

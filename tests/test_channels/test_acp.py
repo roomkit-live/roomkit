@@ -442,10 +442,12 @@ class TestACPChannel:
         }
 
     def test_command_and_transport_are_mutually_exclusive(self, tmp_path: Any) -> None:
+        # Two distinct mistakes, two distinct messages: "both" and "neither"
+        # need different corrections.
         transport = _FakeTransport(_FakeACPConnection(None))
-        with pytest.raises(ValueError, match="not both"):
+        with pytest.raises(ValueError, match="one, not both"):
             ACPChannel("acp", ["agent"], transport=transport, cwd=tmp_path)
-        with pytest.raises(ValueError, match="not both"):
+        with pytest.raises(ValueError, match="pass command to spawn"):
             ACPChannel("acp", cwd=tmp_path)
 
     def test_spawn_only_options_are_rejected_with_a_transport(self, tmp_path: Any) -> None:
