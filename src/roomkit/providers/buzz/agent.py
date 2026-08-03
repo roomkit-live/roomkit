@@ -106,6 +106,10 @@ class BuzzAgent:
         ``offline`` published while the socket is up), channels drained and
         closed (RFC 12.10.4). Raises whatever ``kit.close()`` raises, after
         the rest of the shutdown ran to completion.
+
+        A failure during startup takes the same exit: whatever had already
+        been started is stopped and the kit is closed before the exception
+        reaches the caller.
         """
         if self._ran:
             raise RuntimeError("BuzzAgent.run() is single-shot; build a new agent to restart")
@@ -123,42 +127,49 @@ class BuzzAgent:
 
         loop = asyncio.get_running_loop()
         installed: list[signal.Signals] = []
-        for sig in (signal.SIGTERM, signal.SIGINT):
-            try:
-                loop.add_signal_handler(sig, self._request_stop, BuzzAgentStopCause.SIGNAL)
-                installed.append(sig)
-            except (NotImplementedError, RuntimeError):
-                # Non-Unix event loop (or nested loop): the substrate's stop
-                # signal cannot be wired here — document/hand-wire instead.
-                logger.warning("Cannot install %s handler on this event loop", sig.name)
-
         reaper: asyncio.Task | None = None
-        if self._exit_after_inactivity is not None:
-            # Any broadcast in any room — inbound routed or AI answering —
-            # counts as activity, so the hook alone nearly covers "events
-            # dispatched"; the sources' own last-message timestamps below
-            # also count inbound that hooks later blocked.
-            self._kit.hook(
-                HookTrigger.AFTER_BROADCAST,
-                execution=HookExecution.ASYNC,
-                name="buzz_agent_activity",
-            )(self._record_activity)
-            # The reaper runs on its own timer, never gated on other state:
-            # the idle agent it exists to stop is exactly the one nothing
-            # else would wake.
-            reaper = asyncio.create_task(self._inactivity_loop())
-
-        for source in self._sources:
-            await self._kit.attach_source(source.channel_id, source, auto_restart=True)
-        logger.info(
-            "Buzz agent running: %d source(s)%s",
-            len(self._sources),
-            f", inactivity bound {self._exit_after_inactivity:.0f}s"
-            if self._exit_after_inactivity
-            else "",
-        )
-
+        serving = False
+        # Everything acquired below is released by the finally, startup
+        # included: a source that fails to attach (an unreachable relay, two
+        # sources sharing a channel_id) must not leave the reaper running,
+        # the signal handlers installed, the earlier sources connected and
+        # the kit open.
         try:
+            for sig in (signal.SIGTERM, signal.SIGINT):
+                try:
+                    loop.add_signal_handler(sig, self._request_stop, BuzzAgentStopCause.SIGNAL)
+                    installed.append(sig)
+                except (NotImplementedError, RuntimeError):
+                    # Non-Unix event loop (or nested loop): the substrate's stop
+                    # signal cannot be wired here — document/hand-wire instead.
+                    logger.warning("Cannot install %s handler on this event loop", sig.name)
+
+            if self._exit_after_inactivity is not None:
+                # Any broadcast in any room — inbound routed or AI answering —
+                # counts as activity, so the hook alone nearly covers "events
+                # dispatched"; the sources' own last-message timestamps below
+                # also count inbound that hooks later blocked.
+                self._kit.hook(
+                    HookTrigger.AFTER_BROADCAST,
+                    execution=HookExecution.ASYNC,
+                    name="buzz_agent_activity",
+                )(self._record_activity)
+                # The reaper runs on its own timer, never gated on other state:
+                # the idle agent it exists to stop is exactly the one nothing
+                # else would wake.
+                reaper = asyncio.create_task(self._inactivity_loop())
+
+            for source in self._sources:
+                await self._kit.attach_source(source.channel_id, source, auto_restart=True)
+            logger.info(
+                "Buzz agent running: %d source(s)%s",
+                len(self._sources),
+                f", inactivity bound {self._exit_after_inactivity:.0f}s"
+                if self._exit_after_inactivity
+                else "",
+            )
+
+            serving = True
             await self._stopped.wait()
         finally:
             if reaper is not None:
@@ -166,7 +177,7 @@ class BuzzAgent:
             for sig in installed:
                 loop.remove_signal_handler(sig)
             cause = self._cause or BuzzAgentStopCause.SIGNAL
-            logger.info("Buzz agent stopping (%s)", cause)
+            logger.info("Buzz agent stopping (%s)", cause if serving else "startup failed")
             await self._kit.close()
 
         return cause

@@ -755,6 +755,36 @@ class TestBuzzAgent:
             await asyncio.wait_for(agent.run(), timeout=2)
         assert "takes over on_owner_command" in caplog.text
 
+    async def test_a_failed_startup_still_releases_what_it_started(self, buzz_source) -> None:
+        """A source that will not attach must not leave the agent half-alive.
+
+        Two sources on one channel_id: the first attaches, the second raises.
+        Everything acquired before that — signal handlers, the inactivity
+        reaper, the attached source, the kit itself — has to come back down.
+        """
+        import signal
+
+        from roomkit import RoomKit
+        from roomkit.core.exceptions import SourceAlreadyAttachedError
+        from roomkit.providers.buzz import BuzzAgent
+
+        config = BuzzConfig(relay_url="wss://relay", private_key="nsec1x", owner_pubkey=OWNER)
+        first, second = buzz_source(config=config), buzz_source(config=config)
+        assert first.channel_id == second.channel_id
+        kit = RoomKit()
+        agent = BuzzAgent(kit, [first, second], exit_after_inactivity=60)
+
+        loop = asyncio.get_running_loop()
+        with pytest.raises(SourceAlreadyAttachedError):
+            await asyncio.wait_for(agent.run(), timeout=2)
+        await asyncio.sleep(0.05)  # let the cancelled reaper actually die
+
+        assert kit._closed is True
+        assert not [t for t in asyncio.all_tasks(loop) if "_inactivity_loop" in repr(t.get_coro())]
+        # remove_signal_handler returns False when there was nothing to remove.
+        for sig in (signal.SIGTERM, signal.SIGINT):
+            assert loop.remove_signal_handler(sig) is False
+
 
 class TestHuddleAnnouncementParser:
     def _announcement(self, **overrides) -> dict:

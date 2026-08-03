@@ -217,8 +217,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     an opt-in `exit_after_inactivity` bound (default off; reaper on its own
     timer), and exits every cause through the same graceful path
     (`kit.close()` → presence `offline` → sockets closed), returning a
-    `BuzzAgentStopCause`. Intentional stops are final: the source supervisor
-    only restarts sources that *raise*, never a clean stop.
+    `BuzzAgentStopCause`. A startup that fails — an unreachable relay, two
+    sources sharing a `channel_id` — takes that same exit before the
+    exception reaches the caller, so a half-started agent leaves no reaper
+    task, no installed signal handler and no open kit behind. Intentional
+    stops are final: the source supervisor only restarts sources that
+    *raise*, never a clean stop.
   - **`BuzzConfig.from_env()`** reads the reserved identity triplet
     (`BUZZ_PRIVATE_KEY`/`NOSTR_PRIVATE_KEY`, `BUZZ_RELAY_URL`,
     `BUZZ_AUTH_TAG`), fail-closed — a RoomKit agent is launchable by the
