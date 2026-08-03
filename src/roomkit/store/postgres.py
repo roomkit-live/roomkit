@@ -438,6 +438,24 @@ class PostgresStore(ConversationStore):
                 )
         return room
 
+    async def room_exists(self, room_id: str) -> bool:
+        """Existence, not the row — routing asks this per message."""
+        with self._query_span("room_exists", "rooms"):
+            async with self._acquire() as conn:
+                found = await conn.fetchval("SELECT 1 FROM rooms WHERE id = $1", room_id)
+        return found is not None
+
+    async def binding_exists(self, room_id: str, channel_id: str) -> bool:
+        """Existence, not the row — routing asks this per message."""
+        with self._query_span("binding_exists", "bindings"):
+            async with self._acquire() as conn:
+                found = await conn.fetchval(
+                    "SELECT 1 FROM bindings WHERE room_id = $1 AND channel_id = $2",
+                    room_id,
+                    channel_id,
+                )
+        return found is not None
+
     async def get_delivered_index(self, room_id: str) -> int:
         """One column, not the whole room.
 

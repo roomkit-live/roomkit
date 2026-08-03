@@ -302,9 +302,12 @@ class InboundMixin(HelpersMixin):
             else:
                 # Ensure room exists; auto-create if needed (e.g. voice session
                 # with a room_id from SIP headers that hasn't been created yet).
-                room = await self._store.get_room(room_id)
-                if room is None:
-                    room = await self.create_room(room_id=room_id)
+                # Existence checks only — neither the room nor the binding is
+                # used beyond the yes/no, so materialising either would decode
+                # its JSONB columns and validate a whole model per message for
+                # nothing.
+                if not await self._store.room_exists(room_id):
+                    await self.create_room(room_id=room_id)
                     await self.attach_channel(room_id, message.channel_id)
                     room_just_created = True
                 else:
@@ -312,8 +315,7 @@ class InboundMixin(HelpersMixin):
                     # integrator detached it (RFC §7.5-7). The unlocked read
                     # keeps the common case (already bound) free; the actual
                     # decision runs under the room lock in _maybe_auto_attach.
-                    binding = await self._store.get_binding(room_id, message.channel_id)
-                    if binding is None:
+                    if not await self._store.binding_exists(room_id, message.channel_id):
                         await self._maybe_auto_attach(room_id, message.channel_id)
             telemetry.end_span(route_span, attributes={"room_id": room_id or ""})
         except Exception as exc:

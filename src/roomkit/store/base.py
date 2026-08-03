@@ -47,6 +47,24 @@ class ConversationStore(ABC):
         """
         ...
 
+    async def room_exists(self, room_id: str) -> bool:
+        """Whether a room exists, without materialising it.
+
+        Inbound routing asks this on every message and discards everything
+        else, so going through :meth:`get_room` selects every column, decodes
+        the JSONB ones and validates a whole ``Room`` — to answer a yes/no.
+        Backends SHOULD override with an existence query.
+        """
+        return await self.get_room(room_id) is not None
+
+    async def binding_exists(self, room_id: str, channel_id: str) -> bool:
+        """Whether a channel is attached to a room, without materialising it.
+
+        Same reasoning as :meth:`room_exists`: routing only needs the yes/no,
+        and the decision it feeds is re-taken under the room lock anyway.
+        """
+        return await self.get_binding(room_id, channel_id) is not None
+
     async def get_delivered_index(self, room_id: str) -> int:
         """Read a room's delivery cursor, and nothing else.
 

@@ -110,6 +110,9 @@ class InMemoryStore(ConversationStore):
         self._rooms[room.id] = room
         return room
 
+    async def room_exists(self, room_id: str) -> bool:
+        return room_id in self._rooms
+
     async def get_delivered_index(self, room_id: str) -> int:
         room = self._rooms.get(room_id)
         return -1 if room is None else room.delivered_index
