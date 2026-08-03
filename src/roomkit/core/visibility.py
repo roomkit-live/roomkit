@@ -78,14 +78,20 @@ def visible_events(context: RoomContext, channel_id: str) -> list[RoomEvent]:
     whenever it is bound with a narrow visibility (the §7.4 assistant pattern).
 
     A channel with no binding in this room sees only what it produced itself.
+
+    Answers the visibility half of §7.5 rule 1 only. Access is enforced where
+    events are delivered (:meth:`EventRouter._filter_targets` drops WRITE_ONLY
+    and NONE), which is why a channel that may not read never reaches a context
+    rebuild in the first place; a caller reconstructing history by itself owes
+    that check. READ_ONLY and muted channels do read, and keep their history.
     """
-    reader = context.get_binding(channel_id)
+    bindings = {b.channel_id: b for b in context.bindings}
+    reader = bindings.get(channel_id)
     if reader is None:
         return [e for e in context.recent_events if e.source.channel_id == channel_id]
-    sources = {b.channel_id: b for b in context.bindings}
     return [
         e
         for e in context.recent_events
         if e.source.channel_id == channel_id
-        or visibility_allows(effective_visibility(e, sources.get(e.source.channel_id)), reader)
+        or visibility_allows(effective_visibility(e, bindings.get(e.source.channel_id)), reader)
     ]
