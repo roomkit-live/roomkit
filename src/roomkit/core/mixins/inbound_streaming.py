@@ -9,6 +9,7 @@ from uuid import uuid4
 
 from roomkit.core.lanes import DeliveryCascade
 from roomkit.core.mixins.helpers import HelpersMixin
+from roomkit.core.mixins.lane_execution import DeliverySource
 from roomkit.core.visibility import visibility_allows
 from roomkit.models.enums import (
     Access,
@@ -137,6 +138,22 @@ class InboundStreamingMixin(HelpersMixin):
                 channel_type=sr.source_channel_type,
             )
 
+        # Planning inputs for the whole run, resolved once. Every segment has
+        # the same sender and the same delivery set, so re-resolving per
+        # segment would buy nothing and cost a room lock plus a context read
+        # each time — on a tool-heavy turn, tens of them on the hot path the
+        # delivery lanes exist to keep clear. The binding is already in the
+        # context the caller built; the batch broadcast this replaced planned
+        # off that same snapshot.
+        source_binding = next(
+            (b for b in context.bindings if b.channel_id == sr.source_channel_id), None
+        )
+        plan_source: DeliverySource | str = (
+            DeliverySource(binding=source_binding, context=context)
+            if source_binding is not None
+            else sr.source_channel_id
+        )
+
         async def _lane_segment(event: RoomEvent, *, exclude: set[str] | None) -> None:
             """Commit a segment and queue its delivery on the room's lane.
 
@@ -149,7 +166,7 @@ class InboundStreamingMixin(HelpersMixin):
             stored = await self._commit_and_deliver(
                 room_id,
                 event,
-                sr.source_channel_id,
+                plan_source,
                 exclude_delivery=exclude,
                 cascade=cascade,
             )

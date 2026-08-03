@@ -11,6 +11,7 @@ room lock anew; they are never drained inside the trigger's lock tenure).
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from roomkit.core.mixins.helpers import _RECENT_EVENTS_LIMIT, HelpersMixin
@@ -25,10 +26,27 @@ if TYPE_CHECKING:
     from roomkit.core.hooks import HookEngine
     from roomkit.core.lanes import DeliveryCascade, DeliveryPlan, RoomLaneRegistry
     from roomkit.core.locks import RoomLockManager
+    from roomkit.models.channel import ChannelBinding
+    from roomkit.models.context import RoomContext
     from roomkit.models.hook import InjectedEvent
     from roomkit.store.base import ConversationStore
 
 logger = logging.getLogger("roomkit.framework")
+
+
+@dataclass(slots=True, frozen=True)
+class DeliverySource:
+    """Planning inputs shared by a run of events from one sender.
+
+    Resolving them per event costs a room lock and a context read every
+    time. A stream's segments share one sender and one delivery set, so the
+    run resolves them once and hands the result to each commit — which is
+    what the single batch broadcast they replaced did, against bindings of
+    exactly the same freshness.
+    """
+
+    binding: ChannelBinding
+    context: RoomContext
 
 
 @runtime_checkable
@@ -120,7 +138,7 @@ class LaneExecutionMixin(HelpersMixin):
         self,
         room_id: str,
         event: RoomEvent,
-        source_channel_id: str,
+        source: str | DeliverySource,
         *,
         exclude_delivery: set[str] | None = None,
         allow_reentry: bool = False,
@@ -139,14 +157,21 @@ class LaneExecutionMixin(HelpersMixin):
         single ordering authority: the cursor advances after this event's
         delivery set has run, never before it.
 
+        ``source`` is the sending channel's id, which costs a room lock and
+        a context read to resolve — right for a one-off event, wrong for a
+        run of them. A caller emitting several (a stream's segments) resolves
+        a :class:`DeliverySource` once and passes that instead: the commit
+        then takes no lock and reads nothing, and the store still assigns the
+        index atomically (RFC §8.1), which is what this path always relied on.
+
         Responses are not re-entered by default: these callers already own
         the turn's output (they read it off the ``BroadcastResult`` or, for
         a stream, produced it), and the inline broadcast they replace
         discarded ``reentry_events`` too.
 
         Pass ``cascade`` to enqueue without waiting — for a caller emitting
-        a run of events (a stream's segments) that must not block on each
-        one's delivery; that caller owns the single wait at the end.
+        a run of events that must not block on each one's delivery; that
+        caller owns the single wait at the end.
 
         Returns the committed event, or ``None`` when the persistence
         policy excluded it (delivered, unstored — RFC §14.3).
@@ -156,37 +181,24 @@ class LaneExecutionMixin(HelpersMixin):
         own_cascade = cascade is None
         if cascade is None:
             cascade = DeliveryCascade(room_id, reentry_budget=self._max_chain_depth * 10)
-        router = self._get_router()
 
-        async with self._lock_manager.locked(room_id):
-            source_binding = await self._store.get_binding(room_id, source_channel_id)
-            if source_binding is None:
-                # Nothing to broadcast from — the event is still part of the
-                # timeline, so it commits as a plain cursor entry.
-                return await self._commit_to_lane(
-                    room_id, event, cascade, None, policy_aware=policy_aware
+        if isinstance(source, str):
+            async with self._lock_manager.locked(room_id):
+                resolved = await self._resolve_delivery_source(room_id, source)
+                committed = await self._commit_to_lane(
+                    room_id,
+                    event,
+                    cascade,
+                    self._plan_factory(resolved, exclude_delivery, allow_reentry),
+                    policy_aware=policy_aware,
                 )
-            context = await self._build_context(room_id)
-
-            def factory(committed: RoomEvent) -> DeliveryPlan:
-                plan = router.plan(
-                    committed,
-                    source_binding,
-                    context.model_copy(
-                        update={
-                            "recent_events": [
-                                *context.recent_events[-(_RECENT_EVENTS_LIMIT - 1) :],
-                                committed,
-                            ]
-                        }
-                    ),
-                    exclude_delivery=exclude_delivery,
-                )
-                plan.allow_reentry = allow_reentry
-                return plan
-
+        else:
             committed = await self._commit_to_lane(
-                room_id, event, cascade, factory, policy_aware=policy_aware
+                room_id,
+                event,
+                cascade,
+                self._plan_factory(source, exclude_delivery, allow_reentry),
+                policy_aware=policy_aware,
             )
 
         # Off the lock: waiting under it would deadlock the lane against its
@@ -194,6 +206,52 @@ class LaneExecutionMixin(HelpersMixin):
         if own_cascade:
             await cascade.wait()
         return committed
+
+    async def _resolve_delivery_source(
+        self, room_id: str, source_channel_id: str
+    ) -> DeliverySource | None:
+        """Resolve who sends and against what state. Call under the room lock.
+
+        ``None`` when the sender has no binding: there is nothing to
+        broadcast from, and the event commits as a plain cursor entry.
+        """
+        binding = await self._store.get_binding(room_id, source_channel_id)
+        if binding is None:
+            return None
+        return DeliverySource(binding=binding, context=await self._build_context(room_id))
+
+    def _plan_factory(
+        self,
+        source: DeliverySource | None,
+        exclude_delivery: set[str] | None,
+        allow_reentry: bool,
+    ) -> Callable[[RoomEvent], DeliveryPlan] | None:
+        """The plan builder ``_commit_to_lane`` calls on the committed event.
+
+        ``None`` in, ``None`` out — the commit reduces to a cursor entry.
+        """
+        if source is None:
+            return None
+        router = self._get_router()
+
+        def factory(committed: RoomEvent) -> DeliveryPlan:
+            plan = router.plan(
+                committed,
+                source.binding,
+                source.context.model_copy(
+                    update={
+                        "recent_events": [
+                            *source.context.recent_events[-(_RECENT_EVENTS_LIMIT - 1) :],
+                            committed,
+                        ]
+                    }
+                ),
+                exclude_delivery=exclude_delivery,
+            )
+            plan.allow_reentry = allow_reentry
+            return plan
+
+        return factory
 
     def _enqueue_exec(
         self,
