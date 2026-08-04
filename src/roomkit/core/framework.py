@@ -708,6 +708,7 @@ class RoomKit(
         created_at: datetime | None = None,
         parent_event_id: str | None = None,
         idempotency_key: str | None = None,
+        addressed_to: list[str] | None = None,
     ) -> RoomEvent:
         """Send an event directly into a room from a channel.
 
@@ -723,6 +724,14 @@ class RoomKit(
             provider: Optional provider/backend name for event attribution
             response_visibility: Controls where the AI's response is delivered.
                 Uses the same vocabulary as visibility. None means no restriction.
+            addressed_to: The intelligence channels this event asks to act
+                (RFC §19.3). An address is set by a sender, and direct injection
+                has a sender like any other entry point: a caller storing a
+                message whose answer it triggers separately passes ``[]`` so the
+                stored message solicits nobody, and one talking to a specific
+                agent in a room that holds several names it. ``None`` leaves the
+                event unaddressed — the router decides, or every eligible
+                intelligence channel acts.
             parent_event_id: In-app thread parent. The locked pipeline normalises
                 it to the thread root (flat two-level model); see
                 :meth:`_resolve_thread_root`.
@@ -757,6 +766,7 @@ class RoomKit(
             metadata=metadata or {},
             visibility=visibility,
             response_visibility=response_visibility,
+            addressed_to=addressed_to,
             idempotency_key=idempotency_key,
         )
         if created_at is not None:

@@ -437,6 +437,69 @@ class TestUnsolicitedTargetsCostNothing:
         await kit.close()
 
 
+class TestDirectInjectionAddressing:
+    """``send_event`` has a sender too, and a sender may name who it asks."""
+
+    async def test_a_stored_message_can_solicit_nobody(self) -> None:
+        # The shape an application needs when it stores a message and triggers
+        # the answer itself: the stored event must not also wake the agent.
+        kit, human, agents = await _room("codex")
+
+        await kit.send_event(
+            room_id="room-1",
+            channel_id="human",
+            content=TextContent(body="stored, not asked"),
+            addressed_to=[],
+        )
+
+        assert agents["codex"].solicited == []
+        await kit.close()
+
+    async def test_an_injected_event_can_name_one_agent(self) -> None:
+        kit, human, agents = await _room("claude-code", "codex")
+
+        await kit.send_event(
+            room_id="room-1",
+            channel_id="human",
+            content=TextContent(body="you specifically"),
+            addressed_to=["codex"],
+        )
+
+        assert agents["codex"].solicited == ["you specifically"]
+        assert agents["claude-code"].solicited == []
+        await kit.close()
+
+    async def test_the_address_is_stored_on_the_injected_event(self) -> None:
+        kit, human, agents = await _room("codex")
+
+        await kit.send_event(
+            room_id="room-1",
+            channel_id="human",
+            content=TextContent(body="go"),
+            addressed_to=["codex"],
+        )
+
+        events = await kit.store.list_events("room-1")
+        injected = next(e for e in events if e.source.channel_id == "human")
+        assert injected.addressed_to == ["codex"]
+        await kit.close()
+
+    async def test_unaddressed_injection_is_unchanged(self) -> None:
+        kit, human, agents = await _room("codex")
+
+        await kit.send_event(
+            room_id="room-1",
+            channel_id="human",
+            content=TextContent(body="hello"),
+        )
+
+        assert agents["codex"].solicited == ["hello"]
+        events = await kit.store.list_events("room-1")
+        injected = next(e for e in events if e.source.channel_id == "human")
+        assert injected.addressed_to is None
+        await kit.close()
+
+
 class TestResponseVisibility:
     """A private question must not publish the answer it gets."""
 

@@ -381,6 +381,17 @@ await kit.process_inbound(
 
 Addressing is **not** visibility: it narrows who is *asked*, never who may *see*. Transport delivery is untouched, so the humans in the room still get the message. The address is stored on the event, so a transcript shows who was asked.
 
+Direct injection addresses the same way — `[]` is what an application needs when it stores a message and triggers the answer itself:
+
+```python
+await kit.send_event(
+    room_id=room_id,
+    channel_id="system",
+    content=TextContent(body=body),
+    addressed_to=[],       # stored, and asking nobody
+)
+```
+
 ### Agent Response Policy
 
 An agent's own output solicits the other agents by default (the chaining a pipeline needs, bounded by `max_chain_depth`). In a room of independent agents that is a hazard:
