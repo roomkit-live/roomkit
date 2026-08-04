@@ -234,13 +234,14 @@ class PostgresStore(ConversationStore):
         cannot destroy data.
 
         Serialized across processes by the same advisory lock :meth:`migrate`
-        takes, and run as one transaction. Idempotent DDL is not the same as
-        *concurrent* DDL: PostgreSQL resolves ``IF NOT EXISTS`` before taking
-        the lock it needs, so two workers booting together both see a missing
-        object and the loser raises (``duplicate_column`` on the guarded
-        ``delivered_index`` migration, ``duplicate_object`` /
-        ``unique_violation`` on a table or index). A deploy that restarts a
-        fleet at once is exactly that case.
+        takes, acquired as the first statement of the one transaction that
+        runs the DDL. Idempotent DDL is not the same as *concurrent* DDL —
+        two workers resolving ``IF NOT EXISTS`` against the same missing
+        object would each try to create it and the loser would raise — so the
+        lock makes them run one after the other: the second worker blocks
+        until the first commits, then finds every object already present and
+        does nothing. A deploy that restarts a whole fleet at once is exactly
+        the case this covers.
 
         If a v1 (JSONB-blob) schema is detected, ``init()`` refuses to
         touch it and raises :class:`PostgresSchemaError`. Back up your data,

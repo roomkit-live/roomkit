@@ -112,7 +112,7 @@ class _ShellState:
     """When the current turn was submitted — the wait the user is living."""
 
     in_flight: asyncio.Task[Any] | None = None
-    """The current ``process_inbound`` task — the phase-2b interrupt hook."""
+    """The current ``process_inbound`` task — what an Esc interrupt cancels."""
 
     status_extra: StatusFactory | None = None
     """The application's own segment — who the next message addresses, a mode,
@@ -148,7 +148,8 @@ async def run_console_shell(
     while the bar is up — which is what lets a handler prompt through
     ``terminal_input``/``terminal_select``. On exit, the in-flight turn is
     cancelled and queued submissions are dropped; a turn cancelled mid-stream
-    does not persist its partial text (graceful interruption is phase 2b).
+    keeps the partial segment the pipeline already persisted, so what the
+    reader saw stays in the room's record.
 
     ``input``/``output`` inject prompt_toolkit pipe/dummy IO for tests.
     """
@@ -395,7 +396,7 @@ async def _consume(
             current = asyncio.current_task()
             if current is not None and current.cancelling():
                 raise  # shell shutdown cancelled the consumer itself
-            # Only the in-flight turn was cancelled (phase-2b interrupt):
+            # Only the in-flight turn was cancelled (an Esc interrupt):
             # keep serving the queue.
         except Exception:
             # ON_ERROR hooks already fired inside the pipeline.
