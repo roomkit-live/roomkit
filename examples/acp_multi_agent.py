@@ -7,9 +7,10 @@ Both agents run in the same working directory, so one can write code and the
 other review what landed on disk.
 
 Every submission names its recipient (``addressed_to``), so **only the
-addressed agent runs** — and the room is created ``ADDRESSED_ONLY``, so an
-agent's own output solicits nobody either. Two settings, no routing rules:
-the two never answer each other down to the chain-depth limit.
+addressed agent runs** — and the room is switched to ``ADDRESSED_ONLY`` once
+both agents are in it, so an agent's own output solicits nobody either. Two
+settings, no routing rules: the two never answer each other down to the
+chain-depth limit.
 
 An agent that is not addressed is skipped entirely — not asked, and not told
 (RFC §19.3.2). Its session would therefore be missing everything said while
@@ -186,10 +187,7 @@ async def main(args: argparse.Namespace) -> None:
     workspace = args.workspace
     addressed = Addressed(AGENTS[0].channel_id)
 
-    # ADDRESSED_ONLY: an agent's output solicits nobody it did not address.
-    # Under the default (AGENT_CHAIN) the first answer would reach the other
-    # agent, whose answer would come back, down to max_chain_depth.
-    kit = RoomKit(agent_response_policy=AgentResponsePolicy.ADDRESSED_ONLY)
+    kit = RoomKit()
     cli = CLIChannel(
         "you",
         show_thinking=args.thinking_tokens > 0,
@@ -227,6 +225,14 @@ async def main(args: argparse.Namespace) -> None:
     await kit.attach_channel(room_id, cli.channel_id)
     for spec in AGENTS:
         await kit.attach_channel(room_id, spec.channel_id, category=ChannelCategory.INTELLIGENCE)
+
+    # The room turned multi-agent, so it needs ADDRESSED_ONLY: an agent's output
+    # must solicit nobody it did not address itself. Under the default
+    # (AGENT_CHAIN) the first answer would reach the other agent, whose answer
+    # would come back, down to max_chain_depth. Set on the ROOM, not on the kit:
+    # a kit-wide default would also silence the single-agent rooms a server
+    # hosts alongside this one, where chaining is exactly what they want.
+    await kit.set_agent_response_policy(room_id, AgentResponsePolicy.ADDRESSED_ONLY)
 
     def agent_options() -> list[tuple[str, str]]:
         options = []

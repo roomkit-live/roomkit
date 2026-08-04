@@ -299,6 +299,26 @@ class EventRouter:
         target_results: list[_TargetResult] = []
 
         async def _process_target(binding: ChannelBinding) -> None:
+            # Solicitation is decided before anything is done for this target
+            # (RFC §19.3, §19.4 step 0). An intelligence channel that is not
+            # asked to act costs nothing: no registry lookup, no transcode, and
+            # no warning about a channel a restart has not re-registered but
+            # that this event never needed. Reads the untranscoded event —
+            # transcoding rewrites content, never the address or the routing
+            # metadata read here. Transport delivery below is untouched:
+            # addressing narrows who is asked, never who may see.
+            if binding.category == ChannelCategory.INTELLIGENCE:
+                internal = bool((event.metadata or {}).get("_orchestration_internal"))
+                asked = not internal and _solicits(
+                    event,
+                    binding.channel_id,
+                    source_is_agent=source_binding.category == ChannelCategory.INTELLIGENCE,
+                    policy=context.room.agent_response_policy,
+                )
+                if not asked:
+                    target_results.append(_TargetResult(channel_id=binding.channel_id))
+                    return
+
             channel = self._channels.get(binding.channel_id)
             if channel is None:
                 logger.warning(
@@ -333,27 +353,12 @@ class EventRouter:
                         transcoded_event, binding.capabilities.max_length
                     )
 
-                # Orchestration: skip intelligence channels for internal events
-                if binding.category == ChannelCategory.INTELLIGENCE:
-                    if (transcoded_event.metadata or {}).get("_orchestration_internal"):
-                        target_results.append(tr)
-                        return
-                    # An explicit address decides who acts, ahead of any
-                    # routing decision (RFC §19.3, §19.4 step 0). Transport
-                    # delivery above is untouched: addressing narrows who is
-                    # asked, never who may see.
-                    if not _solicits(
-                        transcoded_event,
-                        binding.channel_id,
-                        source_is_agent=source_binding.category == ChannelCategory.INTELLIGENCE,
-                        policy=context.room.agent_response_policy,
-                    ):
-                        target_results.append(tr)
-                        return
-
-                    # Greeting gate: wait for greeting to be stored before AI processes
-                    if self._greeting_gate_fn is not None:
-                        await self._greeting_gate_fn(transcoded_event.room_id, 30.0)
+                # Greeting gate: wait for greeting to be stored before AI processes
+                if (
+                    binding.category == ChannelCategory.INTELLIGENCE
+                    and self._greeting_gate_fn is not None
+                ):
+                    await self._greeting_gate_fn(transcoded_event.room_id, 30.0)
 
                 # on_event — all channels react.
                 output = await channel.on_event(transcoded_event, binding, context)

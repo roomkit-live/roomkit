@@ -6,10 +6,14 @@ two are independent, and most of these tests exist to keep them that way.
 
 from __future__ import annotations
 
+import logging
 from typing import Any
+
+import pytest
 
 from roomkit import AgentResponsePolicy, ChannelCategory, RoomKit
 from roomkit.core.event_router import _solicits
+from roomkit.core.exceptions import RoomNotFoundError
 from roomkit.models.channel import ChannelOutput
 from roomkit.models.delivery import InboundMessage
 from roomkit.models.enums import ChannelType, EventType, Visibility
@@ -322,6 +326,114 @@ class TestAgentResponsePolicy:
         # "a" answered once; "b" never heard a thing, so nothing bounced back.
         assert talkers["a"].solicited == ["go"]
         assert talkers["b"].solicited == []
+        await kit.close()
+
+    async def test_the_policy_can_be_switched_on_a_live_room(self) -> None:
+        # A room rarely knows at creation how many agents it will hold. The one
+        # that gains a second agent must be able to stop the ping-pong then, on
+        # the room it already has.
+        kit = RoomKit()
+        human = SimpleChannel("human")
+        kit.register_channel(human)
+        talkers = {aid: _Talker(aid) for aid in ("a", "b")}
+        for talker in talkers.values():
+            kit.register_channel(talker)
+        await kit.create_room(room_id="room-1")
+        await kit.attach_channel("room-1", "human")
+        for aid in talkers:
+            await kit.attach_channel("room-1", aid, category=ChannelCategory.INTELLIGENCE)
+
+        # Default AGENT_CHAIN: "a" answers, and its answer reaches "b".
+        await kit.process_inbound(
+            InboundMessage(
+                channel_id="human",
+                sender_id="user",
+                content=TextContent(body="go"),
+                addressed_to=["a"],
+            )
+        )
+        assert talkers["b"].solicited != []
+
+        room = await kit.set_agent_response_policy("room-1", AgentResponsePolicy.ADDRESSED_ONLY)
+        assert room.agent_response_policy is AgentResponsePolicy.ADDRESSED_ONLY
+
+        talkers["a"].solicited.clear()
+        talkers["b"].solicited.clear()
+        await kit.process_inbound(
+            InboundMessage(
+                channel_id="human",
+                sender_id="user",
+                content=TextContent(body="again"),
+                addressed_to=["a"],
+            )
+        )
+
+        assert talkers["a"].solicited == ["again"]
+        assert talkers["b"].solicited == []
+        await kit.close()
+
+    async def test_setting_the_policy_it_already_has_is_a_no_op(self) -> None:
+        kit = RoomKit()
+        await kit.create_room(room_id="room-1")
+
+        room = await kit.set_agent_response_policy("room-1", AgentResponsePolicy.AGENT_CHAIN)
+
+        assert room.agent_response_policy is AgentResponsePolicy.AGENT_CHAIN
+        await kit.close()
+
+    async def test_setting_the_policy_on_a_missing_room_raises(self) -> None:
+        kit = RoomKit()
+        with pytest.raises(RoomNotFoundError):
+            await kit.set_agent_response_policy("nope", AgentResponsePolicy.ADDRESSED_ONLY)
+        await kit.close()
+
+
+class TestUnsolicitedTargetsCostNothing:
+    """A binding that is not asked to act is skipped before any work for it.
+
+    A restart wipes the in-memory channel registry while the bindings persist,
+    so a room whose roster is rehydrated lazily holds bindings with no live
+    channel. Those must be silent: the warning is for a channel that WAS
+    needed.
+    """
+
+    async def test_an_unregistered_unsolicited_agent_is_silent(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        kit, human, agents = await _room("claude-code", "codex")
+        kit.unregister_channel("claude-code")
+
+        with caplog.at_level(logging.WARNING, logger="roomkit.event_router"):
+            await kit.process_inbound(
+                InboundMessage(
+                    channel_id="human",
+                    sender_id="user",
+                    content=TextContent(body="review it"),
+                    addressed_to=["codex"],
+                )
+            )
+
+        assert agents["codex"].solicited == ["review it"]
+        assert "not found in registry" not in caplog.text
+        await kit.close()
+
+    async def test_an_unregistered_solicited_agent_still_warns(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        kit, human, agents = await _room("claude-code", "codex")
+        kit.unregister_channel("claude-code")
+
+        with caplog.at_level(logging.WARNING, logger="roomkit.event_router"):
+            await kit.process_inbound(
+                InboundMessage(
+                    channel_id="human",
+                    sender_id="user",
+                    content=TextContent(body="anyone"),
+                    addressed_to=["claude-code"],
+                )
+            )
+
+        assert "not found in registry" in caplog.text
         await kit.close()
 
 

@@ -352,10 +352,57 @@ handler = router.install(kit, agents=[billing_agent, shipping_agent, triage_agen
 
 ### Routing Selection Priority
 
+0. **Address** — if the event carries `addressed_to`, it decides; the router returns untouched
 1. **Agent affinity** — if `state.active_agent_id` is set and attached, stick with it
 2. **Rules** — evaluate in ascending `priority` order; first match wins
 3. **Fallback** — return `default_agent_id`
 4. **Loop prevention** — events FROM intelligence channels are never routed
+
+## Addressing
+
+Routing rules answer *which agent handles this kind of event*. Addressing answers *which agent am I talking to right now*, per message:
+
+```python
+await kit.process_inbound(
+    InboundMessage(
+        channel_id="you",
+        sender_id="user",
+        content=TextContent(body="review hello.py"),
+        addressed_to=["codex"],       # only this agent is asked to act
+    )
+)
+```
+
+| `addressed_to` | Meaning |
+|---|---|
+| `None` | Unaddressed — every eligible agent acts, or the router decides |
+| `["codex"]` | Only `codex` is asked; the others see it and stay silent |
+| `[]` | Nobody is asked — a decision, not an absence |
+
+Addressing is **not** visibility: it narrows who is *asked*, never who may *see*. Transport delivery is untouched, so the humans in the room still get the message. The address is stored on the event, so a transcript shows who was asked.
+
+### Agent Response Policy
+
+An agent's own output solicits the other agents by default (the chaining a pipeline needs, bounded by `max_chain_depth`). In a room of independent agents that is a hazard:
+
+```python
+# At creation, kit-wide or per room
+kit = RoomKit(agent_response_policy=AgentResponsePolicy.ADDRESSED_ONLY)
+await kit.create_room(room_id="dev", agent_response_policy=AgentResponsePolicy.ADDRESSED_ONLY)
+
+# On a live room — the one that just gained a second agent
+await kit.attach_channel(room_id, "codex", category=ChannelCategory.INTELLIGENCE)
+await kit.set_agent_response_policy(room_id, AgentResponsePolicy.ADDRESSED_ONLY)
+```
+
+| Policy | An agent's output solicits |
+|---|---|
+| `AGENT_CHAIN` | every eligible intelligence channel — the default |
+| `ADDRESSED_ONLY` | only the channels it addressed, if any |
+
+A policy change applies to events processed after it; setting the policy a room already holds is a no-op. A binding that is not solicited is skipped before any work is done for it, so a roster can be attached lazily and rehydrated one agent at a time.
+
+RoomKit takes the decision, never the syntax: `@codex`, a `/agent` command or a picker all live in the application, which passes channel ids.
 
 ## Conversation Pipeline (Advanced)
 

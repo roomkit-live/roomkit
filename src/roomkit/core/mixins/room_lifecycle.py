@@ -202,6 +202,34 @@ class RoomLifecycleMixin(HelpersMixin):
             room = room.model_copy(update={"timers": timers, "updated_at": datetime.now(UTC)})
             return await self._store.update_room(room)
 
+    async def set_agent_response_policy(self, room_id: str, policy: AgentResponsePolicy) -> Room:
+        """Set what an agent's own output solicits in this room (RFC §19.3.1).
+
+        The policy is chosen at creation, but a room rarely knows then how many
+        agents it will end up holding: one that gains a second agent is a
+        different room, because under ``AGENT_CHAIN`` the first answer solicits
+        the other agent, whose answer comes back, down to ``max_chain_depth``.
+        Switching to ``ADDRESSED_ONLY`` at that moment is what keeps a room of
+        independent agents from answering itself.
+
+        Applies to events processed after it — an event already broadcast is
+        not reconsidered. No-op when the room already holds *policy*.
+        """
+        async with self._lock_manager.locked(room_id):
+            room = await self.get_room(room_id)
+            if room.agent_response_policy is policy:
+                return room
+            room = room.model_copy(
+                update={"agent_response_policy": policy, "updated_at": datetime.now(UTC)}
+            )
+            logger.info(
+                "Room %s agent response policy set to %s",
+                room_id,
+                policy.value,
+                extra={"room_id": room_id},
+            )
+            return await self._store.update_room(room)
+
     async def check_room_timers(self, room_id: str) -> Room:
         """Check and apply timer-based transitions for a single room.
 

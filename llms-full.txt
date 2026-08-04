@@ -1812,7 +1812,7 @@ calling `RetryPolicy` decides whether to act.
   directly if you need them.
 ---
 
-`ACPChannel` makes RoomKit an **Agent Client Protocol client**: an external coding agent (Claude Code, Codex CLI, Gemini CLI, any registry-listed ACP agent) runs as a subprocess speaking ACP v1 over stdio; each Room becomes one session of that agent. The reverse direction — exposing a RoomKit agent as an ACP *server* — is out of scope. `CLIChannel` is the interactive terminal transport playing the human side in local sessions.
+`ACPChannel` makes RoomKit an **Agent Client Protocol client**: an external coding agent (Claude Code, Codex CLI, Gemini CLI, any registry-listed ACP agent) speaks ACP v1 — spawned here as a subprocess over stdio by default, or reached through a caller-supplied `ACPTransport`; each Room becomes one session of that agent. The reverse direction — exposing a RoomKit agent as an ACP *server* — is out of scope. `CLIChannel` is the interactive terminal transport playing the human side in local sessions.
 
 ```bash
 pip install "roomkit[acp]"      # agent-client-protocol>=0.11.0,<0.12
@@ -1829,7 +1829,8 @@ from roomkit import ACPChannel
 agent = ACPChannel(
     "coding-agent",
     command=["npx", "-y", "@agentclientprotocol/claude-agent-acp@0.61.0"],
-    cwd="/srv/workspaces/my-project",  # required, absolute
+    transport=None,                    # or an ACPTransport, instead of command
+    cwd="/srv/workspaces/my-project",  # required, absolute — on the AGENT's host
     additional_directories=None,       # extra absolute dirs for the session
     env=None,                          # added to the SDK's restricted env
     mcp_servers=None,                  # ACP MCP-server descriptors (SDK types)
@@ -1838,13 +1839,17 @@ agent = ACPChannel(
 )
 ```
 
-`command` is an argument vector executed directly, **no shell**; a bare string, empty/non-string args, or non-absolute `cwd`/`additional_directories` raise `ValueError`. Class attrs: `channel_type = ChannelType.AI`, `category = ChannelCategory.INTELLIGENCE`, `direction = BIDIRECTIONAL`; capabilities TEXT + RICH. `handle_inbound()` raises `NotImplementedError` — the channel reacts to Room events via `on_event()`.
+`command` is an argument vector executed directly, **no shell**; a bare string, empty/non-string args, or non-absolute `cwd`/`additional_directories` raise `ValueError`. Exactly one of `command` / `transport` is required (neither or both → `ValueError`), and `env`/`inherit_env` next to a `transport` raise rather than being ignored — they configure the spawn. Class attrs: `channel_type = ChannelType.AI`, `category = ChannelCategory.INTELLIGENCE`, `direction = BIDIRECTIONAL`; capabilities TEXT + RICH. `handle_inbound()` raises `NotImplementedError` — the channel reacts to Room events via `on_event()`.
+
+### Transports
+
+`ACPTransport` (ABC, `channels/acp_transport.py`) is the pipe, and nothing more: `open(client, *, queue) -> ClientSideConnection` (build it with `acp.connect_to_agent(client, writer, reader, queue=queue)` — the protocol only needs a reader/writer pair), `close()` (must not raise; called on teardown *and* on a failed handshake), `is_alive()` (default `True`), and a `name` property surfaced as `info["transport"]`. `StdioACPTransport(command, cwd=…, env=…, inherit_env=…)` is the default, constructed for you from `command=`, and owns the spawn: argument-vector validation, `_resolve_spawn_env`, the stderr drain, and `returncode`-based liveness. Everything protocol-level — `initialize`, version negotiation, `authenticate`, sessions, prompts, permissions, config options, event mapping — stays on the channel, so a transport inherits it.
 
 ### Process and session model
 
-One agent **process** per channel, started lazily on the first prompt; one ACP **session** per Room, created on demand and tagged with extension key `roomkit.live/roomId`. Prompts are serialized per Room (per-room lock); different Rooms progress concurrently through the same connection. If the subprocess dies, the next prompt respawns it and clears all session mappings. The client declares no fs/terminal capabilities: `fs/*`, `terminal/*`, and `session/request_input` (elicitation) requests get `method_not_found` — `ON_USER_INPUT_REQUIRED` never fires from ACP.
+One connection per channel, opened lazily on the first prompt; one ACP **session** per Room, created on demand and tagged with extension key `roomkit.live/roomId`. Prompts are serialized per Room (per-room lock); different Rooms progress concurrently through the same connection. When the transport reports the connection dead (for stdio: the subprocess exited), the next prompt reconnects and clears all session mappings — a reconnect never resumes sessions. The client declares no fs/terminal capabilities: `fs/*`, `terminal/*`, and `session/request_input` (elicitation) requests get `method_not_found` — `ON_USER_INPUT_REQUIRED` never fires from ACP.
 
-Methods: `session_id(room_id)` returns the process-local session id or `None`; `cancel(room_id)` cancels the active turn (`True` if a cancel was sent); `close_session(room_id)` closes and forgets one Room's session; `close()` cancels turns, closes sessions, stops the subprocess and handler. The `info` property reports `{transport, protocol_version, sdk_version, connected, agent, session_count}`.
+Methods: `session_id(room_id)` returns the process-local session id or `None`; `cancel(room_id)` cancels the active turn (`True` if a cancel was sent); `close_session(room_id)` closes and forgets one Room's session; `close()` cancels turns, closes sessions, closes the transport and stops the handler. The `info` property reports `{transport, protocol_version, sdk_version, connected, agent, session_count}`.
 
 ### How agent output enters the room
 
@@ -1857,6 +1862,10 @@ For each non-self text event, `on_event()` returns `ChannelOutput(responded=True
 - `usage_update` → ephemeral `CUSTOM` `{"type": "acp_usage"}`.
 
 `register_channel()` wires `kit`'s realtime backend in automatically. A failed prompt surfaces as `ProviderError(provider="acp")`; cancellation ends the stream silently and closes any open thinking block.
+
+A turn never outlives its tool calls. Whichever way it ends — error, cancellation, or a stop the user asked for, which returns through the ordinary end of a prompt — every tool started without a terminal `tool_call_update` is closed first: a `ToolCallEndMarker` with `status="failed"` and an `error` saying the turn ended before the tool reported, emitted into the stream so the stored `TOOL_CALL_END` exists, plus the matching ephemeral. A turn whose tools all reported emits nothing extra. One gap remains by construction: a stream closed from the outside (its consumer cancelled, a muted binding) is past yielding, so only the ephemeral goes out and the stored row stays pending.
+
+ACP fixes the envelope and leaves the payload to the agent, so `CLIChannel(console=True)` unwraps rather than prints (`roomkit.console._tool_preview`): ACP `text`/`diff` blocks, MCP `content`, and `raw_output` wrappers (`formatted_output`+`exit_code` from Codex, `output`, `result`/`error`) all reduce to their text; a `terminal` block carries no text, so the preview falls back to `raw_output`; `image`/`audio`/`resource` blocks are named, never dumped as base64; 5 lines per result, 200 chars per line; unknown shapes render as compact JSON.
 
 ### Permission flow
 
@@ -3243,10 +3252,57 @@ handler = router.install(kit, agents=[billing_agent, shipping_agent, triage_agen
 
 ### Routing Selection Priority
 
+0. **Address** — if the event carries `addressed_to`, it decides; the router returns untouched
 1. **Agent affinity** — if `state.active_agent_id` is set and attached, stick with it
 2. **Rules** — evaluate in ascending `priority` order; first match wins
 3. **Fallback** — return `default_agent_id`
 4. **Loop prevention** — events FROM intelligence channels are never routed
+
+## Addressing
+
+Routing rules answer *which agent handles this kind of event*. Addressing answers *which agent am I talking to right now*, per message:
+
+```python
+await kit.process_inbound(
+    InboundMessage(
+        channel_id="you",
+        sender_id="user",
+        content=TextContent(body="review hello.py"),
+        addressed_to=["codex"],       # only this agent is asked to act
+    )
+)
+```
+
+| `addressed_to` | Meaning |
+|---|---|
+| `None` | Unaddressed — every eligible agent acts, or the router decides |
+| `["codex"]` | Only `codex` is asked; the others see it and stay silent |
+| `[]` | Nobody is asked — a decision, not an absence |
+
+Addressing is **not** visibility: it narrows who is *asked*, never who may *see*. Transport delivery is untouched, so the humans in the room still get the message. The address is stored on the event, so a transcript shows who was asked.
+
+### Agent Response Policy
+
+An agent's own output solicits the other agents by default (the chaining a pipeline needs, bounded by `max_chain_depth`). In a room of independent agents that is a hazard:
+
+```python
+# At creation, kit-wide or per room
+kit = RoomKit(agent_response_policy=AgentResponsePolicy.ADDRESSED_ONLY)
+await kit.create_room(room_id="dev", agent_response_policy=AgentResponsePolicy.ADDRESSED_ONLY)
+
+# On a live room — the one that just gained a second agent
+await kit.attach_channel(room_id, "codex", category=ChannelCategory.INTELLIGENCE)
+await kit.set_agent_response_policy(room_id, AgentResponsePolicy.ADDRESSED_ONLY)
+```
+
+| Policy | An agent's output solicits |
+|---|---|
+| `AGENT_CHAIN` | every eligible intelligence channel — the default |
+| `ADDRESSED_ONLY` | only the channels it addressed, if any |
+
+A policy change applies to events processed after it; setting the policy a room already holds is a no-op. A binding that is not solicited is skipped before any work is done for it, so a roster can be attached lazily and rehydrated one agent at a time.
+
+RoomKit takes the decision, never the syntax: `@codex`, a `/agent` command or a picker all live in the application, which passes channel ids.
 
 ## Conversation Pipeline (Advanced)
 
@@ -3544,8 +3600,25 @@ Requires `pip install roomkit[buzz]` (installs `buzzkit`, a compiled wheel kept 
 - Inbound parsing: `parse_buzz_event(event, channel_id, own_pubkey=..., ignore_own=True)` converts a kind-9 Nostr event dict to an `InboundMessage` — sender pubkey becomes `sender_id`, the Nostr event id becomes `external_id` and `idempotency_key`, metadata carries `nostr_event_id`, `nostr_kind`, `buzz_channel_id`. Subscribe to other event kinds with `BuzzRelaySource(..., kinds=[...], parser=...)`.
 - `provider.send(event, to=channel_uuid)` publishes a kind-9 channel message signed with the agent's key; the returned `ProviderResult.provider_message_id` is the Nostr event id. HTTP-bridge sends succeed even while the inbound WebSocket is mid-reconnect; the source reconnects with exponential backoff (1 s doubling to a 30 s cap).
 - Testing: `MockBuzzProvider` records `sent` without the `buzzkit` dependency. ABC: `BuzzRelayProvider`.
+- Presence: with `announce_presence=True` the source publishes kind-20001 `"online"` on connect, heartbeats every 30 s (surviving transient publish failures), and publishes `"offline"` on a deliberate `stop()` so the agent's dot flips immediately instead of lapsing by relay TTL.
+- Owner control commands (`buzzkit>=0.3.0`): with `obey_owner_commands=True` (default), a kind-9 message whose trimmed content is exactly `!shutdown` / `!cancel` / `!rotate`, mentioning the agent and authored by the **proven** owner — the NIP-OA auth tag's Schnorr-verified attester, else `BuzzConfig.owner_pubkey` — is consumed before the pipeline (the AI never answers its own stop command). `!shutdown` stops the source gracefully; all commands reach the optional `on_owner_command` callback, which takes over the response when provided. No provable owner, or a non-owner author → the message flows normally (fail-closed). Replay-safe: a command issued before the source started is stale (relays replay recent history on every subscribe) — consumed without action; one issued during a disconnection is honored when the reconnect replays it.
+- Inbound metadata carries `nostr_created_at` (unix seconds, the Nostr timestamp) so apps can tell live traffic from relay-history replay — used by `examples/buzz_agent.py`'s echo guard.
 
 Runnable example: `examples/buzz_bot.py`.
+
+### BuzzAgent — the lifecycle runner
+
+`BuzzAgent` (`roomkit.providers.buzz`) turns a configured RoomKit app into a first-class Buzz agent: it attaches the sources (taking over their `on_owner_command`), installs SIGTERM/SIGINT handlers, optionally arms an `exit_after_inactivity` bound (seconds; default off; reaper on its own timer), and exits every stop cause — owner `!shutdown`, signal, inactivity — through one graceful path: `kit.close()` (presence `offline`, sockets closed). `run()` is single-shot, consumes the kit, and returns a `BuzzAgentStopCause` (`owner_shutdown` / `signal` / `inactivity`); exit the process with code 0 so supervisors never restart an intentional stop.
+
+```python
+from roomkit.providers.buzz import BuzzAgent, BuzzConfig
+
+config = BuzzConfig.from_env()   # BUZZ_PRIVATE_KEY (or NOSTR_PRIVATE_KEY) / BUZZ_RELAY_URL / BUZZ_AUTH_TAG — fail-closed
+agent = BuzzAgent(kit, [source], exit_after_inactivity=7200)
+cause = await agent.run()        # blocks until the owner, a signal, or idleness stops it
+```
+
+Runnable example: `examples/buzz_agent.py`.
 
 Buzz huddles (live voice calls in ephemeral channels) are handled by the voice subsystem, not this transport: `BuzzHuddleBackend` (`roomkit.voice.backends.buzz_huddle`) is a `VoiceBackend` carrying huddle Opus audio for a `RealtimeVoiceChannel`, and `BuzzHuddleWatcher` owns the announcement-to-call lifecycle, watching the parent channel for kind-48100 announcements (`KIND_HUDDLE_STARTED` / `huddle_announcement_parser` in `roomkit.sources.buzz`) and bridging each huddle. See `examples/buzz_voice_agent.py`.
 
