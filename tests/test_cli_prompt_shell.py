@@ -7,6 +7,7 @@ output. prompt_toolkit is in the dev extras (console extra), so CI runs this.
 from __future__ import annotations
 
 import asyncio
+from io import StringIO
 from unittest.mock import AsyncMock, patch
 
 from prompt_toolkit.input import create_pipe_input
@@ -567,34 +568,18 @@ class TestUserLineEcho:
         assert mock_echo.call_args_list[0].kwargs["prompt"] == cli._prompt
 
 
-class TestPinToBottom:
-    def test_writes_cursor_position_escape(self) -> None:
-        from io import StringIO
-        from types import SimpleNamespace
-
-        from prompt_toolkit.data_structures import Size
-
-        from roomkit.console._shell import _pin_to_bottom
-
-        fake_session = SimpleNamespace(
-            output=SimpleNamespace(get_size=lambda: Size(rows=50, columns=120))
-        )
-        with patch("sys.stdout", new_callable=StringIO) as out:
-            _pin_to_bottom(fake_session)  # type: ignore[arg-type]
-        assert out.getvalue() == "\x1b[50;1H"
-
-    async def test_not_written_when_test_output_injected(self) -> None:
-        # With an injected output (tests, embedding), the escape must not
-        # leak to the process stdout.
+class TestInputZonePlacement:
+    async def test_the_zone_is_drawn_where_the_cursor_is(self) -> None:
+        # prompt_toolkit lays the input line and its toolbar out as one
+        # HSplit and draws it inline, so the shell must not move the cursor
+        # first: doing so leaves the banner at the top and a screen of unused
+        # rows above the bar until the transcript fills them.
         cli = CLIChannel("cli", console=True)
         kit = AsyncMock()
         kit.process_inbound = AsyncMock()
 
-        with (
-            create_pipe_input() as pipe,
-            patch("roomkit.console._shell._pin_to_bottom") as mock_pin,
-        ):
+        with create_pipe_input() as pipe, patch("sys.stdout", new_callable=StringIO) as out:
             pipe.send_text("quit\n")
             await _run_shell(cli, kit, pipe)
 
-        mock_pin.assert_not_called()
+        assert "\x1b[" not in out.getvalue()

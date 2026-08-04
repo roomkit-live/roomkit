@@ -1,8 +1,10 @@
 """Pinned-bar interactive shell for ``CLIChannel(console=True)``.
 
-The Claude Code layout: an input bar pinned to the bottom of the terminal,
-a status toolbar under it, and the conversation scrolling above in normal
-scrollback. The user can type while the agent streams; submitted messages
+The Claude Code layout: an input bar with a status toolbar under it, and the
+conversation scrolling above in normal scrollback. prompt_toolkit lays the
+two out as one container and draws it where the cursor is, so the zone opens
+under the banner and settles at the bottom of the screen as the transcript
+grows into it. The user can type while the agent streams; submitted messages
 queue and process strictly one at a time.
 
 prompt_toolkit is imported at module top — this module itself is imported
@@ -15,7 +17,6 @@ import asyncio
 import contextlib
 import logging
 import os
-import sys
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
@@ -205,15 +206,6 @@ async def run_console_shell(
         spin_wake.set()
 
     tracker.on_change = _activity_changed
-
-    if output is None:
-        # Real terminal: start the bar at the BOTTOM of the screen, Claude
-        # Code-style. prompt_toolkit renders the input line wherever the
-        # cursor is (only the toolbar is bottom-anchored), so without this
-        # the bar floats mid-screen under the banner, detached from the
-        # toolbar. Moving the cursor to the last row pins input + toolbar
-        # together; every subsequent write scrolls the transcript above.
-        _pin_to_bottom(session)
 
     consumer: asyncio.Task[None] | None = None
     spinner: asyncio.Task[None] | None = None
@@ -513,25 +505,6 @@ def _rule(session: PromptSession[str]) -> str:
     with contextlib.suppress(NotImplementedError, OSError, ValueError):
         columns = int(session.output.get_size().columns)
     return "─" * max(1, columns)
-
-
-def _pin_to_bottom(session: PromptSession[str]) -> None:
-    """Move the cursor to the last screen row so the bar renders there.
-
-    Plain cursor positioning — no scroll, existing content stays put. If the
-    prompt + toolbar need more rows than remain, prompt_toolkit scrolls the
-    difference itself.
-    """
-    rows: int | None = None
-    with contextlib.suppress(NotImplementedError, OSError, ValueError):
-        rows = int(session.output.get_size().rows)
-    if rows is None:
-        try:
-            rows = os.get_terminal_size().lines
-        except OSError:
-            return
-    sys.stdout.write(f"\x1b[{rows};1H")
-    sys.stdout.flush()
 
 
 __all__ = ["active_shell_app", "run_console_shell"]
