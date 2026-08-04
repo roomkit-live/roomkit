@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.40.0] — 2026-08-04
+
 ### Changed
 
 - **The room lock ends at broadcast planning — external delivery moved to
@@ -41,7 +43,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   without wedging the room. The Postgres store backfills
   `delivered_index = latest_index` once, when the column is first created
   (pre-lane deployments delivered under the lock, so everything stored is
-  delivered).
+  delivered). Known limit: the cursor advances when a delivery set executes,
+  and the post-delivery pass that follows it (AFTER_BROADCAST hooks and the
+  side-effect persistence write) runs after that advance. A crash in that
+  window leaves the cursor past an event whose post-effects never ran, and
+  unlike an undelivered event this leaves no hole to gap-skip, so it is not
+  retried. The durable outbox that turns this into recovery is a separate
+  step (RFC §13.6); until then a post-effect side effect is best-effort
+  across a process crash.
 
   The lane is the room's *only* delivery primitive: every committed event
   with recipients goes through it, because a commit publishes its index on
@@ -431,6 +440,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `BuzzClient.verified_owner_hex` these features are built on).
 
 ### Fixed
+
+- **A configured `supervisor_id` receives an addressed message again** (RFC
+  §19.4 step 4). Addressing (`addressed_to`) decides who acts, and the router
+  correctly does not override it — but the supervisor is the one addition
+  step 4 makes on top of the address: it ALWAYS receives the event, "in
+  addition to the addressed channels". The router's addressed branch returned
+  without stamping the supervisor, and solicitation short-circuited on the
+  address before consulting the always-process list, so any message that named
+  a recipient silently dropped the supervisor — the single channel an address
+  is not allowed to silence. The router now stamps only the supervisor (never a
+  routing target) on an addressed event, and solicitation honours it; a sender
+  who already named the supervisor gets no redundant stamp.
 
 - **A coding agent that answers in raw JSON now renders as output in the
   console, and a shell command behind an ACP `terminal` block renders at
