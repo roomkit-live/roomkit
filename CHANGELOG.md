@@ -3762,9 +3762,37 @@ See entries `0.7.0a1` through `0.7.0a18` below.
 - `STTProvider.transcribe()` returns `TranscriptionResult` (Phase 3.1)
 - Framework event names enriched with payloads (Phase 4)
 
-[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.39.0...HEAD
+[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.40.0...HEAD
+[0.40.0]: https://github.com/roomkit-live/roomkit/compare/v0.39.0...v0.40.0
 [0.39.0]: https://github.com/roomkit-live/roomkit/compare/v0.38.0...v0.39.0
+[0.38.0]: https://github.com/roomkit-live/roomkit/compare/v0.37.1...v0.38.0
+[0.37.1]: https://github.com/roomkit-live/roomkit/compare/v0.37.0...v0.37.1
+[0.37.0]: https://github.com/roomkit-live/roomkit/compare/v0.36.0...v0.37.0
+[0.36.0]: https://github.com/roomkit-live/roomkit/compare/v0.35.0...v0.36.0
+[0.35.0]: https://github.com/roomkit-live/roomkit/compare/v0.34.0...v0.35.0
+[0.34.0]: https://github.com/roomkit-live/roomkit/compare/v0.33.0...v0.34.0
+[0.33.0]: https://github.com/roomkit-live/roomkit/compare/v0.32.0...v0.33.0
+[0.32.0]: https://github.com/roomkit-live/roomkit/compare/v0.31.0...v0.32.0
+[0.31.0]: https://github.com/roomkit-live/roomkit/compare/v0.30.0...v0.31.0
+[0.30.0]: https://github.com/roomkit-live/roomkit/compare/v0.29.0...v0.30.0
+[0.29.0]: https://github.com/roomkit-live/roomkit/compare/v0.28.0...v0.29.0
+[0.28.0]: https://github.com/roomkit-live/roomkit/compare/v0.27.0...v0.28.0
+[0.27.0]: https://github.com/roomkit-live/roomkit/compare/v0.26.0...v0.27.0
+[0.26.0]: https://github.com/roomkit-live/roomkit/compare/v0.25.0...v0.26.0
+[0.25.0]: https://github.com/roomkit-live/roomkit/compare/v0.24.0...v0.25.0
+[0.24.0]: https://github.com/roomkit-live/roomkit/compare/v0.23.0...v0.24.0
+[0.23.0]: https://github.com/roomkit-live/roomkit/compare/v0.22.0...v0.23.0
+[0.22.0]: https://github.com/roomkit-live/roomkit/compare/v0.20.0...v0.22.0
+[0.20.0]: https://github.com/roomkit-live/roomkit/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/roomkit-live/roomkit/compare/v0.18.0...v0.19.0
+[0.18.0]: https://github.com/roomkit-live/roomkit/compare/v0.17.0...v0.18.0
+[0.17.0]: https://github.com/roomkit-live/roomkit/compare/v0.16.0...v0.17.0
+[0.16.0]: https://github.com/roomkit-live/roomkit/compare/v0.15.0...v0.16.0
+[0.15.0]: https://github.com/roomkit-live/roomkit/compare/v0.14.0...v0.15.0
+[0.14.0]: https://github.com/roomkit-live/roomkit/compare/v0.13.0...v0.14.0
+[0.13.0]: https://github.com/roomkit-live/roomkit/compare/v0.12.0...v0.13.0
+[0.12.0]: https://github.com/roomkit-live/roomkit/compare/v0.11.0...v0.12.0
+[0.11.0]: https://github.com/roomkit-live/roomkit/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/roomkit-live/roomkit/compare/v0.9.1...v0.10.0
 [0.9.1]: https://github.com/roomkit-live/roomkit/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/roomkit-live/roomkit/compare/v0.8.0...v0.9.0
