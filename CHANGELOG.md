@@ -5,7 +5,7 @@ All notable changes to RoomKit are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.41.0] — 2026-08-04
 
 ### Added
 
@@ -3788,7 +3788,8 @@ See entries `0.7.0a1` through `0.7.0a18` below.
 - `STTProvider.transcribe()` returns `TranscriptionResult` (Phase 3.1)
 - Framework event names enriched with payloads (Phase 4)
 
-[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.40.0...HEAD
+[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.41.0...HEAD
+[0.41.0]: https://github.com/roomkit-live/roomkit/compare/v0.40.0...v0.41.0
 [0.40.0]: https://github.com/roomkit-live/roomkit/compare/v0.39.0...v0.40.0
 [0.39.0]: https://github.com/roomkit-live/roomkit/compare/v0.38.0...v0.39.0
 [0.38.0]: https://github.com/roomkit-live/roomkit/compare/v0.37.1...v0.38.0
