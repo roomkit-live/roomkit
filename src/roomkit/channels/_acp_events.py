@@ -282,10 +282,19 @@ class ACPEventsMixin:
         left something open from one that ended clean. Idempotent: a tool
         already finished is skipped by :meth:`_emit_tool_end`.
         """
-        closed = False
-        for tool in list(turn.tools.values()):
-            if not tool.started or tool.finished:
-                continue
+        open_tools = [tool for tool in turn.tools.values() if tool.started and not tool.finished]
+        if not open_tools:
+            return False
+        # Said out loud: an agent that stops mid-tool leaves no other trace,
+        # and whoever reads the timeline afterwards sees a failed tool without
+        # knowing the turn died under it.
+        logger.info(
+            "ACP turn ended with %d tool call(s) unfinished in room %s: %s",
+            len(open_tools),
+            room_id,
+            ", ".join(tool.name for tool in open_tools),
+        )
+        for tool in open_tools:
             await self._emit_tool_end(
                 turn if stream else None,
                 room_id,
@@ -293,8 +302,7 @@ class ACPEventsMixin:
                 "failed",
                 error=_TURN_ENDED_ERROR,
             )
-            closed = True
-        return closed
+        return True
 
     async def _emit_tool_end(
         self,
