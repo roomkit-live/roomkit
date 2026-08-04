@@ -42,6 +42,7 @@ from roomkit.channels._conference_lane import (
     ConferenceBargeIn,
     ConferenceLane,
     ConferenceTranscription,
+    UtteranceTiming,
 )
 from roomkit.channels._conference_lanes import ConferenceLanesMixin
 from roomkit.channels._conference_metadata import CONFERENCE_METADATA_KEY
@@ -109,6 +110,7 @@ __all__ = [
     "ConferenceRecordingStarted",
     "ConferenceRecordingStopped",
     "ConferenceTranscription",
+    "UtteranceTiming",
 ]
 
 

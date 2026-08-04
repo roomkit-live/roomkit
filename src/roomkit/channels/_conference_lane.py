@@ -21,6 +21,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -43,18 +44,52 @@ logger = logging.getLogger("roomkit.channels.conference")
 _ABANDONED_TASKS: set[asyncio.Task[None]] = set()
 
 
+@dataclass(frozen=True)
+class UtteranceTiming:
+    """Where a lane's utterance sat in time.
+
+    Read at the VAD's own boundaries, so it describes the speech rather than
+    its recognition: stamping the clock when the transcription *arrives*
+    would fold the recogniser's round trip into every timestamp.
+
+    Both ends come from :func:`time.monotonic`, taken as the lane crossed
+    them — comparable with any other reading in the same process and
+    meaningless outside it. One clock deliberately: the VAD also counts the
+    audio it kept, in frame durations, and a start read from the wall clock
+    against a duration counted in audio would only agree while frames arrive
+    in real time. Every lane in a conference shares this timeline, which is
+    what lets a transcript order two speakers against each other.
+
+    ``ended_at`` is the VAD's speech-end, so the span includes the trailing
+    silence the VAD needs before it will call an utterance over.
+    """
+
+    started_at: float
+    ended_at: float
+
+    @property
+    def duration_ms(self) -> float:
+        """How long the utterance ran, in milliseconds."""
+        return (self.ended_at - self.started_at) * 1000.0
+
+
 @dataclass
 class ConferenceTranscription:
     """What a lane produced, before it enters the room.
 
     Carried to ON_TRANSCRIPTION so a hook can identify the track and the
-    participant, block the text, or rewrite it.
+    participant, place the utterance in time, block the text, or rewrite it.
     """
 
     track_id: str
     participant_id: str
     room_id: str
     text: str
+    # When the speech happened, per the VAD. A transcript writer needs this to
+    # place a line: the alternative is stamping the arrival, which drifts by
+    # however long the recogniser took and collapses every utterance to a
+    # single instant.
+    timing: UtteranceTiming
 
 
 @dataclass
@@ -78,8 +113,9 @@ class ConferenceBargeIn:
 # far. The channel decides whether that speech interrupts the bot.
 SpeechCallback = Callable[["ConferenceLane", float], Awaitable[None]]
 
-# Called once per utterance, with the accumulated speech and its sample rate.
-UtteranceCallback = Callable[["ConferenceLane", bytes, int], Awaitable[None]]
+# Called once per utterance, with the accumulated speech, its sample rate and
+# where the utterance sat in time.
+UtteranceCallback = Callable[["ConferenceLane", bytes, int, "UtteranceTiming"], Awaitable[None]]
 
 # Called at the VAD's utterance boundaries: once when the track goes from
 # silence to speech, once when the utterance closes. The channel announces
@@ -152,6 +188,9 @@ class ConferenceLane:
         self._released = asyncio.Event()
         self._speaking = False
         self._speech_ms = 0.0
+        # When the current utterance opened. Read at SPEECH_END, where the
+        # counters are reset before the transcription round trip begins.
+        self._speech_started_at = 0.0
 
     @property
     def running(self) -> bool:
@@ -311,6 +350,7 @@ class ConferenceLane:
         if event is not None and event.type is VADEventType.SPEECH_START:
             self._speaking = True
             self._speech_ms = 0.0
+            self._speech_started_at = time.monotonic()
             await self._on_speech_start(self)
 
         if self._speaking:
@@ -320,13 +360,16 @@ class ConferenceLane:
         if event is None or event.type is not VADEventType.SPEECH_END:
             return
 
+        # Read here, at the boundary — not when the transcription comes back,
+        # which is a recogniser round trip later.
+        timing = UtteranceTiming(started_at=self._speech_started_at, ended_at=time.monotonic())
         self._speaking = False
         self._speech_ms = 0.0
         # Before the utterance is handed on, not after: recognition is a round
         # trip, and "they stopped speaking" is true now.
         await self._on_speech_end(self)
         if event.audio_bytes:
-            await self._on_utterance(self, event.audio_bytes, result.frame.sample_rate)
+            await self._on_utterance(self, event.audio_bytes, result.frame.sample_rate, timing)
 
 
 def _frame_duration_ms(frame: AudioFrame) -> float:

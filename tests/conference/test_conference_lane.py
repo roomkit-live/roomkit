@@ -202,6 +202,67 @@ class TestSegmentation:
         ] == [("p-alice", "c'est Alice"), ("p-bob", "c'est Bob")]
 
 
+class TestUtteranceTiming:
+    """ON_TRANSCRIPTION carries where the utterance sat, not when it arrived.
+
+    A transcript writer has to place each line on a timeline. Stamping the
+    clock on arrival is the tempting shortcut, and it is wrong twice: every
+    line drifts by however long the recogniser took, and an utterance with no
+    duration collapses to a single instant.
+    """
+
+    async def test_the_timing_describes_the_speech_not_its_recognition(self) -> None:
+        seen: list[Any] = []
+
+        kit, channel, backend = await _kit()
+
+        @kit.hook(HookTrigger.ON_TRANSCRIPTION)
+        async def _capture(payload: Any, _ctx: RoomContext) -> HookResult:
+            seen.append(payload)
+            return HookResult.allow()
+
+        await backend.simulate_participant_joined(ROOM, "p-alice")
+        track = await backend.simulate_track_published(ROOM, "p-alice")
+
+        before = time.monotonic()
+        await say(backend, track)
+        await drain(channel, track.id)
+        after = time.monotonic()
+
+        assert len(seen) == 1
+        timing = seen[0].timing
+        # Both ends fall inside the window we spoke in — a clock read when the
+        # transcription came back could not, it sits an STT round trip later.
+        assert before <= timing.started_at <= timing.ended_at <= after
+        # And the utterance has a span. Zero would mean the two ends were read
+        # at the same moment, which is what stamping arrival would give.
+        assert timing.duration_ms > 0.0
+
+    async def test_successive_utterances_advance(self) -> None:
+        """Two utterances must not share a timestamp: consecutive lines in a
+        transcript are what the ordering is read from."""
+        seen: list[Any] = []
+
+        kit, channel, backend = await _kit(stt=MockSTTProvider(transcripts=["d'abord", "ensuite"]))
+
+        @kit.hook(HookTrigger.ON_TRANSCRIPTION)
+        async def _capture(payload: Any, _ctx: RoomContext) -> HookResult:
+            seen.append(payload)
+            return HookResult.allow()
+
+        await backend.simulate_participant_joined(ROOM, "p-alice")
+        track = await backend.simulate_track_published(ROOM, "p-alice")
+
+        await say(backend, track)
+        await drain(channel, track.id)
+        await say(backend, track)
+        await drain(channel, track.id)
+
+        assert len(seen) == 2
+        first, second = seen[0].timing, seen[1].timing
+        assert second.started_at >= first.ended_at
+
+
 class TestStageOrder:
     async def test_stages_run_in_the_canonical_order(self) -> None:
         """RFC §12.3: resampler, then AGC, then denoiser, then VAD.

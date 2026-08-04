@@ -33,6 +33,7 @@ from roomkit.channels.conference import (
     ConferenceRecordingStarted,
     ConferenceRecordingStopped,
     ConferenceTranscription,
+    UtteranceTiming,
 )
 from roomkit.channels.realtime_av import RealtimeAudioVideoChannel
 from roomkit.channels.realtime_voice import RealtimeVoiceChannel, get_current_voice_session
@@ -316,6 +317,7 @@ __all__ = [
     "ConferenceToolHandler",
     "ConferenceTrack",
     "ConferenceTranscription",
+    "UtteranceTiming",
     "LiveKitConferenceBackend",
     "LiveKitConfig",
     "MockConferenceBackend",

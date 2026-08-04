@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`ConferenceTranscription` says where the utterance sat in time.** A new
+  `timing: UtteranceTiming` field carries `started_at` / `ended_at`, both read
+  from `time.monotonic()` at the VAD's own speech boundaries — not when the
+  transcription came back, which is a recogniser round trip later. A transcript
+  writer could previously only stamp arrival, which drifts by the recogniser's
+  latency and gives every utterance one instant for both its ends.
+
+  One clock deliberately: the VAD also counts the audio it kept, in frame
+  durations, and a start read from the wall clock against a duration counted in
+  audio agree only for as long as frames arrive in real time. Every lane in a
+  conference shares this timeline, which is what lets a transcript order two
+  speakers against each other. `duration_ms` is derived from the two ends, and
+  the span includes the trailing silence the VAD needs before it will call an
+  utterance over.
+
+  `UtteranceTiming` is exported from `roomkit` and
+  `roomkit.channels.conference`.
+
+### Changed
+
+- **`UtteranceCallback` receives the utterance's timing.** Lane callbacks are
+  internal to `ConferenceChannel`; integrators reach this through
+  `ON_TRANSCRIPTION`, where the new field is additive.
+
 ## [0.40.0] — 2026-08-04
 
 ### Changed

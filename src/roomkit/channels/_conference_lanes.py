@@ -21,7 +21,11 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-from roomkit.channels._conference_lane import ConferenceLane, ConferenceTranscription
+from roomkit.channels._conference_lane import (
+    ConferenceLane,
+    ConferenceTranscription,
+    UtteranceTiming,
+)
 from roomkit.channels._conference_operations import ConferenceResource
 from roomkit.channels._conference_recording import TrackFormat
 from roomkit.conference.models import ConferenceTrack, TrackKind
@@ -296,12 +300,15 @@ class ConferenceLanesMixin:
             )
 
     async def _on_lane_utterance(
-        self, lane: ConferenceLane, audio: bytes, sample_rate: int
+        self, lane: ConferenceLane, audio: bytes, sample_rate: int, timing: UtteranceTiming
     ) -> None:
         """Transcribe one utterance and route it, attributed to its speaker.
 
         One event per utterance rather than one per frame: the VAD decided
         where the utterance ended, and this is the audio it accumulated.
+        ``timing`` describes that speech, not this recognition — carried
+        through so a hook can place the utterance on a timeline without
+        paying the recogniser's round trip into every timestamp.
         """
         if self._stt is None or self._framework is None:
             return
@@ -332,7 +339,7 @@ class ConferenceLanesMixin:
         async with self._activity.track(lane.room_id):
             if not room.may_collect():
                 return
-            text = await self._run_transcription_hook(lane, text)
+            text = await self._run_transcription_hook(lane, text, timing)
         if not text:
             return
         # Read once more, and outside the block: delivery takes the room lock,
@@ -352,7 +359,9 @@ class ConferenceLanesMixin:
             room_id=lane.room_id,
         )
 
-    async def _run_transcription_hook(self, lane: ConferenceLane, text: str) -> str:
+    async def _run_transcription_hook(
+        self, lane: ConferenceLane, text: str, timing: UtteranceTiming
+    ) -> str:
         """Let hooks inspect, rewrite or block a lane's transcription.
 
         Synchronous, because the point is to decide before the text reaches the
@@ -371,6 +380,7 @@ class ConferenceLanesMixin:
             participant_id=lane.participant_id,
             room_id=lane.room_id,
             text=text,
+            timing=timing,
         )
         result = await self._framework.hook_engine.run_sync_hooks(
             lane.room_id,
