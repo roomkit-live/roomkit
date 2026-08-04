@@ -5,6 +5,24 @@ All notable changes to RoomKit are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.41.3] — 2026-08-04
+
+### Added
+
+- **`kit.send_event(addressed_to=[...])` — direct injection has a sender too.**
+  An address is set on an event *by its sender* (RFC §19.3), and every entry
+  point has one: `InboundMessage` could name who it asked since 0.40, direct
+  injection could not, though it traverses the same pipeline (RFC §10.5) and
+  lands the same event in the same room. The gap showed as soon as an
+  application stored a message and triggered the answer itself — the shape
+  behind every "the AI replies when it is mentioned" surface. With no way to
+  say *this stored message asks nobody*, the only lever left was muting the
+  intelligence channel around the write and unmuting it for the turn: a state
+  mutation standing in for a per-event decision, which races the write it
+  guards, has to be undone under the same lock, and leaves the room's agent
+  silenced or shouting if anything in between fails. `addressed_to=[]` says it
+  on the event, where there is nothing to race.
+
 ## [0.41.2] — 2026-08-04
 
 ### Added
