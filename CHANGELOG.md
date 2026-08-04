@@ -5,6 +5,40 @@ All notable changes to RoomKit are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.41.2] — 2026-08-04
+
+### Added
+
+- **`kit.set_agent_response_policy(room_id, policy)` — the room that turned
+  multi-agent can say so.** `AgentResponsePolicy` was selectable at creation
+  only, and a room rarely knows then how many agents it will end up holding: a
+  chat that opens with one assistant and gains a second when the human asks for
+  it becomes a room of independent agents at that moment, and under
+  `AGENT_CHAIN` the first answer solicits the newcomer, whose answer comes back,
+  down to `max_chain_depth`. The only way to switch a live room was to mutate
+  the `Room` and call `store.update_room()`, which is the framework's own state
+  written from outside the framework. Setting the policy a room already holds is
+  a no-op, so the call sits safely on an attach path; the change applies to
+  events processed after it, never retroactively to a turn already routed
+  (RFC §19.3.1).
+
+### Changed
+
+- **An intelligence channel that is not solicited now costs nothing.** The
+  registry lookup, the transcode and the `max_length` pass all ran before
+  `_solicits` was consulted, so a binding the event never addressed still paid
+  for them — and an unregistered one logged `Channel … not found in registry` on
+  every single broadcast. That is the normal state of a room whose roster is
+  rehydrated lazily: after a restart the bindings are all in the store and none
+  of the channels are live, and only the agent actually being talked to has to
+  be rebuilt. Solicitation is now decided first, from the untranscoded event
+  (transcoding rewrites content, never the address). The warning still fires for
+  a channel that *was* asked to act, which is the case worth knowing about.
+
+- `examples/acp_multi_agent.py` sets `ADDRESSED_ONLY` on its room rather than on
+  the kit. A kit-wide default would also silence the single-agent rooms a server
+  hosts alongside it, where chaining is exactly what they want.
+
 ## [0.41.1] — 2026-08-04
 
 ### Fixed
