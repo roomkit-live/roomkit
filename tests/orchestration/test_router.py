@@ -126,6 +126,44 @@ class TestAddressedEvents:
         assert result.action == "allow"
         assert result.event is None  # nothing stamped
 
+    async def test_supervisor_is_stamped_on_an_addressed_event(self):
+        # RFC §19.4 step 4 — the supervisor ALWAYS receives the event, "in
+        # addition to the addressed channels". The address decides everything
+        # else, but the supervisor is the one addition it does not cancel.
+        router = ConversationRouter(
+            default_agent_id="agent-default", supervisor_id="agent-supervisor"
+        )
+        hook = router.as_hook()
+        event = make_event(room_id="r1", channel_id="sms1").model_copy(
+            update={"addressed_to": ["agent-b"]}
+        )
+        ctx = _context(
+            bindings=[
+                _transport_binding("sms1"),
+                _ai_binding("agent-b"),
+                _ai_binding("agent-supervisor"),
+            ]
+        )
+
+        result = await hook(event, ctx)
+
+        assert result.event is not None
+        assert result.event.metadata["_always_process"] == ["agent-supervisor"]
+        assert "_routed_to" not in result.event.metadata  # the address still decides
+
+    async def test_addressed_supervisor_is_not_double_stamped(self):
+        # If the sender already named the supervisor, there is nothing to add.
+        router = ConversationRouter(supervisor_id="agent-supervisor")
+        hook = router.as_hook()
+        event = make_event(room_id="r1", channel_id="sms1").model_copy(
+            update={"addressed_to": ["agent-supervisor"]}
+        )
+        ctx = _context(bindings=[_transport_binding("sms1"), _ai_binding("agent-supervisor")])
+
+        result = await hook(event, ctx)
+
+        assert result.event is None  # already addressed; nothing to stamp
+
     async def test_address_beats_sticky_affinity(self):
         # The case that motivated step 0: with affinity consulted first, an
         # address would be unreachable for as long as an agent held the

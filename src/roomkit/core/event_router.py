@@ -92,18 +92,22 @@ def _solicits(
     Solicitation only — the caller has already resolved *visibility*, which
     is a separate question this must not re-answer.
     """
+    metadata = event.metadata or {}
+    always_process = metadata.get("_always_process", [])
+
     addressed = event.addressed_to
     if addressed is not None:
-        return channel_id in addressed
+        # The address decides — except the supervisor, which RFC §19.4 step 4
+        # adds on top of the addressed channels when a router stamps it.
+        return channel_id in addressed or channel_id in always_process
 
     if source_is_agent and policy is AgentResponsePolicy.ADDRESSED_ONLY:
         return False
 
-    metadata = event.metadata or {}
     routed_to = metadata.get("_routed_to")
     if routed_to is None:
         return True
-    return channel_id == routed_to or channel_id in metadata.get("_always_process", [])
+    return channel_id == routed_to or channel_id in always_process
 
 
 @dataclass

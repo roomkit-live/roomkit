@@ -101,11 +101,22 @@ class TestSolicitation:
         # RFC §19.4 step 0 — a router cannot override what the sender asked.
         event = _event(
             addressed_to=["codex"],
-            metadata={"_routed_to": "claude-code", "_always_process": ["supervisor"]},
+            metadata={"_routed_to": "claude-code"},
         )
         assert _solicits(event, "codex") is True
         assert _solicits(event, "claude-code") is False
-        assert _solicits(event, "supervisor") is False
+
+    def test_supervisor_still_acts_on_an_addressed_event(self) -> None:
+        # RFC §19.4 step 4 — the supervisor ALWAYS receives the event, "in
+        # addition to the addressed channels". The address decides everything
+        # else; the supervisor is the one addition it does not cancel.
+        event = _event(
+            addressed_to=["codex"],
+            metadata={"_always_process": ["supervisor"]},
+        )
+        assert _solicits(event, "codex") is True
+        assert _solicits(event, "supervisor") is True
+        assert _solicits(event, "claude-code") is False
 
     def test_router_still_decides_when_unaddressed(self) -> None:
         event = _event(metadata={"_routed_to": "claude-code", "_always_process": ["supervisor"]})

@@ -183,14 +183,23 @@ class ConversationRouter:
 
             if event.addressed_to is not None:
                 # Step 0: the sender named its recipients, and a router does
-                # not overrule the sender. Stamping here would be dead
-                # metadata at best — solicitation reads the address first —
-                # and misleading to anyone reading the stored event.
+                # not overrule the selection. The supervisor is the one
+                # exception RFC §19.4 step 4 carves out — it ALWAYS receives
+                # the event, "in addition to the addressed channels" — so it
+                # is stamped even here; everything else the address decides.
                 logger.debug(
                     "Event %s is addressed to %s; routing skipped",
                     event.id,
                     event.addressed_to,
                 )
+                if self._supervisor_id and self._supervisor_id not in event.addressed_to:
+                    updated_metadata = {
+                        **(event.metadata or {}),
+                        "_always_process": [self._supervisor_id],
+                    }
+                    return HookResult.modify(
+                        event.model_copy(update={"metadata": updated_metadata})
+                    )
                 return HookResult.allow()
 
             state = get_conversation_state(context.room)
