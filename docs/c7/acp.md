@@ -51,6 +51,8 @@ For each non-self text event, `on_event()` returns `ChannelOutput(responded=True
 
 `register_channel()` wires `kit`'s realtime backend in automatically. A failed prompt surfaces as `ProviderError(provider="acp")`; cancellation ends the stream silently and closes any open thinking block.
 
+ACP fixes the envelope and leaves the payload to the agent, so `CLIChannel(console=True)` unwraps rather than prints (`roomkit.console._tool_preview`): ACP `text`/`diff` blocks, MCP `content`, and `raw_output` wrappers (`formatted_output`+`exit_code` from Codex, `output`, `result`/`error`) all reduce to their text; a `terminal` block carries no text, so the preview falls back to `raw_output`; `image`/`audio`/`resource` blocks are named, never dumped as base64; 5 lines per result, 200 chars per line; unknown shapes render as compact JSON.
+
 ### Permission flow
 
 Every agent `session/request_permission` goes to the `external_tool_handler` (`ExternalToolHandler` ABC from `roomkit.tools`, with `PolicyExternalToolHandler` and `ToolDecision`):

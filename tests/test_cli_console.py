@@ -6,6 +6,7 @@ the dev extras.
 
 from __future__ import annotations
 
+import json
 from io import StringIO
 from types import SimpleNamespace
 
@@ -352,6 +353,161 @@ class TestToolRendering:
         rendered = output.getvalue()
         assert "⎿ ✓ Terminal · 5.2s" in rendered
         assert "Hello, world!" in rendered
+
+
+class TestCodexResultPayloads:
+    """Payload shapes captured from ``@agentclientprotocol/codex-acp``.
+
+    Codex answers in ``raw_output`` JSON rather than ACP content blocks, and
+    for shell commands puts a ``terminal`` block — which carries no text —
+    in the display payload. Both used to reach the console as a JSON dump or
+    as nothing at all.
+    """
+
+    def test_read_file_payload_shows_the_file(self) -> None:
+        content = ToolCallContent(
+            tool_name="Read file '/tmp/hello.txt'",
+            tool_id="exec-1",
+            status="completed",
+            result={"formatted_output": "first line\nsecond line\n", "exit_code": 0},
+        )
+        assert tool_result_preview(content) == [
+            ("dim", "first line"),
+            ("dim", "second line"),
+        ]
+
+    def test_terminal_block_falls_back_to_the_raw_output(self) -> None:
+        # The start update carries the terminal handle, the completion the text.
+        content = ToolCallContent(
+            tool_name="ls -la",
+            tool_id="exec-2",
+            status="completed",
+            result={"formatted_output": "644  hello.txt  23B\n", "exit_code": 0},
+            structured_content={"acp_content": [{"type": "terminal", "terminalId": "exec-2"}]},
+        )
+        assert tool_result_preview(content) == [("dim", "644  hello.txt  23B")]
+
+    def test_failure_error_json_is_read_not_printed(self) -> None:
+        # ACPChannel builds ``error`` as the JSON dump of the raw output.
+        content = ToolCallContent(
+            tool_name="cat /nope/missing.txt",
+            tool_id="exec-3",
+            status="failed",
+            error=json.dumps(
+                {
+                    "formatted_output": "cat: /nope/missing.txt: No such file or directory\n",
+                    "exit_code": 1,
+                }
+            ),
+        )
+        assert tool_result_preview(content) == [
+            ("dim", "cat: /nope/missing.txt: No such file or directory")
+        ]
+
+    def test_silent_failure_reports_the_exit_code(self) -> None:
+        content = ToolCallContent(
+            tool_name="grep -q needle",
+            tool_id="exec-4",
+            status="failed",
+            error=json.dumps({"formatted_output": "", "exit_code": 1}),
+        )
+        assert tool_result_preview(content) == [("dim", "exit code 1")]
+
+    def test_successful_command_without_output_previews_nothing(self) -> None:
+        content = ToolCallContent(
+            tool_name="touch f",
+            tool_id="exec-5",
+            status="completed",
+            result={"formatted_output": "", "exit_code": 0},
+        )
+        assert tool_result_preview(content) == []
+
+    def test_mcp_wrapper_result_and_error(self) -> None:
+        ok = ToolCallContent(
+            tool_name="mcp.docs.search",
+            tool_id="mcp-1",
+            status="completed",
+            result={"result": {"content": [{"type": "text", "text": "one hit"}]}, "error": None},
+        )
+        assert tool_result_preview(ok) == [("dim", "one hit")]
+
+        failed = ToolCallContent(
+            tool_name="mcp.docs.search",
+            tool_id="mcp-2",
+            status="completed",
+            result={"result": None, "error": "server unreachable"},
+        )
+        assert tool_result_preview(failed) == [("dim", "server unreachable")]
+
+    def test_nested_json_string_payload_is_unwrapped(self) -> None:
+        content = ToolCallContent(
+            tool_name="exec_command",
+            tool_id="fn-1",
+            status="completed",
+            result={"output": json.dumps({"output": "done\n", "metadata": {"exit_code": 0}})},
+        )
+        assert tool_result_preview(content) == [("dim", "done")]
+
+    def test_json_output_of_a_command_keeps_its_lines(self) -> None:
+        # ``cat package.json`` is text that happens to be JSON — not an
+        # envelope to take apart.
+        content = ToolCallContent(
+            tool_name="cat package.json",
+            tool_id="exec-6",
+            status="completed",
+            result={"formatted_output": '{\n  "name": "roomkit"\n}\n', "exit_code": 0},
+        )
+        assert tool_result_preview(content) == [
+            ("dim", "{"),
+            ("dim", '  "name": "roomkit"'),
+            ("dim", "}"),
+        ]
+
+    def test_media_is_named_never_dumped(self) -> None:
+        content = ToolCallContent(
+            tool_name="Image generation",
+            tool_id="img-1",
+            status="completed",
+            result=[
+                {
+                    "type": "content",
+                    "content": {"type": "image", "data": "A" * 4000, "mimeType": "image/png"},
+                }
+            ],
+        )
+        assert tool_result_preview(content) == [("dim", "[image image/png]")]
+
+    def test_resource_link_shows_its_name(self) -> None:
+        content = ToolCallContent(
+            tool_name="View Image /tmp/shot.png",
+            tool_id="img-2",
+            status="completed",
+            result=[{"type": "resource_link", "name": "/tmp/shot.png", "uri": "/tmp/shot.png"}],
+        )
+        assert tool_result_preview(content) == [("dim", "/tmp/shot.png")]
+
+    def test_long_lines_are_clipped(self) -> None:
+        content = ToolCallContent(
+            tool_name="Terminal",
+            tool_id="t1",
+            status="completed",
+            result="x" * 500,
+        )
+        ((kind, line),) = tool_result_preview(content)
+        assert kind == "dim"
+        assert len(line) == 200
+        assert line.endswith("…")
+
+    def test_unknown_payload_still_falls_back_to_json(self) -> None:
+        content = ToolCallContent(
+            tool_name="weird",
+            tool_id="w1",
+            status="completed",
+            result={"revisedPrompt": "a cat", "status": "queued"},
+        )
+        assert tool_result_preview(content) == [
+            ("dim", '{"revisedPrompt": "a cat", "status": "queued"}')
+        ]
 
 
 class TestTurnLayout:

@@ -7,11 +7,8 @@ full-screen layout, so history stays scrollable and copy-pastable.
 
 from __future__ import annotations
 
-import difflib
-import json
 import sys
 import time
-from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import IO, TYPE_CHECKING, Any
 
@@ -23,6 +20,7 @@ from rich.text import Text
 from roomkit._version import __version__
 from roomkit.channels._cli_markdown import MarkdownStreamRenderer, _format_arguments
 from roomkit.console._brand import ACCENT, MUTED, PRIMARY, PRIMARY_LIGHT, SURFACE, logo_lines
+from roomkit.console._tool_preview import tool_result_preview
 from roomkit.models.enums import ChannelCategory, EventType
 from roomkit.models.event import RoomEvent, ToolCallContent
 
@@ -239,107 +237,6 @@ def _format_duration(ms: int) -> str:
         return f"{ms / 1000:.1f}s"
     minutes, rest = divmod(ms, 60_000)
     return f"{minutes}m {rest // 1000}s"
-
-
-_PREVIEW_MAX_LINES = 5
-_PREVIEW_HARD_CAP = 200  # lines collected before slicing — bounds huge diffs
-
-
-def tool_result_preview(
-    content: ToolCallContent,
-    *,
-    max_lines: int = _PREVIEW_MAX_LINES,
-) -> list[tuple[str, str]]:
-    """Extract display lines from a tool result — what Claude Code shows.
-
-    Returns ``(kind, line)`` pairs, kind one of ``"dim"`` (plain output),
-    ``"add"``/``"del"`` (diff lines), capped at *max_lines* with a trailing
-    ``… +N lines`` marker. Understands ACP content blocks (text, ``diff``
-    with old/new text), MCP-style ``{"content": [...]}`` payloads, plain
-    strings, and falls back to compact JSON for anything else.
-
-    ACP's display-intended payload (``structured_content["acp_content"]``,
-    where file diffs live) wins over the raw result; the error text wins on
-    failure.
-    """
-    source: Any = None
-    if content.status == "failed" and content.error:
-        source = content.error
-    else:
-        if isinstance(content.structured_content, Mapping):
-            source = content.structured_content.get("acp_content")
-        if source is None:
-            source = content.result
-    collected: list[tuple[str, str]] = []
-    _collect_preview(source, collected)
-    if not collected:
-        return []
-    if len(collected) > max_lines:
-        hidden = len(collected) - max_lines
-        collected = collected[:max_lines]
-        collected.append(("dim", f"… +{hidden} lines"))
-    return collected
-
-
-def _collect_preview(value: Any, out: list[tuple[str, str]]) -> None:
-    if value is None or len(out) >= _PREVIEW_HARD_CAP:
-        return
-    if isinstance(value, str):
-        out.extend(("dim", line) for line in value.splitlines() if line.strip())
-        return
-    if isinstance(value, Mapping):
-        block_type = value.get("type")
-        if block_type == "diff":
-            _collect_diff_preview(value, out)
-            return
-        if block_type == "content":
-            _collect_preview(value.get("content"), out)
-            return
-        if block_type == "text":
-            _collect_preview(value.get("text"), out)
-            return
-        if block_type == "terminal":
-            return  # terminal blocks carry no inline output
-        for key in ("output", "text", "content"):
-            if key in value:
-                _collect_preview(value[key], out)
-                return
-        rendered = json.dumps(value, ensure_ascii=False, default=str)
-        out.append(("dim", rendered[:200]))
-        return
-    if isinstance(value, list):
-        for item in value:
-            if len(out) >= _PREVIEW_HARD_CAP:
-                return
-            _collect_preview(item, out)
-        return
-    out.append(("dim", str(value)[:200]))
-
-
-def _collect_diff_preview(block: Mapping[str, Any], out: list[tuple[str, str]]) -> None:
-    path = block.get("path")
-    if path:
-        out.append(("dim", str(path)))
-    # ACP dumps use camelCase aliases (oldText/newText); tolerate snake_case.
-    old_text = block.get("oldText", block.get("old_text")) or ""
-    new_text = block.get("newText", block.get("new_text")) or ""
-    diff = difflib.unified_diff(
-        str(old_text).splitlines(),
-        str(new_text).splitlines(),
-        lineterm="",
-        n=1,
-    )
-    for line in diff:
-        if len(out) >= _PREVIEW_HARD_CAP:
-            return
-        if line.startswith(("---", "+++", "@@")):
-            continue
-        if line.startswith("+"):
-            out.append(("add", line))
-        elif line.startswith("-"):
-            out.append(("del", line))
-        else:
-            out.append(("dim", line))
 
 
 def format_tool_line(event: RoomEvent, content: ToolCallContent) -> str | None:

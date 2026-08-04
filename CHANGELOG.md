@@ -23,9 +23,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   enqueued; the shared cursor forces the global order. Observable
   semantics preserved: `process_inbound`/`send_event` still return after
   the full delivery cascade (trigger set + every reentry pass it spawned),
-  so "the AI response is committed when the call returns" holds. Response
-  events re-enter as their own commit passes (fresh room lock) instead of
-  being drained inside the trigger's lock tenure — a concurrent inbound
+  so "the AI response is committed when the call returns" holds.
+  Post-delivery failures — including the side-effect persistence write — are
+  recorded on that cascade and reach the caller instead of being log-only;
+  cancelling or closing a lane releases even the delivery already dequeued,
+  so a waiter cannot be stranded mid-round. Response events re-enter as
+  their own commit passes (fresh room lock) instead of being drained inside
+  the trigger's lock tenure — a concurrent inbound
   MAY now commit between a trigger and its response (the RFC's explicit
   relaxation: index monotonicity and parent linkage, never adjacency).
   AFTER_BROADCAST keeps its contract (fires after the event's delivery
@@ -65,14 +69,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and participants — the lock exists so the status gate and the delivery plan
   read fresh state (RFC §10.1 steps 6 and 12) — but it now carries the history
   it was handed, and only when the room's `event_count` proves nothing
-  committed in between: the timeline is append-only (§8.1), so an unmoved
-  counter means the carried window is *exactly* what a fresh read would return.
-  An edit or a delete is itself a committed event, so it moves the counter and
-  sends the pass back to a full read. Nothing a hook or an AI channel sees
-  changes. `send_event` stops building a context under the lock for the locked
-  pass to rebuild a line later, and passes none.
+  committed in between: the committed timeline is append-only (§8.1), so an
+  unmoved counter means no event entered it. An EDIT or DELETE event is itself
+  a commit, so it moves the counter and sends the pass back to a full read.
+  Direct host calls to `update_event()` / hard `delete_event()` are the
+  documented exception: they mutate stored snapshots without moving the room
+  tally, so a concurrent call may keep the pre-lock snapshot for that pass
+  (the same snapshot boundary RFC §14.4 gives every event read). Nothing a hook
+  or an AI channel sees changes on the ordinary commit path. `send_event`
+  stops building a context under the lock for the locked pass to rebuild a
+  line later, and passes none.
+
+- **`Room.event_count` is a maintained commit tally, not an implicit recount**
+  (RMK-97, RFC §10.1 step 12). Both shipped stores now apply the specified
+  `event_count += 1` when committing instead of deriving the value from the
+  events still present. PostgreSQL therefore drops the only O(room history)
+  query left on the inbound hot path — one `COUNT(*)` and one SQL statement
+  fewer per message. The distinction matters after a hard deletion: the room
+  tally remains monotonic and may exceed the number of stored events;
+  `ConversationStore.get_event_count()` remains the exact on-demand count for
+  callers that need it. `InMemoryStore`, `PostgresStore` and the ABC default
+  now share that contract.
 
 ### Added
+
+- **Distributed ephemeral backends: Redis realtime + Redis status bus.**
+  The two surfaces that stayed process-local after the scale-out work now
+  cross process boundaries. `RedisRealtimeBackend` distributes ephemeral
+  events (typing, presence, reactions, thinking deltas, tool-call markers)
+  over Redis pub/sub — single shared reader per process, per-subscription
+  bounded queues so a slow callback never stalls the rest (same isolation
+  as `InMemoryRealtime`), and `subscribe()` only returns once the server
+  confirmed the subscription. `RedisStatusBackend` gives the multi-agent
+  `StatusBus` a shared capped history (`LPUSH`/`LTRIM`) plus cross-process
+  notifications (pub/sub) — every worker observes every agent's entries and
+  `recent()` reads the same log everywhere. Both follow the
+  `RedisDeliveryBackend` conventions (URL or injected client, lazy import,
+  `roomkit[redis]` extra) and are re-exported from `roomkit.realtime` /
+  `roomkit.orchestration`. New example `examples/realtime_redis.py`
+  (two-terminal cross-process demo). The `redis` extra floor moves to
+  `>=5.0.1` — the delivery backend already called `Redis.aclose()`, which
+  only exists from that release.
+
+- **`RoomKit.get_timeline(newest_first=True)`.** The store-level read has
+  offered it since the tool-usage hydration work; the framework method did
+  not, so the one thing a reconnecting client actually wants — the last N
+  events, ascending — was only reachable through cursor gymnastics. Default
+  stays `False` (page 1 of a log reads from the beginning).
 
 - **An ACP agent catches up on the room it was not asked about** (RMK-102, RFC
   §19.3.2). §19.3.2 was left open on purpose — build the addressing machinery,
@@ -256,14 +299,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   nothing competes for the keys. Without a shell it falls back to a numbered
   list read from stdin, so piped and CI runs still work. Options are
   `(value, label)` pairs or bare strings; the return is the chosen value, or
-  `None` on cancel. The new multi-agent ACP example uses it for `/agents`.
+  `None` on cancel. The new multi-agent ACP example uses it for `/agent`.
 
 - **`examples/acp_multi_agent.py` — Claude Code and Codex in one Room.**
   Two ACP agents, one console, addressed by mention (`@codex review
-  hello.py`): a `ConversationRouter` rule sends each message to the addressed
-  agent alone, and agent output never triggers another agent. Built
-  deliberately on the existing public API only — it is the measurement of
-  what multi-agent rooms still need, not a workaround.
+  hello.py`): `CLIChannel.run(addressed_to=...)` sends each message to the
+  selected agent alone, and the room's `ADDRESSED_ONLY` policy keeps agent
+  output from triggering the other one. An ACP session that was skipped
+  catches up from the visible room timeline before its next prompt.
 
 - **Console transcript: a quiet handle, a marked answer, and what the turn
   cost.** A turn now opens with `@claude code` (dim italic — it names the
@@ -310,8 +353,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   win, and nothing is forwarded by default. The Claude Code example forwards
   `SSH_AUTH_SOCK`.
 
-- **`CLIChannel(console=True)` — branded console mode with a pinned input
-  bar.** The classic REPL stays the default; console mode renders inline
+- **`CLIChannel(console=True)` — branded console mode with an inline input
+  zone.** The classic REPL stays the default; console mode renders inline
   (normal scrollback, no alt-screen, unlike the voice `RoomKitConsole`
   dashboard) with a startup banner — RoomKit logo, version, AI model(s)
   discovered from the room's intelligence bindings, room id, attached
@@ -321,11 +364,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   blocks, MCP-style payloads) render under the completion line, capped
   with a `… +N lines` marker; a start renders without parentheses when
   arguments are not yet known (ACP enriches titles mid-run).
-  On a real terminal the input bar stays pinned at the bottom (with a
-  status toolbar: room, model, idle/working + queued count) and the user
-  keeps typing while the agent streams; submissions queue and process
-  strictly one at a time. Under the bar the stream flushes append-only per
-  completed Markdown block (fence-aware — code blocks are never split);
+  On a real terminal the input zone opens directly below the banner, then
+  settles at the bottom as the transcript grows; its status toolbar shows the
+  room, model, idle/working state and queued count. The user keeps typing while
+  the agent streams, and submissions queue and process strictly one at a time.
+  Above the zone the stream flushes append-only per completed Markdown block
+  (fence-aware — code blocks are never split);
   non-TTY sessions (pipes, CI) fall back to the sequential loop with the
   phase-agnostic inline renderer. Subsumes `markdown=True`; requires the
   `console` extra, which now ships `prompt-toolkit>=3.0.36` alongside
@@ -387,6 +431,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `BuzzClient.verified_owner_hex` these features are built on).
 
 ### Fixed
+
+- **A coding agent that answers in raw JSON now renders as output in the
+  console, and a shell command behind an ACP `terminal` block renders at
+  all.** ACP fixes the envelope — `content` blocks and a free-form
+  `raw_output` — and leaves the payload inside it to each agent, so Claude
+  Code's text and diff blocks rendered as a transcript while Codex's
+  `{"formatted_output": …, "exit_code": N}` reached the terminal verbatim,
+  escaped newlines and all, cut mid-string at 200 characters. Three shapes,
+  each captured from a live `@agentclientprotocol/codex-acp` 1.1.9 session:
+  a file read arrived as that JSON dump; a shell command arrived with a
+  `terminal` content block — a handle on live output, carrying no text —
+  which won over the raw result and so displayed **nothing**; a failed
+  command put the same JSON in `error`, printed as one unwrapped line.
+  Preview extraction moves to `roomkit.console._tool_preview`, which reads
+  the envelope instead of printing it: payload wrappers (`formatted_output`,
+  `output`, `text`, `content`, MCP's `result`/`error`) are unwrapped down to
+  their text, an envelope that arrived as a JSON *string* is parsed, a
+  display payload that yields nothing falls back to the raw result,
+  `image`/`audio`/`resource` blocks are named rather than dumping their
+  base64, and every preview line is clipped at 200 characters. A command
+  that fails without printing anything now reports `exit code N` instead of
+  a bare `✗ tool failed`. Output that merely happens to be JSON
+  (`cat package.json`) keeps its own lines, and a payload shape nobody
+  recognises still degrades to the compact JSON it rendered before.
 
 - **An event visibility hid from a channel no longer comes back to it as
   context on the next turn** (RFC §7.5 rule 8, new in `roomkit-specs`).
@@ -488,32 +556,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   dot turns grey immediately instead of lingering "online" until the
   relay-side presence TTL lapses — the avoidable half of the staleness
   window Buzz's remote-agents spec (I3) bounds.
-
-### Added
-
-- **Distributed ephemeral backends: Redis realtime + Redis status bus.**
-  The two surfaces that stayed process-local after the scale-out work now
-  cross process boundaries. `RedisRealtimeBackend` distributes ephemeral
-  events (typing, presence, reactions, thinking deltas, tool-call markers)
-  over Redis pub/sub — single shared reader per process, per-subscription
-  bounded queues so a slow callback never stalls the rest (same isolation
-  as `InMemoryRealtime`), and `subscribe()` only returns once the server
-  confirmed the subscription. `RedisStatusBackend` gives the multi-agent
-  `StatusBus` a shared capped history (`LPUSH`/`LTRIM`) plus cross-process
-  notifications (pub/sub) — every worker observes every agent's entries and
-  `recent()` reads the same log everywhere. Both follow the
-  `RedisDeliveryBackend` conventions (URL or injected client, lazy import,
-  `roomkit[redis]` extra) and are re-exported from `roomkit.realtime` /
-  `roomkit.orchestration`. New example `examples/realtime_redis.py`
-  (two-terminal cross-process demo). The `redis` extra floor moves to
-  `>=5.0.1` — the delivery backend already called `Redis.aclose()`, which
-  only exists from that release.
-
-- **`RoomKit.get_timeline(newest_first=True)`.** The store-level read has
-  offered it since the tool-usage hydration work; the framework method did
-  not, so the one thing a reconnecting client actually wants — the last N
-  events, ascending — was only reachable through cursor gymnastics. Default
-  stays `False` (page 1 of a log reads from the beginning).
 
 ## [0.39.0] — 2026-08-02
 
