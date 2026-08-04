@@ -5,6 +5,32 @@ All notable changes to RoomKit are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **An ACP turn that dies no longer leaves its tool calls spinning forever.**
+  A turn interrupted mid-tool — the agent's process restarted, its host gone —
+  emitted a `TOOL_CALL_START` that nothing ever closed. That row is persisted,
+  so the tool card read as *running* on every reload of the conversation,
+  indefinitely.
+
+  `ACPChannel` now closes what a turn leaves open, whichever way it ends:
+  every tool started without a terminal `tool_call_update` gets a
+  `ToolCallEndMarker` with `status="failed"` and an error saying the turn ended
+  before the tool reported a result. The distinction is for whoever reads the
+  thread — a tool that never returned because the turn died is not a tool that
+  failed on its own. Cancellation takes the same path: a stop the user asks for
+  returns through the ordinary end of a prompt, and takes the open tool with it.
+  A turn whose tools all reported emits nothing extra.
+
+  The closing markers are emitted *into the stream*, before the turn's terminal
+  return or error, because the stored `TOOL_CALL_END` is persisted from the
+  marker — the channel's `finally` runs when nothing can be yielded any more.
+  A stream closed from the outside (its consumer cancelled, a muted binding) is
+  past that point: it still publishes the ephemeral `TOOL_CALL_END` for live
+  surfaces, but its stored row stays pending.
+
 ## [0.41.0] — 2026-08-04
 
 ### Added

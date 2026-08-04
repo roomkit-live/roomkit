@@ -500,6 +500,16 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
                 while True:
                     item = await turn.queue.get()
                     if isinstance(item, _TurnDone):
+                        # Whatever the turn left open closes here, in the
+                        # stream, because the stored TOOL_CALL_END is
+                        # persisted from the marker — and the finally below
+                        # runs too late to yield one. The closing markers go
+                        # through the same queue, so the terminal item is put
+                        # back to be read after them; the second pass finds
+                        # nothing open and falls through.
+                        if await self._close_open_tools(turn, room_id, stream=True):
+                            turn.queue.put_nowait(item)
+                            continue
                         if item.error is not None:
                             if isinstance(item.error, asyncio.CancelledError):
                                 return
@@ -523,6 +533,12 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
                         EphemeralEventType.THINKING_END,
                         {"thinking": "", "round": 0},
                     )
+                # A stream closed from the outside — the consumer was
+                # cancelled, a muted binding dropped it — never reaches the
+                # terminal item above. Its tools still have to stop spinning
+                # for live surfaces; the stored row is beyond reach from here,
+                # nothing can be yielded into a generator already closing.
+                await self._close_open_tools(turn, room_id, stream=False)
                 if self._turns.get(session_id) is turn:
                     self._turns.pop(session_id, None)
 

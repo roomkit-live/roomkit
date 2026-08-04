@@ -43,7 +43,8 @@ from roomkit.models.streaming import (
     ToolCallEndMarker,
     ToolCallStartMarker,
 )
-from roomkit.realtime.base import EphemeralEvent
+from roomkit.providers.ai.base import ProviderError
+from roomkit.realtime.base import EphemeralEvent, EphemeralEventType
 from roomkit.realtime.memory import InMemoryRealtime
 from roomkit.tools.external import ExternalToolHandler, ToolDecision
 from tests.conftest import make_event
@@ -1002,6 +1003,175 @@ class TestACPChannel:
 
         assert result.error is None
         assert "✓ Inspect files" in stdout.getvalue()
+        await kit.close()
+
+    async def test_a_turn_that_dies_mid_tool_closes_the_call(self, tmp_path: Any) -> None:
+        """An agent that disappears mid-tool must not leave the card spinning.
+
+        The stream is what the timeline is built from, so the closing marker
+        has to arrive there — before the error that ends the turn.
+        """
+        channel, connection, _ = _channel(tmp_path, emit_updates=False)
+
+        async def prompt_then_die(
+            session_id: str,
+            prompt: list[Any],
+            **kwargs: Any,
+        ) -> PromptResponse:
+            await connection.client.session_update(
+                session_id,
+                acp.start_tool_call(
+                    "tool-1",
+                    "Terminal",
+                    kind="execute",
+                    status="in_progress",
+                    raw_input={"command": "echo hi"},
+                ),
+            )
+            raise RuntimeError("agent process restarted")
+
+        connection.prompt = prompt_then_die  # type: ignore[method-assign]
+        output = await channel.on_event(
+            make_event(body="Run it"),
+            _binding(),
+            RoomContext(room=Room(id="room-1")),
+        )
+
+        chunks: list[Any] = []
+        with pytest.raises(ProviderError):
+            async for chunk in output.response_stream:
+                chunks.append(chunk)
+
+        assert [type(chunk) for chunk in chunks] == [ToolCallStartMarker, ToolCallEndMarker]
+        end = chunks[-1]
+        assert end.tool_id == "tool-1"
+        assert end.tool_name == "Terminal"
+        assert end.status == "failed"
+        # Why it failed matters to whoever reads the thread: a tool that never
+        # returned because the turn died is not a tool that failed on its own.
+        assert "ended before" in (end.error or "")
+        await channel.close()
+
+    async def test_a_cancelled_turn_closes_the_tool_it_left_open(self, tmp_path: Any) -> None:
+        """Stop comes back through the ordinary end of a turn, not an error.
+
+        ``cancel()`` forwards to the ACP session and the prompt returns with
+        its stop reason, so a turn stopped by the user looks like any other
+        finished one — and takes its unfinished tools with it.
+        """
+        channel, connection, _ = _channel(tmp_path, emit_updates=False)
+        realtime = InMemoryRealtime()
+        channel._realtime = realtime
+        ephemeral: list[EphemeralEvent] = []
+
+        async def capture(event: EphemeralEvent) -> None:
+            ephemeral.append(event)
+
+        await realtime.subscribe_to_room("room-1", capture)
+
+        async def prompt_then_stop(
+            session_id: str,
+            prompt: list[Any],
+            **kwargs: Any,
+        ) -> PromptResponse:
+            await connection.client.session_update(
+                session_id,
+                acp.start_tool_call(
+                    "tool-1",
+                    "Write",
+                    kind="edit",
+                    status="in_progress",
+                    raw_input={"path": "/tmp/notes.md"},
+                ),
+            )
+            return PromptResponse(stop_reason="cancelled")
+
+        connection.prompt = prompt_then_stop  # type: ignore[method-assign]
+        output = await channel.on_event(
+            make_event(body="Write it"),
+            _binding(),
+            RoomContext(room=Room(id="room-1")),
+        )
+        chunks = [chunk async for chunk in output.response_stream]
+        await asyncio.sleep(0)  # let the realtime fan-out run
+
+        ends = [chunk for chunk in chunks if isinstance(chunk, ToolCallEndMarker)]
+        assert len(ends) == 1
+        assert ends[0].tool_id == "tool-1"
+        assert ends[0].status == "failed"
+        ephemeral_ends = [
+            event
+            for event in ephemeral
+            if event.type is EphemeralEventType.TOOL_CALL_END
+            and event.data["tool_calls"][0]["id"] == "tool-1"
+        ]
+        assert len(ephemeral_ends) == 1
+        assert ephemeral_ends[0].data["tool_calls"][0]["status"] == "failed"
+        await channel.close()
+        await realtime.close()
+
+    async def test_framework_stores_the_end_of_a_tool_a_dead_turn_abandoned(
+        self,
+        tmp_path: Any,
+    ) -> None:
+        """The spinner that survives a reload is a stored row, so check the store.
+
+        A ``TOOL_CALL_START`` with no ``TOOL_CALL_END`` renders as pending
+        forever; the timeline is what a reloading page reads back.
+        """
+        kit = RoomKit()
+        source = SimpleChannel("sms")
+        channel, connection, _ = _channel(tmp_path, emit_updates=False)
+
+        async def prompt_then_die(
+            session_id: str,
+            prompt: list[Any],
+            **kwargs: Any,
+        ) -> PromptResponse:
+            await connection.client.session_update(
+                session_id,
+                acp.update_agent_message_text("Running it"),
+            )
+            await connection.client.session_update(
+                session_id,
+                acp.start_tool_call(
+                    "tool-1",
+                    "Terminal",
+                    kind="execute",
+                    status="in_progress",
+                    raw_input={"command": "echo hi"},
+                ),
+            )
+            raise RuntimeError("agent process restarted")
+
+        connection.prompt = prompt_then_die  # type: ignore[method-assign]
+        kit.register_channel(source)
+        kit.register_channel(channel)
+        await kit.create_room(room_id="room-1")
+        await kit.attach_channel("room-1", "sms")
+        await kit.attach_channel(
+            "room-1",
+            "acp-agent",
+            category=ChannelCategory.INTELLIGENCE,
+        )
+
+        await kit.process_inbound(
+            InboundMessage(
+                channel_id="sms",
+                sender_id="user",
+                content=TextContent(body="Run it"),
+            )
+        )
+        timeline = await kit.get_timeline("room-1", limit=20)
+
+        starts = [event for event in timeline if event.type == EventType.TOOL_CALL_START]
+        ends = [event for event in timeline if event.type == EventType.TOOL_CALL_END]
+        assert len(starts) == 1
+        assert len(ends) == 1
+        assert isinstance(ends[0].content, ToolCallContent)
+        assert ends[0].content.tool_id == "tool-1"
+        assert ends[0].content.status == "failed"
+        assert ends[0].index > starts[0].index
         await kit.close()
 
     async def test_register_channel_wires_external_tool_hooks(self, tmp_path: Any) -> None:

@@ -30,6 +30,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("roomkit.channels.acp")
 
+_TURN_ENDED_ERROR = "The ACP turn ended before the tool reported a result"
+
 
 class ACPEventsMixin:
     """Consume agent updates and enforce the ACP permission boundary."""
@@ -256,12 +258,52 @@ class ACPEventsMixin:
                 },
             )
 
+    async def _close_open_tools(
+        self,
+        turn: _TurnState,
+        room_id: str | None,
+        *,
+        stream: bool,
+    ) -> bool:
+        """Fail every tool the turn started and never closed.
+
+        A turn can die mid-tool — the agent process restarts, the node goes
+        away, the user presses Stop — and the agent then never sends the
+        terminal ``tool_call_update``. Without this the ``TOOL_CALL_START``
+        stands alone and its card spins forever, on every reload, because the
+        stored row says the call is still pending.
+
+        ``stream`` says whether the closing markers can still reach the
+        stream: they must, for the *stored* ``TOOL_CALL_END`` to exist at
+        all — it is persisted from the marker. Once the consumer is gone
+        (``stream=False``) only the ephemeral event can go out.
+
+        Returns whether anything was closed, so a caller can tell a turn that
+        left something open from one that ended clean. Idempotent: a tool
+        already finished is skipped by :meth:`_emit_tool_end`.
+        """
+        closed = False
+        for tool in list(turn.tools.values()):
+            if not tool.started or tool.finished:
+                continue
+            await self._emit_tool_end(
+                turn if stream else None,
+                room_id,
+                tool,
+                "failed",
+                error=_TURN_ENDED_ERROR,
+            )
+            closed = True
+        return closed
+
     async def _emit_tool_end(
         self,
         turn: _TurnState | None,
         room_id: str | None,
         tool: _ToolState,
         status: str,
+        *,
+        error: str | None = None,
     ) -> None:
         if tool.finished:
             return
@@ -272,7 +314,11 @@ class ACPEventsMixin:
         if result is None and content_dump is not None:
             result = content_dump
         marker_status = "failed" if status == "failed" else "completed"
-        error = _result_text(result) if marker_status == "failed" and result is not None else None
+        # A tool cut short has no result to explain itself with, so the caller
+        # says why instead: "never returned" and "returned an error" read the
+        # same in the timeline otherwise.
+        if error is None and marker_status == "failed" and result is not None:
+            error = _result_text(result)
         if turn is not None:
             # ACP's tool content is the display-intended payload (diffs,
             # formatted text); carry it beside the raw result so UI surfaces
@@ -299,7 +345,7 @@ class ACPEventsMixin:
                         {
                             "id": tool.tool_id,
                             "name": tool.name,
-                            "result": _result_text(result)[:500],
+                            "result": (error or _result_text(result))[:500],
                             "status": marker_status,
                         }
                     ],
