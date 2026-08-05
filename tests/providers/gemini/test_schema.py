@@ -251,3 +251,111 @@ class TestUnionCollapse:
         cleaned = clean_gemini_schema(schema)
         for prop in cleaned["properties"].values():  # type: ignore[union-attr]
             assert "type" in prop, f"Property emerged typeless: {prop}"
+
+
+class TestTypeListCollapse:
+    """JSON Schema's own spelling of optionality: ``type`` as a list.
+
+    ``{"type": ["string", "null"]}`` is what the spec says and what a
+    generator that is not Pydantic emits — a TypeScript MCP server through
+    ``zod-to-json-schema``, for one. ``type`` is a key Gemini accepts, so such
+    a list used to travel through the cleaning untouched and blow up inside
+    ``FunctionDeclaration``, whose ``type`` is a single-valued enum.
+    """
+
+    def test_optional_string_collapses_to_nullable(self) -> None:
+        schema = {
+            "type": "object",
+            "properties": {
+                "cmd": {"type": ["string", "null"], "description": "the command"},
+            },
+        }
+        cleaned = clean_gemini_schema(schema)
+        assert cleaned is not None
+        cmd = cleaned["properties"]["cmd"]
+        assert cmd["type"] == "string"
+        assert cmd["nullable"] is True
+        assert cmd["description"] == "the command"
+
+    def test_list_without_null_keeps_first_and_stays_non_nullable(self) -> None:
+        """Gemini has no union type, so a wider list keeps its first member —
+        the same call :func:`_collapse_union` makes for a wider ``anyOf``."""
+        cleaned = clean_gemini_schema({"type": ["string", "integer"]})
+        assert cleaned == {"type": "string"}
+
+    def test_wider_list_keeps_first_non_null(self) -> None:
+        cleaned = clean_gemini_schema({"type": ["null", "integer", "string"]})
+        assert cleaned == {"type": "integer", "nullable": True}
+
+    def test_all_null_list_falls_back_to_string(self) -> None:
+        """A typeless property is the failure this module exists to prevent."""
+        cleaned = clean_gemini_schema({"type": ["null"]})
+        assert cleaned == {"type": "string", "nullable": True}
+
+    def test_single_element_list_is_still_a_list(self) -> None:
+        cleaned = clean_gemini_schema({"type": ["boolean"]})
+        assert cleaned == {"type": "boolean"}
+
+    def test_scalar_type_is_left_alone(self) -> None:
+        cleaned = clean_gemini_schema({"type": "string", "description": "d"})
+        assert cleaned == {"type": "string", "description": "d"}
+
+    def test_collapse_inside_array_items(self) -> None:
+        schema = {"type": "array", "items": {"type": ["string", "null"]}}
+        cleaned = clean_gemini_schema(schema)
+        assert cleaned == {
+            "type": "array",
+            "items": {"type": "string", "nullable": True},
+        }
+
+    def test_collapse_in_nested_properties(self) -> None:
+        schema = {
+            "type": "object",
+            "properties": {
+                "outer": {
+                    "type": "object",
+                    "properties": {"inner": {"type": ["integer", "null"]}},
+                },
+            },
+        }
+        cleaned = clean_gemini_schema(schema)
+        inner = cleaned["properties"]["outer"]["properties"]["inner"]  # type: ignore[index]
+        assert inner == {"type": "integer", "nullable": True}
+
+    def test_type_list_inside_a_union_branch(self) -> None:
+        """Both spellings at once: the union collapse picks a branch, and that
+        branch's own type list still has to be folded."""
+        schema = {"anyOf": [{"type": ["string", "null"]}, {"type": "null"}]}
+        cleaned = clean_gemini_schema(schema)
+        assert cleaned == {"type": "string", "nullable": True}
+
+    def test_every_property_reaches_gemini_declarable(self) -> None:
+        """The full flow, not just the dict: the cleaned schema has to be
+        accepted by ``FunctionDeclaration`` itself, which is where a type list
+        failed — a session whose tools carry one never connects at all."""
+        from google.genai import types
+
+        schema = {
+            "type": "object",
+            "properties": {
+                "cmd": {"type": ["string", "null"], "description": "the command"},
+                "count": {"type": ["integer", "null"]},
+                "flag": {"type": "boolean"},
+                "tags": {"type": "array", "items": {"type": ["string", "null"]}},
+                "note": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+            },
+        }
+        declaration = types.FunctionDeclaration(
+            name="run",
+            description="run something",
+            parameters=clean_gemini_schema(schema),  # type: ignore[arg-type]
+        )
+        assert declaration.parameters is not None
+        assert declaration.parameters.properties is not None
+        assert set(declaration.parameters.properties) == {
+            "cmd",
+            "count",
+            "flag",
+            "tags",
+            "note",
+        }

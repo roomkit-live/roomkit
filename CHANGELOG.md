@@ -5,6 +5,25 @@ All notable changes to RoomKit are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.41.4] — 2026-08-05
+
+### Fixed
+
+- **A Gemini Live session no longer dies on a tool whose parameter is written
+  `{"type": ["string", "null"]}`.** That is JSON Schema's own spelling of an
+  optional string, and what a generator that is not Pydantic emits — a
+  TypeScript MCP server going through `zod-to-json-schema`, for one.
+  `clean_gemini_schema` already folded the Pydantic shape
+  (`anyOf: [{type: X}, {type: null}]`) down to `{type: X, nullable: true}`, but
+  `type` is a key Gemini accepts, so a type *list* travelled through the
+  cleaning untouched and failed inside `FunctionDeclaration`, whose `type` is a
+  single-valued enum. The failure is not a degraded tool: `_build_config` raises
+  while assembling the declarations, so `provider.connect` dies and the whole
+  voice session never opens — one such tool anywhere in the tenant's set takes
+  realtime voice down for that room. Both spellings now collapse the same way, a
+  wider list keeping its first non-null member exactly as a wider `anyOf` does.
+  Reported from a production Luge tenant.
+
 ## [0.41.3] — 2026-08-04
 
 ### Added
