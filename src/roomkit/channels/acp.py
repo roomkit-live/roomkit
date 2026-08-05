@@ -34,7 +34,13 @@ from roomkit.channels._acp_client import (
     _usage_report,
     _usage_tokens,
 )
-from roomkit.channels._acp_context import event_text, room_context_block
+from roomkit.channels._acp_context import (
+    ACPContextContributor,
+    compose_prompt,
+    contributed_blocks,
+    event_text,
+    room_context_block,
+)
 from roomkit.channels._acp_events import ACPEventsMixin
 from roomkit.channels.acp_transport import ACPTransport, StdioACPTransport
 from roomkit.channels.base import Channel
@@ -117,6 +123,27 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
             one with a private thread and no way to know it. ``0`` turns the
             catch-up off. Only what the agent missed is sent, and only what
             visibility would have delivered to it (RFC §7.5 rule 8).
+        context_contributor: What the host adds to a turn's prompt that the
+            agent cannot go and fetch — member memories, a document corpus, an
+            organisation's rules. Awaited once per solicited turn with the
+            room's context and the triggering event; the blocks it returns
+            open the prompt, ahead of the catch-up and the request. One that
+            raises is logged and the turn goes without it.
+
+            Turn-scoped context only. An ACP session keeps what it was already
+            told, so a block that never changes is paid for again every turn;
+            what is stable belongs to the agent's own configuration
+            (``AGENTS.md``, MCP servers) — ACP has no instruction channel and
+            this is not one, it is conversation.
+
+            Nothing here is bounded. RoomKit does not truncate the blocks — it
+            knows neither their unit nor the agent's tokenizer, and the model
+            can change mid-session — and does not bound how long the
+            contributor takes. Both budgets are the host's, and a slow
+            contributor delays the broadcast for the whole room, not just for
+            this agent. Nor can RoomKit filter what the blocks carry: the
+            catch-up is filtered per reader because it is made of room events
+            (RFC §7.5 rule 8), and these are not.
     """
 
     channel_type = ChannelType.AI
@@ -137,6 +164,7 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
         authentication_method: str | None = None,
         external_tool_handler: ExternalToolHandler | None = None,
         room_history: int = _DEFAULT_ROOM_HISTORY,
+        context_contributor: ACPContextContributor | None = None,
     ) -> None:
         super().__init__(channel_id)
         if command is not None and transport is not None:
@@ -175,6 +203,7 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
                 "the catch-up off"
             )
         self._room_history = room_history
+        self._context_contributor = context_contributor
 
         self._loaded_sdk: _SDK | None = None
         self._client = _ACPClient(self)
@@ -315,8 +344,12 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
             return ChannelOutput.empty()
 
         room_id = context.room.id if context.room is not None else event.room_id
-        # What the room said while this agent was not being asked. Built here,
-        # where the context is, and prefixed to the request it precedes.
+        # Both sections are built here, where the context is, and prefixed to
+        # the request they precede: what only the host holds, then what the
+        # room said while this agent was not being asked.
+        blocks = await contributed_blocks(
+            self._context_contributor, context, event, channel_id=self.channel_id
+        )
         catch_up = room_context_block(
             context,
             self.channel_id,
@@ -329,7 +362,7 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
             response_stream=self._prompt_stream(
                 room_id,
                 event.id,
-                f"{catch_up}\n\n{text}" if catch_up else text,
+                compose_prompt(blocks, catch_up, text),
                 event.index,
             ),
             response_metadata={"acp": {"protocol_version": _STABLE_PROTOCOL_VERSION}},

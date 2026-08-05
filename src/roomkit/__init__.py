@@ -16,6 +16,7 @@ from roomkit.channels import (
     WhatsAppChannel,
     WhatsAppPersonalChannel,
 )
+from roomkit.channels._acp_context import ACPContextContributor
 from roomkit.channels._turn_config import AIChannelTurnConfig
 from roomkit.channels.acp import ACPChannel
 from roomkit.channels.acp_transport import ACPTransport, StdioACPTransport
@@ -238,6 +239,7 @@ __all__ = [
     "WaitForIdle",
     # Channels
     "ACPChannel",
+    "ACPContextContributor",
     "ACPTransport",
     "Agent",
     "AIChannel",

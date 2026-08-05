@@ -32,6 +32,10 @@ Run with:
 Type a coding request at the prompt. ``/model`` shows the running model and
 the available ones, ``/model sonnet`` switches. Type ``quit`` (or Ctrl+D) to
 exit.
+
+The host contributes context the agent cannot fetch (``context_contributor``,
+see ``host_notes`` below). Ask ``when can we deploy this?`` and the answer
+comes back with the Tuesday rule the agent was never told by anyone else.
 """
 
 from __future__ import annotations
@@ -50,10 +54,13 @@ from shared import console_enabled, existing_directory, non_negative_int, setup_
 
 from roomkit import (
     ACPChannel,
+    Channel,
     ChannelCategory,
     CLIChannel,
     HookExecution,
     HookTrigger,
+    RoomContext,
+    RoomEvent,
     RoomKit,
 )
 from roomkit.console import terminal_input
@@ -61,6 +68,30 @@ from roomkit.tools import ExternalToolHandler, ToolDecision
 
 CLAUDE_AGENT_ACP_VERSION = "0.61.0"
 CLAUDE_AGENT_ACP_PACKAGE = f"@agentclientprotocol/claude-agent-acp@{CLAUDE_AGENT_ACP_VERSION}"
+
+HOST_NOTES = {
+    "deploy": "Deploys go out on Tuesdays only, and never after 15:00.",
+    "release": "The changelog is hand-maintained; the release script does not write it.",
+    "review": "Two approvals are required before anything lands on main.",
+}
+"""Facts this host holds and the agent has no way to fetch.
+
+A real one would query the member's saved memories or a document corpus. The
+shape is what matters: it is not on disk, not in the room, and the agent
+cannot go and look.
+"""
+
+
+async def host_notes(context: RoomContext, trigger: RoomEvent) -> list[str]:
+    """Select the notes this turn's request actually needs.
+
+    Request-dependent on purpose. The ACP session keeps whatever it was
+    already told, so a block that never changes is paid for again on every
+    turn — standing instructions belong in the workspace's ``CLAUDE.md``, not
+    here. A contributor that raised would cost its blocks, not the turn.
+    """
+    asked = Channel.extract_text(trigger).casefold()
+    return [f"[Host note] {note}" for topic, note in HOST_NOTES.items() if topic in asked]
 
 
 class TerminalPermissionHandler(ExternalToolHandler):
@@ -154,6 +185,9 @@ async def main(args: argparse.Namespace) -> None:
         # key passphrases in this terminal.
         inherit_env=["SSH_AUTH_SOCK"],
         external_tool_handler=TerminalPermissionHandler(),
+        # What only this process knows, added to the turn that needs it. The
+        # blocks open the prompt, ahead of the room catch-up and the request.
+        context_contributor=host_notes,
     )
 
     kit.register_channel(cli)

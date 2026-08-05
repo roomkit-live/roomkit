@@ -9,6 +9,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **An ACP host can contribute context to a turn's prompt.** `ACPChannel`
+  composed the prompt itself — the room catch-up, then the request — and an
+  integrator had no seam to add what only it holds: the member's saved notes, a
+  document corpus, an organisation's rules. An `AIChannel` has the
+  `MemoryProvider` for that, because it rebuilds its message list every turn;
+  an ACP session keeps its history in the agent's own process and offered
+  nothing equivalent. Working around it below the channel does not exist: at
+  transport level the catch-up is already glued to the text, and the transport
+  holds neither the `RoomContext` nor the host's identity.
+
+  `ACPChannel(..., context_contributor=host.blocks_for_turn)` is awaited once
+  per solicited turn with the room's context and the triggering event, and the
+  blocks it returns open the prompt — ahead of the catch-up, because what the
+  agent missed of the conversation belongs nearer the request than background
+  does. A contributor that raises costs its blocks and not the turn, like the
+  channel's other host-supplied callbacks.
+
+  Three things the contract says out loud. It is turn-scoped: the session
+  keeps what it was already told, so a block that never changes is paid for
+  again every turn, and what is stable belongs to the agent's own
+  configuration — ACP has no instruction channel, and this is not one. Nothing
+  is bounded: RoomKit knows neither the blocks' unit nor the agent's tokenizer,
+  the model can change mid-session, and a cut would corrupt the host's meaning,
+  so both the token budget and the deadline are the host's — with the caveat
+  that `on_event` runs inside the broadcast pipeline, where a slow contributor
+  delays delivery for the whole room. And RoomKit cannot filter what the blocks
+  carry: the catch-up is filtered per reader because it is made of room events
+  (RFC §7.5 rule 8), and these are not.
+
+  A channel constructed without one prompts exactly as before.
+
 - **A conference mint may carry attributes, so the identity stops being the
   only field that travels.** `mint_access()` put an identity and a display
   name in the credential and nothing else, while the reception side of the
