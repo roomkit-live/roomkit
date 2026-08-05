@@ -168,6 +168,8 @@ async def main(args: argparse.Namespace) -> None:
         category=ChannelCategory.INTELLIGENCE,
     )
 
+    billed_so_far = 0.0
+
     @kit.hook(HookTrigger.ON_AI_RESPONSE, execution=HookExecution.ASYNC)
     async def turn_finished(event: Any, _ctx: Any) -> None:
         """What a host learns when the agent has finished answering.
@@ -178,20 +180,34 @@ async def main(args: argparse.Namespace) -> None:
         which is what makes post-processing (summaries, memory, metrics)
         possible for a conversation an agent held.
 
-        ``usage`` carries the agent's own counters, unaltered. Reading only
-        ``input_tokens`` badly understates a coding agent: almost all of its
-        context arrives as cache reads, so ``total_tokens`` is the number that
-        matches the bill.
+        Priced from ``cost``, which ACP reports as the session's running
+        total — that one genuinely accumulates — so a turn's own price is the
+        difference from the last reading. RoomKit relays the figure without
+        differencing it, because which difference is wanted belongs to whoever
+        is counting; this is one of them.
+
+        The token counters explain the price rather than set it. A turn that
+        answers in three words still reports tens of thousands, nearly all of
+        it the agent's preamble and the project's context re-read from cache
+        at a fraction of a fresh token's price. Summing ``total_tokens`` over
+        a conversation therefore counts the same prefix once per turn and
+        means nothing in money.
         """
+        nonlocal billed_so_far
         spend = ""
         if event.usage:
-            spend = (
-                f" | {event.usage.get('input_tokens', 0)} in"
+            total = event.usage.get("cost")
+            if total is not None:
+                turn_cost = total - billed_so_far
+                billed_so_far = total
+                spend += f" · {turn_cost:.4f} {event.usage.get('currency', '')}".rstrip()
+            spend += (
+                f" · {event.usage.get('total_tokens', 0)} tokens"
+                f" ({event.usage.get('input_tokens', 0)} in"
                 f" / {event.usage.get('output_tokens', 0)} out"
-                f" / {event.usage.get('cached_read_tokens', 0)} cached"
-                f" = {event.usage.get('total_tokens', 0)} tokens"
+                f" / {event.usage.get('cached_read_tokens', 0)} cached)"
             )
-        print(f"\n[turn] {event.tool_calls_count} tool call(s) in {event.latency_ms}ms{spend}\n")
+        print(f"\n[turn] {event.tool_calls_count} tool call(s) · {event.latency_ms}ms{spend}\n")
 
     async def switch_model(requested: str) -> None:
         """Handle ``/model`` here instead of letting it reach the agent.

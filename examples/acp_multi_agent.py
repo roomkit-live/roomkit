@@ -30,10 +30,13 @@ How you name an agent is this example's business, not RoomKit's: it accepts
 ``@codex review hello.py`` and ``/agent`` for a picker, and passes channel
 ids.
 
-Each finished turn prints a ``[turn] @agent · N tool call(s) · Xms`` line. That
-is the ``ON_AI_RESPONSE`` hook, which fires for any channel of category
-``INTELLIGENCE`` — both agents own their tool loop in another process, and
-``channel_id`` is what tells a host which of the two just answered.
+Each finished turn prints a ``[turn] @agent · N tool call(s) · Xms · price``
+line. That is the ``ON_AI_RESPONSE`` hook, which fires for any channel of
+category ``INTELLIGENCE`` — both agents own their tool loop in another
+process, and ``channel_id`` is what tells a host which of the two just
+answered. The price is this turn's, obtained by differencing the session cost
+each agent reports; the token count beside it is mostly context re-read from
+cache and is not what you pay.
 
 Requires:
     pip install "roomkit[acp,console]"
@@ -241,6 +244,8 @@ async def main(args: argparse.Namespace) -> None:
     # hosts alongside this one, where chaining is exactly what they want.
     await kit.set_agent_response_policy(room_id, AgentResponsePolicy.ADDRESSED_ONLY)
 
+    billed_so_far: dict[str, float] = {}
+
     @kit.hook(HookTrigger.ON_AI_RESPONSE, execution=HookExecution.ASYNC)
     async def turn_finished(event: Any, _ctx: Any) -> None:
         """One report per finished turn, naming the agent that produced it.
@@ -250,11 +255,22 @@ async def main(args: argparse.Namespace) -> None:
         in this process — and ``channel_id`` is what tells a host which of them
         just answered, in a room where two of them take turns.
 
-        Counters are each agent's own, relayed unaltered, and two agents need
-        not report the same fields: read ``total_tokens`` where it is offered
-        rather than assuming any single key exists.
+        Each agent has its own session and so its own running cost, which is
+        why the last reading is kept per channel and not once for the room.
+        Subtracting them is the caller's job: RoomKit relays what the agent
+        reported without deciding which difference anyone wants.
+
+        Counters are each agent's own and two agents need not report the same
+        fields, so nothing here assumes a key exists.
         """
-        spend = f" · {event.usage['total_tokens']} tokens" if "total_tokens" in event.usage else ""
+        spend = ""
+        total = event.usage.get("cost")
+        if total is not None:
+            turn_cost = total - billed_so_far.get(event.channel_id, 0.0)
+            billed_so_far[event.channel_id] = total
+            spend += f" · {turn_cost:.4f} {event.usage.get('currency', '')}".rstrip()
+        if "total_tokens" in event.usage:
+            spend += f" · {event.usage['total_tokens']} tokens"
         print(
             f"\n[turn] @{event.channel_id} · {event.tool_calls_count} tool call(s)"
             f" · {event.latency_ms}ms{spend}\n"
