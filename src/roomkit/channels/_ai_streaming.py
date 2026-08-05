@@ -40,6 +40,18 @@ if TYPE_CHECKING:
 logger = logging.getLogger("roomkit.channels.ai")
 
 
+def _accumulate_usage(total: dict[str, int], round_usage: dict[str, Any]) -> None:
+    """Add one round's token counters into a turn's running totals.
+
+    Every integer counter is carried, not just input and output: cache reads
+    and writes are what tell a re-read prefix apart from fresh input, and the
+    two are billed an order of magnitude apart.
+    """
+    for counter, value in round_usage.items():
+        if isinstance(value, int):
+            total[counter] = total.get(counter, 0) + value
+
+
 class _ThinkingCoalescer:
     """Batches per-token thinking deltas into one ``THINKING_DELTA`` publish per window.
 
@@ -357,9 +369,6 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
         _round_usage: dict[str, Any] | None = None
         _total_input_tokens = 0
         _total_output_tokens = 0
-        # Every counter a round reported, summed — cache reads and writes
-        # included. They are what tells a cached prefix apart from fresh
-        # input, and the two are billed an order of magnitude apart.
         _total_usage: dict[str, int] = {}
         _span_errored = False
         _t0_stream = time.monotonic()
@@ -548,9 +557,7 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                             round_out = _round_usage.get("output_tokens", 0)
                             _total_input_tokens += round_in
                             _total_output_tokens += round_out
-                            for _key, _value in _round_usage.items():
-                                if isinstance(_value, int):
-                                    _total_usage[_key] = _total_usage.get(_key, 0) + _value
+                            _accumulate_usage(_total_usage, _round_usage)
                             telemetry.record_metric(
                                 "roomkit.llm.input_tokens",
                                 float(round_in),

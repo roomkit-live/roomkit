@@ -311,22 +311,15 @@ class ModelPricing(BaseModel):
         Returns:
             The cost of that response, in :attr:`currency`.
         """
-        cache_read = (
-            self.input_per_million
-            if self.cache_read_per_million is None
-            else self.cache_read_per_million
-        )
-        cache_write = (
-            self.input_per_million
-            if self.cache_write_per_million is None
-            else self.cache_write_per_million
-        )
         total = (
             usage.get("input_tokens", 0) * self.input_per_million
             + usage.get("output_tokens", 0) * self.output_per_million
-            + usage.get("cache_read_input_tokens", 0) * cache_read
-            + usage.get("cache_creation_input_tokens", 0) * cache_write
         )
+        for counter, rate in (
+            ("cache_read_input_tokens", self.cache_read_per_million),
+            ("cache_creation_input_tokens", self.cache_write_per_million),
+        ):
+            total += usage.get(counter, 0) * (self.input_per_million if rate is None else rate)
         return total / 1_000_000
 
 

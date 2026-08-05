@@ -103,7 +103,8 @@ def show_what_a_turn_costs() -> None:
         (OpenAIAIProvider, "gpt-5.6-sol"),
     ):
         entry = next(m for m in provider_cls.available_models() if m.id == model_id)
-        assert entry.pricing is not None
+        if entry.pricing is None:
+            continue
         cost = entry.pricing.cost_for(usage)
         print(
             f"  {model_id:<32} ${cost:.6f} {entry.pricing.currency}"
