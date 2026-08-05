@@ -118,7 +118,17 @@ class GeminiAIProvider(AIProvider):
         return self._merge_curated(live)
 
     @staticmethod
-    def _round_signature(parts: list[Any]) -> bytes | None:
+    def _part_signature(part: AIToolCallPart) -> bytes | None:
+        """Decode the thought_signature a tool call carries, if any.
+
+        Stored base64 in the part's metadata (a portable str), sent to Gemini
+        as the raw bytes it emitted.
+        """
+        sig = part.metadata.get("thought_signature")
+        return base64.b64decode(sig) if sig else None
+
+    @classmethod
+    def _round_signature(cls, parts: list[Any]) -> bytes | None:
         """Decode the first thought_signature carried by a round's tool calls.
 
         ``None`` when no call in the round carries one — nothing to borrow,
@@ -126,9 +136,9 @@ class GeminiAIProvider(AIProvider):
         """
         for p in parts:
             if isinstance(p, AIToolCallPart):
-                sig = p.metadata.get("thought_signature")
-                if sig:
-                    return base64.b64decode(sig)
+                sig = cls._part_signature(p)
+                if sig is not None:
+                    return sig
         return None
 
     def _format_messages(self, messages: list[AIMessage]) -> list[Any]:
@@ -156,8 +166,8 @@ class GeminiAIProvider(AIProvider):
                     if isinstance(p, AITextPart):
                         parts.append(self._types.Part.from_text(text=p.text))
                     elif isinstance(p, AIToolCallPart):
-                        own_sig = p.metadata.get("thought_signature")
-                        sig = base64.b64decode(own_sig) if own_sig else round_sig
+                        own_sig = self._part_signature(p)
+                        sig = own_sig if own_sig is not None else round_sig
                         if sig is not None:
                             # No ``thought=True`` here — a signed functionCall
                             # part is NOT a thought part, and flagging it as

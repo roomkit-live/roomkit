@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -211,8 +212,6 @@ class TestGeminiAIProvider:
         The provider routes data URIs through ``from_bytes`` with the
         decoded payload.
         """
-        import base64
-
         mock_genai = _mock_genai_module()
         with patch.dict("sys.modules", _genai_modules(mock_genai)):
             from roomkit.providers.gemini.ai import GeminiAIProvider
@@ -282,8 +281,6 @@ class TestGeminiAIProvider:
     async def test_tool_result_image_appended_as_user_content(self) -> None:
         """An image tool result keeps the function response text-only and puts
         the decoded image on a following user Content (inline bytes)."""
-        import base64
-
         mock_genai = _mock_genai_module()
         with patch.dict("sys.modules", _genai_modules(mock_genai)):
             from roomkit.providers.ai.base import AIToolResultPart
@@ -516,8 +513,6 @@ class TestGeminiAIProvider:
         # thought_signature, a later one re-emits it without. The provider must
         # collapse them into ONE tool call that retains the signature — else
         # Gemini 3 rejects the next turn with HTTP 400 "missing thought_signature".
-        import base64
-
         mock_genai = _mock_genai_module()
         with patch.dict("sys.modules", _genai_modules(mock_genai)):
             from roomkit.providers.gemini.ai import GeminiAIProvider
@@ -558,8 +553,6 @@ class TestGeminiAIProvider:
         # validator then demands a signature on EVERY history functionCall.
         # The borrowed signature must reach a call that comes BEFORE the signed
         # one — the round is scanned up front, not carried forward.
-        import base64
-
         mock_genai = _mock_genai_module()
         with patch.dict("sys.modules", _genai_modules(mock_genai)):
             from roomkit.providers.ai.base import AIToolCallPart
@@ -594,8 +587,6 @@ class TestGeminiAIProvider:
     async def test_each_signed_call_keeps_its_own_signature(self) -> None:
         # Borrowing is a fallback, not a rewrite: a call that carries its own
         # signature replays with that one, not the round's first.
-        import base64
-
         mock_genai = _mock_genai_module()
         with patch.dict("sys.modules", _genai_modules(mock_genai)):
             from roomkit.providers.ai.base import AIToolCallPart
