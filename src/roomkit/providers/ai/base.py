@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import time as _time
 from abc import ABC, abstractmethod
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Mapping
+from datetime import date
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
@@ -254,6 +255,81 @@ class StreamDone(BaseModel):
 StreamEvent = StreamThinkingDelta | StreamTextDelta | StreamToolCall | StreamDone
 
 
+class ModelPricing(BaseModel):
+    """List price of one model, per million tokens, as its vendor published it.
+
+    Rates mirror the keys roomkit itself reports in ``usage``
+    (:attr:`AIResponse.usage`) — input, output, cache reads, cache writes —
+    so a consumer can price a response without inventing a mapping. What is
+    *not* here is deliberate: per-client negotiated rates, discounts and
+    currency conversion belong to whoever bills, not to a shared catalog.
+
+    A rate is volatile in a way a model id is not, hence :attr:`verified`:
+    the entry states what the vendor published on that date, and a consumer
+    can decide for itself when that is too old to trust.
+
+    Attributes:
+        input_per_million: Price of a million uncached input tokens.
+        output_per_million: Price of a million output tokens.
+        cache_read_per_million: Price of a million tokens re-read from the
+            prompt cache. ``None`` when the vendor bills reads at the input
+            rate or publishes no separate figure.
+        cache_write_per_million: Price of a million tokens written to the
+            prompt cache — Anthropic's 5-minute write premium (1.25x input),
+            which is the TTL roomkit's ``ephemeral`` markers request. ``None``
+            where a write is not billed per token: OpenAI does not charge for
+            writes, and Google bills cache *storage* by the hour, a different
+            unit that this field would misstate.
+        currency: ISO 4217 code the rates are quoted in. Every vendor roomkit
+            ships a catalog for publishes in USD.
+        verified: Date the rates were read from the vendor's own price list.
+    """
+
+    input_per_million: float
+    output_per_million: float
+    cache_read_per_million: float | None = None
+    cache_write_per_million: float | None = None
+    currency: str = "USD"
+    verified: date
+
+    def cost_for(self, usage: Mapping[str, int]) -> float:
+        """Price a single response's ``usage`` dict, in :attr:`currency`.
+
+        Reads the keys roomkit's providers report — ``input_tokens``,
+        ``output_tokens``, ``cache_read_input_tokens``,
+        ``cache_creation_input_tokens`` — and ignores anything else, so a
+        provider reporting extra counters neither breaks nor inflates the
+        total. Missing keys count as zero.
+
+        Cache counters fall back to the input rate when the model carries no
+        dedicated one: an unknown cache rate should overstate the bill rather
+        than hide it from a budget check.
+
+        Args:
+            usage: A response's token counters, as reported by the provider.
+
+        Returns:
+            The cost of that response, in :attr:`currency`.
+        """
+        cache_read = (
+            self.input_per_million
+            if self.cache_read_per_million is None
+            else self.cache_read_per_million
+        )
+        cache_write = (
+            self.input_per_million
+            if self.cache_write_per_million is None
+            else self.cache_write_per_million
+        )
+        total = (
+            usage.get("input_tokens", 0) * self.input_per_million
+            + usage.get("output_tokens", 0) * self.output_per_million
+            + usage.get("cache_read_input_tokens", 0) * cache_read
+            + usage.get("cache_creation_input_tokens", 0) * cache_write
+        )
+        return total / 1_000_000
+
+
 class ModelInfo(BaseModel):
     """Metadata describing a single model offered by an AI provider.
 
@@ -273,6 +349,12 @@ class ModelInfo(BaseModel):
             ``"completion"``, ``"embedding"``, ``"vision"``, ``"tools"``).
             Empty when the source does not report them — consumers treat
             empty as "unknown, allow everywhere" rather than "none".
+        pricing: Vendor list price for this model, if published. It lives
+            here, beside the id, because a lineup and its price list turn
+            over together: kept apart, adding a model leaves its price
+            behind and the consumer bills nothing. ``None`` where no
+            per-token list price exists — locally pulled open weights, a
+            private edge, a retired id the vendor stopped quoting.
     """
 
     id: str
@@ -281,6 +363,7 @@ class ModelInfo(BaseModel):
     supports_vision: bool | None = None
     deprecated: bool = False
     capabilities: list[str] = Field(default_factory=list)
+    pricing: ModelPricing | None = None
 
 
 class AIProvider(ABC):
@@ -344,7 +427,8 @@ class AIProvider(ABC):
 
         A live models endpoint typically returns ids with little metadata.
         For each live model that also appears in :meth:`available_models`,
-        fill any missing ``display_name``/``context_window``/``supports_vision``
+        fill any missing
+        ``display_name``/``context_window``/``supports_vision``/``pricing``
         from the curated entry, keeping whatever the API did report.
         """
         curated = {m.id: m for m in cls.available_models()}
@@ -364,6 +448,7 @@ class AIProvider(ABC):
                             if model.supports_vision is not None
                             else match.supports_vision
                         ),
+                        "pricing": model.pricing or match.pricing,
                     }
                 )
             )

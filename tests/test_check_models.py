@@ -12,13 +12,14 @@ import importlib.util
 import json
 import sys
 import urllib.error
+from datetime import date
 from pathlib import Path
 from types import ModuleType
 from typing import Any
 
 import pytest
 
-from roomkit.providers.ai.base import ModelInfo
+from roomkit.providers.ai.base import ModelInfo, ModelPricing
 
 _SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "check_models.py"
 
@@ -38,15 +39,30 @@ def _load_script() -> ModuleType:
 check_models = _load_script()
 
 
-def _upstream(model_id: str, *, context: int = 200_000, created: int = 1_000) -> dict[str, Any]:
+def _upstream(
+    model_id: str,
+    *,
+    context: int = 200_000,
+    created: int = 1_000,
+    pricing: dict[str, str] | None = None,
+) -> dict[str, Any]:
     """One upstream record, shaped like OpenRouter's ``/api/v1/models`` items."""
-    return {
+    record: dict[str, Any] = {
         "id": model_id,
         "name": model_id,
         "created": created,
         "context_length": context,
         "architecture": {"input_modalities": ["text"], "output_modalities": ["text"]},
     }
+    if pricing is not None:
+        record["pricing"] = pricing
+    return record
+
+
+def _priced(**rates: float) -> ModelPricing:
+    """Short-hand: ``_priced(input=3.0)`` builds ``input_per_million=3.0``."""
+    fields: dict[str, Any] = {f"{name}_per_million": value for name, value in rates.items()}
+    return ModelPricing(verified=date(2026, 8, 5), **fields)
 
 
 def _catalog(monkeypatch: pytest.MonkeyPatch, *models: ModelInfo) -> str:
@@ -174,6 +190,90 @@ def test_gone_stays_quiet_for_deprecated_ids_and_aliases(
     assert not _check(name, [_upstream("vendor/acme-9")]).gone
 
 
+# --- prices --------------------------------------------------------------------
+
+
+def test_price_reports_a_disagreeing_rate(monkeypatch: pytest.MonkeyPatch) -> None:
+    name = _catalog(
+        monkeypatch,
+        ModelInfo(id="acme-1", context_window=200_000, pricing=_priced(input=3.0, output=15.0)),
+    )
+    found = _check(
+        name,
+        [_upstream("vendor/acme-1", pricing={"prompt": "0.000003", "completion": "0.00001"})],
+    )
+    assert found.price and "output" in found.price[0]
+    # A wrong rate bills the wrong amount: it blocks a release, like drift.
+    assert found.errors
+
+
+def test_matching_rates_are_not_a_finding(monkeypatch: pytest.MonkeyPatch) -> None:
+    name = _catalog(
+        monkeypatch,
+        ModelInfo(
+            id="acme-1",
+            context_window=200_000,
+            pricing=_priced(input=3.0, output=15.0, cache_read=0.3),
+        ),
+    )
+    found = _check(
+        name,
+        [
+            _upstream(
+                "vendor/acme-1",
+                pricing={
+                    "prompt": "0.000003",
+                    "completion": "0.000015",
+                    "input_cache_read": "0.0000003",
+                },
+            )
+        ],
+    )
+    assert not found.errors
+
+
+def test_a_rate_the_catalog_leaves_unset_is_not_compared(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Google bills cache by storage-hour; the mirror flattens that into a
+    # per-token figure. Leaving the field unset states that, and is not drift.
+    name = _catalog(
+        monkeypatch,
+        ModelInfo(id="acme-1", context_window=200_000, pricing=_priced(input=1.5, output=7.5)),
+    )
+    found = _check(
+        name,
+        [
+            _upstream(
+                "vendor/acme-1",
+                pricing={
+                    "prompt": "0.0000015",
+                    "completion": "0.0000075",
+                    "input_cache_write": "0.0000000833",
+                },
+            )
+        ],
+    )
+    assert not found.errors
+
+
+def test_a_rate_upstream_does_not_quote_is_not_compared(monkeypatch: pytest.MonkeyPatch) -> None:
+    name = _catalog(
+        monkeypatch,
+        ModelInfo(id="acme-1", context_window=200_000, pricing=_priced(input=1.5, output=7.5)),
+    )
+    found = _check(name, [_upstream("vendor/acme-1", pricing={"prompt": "0.0000015"})])
+    assert not found.errors
+
+
+def test_an_unpriced_catalog_entry_is_not_a_price_finding(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Completeness is the test suite's job (test_ai_models.py); this script
+    # only judges the rates a catalog does state.
+    name = _catalog(monkeypatch, ModelInfo(id="acme-1", context_window=200_000))
+    found = _check(name, [_upstream("vendor/acme-1", pricing={"prompt": "0.000003"})])
+    assert not found.price
+
+
 # --- deliberate divergences ----------------------------------------------------
 
 
@@ -200,10 +300,54 @@ def test_mirror_only_slug_suppresses_missing_and_is_counted(
     assert found.expected == 1
 
 
+def test_price_deliberate_suppresses_a_rate_finding_and_is_counted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setitem(check_models.PRICE_DELIBERATE, "acme-1", "mirror quotes the batch rate")
+    name = _catalog(
+        monkeypatch,
+        ModelInfo(id="acme-1", context_window=200_000, pricing=_priced(input=2.0, output=12.0)),
+    )
+    found = _check(
+        name,
+        [_upstream("vendor/acme-1", pricing={"prompt": "0.000001", "completion": "0.000006"})],
+    )
+    assert not found.errors
+    assert found.expected == 1
+
+
+def test_a_deliberate_window_still_has_its_price_checked(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The two diverge for unrelated reasons — suppressing the window must not
+    # silence a wrong rate.
+    monkeypatch.setitem(check_models.DELIBERATE, "acme-1", "roomkit sends no beta header")
+    name = _catalog(
+        monkeypatch,
+        ModelInfo(id="acme-1", context_window=128_000, pricing=_priced(input=3.0, output=15.0)),
+    )
+    found = _check(
+        name,
+        [
+            _upstream(
+                "vendor/acme-1",
+                context=1_000_000,
+                pricing={"prompt": "0.000003", "completion": "0.00003"},
+            )
+        ],
+    )
+    assert not found.drift
+    assert found.price and "output" in found.price[0]
+
+
 def test_every_recorded_divergence_carries_a_reason() -> None:
     # An exception without a reason is indistinguishable from silencing an
     # inconvenient finding, so the reason is the price of the entry.
-    for reason in (*check_models.DELIBERATE.values(), *check_models.MIRROR_ONLY.values()):
+    for reason in (
+        *check_models.DELIBERATE.values(),
+        *check_models.MIRROR_ONLY.values(),
+        *check_models.PRICE_DELIBERATE.values(),
+    ):
         assert reason.strip()
 
 

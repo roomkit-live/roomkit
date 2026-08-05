@@ -14,6 +14,12 @@ questions:
   than a release cycle, so treat this as offline metadata, never as the
   authoritative list of what a provider offers.
 
+Each entry also carries the vendor's list price (``ModelInfo.pricing``), so
+pricing a turn needs no second table: ``pricing.cost_for(response.usage)``
+answers directly. Keeping the rates beside the ids is what stops the two
+drifting — a rate sheet maintained elsewhere silently bills a newly added
+model at zero.
+
 Run with:
     uv run python examples/list_models.py
 
@@ -26,7 +32,7 @@ from __future__ import annotations
 import asyncio
 import os
 
-from roomkit.providers.ai.base import ModelInfo
+from roomkit.providers.ai.base import ModelInfo, ModelPricing
 from roomkit.providers.anthropic.ai import AnthropicAIProvider
 from roomkit.providers.gemini.ai import GeminiAIProvider
 from roomkit.providers.mistral.ai import MistralAIProvider
@@ -50,7 +56,22 @@ def _format(model: ModelInfo) -> str:
     ctx = f"{model.context_window:,}" if model.context_window else "?"
     vision = "👁 " if model.supports_vision else "   "
     flag = " (deprecated)" if model.deprecated else ""
-    return f"  {vision}{model.id:<32} ctx={ctx:<12}{flag}"
+    return f"  {vision}{model.id:<32} ctx={ctx:<12}{_format_price(model.pricing):<26}{flag}"
+
+
+def _format_price(pricing: ModelPricing | None) -> str:
+    """One model's rates, or why there are none.
+
+    Ollama serves weights pulled onto your own hardware and PolarGrid runs on
+    private edges: neither publishes a per-token price, so those catalogs say
+    so rather than claiming zero.
+    """
+    if pricing is None:
+        return "no published rate"
+    rates = f"${pricing.input_per_million:g}/${pricing.output_per_million:g} per M"
+    if pricing.cache_read_per_million is not None:
+        rates += f" (cached in ${pricing.cache_read_per_million:g})"
+    return rates
 
 
 def show_curated_catalogs() -> None:
@@ -60,6 +81,34 @@ def show_curated_catalogs() -> None:
         print(f"\n{label} — {len(models)} curated models")
         for model in models:
             print(_format(model))
+
+
+def show_what_a_turn_costs() -> None:
+    """Price a real turn's usage from the catalog — no key, no network.
+
+    The counters are the ones a provider reports in ``AIResponse.usage``, and
+    the cached prefix is deliberately separate from fresh input: at Anthropic's
+    rates it is a tenth the price, so folding the two together overstates the
+    bill by an order of magnitude on a long conversation.
+    """
+    usage = {
+        "input_tokens": 12_693,
+        "output_tokens": 20,
+        "cache_read_input_tokens": 48_000,
+    }
+    print(f"\nWhat one turn costs — usage {usage}")
+    for provider_cls, model_id in (
+        (GeminiAIProvider, "gemini-3.6-flash"),
+        (AnthropicAIProvider, "claude-opus-5"),
+        (OpenAIAIProvider, "gpt-5.6-sol"),
+    ):
+        entry = next(m for m in provider_cls.available_models() if m.id == model_id)
+        assert entry.pricing is not None
+        cost = entry.pricing.cost_for(usage)
+        print(
+            f"  {model_id:<32} ${cost:.6f} {entry.pricing.currency}"
+            f"   (rates verified {entry.pricing.verified})"
+        )
 
 
 async def show_live_openai() -> None:
@@ -102,6 +151,7 @@ async def show_live_openrouter() -> None:
 
 async def main() -> None:
     show_curated_catalogs()
+    show_what_a_turn_costs()
     await show_live_openai()
     await show_live_openrouter()
 

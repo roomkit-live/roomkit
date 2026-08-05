@@ -28,11 +28,20 @@ accepts them: ``grok-4.5-latest``/``grok-build-latest`` → ``grok-4.5``;
 ``grok-4.3-latest``/``grok-latest`` → ``grok-4.3``;
 ``grok-4.20``/``grok-4.20-reasoning-latest`` → ``grok-4.20-0309-reasoning``;
 ``grok-code-fast``/``grok-code-fast-1`` → ``grok-build-0.1``.
+
+Prices come from the same model docs, read 2026-08-05, and are the rate below
+xAI's 200k-token prompt threshold; past it every rate doubles, which a single
+per-model figure cannot express. ``cache_write`` is unset: xAI publishes a
+cached-input rate but bills nothing for populating the cache.
 """
 
 from __future__ import annotations
 
-from roomkit.providers.ai.base import ModelInfo
+from datetime import date
+
+from roomkit.providers.ai.base import ModelInfo, ModelPricing
+
+_VERIFIED = date(2026, 8, 5)
 
 MODELS: list[ModelInfo] = [
     ModelInfo(
@@ -41,6 +50,12 @@ MODELS: list[ModelInfo] = [
         context_window=500_000,
         supports_vision=True,
         capabilities=["tools", "thinking"],
+        pricing=ModelPricing(
+            input_per_million=2.0,
+            output_per_million=6.0,
+            cache_read_per_million=0.3,
+            verified=_VERIFIED,
+        ),
     ),
     ModelInfo(
         id="grok-4.3",
@@ -48,6 +63,12 @@ MODELS: list[ModelInfo] = [
         context_window=1_000_000,
         supports_vision=True,
         capabilities=["tools", "thinking"],
+        pricing=ModelPricing(
+            input_per_million=1.25,
+            output_per_million=2.5,
+            cache_read_per_million=0.2,
+            verified=_VERIFIED,
+        ),
     ),
     ModelInfo(
         id="grok-4.20-0309-reasoning",
@@ -55,6 +76,12 @@ MODELS: list[ModelInfo] = [
         context_window=1_000_000,
         supports_vision=True,
         capabilities=["tools", "thinking"],
+        pricing=ModelPricing(
+            input_per_million=1.25,
+            output_per_million=2.5,
+            cache_read_per_million=0.2,
+            verified=_VERIFIED,
+        ),
     ),
     ModelInfo(
         id="grok-4.20-0309-non-reasoning",
@@ -62,6 +89,12 @@ MODELS: list[ModelInfo] = [
         context_window=1_000_000,
         supports_vision=True,
         capabilities=["tools"],
+        pricing=ModelPricing(
+            input_per_million=1.25,
+            output_per_million=2.5,
+            cache_read_per_million=0.2,
+            verified=_VERIFIED,
+        ),
     ),
     # Effort on this one sizes the agent swarm rather than the reasoning depth,
     # and it additionally accepts ``"xhigh"``.
@@ -71,6 +104,12 @@ MODELS: list[ModelInfo] = [
         context_window=1_000_000,
         supports_vision=True,
         capabilities=["tools", "thinking"],
+        pricing=ModelPricing(
+            input_per_million=1.25,
+            output_per_million=2.5,
+            cache_read_per_million=0.2,
+            verified=_VERIFIED,
+        ),
     ),
     ModelInfo(
         id="grok-build-0.1",
@@ -78,5 +117,11 @@ MODELS: list[ModelInfo] = [
         context_window=256_000,
         supports_vision=True,
         capabilities=["tools", "thinking"],
+        pricing=ModelPricing(
+            input_per_million=1.0,
+            output_per_million=2.0,
+            cache_read_per_million=0.2,
+            verified=_VERIFIED,
+        ),
     ),
 ]

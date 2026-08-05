@@ -21,11 +21,20 @@ Reported:
   DRIFT    a catalog id whose context window disagrees with upstream — an
            actively wrong number, the one failure that silently mistrims
            conversation history.
+  PRICE    a rate the catalog states and upstream quotes differently — the
+           failure that bills the wrong amount. Only rates the catalog
+           actually states are compared: an unset one says "not billed per
+           token here", which is a claim about the vendor, not a number.
   MISSING  an upstream model newer than everything the catalog knows, in a
            family the catalog already tracks — i.e. the vendor moved on.
   GONE     a non-deprecated catalog id upstream no longer lists — a candidate
            retirement, reported as a warning because a mirror lagging is at
            least as likely as a real removal.
+
+Whether every model *has* a price is not checked here: that one needs neither
+network nor release, so it lives in the test suite
+(``tests/test_providers/test_ai_models.py``) and fails on the commit that adds
+an unpriced model.
 
 Exit codes: 0 clean, 1 findings, 2 upstream unreachable (network, not drift —
 callers should warn and continue rather than block on someone else's outage).
@@ -35,6 +44,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import re
 import sys
 import urllib.error
@@ -42,6 +52,8 @@ import urllib.request
 from dataclasses import dataclass, field
 from importlib import import_module
 from typing import Any
+
+from roomkit.providers.ai.base import ModelInfo
 
 UPSTREAM_URL = "https://openrouter.ai/api/v1/models"
 
@@ -92,6 +104,25 @@ DELIBERATE: dict[str, str] = {
     "grok-4.20-multi-agent-0309": "mirror carries the undated alias instead",
 }
 
+# Catalog ids whose *rates* deliberately differ from the mirror's, same rule as
+# DELIBERATE: an entry is a claim that someone read the vendor's own price list.
+PRICE_DELIBERATE: dict[str, str] = {
+    # The mirror resells these two at exactly OpenAI's Batch column ($1/$6 and
+    # $0.10/$0.60). roomkit calls the synchronous API, so the catalog carries
+    # the standard rate from OpenAI's pricing page (2026-08-05).
+    "gpt-5.6-terra": "mirror quotes the Batch rate; roomkit bills the standard one",
+    "gpt-5.6-luna": "mirror quotes the Batch rate; roomkit bills the standard one",
+}
+
+# (ModelPricing attribute, upstream pricing key, label) — upstream quotes USD
+# per token, the catalog quotes USD per million.
+_PRICE_FIELDS = (
+    ("input_per_million", "prompt", "input"),
+    ("output_per_million", "completion", "output"),
+    ("cache_read_per_million", "input_cache_read", "cache read"),
+    ("cache_write_per_million", "input_cache_write", "cache write"),
+)
+
 # A dateless alias (`mistral-large-latest`) or a dated snapshot
 # (`claude-haiku-4-5-20251001`) is a form the vendor accepts but a mirror does
 # not republish, so absence upstream says nothing about it.
@@ -103,15 +134,17 @@ class Findings:
     """Everything one catalog turned up, split by severity."""
 
     drift: list[str] = field(default_factory=list)
+    price: list[str] = field(default_factory=list)
     missing: list[str] = field(default_factory=list)
     gone: list[str] = field(default_factory=list)
     expected: int = 0
-    """Divergences suppressed by ``DELIBERATE`` / ``MIRROR_ONLY``. Counted so a
-    growing pile of exceptions stays visible instead of hiding in the source."""
+    """Divergences suppressed by ``DELIBERATE`` / ``MIRROR_ONLY`` /
+    ``PRICE_DELIBERATE``. Counted so a growing pile of exceptions stays visible
+    instead of hiding in the source."""
 
     @property
     def errors(self) -> list[str]:
-        return self.drift + self.missing
+        return self.drift + self.price + self.missing
 
 
 def normalize(model_id: str) -> str:
@@ -136,6 +169,31 @@ def family(model_id: str) -> str:
     ``gemini-*``, and only one of those belongs here.
     """
     return re.split(r"[-.]", model_id, maxsplit=1)[0]
+
+
+def price_findings(label: str, model: ModelInfo, upstream: dict[str, Any]) -> list[str]:
+    """Compare the rates a catalog entry states against upstream's quote.
+
+    Only stated rates are compared. A ``None`` in the catalog means "this
+    vendor does not bill that per token" — OpenAI charges nothing to write a
+    cache, Google bills its cache by storage-hour — and upstream flattening
+    those into a per-token figure is not a disagreement about a number.
+    """
+    if model.pricing is None:
+        return []
+    quoted = upstream.get("pricing") or {}
+    findings: list[str] = []
+    for attribute, key, name in _PRICE_FIELDS:
+        ours = getattr(model.pricing, attribute)
+        theirs = quoted.get(key)
+        if ours is None or theirs in (None, ""):
+            continue
+        upstream_rate = float(theirs) * 1_000_000
+        if not math.isclose(ours, upstream_rate, rel_tol=1e-6):
+            findings.append(
+                f"{label}: {model.id} {name} ${ours:g}/M but upstream quotes ${upstream_rate:g}/M"
+            )
+    return findings
 
 
 def fetch_upstream(url: str = UPSTREAM_URL, timeout: float = 30.0) -> list[dict[str, Any]]:
@@ -191,12 +249,18 @@ def check_catalog(
         window = match.get("context_length")
         if model.id in DELIBERATE:
             found.expected += 1
-            continue
-        if model.context_window is not None and window and model.context_window != window:
+        elif model.context_window is not None and window and model.context_window != window:
             found.drift.append(
                 f"{label}: {model.id} context_window={model.context_window:,} "
                 f"but upstream reports {window:,}"
             )
+        # Rates are checked even where the window is a known divergence: the
+        # two disagree for unrelated reasons, and a suppressed window should
+        # not silence a wrong price.
+        if model.id in PRICE_DELIBERATE:
+            found.expected += 1
+        else:
+            found.price.extend(price_findings(label, model, match))
 
     if not (track_new and newest_known):
         return found

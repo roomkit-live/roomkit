@@ -9,6 +9,7 @@ offline while still covering the response→ModelInfo mapping and curated merge.
 
 from __future__ import annotations
 
+from datetime import date
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock
@@ -16,7 +17,7 @@ from unittest.mock import AsyncMock
 import pytest
 from pydantic import SecretStr
 
-from roomkit.providers.ai import ModelInfo
+from roomkit.providers.ai import ModelInfo, ModelPricing
 from roomkit.providers.ai.base import AIContext, AIProvider, AIResponse
 from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.providers.anthropic.ai import AnthropicAIProvider
@@ -30,6 +31,8 @@ from roomkit.providers.ollama.ai import OllamaAIProvider
 from roomkit.providers.ollama.config import OllamaConfig
 from roomkit.providers.openai.ai import OpenAIAIProvider
 from roomkit.providers.openai.config import OpenAIConfig
+from roomkit.providers.openrouter.ai import OpenRouterAIProvider
+from roomkit.providers.xai.ai import XAIAIProvider
 
 # (provider class, config class) for the providers that ship a curated catalog.
 CURATED = [
@@ -38,6 +41,19 @@ CURATED = [
     (GeminiAIProvider, GeminiConfig),
     (MistralAIProvider, MistralConfig),
     (OllamaAIProvider, OllamaConfig),
+]
+
+# Providers whose vendor publishes a per-token list price, so every model in
+# the catalog must carry one. Ollama (open weights pulled onto your own
+# hardware) and PolarGrid (private edges) publish none — demanding a price
+# there would mean inventing it.
+PRICED = [
+    AnthropicAIProvider,
+    OpenAIAIProvider,
+    GeminiAIProvider,
+    MistralAIProvider,
+    XAIAIProvider,
+    OpenRouterAIProvider,
 ]
 
 
@@ -56,6 +72,84 @@ def test_modelinfo_defaults() -> None:
     assert m.context_window is None
     assert m.supports_vision is None
     assert m.deprecated is False
+    assert m.pricing is None
+
+
+# --- ModelPricing --------------------------------------------------------------
+
+
+def test_pricing_defaults_to_usd_without_cache_rates() -> None:
+    p = ModelPricing(input_per_million=3.0, output_per_million=15.0, verified=date(2026, 8, 5))
+    assert p.currency == "USD"
+    assert p.cache_read_per_million is None
+    assert p.cache_write_per_million is None
+
+
+def test_cost_for_prices_input_and_output() -> None:
+    p = ModelPricing(input_per_million=1.5, output_per_million=7.5, verified=date(2026, 8, 5))
+    # The conversation that opened RMK-116: 12,693 in / 20 out on a Gemini Flash.
+    cost = p.cost_for({"input_tokens": 12_693, "output_tokens": 20})
+    assert cost == pytest.approx(12_693 * 1.5e-6 + 20 * 7.5e-6)
+
+
+def test_cost_for_uses_the_cache_rates_when_the_model_has_them() -> None:
+    p = ModelPricing(
+        input_per_million=5.0,
+        output_per_million=25.0,
+        cache_read_per_million=0.5,
+        cache_write_per_million=6.25,
+        verified=date(2026, 8, 5),
+    )
+    cost = p.cost_for(
+        {
+            "input_tokens": 1_000,
+            "output_tokens": 100,
+            "cache_read_input_tokens": 100_000,
+            "cache_creation_input_tokens": 10_000,
+        }
+    )
+    # The cached prefix costs a tenth of the input rate — the whole point of
+    # carrying a cache rate rather than billing every token at the input price.
+    assert cost == pytest.approx(0.005 + 0.0025 + 0.05 + 0.0625)
+
+
+def test_cost_for_falls_back_to_the_input_rate_for_an_unpriced_cache() -> None:
+    p = ModelPricing(input_per_million=2.0, output_per_million=6.0, verified=date(2026, 8, 5))
+    # Overstating beats hiding the tokens from a budget check.
+    assert p.cost_for({"cache_read_input_tokens": 1_000_000}) == pytest.approx(2.0)
+
+
+def test_cost_for_ignores_unknown_counters_and_missing_keys() -> None:
+    p = ModelPricing(input_per_million=1.0, output_per_million=1.0, verified=date(2026, 8, 5))
+    assert p.cost_for({}) == 0.0
+    assert p.cost_for({"reasoning_tokens": 5_000, "input_tokens": 1_000}) == pytest.approx(0.001)
+
+
+def test_merge_curated_backfills_pricing() -> None:
+    class _Cat(AIProvider):
+        @property
+        def model_name(self) -> str:
+            return "c"
+
+        async def generate(self, context: AIContext) -> AIResponse:
+            return AIResponse(content="")
+
+        @classmethod
+        def available_models(cls) -> list[ModelInfo]:
+            return [
+                ModelInfo(
+                    id="a",
+                    pricing=ModelPricing(
+                        input_per_million=1.0, output_per_million=2.0, verified=date(2026, 8, 5)
+                    ),
+                )
+            ]
+
+    merged = {m.id: m for m in _Cat._merge_curated([ModelInfo(id="a"), ModelInfo(id="b")])}
+    # A live endpoint reports ids, rarely rates: the curated price survives.
+    assert merged["a"].pricing is not None
+    assert merged["a"].pricing.input_per_million == 1.0
+    assert merged["b"].pricing is None
 
 
 def test_base_available_models_is_empty() -> None:
@@ -157,6 +251,41 @@ def test_default_config_model_is_in_catalog(
     default = config_cls.model_fields["model"].default
     ids = {m.id for m in provider_cls.available_models()}
     assert default in ids, f"{provider_cls.__name__} default {default!r} missing from catalog"
+
+
+# --- Every model a vendor prices carries its price ----------------------------
+#
+# The gap this closes: `gemini-3.6-flash` shipped in the catalog while the
+# consumer's separate rate sheet stopped at 3.5, so a whole conversation billed
+# zero. Nothing noticed, because a catalog with no prices in it is internally
+# consistent. This runs offline on every commit — unlike `make check-models`,
+# which needs a network and only runs at release.
+
+
+@pytest.mark.parametrize("provider_cls", PRICED)
+def test_every_model_in_a_priced_catalog_carries_a_price(provider_cls: type[AIProvider]) -> None:
+    for model in provider_cls.available_models():
+        if model.deprecated:
+            # A retired id is one its vendor may have stopped quoting.
+            continue
+        assert model.pricing is not None, (
+            f"{provider_cls.__name__}: {model.id} has no price — add it to the catalog "
+            "from the vendor's own price list, or the consumer bills this model at zero"
+        )
+
+
+@pytest.mark.parametrize("provider_cls", PRICED)
+def test_catalog_prices_are_well_formed(provider_cls: type[AIProvider]) -> None:
+    for model in provider_cls.available_models():
+        pricing = model.pricing
+        if pricing is None:
+            continue
+        assert pricing.input_per_million > 0, f"{model.id} input rate"
+        assert pricing.output_per_million > 0, f"{model.id} output rate"
+        assert pricing.currency, f"{model.id} currency"
+        assert pricing.verified <= date.today(), f"{model.id} verified in the future"
+        for rate in (pricing.cache_read_per_million, pricing.cache_write_per_million):
+            assert rate is None or rate >= 0, f"{model.id} negative cache rate"
 
 
 def test_catalog_entry_returns_the_active_models_metadata() -> None:
