@@ -426,7 +426,7 @@ async def test_compose_unknown_tool_falls_through_all() -> None:
 
 
 async def test_tool_call_context_read_from_contextvar() -> None:
-    from roomkit.tools.human_input import ToolCallContext, _current_tool_call
+    from roomkit.tools.context import ToolCallContext, _current_tool_call
 
     hit = HumanInputToolHandler(tool_names={"ask"}, timeout=5)
 

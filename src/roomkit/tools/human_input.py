@@ -52,12 +52,10 @@ done::
 from __future__ import annotations
 
 import asyncio
-import contextvars
 import json
 import logging
 from collections import OrderedDict
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
 from typing import Any
 from uuid import uuid4
 
@@ -65,6 +63,7 @@ from roomkit.core.task_utils import log_task_exception
 from roomkit.models.enums import ChannelType
 from roomkit.models.pending_input import PendingInput, PendingInputEvent, PendingInputStatus
 from roomkit.providers.ai.base import AITool
+from roomkit.tools.context import _current_tool_call
 
 logger = logging.getLogger("roomkit.tools.human_input")
 
@@ -72,40 +71,6 @@ logger = logging.getLogger("roomkit.tools.human_input")
 # (via register_channel hook builder) or by the application directly.
 # Returns True to proceed, False to deny the pending request.
 OnInputRequiredCallback = Callable[[PendingInputEvent], Awaitable[bool]]
-
-
-# ── Tool-call context propagation ────────────────────────────────────
-#
-# The ToolHandler protocol is (name, arguments) → str — it does not
-# receive room_id, tool_call_id, or channel_id.  This contextvar
-# bridges the gap: _ai_tools._run_one() sets it before calling the
-# handler, and HumanInputToolHandler reads it.
-#
-# Safe with asyncio.gather because gather creates Tasks with copied
-# contexts.
-
-
-@dataclass
-class ToolCallContext:
-    """Contextvar payload carrying tool-call metadata.
-
-    ``structured_content`` is the reverse channel: the ToolHandler contract
-    returns only a string, but MCP tools can produce a structured result
-    (``CallToolResult.structuredContent``) that UI surfaces need verbatim —
-    the LLM-facing string may be truncated/evicted when large. A handler
-    that has one sets it here; ``_run_one()`` reads it back after the call
-    and carries it on the tool-call events untouched by eviction.
-    """
-
-    room_id: str = ""
-    tool_call_id: str = ""
-    channel_id: str = ""
-    structured_content: dict[str, Any] | None = None
-
-
-_current_tool_call: contextvars.ContextVar[ToolCallContext | None] = contextvars.ContextVar(
-    "_current_tool_call", default=None
-)
 
 
 class HumanInputHandler:

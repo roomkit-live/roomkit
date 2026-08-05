@@ -1,11 +1,11 @@
-"""Public accessors for per-call tool execution context.
+"""Per-call tool execution context, and the public accessors for it.
 
 An ``AIChannel`` object is registered once per ``channel_id`` and shared
 by every room it serves, so any room-specific state stored on the channel
 (or on a host's tool handler) goes stale the moment another room attaches.
 The tool loop scopes its per-invocation state in a contextvar instead;
-this module exposes the parts of that state a host's tool handler may
-need to resolve the call's origin.
+this module holds that contextvar and exposes the parts of the state a
+host's tool handler may need to resolve the call's origin.
 
 Contextvars propagate through the async call chain, so a handler invoked
 from inside a tool loop sees the loop's context without any signature
@@ -14,6 +14,39 @@ accessors return ``None`` — hosts keep their own fallback for those paths.
 """
 
 from __future__ import annotations
+
+import contextvars
+from dataclasses import dataclass
+from typing import Any
+
+
+@dataclass
+class ToolCallContext:
+    """Contextvar payload carrying tool-call metadata.
+
+    The ToolHandler protocol is ``(name, arguments) → str`` — it does not
+    receive ``room_id``, ``tool_call_id`` or ``channel_id``.  This payload
+    bridges the gap: ``_ai_tools._run_one()`` sets it before calling the
+    handler, and a handler that needs the call's origin reads it.  Safe
+    with :func:`asyncio.gather`, which creates Tasks with copied contexts.
+
+    ``structured_content`` is the reverse channel: the ToolHandler contract
+    returns only a string, but MCP tools can produce a structured result
+    (``CallToolResult.structuredContent``) that UI surfaces need verbatim —
+    the LLM-facing string may be truncated/evicted when large. A handler
+    that has one sets it here; ``_run_one()`` reads it back after the call
+    and carries it on the tool-call events untouched by eviction.
+    """
+
+    room_id: str = ""
+    tool_call_id: str = ""
+    channel_id: str = ""
+    structured_content: dict[str, Any] | None = None
+
+
+_current_tool_call: contextvars.ContextVar[ToolCallContext | None] = contextvars.ContextVar(
+    "_current_tool_call", default=None
+)
 
 
 def current_tool_room_id() -> str | None:

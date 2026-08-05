@@ -42,7 +42,7 @@ from roomkit.providers.ai.base import (
 )
 from roomkit.sandbox.tools import SANDBOX_TOOL_PREFIX
 from roomkit.telemetry.base import SpanKind
-from roomkit.tools.human_input import ToolCallContext, _current_tool_call
+from roomkit.tools.context import ToolCallContext, _current_tool_call
 from roomkit.tools.validation import validate_tool_arguments
 
 if TYPE_CHECKING:

@@ -17,7 +17,7 @@ import pytest
 from roomkit.models.event import ToolCallContent
 from roomkit.models.streaming import ToolCallEndMarker
 from roomkit.providers.ai.base import AIToolResultPart
-from roomkit.tools.human_input import ToolCallContext, _current_tool_call
+from roomkit.tools.context import ToolCallContext, _current_tool_call
 from roomkit.tools.mcp import MCPToolProvider
 
 

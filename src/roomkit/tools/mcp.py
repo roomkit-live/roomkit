@@ -32,7 +32,7 @@ def _publish_structured_content(result: Any) -> None:
     structured = getattr(result, "structuredContent", None)
     if not isinstance(structured, dict):
         return
-    from roomkit.tools.human_input import _current_tool_call
+    from roomkit.tools.context import _current_tool_call
 
     ctx = _current_tool_call.get()
     if ctx is None:
