@@ -52,6 +52,9 @@ class TelegramBotAPI:
                 "Install it with: pip install roomkit[telegram]"
             ) from exc
         self._config = config
+        self._webhook_secret = (
+            config.webhook_secret.get_secret_value() if config.webhook_secret else None
+        )
         self._httpx = _httpx
         self._client: httpx.AsyncClient = _httpx.AsyncClient(
             timeout=config.timeout,
@@ -106,22 +109,32 @@ class TelegramBotAPI:
                 result whose ``metadata["description"]`` says which.
             secret: Echoed back on every request in the
                 ``X-Telegram-Bot-Api-Secret-Token`` header, which
-                :meth:`TelegramBotProvider.verify_signature` checks. Without it
-                any host that learns the URL can post updates to it.
+                :meth:`TelegramBotProvider.verify_signature` checks. When
+                omitted, :attr:`TelegramConfig.webhook_secret` is used. A
+                successfully registered explicit value becomes the value this
+                provider verifies, so registration and verification cannot
+                silently diverge. Without either value, any host that learns
+                the URL can post updates to it.
             allowed_updates: The update kinds to receive. Telegram's own
                 default omits some kinds entirely, so a consumer that wants
                 ``callback_query`` must ask for it by name.
             drop_pending_updates: Discard what queued up while no webhook was
                 registered, rather than delivering it all at once.
         """
+        webhook_secret = self._webhook_secret if secret is None else secret
         payload: dict[str, Any] = {"url": url}
-        if secret:
-            payload["secret_token"] = secret
+        if webhook_secret:
+            payload["secret_token"] = webhook_secret
         if allowed_updates is not None:
             payload["allowed_updates"] = allowed_updates
         if drop_pending_updates:
             payload["drop_pending_updates"] = True
-        return await self._api_call("setWebhook", payload)
+        result = await self._api_call("setWebhook", payload)
+        if result.success:
+            # Telegram has accepted this exact value. Keep verification tied to
+            # it even when the caller rotated the config's initial secret.
+            self._webhook_secret = webhook_secret
+        return result
 
     async def delete_webhook(self, *, drop_pending_updates: bool = False) -> ProviderResult:
         """Stop Telegram POSTing updates — ``deleteWebhook``."""

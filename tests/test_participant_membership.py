@@ -90,6 +90,27 @@ class TestMembership:
         assert len(fired) == 1
         assert [m.id for m in await kit.list_members("r1")] == ["u1"]
 
+    async def test_active_member_records_a_second_channel_without_rejoining(
+        self, kit: RoomKit
+    ) -> None:
+        fired: list[RoomEvent] = []
+
+        async def on_joined(event: RoomEvent, ctx: RoomContext) -> None:
+            fired.append(event)
+
+        kit.hook_engine.register(_async_hook(HookTrigger.ON_PARTICIPANT_JOINED, on_joined))
+        await kit.create_room(room_id="r1")
+        await kit.add_member("r1", "sms-main", "u1", identity_id="u1")
+
+        reached = await kit.add_member("r1", "email-main", "u1", identity_id="u1")
+
+        assert reached.channel_id == "sms-main"
+        assert reached.connected_via == ["sms-main", "email-main"]
+        assert len(fired) == 1
+        stored = await kit.store.get_participant("r1", "u1")
+        assert stored is not None
+        assert stored.connected_via == ["sms-main", "email-main"]
+
     async def test_add_member_with_identity_is_identified(self, kit: RoomKit) -> None:
         await kit.create_room(room_id="r1")
         p = await kit.add_member("r1", "ws:u1:r1", "u1", identity_id="u1")
@@ -295,7 +316,7 @@ class TestChannelReuse:
         with caplog.at_level(logging.WARNING, logger="roomkit.framework"):
             rejoined = await kit.add_member("r1", "conference:r1", "u1", identity_id="u1")
         assert rejoined.channel_id == "conference:r1"
-        assert rejoined.connected_via == ["ws:u1:r1", "conference:r1"]
+        assert rejoined.connected_via == ["conference:r1", "ws:u1:r1"]
         message = next(r.getMessage() for r in caplog.records if r.levelno == logging.WARNING)
         assert "ws:u1:r1" in message
         assert "conference:r1" in message

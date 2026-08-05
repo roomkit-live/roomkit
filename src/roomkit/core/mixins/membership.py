@@ -64,27 +64,36 @@ class MembershipMixin(HelpersMixin):
         Unlike :meth:`ensure_participant` — which lazily materialises a sender
         the first time they speak — this is a deliberate join. It is safe to
         call on every room open: joining someone who is already an ``ACTIVE``
-        member is a no-op (no write, no event). A genuine join — a brand-new
-        member, or re-adding someone who previously left — upserts the
-        participant as ``ACTIVE``, emits ``PARTICIPANT_JOINED`` and fires the
-        ``ON_PARTICIPANT_JOINED`` hook. A re-join preserves ``joined_at``.
+        member through a channel already recorded on them is a no-op. A newly
+        reached channel is persisted as bookkeeping, without a join event. A
+        genuine join — a brand-new member, or re-adding someone who previously
+        left — upserts the participant as ``ACTIVE``, emits
+        ``PARTICIPANT_JOINED`` and fires the ``ON_PARTICIPANT_JOINED`` hook. A
+        re-join preserves ``joined_at``.
 
         When ``identity_id`` is given the participant is marked ``IDENTIFIED``
         (the caller already knows who they are).
 
-        A join through a channel other than the record's primary one moves the
-        primary to the channel being joined through — that is what "primary
-        channel used to join" means (RFC §5.5) — without forking a second
-        record: the channel it replaces stays in ``connected_via``, and the move
-        is logged naming both, since a caller reading ``channel_id`` afterwards
-        sees only the new one.
+        Re-adding an inactive record through a channel other than its primary
+        moves the primary to the channel being joined through — that is what
+        "primary channel used to join" means (RFC §5.5) — without forking a
+        second record. The channel it replaces stays in ``connected_via``, and
+        the move is logged naming both, since a caller reading ``channel_id``
+        afterwards sees only the new one.
         """
         async with self._lock_manager.locked(room_id):
             await self.get_room(room_id)
             existing = await self._store.get_participant(room_id, participant_id)
             if existing is not None and existing.status == ParticipantStatus.ACTIVE:
-                # Already a member — idempotent no-op on the hot path.
-                return existing
+                # Already a member: membership remains an idempotent no-op, but
+                # RFC §5.5 still requires recording a newly reached channel.
+                warn_cross_channel(existing, channel_id, rehomed=False)
+                channels = channels_reached(existing, channel_id)
+                if channels is None:
+                    return existing
+                return await self._store.update_participant(
+                    existing.model_copy(update={"connected_via": channels})
+                )
 
             identification = (
                 IdentificationStatus.IDENTIFIED if identity_id else IdentificationStatus.PENDING
@@ -92,13 +101,15 @@ class MembershipMixin(HelpersMixin):
             if existing is not None:
                 warn_cross_channel(existing, channel_id, rehomed=True)
                 channels = channels_reached(existing, channel_id)
+                reached = existing.connected_via if channels is None else channels
+                # This deliberate join re-homes the participant, so the new
+                # primary leads the ordered list while every old channel stays.
+                reached = list(dict.fromkeys([channel_id, *reached]))
                 participant = existing.model_copy(
                     update={
                         "status": ParticipantStatus.ACTIVE,
                         "channel_id": channel_id,
-                        "connected_via": (
-                            existing.connected_via if channels is None else channels
-                        ),
+                        "connected_via": reached,
                         "role": role,
                         "identity_id": identity_id or existing.identity_id,
                         "identification": identification,

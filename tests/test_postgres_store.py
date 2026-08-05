@@ -393,6 +393,13 @@ class TestPostgresStore:
         for table in postgres_schema.V1_TABLES:
             assert f"DROP TABLE IF EXISTS {table} CASCADE" in postgres_schema.V1_TO_V2_DROP
 
+    def test_schema_backfills_the_participant_primary_channel(self) -> None:
+        """The additive migration repairs pre-connected_via participant rows."""
+        from roomkit.store import postgres_schema
+
+        assert "SET connected_via = ARRAY[channel_id]" in postgres_schema.SCHEMA
+        assert "connected_via[1] IS DISTINCT FROM channel_id" in postgres_schema.SCHEMA
+
     def test_thread_index_is_composite_under_a_new_name(self) -> None:
         """The thread-reply index carries (parent_event_id, index) under a name
         distinct from the legacy single-column idx_events_parent — so init()'s
@@ -1048,6 +1055,18 @@ class TestPostgresStore:
         result = await store.get_participant("room-1", "p-1")
         assert result is not None
         assert result.connected_via == ["ch-1", "conference-1"]
+
+    async def test_get_participant_repairs_an_empty_legacy_channel_list(self) -> None:
+        store, mock_conn = _make_store_with_pool()
+        participant = _make_participant()
+        row = _participant_row(participant)
+        row["connected_via"] = []
+        mock_conn.fetchrow.return_value = row
+
+        result = await store.get_participant("room-1", "p-1")
+
+        assert result is not None
+        assert result.connected_via == ["ch-1"]
 
     # ── Read tracking ───────────────────────────────────────────
 

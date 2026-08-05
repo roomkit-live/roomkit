@@ -80,7 +80,7 @@ sse = ["httpx>=0.27", "httpx-sse>=0.4"]
 gradium = ["gradium>=0.5.7"]
 opentelemetry = ["opentelemetry-api>=1.20", "opentelemetry-sdk>=1.20"]
 pyroscope = ["pyroscope-io>=1.0"]
-smart-turn = ["numpy>=1.26", "onnxruntime>=1.20", "transformers>=4.57"]
+smart-turn = ["numpy>=1.26", "onnxruntime>=1.20", "transformers>=5.5"]
 telegram = ["httpx>=0.27", "telegramify-markdown>=1.2.0"]
 teams = ["botbuilder-core>=4.17"]
 discord = ["discord.py>=2.4"]
@@ -268,13 +268,21 @@ include = [
 "deprecated" = "ignore"
 
 [tool.uv]
-# neutts, qwen-tts and qwen-asr pin incompatible transformers versions
+# ``all`` includes smart-turn, whose secure transformers floor is incompatible
+# with the versions pinned by neutts, qwen-tts and qwen-asr. Those three also
+# pin mutually incompatible versions.
 conflicts = [
     [
         { extra = "neutts" },
         { extra = "qwen-tts" },
         { extra = "qwen-asr" },
     ],
+    [{ extra = "smart-turn" }, { extra = "neutts" }],
+    [{ extra = "smart-turn" }, { extra = "qwen-tts" }],
+    [{ extra = "smart-turn" }, { extra = "qwen-asr" }],
+    [{ extra = "all" }, { extra = "neutts" }],
+    [{ extra = "all" }, { extra = "qwen-tts" }],
+    [{ extra = "all" }, { extra = "qwen-asr" }],
 ]
 
 [tool.ruff]

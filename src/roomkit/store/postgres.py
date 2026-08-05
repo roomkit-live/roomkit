@@ -229,9 +229,10 @@ class PostgresStore(ConversationStore):
     async def init(self, min_size: int = 2, max_size: int = 10) -> None:
         """Create the connection pool (if needed) and ensure the schema exists.
 
-        Runs **only additive, idempotent** DDL (``CREATE TABLE IF NOT EXISTS``).
-        It never drops a table, so calling ``init()`` after a library upgrade
-        cannot destroy data.
+        Runs only additive, idempotent schema maintenance: DDL such as
+        ``CREATE TABLE IF NOT EXISTS`` plus bounded repairs for columns added
+        by newer versions. It never drops a table or discards user data, so
+        calling ``init()`` after a library upgrade cannot destroy data.
 
         Serialized across processes by the same advisory lock :meth:`migrate`
         takes, acquired as the first statement of the one transaction that

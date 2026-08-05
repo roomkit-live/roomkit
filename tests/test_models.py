@@ -238,6 +238,16 @@ class TestParticipant:
         p = Participant(id="p1", room_id="r1", channel_id="ch1")
         assert p.role == ParticipantRole.MEMBER
         assert p.display_name is None
+        assert p.connected_via == ["ch1"]
+
+    def test_primary_channel_is_included_first_without_duplicates(self) -> None:
+        p = Participant(
+            id="p1",
+            room_id="r1",
+            channel_id="ch1",
+            connected_via=["ch2", "ch1", "ch2"],
+        )
+        assert p.connected_via == ["ch1", "ch2"]
 
 
 # -- Identity --

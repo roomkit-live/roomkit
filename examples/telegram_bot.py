@@ -21,10 +21,15 @@ application never writes a second HTTP client for a token the provider holds.
 Setup:
     1. Create a bot via @BotFather on Telegram — it gives you the bot token.
     2. Deploy a web server with a public HTTPS URL.
-    3. Register your webhook with Telegram:
+    3. Put one persistent random value in TELEGRAM_WEBHOOK_SECRET, pass it to
+       TelegramConfig, then register your webhook:
          await provider.set_webhook("https://yourdomain.com/webhook/telegram",
-                                    secret=..., allowed_updates=[...])
-    4. In your webhook endpoint, parse the POST body and call:
+                                    allowed_updates=[...])
+    4. In your webhook endpoint, verify the header before parsing the body:
+         raw = await request.body()
+         header = request.headers.get("X-Telegram-Bot-Api-Secret-Token", "")
+         if not provider.verify_signature(raw, header):
+             raise HTTPException(status_code=403)
          messages = parse_telegram_webhook(payload, channel_id="tg-main")
          for msg in messages:
              await kit.process_inbound(msg)
@@ -50,7 +55,6 @@ Requires:
 from __future__ import annotations
 
 import os
-import secrets
 import sys
 from pathlib import Path
 
@@ -74,9 +78,16 @@ from roomkit.providers.telegram import (
 
 async def main() -> None:
     # --- Configuration -------------------------------------------------------
-    env = require_env("TELEGRAM_BOT_TOKEN")
+    webhook_url = os.environ.get("TELEGRAM_WEBHOOK_URL")
+    required = ["TELEGRAM_BOT_TOKEN"]
+    if webhook_url:
+        required.append("TELEGRAM_WEBHOOK_SECRET")
+    env = require_env(*required)
 
-    config = TelegramConfig(bot_token=env["TELEGRAM_BOT_TOKEN"])
+    config = TelegramConfig(
+        bot_token=env["TELEGRAM_BOT_TOKEN"],
+        webhook_secret=env.get("TELEGRAM_WEBHOOK_SECRET"),
+    )
     provider = TelegramBotProvider(config)
 
     # --- RoomKit setup -------------------------------------------------------
@@ -190,11 +201,9 @@ async def main() -> None:
     # X-Telegram-Bot-Api-Secret-Token header, which provider.verify_signature
     # checks. allowed_updates is not optional in practice: Telegram's own
     # default leaves out callback_query, so a bot with buttons must ask for it.
-    webhook_url = os.environ.get("TELEGRAM_WEBHOOK_URL")
     if webhook_url:
         registered = await provider.set_webhook(
             webhook_url,
-            secret=secrets.token_hex(32),
             allowed_updates=["message", "edited_message", "callback_query"],
         )
         print(f"\nsetWebhook({webhook_url}) -> success={registered.success}")

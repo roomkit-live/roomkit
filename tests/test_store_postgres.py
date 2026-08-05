@@ -362,13 +362,34 @@ class TestParticipantOperations:
         # order is order of first sight, not set order
         assert result.connected_via[0] == "ch1"
 
-    async def test_connected_via_defaults_empty_on_a_row_that_predates_it(self, store) -> None:
-        """The column is additive: a record stored without a list reads as empty."""
+    async def test_connected_via_repairs_a_row_that_predates_it(self, store) -> None:
+        """RFC §5.5: an old empty list reads with its primary included."""
         await store.create_room(Room(id="r1"))
         await store.add_participant(Participant(id="p1", room_id="r1", channel_id="ch1"))
+        async with store._pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE participants SET connected_via='{}' WHERE room_id='r1' AND id='p1'"
+            )
         result = await store.get_participant("r1", "p1")
         assert result is not None
-        assert result.connected_via == []
+        assert result.connected_via == ["ch1"]
+
+    async def test_init_backfills_connected_via_on_a_legacy_row(self, store) -> None:
+        """The additive schema pass persists the primary on pre-column rows."""
+        await store.create_room(Room(id="r1"))
+        await store.add_participant(Participant(id="p1", room_id="r1", channel_id="ch1"))
+        async with store._pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE participants SET connected_via='{}' WHERE room_id='r1' AND id='p1'"
+            )
+
+        await store.init()
+
+        async with store._pool.acquire() as conn:
+            connected_via = await conn.fetchval(
+                "SELECT connected_via FROM participants WHERE room_id='r1' AND id='p1'"
+            )
+        assert connected_via == ["ch1"]
 
 
 class TestReadTracking:

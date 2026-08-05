@@ -553,5 +553,43 @@ class TestTelegramSignatureVerification:
     def test_verify_no_webhook_secret(self) -> None:
         provider = TelegramBotProvider(_config())
 
-        with pytest.raises(ValueError, match="webhook_secret must be provided"):
+        with pytest.raises(ValueError, match="webhook_secret must be configured or registered"):
             provider.verify_signature(b"ignored", "any-token")
+
+    async def test_explicit_registration_makes_the_secret_verifiable(self) -> None:
+        provider = TelegramBotProvider(_config())
+        provider._client = httpx.AsyncClient(
+            transport=_MockTransport({"ok": True, "result": True})
+        )
+
+        result = await provider.set_webhook("https://example.test/hook", secret="new-secret")
+
+        assert result.success is True
+        assert provider.verify_signature(b"ignored", "new-secret") is True
+
+    async def test_successful_webhook_registration_updates_the_verified_secret(self) -> None:
+        provider = TelegramBotProvider(_config(webhook_secret="old-secret"))
+        provider._client = httpx.AsyncClient(
+            transport=_MockTransport({"ok": True, "result": True})
+        )
+
+        result = await provider.set_webhook("https://example.test/hook", secret="rotated-secret")
+
+        assert result.success is True
+        assert provider.verify_signature(b"ignored", "rotated-secret") is True
+        assert provider.verify_signature(b"ignored", "old-secret") is False
+
+    async def test_failed_webhook_registration_keeps_the_previous_verified_secret(self) -> None:
+        provider = TelegramBotProvider(_config(webhook_secret="old-secret"))
+        provider._client = httpx.AsyncClient(
+            transport=_MockTransport(
+                {"ok": False, "error_code": 400, "description": "Bad webhook"},
+                status=400,
+            )
+        )
+
+        result = await provider.set_webhook("https://example.test/hook", secret="rejected-secret")
+
+        assert result.success is False
+        assert provider.verify_signature(b"ignored", "old-secret") is True
+        assert provider.verify_signature(b"ignored", "rejected-secret") is False

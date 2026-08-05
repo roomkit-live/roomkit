@@ -144,6 +144,18 @@ class TestWebhookLifecycle:
 
         assert transport.last_body == {"url": "https://example.test/hook"}
 
+    async def test_set_webhook_uses_the_configured_secret_by_default(self) -> None:
+        transport = _Recorder(result=True)
+        api = TelegramBotAPI(_config(webhook_secret="configured-secret"))
+        api._client = httpx.AsyncClient(transport=transport)
+
+        await api.set_webhook("https://example.test/hook")
+
+        assert transport.last_body == {
+            "url": "https://example.test/hook",
+            "secret_token": "configured-secret",
+        }
+
     async def test_a_bare_true_result_is_a_success_not_a_crash(self) -> None:
         """Every call but a send answers ``result: true``; only a Message has an id."""
         result = await _api(_Recorder(result=True)).set_webhook("https://example.test/hook")

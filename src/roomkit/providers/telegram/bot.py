@@ -264,7 +264,8 @@ class TelegramBotProvider(TelegramBotAPI, TelegramProvider):
         On each webhook request Telegram sends the token in the
         ``X-Telegram-Bot-Api-Secret-Token`` header.  Verification is a
         constant-time comparison of that header value against the
-        configured :attr:`TelegramConfig.webhook_secret`.
+        secret most recently accepted by :meth:`set_webhook`, initially
+        :attr:`TelegramConfig.webhook_secret`.
 
         Args:
             payload: Raw request body bytes (unused).
@@ -274,15 +275,15 @@ class TelegramBotProvider(TelegramBotAPI, TelegramProvider):
             True if the token matches, False otherwise.
 
         Raises:
-            ValueError: If ``webhook_secret`` was not provided in config.
+            ValueError: If no webhook secret was configured or registered.
         """
-        if not self._config.webhook_secret:
+        if not self._webhook_secret:
             raise ValueError(
-                "webhook_secret must be provided in TelegramConfig for signature verification"
+                "webhook_secret must be configured or registered for signature verification"
             )
         return hmac.compare_digest(
             signature,
-            self._config.webhook_secret.get_secret_value(),
+            self._webhook_secret,
         )
 
     @staticmethod

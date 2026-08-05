@@ -3,9 +3,10 @@
 Owns the DDL used by ``PostgresStore``. Two concerns are kept strictly
 separate:
 
-* ``SCHEMA`` — **additive, idempotent** DDL (``CREATE TABLE IF NOT EXISTS``
-  and index touch-ups). Safe to run on every connect; never drops a table.
-  This is the only DDL ``PostgresStore.init()`` executes.
+* ``SCHEMA`` — **additive, idempotent** schema setup (``CREATE TABLE IF NOT
+  EXISTS``, index touch-ups, and bounded repairs for newly added columns).
+  Safe to run on every connect; never drops a table or discards user data.
+  This is the only schema batch ``PostgresStore.init()`` executes.
 * ``V1_TO_V2_DROP`` — the **destructive** v1→v2 migration. It drops every
   table (data loss) and is *never* run automatically. It is applied only by
   the explicit, opt-in ``PostgresStore.migrate()`` after the caller confirms
@@ -237,10 +238,13 @@ CREATE TABLE IF NOT EXISTS participants (
     PRIMARY KEY (room_id, id)
 );
 -- The channels a participant has been reached through (RFC 5.5), primary
--- included. Additive and unguarded, like events.addressed_to: an existing row
--- carries no list, and an empty one reads as "only ever seen on channel_id" —
--- which is what it was stored under. Nothing to backfill, re-running is a no-op.
+-- included and first. The UPDATE is an idempotent data repair for rows created
+-- before the column existed, and for any old writer that stored an empty or
+-- out-of-order list. It never discards a channel already recorded.
 ALTER TABLE participants ADD COLUMN IF NOT EXISTS connected_via TEXT[] NOT NULL DEFAULT '{}';
+UPDATE participants
+SET connected_via = ARRAY[channel_id] || array_remove(connected_via, channel_id)
+WHERE connected_via[1] IS DISTINCT FROM channel_id;
 CREATE INDEX IF NOT EXISTS idx_participants_channel
     ON participants(room_id, channel_id);
 
