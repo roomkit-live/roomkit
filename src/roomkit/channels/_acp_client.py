@@ -66,13 +66,7 @@ class _TurnState:
     """
 
     tokens: dict[str, int] = field(default_factory=dict)
-    """Token counters the agent returned when the prompt ended.
-
-    Session totals, not this turn's — see :func:`_usage_tokens`.
-    """
-
-    tokens_baseline: dict[str, int] = field(default_factory=dict)
-    """The same counters as they stood when this turn opened, to subtract."""
+    """Token counters the agent returned when the prompt ended."""
 
     context: dict[str, Any] = field(default_factory=dict)
     """Last context-window occupancy and running cost the agent announced."""
@@ -138,15 +132,19 @@ _TOKEN_FIELDS = (
 
 
 def _usage_tokens(usage: Any) -> dict[str, int]:
-    """Read an ACP ``Usage`` into RoomKit's token-counter names.
+    """Read the ``Usage`` an agent returns when a prompt ends.
 
     Taken off the model by attribute rather than out of :func:`_model_dump`,
     whose camelCase aliases would not sit beside the counters an in-process
     provider reports under the same key.
 
-    These are session totals, not this turn's — the schema is explicit
-    ("Total input tokens across all turns") even though the agent hands them
-    back at the end of a prompt. What one turn spent is a difference.
+    Relayed exactly as the agent sent it. The ACP schema annotates these
+    fields as running session figures ("total input tokens across all turns")
+    while the reference agent fills them per prompt — measured against it,
+    ``cached_read_tokens`` is the whole prefix re-read on that turn, not a sum
+    over turns. RoomKit cannot tell the two apart from one reading, and
+    guessing wrong corrupts the number in the direction nobody can detect
+    downstream, so it does no arithmetic on them at all.
     """
     counters: dict[str, int] = {}
     for name in _TOKEN_FIELDS:
@@ -160,9 +158,9 @@ def _usage_context(update: Any) -> dict[str, Any]:
     """Read a usage notification: how full the context is, what it has cost.
 
     A different quantity from the token counters above — ``used``/``size``
-    describe the window the session is living in, and ``cost`` is the
-    session's running total. Neither is a per-turn number, so neither is
-    differenced.
+    describe the window the session is living in, and ``cost`` is its running
+    total. These really are cumulative, and observably so: they climb turn
+    after turn.
     """
     context: dict[str, Any] = {}
     used = getattr(update, "used", None)
@@ -181,31 +179,15 @@ def _usage_context(update: Any) -> dict[str, Any]:
     return context
 
 
-def _usage_report(
-    tokens: dict[str, int],
-    baseline: dict[str, int],
-    context: dict[str, Any],
-) -> dict[str, Any]:
-    """What one turn spent, from the session totals that bracket it.
+def _usage_report(tokens: dict[str, int], context: dict[str, Any]) -> dict[str, Any]:
+    """The accounting a finished turn carries: what the agent counted, and where.
 
-    The token counters carry the turn's own spend, so they mean what the same
-    keys mean on an in-process provider's report and stay summable over a
-    conversation. Everything cumulative is kept whole under ``session_total``,
-    where the running cost and the context occupancy also live.
-
-    Counters can fall between two readings — a compaction empties part of the
-    context. A turn that spent a negative number of tokens is not a thing, so
-    those floor at zero.
+    Two readings side by side under distinct keys — the token counters from
+    the prompt's own response, and the session's context occupancy and running
+    cost. Both are the agent's figures, unaltered; see :func:`_usage_tokens`
+    for why nothing here is differenced.
     """
-    report: dict[str, Any] = {
-        name: max(0, tokens[name] - baseline.get(name, 0))
-        for name in _TOKEN_FIELDS
-        if name in tokens
-    }
-    session_total = {**tokens, **context}
-    if session_total:
-        report["session_total"] = session_total
-    return report
+    return {**tokens, **context}
 
 
 def _config_values(options: Any) -> dict[str, str | bool]:
@@ -377,7 +359,6 @@ class ACPConnectionMixin:
     _sessions: dict[str, str]
     _session_rooms: dict[str, str]
     _session_options: dict[str, list[Any]]
-    _session_tokens: dict[str, dict[str, int]]
     _agent_info: dict[str, Any] | None
     _handler_started: bool
     _closed: bool
@@ -413,7 +394,6 @@ class ACPConnectionMixin:
                 self._sessions.clear()
                 self._session_rooms.clear()
                 self._session_options.clear()
-                self._session_tokens.clear()
 
             sdk = self._sdk()
             if sdk.acp.PROTOCOL_VERSION != _STABLE_PROTOCOL_VERSION:

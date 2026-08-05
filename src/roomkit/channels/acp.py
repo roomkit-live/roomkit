@@ -191,7 +191,6 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
         self._handler_started = False
         self._closed = False
         self._realtime: RealtimeBackend | None = None
-        self._session_tokens: dict[str, dict[str, int]] = {}
         self._after_response_hook: AfterResponseCallback | None = None
 
     @property
@@ -387,7 +386,6 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
                 return False
             self._session_rooms.pop(session_id, None)
             self._session_options.pop(session_id, None)
-            self._session_tokens.pop(session_id, None)
             # The catch-up mark tracks what *this session* was told. A room
             # whose session is gone starts over: the next one opens empty and
             # has missed everything.
@@ -455,7 +453,6 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
         self._sessions.clear()
         self._session_rooms.clear()
         self._session_options.clear()
-        self._session_tokens.clear()
         self._prompted_index.clear()
 
     async def _session_for(self, room_id: str, connection: Any) -> str:
@@ -491,7 +488,6 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
             connection = await self._ensure_connection()
             session_id = await self._session_for(room_id, connection)
             turn = _TurnState(room_id=room_id)
-            turn.tokens_baseline = self._session_tokens.get(session_id, {})
             self._turns[session_id] = turn
             prompt = [self._sdk().acp.text_block(text)]
             # The room is caught up only once the prompt carrying it is on its
@@ -552,10 +548,6 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
                 if self._turns.get(session_id) is turn:
                     self._turns.pop(session_id, None)
                 if turn.completed:
-                    if turn.tokens:
-                        # Where the next turn subtracts from, whether or not
-                        # anyone is listening to this one.
-                        self._session_tokens[session_id] = turn.tokens
                     await self._report_response(turn)
 
     async def _report_response(self, turn: _TurnState) -> None:
@@ -575,7 +567,7 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
                     response_content="".join(turn.text),
                     room_id=turn.room_id,
                     tool_calls_count=len(turn.tools),
-                    usage=_usage_report(turn.tokens, turn.tokens_baseline, turn.context),
+                    usage=_usage_report(turn.tokens, turn.context),
                     latency_ms=int((time.monotonic() - turn.started_at) * 1000),
                     streaming=True,
                 )

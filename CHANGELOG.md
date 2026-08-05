@@ -141,11 +141,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   how many tools it called, and how long it took. A turn only reports when it
   reaches its terminal item without an error — a stream closed from the
   outside cancels the agent and delivers nothing, so it is not a response.
-  Token counters come from the `PromptResponse` the agent returns; because ACP
-  reports them as **session totals**, `usage` carries this turn's difference
-  under the same keys an in-process provider fills, and keeps the cumulative
-  reading whole under `usage["session_total"]` alongside the context
-  occupancy and the running cost.
+
+  `usage` carries the token counters off the `PromptResponse` the agent
+  returns, relayed unaltered, beside the context occupancy and running cost
+  its usage notifications announce. The ACP schema annotates those counters as
+  running session figures while the reference agent fills them per prompt —
+  measured against it, `cached_read_tokens` is the whole prefix re-read on that
+  turn, not a sum over turns. One reading cannot tell the two apart, and
+  reinterpreting either way corrupts the number where nothing downstream can
+  notice, so RoomKit does no arithmetic on them. Read `total_tokens`: a coding
+  agent's context arrives almost entirely as cache reads, which makes
+  `input_tokens` alone a large understatement.
 
 - **A participant reached on a second channel is no longer adopted in
   silence.** `ensure_participant(room, channel, participant_id)` looks a

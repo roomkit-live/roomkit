@@ -178,14 +178,18 @@ async def main(args: argparse.Namespace) -> None:
         which is what makes post-processing (summaries, memory, metrics)
         possible for a conversation an agent held.
 
-        Token counters are this turn's own; the running session totals stay
-        under ``event.usage["session_total"]``.
+        ``usage`` carries the agent's own counters, unaltered. Reading only
+        ``input_tokens`` badly understates a coding agent: almost all of its
+        context arrives as cache reads, so ``total_tokens`` is the number that
+        matches the bill.
         """
         spend = ""
         if event.usage:
             spend = (
                 f" | {event.usage.get('input_tokens', 0)} in"
                 f" / {event.usage.get('output_tokens', 0)} out"
+                f" / {event.usage.get('cached_read_tokens', 0)} cached"
+                f" = {event.usage.get('total_tokens', 0)} tokens"
             )
         print(f"\n[turn] {event.tool_calls_count} tool call(s) in {event.latency_ms}ms{spend}\n")
 

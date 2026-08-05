@@ -1278,12 +1278,22 @@ class TestEndOfTurnReport:
         assert seen[0].tool_calls_count == 1
         await kit.close()
 
-    async def test_token_counters_carry_the_turn_not_the_session(self, tmp_path: Any) -> None:
-        """ACP reports session totals; a host summing turns must not double-count."""
+    async def test_the_counters_are_relayed_exactly_as_the_agent_sent_them(
+        self,
+        tmp_path: Any,
+    ) -> None:
+        """No arithmetic on the agent's figures.
+
+        The schema annotates these fields as running session figures while the
+        reference agent fills them per prompt. One reading cannot tell which,
+        and reinterpreting either way corrupts the number silently — so each
+        turn carries what its own response reported, beside the session
+        occupancy and cost that the notification really does accumulate.
+        """
         channel, connection, _ = _channel(tmp_path, emit_updates=False)
         connection.usage_totals = [
             Usage(input_tokens=100, output_tokens=20, total_tokens=120),
-            Usage(input_tokens=260, output_tokens=45, total_tokens=305),
+            Usage(input_tokens=160, output_tokens=25, total_tokens=185),
         ]
         connection.context_updates = [
             UsageUpdate(
@@ -1304,36 +1314,42 @@ class TestEndOfTurnReport:
             _ = [chunk async for chunk in output.response_stream]
 
         assert reports[0].usage["input_tokens"] == 100
-        assert reports[0].usage["session_total"]["context_used"] == 120
-        assert reports[0].usage["session_total"]["context_size"] == 200_000
-        assert reports[0].usage["session_total"]["cost"] == 0.25
-        assert reports[0].usage["session_total"]["currency"] == "USD"
-        # The second turn spent 160 in and 25 out; the session has spent 260.
+        assert reports[0].usage["output_tokens"] == 20
+        assert reports[0].usage["total_tokens"] == 120
+        assert reports[0].usage["context_used"] == 120
+        assert reports[0].usage["context_size"] == 200_000
+        assert reports[0].usage["cost"] == 0.25
+        assert reports[0].usage["currency"] == "USD"
+        # Untouched by what the first turn reported.
         assert reports[1].usage["input_tokens"] == 160
         assert reports[1].usage["output_tokens"] == 25
         assert reports[1].usage["total_tokens"] == 185
-        assert reports[1].usage["session_total"]["input_tokens"] == 260
         await channel.close()
 
-    async def test_a_compaction_does_not_report_negative_spend(self, tmp_path: Any) -> None:
-        """Counters can fall when the agent compacts; a turn never spends less than nothing."""
+    async def test_cache_counters_survive_the_report(self, tmp_path: Any) -> None:
+        """Where a coding agent's spend actually shows up, so it must arrive whole."""
         channel, connection, _ = _channel(tmp_path, emit_updates=False)
         connection.usage_totals = [
-            Usage(input_tokens=400, output_tokens=90, total_tokens=490),
-            Usage(input_tokens=120, output_tokens=95, total_tokens=215),
+            Usage(
+                input_tokens=2,
+                output_tokens=3,
+                total_tokens=27_369,
+                cached_read_tokens=16_997,
+                cached_write_tokens=10_367,
+            )
         ]
         reports = self._capture(channel)
 
-        for body in ("first", "second"):
-            output = await channel.on_event(
-                make_event(body=body),
-                _binding(),
-                RoomContext(room=Room(id="room-1")),
-            )
-            _ = [chunk async for chunk in output.response_stream]
+        output = await channel.on_event(
+            make_event(body="first"),
+            _binding(),
+            RoomContext(room=Room(id="room-1")),
+        )
+        _ = [chunk async for chunk in output.response_stream]
 
-        assert reports[1].usage["input_tokens"] == 0
-        assert reports[1].usage["output_tokens"] == 5
+        assert reports[0].usage["cached_read_tokens"] == 16_997
+        assert reports[0].usage["cached_write_tokens"] == 10_367
+        assert reports[0].usage["total_tokens"] == 27_369
         await channel.close()
 
     async def test_an_agent_that_reports_nothing_reports_no_usage(self, tmp_path: Any) -> None:
@@ -1401,28 +1417,6 @@ class TestEndOfTurnReport:
 
         assert reports == []
         assert connection.cancelled_sessions == ["session-1"]
-        await channel.close()
-
-    async def test_a_closed_session_starts_the_counters_over(self, tmp_path: Any) -> None:
-        """Session ids are not reused, and neither is what the old one had spent."""
-        channel, connection, _ = _channel(tmp_path, emit_updates=False)
-        connection.usage_totals = [
-            Usage(input_tokens=100, output_tokens=20, total_tokens=120),
-            Usage(input_tokens=70, output_tokens=15, total_tokens=85),
-        ]
-        reports = self._capture(channel)
-
-        for body in ("first", "second"):
-            output = await channel.on_event(
-                make_event(body=body),
-                _binding(),
-                RoomContext(room=Room(id="room-1")),
-            )
-            _ = [chunk async for chunk in output.response_stream]
-            await channel.close_session("room-1")
-
-        assert channel._session_tokens == {}
-        assert reports[1].usage["input_tokens"] == 70
         await channel.close()
 
 
