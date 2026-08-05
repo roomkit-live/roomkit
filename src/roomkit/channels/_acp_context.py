@@ -133,11 +133,14 @@ async def contributed_blocks(
 ) -> list[str]:
     """What the host adds to this turn — never at the cost of the turn.
 
-    Fail-open: a contributor that raises is logged and the turn goes without
+    Fail-open: a contributor that fails is logged and the turn goes without
     its blocks, which is how the other host-supplied callbacks in this channel
     behave. Losing the answer because the background context could not be
-    assembled would be the worse trade. ``BaseException`` is deliberately not
-    caught — a cancelled turn must stay cancelled.
+    assembled would be the worse trade. Reading what came back is inside the
+    same guard as the call: a contributor that returns ``None``, or something
+    that is not a block, is as broken as one that raised and must cost no
+    more. ``BaseException`` is deliberately not caught — a cancelled turn must
+    stay cancelled.
 
     A lone ``str`` counts as one block. ``str`` satisfies ``Sequence[str]``,
     so a type checker passes it through, and iterating it would spell the
@@ -147,12 +150,12 @@ async def contributed_blocks(
         return []
     try:
         blocks = await contributor(context, trigger)
+        if isinstance(blocks, str):
+            blocks = [blocks]
+        return [stripped for block in blocks if (stripped := block.strip())]
     except Exception:
         logger.exception("ACP context contributor failed (%s); prompting without it", channel_id)
         return []
-    if isinstance(blocks, str):
-        blocks = [blocks]
-    return [stripped for block in blocks if (stripped := block.strip())]
 
 
 def compose_prompt(blocks: Sequence[str], catch_up: str, request: str) -> str:

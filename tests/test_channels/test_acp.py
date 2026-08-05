@@ -1706,6 +1706,24 @@ class TestHostContext:
         assert sent.endswith("go")
         await channel.close()
 
+    async def test_a_contributor_that_returns_nonsense_does_not_cost_it_either(
+        self, tmp_path: Any
+    ) -> None:
+        # Falling off the end of an async function returns None. Reading the
+        # result must be as guarded as the call, or fail-open holds for the
+        # contributors that raise and not for the ones that simply forgot.
+        async def forgot_to_return(context: Any, trigger: RoomEvent) -> Any:
+            return None
+
+        channel, connection, _ = _channel(
+            tmp_path, emit_updates=False, context_contributor=forgot_to_return
+        )
+        trigger = make_event(room_id="room-1", body="go", index=0)
+        await _prompt(channel, trigger, _context(trigger))
+
+        assert _sent(connection) == "go"
+        await channel.close()
+
     async def test_a_cancelled_contributor_cancels_the_turn(self, tmp_path: Any) -> None:
         # Fail-open covers a contributor that failed, not one whose task is
         # being torn down: swallowing that would resurrect a cancelled turn.
