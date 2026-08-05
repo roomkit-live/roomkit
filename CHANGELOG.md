@@ -197,6 +197,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A vLLM server described itself with OpenAI's model list.**
+  `create_vllm_provider()` returned a plain `OpenAIAIProvider`, so
+  `available_models()` answered with OpenAI's hosted catalog — someone else's
+  models, for a server running whatever weights you loaded onto it. Worse, an
+  id that happened to collide (a proxy named `gpt-4o`, a fine-tune) borrowed
+  that model's context window and trimmed history against it. It also inherited
+  OpenAI's vision prefixes, which no local model id matches, so every vLLM
+  deployment reported text-only and dropped images before the wire. The factory
+  now returns an `OpenAIAIProvider` subclass — identical on the wire — whose
+  catalog is empty (`context_window is None`, the honest answer for a model
+  RoomKit has never heard of) and which passes images through, letting a
+  multimodal server work and a text-only one answer with an error. Same bargain
+  Ollama and Mistral already make. `list_models()` is unchanged and still
+  queries the server's `/v1/models`.
+
+- **RoomKit refused seven PolarGrid edges the SDK can route.** The offline
+  region list carried nine, so `lax-01`, `sea-01`, `chi-01`, `phx-01`,
+  `was-01`, `mia-01` and `sfo-03` were rejected by `resolve_region_id()` as if
+  they were typos — including two US East edges, which matters where the
+  Canada/US split is the data-residency signal. The list now mirrors the SDK's
+  own `POLARGRID_REGIONS` (all 16), and cites that shipped table rather than a
+  doc page, because the table is what actually routes. The `polargrid` extra's
+  floor moves to `polargrid-sdk>=0.9.2` accordingly: `chi`/`lax`/`phx`/`sea`/
+  `was` landed in 0.9.0, `mia-01` in 0.9.1, `sfo-03` in 0.9.2. A test asserts
+  the mirror equals the SDK's table whenever the optional SDK is installed, so
+  the two cannot drift again silently. The alias table is deliberately *not*
+  extended — the new edges have no alias upstream, and inventing one would make
+  it a table RoomKit maintains rather than a mirror it tracks.
+
 - **Images stopped reaching the wire on every current OpenAI and Anthropic
   model.** Both providers answered `supports_vision` from a hardcoded tuple of
   model-name prefixes kept alongside the catalog that already states the same

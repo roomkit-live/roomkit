@@ -833,12 +833,35 @@ class TestPolarGridModels:
         provider, _ = _provider()
         regions = provider.available_regions()
         by_id = {r.id: r for r in regions}
-        # All 9 documented edges, with the Canada/US residency split.
-        assert len(regions) == 9
+        # Every edge the SDK can route, with the Canada/US residency split.
+        assert len(regions) == 16
         assert by_id["yul-02"].name == "Montreal 02"
         assert by_id["yul-02"].location == "Canada East"
         canadian = [r.id for r in regions if (r.location or "").startswith("Canada")]
         assert set(canadian) == {"yto-01", "yul-01", "yul-02", "yvr-02"}
+        # The edges that came online after the first snapshot. roomkit refused
+        # them until 2026-08-05 even though the SDK routes them, which made a
+        # valid region look like a typo.
+        assert {"was-01", "mia-01", "chi-01", "sfo-03", "lax-01", "sea-01", "phx-01"} <= set(by_id)
+        assert all((by_id[r].location or "").startswith("US") for r in ("lax-01", "mia-01"))
+
+    def test_region_catalog_matches_what_the_sdk_can_route(self) -> None:
+        # The list is an offline mirror of polargrid.client.POLARGRID_REGIONS,
+        # and a mirror that drifts is worse than no mirror: an edge missing
+        # here is rejected by resolve_region_id even though the SDK would
+        # route it. Skipped when the optional SDK is absent.
+        client = pytest.importorskip("polargrid.client")
+
+        from roomkit.providers.polargrid.models import REGIONS
+
+        assert {r.id for r in REGIONS} == set(client.POLARGRID_REGIONS)
+
+    def test_new_edges_resolve(self) -> None:
+        from roomkit.providers.polargrid.models import resolve_region_id
+
+        assert resolve_region_id("lax-01") == "lax-01"
+        assert resolve_region_id("SFO-03") == "sfo-03"  # case-insensitive
+        assert resolve_region_id("yul-2") is None  # still rejects a typo
 
     @pytest.mark.asyncio
     async def test_connected_region_reports_edge_with_location(self) -> None:

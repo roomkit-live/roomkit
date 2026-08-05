@@ -48,9 +48,16 @@ class PolarGridRegion(BaseModel):
     location: str | None = None
 
 
-# Authoritative edge list from PolarGrid's regions guide
-# (https://polargrid.mintlify.app/guides/regions, verified 2026-06-11). The
-# Canada/US split is the data-residency signal (Law 25 / PIPEDA).
+# Offline mirror of the SDK's own ``polargrid.client.POLARGRID_REGIONS``
+# (read from polargrid-sdk 0.9.2 on 2026-08-05), which is what actually routes
+# a request — the regions guide agrees, but the shipped table is the thing that
+# decides. Mirrored rather than imported because this module must load without
+# the optional SDK installed. An edge missing here is refused by
+# ``resolve_region_id`` even though the SDK could route it, so the floor in
+# pyproject.toml is what keeps the mirror truthful: chi/lax/phx/sea/was landed
+# in 0.9.0, mia-01 in 0.9.1, sfo-03 in 0.9.2. Bump both together.
+#
+# The Canada/US split is the data-residency signal (Law 25 / PIPEDA).
 REGIONS: list[PolarGridRegion] = [
     PolarGridRegion(id="yto-01", name="Toronto", location="Canada Central"),
     PolarGridRegion(id="yul-01", name="Montreal", location="Canada East"),
@@ -58,19 +65,27 @@ REGIONS: list[PolarGridRegion] = [
     PolarGridRegion(id="yvr-02", name="Vancouver", location="Canada West"),
     PolarGridRegion(id="nyc-01", name="New York", location="US East"),
     PolarGridRegion(id="nyc-02", name="New York 02", location="US East"),
+    PolarGridRegion(id="was-01", name="Washington DC", location="US East"),
+    PolarGridRegion(id="mia-01", name="Miami", location="US East"),
     PolarGridRegion(id="dfw-01", name="Dallas", location="US Central"),
     PolarGridRegion(id="dfw-02", name="Dallas 02", location="US Central"),
+    PolarGridRegion(id="chi-01", name="Chicago", location="US Central"),
     PolarGridRegion(id="sfo-01", name="San Francisco", location="US West"),
+    PolarGridRegion(id="sfo-03", name="San Francisco 03", location="US West"),
+    PolarGridRegion(id="lax-01", name="Los Angeles", location="US West"),
+    PolarGridRegion(id="sea-01", name="Seattle", location="US West"),
+    PolarGridRegion(id="phx-01", name="Phoenix", location="US West"),
 ]
 
 _REGION_IDS: frozenset[str] = frozenset(r.id for r in REGIONS if r.id)
 
 # Friendly region aliases → canonical edge id. Mirrors the PolarGrid SDK's
-# own resolution table (``polargrid.client.REGION_ALIASES``, verified against
-# polargrid-sdk 0.8.5 on 2026-07-06) so a region roomkit accepts is one the
-# SDK can actually route. The SDK publishes no live region list — hence this
-# offline mirror, same rationale as REGIONS above. If the SDK adds an alias,
-# add it here too.
+# own resolution table (``polargrid.client.REGION_ALIASES``, unchanged in
+# polargrid-sdk 0.9.2, re-verified 2026-08-05) so a region roomkit accepts is
+# one the SDK can actually route. Deliberately not extended past what the SDK
+# carries: the newer edges have no alias upstream, and inventing one here would
+# make this a table roomkit maintains rather than a mirror it tracks. Their
+# canonical ids work. If the SDK adds an alias, add it here too.
 REGION_ALIASES: dict[str, str] = {
     "toronto": "yto-01",
     "yto": "yto-01",
