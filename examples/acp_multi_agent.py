@@ -30,6 +30,11 @@ How you name an agent is this example's business, not RoomKit's: it accepts
 ``@codex review hello.py`` and ``/agent`` for a picker, and passes channel
 ids.
 
+Each finished turn prints a ``[turn] @agent · N tool call(s) · Xms`` line. That
+is the ``ON_AI_RESPONSE`` hook, which fires for any channel of category
+``INTELLIGENCE`` — both agents own their tool loop in another process, and
+``channel_id`` is what tells a host which of the two just answered.
+
 Requires:
     pip install "roomkit[acp,console]"
     Node.js 22+ with ``npx`` available
@@ -72,6 +77,8 @@ from roomkit import (
     AgentResponsePolicy,
     ChannelCategory,
     CLIChannel,
+    HookExecution,
+    HookTrigger,
     RoomKit,
 )
 from roomkit.console import terminal_input, terminal_select
@@ -233,6 +240,25 @@ async def main(args: argparse.Namespace) -> None:
     # a kit-wide default would also silence the single-agent rooms a server
     # hosts alongside this one, where chaining is exactly what they want.
     await kit.set_agent_response_policy(room_id, AgentResponsePolicy.ADDRESSED_ONLY)
+
+    @kit.hook(HookTrigger.ON_AI_RESPONSE, execution=HookExecution.ASYNC)
+    async def turn_finished(event: Any, _ctx: Any) -> None:
+        """One report per finished turn, naming the agent that produced it.
+
+        The trigger follows a channel's INTELLIGENCE category rather than its
+        class, so both agents reach it even though neither runs its tool loop
+        in this process — and ``channel_id`` is what tells a host which of them
+        just answered, in a room where two of them take turns.
+
+        Counters are each agent's own, relayed unaltered, and two agents need
+        not report the same fields: read ``total_tokens`` where it is offered
+        rather than assuming any single key exists.
+        """
+        spend = f" · {event.usage['total_tokens']} tokens" if "total_tokens" in event.usage else ""
+        print(
+            f"\n[turn] @{event.channel_id} · {event.tool_calls_count} tool call(s)"
+            f" · {event.latency_ms}ms{spend}\n"
+        )
 
     def agent_options() -> list[tuple[str, str]]:
         options = []
