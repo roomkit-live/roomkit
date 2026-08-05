@@ -132,7 +132,20 @@ class ChannelOpsMixin(HelpersMixin):
         # Propagate telemetry to all channels
         channel._telemetry = self._telemetry  # ty: ignore[unresolved-attribute]
 
-        # Propagate realtime backend to AI channels for tool call events
+        # ON_AI_RESPONSE reports a fact — an agent finished a turn — and every
+        # INTELLIGENCE channel produces it, whichever class it descends from.
+        # Selecting on AIChannel made a channel that owns its own turn (an ACP
+        # coding agent) invisible to the host's post-processing while it held
+        # the conversation. The category is what the channel declares itself to
+        # be, so a future agent channel is served without editing this.
+        if channel.category is ChannelCategory.INTELLIGENCE:
+            channel._after_response_hook = (  # ty: ignore[unresolved-attribute]
+                self._build_after_response_hook(channel.channel_id)
+            )
+
+        # Propagate realtime backend to AI channels for tool call events. The
+        # rest of these presume the tool loop runs in this process, which is
+        # what still makes AIChannel the right selector for them.
         from roomkit.channels.ai import AIChannel
 
         if isinstance(channel, AIChannel):
@@ -140,7 +153,6 @@ class ChannelOpsMixin(HelpersMixin):
             channel._tool_call_hook = self._build_tool_call_hook(channel.channel_id)
             channel._before_tool_call_hook = self._build_before_tool_call_hook(channel.channel_id)
             channel._tool_usage_loader = self._build_tool_usage_loader()
-            channel._after_response_hook = self._build_after_response_hook(channel.channel_id)
             channel._before_generation_hook = self._build_before_generation_hook(
                 channel.channel_id
             )

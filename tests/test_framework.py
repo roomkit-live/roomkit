@@ -230,6 +230,21 @@ class TestChannelManagement:
         binding = await kit.set_access("r1", "sms1", Access.READ_ONLY)
         assert binding.access == Access.READ_ONLY
 
+    async def test_the_response_report_follows_the_category(self, kit: RoomKit) -> None:
+        """Any INTELLIGENCE channel can say a turn finished, whatever its class.
+
+        Selecting on ``AIChannel`` left an agent that owns its own turn — an
+        ACP coding agent — with no way to reach ``ON_AI_RESPONSE``, and so
+        invisible to every post-processing task the host hangs off it.
+        """
+        agent = AILikeChannel("agent1")
+        transport = SimpleChannel("sms1")
+        kit.register_channel(agent)
+        kit.register_channel(transport)
+
+        assert agent._after_response_hook is not None  # ty: ignore[unresolved-attribute]
+        assert not hasattr(transport, "_after_response_hook")
+
 
 class TestInboundPipeline:
     async def test_basic_inbound(self, kit: RoomKit) -> None:
