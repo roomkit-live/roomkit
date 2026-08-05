@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 from uuid import uuid4
 
+from roomkit.core._participant_channels import channels_reached, warn_cross_channel
 from roomkit.core.exceptions import (
     IdentityNotFoundError,
     ParticipantNotFoundError,
@@ -357,7 +358,8 @@ class RoomLifecycleMixin(HelpersMixin):
         async with self._lock_manager.locked(room_id):
             existing = await self._store.get_participant(room_id, participant_id)
             if existing:
-                channels = self._record_channel_use(existing, channel_id)
+                warn_cross_channel(existing, channel_id, rehomed=False)
+                channels = channels_reached(existing, channel_id)
                 if channels is None:
                     return existing
                 return await self._store.update_participant(

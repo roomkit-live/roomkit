@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
+from roomkit.core._participant_channels import channels_reached, warn_cross_channel
 from roomkit.core.exceptions import ParticipantNotFoundError
 from roomkit.core.mixins.helpers import HelpersMixin
 from roomkit.models.enums import (
@@ -89,12 +90,15 @@ class MembershipMixin(HelpersMixin):
                 IdentificationStatus.IDENTIFIED if identity_id else IdentificationStatus.PENDING
             )
             if existing is not None:
-                channels = self._record_channel_use(existing, channel_id, rehomes=True)
+                warn_cross_channel(existing, channel_id, rehomed=True)
+                channels = channels_reached(existing, channel_id)
                 participant = existing.model_copy(
                     update={
                         "status": ParticipantStatus.ACTIVE,
                         "channel_id": channel_id,
-                        "connected_via": channels or existing.connected_via,
+                        "connected_via": (
+                            existing.connected_via if channels is None else channels
+                        ),
                         "role": role,
                         "identity_id": identity_id or existing.identity_id,
                         "identification": identification,

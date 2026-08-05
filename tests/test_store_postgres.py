@@ -351,7 +351,9 @@ class TestParticipantOperations:
         await store.create_room(Room(id="r1"))
         p = Participant(id="p1", room_id="r1", channel_id="ch1", connected_via=["ch1"])
         await store.add_participant(p)
-        assert (await store.get_participant("r1", "p1")).connected_via == ["ch1"]
+        stored = await store.get_participant("r1", "p1")
+        assert stored is not None
+        assert stored.connected_via == ["ch1"]
 
         await store.update_participant(p.model_copy(update={"connected_via": ["ch1", "ch2"]}))
         result = await store.get_participant("r1", "p1")

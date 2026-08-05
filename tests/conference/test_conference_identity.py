@@ -386,6 +386,30 @@ class TestWhatTheRoomEndsUpWith:
         assert [record.id for record in records] == [DIAL_IN]
         assert records[0].external_id == DIAL_IN
 
+    async def test_an_arrival_records_the_conference_among_the_channels_reached(self) -> None:
+        """RFC §5.5: a channel that reaches a participant records itself.
+
+        A record the conference created seeds the list; a record it did not —
+        one an integrator admitted through another channel — must gain the
+        conference too, or ``connected_via`` is incomplete exactly in the
+        cross-channel case it exists for.
+        """
+        kit, _, backend = await _kit_with_channel()
+        await kit.ensure_participant(ROOM, "ws:alice", "p-alice")
+
+        await backend.simulate_participant_joined(ROOM, "p-alice")
+
+        record = await _participant(kit, "p-alice")
+        assert record.channel_id == "ws:alice"  # an arrival is not a join
+        assert record.connected_via == ["ws:alice", "conf"]
+
+    async def test_a_dial_in_seeds_the_channels_reached_with_the_conference(self) -> None:
+        kit, _, backend = await _kit_with_channel()
+
+        await backend.simulate_participant_joined(ROOM, DIAL_IN)
+
+        assert (await _participant(kit)).connected_via == ["conf"]
+
     async def test_a_dial_in_reaches_the_same_identity_as_a_text(self) -> None:
         """The purpose the RFC states, end to end: one resolver, one number, one
         Identity, whether the person dialled in or wrote.

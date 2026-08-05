@@ -27,6 +27,7 @@ from collections.abc import Callable, Coroutine
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 from uuid import uuid4
 
+from roomkit.core._participant_channels import channels_reached, warn_cross_channel
 from roomkit.core.exceptions import RoomNotFoundError
 from roomkit.models.context import RoomContext
 from roomkit.models.enums import (
@@ -273,63 +274,6 @@ class HelpersMixin:
                 )
         return None
 
-    @staticmethod
-    def _record_channel_use(
-        existing: Participant, channel_id: str, *, rehomes: bool = False
-    ) -> list[str] | None:
-        """The channels to store now that *channel_id* has asked for *existing*.
-
-        A participant is one record per (room, id) — the same person reached by
-        SMS and then by email is one participant, not two (RFC §4.4, §5.5). So
-        a caller naming a channel the record was not created on gets that record
-        back, which is legitimate and must not fail; what it must not be is
-        silent. The record handed over still names another channel in
-        ``channel_id``, and a caller that goes on to keep a lifecycle or a status
-        on it is driving another channel's record without having been told —
-        which is how leaving a conference came to erase a team-channel
-        membership. Hence the warning naming both channels.
-
-        Returns the new ``connected_via`` (primary channel included, order of
-        first sight preserved), or ``None`` when the record already says
-        everything there is to say. Bookkeeping, not presentation: no
-        ``PARTICIPANT_UPDATED``, no ``ON_PARTICIPANT_UPDATED`` (RFC §5.5).
-
-        *rehomes* says the caller is a deliberate join, which MAY move the
-        primary channel to the one being joined through; a lazy get-or-create
-        leaves it where it is. Either way the channel it replaces stays on the
-        list.
-        """
-        channels = list(dict.fromkeys([existing.channel_id, *existing.connected_via, channel_id]))
-        if channel_id != existing.channel_id:
-            if rehomes:
-                logger.warning(
-                    "Participant %s of room %s is joining through channel %r; the primary "
-                    "channel of their record was %r and becomes %r — one record still, and "
-                    "%r stays in connected_via (RFC 5.5).",
-                    existing.id,
-                    existing.room_id,
-                    channel_id,
-                    existing.channel_id,
-                    channel_id,
-                    existing.channel_id,
-                    extra={"room_id": existing.room_id},
-                )
-            else:
-                logger.warning(
-                    "Participant %s of room %s is recorded on channel %r; %r asked for them "
-                    "and gets that record as it stands, primary channel included (RFC 5.5). "
-                    "Reaching one participant on several channels is the point — but a "
-                    "lifecycle or a status kept on this record from %r moves it for %r too.",
-                    existing.id,
-                    existing.room_id,
-                    existing.channel_id,
-                    channel_id,
-                    channel_id,
-                    existing.channel_id,
-                    extra={"room_id": existing.room_id},
-                )
-        return channels if channels != existing.connected_via else None
-
     async def _create_pending_participant(
         self,
         room_id: str,
@@ -347,7 +291,8 @@ class HelpersMixin:
         channel_id = event.source.channel_id
         existing = await self._store.get_participant(room_id, participant_id)
         if existing is not None:
-            channels = self._record_channel_use(existing, channel_id)
+            warn_cross_channel(existing, channel_id, rehomed=False)
+            channels = channels_reached(existing, channel_id)
             if channels is None:
                 return existing
             return await self._store.update_participant(
@@ -396,7 +341,8 @@ class HelpersMixin:
                     "identity_id": identity.id,
                     "display_name": identity.display_name or existing.display_name,
                 }
-            channels = self._record_channel_use(existing, channel_id)
+            warn_cross_channel(existing, channel_id, rehomed=False)
+            channels = channels_reached(existing, channel_id)
             if channels is not None:
                 update["connected_via"] = channels
             if update:

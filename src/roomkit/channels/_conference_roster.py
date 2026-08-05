@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any
 
 from roomkit.channels._conference_identity import participant_update
 from roomkit.channels._conference_metadata import CONFERENCE_METADATA_KEY, provider_record
+from roomkit.core._participant_channels import channels_reached
 from roomkit.models.enums import IdentificationStatus, ParticipantStatus
 from roomkit.models.participant import Participant
 
@@ -204,6 +205,15 @@ class ConferenceRoster:
         if self._store is None:  # pragma: no cover — guarded by the caller
             return
         update: dict[str, Any] = {}
+        # The record stays where it is homed — this channel did not create it,
+        # and an arrival is not a join (RFC 5.5) — but the room has now reached
+        # them here, and a channel reached once and never recorded is one the
+        # room cannot afterwards say it reached. No warning: nobody named a
+        # channel here, the SFU reported an arrival on this one, and whoever
+        # admitted them under an id another channel holds was told at admission.
+        channels = channels_reached(existing, self._channel_id)
+        if channels is not None:
+            update["connected_via"] = channels
         if existing.status is ParticipantStatus.LEFT:
             update["status"] = ParticipantStatus.ACTIVE
         # Fill, never overwrite: a name the integrator set is theirs, and the
