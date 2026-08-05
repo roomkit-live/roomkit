@@ -333,6 +333,11 @@ class TelegramBotAPI:
             return self._parse_error(exc)
         except self._httpx.HTTPError as exc:
             return ProviderResult(success=False, error=str(exc))
+        except ValueError:
+            # A 2xx carrying something other than JSON — an intercepting proxy's
+            # error page passes raise_for_status intact. Every call promises a
+            # ProviderResult, so this cannot be allowed to escape as an exception.
+            return ProviderResult(success=False, error="invalid_response")
 
         # A send answers with a Message object; the rest answer with a bare
         # ``true``, a list of updates, or the bot itself. Only a Message has an

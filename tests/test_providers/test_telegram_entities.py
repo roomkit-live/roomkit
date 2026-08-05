@@ -43,6 +43,11 @@ class TestEntityText:
     def test_an_entity_pointing_past_the_text_is_empty(self) -> None:
         assert entity_text("short", {"offset": 100, "length": 5}) == ""
 
+    def test_a_negative_bound_is_empty_rather_than_a_slice_from_the_end(self) -> None:
+        """Entities are composed by someone else's client, so the bound is theirs."""
+        assert entity_text("hey @luge_bot", {"offset": -9, "length": 9}) == ""
+        assert entity_text("hey @luge_bot", {"offset": 4, "length": -1}) == ""
+
 
 class TestMentionsBot:
     def test_a_mention_entity(self) -> None:

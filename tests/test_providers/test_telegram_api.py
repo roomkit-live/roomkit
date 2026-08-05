@@ -297,3 +297,19 @@ class TestErrorShape:
 
         assert result.success is False
         assert result.error == "http_502"
+
+    async def test_a_success_that_is_not_json_does_not_escape_as_an_exception(self) -> None:
+        """An intercepting proxy's error page passes raise_for_status intact.
+
+        Every call promises a ProviderResult; a JSONDecodeError raised out of
+        the parse would break that promise for the whole surface at once.
+        """
+
+        class _Intercepted(httpx.AsyncBaseTransport):
+            async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+                return httpx.Response(200, content=b"<html>captive portal</html>", request=request)
+
+        result = await _api(_Intercepted()).get_me()
+
+        assert result.success is False
+        assert result.error == "invalid_response"

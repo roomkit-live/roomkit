@@ -36,6 +36,11 @@ def entity_text(text: str, entity: dict[str, Any]) -> str:
     """
     offset = entity.get("offset", 0)
     length = entity.get("length", 0)
+    if offset < 0 or length < 0:
+        # Telegram never sends these, but the entities reaching mentions_bot are
+        # composed by someone else's client. A negative bound would slice from
+        # the end of the string and return a stretch nobody pointed at.
+        return ""
     encoded = text.encode("utf-16-le")
     return encoded[offset * 2 : (offset + length) * 2].decode("utf-16-le", errors="replace")
 
