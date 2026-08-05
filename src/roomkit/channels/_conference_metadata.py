@@ -12,7 +12,12 @@ what is written there is bounded. The provenance survives into the store on
 purpose: what an identity was founded on has to remain answerable after the
 fact, and a flat bag cannot answer it.
 
-See RFC section 12.10.2.
+The bound faces both ways, which is why the mint's check lives here too: a
+credential the channel issues may carry attributes of the integrator's own, and
+emitting what this module would refuse to store would promise a round trip it
+does not make.
+
+See RFC sections 12.10.2 and 12.10.3.
 """
 
 from __future__ import annotations
@@ -57,6 +62,55 @@ MAX_KEY_CHARS = 128
 
 MAX_VALUE_CHARS = 1024
 """How large a single attribute value may be, serialized."""
+
+
+def require_mintable_attributes(attributes: Mapping[str, str]) -> None:
+    """Refuse attributes a credential must not carry into a room.
+
+    The same three limits :func:`_bounded` applies to what a room persists,
+    applied to what a mint emits — a library that hands out a credential
+    carrying what it would drop on the way back in is promising a round trip it
+    does not make.
+
+    It refuses where the inbound bound drops, and the difference is who is on
+    the other end. An attribute that arrives over-long was written by a stranger
+    the framework cannot address, so dropping it is the only move left. One that
+    is *minted* over-long was written by the integrator, right here, in a call
+    that can raise — and an attribute silently missing from a token is a bug
+    they would otherwise meet in the browser, a deployment later.
+
+    Values must be strings: they ride a provider's own attribute map, and every
+    SFU that carries one carries strings. Anything richer is the integrator's to
+    serialize, so that what comes back is what went out.
+
+    Raises:
+        ValueError: naming the attribute and the limit it failed.
+    """
+    if len(attributes) > MAX_ATTRIBUTES:
+        raise ValueError(
+            f"A conference credential carries at most {MAX_ATTRIBUTES} attributes, and this "
+            f"mint asks for {len(attributes)}. The bound is the one the room applies to the "
+            "provider attributes it persists: minting more would emit what a re-join could "
+            "not store."
+        )
+    for key, value in attributes.items():
+        if not isinstance(key, str) or len(key) > MAX_KEY_CHARS:
+            raise ValueError(
+                f"Conference attribute name {key!r} is not a string of at most "
+                f"{MAX_KEY_CHARS} characters, which is what the room will persist when the "
+                "SFU reports it back."
+            )
+        if not isinstance(value, str):
+            raise ValueError(
+                f"Conference attribute {key!r} is {type(value).__name__}, and an SFU's "
+                "attribute map carries strings. Serialize it yourself, so that what comes "
+                "back is what went out."
+            )
+        if not _fits(value):
+            raise ValueError(
+                f"Conference attribute {key!r} is longer than the {MAX_VALUE_CHARS} "
+                "characters the room will persist when the SFU reports it back."
+            )
 
 
 def split_provenance(participant: ConferenceParticipant) -> tuple[dict[str, Any], dict[str, Any]]:

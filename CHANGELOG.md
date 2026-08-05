@@ -9,6 +9,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A conference mint may carry attributes, so the identity stops being the
+  only field that travels.** `mint_access()` put an identity and a display
+  name in the credential and nothing else, while the reception side of the
+  same boundary surfaced a provider's whole attribute map and said what it
+  vouched for — a channel RoomKit read finely and could not write to. The cost
+  landed on `participant_id`: an integrator whose own clients must be told
+  *who* is behind a channel identity had only the identity to say it with, so
+  the identity became a small format to parse, with as many parsers as
+  readers.
+
+  `ConferenceChannel.mint_access(..., attributes={"app.user": "user-42"})`
+  now carries string pairs into the credential — `ConferenceBackend` grew the
+  optional argument, LiveKit puts it in the token's `attributes` claim, and
+  the SFU reports it back on every participant. Three rules keep it honest
+  (RFC §12.10.3). It is opt-in per mint: the channel knows each participant's
+  `identity_id` and adds none of its own, because minting it unasked would
+  publish everyone's platform identity to every peer of a conference that may
+  be pseudonymous. What comes back is *unasserted* — it rode a token, which is
+  not a thing an SFU established, so it can be read and rendered and cannot
+  found an identity. And what may be minted is bounded by what the room would
+  persist when the SFU reports it back, with `mint_access()` raising rather
+  than truncating: at emission the caller is the integrator, the one party in
+  the exchange that can be told.
+
+  Backends written before the argument existed are never handed it, so they
+  go on serving every mint that does not ask for attributes.
+
 - **`TelegramBotAPI` — the Bot API as methods, not just the sends a room
   produces.** The provider could send a message and nothing else, so every
   application around it grew a second Telegram client: a second base URL

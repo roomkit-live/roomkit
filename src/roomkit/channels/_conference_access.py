@@ -21,8 +21,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
+from roomkit.channels._conference_metadata import require_mintable_attributes
 from roomkit.channels._conference_operations import ConferenceResource
 from roomkit.conference.models import ConferenceAccess, ConferenceGrants
 from roomkit.core.exceptions import (
@@ -99,7 +101,12 @@ class ConferenceAccessMixin:
     _ensure_bot_for_mint: Any
 
     async def mint_access(
-        self, room_id: str, participant_id: str, *, grants: ConferenceGrants | None = None
+        self,
+        room_id: str,
+        participant_id: str,
+        *,
+        grants: ConferenceGrants | None = None,
+        attributes: Mapping[str, str] | None = None,
     ) -> ConferenceAccess:
         """Mint credentials for a participant to join the conference.
 
@@ -153,12 +160,27 @@ class ConferenceAccessMixin:
         mint. Outside, the ordering still holds: a detach that got the lock
         first has set ``attached`` to false by the time this reads it.
 
+        ``attributes`` are the caller's to decide, and the channel adds none of
+        its own. It knows the participant's ``identity_id`` and could mint it
+        unasked, which would resolve every host's problem at once and publish
+        the platform identity of everyone in the room to every peer of a
+        conference that may be pseudonymous. So what travels is what the
+        integrator passed, per mint, and it is bounded to what the room would
+        persist if the SFU reported it back (RFC 12.10.3). Whatever a backend
+        surfaces from it comes back *unasserted*: it rode a token, which is not
+        a thing an SFU established.
+
         A credential that goes out also starts the lazy bot join, in the
         background: a mint is the framework's advance notice that a human is
         about to connect, and the one trigger for it that does not depend on
         the backend's callbacks (RFC 12.10.3, 12.10.4). The join never delays
         this call's answer, and its failure never fails the mint.
         """
+        # Before anything is tracked or admitted: a mint the channel is going
+        # to refuse over its own argument should not start a drain, and the
+        # answer does not depend on the room or the roster.
+        if attributes:
+            require_mintable_attributes(attributes)
         async with self._activity.track(room_id):
             await self._check_admissible(room_id, participant_id)
             self._require_attached(room_id)
@@ -170,7 +192,12 @@ class ConferenceAccessMixin:
             # the participant id.
             display_name = await self._roster.display_name(room_id, participant_id)
             access = await self._mint(
-                room_id, participant_id, grants or self._default_grants, generation, display_name
+                room_id,
+                participant_id,
+                grants or self._default_grants,
+                generation,
+                display_name,
+                attributes,
             )
         access = await self._hand_over(room_id, participant_id, access, generation)
         # A credential going out means someone is about to connect, and it is
@@ -232,6 +259,7 @@ class ConferenceAccessMixin:
         grants: ConferenceGrants,
         generation: int,
         display_name: str | None = None,
+        attributes: Mapping[str, str] | None = None,
     ) -> ConferenceAccess:
         """Ask the backend for the credential, on a request a detach can take back.
 
@@ -264,7 +292,7 @@ class ConferenceAccessMixin:
         """
         room = self._room(room_id)
         request = asyncio.ensure_future(
-            self._mint_on_backend(room_id, participant_id, grants, display_name)
+            self._mint_on_backend(room_id, participant_id, grants, display_name, attributes)
         )
         room.mints.add(request)
         try:
@@ -290,6 +318,7 @@ class ConferenceAccessMixin:
         participant_id: str,
         grants: ConferenceGrants,
         display_name: str | None,
+        attributes: Mapping[str, str] | None,
     ) -> ConferenceAccess:
         """Ask the backend for a credential, under a lease on the backend.
 
@@ -297,12 +326,23 @@ class ConferenceAccessMixin:
         mint a teardown abandoned may still be executing inside the backend —
         a shielded network call — and closing the transport under it neither
         stops the mint nor recalls the credential it produces (RFC 12.10.4).
+
+        ``attributes`` is passed only when there are some. A backend written
+        before the parameter existed goes on serving every mint that does not
+        use it, and only a caller actually asking for attributes meets that
+        backend's refusal — which is the right place to meet it, and louder
+        than a channel quietly dropping what it was asked to carry.
         """
+        extra: dict[str, Any] = {"attributes": attributes} if attributes else {}
         with self._operations.use(
             ConferenceResource.BACKEND, what=f"minting access for {participant_id}"
         ):
             return await self._backend.mint_access(
-                room_id, participant_id, grants, display_name=display_name
+                room_id,
+                participant_id,
+                grants,
+                display_name=display_name,
+                **extra,
             )
 
     def _refuse_mint(self, room_id: str, participant_id: str) -> RoomNotAttachedError:

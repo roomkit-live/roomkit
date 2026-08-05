@@ -178,6 +178,53 @@ class TestMintedAccess:
         assert access.url == "ws://127.0.0.1:7880"
         assert access.provider_data == {"room": "room-1", "identity": "p-alice"}
 
+    async def test_the_attributes_the_caller_asked_for_ride_the_token(self) -> None:
+        """RFC §12.10.3: the identity is not the only field that travels.
+
+        LiveKit reports the claim back in the attribute map ``list_participants``
+        reads, which is what makes the value reachable by the SFU's own clients.
+        """
+        access = await _backend().mint_access(
+            "room-1", "p-alice", ConferenceGrants(), attributes={"app.user": "user-42"}
+        )
+
+        assert _claims(access.token)["attributes"] == {"app.user": "user-42"}
+
+    async def test_a_mint_that_asks_for_none_carries_none(self) -> None:
+        access = await _backend().mint_access("room-1", "p-alice", ConferenceGrants())
+
+        assert "attributes" not in _claims(access.token)
+
+    async def test_an_empty_map_is_not_a_claim(self) -> None:
+        access = await _backend().mint_access(
+            "room-1", "p-alice", ConferenceGrants(), attributes={}
+        )
+
+        assert "attributes" not in _claims(access.token)
+
+    async def test_a_name_and_attributes_travel_together(self) -> None:
+        access = await _backend().mint_access(
+            "room-1",
+            "p-alice",
+            ConferenceGrants(),
+            display_name="Alice",
+            attributes={"app.user": "user-42"},
+        )
+
+        claims = _claims(access.token)
+        assert claims["name"] == "Alice"
+        assert claims["attributes"] == {"app.user": "user-42"}
+
+    def test_the_bots_own_token_carries_none(self) -> None:
+        """The bot is the framework's own session, and nothing asks it to
+        present attributes to the room.
+        """
+        access = _backend()._access(
+            "room-1", "roomkit", ConferenceGrants.observer(), publish_data=False
+        )
+
+        assert "attributes" not in _claims(access.token)
+
     def test_the_token_stays_out_of_the_access_repr(self) -> None:
         access = _backend()._access("room-1", "p-alice", ConferenceGrants(), publish_data=True)
 

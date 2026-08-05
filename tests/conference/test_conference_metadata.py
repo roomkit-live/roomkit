@@ -10,6 +10,8 @@ settled an identity.
 
 from __future__ import annotations
 
+import pytest
+
 from roomkit import CONFERENCE_METADATA_KEY, MockConferenceBackend, RoomKit
 from roomkit.channels._conference_metadata import (
     ASSERTED_KEY,
@@ -18,6 +20,7 @@ from roomkit.channels._conference_metadata import (
     MAX_VALUE_CHARS,
     UNASSERTED_KEY,
     provider_record,
+    require_mintable_attributes,
 )
 from roomkit.channels.conference import ConferenceChannel
 from roomkit.conference.models import ConferenceParticipant
@@ -225,3 +228,40 @@ class TestWhatIsBounded:
         record = provider_record(_participant(metadata={"headers": {"X-Trace": "abc"}}))
 
         assert record[UNASSERTED_KEY] == {"headers": {"X-Trace": "abc"}}
+
+
+class TestWhatMayBeMinted:
+    """The same bound, facing out (RFC §12.10.3).
+
+    A credential may carry attributes of the integrator's own, and emitting
+    what this module would refuse to store promises a round trip that does not
+    happen. It refuses where the inbound bound drops, because the party on this
+    side is the integrator — the one that can be told.
+    """
+
+    def test_what_the_room_would_keep_is_mintable(self) -> None:
+        require_mintable_attributes({"app.user": "user-42", "app.tier": "gold"})
+
+    def test_nothing_is_a_valid_something(self) -> None:
+        require_mintable_attributes({})
+
+    def test_more_attributes_than_a_bag_holds_is_refused(self) -> None:
+        flood = {f"k{index}": "v" for index in range(MAX_ATTRIBUTES + 1)}
+
+        with pytest.raises(ValueError, match=f"at most {MAX_ATTRIBUTES} attributes"):
+            require_mintable_attributes(flood)
+
+    def test_a_key_the_room_would_drop_is_refused(self) -> None:
+        with pytest.raises(ValueError, match=f"{MAX_KEY_CHARS} characters"):
+            require_mintable_attributes({"k" * (MAX_KEY_CHARS + 1): "v"})
+
+    def test_a_value_the_room_would_drop_is_refused(self) -> None:
+        with pytest.raises(ValueError, match=f"{MAX_VALUE_CHARS}"):
+            require_mintable_attributes({"big": "x" * (MAX_VALUE_CHARS + 1)})
+
+    def test_a_value_that_is_not_a_string_is_refused(self) -> None:
+        """An SFU's attribute map carries strings, so serializing is the
+        integrator's — and then what comes back is what went out.
+        """
+        with pytest.raises(ValueError, match="carries strings"):
+            require_mintable_attributes({"count": 3})  # type: ignore[dict-item]

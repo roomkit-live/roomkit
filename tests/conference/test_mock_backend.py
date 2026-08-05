@@ -235,6 +235,65 @@ class TestControlPlane:
         assert participant.metadata == {"sip.phoneNumber": "+15551234", "nickname": "bob"}
         assert participant.asserted_metadata == {"sip.phoneNumber": "+15551234"}
 
+    async def test_a_mint_makes_nobody_appear(self) -> None:
+        """A credential admits nobody by itself (RFC §12.10.3).
+
+        Presence is observable only through a connection, so a mock that put a
+        participant on the list at mint time would do what no SFU can — and
+        every lazy-join rule that leans on the difference would pass here and
+        fail against the real thing.
+        """
+        backend = MockConferenceBackend()
+        await backend.ensure_room(ROOM)
+
+        await backend.mint_access(
+            ROOM, "p-alice", ConferenceGrants(), attributes={"app.user": "user-42"}
+        )
+
+        assert await backend.list_participants(ROOM) == []
+
+    async def test_what_a_credential_carried_surfaces_when_its_holder_arrives(self) -> None:
+        """Minted attributes come back the way an SFU reports them: on the
+        participant, surfaced, and vouched for by nobody — a token is not a
+        thing the server established (RFC §12.10.2 rule 1).
+        """
+        backend = MockConferenceBackend()
+        await backend.ensure_room(ROOM)
+        await backend.mint_access(
+            ROOM, "p-alice", ConferenceGrants(), attributes={"app.user": "user-42"}
+        )
+
+        participant = await backend.simulate_participant_joined(ROOM, "p-alice")
+
+        assert participant.metadata["app.user"] == "user-42"
+        assert participant.asserted_metadata == {}
+        listed = await backend.list_participants(ROOM)
+        assert listed[0].metadata["app.user"] == "user-42"
+
+    async def test_what_the_arrival_states_outranks_what_was_minted(self) -> None:
+        backend = MockConferenceBackend()
+        await backend.ensure_room(ROOM)
+        await backend.mint_access(ROOM, "p-alice", ConferenceGrants(), attributes={"tier": "gold"})
+
+        participant = await backend.simulate_participant_joined(
+            ROOM, "p-alice", client_metadata={"tier": "platinum"}
+        )
+
+        assert participant.metadata["tier"] == "platinum"
+
+    async def test_a_closed_room_forgets_what_it_minted(self) -> None:
+        backend = MockConferenceBackend()
+        await backend.ensure_room(ROOM)
+        await backend.mint_access(
+            ROOM, "p-alice", ConferenceGrants(), attributes={"app.user": "user-42"}
+        )
+
+        await backend.close_room(ROOM)
+        await backend.ensure_room(ROOM)
+        participant = await backend.simulate_participant_joined(ROOM, "p-alice")
+
+        assert participant.metadata == {}
+
     async def test_a_backend_can_say_it_cannot_tell_the_two_apart(self) -> None:
         backend = MockConferenceBackend()
         await backend.ensure_room(ROOM)

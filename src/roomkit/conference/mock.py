@@ -19,7 +19,7 @@ second mock that would drift from this one.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 from uuid import uuid4
@@ -124,6 +124,7 @@ class MockConferenceBackend(ConferenceBackend):
         self.calls: list[MockConferenceCall] = []
         self.rooms: dict[str, dict[str, Any]] = {}
         self.participants: dict[str, dict[str, ConferenceParticipant]] = {}
+        self.minted_attributes: dict[str, dict[str, dict[str, str]]] = {}
         self.tracks: dict[str, ConferenceTrack] = {}
         self.track_formats: dict[str, MockTrackFormat] = {}
         self.subscriptions: set[str] = set()
@@ -210,6 +211,10 @@ class MockConferenceBackend(ConferenceBackend):
         await self._enter("close_room", room_id=room_id)
         self.rooms.pop(room_id, None)
         self.participants.pop(room_id, None)
+        # A credential minted for a room that is gone admits nobody, so what it
+        # was carrying goes with it rather than waiting for a room of the same
+        # name to inherit it.
+        self.minted_attributes.pop(room_id, None)
 
     async def mint_access(
         self,
@@ -218,14 +223,26 @@ class MockConferenceBackend(ConferenceBackend):
         grants: ConferenceGrants,
         *,
         display_name: str | None = None,
+        attributes: Mapping[str, str] | None = None,
     ) -> ConferenceAccess:
+        """Mint a credential, and remember what it was told to carry.
+
+        The attributes are kept rather than applied: a credential admits
+        nobody by itself, and a mock that made a participant appear on a mint
+        would do what no SFU can — presence is observable only through a
+        connection (RFC 12.10.3). They surface when the participant actually
+        arrives, which is where a real SFU surfaces them too.
+        """
         await self._enter(
             "mint_access",
             room_id=room_id,
             participant_id=participant_id,
             grants=grants,
             display_name=display_name,
+            attributes=attributes,
         )
+        if attributes:
+            self.minted_attributes.setdefault(room_id, {})[participant_id] = dict(attributes)
         return ConferenceAccess(
             url="wss://mock.conference.invalid",
             token=f"mock-token-{participant_id}",
@@ -390,9 +407,16 @@ class MockConferenceBackend(ConferenceBackend):
         ``asserts_provenance=False`` is the third kind of backend — one that
         cannot tell the two apart and says so. Everything it surfaces becomes
         unvouched, whichever argument it arrived in.
+
+        Attributes a credential was minted with arrive here too, underneath
+        both: they rode a token, so the SFU reports them like any other
+        attribute — and never as asserted, because a token is not a thing this
+        backend established (RFC §12.10.2 rule 1). Underneath, because what a
+        test states about this arrival is what this arrival carries.
         """
         asserted = dict(metadata or {})
-        surfaced = {**(client_metadata or {}), **asserted}
+        minted = self.minted_attributes.get(room_id, {}).get(participant_id, {})
+        surfaced = {**minted, **(client_metadata or {}), **asserted}
         participant = ConferenceParticipant(
             participant_id=participant_id,
             display_name=display_name,

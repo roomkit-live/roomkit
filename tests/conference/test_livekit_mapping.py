@@ -363,6 +363,19 @@ class TestProvenance:
 
         assert "phone_number" not in asserted
 
+    def test_a_minted_attribute_is_not_asserted_by_arriving_on_a_dial_in(self) -> None:
+        """A dial-in keeps exactly the provenance it had (RMK-110).
+
+        Attributes now ride the credential, and a credential is not something
+        the SFU established: the trunk's own ``sip.*`` stay asserted, and what
+        was minted alongside them does not become so by keeping their company.
+        """
+        asserted = asserted_attributes(
+            "PARTICIPANT_KIND_SIP", {"sip.phoneNumber": "+1", "app.user": "user-42"}
+        )
+
+        assert asserted == {"sip.phoneNumber": "+1"}
+
 
 class TestParticipantRecord:
     def _info(self, **overrides: object) -> dict[str, object]:

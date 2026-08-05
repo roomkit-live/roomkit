@@ -20,6 +20,10 @@ Then it shows where the provider's attributes end up: under one key of the
 Participant's metadata, provenance kept, never merged over what the integrator
 put there — not even when a participant re-joins naming the same field.
 
+And last, the same boundary in the other direction: what a mint may send along
+with an identity, so that an integrator's own clients can tell who a tile
+belongs to without the identity becoming a format to parse.
+
 Run with:
     uv run python examples/conference_identity_provenance.py
 """
@@ -40,36 +44,36 @@ from roomkit.models.identity import Identity
 
 ROOM = "board-meeting"
 DIAL_IN = "sip_15551234"
+BROWSER = "p-alice"
 NUMBER = "+15551234"
 ALICE = Identity(id="user-42", display_name="Alice", channel_addresses={"sms": [NUMBER]})
 
 
 async def conference(
     trusts_unasserted: bool = False,
-) -> tuple[RoomKit, MockConferenceBackend]:
+) -> tuple[RoomKit, ConferenceChannel, MockConferenceBackend]:
     backend = MockConferenceBackend()
-    kit = RoomKit(identity_resolver=MockIdentityResolver({NUMBER: ALICE}))
-    kit.register_channel(
-        ConferenceChannel(
-            "conf",
-            backend=backend,
-            identity_trusts_unasserted_metadata=trusts_unasserted,
-        )
+    channel = ConferenceChannel(
+        "conf",
+        backend=backend,
+        identity_trusts_unasserted_metadata=trusts_unasserted,
     )
+    kit = RoomKit(identity_resolver=MockIdentityResolver({NUMBER: ALICE}))
+    kit.register_channel(channel)
     await kit.create_room(ROOM)
     await kit.attach_channel(ROOM, "conf")
-    return kit, backend
+    return kit, channel, backend
 
 
-async def record_of(kit: RoomKit) -> Participant:
-    record = await kit.store.get_participant(ROOM, DIAL_IN)
+async def record_of(kit: RoomKit, participant_id: str = DIAL_IN) -> Participant:
+    record = await kit.store.get_participant(ROOM, participant_id)
     assert record is not None
     return record
 
 
 async def arrive(trusts_unasserted: bool = False, **joined: object) -> Participant:
     """Let one participant into a fresh conference, and hand back its record."""
-    kit, backend = await conference(trusts_unasserted)
+    kit, _, backend = await conference(trusts_unasserted)
     await backend.simulate_participant_joined(ROOM, DIAL_IN, **joined)  # type: ignore[arg-type]
     record = await record_of(kit)
     await kit.close_room(ROOM)
@@ -119,7 +123,7 @@ async def who_gets_believed() -> None:
 
 async def what_the_record_keeps() -> None:
     """A conference is where strangers get to propose keys for your metadata."""
-    kit, backend = await conference()
+    kit, _, backend = await conference()
     await backend.simulate_participant_joined(ROOM, DIAL_IN, metadata={"sip.phoneNumber": NUMBER})
 
     # The integrator's own field, written after the caller was identified.
@@ -141,9 +145,41 @@ async def what_the_record_keeps() -> None:
     await kit.close_room(ROOM)
 
 
+async def what_the_mint_may_send_along() -> None:
+    """The other direction: what the room gets to write into the conference.
+
+    A participant id is a *channel* identity, opaque on purpose — the person
+    behind it is carried by `identity_id`, which never leaves the room. So an
+    integrator's own client has nothing to put on a tile, unless the mint says
+    so: `attributes` is the field that travels beside the identity, per mint,
+    and only when it is asked for (RFC §12.10.3).
+    """
+    kit, channel, backend = await conference()
+    await kit.ensure_participant(ROOM, "conf", BROWSER, display_name="Alice")
+    await channel.mint_access(ROOM, BROWSER, attributes={"app.user": ALICE.id})
+
+    # The credential admits; the arrival is what surfaces what it carried.
+    await backend.simulate_participant_joined(ROOM, BROWSER)
+    record = await record_of(kit, BROWSER)
+
+    founded = record.identity_id or "nothing — a token vouches for nobody"
+    print("\nWhat a mint may send along")
+    print(f"  the SFU's clients read: {record.metadata[CONFERENCE_METADATA_KEY]['unasserted']}")
+    print(f"  what it founded:        {founded}")
+
+    # And the room refuses to emit what it would refuse to store: a credential
+    # carrying what cannot survive the round trip is a promise it cannot keep.
+    try:
+        await channel.mint_access(ROOM, BROWSER, attributes={"note": "x" * 2_000})
+    except ValueError as exc:
+        print(f"  over the bound:         {exc}")
+    await kit.close_room(ROOM)
+
+
 async def main() -> None:
     await who_gets_believed()
     await what_the_record_keeps()
+    await what_the_mint_may_send_along()
 
 
 if __name__ == "__main__":

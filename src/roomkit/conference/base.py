@@ -15,7 +15,7 @@ from __future__ import annotations
 import inspect
 import logging
 from abc import ABC, abstractmethod
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
 from roomkit.conference.models import (
@@ -156,6 +156,7 @@ class ConferenceBackend(ABC):
         grants: ConferenceGrants,
         *,
         display_name: str | None = None,
+        attributes: Mapping[str, str] | None = None,
     ) -> ConferenceAccess:
         """Mint credentials for a participant to join the SFU directly.
 
@@ -172,6 +173,29 @@ class ConferenceBackend(ABC):
         to a roster rebuilt from the join's catch-up after a restart (RFC
         12.10.3). One that cannot simply ignores it; attribution never
         depends on it.
+
+        ``attributes`` is what the caller wants carried on the participant
+        besides its identity. Without it the identity is the only field that
+        travels, so an integrator whose own clients must be told *who* is
+        behind it has to encode that in the identity — which turns a
+        ``Participant.id`` into a small format to parse, and undoes the
+        separation between a channel identity and the Identity linked to it.
+        A backend whose SFU carries per-participant attributes should put them
+        in the credential and surface whatever the SFU reports back on
+        ``ConferenceParticipant.metadata``; one whose SFU carries none ignores
+        them, and nothing downstream depends on their arrival.
+
+        Surfaced, never vouched for. An implementation must not put an
+        attribute in ``asserted_metadata`` merely because it rode a credential
+        this backend minted: the deployment may issue other credentials, and an
+        SFU that lets a client rewrite its own attributes after joining leaves
+        nothing to tell the two apart at read time (RFC 12.10.2 rule 1). What
+        travels here can be read and rendered; it cannot found an identity.
+
+        The size bound is the channel's, not this method's: it is the same
+        bound the room applies to the attributes it persists, and it lives
+        where that one lives (``roomkit.channels._conference_metadata``). A
+        backend called directly gets what its caller passed.
 
         The returned credential is opaque to the framework: the integrator
         hands it to its client application, and the provider's SDK consumes it.

@@ -27,6 +27,11 @@ from roomkit import (
     RoomKit,
     TrackKind,
 )
+from roomkit.channels._conference_metadata import (
+    MAX_ATTRIBUTES,
+    MAX_KEY_CHARS,
+    MAX_VALUE_CHARS,
+)
 from roomkit.channels.conference import ConferenceChannel
 from roomkit.core.exceptions import (
     ConferenceAlreadyAttachedError,
@@ -77,6 +82,25 @@ class _JoinedEarlierBackend(MockConferenceBackend):
         bot = await super().join_as_bot(room_id, identity, grants)
         bot.joined_at = datetime.now(UTC) - timedelta(milliseconds=self.AGO_MS)
         return bot
+
+
+class _PreAttributesBackend(MockConferenceBackend):
+    """A backend written before `mint_access` grew an ``attributes`` argument.
+
+    Stands for every integrator's own backend on the day this parameter
+    landed: it keeps working, and only a caller that actually asks for
+    attributes meets its refusal.
+    """
+
+    async def mint_access(  # type: ignore[no-untyped-def,override]
+        self,
+        room_id,
+        identity,
+        grants,
+        *,
+        display_name=None,
+    ):
+        return await super().mint_access(room_id, identity, grants, display_name=display_name)
 
 
 class _NaiveClockBackend(MockConferenceBackend):
@@ -1280,6 +1304,118 @@ class TestDisplayNameRidesTheCredential:
         participant = await kit.store.get_participant(ROOM, "p-alice")
         assert participant is not None
         assert participant.display_name == "Alice"
+
+
+class TestMintedAttributesRideTheCredential:
+    """The identity is no longer the only field that travels (RMK-110).
+
+    An integrator whose own clients must be told *who* is behind a channel
+    identity had nowhere to put it, so the pressure was to encode meaning in
+    the identity itself — which is the separation `identity_id` exists to keep.
+    What travels now is what the caller passed, and nothing else.
+    """
+
+    async def test_the_mint_carries_what_the_caller_passed(self) -> None:
+        kit, channel, backend = await _kit_with_channel()
+        await kit.ensure_participant(ROOM, "conf", "p-alice")
+
+        await channel.mint_access(ROOM, "p-alice", attributes={"app.user": "user-42"})
+
+        mint = [c for c in backend.calls if c.method == "mint_access"][-1]
+        assert mint.args["attributes"] == {"app.user": "user-42"}
+
+    async def test_a_mint_that_asks_for_nothing_carries_nothing(self) -> None:
+        kit, channel, backend = await _kit_with_channel()
+        await kit.ensure_participant(ROOM, "conf", "p-alice")
+
+        await channel.mint_access(ROOM, "p-alice")
+
+        mint = [c for c in backend.calls if c.method == "mint_access"][-1]
+        assert mint.args["attributes"] is None
+
+    async def test_the_channel_adds_nothing_the_caller_did_not_ask_for(self) -> None:
+        """It knows the participant's ``identity_id`` and could mint it unasked.
+
+        That would solve every host's problem at once and publish the platform
+        identity of everyone in the room to every peer of a conference that may
+        be pseudonymous. Opt-in per mint is the whole design (RFC §12.10.3).
+        """
+        kit, channel, backend = await _kit_with_channel()
+        await kit.ensure_participant(ROOM, "conf", "p-alice")
+        record = await kit.store.get_participant(ROOM, "p-alice")
+        assert record is not None
+        await kit.store.update_participant(record.model_copy(update={"identity_id": "user-42"}))
+
+        await channel.mint_access(ROOM, "p-alice")
+
+        mint = [c for c in backend.calls if c.method == "mint_access"][-1]
+        assert mint.args["attributes"] is None
+
+    async def test_they_come_back_on_the_roster_unasserted(self) -> None:
+        """Readable and renderable, and unable to found an identity: they rode
+        a token, which is not a thing an SFU established (RFC §12.10.2 rule 1).
+        """
+        kit, channel, backend = await _kit_with_channel()
+        await kit.ensure_participant(ROOM, "conf", "p-alice")
+        await channel.mint_access(ROOM, "p-alice", attributes={"app.user": "user-42"})
+
+        await backend.simulate_participant_joined(ROOM, "p-alice")
+
+        record = await kit.store.get_participant(ROOM, "p-alice")
+        assert record is not None
+        provider = record.metadata[CONFERENCE_METADATA_KEY]
+        assert provider["unasserted"]["app.user"] == "user-42"
+        assert "app.user" not in provider["asserted"]
+
+    async def test_a_backend_from_before_the_parameter_still_mints(self) -> None:
+        """The parameter is optional on the way in and on the way down: a
+        backend written before it existed is never handed it.
+        """
+        kit, channel, backend = await _kit_with_channel(_PreAttributesBackend())
+        await kit.ensure_participant(ROOM, "conf", "p-alice")
+
+        access = await channel.mint_access(ROOM, "p-alice")
+
+        assert access.token
+
+
+class TestWhatAMintRefusesToCarry:
+    """The bound of RFC §12.10.3: a credential must not carry what the room
+    would refuse to persist when the SFU reported it back. It refuses rather
+    than truncates, because here the caller is the integrator — and an
+    attribute silently missing from a token is met in the browser, later.
+    """
+
+    @pytest.mark.parametrize(
+        ("attributes", "message"),
+        [
+            ({f"k{index}": "v" for index in range(MAX_ATTRIBUTES + 1)}, "at most"),
+            ({"k" * (MAX_KEY_CHARS + 1): "v"}, "characters"),
+            ({"big": "x" * (MAX_VALUE_CHARS + 1)}, "longer than"),
+            ({"count": 3}, "carries strings"),
+        ],
+        ids=["too-many", "long-key", "long-value", "not-a-string"],
+    )
+    async def test_an_unmintable_attribute_is_refused(
+        self, attributes: dict[str, Any], message: str
+    ) -> None:
+        kit, channel, backend = await _kit_with_channel()
+        await kit.ensure_participant(ROOM, "conf", "p-alice")
+
+        with pytest.raises(ValueError, match=message):
+            await channel.mint_access(ROOM, "p-alice", attributes=attributes)
+
+    async def test_the_refusal_lands_before_the_backend_is_asked(self) -> None:
+        """A mint the channel will refuse over its own argument never reaches
+        the SFU, so there is no credential for an operator to wonder about.
+        """
+        kit, channel, backend = await _kit_with_channel()
+        await kit.ensure_participant(ROOM, "conf", "p-alice")
+
+        with pytest.raises(ValueError):
+            await channel.mint_access(ROOM, "p-alice", attributes={"count": 3})
+
+        assert [c for c in backend.calls if c.method == "mint_access"] == []
 
 
 class TestAccessMinting:

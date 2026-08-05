@@ -60,6 +60,7 @@ import contextlib
 import json
 import logging
 import os
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -319,6 +320,7 @@ class LiveKitConferenceBackend(ConferenceBackend):
         grants: ConferenceGrants,
         *,
         display_name: str | None = None,
+        attributes: Mapping[str, str] | None = None,
     ) -> ConferenceAccess:
         """Mint a join credential for a participant the framework named.
 
@@ -331,9 +333,23 @@ class LiveKitConferenceBackend(ConferenceBackend):
         what LiveKit's own clients render — and comes back on every
         ``ParticipantInfo`` the server reports, which is how a roster rebuilt
         after a restart gets its names back (RFC 12.10.3).
+
+        ``attributes`` ride it as LiveKit's participant ``attributes`` claim,
+        and come back in the same map ``list_participants()`` reads. They are
+        surfaced there and nothing more: :func:`asserted_attributes` vouches
+        for a participant's ``sip.*`` and only on a participant the server
+        itself calls SIP, so an attribute this backend minted for a browser
+        stays unasserted — which is exact, because this backend cannot see
+        whether another token in the deployment grants
+        ``can_update_own_metadata`` (RFC 12.10.2 rule 1).
         """
         return self._access(
-            room_id, participant_id, grants, publish_data=True, display_name=display_name
+            room_id,
+            participant_id,
+            grants,
+            publish_data=True,
+            display_name=display_name,
+            attributes=attributes,
         )
 
     def _access(
@@ -344,6 +360,7 @@ class LiveKitConferenceBackend(ConferenceBackend):
         *,
         publish_data: bool,
         display_name: str | None = None,
+        attributes: Mapping[str, str] | None = None,
     ) -> ConferenceAccess:
         video_grants = self._api_module.VideoGrants(
             **video_grant_kwargs(room_id, grants, publish_data=publish_data)
@@ -356,6 +373,11 @@ class LiveKitConferenceBackend(ConferenceBackend):
         )
         if display_name is not None:
             token = token.with_name(display_name)
+        # An empty map is not a claim: LiveKit drops an empty attributes claim
+        # from the JWT anyway, and asking for one would only put the decision
+        # in the SDK's hands rather than in this method's.
+        if attributes:
+            token = token.with_attributes(dict(attributes))
         return ConferenceAccess(
             url=self._url,
             token=token.to_jwt(),
