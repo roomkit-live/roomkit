@@ -55,6 +55,7 @@ def _mock_response(
     prompt_tokens: int = 10,
     completion_tokens: int = 25,
     tool_calls: list[dict[str, Any]] | None = None,
+    cached_tokens: int | None = None,
 ) -> SimpleNamespace:
     """Build a fake OpenAI chat completion response."""
     mock_tool_calls = None
@@ -80,6 +81,9 @@ def _mock_response(
         usage=SimpleNamespace(
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
+            prompt_tokens_details=(
+                None if cached_tokens is None else SimpleNamespace(cached_tokens=cached_tokens)
+            ),
         ),
     )
 
@@ -208,6 +212,30 @@ class TestOpenAIAIProvider:
             result = await provider.generate(_context())
 
             assert result.usage == {"input_tokens": 42, "output_tokens": 7}
+
+    @pytest.mark.asyncio
+    async def test_generate_reports_the_cached_prefix_apart_from_fresh_input(self) -> None:
+        # OpenAI's prompt_tokens counts the cached prefix; reporting both
+        # whole would have a cost dashboard bill those tokens twice, at the
+        # full input rate on top of the cached one.
+        with patch.dict("sys.modules", {"openai": _mock_openai_module()}):
+            from roomkit.providers.openai.ai import OpenAIAIProvider
+
+            provider = OpenAIAIProvider(_config())
+            provider._client = MagicMock()
+            provider._client.chat.completions.create = AsyncMock(
+                return_value=_mock_response(
+                    prompt_tokens=1_000, completion_tokens=20, cached_tokens=800
+                )
+            )
+
+            result = await provider.generate(_context())
+
+            assert result.usage == {
+                "input_tokens": 200,
+                "output_tokens": 20,
+                "cache_read_input_tokens": 800,
+            }
 
     @pytest.mark.asyncio
     async def test_generate_api_error(self) -> None:

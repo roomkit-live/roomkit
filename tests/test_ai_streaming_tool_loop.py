@@ -582,3 +582,64 @@ class TestStreamingTokenAccumulation:
         # Tokens should be summed: 100+200=300 input, 50+75=125 output
         assert span.attributes.get(Attr.LLM_INPUT_TOKENS) == 300
         assert span.attributes.get(Attr.LLM_OUTPUT_TOKENS) == 125
+
+    async def test_cache_counters_reach_the_after_response_hook(self) -> None:
+        """Every counter a round reports is summed, not just input/output.
+
+        The hook payload is where a consumer prices a turn. Forwarding only
+        input/output made a cached prefix indistinguishable from fresh input,
+        and the two are billed an order of magnitude apart.
+        """
+        from roomkit.models.tool_call import AIResponseEvent
+
+        async def tool_handler(name: str, args: dict[str, Any]) -> str:
+            return "result"
+
+        responses = [
+            AIResponse(
+                content="Round 1.",
+                finish_reason="tool_calls",
+                usage={
+                    "input_tokens": 200,
+                    "output_tokens": 5,
+                    "cache_read_input_tokens": 800,
+                    "cache_creation_input_tokens": 1_000,
+                },
+                tool_calls=[AIToolCall(id="tc1", name="search", arguments={})],
+            ),
+            AIResponse(
+                content="Round 2.",
+                finish_reason="stop",
+                usage={
+                    "input_tokens": 100,
+                    "output_tokens": 10,
+                    "cache_read_input_tokens": 1_000,
+                },
+            ),
+        ]
+
+        captured: list[AIResponseEvent] = []
+
+        async def after_response(event: AIResponseEvent) -> None:
+            captured.append(event)
+
+        provider = MockAIProvider(ai_responses=responses, streaming=True)
+        ch = AIChannel("ai1", provider=provider, tool_handler=tool_handler)
+        ch._after_response_hook = after_response
+
+        output = await ch.on_event(
+            make_event(body="go", channel_id="sms1"),
+            _binding(),
+            _ctx(),
+        )
+        assert output.response_stream is not None
+        async for _ in output.response_stream:
+            pass
+
+        assert captured
+        assert captured[0].usage == {
+            "input_tokens": 300,
+            "output_tokens": 15,
+            "cache_read_input_tokens": 1_800,
+            "cache_creation_input_tokens": 1_000,
+        }

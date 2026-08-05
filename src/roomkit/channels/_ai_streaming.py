@@ -357,6 +357,10 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
         _round_usage: dict[str, Any] | None = None
         _total_input_tokens = 0
         _total_output_tokens = 0
+        # Every counter a round reported, summed — cache reads and writes
+        # included. They are what tells a cached prefix apart from fresh
+        # input, and the two are billed an order of magnitude apart.
+        _total_usage: dict[str, int] = {}
         _span_errored = False
         _t0_stream = time.monotonic()
         _accumulated_text: list[str] = []
@@ -544,6 +548,9 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                             round_out = _round_usage.get("output_tokens", 0)
                             _total_input_tokens += round_in
                             _total_output_tokens += round_out
+                            for _key, _value in _round_usage.items():
+                                if isinstance(_value, int):
+                                    _total_usage[_key] = _total_usage.get(_key, 0) + _value
                             telemetry.record_metric(
                                 "roomkit.llm.input_tokens",
                                 float(round_in),
@@ -713,6 +720,7 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                             response_content="".join(_accumulated_text),
                             room_id=room_id,
                             usage={
+                                **_total_usage,
                                 "input_tokens": _total_input_tokens,
                                 "output_tokens": _total_output_tokens,
                             },

@@ -336,6 +336,30 @@ class OpenAIAIProvider(AIProvider):
         if self._config.extra_body:
             kwargs["extra_body"] = {**self._config.extra_body, **kwargs.get("extra_body", {})}
 
+    @staticmethod
+    def _usage_from(raw: Any) -> dict[str, int]:
+        """Map an OpenAI-shaped usage object to roomkit's canonical counters.
+
+        ``prompt_tokens`` includes the cached prefix, while
+        ``cache_read_input_tokens`` reports that prefix on its own. Reported
+        as-is the two overlap, and anything pricing them — a per-tenant
+        budget, a cost dashboard — charges the cached tokens twice, at the
+        full input rate on top of the cached one. So the cached prefix is
+        subtracted out here: ``input_tokens`` counts what was billed at the
+        input rate, matching how Anthropic reports natively and how the
+        Gemini provider normalizes.
+        """
+        prompt = raw.prompt_tokens or 0
+        details = getattr(raw, "prompt_tokens_details", None)
+        cached = (getattr(details, "cached_tokens", 0) if details else 0) or 0
+        usage = {
+            "input_tokens": max(prompt - cached, 0),
+            "output_tokens": raw.completion_tokens or 0,
+        }
+        if cached:
+            usage["cache_read_input_tokens"] = cached
+        return usage
+
     # -- Non-streaming ---------------------------------------------------------
 
     async def generate(self, context: AIContext) -> AIResponse:
@@ -407,15 +431,7 @@ class OpenAIAIProvider(AIProvider):
         choice = response.choices[0]
         usage: dict[str, int] = {}
         if response.usage:
-            usage = {
-                "input_tokens": response.usage.prompt_tokens or 0,
-                "output_tokens": response.usage.completion_tokens or 0,
-            }
-            # Extract cached tokens from OpenAI-compatible prompt_tokens_details
-            ptd = getattr(response.usage, "prompt_tokens_details", None)
-            cached = getattr(ptd, "cached_tokens", 0) if ptd else 0
-            if cached:
-                usage["cache_read_input_tokens"] = cached
+            usage = self._usage_from(response.usage)
 
         # Extract tool calls from response
         tool_calls: list[AIToolCall] = []
@@ -495,15 +511,7 @@ class OpenAIAIProvider(AIProvider):
             async for chunk in response:
                 # With include_usage, the final chunk has usage but empty choices
                 if hasattr(chunk, "usage") and chunk.usage:
-                    usage = {
-                        "input_tokens": chunk.usage.prompt_tokens or 0,
-                        "output_tokens": chunk.usage.completion_tokens or 0,
-                    }
-                    # Extract cached tokens from OpenAI-compatible prompt_tokens_details
-                    ptd = getattr(chunk.usage, "prompt_tokens_details", None)
-                    cached = getattr(ptd, "cached_tokens", 0) if ptd else 0
-                    if cached:
-                        usage["cache_read_input_tokens"] = cached
+                    usage = self._usage_from(chunk.usage)
                 if not chunk.choices:
                     continue
                 delta = chunk.choices[0].delta
