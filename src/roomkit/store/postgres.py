@@ -1124,12 +1124,13 @@ class PostgresStore(ConversationStore):
                     "INSERT INTO participants"
                     " (id, room_id, channel_id, display_name, role, status,"
                     "  identification, identity_id, external_id, joined_at,"
-                    "  resolved_at, resolved_by, metadata)"
-                    " VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)"
+                    "  resolved_at, resolved_by, metadata, connected_via)"
+                    " VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)"
                     " ON CONFLICT (room_id, id) DO UPDATE SET"
                     "  channel_id=$3, display_name=$4, role=$5, status=$6,"
                     "  identification=$7, identity_id=$8, external_id=$9,"
-                    "  resolved_at=$11, resolved_by=$12, metadata=$13",
+                    "  resolved_at=$11, resolved_by=$12, metadata=$13,"
+                    "  connected_via=$14",
                     participant.id,
                     participant.room_id,
                     participant.channel_id,
@@ -1143,6 +1144,7 @@ class PostgresStore(ConversationStore):
                     participant.resolved_at,
                     participant.resolved_by,
                     participant.metadata,
+                    participant.connected_via,
                 )
         return participant
 
@@ -1164,7 +1166,7 @@ class PostgresStore(ConversationStore):
                 await conn.execute(
                     "UPDATE participants SET channel_id=$3, display_name=$4, role=$5,"
                     " status=$6, identification=$7, identity_id=$8, external_id=$9,"
-                    " resolved_at=$10, resolved_by=$11, metadata=$12"
+                    " resolved_at=$10, resolved_by=$11, metadata=$12, connected_via=$13"
                     " WHERE room_id=$1 AND id=$2",
                     participant.room_id,
                     participant.id,
@@ -1178,6 +1180,7 @@ class PostgresStore(ConversationStore):
                     participant.resolved_at,
                     participant.resolved_by,
                     participant.metadata,
+                    participant.connected_via,
                 )
         return participant
 

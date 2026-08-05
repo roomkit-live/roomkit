@@ -7,6 +7,8 @@ they speak. Shows:
 - list_members() / is_member() — the active roster
 - ON_PARTICIPANT_JOINED / ON_PARTICIPANT_LEFT lifecycle hooks
 - remove_member() — a soft leave (status flip, history preserved)
+- ensure_participant() on a second channel — one record, `connected_via`, and
+  the warning that names both channels (RFC 5.5)
 - list_read_markers() — per-channel read high-water-marks, mapped back to
   members for a "seen by" receipt
 
@@ -87,6 +89,18 @@ async def main() -> None:
     print("\nSeen by (read up to event index):")
     for channel_id, index in sorted(markers.items()):
         print(f"  {channel_to_name.get(channel_id, channel_id)}: index {index}")
+
+    # --- One record, several channels (RFC 5.5) ---
+    # A participant is one record per (room, id): the same person reached on a
+    # second channel is the same participant, not a new one. So a lookup naming
+    # another channel gets the record as it stands — primary channel included —
+    # and the channel that asked is recorded in connected_via. Watch the warning
+    # this prints: it is the only thing that says the two channels now share a
+    # record, and a lifecycle kept on it would be kept for both.
+    print("\nA conference asks for Alice under the id her WebSocket channel used...")
+    shared = await kit.ensure_participant("team", "conference-team", "alice")
+    print(f"  channel_id stayed: {shared.channel_id}")
+    print(f"  connected_via now: {shared.connected_via}")
 
     # --- Soft leave: status flips to LEFT, history/read-markers survive ---
     print("\nCarol leaves...")

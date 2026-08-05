@@ -93,6 +93,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A participant reached on a second channel is no longer adopted in
+  silence.** `ensure_participant(room, channel, participant_id)` looks a
+  participant up by `(room, id)` and returns whatever it finds. When that
+  record belonged to another channel — a conference asking for a participant
+  under the id a WebSocket channel had already used — the caller got it with no
+  error and no log, believing it held a participant on the channel it had
+  named. Downstream, a conference lifecycle then drove a team-channel
+  membership: leaving the call wrote `LEFT` over it, and joining one revived a
+  membership deliberately dropped. It took weeks to find because nothing said a
+  word.
+
+  The lookup is unchanged, and deliberately so: a participant is **one record
+  per (room, id)**, and the same person reached by SMS and then by email being
+  one participant is the point of a cross-channel identity, not a defect. What
+  changes is that the reuse is now said and kept. `connected_via` — declared in
+  the model and in RFC §5.5 since the beginning, written by nothing until now —
+  carries every channel the room has reached a participant through, primary
+  first, and is persisted. A lookup naming a channel that is not the record's
+  primary one logs a warning naming both. `add_member` still moves the primary
+  channel on a deliberate join through another channel, but keeps the one it
+  replaced on the list and logs the move.
+
+  `ensure_participant` now runs under the room lock, like `add_member` and
+  `remove_member`, since recording a channel is a read-modify-write on the same
+  record. Recording a channel is bookkeeping, not presentation: no
+  `PARTICIPANT_UPDATED` event, no `ON_PARTICIPANT_UPDATED` hook.
+
+  Postgres gains `participants.connected_via TEXT[]` through the additive,
+  idempotent DDL `init()` already runs — no migration step, and an existing row
+  reads as an empty list, which is what it was stored under. RFC §5.5 states the
+  rule ("One record, several channels"); the library follows it. (RMK-108)
+
 - **A voice note sent to a Telegram bot no longer vanishes.**
   `parse_telegram_webhook` knew `text`, `photo` and `location`; every `voice`,
   `audio`, `video_note`, `video` and `document` update fell through to

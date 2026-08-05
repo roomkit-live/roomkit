@@ -236,6 +236,11 @@ CREATE TABLE IF NOT EXISTS participants (
     metadata       JSONB NOT NULL DEFAULT '{}',
     PRIMARY KEY (room_id, id)
 );
+-- The channels a participant has been reached through (RFC 5.5), primary
+-- included. Additive and unguarded, like events.addressed_to: an existing row
+-- carries no list, and an empty one reads as "only ever seen on channel_id" —
+-- which is what it was stored under. Nothing to backfill, re-running is a no-op.
+ALTER TABLE participants ADD COLUMN IF NOT EXISTS connected_via TEXT[] NOT NULL DEFAULT '{}';
 CREATE INDEX IF NOT EXISTS idx_participants_channel
     ON participants(room_id, channel_id);
 

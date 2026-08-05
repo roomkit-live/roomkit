@@ -342,6 +342,32 @@ class TestParticipantOperations:
         assert result is not None
         assert result.display_name == "Alice"
 
+    async def test_connected_via_round_trips(self, store) -> None:
+        """RFC §5.5: the channels a participant was reached through MUST persist.
+
+        A list that only lived in the model would make the multi-channel record
+        true for one process and empty for the next one to read it.
+        """
+        await store.create_room(Room(id="r1"))
+        p = Participant(id="p1", room_id="r1", channel_id="ch1", connected_via=["ch1"])
+        await store.add_participant(p)
+        assert (await store.get_participant("r1", "p1")).connected_via == ["ch1"]
+
+        await store.update_participant(p.model_copy(update={"connected_via": ["ch1", "ch2"]}))
+        result = await store.get_participant("r1", "p1")
+        assert result is not None
+        assert result.connected_via == ["ch1", "ch2"]
+        # order is order of first sight, not set order
+        assert result.connected_via[0] == "ch1"
+
+    async def test_connected_via_defaults_empty_on_a_row_that_predates_it(self, store) -> None:
+        """The column is additive: a record stored without a list reads as empty."""
+        await store.create_room(Room(id="r1"))
+        await store.add_participant(Participant(id="p1", room_id="r1", channel_id="ch1"))
+        result = await store.get_participant("r1", "p1")
+        assert result is not None
+        assert result.connected_via == []
+
 
 class TestReadTracking:
     async def test_unread_count_initial(self, store) -> None:

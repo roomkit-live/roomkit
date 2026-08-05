@@ -125,6 +125,7 @@ def _row_to_participant(row: Any) -> Participant:
         status=row["status"],
         identification=row["identification"],
         identity_id=row["identity_id"],
+        connected_via=list(row["connected_via"] or ()),
         external_id=row["external_id"],
         joined_at=row["joined_at"],
         resolved_at=row["resolved_at"],

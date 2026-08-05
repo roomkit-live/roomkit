@@ -70,6 +70,13 @@ class MembershipMixin(HelpersMixin):
 
         When ``identity_id`` is given the participant is marked ``IDENTIFIED``
         (the caller already knows who they are).
+
+        A join through a channel other than the record's primary one moves the
+        primary to the channel being joined through — that is what "primary
+        channel used to join" means (RFC §5.5) — without forking a second
+        record: the channel it replaces stays in ``connected_via``, and the move
+        is logged naming both, since a caller reading ``channel_id`` afterwards
+        sees only the new one.
         """
         async with self._lock_manager.locked(room_id):
             await self.get_room(room_id)
@@ -82,10 +89,12 @@ class MembershipMixin(HelpersMixin):
                 IdentificationStatus.IDENTIFIED if identity_id else IdentificationStatus.PENDING
             )
             if existing is not None:
+                channels = self._record_channel_use(existing, channel_id, rehomes=True)
                 participant = existing.model_copy(
                     update={
                         "status": ParticipantStatus.ACTIVE,
                         "channel_id": channel_id,
+                        "connected_via": channels or existing.connected_via,
                         "role": role,
                         "identity_id": identity_id or existing.identity_id,
                         "identification": identification,
@@ -98,6 +107,7 @@ class MembershipMixin(HelpersMixin):
                     id=participant_id,
                     room_id=room_id,
                     channel_id=channel_id,
+                    connected_via=[channel_id],
                     display_name=display_name,
                     role=role,
                     status=ParticipantStatus.ACTIVE,

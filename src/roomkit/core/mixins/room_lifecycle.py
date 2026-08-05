@@ -336,17 +336,41 @@ class RoomLifecycleMixin(HelpersMixin):
         participant_id: str,
         display_name: str | None = None,
     ) -> Participant:
-        """Get an existing participant or create one."""
-        existing = await self._store.get_participant(room_id, participant_id)
-        if existing:
-            return existing
-        participant = Participant(
-            id=participant_id,
-            room_id=room_id,
-            channel_id=channel_id,
-            display_name=display_name,
-        )
-        return await self._store.add_participant(participant)
+        """Get an existing participant or create one.
+
+        A participant is one record per (room, id), so ``channel_id`` names the
+        channel a record being *created* is primarily reached on — it is not a
+        filter. A participant the room already has is returned as they stand,
+        primary channel included, even when that channel is not the one asked
+        for: the same person reached by SMS and then by email is one participant,
+        not two (RFC §5.5). The channel asked for is recorded in
+        ``connected_via``, and a channel that is not the record's primary one is
+        logged, because nothing in the returned record would otherwise say so —
+        a caller keeping a lifecycle or a status on it is keeping it on a record
+        another channel also drives. Use :meth:`add_member` for a deliberate join.
+
+        Bookkeeping only: no ``PARTICIPANT_UPDATED`` event, no
+        ``ON_PARTICIPANT_UPDATED`` hook. Runs under the room lock — recording a
+        channel is a read-modify-write, and ``add_member`` / ``remove_member``
+        hold that lock while they write the same record.
+        """
+        async with self._lock_manager.locked(room_id):
+            existing = await self._store.get_participant(room_id, participant_id)
+            if existing:
+                channels = self._record_channel_use(existing, channel_id)
+                if channels is None:
+                    return existing
+                return await self._store.update_participant(
+                    existing.model_copy(update={"connected_via": channels})
+                )
+            participant = Participant(
+                id=participant_id,
+                room_id=room_id,
+                channel_id=channel_id,
+                connected_via=[channel_id],
+                display_name=display_name,
+            )
+            return await self._store.add_participant(participant)
 
     async def resolve_participant(
         self,

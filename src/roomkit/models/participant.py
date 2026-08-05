@@ -26,6 +26,11 @@ class Participant(BaseModel):
     identification: IdentificationStatus = IdentificationStatus.PENDING
     identity_id: str | None = None
     candidates: list[str] | None = None
+    # Every channel the room has reached this participant through, ``channel_id``
+    # included and first (RFC §5.5). A participant is one record per (room, id),
+    # so a second channel lands here rather than forking a second record; what
+    # `channel_id` holds is the *primary* channel, which only a deliberate join
+    # moves. Order is order of first sight.
     connected_via: list[str] = Field(default_factory=list)
     external_id: str | None = None
     resolved_at: datetime | None = None

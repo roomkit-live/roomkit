@@ -209,6 +209,7 @@ def _participant_row(participant: Participant) -> dict:
         "resolved_at": participant.resolved_at,
         "resolved_by": participant.resolved_by,
         "metadata": participant.metadata,
+        "connected_via": participant.connected_via,
     }
 
 
@@ -1016,6 +1017,37 @@ class TestPostgresStore:
         result = await store.list_participants("room-1")
         assert len(result) == 1
         assert result[0].id == "p-1"
+
+    async def test_add_participant_writes_connected_via(self) -> None:
+        """RFC §5.5: the channels a participant was reached through MUST persist."""
+        store, mock_conn = _make_store_with_pool()
+        participant = _make_participant().model_copy(
+            update={"connected_via": ["ch-1", "conference-1"]}
+        )
+        await store.add_participant(participant)
+        sql, *params = mock_conn.execute.call_args[0]
+        assert "connected_via" in sql
+        assert ["ch-1", "conference-1"] in params
+
+    async def test_update_participant_writes_connected_via(self) -> None:
+        store, mock_conn = _make_store_with_pool()
+        participant = _make_participant().model_copy(
+            update={"connected_via": ["ch-1", "conference-1"]}
+        )
+        await store.update_participant(participant)
+        sql, *params = mock_conn.execute.call_args[0]
+        assert "connected_via=" in sql
+        assert ["ch-1", "conference-1"] in params
+
+    async def test_get_participant_reads_connected_via(self) -> None:
+        store, mock_conn = _make_store_with_pool()
+        participant = _make_participant().model_copy(
+            update={"connected_via": ["ch-1", "conference-1"]}
+        )
+        mock_conn.fetchrow.return_value = _participant_row(participant)
+        result = await store.get_participant("room-1", "p-1")
+        assert result is not None
+        assert result.connected_via == ["ch-1", "conference-1"]
 
     # ── Read tracking ───────────────────────────────────────────
 

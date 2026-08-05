@@ -4,11 +4,15 @@ Covers the framework additions:
 - ``add_member`` / ``remove_member`` — explicit join/leave emitting
   ``PARTICIPANT_JOINED`` / ``PARTICIPANT_LEFT`` and firing the matching hooks.
 - ``list_members`` / ``is_member`` — active-roster enumeration.
+- ``ensure_participant`` / ``add_member`` reached through a second channel —
+  one record, ``connected_via``, and the warning that names both (RFC §5.5).
 - ``list_read_markers`` — per-channel read high-water-marks used to aggregate
   "seen by" receipts.
 """
 
 from __future__ import annotations
+
+import logging
 
 import pytest
 
@@ -196,6 +200,124 @@ class TestRenameMember:
         await kit.create_room(room_id="r1")
         with pytest.raises(ParticipantNotFoundError):
             await kit.rename_member("r1", "ghost", "Nobody")
+
+
+class TestChannelReuse:
+    """One record, several channels — and it says so (RMK-108, RFC §5.5).
+
+    ``ensure_participant`` looks a participant up by (room, id), so a caller
+    naming a channel the record was not created on gets that record back. That
+    is the cross-channel identity working as intended; what it must not be is
+    silent, because a caller that keeps a lifecycle on the record it received is
+    driving another channel's record with it.
+    """
+
+    async def test_ensure_participant_does_not_rehome_an_existing_record(
+        self, kit: RoomKit
+    ) -> None:
+        await kit.create_room(room_id="r1")
+        await kit.add_member("r1", "ws:u1:r1", "u1", identity_id="u1")
+        got = await kit.ensure_participant("r1", "conference:r1", "u1")
+        # the record is handed back as it stands — primary channel included
+        assert got.channel_id == "ws:u1:r1"
+        # and there is still exactly one record for u1
+        assert [p.id for p in await kit.store.list_participants("r1")] == ["u1"]
+
+    async def test_ensure_participant_records_the_channel_that_asked(self, kit: RoomKit) -> None:
+        await kit.create_room(room_id="r1")
+        await kit.add_member("r1", "ws:u1:r1", "u1", identity_id="u1")
+        got = await kit.ensure_participant("r1", "conference:r1", "u1")
+        assert got.connected_via == ["ws:u1:r1", "conference:r1"]
+        # persisted, not only returned
+        stored = await kit.store.get_participant("r1", "u1")
+        assert stored is not None
+        assert stored.connected_via == ["ws:u1:r1", "conference:r1"]
+
+    async def test_ensure_participant_warns_naming_both_channels(
+        self, kit: RoomKit, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        await kit.create_room(room_id="r1")
+        await kit.add_member("r1", "ws:u1:r1", "u1", identity_id="u1")
+        with caplog.at_level(logging.WARNING, logger="roomkit.framework"):
+            await kit.ensure_participant("r1", "conference:r1", "u1")
+        warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+        assert len(warnings) == 1
+        # the diagnostic is worthless unless it names *both* channels
+        message = warnings[0].getMessage()
+        assert "ws:u1:r1" in message
+        assert "conference:r1" in message
+
+    async def test_ensure_participant_on_the_same_channel_is_quiet(
+        self, kit: RoomKit, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        await kit.create_room(room_id="r1")
+        await kit.add_member("r1", "ws:u1:r1", "u1", identity_id="u1")
+        with caplog.at_level(logging.WARNING, logger="roomkit.framework"):
+            got = await kit.ensure_participant("r1", "ws:u1:r1", "u1")
+        assert [r for r in caplog.records if r.levelno == logging.WARNING] == []
+        assert got.connected_via == ["ws:u1:r1"]
+
+    async def test_a_repeated_reach_does_not_duplicate_the_entry(self, kit: RoomKit) -> None:
+        await kit.create_room(room_id="r1")
+        await kit.add_member("r1", "ws:u1:r1", "u1", identity_id="u1")
+        await kit.ensure_participant("r1", "conference:r1", "u1")
+        got = await kit.ensure_participant("r1", "conference:r1", "u1")
+        assert got.connected_via == ["ws:u1:r1", "conference:r1"]
+
+    async def test_ensure_participant_creating_a_record_seeds_the_list(self, kit: RoomKit) -> None:
+        await kit.create_room(room_id="r1")
+        created = await kit.ensure_participant("r1", "sms-main", "u1")
+        assert created.channel_id == "sms-main"
+        assert created.connected_via == ["sms-main"]
+
+    async def test_recording_a_channel_emits_nothing(self, kit: RoomKit) -> None:
+        """Bookkeeping, not presentation (RFC §5.5)."""
+        fired: list[RoomEvent] = []
+
+        async def on_updated(event: RoomEvent, ctx: RoomContext) -> None:
+            fired.append(event)
+
+        kit.hook_engine.register(_async_hook(HookTrigger.ON_PARTICIPANT_UPDATED, on_updated))
+        await kit.create_room(room_id="r1")
+        await kit.add_member("r1", "ws:u1:r1", "u1", identity_id="u1")
+        before = len(await kit.store.list_events("r1"))
+        await kit.ensure_participant("r1", "conference:r1", "u1")
+        assert len(await kit.store.list_events("r1")) == before
+        assert fired == []
+
+    async def test_add_member_moves_the_primary_but_keeps_the_one_it_replaces(
+        self, kit: RoomKit, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """A deliberate join MAY re-home — and says so (RFC §5.5)."""
+        await kit.create_room(room_id="r1")
+        await kit.add_member("r1", "ws:u1:r1", "u1", identity_id="u1")
+        await kit.remove_member("r1", "u1")
+        with caplog.at_level(logging.WARNING, logger="roomkit.framework"):
+            rejoined = await kit.add_member("r1", "conference:r1", "u1", identity_id="u1")
+        assert rejoined.channel_id == "conference:r1"
+        assert rejoined.connected_via == ["ws:u1:r1", "conference:r1"]
+        message = next(r.getMessage() for r in caplog.records if r.levelno == logging.WARNING)
+        assert "ws:u1:r1" in message
+        assert "conference:r1" in message
+
+    async def test_the_luge_scenario_leaves_a_readable_trail(self, kit: RoomKit) -> None:
+        """The defect this test exists for (RMK-108).
+
+        A WebSocket channel writes team-channel membership, a conference then
+        asks for a participant under the same id, and the conference lifecycle
+        drives the record from there — leaving the call flipped the membership
+        to LEFT. The library cannot stop a host handing over its own id, but the
+        record now carries the evidence that two channels share it.
+        """
+        await kit.create_room(room_id="r1")
+        await kit.add_member("r1", "ws:u1:r1", "u1", identity_id="u1")
+        await kit.ensure_participant("r1", "conference:r1", "u1")
+        # the conference's departure flips the shared record, as it always did
+        left = await kit.remove_member("r1", "u1")
+        assert left.status == ParticipantStatus.LEFT
+        # but the record now names both channels, so the collision is legible
+        assert left.channel_id == "ws:u1:r1"
+        assert left.connected_via == ["ws:u1:r1", "conference:r1"]
 
 
 class TestReadMarkerAggregation:

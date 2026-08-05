@@ -183,6 +183,7 @@ class ConferenceRoster:
                     id=participant.participant_id,
                     room_id=room_id,
                     channel_id=self._channel_id,
+                    connected_via=[self._channel_id],
                     # The name the SFU carries is presentation the credential
                     # brought back (RFC 12.10.3) — a record being created
                     # fresh has no integrator-set name for it to overwrite,
