@@ -9,7 +9,7 @@ text and diff blocks. Codex fills it with ``{"formatted_output": …,
 other like a JSON dump cut mid-string::
 
     ⎿ ✓ Read file '/…/SKILL.md' · 6 ms
-      {"formatted_output": "---\\nname: luge-platform\\ndescription: Drive Lug
+      {"formatted_output": "---\\nname: deploy-tools\\ndescription: Drive the
 
 So this module reads the envelope rather than printing it: known payload
 shapes are unwrapped down to their text, media is named instead of dumped

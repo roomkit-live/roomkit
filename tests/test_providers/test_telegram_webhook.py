@@ -336,7 +336,7 @@ class TestMessageProtocolFacts:
         """Offsets count UTF-16 units; slicing by them is entity_text's job, not this one's."""
         entities = [{"type": "mention", "offset": 4, "length": 9}]
         parts = parse_telegram_message(
-            {"message_id": 1, "chat": {"id": 555}, "text": "hey @luge_bot", "entities": entities}
+            {"message_id": 1, "chat": {"id": 555}, "text": "hey @demo_bot", "entities": entities}
         )
 
         assert parts is not None
@@ -347,7 +347,7 @@ class TestMessageProtocolFacts:
             {
                 "message_id": 2,
                 "chat": {"id": 555},
-                "caption": "look @luge_bot",
+                "caption": "look @demo_bot",
                 "caption_entities": [{"type": "mention", "offset": 5, "length": 9}],
                 "photo": [{"file_id": "abc"}],
             }
@@ -414,7 +414,7 @@ class TestMessageProtocolFacts:
             "from": {"id": 999},
             "chat": {"id": 555},
             "date": 1700000000,
-            "text": "hey @luge_bot",
+            "text": "hey @demo_bot",
             "entities": [{"type": "mention", "offset": 4, "length": 9}],
             "reply_to_message": {"message_id": 88},
         }
@@ -457,7 +457,7 @@ class TestMessageProtocolFacts:
                     "from": {"id": 999},
                     "chat": {"id": 555},
                     "date": 1700000000,
-                    "text": "hey @luge_bot",
+                    "text": "hey @demo_bot",
                     "entities": [{"type": "mention", "offset": 4, "length": 9}],
                 },
             },

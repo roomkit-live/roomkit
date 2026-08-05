@@ -81,7 +81,7 @@ async def test_streaming_transport_persists_modified_but_streams_raw() -> None:
     """With a real streaming transport attached: the persisted segment is
     de-anonymised by BEFORE_BROADCAST (C1 works on the streaming path), while
     the live chunks already carried the raw text — they precede the hook by
-    construction. The raw-chunk exposure is what the Luge-side gate prevents by
+    construction. The raw-chunk exposure is what a host-side gate prevents by
     withholding the stream fn when PII is active."""
     kit = RoomKit()
     provider = MockAIProvider(

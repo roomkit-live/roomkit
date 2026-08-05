@@ -300,7 +300,7 @@ class TestChannelReuse:
         assert "ws:u1:r1" in message
         assert "conference:r1" in message
 
-    async def test_the_luge_scenario_leaves_a_readable_trail(self, kit: RoomKit) -> None:
+    async def test_the_shared_id_scenario_leaves_a_readable_trail(self, kit: RoomKit) -> None:
         """The defect this test exists for (RMK-108).
 
         A WebSocket channel writes team-channel membership, a conference then

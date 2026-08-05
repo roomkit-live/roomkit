@@ -103,7 +103,7 @@ LIST_TOOLS_SCHEMA: dict[str, Any] = {
                 "type": "string",
                 "description": (
                     "Optional prefix to filter tools by name (e.g. "
-                    '"TnS_" or "luge_admin_"). Empty/omitted returns all.'
+                    '"crm_" or "admin_"). Empty/omitted returns all.'
                 ),
             },
         },

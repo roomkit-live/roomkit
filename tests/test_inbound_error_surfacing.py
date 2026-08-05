@@ -9,9 +9,9 @@ These tests cover the two paths that used to swallow the failure into
 * an error raised in the AI channel's ``on_event`` before the stream begins
   (both surface through the broadcast-error path under the room lock).
 
-Without the fix the room ends up with only lifecycle events and no error
-card; with it, the host's ON_ERROR hook (e.g. Luge's error card) fires once,
-attributed to the failing agent channel.
+Without the fix the room ends up with only lifecycle events and nothing the
+host can render; with it, the host's ON_ERROR hook fires once, attributed to
+the failing agent channel.
 """
 
 from __future__ import annotations

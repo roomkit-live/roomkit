@@ -19,7 +19,7 @@ class TeamsProvider(ABC):
     """Microsoft Teams delivery + dispatch provider.
 
     Implementations own every interaction with the Bot Framework transport
-    so consumers (e.g. Luge) never touch the SDK directly. The contract
+    so consuming applications never touch the SDK directly. The contract
     covers both outbound delivery (:meth:`send`) and inbound dispatch
     (:meth:`process_inbound`), plus the Teams-specific roster helpers
     needed to resolve sender identity (:meth:`get_member`,

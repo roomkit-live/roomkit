@@ -87,7 +87,7 @@ class Agent(AIChannel):
         **kwargs: Any,
     ) -> None:
         super().__init__(channel_id, provider=provider or _NullAIProvider(), **kwargs)
-        # Human-readable display name (e.g. "Willie Manager"), distinct from the
+        # Human-readable display name (e.g. "Research Assistant"), distinct from the
         # channel_id and from ``role`` (the agent's instructions). Used to label
         # the agent in orchestration timelines instead of a truncated role.
         self.name = name

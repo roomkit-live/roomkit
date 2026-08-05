@@ -142,7 +142,7 @@ class TestStructuredResultViaTrace:
     async def test_captures_prefixed_gateway_call_from_trace(self) -> None:
         events = [
             _tool_call_event(
-                "mcp__luge-integrations__submit_result",
+                "mcp__gateway__submit_result",
                 {"status": "completed", "summary": "shipped", "data": {"y": 2}},
             )
         ]
@@ -156,7 +156,7 @@ class TestStructuredResultViaTrace:
         assert payload["data"] == {"y": 2}
 
     async def test_fails_when_trace_has_no_submit_result(self) -> None:
-        events = [_tool_call_event("mcp__luge-integrations__web_search", {"q": "x"})]
+        events = [_tool_call_event("mcp__gateway__web_search", {"q": "x"})]
         kit = _make_cc_kit(events)
         out = await _run_with_structured_result(
             kit, "parent::task-1", "do it", max_result_retries=1
@@ -169,7 +169,7 @@ class TestStructuredResultViaTrace:
 class TestResultHelpers:
     def test_is_submit_result_matches_bare_and_prefixed(self) -> None:
         assert is_submit_result("submit_result")
-        assert is_submit_result("mcp__luge-integrations__submit_result")
+        assert is_submit_result("mcp__gateway__submit_result")
         assert not is_submit_result("web_search")
         assert not is_submit_result("submit_result_extra")
 

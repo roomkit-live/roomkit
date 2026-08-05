@@ -223,7 +223,7 @@ class TestTranscriptions:
         session = await channel.start_session(room_id, "user-1", "fake-ws")
 
         # Simulate teardown detaching the channel binding out from under the
-        # in-flight transcription (Luge's end_session calls detach_channel).
+        # in-flight transcription (a host's end_session calls detach_channel).
         await kit.detach_channel(room_id, "rt-voice-1")
 
         with caplog.at_level(logging.DEBUG, logger="roomkit.channels.realtime_voice"):

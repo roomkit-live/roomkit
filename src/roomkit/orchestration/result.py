@@ -21,7 +21,7 @@ def is_submit_result(tool_name: str) -> bool:
 
     A function-calling provider calls the injected tool by its bare name; a
     claude_code worker calls the gateway-exposed tool, which the sandbox surfaces
-    with an MCP prefix (``mcp__luge-integrations__submit_result``). Match both so
+    with an MCP prefix (``mcp__<server>__submit_result``). Match both so
     the capture is delivery-agnostic.
     """
     return tool_name == SUBMIT_RESULT_TOOL_NAME or tool_name.endswith(

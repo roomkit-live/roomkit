@@ -187,7 +187,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   voice session never opens — one such tool anywhere in the tenant's set takes
   realtime voice down for that room. Both spellings now collapse the same way, a
   wider list keeping its first non-null member exactly as a wider `anyOf` does.
-  Reported from a production Luge tenant.
+  Reported from a production deployment.
 
 ## [0.41.3] — 2026-08-04
 

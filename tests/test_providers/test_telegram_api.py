@@ -68,7 +68,7 @@ def _api(transport: httpx.AsyncBaseTransport) -> TelegramBotAPI:
 
 class TestReads:
     async def test_get_me_carries_the_bot_object(self) -> None:
-        bot = {"id": 42, "is_bot": True, "username": "luge_bot", "first_name": "Luge"}
+        bot = {"id": 42, "is_bot": True, "username": "demo_bot", "first_name": "Demo"}
         transport = _Recorder(result=bot)
 
         result = await _api(transport).get_me()
