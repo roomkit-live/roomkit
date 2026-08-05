@@ -120,6 +120,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **An agent that owns its own turn is no longer invisible when it answers.**
+  `ON_AI_RESPONSE` is the one signal RoomKit gives a host that a turn of
+  intelligence just finished, and it was wired on `isinstance(channel,
+  AIChannel)`. An ACP coding agent is not an `AIChannel` — it is a channel of
+  category `INTELLIGENCE` that runs its tool loop in another process — so a
+  conversation it held produced events, persisted them, broadcast them, and
+  fired nothing afterwards. Every post-processing task an integrator hangs off
+  that trigger (memory extraction, conversation summary, chat title, metrics)
+  simply did not run for those rooms, and would not have run for any future
+  agent channel either.
+
+  The wiring now follows the **category**, which is the capability the trigger
+  is about: any channel declaring `ChannelCategory.INTELLIGENCE` gets the
+  report, whatever class it descends from. The four other callbacks in that
+  block stay on `AIChannel` — they presume a tool loop running in this
+  process, which an ACP agent does not have.
+
+  `ACPChannel` now fills the report at the end of a turn: the text it produced,
+  how many tools it called, and how long it took. A turn only reports when it
+  reaches its terminal item without an error — a stream closed from the
+  outside cancels the agent and delivers nothing, so it is not a response.
+  Token counters come from the `PromptResponse` the agent returns; because ACP
+  reports them as **session totals**, `usage` carries this turn's difference
+  under the same keys an in-process provider fills, and keeps the cumulative
+  reading whole under `usage["session_total"]` alongside the context
+  occupancy and the running cost.
+
 - **A participant reached on a second channel is no longer adopted in
   silence.** `ensure_participant(room, channel, participant_id)` looks a
   participant up by `(room, id)` and returns whatever it finds. When that

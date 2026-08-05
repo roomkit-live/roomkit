@@ -48,7 +48,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from shared import console_enabled, existing_directory, non_negative_int, setup_logging
 
-from roomkit import ACPChannel, ChannelCategory, CLIChannel, RoomKit
+from roomkit import (
+    ACPChannel,
+    ChannelCategory,
+    CLIChannel,
+    HookExecution,
+    HookTrigger,
+    RoomKit,
+)
 from roomkit.console import terminal_input
 from roomkit.tools import ExternalToolHandler, ToolDecision
 
@@ -160,6 +167,27 @@ async def main(args: argparse.Namespace) -> None:
         claude.channel_id,
         category=ChannelCategory.INTELLIGENCE,
     )
+
+    @kit.hook(HookTrigger.ON_AI_RESPONSE, execution=HookExecution.ASYNC)
+    async def turn_finished(event: Any, _ctx: Any) -> None:
+        """What a host learns when the agent has finished answering.
+
+        The trigger follows the channel's INTELLIGENCE category rather than
+        its class, so an agent running its own tool loop in another process
+        reports the end of a turn exactly like an in-process provider does —
+        which is what makes post-processing (summaries, memory, metrics)
+        possible for a conversation an agent held.
+
+        Token counters are this turn's own; the running session totals stay
+        under ``event.usage["session_total"]``.
+        """
+        spend = ""
+        if event.usage:
+            spend = (
+                f" | {event.usage.get('input_tokens', 0)} in"
+                f" / {event.usage.get('output_tokens', 0)} out"
+            )
+        print(f"\n[turn] {event.tool_calls_count} tool call(s) in {event.latency_ms}ms{spend}\n")
 
     async def switch_model(requested: str) -> None:
         """Handle ``/model`` here instead of letting it reach the agent.

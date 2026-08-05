@@ -16,6 +16,7 @@ from roomkit.channels._acp_client import (
     _result_text,
     _ToolState,
     _TurnState,
+    _usage_context,
 )
 from roomkit.models.streaming import (
     ThinkingDeltaMarker,
@@ -56,6 +57,7 @@ class ACPEventsMixin:
         turn = self._turns.get(session_id)
         text = getattr(getattr(update, "content", None), "text", None)
         if turn is not None and isinstance(text, str) and text:
+            turn.text.append(text)
             turn.queue.put_nowait(text)
 
     async def _on_thought_chunk(self, session_id: str, update: Any) -> None:
@@ -99,6 +101,12 @@ class ACPEventsMixin:
         )
 
     async def _on_usage_update(self, session_id: str, update: Any) -> None:
+        turn = self._turns.get(session_id)
+        if turn is not None:
+            # Kept, not only announced: the end-of-turn report is the only
+            # place this reaches a host that is not watching the ephemeral
+            # stream.
+            turn.context = _usage_context(update)
         room_id = self._session_rooms.get(session_id)
         if room_id is None:
             return

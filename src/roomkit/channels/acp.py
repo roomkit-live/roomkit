@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import time
 from collections.abc import AsyncIterator, Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -30,6 +31,8 @@ from roomkit.channels._acp_client import (
     _model_dump,
     _TurnDone,
     _TurnState,
+    _usage_report,
+    _usage_tokens,
 )
 from roomkit.channels._acp_context import event_text, room_context_block
 from roomkit.channels._acp_events import ACPEventsMixin
@@ -47,6 +50,7 @@ from roomkit.models.enums import (
 )
 from roomkit.models.event import RoomEvent
 from roomkit.models.streaming import StreamDelta
+from roomkit.models.tool_call import AfterResponseCallback, AIResponseEvent
 from roomkit.providers.ai.base import ProviderError
 from roomkit.realtime.base import EphemeralEventType
 
@@ -187,6 +191,8 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
         self._handler_started = False
         self._closed = False
         self._realtime: RealtimeBackend | None = None
+        self._session_tokens: dict[str, dict[str, int]] = {}
+        self._after_response_hook: AfterResponseCallback | None = None
 
     @property
     def info(self) -> dict[str, Any]:
@@ -381,6 +387,7 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
                 return False
             self._session_rooms.pop(session_id, None)
             self._session_options.pop(session_id, None)
+            self._session_tokens.pop(session_id, None)
             # The catch-up mark tracks what *this session* was told. A room
             # whose session is gone starts over: the next one opens empty and
             # has missed everything.
@@ -448,6 +455,7 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
         self._sessions.clear()
         self._session_rooms.clear()
         self._session_options.clear()
+        self._session_tokens.clear()
         self._prompted_index.clear()
 
     async def _session_for(self, room_id: str, connection: Any) -> str:
@@ -483,6 +491,7 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
             connection = await self._ensure_connection()
             session_id = await self._session_for(room_id, connection)
             turn = _TurnState(room_id=room_id)
+            turn.tokens_baseline = self._session_tokens.get(session_id, {})
             self._turns[session_id] = turn
             prompt = [self._sdk().acp.text_block(text)]
             # The room is caught up only once the prompt carrying it is on its
@@ -519,6 +528,7 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
                                 f"ACP agent prompt failed: {item.error}",
                                 provider="acp",
                             ) from item.error
+                        turn.completed = True
                         return
                     yield item
             finally:
@@ -541,6 +551,37 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
                 await self._close_open_tools(turn, room_id, stream=False)
                 if self._turns.get(session_id) is turn:
                     self._turns.pop(session_id, None)
+                if turn.completed:
+                    if turn.tokens:
+                        # Where the next turn subtracts from, whether or not
+                        # anyone is listening to this one.
+                        self._session_tokens[session_id] = turn.tokens
+                    await self._report_response(turn)
+
+    async def _report_response(self, turn: _TurnState) -> None:
+        """Announce a finished turn to whatever observes agent responses.
+
+        Reached only from a turn that ran to its terminal item without an
+        error, and once — an abandoned or failed turn produced no response to
+        report. Observational, like the same report on an in-process AI
+        channel: a hook that raises does not disturb the turn that is ending.
+        """
+        if self._after_response_hook is None:
+            return
+        try:
+            await self._after_response_hook(
+                AIResponseEvent(
+                    channel_id=self.channel_id,
+                    response_content="".join(turn.text),
+                    room_id=turn.room_id,
+                    tool_calls_count=len(turn.tools),
+                    usage=_usage_report(turn.tokens, turn.tokens_baseline, turn.context),
+                    latency_ms=int((time.monotonic() - turn.started_at) * 1000),
+                    streaming=True,
+                )
+            )
+        except Exception:
+            logger.debug("After-response hook failed (acp)", exc_info=True)
 
     async def _run_prompt(
         self,
@@ -551,11 +592,15 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
         turn: _TurnState,
     ) -> None:
         try:
-            await connection.prompt(
+            response = await connection.prompt(
                 session_id,
                 prompt,
                 **{"roomkit.live/eventId": event_id},
             )
+            # The turn's own accounting, and the only place it is offered:
+            # the usage notifications describe the context window, not what
+            # answering cost.
+            turn.tokens = _usage_tokens(getattr(response, "usage", None))
             await self._drain_session_updates(session_id)
         except BaseException as exc:
             turn.queue.put_nowait(_TurnDone(error=exc))

@@ -15,6 +15,7 @@ import acp
 import pytest
 from acp.schema import (
     ConfigOptionUpdate,
+    Cost,
     Implementation,
     InitializeResponse,
     NewSessionResponse,
@@ -23,9 +24,11 @@ from acp.schema import (
     SessionConfigOptionSelect,
     SessionConfigSelectOption,
     SetSessionConfigOptionResponse,
+    Usage,
+    UsageUpdate,
 )
 
-from roomkit import ACPChannel, ACPTransport, CLIChannel, RoomKit, StdioACPTransport
+from roomkit import ACPChannel, ACPTransport, AIChannel, CLIChannel, RoomKit, StdioACPTransport
 from roomkit.channels._acp_client import (
     _config_labels,
     _config_values,
@@ -34,7 +37,14 @@ from roomkit.channels.acp_transport import _resolve_spawn_env
 from roomkit.models.channel import ChannelBinding
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundMessage
-from roomkit.models.enums import ChannelCategory, ChannelType, EventType, Visibility
+from roomkit.models.enums import (
+    ChannelCategory,
+    ChannelType,
+    EventType,
+    HookExecution,
+    HookTrigger,
+    Visibility,
+)
 from roomkit.models.event import EventSource, RoomEvent, TextContent, ToolCallContent
 from roomkit.models.participant import Participant
 from roomkit.models.room import Room
@@ -190,6 +200,10 @@ class _FakeACPConnection:
         self.permission_responses: list[Any] = []
         self.authenticated_with: str | None = None
         self._session_counter = 0
+        # Session totals the agent reports back, one entry consumed per
+        # prompt — the shape a real agent uses, cumulative and monotonic.
+        self.usage_totals: list[Usage] = []
+        self.context_updates: list[UsageUpdate] = []
 
     async def initialize(
         self,
@@ -309,7 +323,10 @@ class _FakeACPConnection:
                 ),
             )
             await self.client.session_update(session_id, acp.update_agent_message_text("done"))
-        return PromptResponse(stop_reason="end_turn")
+        if self.context_updates:
+            await self.client.session_update(session_id, self.context_updates.pop(0))
+        usage = self.usage_totals.pop(0) if self.usage_totals else None
+        return PromptResponse(stop_reason="end_turn", usage=usage)
 
     async def cancel(self, session_id: str) -> None:
         self.cancelled_sessions.append(session_id)
@@ -1184,6 +1201,229 @@ class TestACPChannel:
         assert handler._before_tool_hook is not None
         assert handler._on_tool_hook is not None
         await kit.close()
+
+
+class TestEndOfTurnReport:
+    """An agent that owns its turn still has to say the turn is over.
+
+    ``ON_AI_RESPONSE`` is the host's only signal that a turn of intelligence
+    finished, and a coding agent produces exactly the same observable fact as
+    an in-process provider: it answered.
+    """
+
+    @staticmethod
+    def _capture(channel: ACPChannel) -> list[Any]:
+        reports: list[Any] = []
+
+        async def hook(event: Any) -> None:
+            reports.append(event)
+
+        channel._after_response_hook = hook
+        return reports
+
+    async def test_a_finished_turn_reports_what_it_produced(self, tmp_path: Any) -> None:
+        channel, _, _ = _channel(tmp_path, handler=_RecordingToolHandler(approved=True))
+        reports = self._capture(channel)
+
+        output = await channel.on_event(
+            make_event(body="Inspect it"),
+            _binding(),
+            RoomContext(room=Room(id="room-1")),
+        )
+        _ = [chunk async for chunk in output.response_stream]
+
+        assert len(reports) == 1
+        assert reports[0].channel_id == "acp-agent"
+        assert reports[0].room_id == "room-1"
+        assert reports[0].response_content == "Working done"
+        assert reports[0].tool_calls_count == 1
+        assert reports[0].latency_ms >= 0
+        assert reports[0].streaming is True
+        await channel.close()
+
+    async def test_on_ai_response_fires_for_a_channel_that_is_not_an_aichannel(
+        self,
+        tmp_path: Any,
+    ) -> None:
+        """The whole point: the category qualifies the channel, not its class."""
+        kit = RoomKit()
+        source = SimpleChannel("sms")
+        channel, _, _ = _channel(tmp_path, handler=_RecordingToolHandler(approved=True))
+        assert not isinstance(channel, AIChannel)
+        kit.register_channel(source)
+        kit.register_channel(channel)
+        await kit.create_room(room_id="room-1")
+        await kit.attach_channel("room-1", "sms")
+        await kit.attach_channel("room-1", "acp-agent", category=ChannelCategory.INTELLIGENCE)
+
+        seen: list[Any] = []
+
+        @kit.hook(HookTrigger.ON_AI_RESPONSE, execution=HookExecution.ASYNC)
+        async def observe(event: Any, ctx: Any) -> None:
+            seen.append(event)
+
+        await kit.process_inbound(
+            InboundMessage(
+                channel_id="sms",
+                sender_id="user",
+                content=TextContent(body="Inspect"),
+            )
+        )
+        await asyncio.sleep(0.05)
+
+        assert len(seen) == 1
+        assert seen[0].channel_id == "acp-agent"
+        assert seen[0].room_id == "room-1"
+        assert seen[0].response_content == "Working done"
+        assert seen[0].tool_calls_count == 1
+        await kit.close()
+
+    async def test_token_counters_carry_the_turn_not_the_session(self, tmp_path: Any) -> None:
+        """ACP reports session totals; a host summing turns must not double-count."""
+        channel, connection, _ = _channel(tmp_path, emit_updates=False)
+        connection.usage_totals = [
+            Usage(input_tokens=100, output_tokens=20, total_tokens=120),
+            Usage(input_tokens=260, output_tokens=45, total_tokens=305),
+        ]
+        connection.context_updates = [
+            UsageUpdate(
+                session_update="usage_update",
+                used=120,
+                size=200_000,
+                cost=Cost(amount=0.25, currency="USD"),
+            )
+        ]
+        reports = self._capture(channel)
+
+        for body in ("first", "second"):
+            output = await channel.on_event(
+                make_event(body=body),
+                _binding(),
+                RoomContext(room=Room(id="room-1")),
+            )
+            _ = [chunk async for chunk in output.response_stream]
+
+        assert reports[0].usage["input_tokens"] == 100
+        assert reports[0].usage["session_total"]["context_used"] == 120
+        assert reports[0].usage["session_total"]["context_size"] == 200_000
+        assert reports[0].usage["session_total"]["cost"] == 0.25
+        assert reports[0].usage["session_total"]["currency"] == "USD"
+        # The second turn spent 160 in and 25 out; the session has spent 260.
+        assert reports[1].usage["input_tokens"] == 160
+        assert reports[1].usage["output_tokens"] == 25
+        assert reports[1].usage["total_tokens"] == 185
+        assert reports[1].usage["session_total"]["input_tokens"] == 260
+        await channel.close()
+
+    async def test_a_compaction_does_not_report_negative_spend(self, tmp_path: Any) -> None:
+        """Counters can fall when the agent compacts; a turn never spends less than nothing."""
+        channel, connection, _ = _channel(tmp_path, emit_updates=False)
+        connection.usage_totals = [
+            Usage(input_tokens=400, output_tokens=90, total_tokens=490),
+            Usage(input_tokens=120, output_tokens=95, total_tokens=215),
+        ]
+        reports = self._capture(channel)
+
+        for body in ("first", "second"):
+            output = await channel.on_event(
+                make_event(body=body),
+                _binding(),
+                RoomContext(room=Room(id="room-1")),
+            )
+            _ = [chunk async for chunk in output.response_stream]
+
+        assert reports[1].usage["input_tokens"] == 0
+        assert reports[1].usage["output_tokens"] == 5
+        await channel.close()
+
+    async def test_an_agent_that_reports_nothing_reports_no_usage(self, tmp_path: Any) -> None:
+        channel, _, _ = _channel(tmp_path, emit_updates=False)
+        reports = self._capture(channel)
+
+        output = await channel.on_event(
+            make_event(body="hi"),
+            _binding(),
+            RoomContext(room=Room(id="room-1")),
+        )
+        _ = [chunk async for chunk in output.response_stream]
+
+        assert reports[0].usage == {}
+        await channel.close()
+
+    async def test_a_failed_turn_is_not_a_response(self, tmp_path: Any) -> None:
+        channel, connection, _ = _channel(tmp_path, emit_updates=False)
+        reports = self._capture(channel)
+
+        async def refuses(session_id: str, prompt: list[Any], **kwargs: Any) -> PromptResponse:
+            raise RuntimeError("agent blew up")
+
+        connection.prompt = refuses  # type: ignore[method-assign]
+        output = await channel.on_event(
+            make_event(body="hi"),
+            _binding(),
+            RoomContext(room=Room(id="room-1")),
+        )
+        with pytest.raises(ProviderError):
+            _ = [chunk async for chunk in output.response_stream]
+
+        assert reports == []
+        await channel.close()
+
+    async def test_an_abandoned_turn_is_not_a_response(self, tmp_path: Any) -> None:
+        """A consumer that walks away cancels the agent; nothing was delivered."""
+        channel, connection, _ = _channel(tmp_path, emit_updates=False)
+        reports = self._capture(channel)
+        started = asyncio.Event()
+
+        async def never_finishes(
+            session_id: str,
+            prompt: list[Any],
+            **kwargs: Any,
+        ) -> PromptResponse:
+            await connection.client.session_update(
+                session_id,
+                acp.update_agent_message_text("half a thought"),
+            )
+            started.set()
+            await asyncio.sleep(3600)
+            return PromptResponse(stop_reason="end_turn")
+
+        connection.prompt = never_finishes  # type: ignore[method-assign]
+        output = await channel.on_event(
+            make_event(body="hi"),
+            _binding(),
+            RoomContext(room=Room(id="room-1")),
+        )
+        stream = output.response_stream
+        assert await anext(stream) == "half a thought"
+        await started.wait()
+        await stream.aclose()
+
+        assert reports == []
+        assert connection.cancelled_sessions == ["session-1"]
+        await channel.close()
+
+    async def test_a_closed_session_starts_the_counters_over(self, tmp_path: Any) -> None:
+        """Session ids are not reused, and neither is what the old one had spent."""
+        channel, connection, _ = _channel(tmp_path, emit_updates=False)
+        connection.usage_totals = [
+            Usage(input_tokens=100, output_tokens=20, total_tokens=120),
+            Usage(input_tokens=70, output_tokens=15, total_tokens=85),
+        ]
+        reports = self._capture(channel)
+
+        for body in ("first", "second"):
+            output = await channel.on_event(
+                make_event(body=body),
+                _binding(),
+                RoomContext(room=Room(id="room-1")),
+            )
+            _ = [chunk async for chunk in output.response_stream]
+            await channel.close_session("room-1")
+
+        assert channel._session_tokens == {}
+        assert reports[1].usage["input_tokens"] == 70
+        await channel.close()
 
 
 class TestRoomCatchUp:

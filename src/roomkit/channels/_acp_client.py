@@ -57,6 +57,32 @@ class _TurnState:
     tools: dict[str, _ToolState] = field(default_factory=dict)
     thinking_open: bool = False
     runner: asyncio.Task[None] | None = None
+    started_at: float = field(default_factory=time.monotonic)
+    text: list[str] = field(default_factory=list)
+    """What the agent said this turn, kept for the end-of-turn report.
+
+    The queue hands each chunk to the consumer and forgets it, so the turn
+    would otherwise end with no idea what it produced.
+    """
+
+    tokens: dict[str, int] = field(default_factory=dict)
+    """Token counters the agent returned when the prompt ended.
+
+    Session totals, not this turn's — see :func:`_usage_tokens`.
+    """
+
+    tokens_baseline: dict[str, int] = field(default_factory=dict)
+    """The same counters as they stood when this turn opened, to subtract."""
+
+    context: dict[str, Any] = field(default_factory=dict)
+    """Last context-window occupancy and running cost the agent announced."""
+
+    completed: bool = False
+    """Whether the turn reached its terminal item without an error.
+
+    A stream closed from the outside never gets there: the agent is cancelled
+    and its text is not delivered, so that turn is not a response.
+    """
 
 
 def _load_sdk() -> _SDK:
@@ -99,6 +125,87 @@ def _model_dump(value: Any) -> Any:
     if isinstance(value, (list, tuple)):
         return [_model_dump(item) for item in value]
     return value
+
+
+_TOKEN_FIELDS = (
+    "total_tokens",
+    "input_tokens",
+    "output_tokens",
+    "thought_tokens",
+    "cached_read_tokens",
+    "cached_write_tokens",
+)
+
+
+def _usage_tokens(usage: Any) -> dict[str, int]:
+    """Read an ACP ``Usage`` into RoomKit's token-counter names.
+
+    Taken off the model by attribute rather than out of :func:`_model_dump`,
+    whose camelCase aliases would not sit beside the counters an in-process
+    provider reports under the same key.
+
+    These are session totals, not this turn's — the schema is explicit
+    ("Total input tokens across all turns") even though the agent hands them
+    back at the end of a prompt. What one turn spent is a difference.
+    """
+    counters: dict[str, int] = {}
+    for name in _TOKEN_FIELDS:
+        value = getattr(usage, name, None)
+        if isinstance(value, int):
+            counters[name] = value
+    return counters
+
+
+def _usage_context(update: Any) -> dict[str, Any]:
+    """Read a usage notification: how full the context is, what it has cost.
+
+    A different quantity from the token counters above — ``used``/``size``
+    describe the window the session is living in, and ``cost`` is the
+    session's running total. Neither is a per-turn number, so neither is
+    differenced.
+    """
+    context: dict[str, Any] = {}
+    used = getattr(update, "used", None)
+    if isinstance(used, int):
+        context["context_used"] = used
+    size = getattr(update, "size", None)
+    if isinstance(size, int):
+        context["context_size"] = size
+    cost = getattr(update, "cost", None)
+    amount = getattr(cost, "amount", None)
+    if isinstance(amount, (int, float)):
+        context["cost"] = float(amount)
+    currency = getattr(cost, "currency", None)
+    if isinstance(currency, str) and currency:
+        context["currency"] = currency
+    return context
+
+
+def _usage_report(
+    tokens: dict[str, int],
+    baseline: dict[str, int],
+    context: dict[str, Any],
+) -> dict[str, Any]:
+    """What one turn spent, from the session totals that bracket it.
+
+    The token counters carry the turn's own spend, so they mean what the same
+    keys mean on an in-process provider's report and stay summable over a
+    conversation. Everything cumulative is kept whole under ``session_total``,
+    where the running cost and the context occupancy also live.
+
+    Counters can fall between two readings — a compaction empties part of the
+    context. A turn that spent a negative number of tokens is not a thing, so
+    those floor at zero.
+    """
+    report: dict[str, Any] = {
+        name: max(0, tokens[name] - baseline.get(name, 0))
+        for name in _TOKEN_FIELDS
+        if name in tokens
+    }
+    session_total = {**tokens, **context}
+    if session_total:
+        report["session_total"] = session_total
+    return report
 
 
 def _config_values(options: Any) -> dict[str, str | bool]:
@@ -270,6 +377,7 @@ class ACPConnectionMixin:
     _sessions: dict[str, str]
     _session_rooms: dict[str, str]
     _session_options: dict[str, list[Any]]
+    _session_tokens: dict[str, dict[str, int]]
     _agent_info: dict[str, Any] | None
     _handler_started: bool
     _closed: bool
@@ -305,6 +413,7 @@ class ACPConnectionMixin:
                 self._sessions.clear()
                 self._session_rooms.clear()
                 self._session_options.clear()
+                self._session_tokens.clear()
 
             sdk = self._sdk()
             if sdk.acp.PROTOCOL_VERSION != _STABLE_PROTOCOL_VERSION:
