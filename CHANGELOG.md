@@ -171,6 +171,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   place a provider should read its own model's metadata from; `context_window`
   and both fixed `supports_vision` implementations now go through it.
 
+- **The model catalog carries the vendor's price, so a new model cannot bill
+  zero.** RoomKit declared the models and every consumer kept its own rate
+  sheet, which is a list that drifts by construction: `gemini-3.6-flash` shipped
+  in the catalog while a downstream sheet stopped at 3.5, and a whole
+  conversation was recorded at `cost=N/A` — tokens counted, nothing billed, no
+  warning anywhere. `ModelInfo.pricing` is now a `ModelPricing` sitting beside
+  `context_window`, filled from the same vendor page on the same date as the
+  rest of the entry.
+
+  Four rates, not two: `input_per_million`, `output_per_million`,
+  `cache_read_per_million`, `cache_write_per_million` — one per counter RoomKit
+  reports in `usage`. A cached prefix costs a tenth of fresh input at
+  Anthropic's rates, so a two-rate sheet is not a rounding error on a long
+  conversation. An unset rate is a claim, not a gap: OpenAI bills nothing to
+  write a cache, Google bills cache storage by the hour, and neither is a
+  per-token write. `ModelPricing.cost_for(usage)` prices a response in one
+  call, charging an unpriced counter at the input rate so an unknown overstates
+  rather than disappears. `currency` and `verified` travel with the rates — a
+  price changes without the model changing, and Claude Sonnet 5's introductory
+  $2/$10 expiring on 2026-08-31 is exactly why a consumer needs the date.
+
+  Priced: Anthropic, OpenAI, Gemini, Mistral, xAI, and OpenRouter (its own rate
+  card — it is the seller there, and it resells `gpt-5.6-terra` at half OpenAI's
+  own price). Unpriced by nature: Ollama's locally pulled weights, PolarGrid's
+  private edges, and Azure/vLLM, which have no offline catalog at all. Two
+  guards: a test asserts every model in a priced catalog has a rate — it fails
+  on the commit that adds one without, which is when this bug was introduced —
+  and `make check-models` now reports a rate that disagrees with the upstream
+  mirror as `PRICE`, alongside the existing context-window drift.
+
 ### Changed
 
 - **The offline catalogs say what they are for, which is not discovery.** Each
@@ -196,6 +226,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   but it is gone from the ten examples and the docs that hardcoded it.
 
 ### Fixed
+
+- **An OpenAI-compatible provider counted its cached prefix twice.**
+  `prompt_tokens` includes the tokens read from cache, and RoomKit reported it
+  as `input_tokens` while also reporting `cache_read_input_tokens` beside it —
+  so anything pricing a response charged the cached prefix at the full input
+  rate *and* again at the cached one. `input_tokens` now counts what was billed
+  at the input rate, matching how Anthropic reports natively and how the Gemini
+  provider already normalized. Affects `openai`, `openrouter`, `azure` and
+  `vllm`, which share the mapping; a caller summing the two keys to recover the
+  provider's raw `prompt_tokens` still gets it.
+
+- **A streamed turn dropped its cache counters before the response hook.** The
+  streaming loop summed `input_tokens` and `output_tokens` across rounds and
+  forwarded only those, so `AIResponseEvent.usage` — the payload a consumer
+  prices a turn from — could not tell a cached prefix from fresh input. Every
+  integer counter a round reports is now summed and forwarded; the two canonical
+  keys are still always present.
 
 - **A parallel Gemini tool call replayed unsigned when the signature landed on
   a later call.** Gemini puts a `thought_signature` on one function call of a
