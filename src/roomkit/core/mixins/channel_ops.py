@@ -134,10 +134,11 @@ class ChannelOpsMixin(HelpersMixin):
 
         # ON_AI_RESPONSE reports a fact — an agent finished a turn — and every
         # INTELLIGENCE channel produces it, whichever class it descends from.
-        # Selecting on AIChannel made a channel that owns its own turn (an ACP
-        # coding agent) invisible to the host's post-processing while it held
-        # the conversation. The category is what the channel declares itself to
-        # be, so a future agent channel is served without editing this.
+        # A channel that owns its turn in another process is one of those, and
+        # selecting on AIChannel would leave it unable to reach the host's
+        # post-processing while it holds the conversation. The category is what
+        # a channel declares itself to be, so an agent channel written later is
+        # served without editing this.
         if channel.category is ChannelCategory.INTELLIGENCE:
             channel._after_response_hook = (  # ty: ignore[unresolved-attribute]
                 self._build_after_response_hook(channel.channel_id)
@@ -145,7 +146,7 @@ class ChannelOpsMixin(HelpersMixin):
 
         # Propagate realtime backend to AI channels for tool call events. The
         # rest of these presume the tool loop runs in this process, which is
-        # what still makes AIChannel the right selector for them.
+        # what makes AIChannel the right selector for them.
         from roomkit.channels.ai import AIChannel
 
         if isinstance(channel, AIChannel):
