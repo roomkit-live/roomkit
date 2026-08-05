@@ -92,11 +92,12 @@ class HumanInputHandler:
       running — a slow WebSocket broadcast, a hook burning its 30 s budget —
       is answering a request that is already listening.  A denial coming back
       from the callback rejects the request, and ``wait()`` reports it.
-    * **A consumed outcome stays readable.** ``wait()`` retires the request
-      into a bounded retention (*retention* entries, newest kept) and replays
-      it for a second ``wait()``.  Only a genuinely unknown id raises
-      ``ValueError``, so a caller that drops its own bookkeeping cannot turn
-      an answer that arrived into a hard failure.
+    * **A recorded outcome stays readable.** A request settling — answered,
+      rejected, timed out — is kept in a bounded retention (*retention*
+      entries, newest kept), and ``wait()`` replays it once the request has
+      left the active set.  Only a genuinely unknown id raises
+      ``ValueError``, so neither a second read nor a host that keeps its own
+      bookkeeping can turn an answer that arrived into a hard failure.
 
     The ``_on_input_required`` callback is injected by the framework
     (via ``register_channel`` hook builder) or set by the application
@@ -287,11 +288,22 @@ class HumanInputHandler:
         return True
 
     def _retire(self, pending_id: str) -> None:
-        """Move a finished request out of the active set, into retention."""
+        """Move a finished request out of the active set."""
         pending = self._pending.pop(pending_id, None)
-        if pending is None or self._retention == 0:
+        if pending is not None:
+            self._retain(pending)
+
+    def _retain(self, pending: PendingInput) -> None:
+        """Record a settled outcome, evicting the oldest past the cap.
+
+        Called the moment a request settles, not when someone reads it: a
+        host that keeps its own bookkeeping and drops the request on
+        ``resolve()`` must not be able to turn the answer it just recorded
+        into a failure for whoever asked the question.
+        """
+        if self._retention == 0:
             return
-        self._recent[pending_id] = pending
+        self._recent[pending.pending_id] = pending
         while len(self._recent) > self._retention:
             self._recent.popitem(last=False)
 
@@ -321,6 +333,7 @@ class HumanInputHandler:
         pending.result = result
         pending.status = PendingInputStatus.RESOLVED
         pending._event.set()
+        self._retain(pending)
         return True
 
     def reject(self, pending_id: str, reason: str = "") -> bool:
@@ -334,6 +347,7 @@ class HumanInputHandler:
         pending.reject_reason = reason
         pending.status = PendingInputStatus.REJECTED
         pending._event.set()
+        self._retain(pending)
         return True
 
 

@@ -215,6 +215,17 @@ async def test_wait_replays_a_consumed_answer() -> None:
     assert await handler.wait(pending.pending_id, timeout=1) == "Dark"
 
 
+async def test_wait_reads_an_answer_the_host_dropped() -> None:
+    """The incident: a host doing its own bookkeeping drops the request on
+    resolve(), and the tool reaches wait() afterwards."""
+    handler = HumanInputHandler()
+    pending = await handler.create("tool", {}, room_id="r1", tool_call_id="tc1", channel_id="ch1")
+    handler.resolve(pending.pending_id, "Dark")
+    handler._pending.pop(pending.pending_id, None)
+
+    assert await handler.wait(pending.pending_id, timeout=1) == "Dark"
+
+
 async def test_wait_replays_a_rejection() -> None:
     handler = HumanInputHandler()
     pending = await handler.create("tool", {}, room_id="r1", tool_call_id="tc1", channel_id="ch1")

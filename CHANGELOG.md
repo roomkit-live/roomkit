@@ -239,12 +239,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `HookResult.block()` still rejects the request, reported by `wait()` wherever
   it has got to.
 
-- **A consumed outcome was indistinguishable from an id that never existed.**
-  `wait()` raised `ValueError` for both, so waiting twice — or waiting after
-  someone else dropped their record of the request — reported a failure instead
-  of what happened. Outcomes are now retired into a bounded retention (the last
-  128, `HumanInputHandler(retention=…)`) and replayed: the same answer, the same
-  rejection, the same timeout. `ValueError` is left to mean what it says.
+- **A recorded outcome was indistinguishable from an id that never existed.**
+  `wait()` raised `ValueError` for both, so waiting twice — or waiting after a
+  host that keeps its own bookkeeping dropped the request on `resolve()` —
+  reported a failure instead of what happened. An outcome now goes into a
+  bounded retention the moment it settles (the last 128,
+  `HumanInputHandler(retention=…)`) and `wait()` replays it: the same answer,
+  the same rejection, the same timeout. Recorded at settle time and not at read
+  time, because the host that drops the request is the one that recorded the
+  answer a moment earlier. `ValueError` is left to mean what it says.
   `create_detached()` and `release()` name the other half of the problem: the
   external-runtime path calls `create()` and never `wait()`, which left the
   cleanup ownership for each caller to guess at.
