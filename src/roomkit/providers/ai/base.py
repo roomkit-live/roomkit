@@ -308,21 +308,32 @@ class AIProvider(ABC):
 
     @classmethod
     def available_models(cls) -> list[ModelInfo]:
-        """Curated, offline catalog of models known to this provider.
+        """Offline metadata for the models roomkit can describe without a key.
 
-        Returns a hand-maintained list — no API key or network required —
-        so an integrator can discover configurable models by calling this
-        on the class before instantiating. The base returns an empty list;
-        each provider overrides it with its catalog.
+        This is **not** the discovery surface. A provider's lineup turns over
+        faster than a release cycle, so a hand-maintained list can never be
+        the authoritative answer to "what does this provider offer" — that is
+        :meth:`list_models`, which asks the provider. What this list is for is
+        the metadata roomkit needs *before* any network call exists: it backs
+        :attr:`context_window` (a sync property, so it cannot await an API)
+        and backfills the sparse ids a live endpoint returns, via
+        :meth:`_merge_curated`.
+
+        A model absent from it is an ordinary outcome, not an error: the
+        caller gets ``context_window is None`` and degrades, which is the
+        point — an unknown window is safer than a stale one. The base returns
+        an empty list; providers override it.
         """
         return []
 
     async def list_models(self) -> list[ModelInfo]:
-        """Models reported live by the provider's API.
+        """Models reported live by the provider's API — the discovery surface.
 
-        The base implementation returns the curated :meth:`available_models`.
-        Providers whose API exposes a models endpoint override this to query
-        it, backfilling missing metadata from the catalog via
+        Always current, and the only answer that reflects the caller's own
+        account (entitlements, regional availability, locally loaded weights).
+        The base implementation falls back to :meth:`available_models` for
+        providers whose API exposes no models endpoint; the rest override
+        this to query it, backfilling missing metadata via
         :meth:`_merge_curated`.
         """
         return self.available_models()
@@ -361,8 +372,26 @@ class AIProvider(ABC):
     @property
     @abstractmethod
     def model_name(self) -> str:
-        """Model identifier (e.g. 'claude-sonnet-4-20250514', 'gpt-4o')."""
+        """Model identifier (e.g. 'claude-opus-5', 'gpt-5.6-sol')."""
         ...
+
+    def catalog_entry(self) -> ModelInfo | None:
+        """The offline :class:`ModelInfo` for the active model, if known.
+
+        The single place a provider should read its own model's metadata from.
+        A second hardcoded table — a tuple of vision-capable prefixes, say —
+        duplicates what :meth:`available_models` already states and rots
+        independently of it, which is how a provider ends up reporting a
+        current model as text-only.
+
+        Returns ``None`` for an id the catalog does not carry (a custom or
+        local model behind ``base_url``, a snapshot newer than this release).
+        """
+        name = self.model_name
+        for model in type(self).available_models():
+            if model.id == name:
+                return model
+        return None
 
     @property
     def context_window(self) -> int | None:
@@ -374,11 +403,8 @@ class AIProvider(ABC):
         ids, e.g. an arbitrary vLLM model string), so callers must degrade
         gracefully rather than assume a window.
         """
-        name = self.model_name
-        for model in type(self).available_models():
-            if model.id == name:
-                return model.context_window
-        return None
+        entry = self.catalog_entry()
+        return entry.context_window if entry else None
 
     @abstractmethod
     async def generate(self, context: AIContext) -> AIResponse:

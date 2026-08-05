@@ -31,13 +31,18 @@ from roomkit.providers.ai.base import (
 from roomkit.providers.openai.config import OpenAIConfig
 from roomkit.providers.openai.models import MODELS
 
-# OpenAI models that support vision
-_VISION_MODELS = (
+# Fallback only, for ids the catalog does not carry — a snapshot newer than
+# this release, or an OpenAI-compatible server behind ``base_url`` naming its
+# own model. A model that is in the catalog is answered from there instead.
+_VISION_PREFIXES = (
+    "gpt-5",
     "gpt-4o",
+    "gpt-4.1",
     "gpt-4-turbo",
     "gpt-4-vision",
     "o1",
     "o3",
+    "o4",
 )
 
 _THINK_RE = re.compile(r"<think>(.*?)</think>", re.DOTALL)
@@ -144,8 +149,18 @@ class OpenAIAIProvider(AIProvider):
 
     @property
     def supports_vision(self) -> bool:
-        """GPT-4o and GPT-4-turbo models support vision."""
-        return any(self._config.model.startswith(prefix) for prefix in _VISION_MODELS)
+        """Whether the configured model accepts image input.
+
+        Read from the offline catalog, which states it per model, rather than
+        from a prefix table that has to be remembered on every release — the
+        prefix form predated GPT-5 entirely and silently reported the whole
+        current lineup as text-only, dropping images before they reached
+        the wire.
+        """
+        entry = self.catalog_entry()
+        if entry is not None and entry.supports_vision is not None:
+            return entry.supports_vision
+        return self._config.model.startswith(_VISION_PREFIXES)
 
     @property
     def supports_streaming(self) -> bool:

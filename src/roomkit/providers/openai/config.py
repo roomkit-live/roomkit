@@ -21,7 +21,10 @@ class OpenAIConfig(BaseModel):
 
     api_key: SecretStr
     base_url: str | None = None
-    model: str = "gpt-4o"
+    model: str = "gpt-5.6-sol"
+    """Model identifier. The default tracks OpenAI's current frontier model —
+    a default that names a retired snapshot is a 404 at the first request,
+    so it moves when the lineup does. Pin an id explicitly to opt out."""
     max_tokens: int = 1024
     temperature: float = 0.7
     timeout: float = 30.0

@@ -196,7 +196,7 @@ def _build_exec_provider() -> object:
         return AnthropicAIProvider(
             AnthropicConfig(
                 api_key=os.environ["ANTHROPIC_API_KEY"],
-                model=os.environ.get("EXEC_MODEL", "claude-sonnet-4-20250514"),
+                model=os.environ.get("EXEC_MODEL", "claude-opus-5"),
                 max_tokens=2048,
             )
         )

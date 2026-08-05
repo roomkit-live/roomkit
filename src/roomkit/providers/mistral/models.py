@@ -1,15 +1,22 @@
-"""Curated catalog of Mistral chat/multimodal models.
+"""Offline metadata for Mistral chat/multimodal models.
 
-Hand-maintained, offline list returned by ``MistralAIProvider.available_models``.
-Sourced from the Mistral model cards (docs.mistral.ai/models). The lineup changes
-fast — refresh this against the live docs, or call
-``MistralAIProvider.list_models()`` for what the account's API reports right now.
+Hand-maintained list returned by ``MistralAIProvider.available_models`` — the
+context windows roomkit needs before it can make a network call, not a claim
+about what Mistral currently offers. Call ``MistralAIProvider.list_models()``
+for that; it queries the account's models endpoint.
+
+Sourced from the Mistral model cards (docs.mistral.ai/models), verified
+2026-08-05.
 
 Scope is general chat/multimodal models; embeddings, moderation, OCR, audio
 (Voxtral), and code-completion (Codestral/Devstral) models are omitted. The whole
-current Mistral 3 family is multimodal. The deprecated 128k-tier models leave
+current Mistral 3 family is multimodal, and every member carries a 256k window
+except Ministral 3 3B, which is half that. The deprecated 128k-tier models leave
 ``context_window`` as ``None`` — Mistral documents them only as "128k" without a
 firm token integer.
+
+Both the dated ids and their ``-latest`` aliases are listed so either form
+resolves here.
 """
 
 from __future__ import annotations
@@ -28,6 +35,12 @@ MODELS: list[ModelInfo] = [
     ModelInfo(
         id="mistral-large-2512",
         display_name="Mistral Large 3",
+        context_window=_CTX,
+        supports_vision=True,
+    ),
+    ModelInfo(
+        id="mistral-medium-latest",
+        display_name="Mistral Medium 3.5",
         context_window=_CTX,
         supports_vision=True,
     ),
@@ -64,7 +77,7 @@ MODELS: list[ModelInfo] = [
     ModelInfo(
         id="ministral-3b-latest",
         display_name="Ministral 3 3B",
-        context_window=_CTX,
+        context_window=131_072,
         supports_vision=True,
     ),
     ModelInfo(

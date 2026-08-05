@@ -225,7 +225,7 @@ class TestOpenAIAIProvider:
 
     def test_config_defaults(self) -> None:
         cfg = _config()
-        assert cfg.model == "gpt-4o"
+        assert cfg.model == "gpt-5.6-sol"
         assert cfg.max_tokens == 1024
         assert cfg.temperature == 0.7
         assert cfg.base_url is None

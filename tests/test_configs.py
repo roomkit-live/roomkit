@@ -36,7 +36,7 @@ class TestTwilioConfig:
 class TestAnthropicConfig:
     def test_defaults(self) -> None:
         cfg = AnthropicConfig(api_key=SecretStr("sk-test"))
-        assert cfg.model == "claude-sonnet-4-20250514"
+        assert cfg.model == "claude-opus-5"
         assert cfg.max_tokens == 1024
 
 

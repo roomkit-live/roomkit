@@ -1,19 +1,31 @@
-"""Curated catalog of Anthropic Claude models.
+"""Offline metadata for Anthropic Claude models.
 
-Hand-maintained, offline list returned by ``AnthropicAIProvider.available_models``.
-Sourced from the Anthropic models overview (platform.claude.com/docs/en/about-claude/models).
-The lineup changes fast — refresh this against the live docs, or call
-``AnthropicAIProvider.list_models()`` for what the account's API reports right now.
+Hand-maintained list returned by ``AnthropicAIProvider.available_models`` — the
+context windows roomkit needs before it can make a network call, not a claim
+about what Anthropic currently offers. Call
+``AnthropicAIProvider.list_models()`` for that; it asks the account's API.
+
+Sourced from the Anthropic models overview
+(platform.claude.com/docs/en/about-claude/models), verified 2026-08-05.
+
+All current Claude models accept image input; context windows are 1M for the
+4.6+/Opus 5/Fable/Mythos tier on the Claude API and 200K for the rest. Dated
+snapshot ids and their dateless aliases are both listed so either form
+resolves here.
 """
 
 from __future__ import annotations
 
 from roomkit.providers.ai.base import ModelInfo
 
-# All current Claude models accept image input; context windows are 1M for the
-# 4.6+/Fable/Mythos tier on the Claude API and 200K for the rest. Dated snapshot
-# ids and their dateless aliases are both listed so either form resolves here.
 MODELS: list[ModelInfo] = [
+    ModelInfo(
+        id="claude-opus-5",
+        display_name="Claude Opus 5",
+        context_window=1_000_000,
+        supports_vision=True,
+        capabilities=["thinking"],
+    ),
     ModelInfo(
         id="claude-fable-5",
         display_name="Claude Fable 5",

@@ -1,13 +1,17 @@
-"""Curated catalog of popular Ollama models.
+"""Offline metadata for popular Ollama models.
 
-Hand-maintained, offline list returned by ``OllamaAIProvider.available_models``.
-Ollama is an open-weights registry where models are pulled locally by name, so
-this is a *popularity* snapshot of the public library (ollama.com/library), not
-an account-specific set. For the models actually installed on a given server,
-call ``OllamaAIProvider.list_models()`` — it queries the local ``/api/tags``.
+Hand-maintained list returned by ``OllamaAIProvider.available_models``. Ollama
+is an open-weights registry where models are pulled locally by name, so this
+list is doubly not a discovery surface: it is a *popularity* snapshot of the
+public library (ollama.com/library, verified 2026-08-05), and a given server
+serves whatever someone pulled onto it. For that, call
+``OllamaAIProvider.list_models()`` — it queries the local ``/api/tags``.
 
-Context windows are the documented per-model defaults; larger size variants of
-the same family often support more. Ids use the canonical base pull name.
+What the list is for is the same as every other provider's: resolving a
+context window offline, so history trimming has a number to work with before
+any network call. Windows are the documented per-model defaults; larger size
+variants of the same family often support more. Ids use the canonical base
+pull name.
 """
 
 from __future__ import annotations

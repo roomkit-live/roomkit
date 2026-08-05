@@ -107,6 +107,33 @@ echo "==> Running ty..."
 uv run ty check src/roomkit/
 echo "    ty passed."
 
+# --- Check model catalogs against upstream ---
+# The offline catalogs in providers/*/models.py are the one thing the test
+# suite structurally cannot validate: a catalog that has fallen a lineup behind
+# is still internally consistent, so every test passes while the library ships
+# ids the vendor has retired. This is the only moment that reliably catches it.
+#
+# Runs before any mutation. Findings stop the release; an unreachable mirror
+# (exit 2) only warns, because blocking a release on someone else's outage
+# trades one problem for a worse one.
+if [[ -n "${SKIP_MODEL_CHECK:-}" ]]; then
+    echo "==> Skipping model catalog check (SKIP_MODEL_CHECK set)."
+else
+    echo "==> Checking model catalogs..."
+    set +e
+    uv run python scripts/check_models.py
+    MODEL_CHECK_STATUS=$?
+    set -e
+    if [[ $MODEL_CHECK_STATUS -eq 1 ]]; then
+        echo "Error: model catalogs are out of date (see above)."
+        echo "       Update providers/*/models.py, or re-run with SKIP_MODEL_CHECK=1"
+        echo "       if this release must go out before the catalogs are refreshed."
+        exit 1
+    elif [[ $MODEL_CHECK_STATUS -ne 0 ]]; then
+        echo "    Warning: could not verify model catalogs — continuing."
+    fi
+fi
+
 # --- Bump version in source ---
 if [[ "$(uname)" == "Darwin" ]]; then
     sed -i '' "s/^__version__ = .*/__version__ = \"${VERSION}\"/" src/roomkit/_version.py

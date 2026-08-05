@@ -110,7 +110,7 @@ tts = ElevenLabsTTSProvider(
 ai_provider = AnthropicAIProvider(
     AnthropicConfig(
         api_key=os.environ.get("ANTHROPIC_API_KEY", ""),
-        model="claude-sonnet-4-20250514",
+        model="claude-opus-5",
         max_tokens=256,
         temperature=0.7,
     )

@@ -90,7 +90,7 @@ sms = SMSChannel("sms-main", provider=TwilioSMSProvider(TwilioConfig(
 )))
 ai = AIChannel("ai-agent", provider=AnthropicAIProvider(AnthropicConfig(
     api_key="sk-ant-...",
-    model="claude-sonnet-4-20250514",
+    model="claude-opus-5",
 )))
 
 kit.register_channel(sms)

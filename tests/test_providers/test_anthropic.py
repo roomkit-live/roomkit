@@ -265,7 +265,7 @@ class TestAnthropicAIProvider:
 
     def test_config_defaults(self) -> None:
         cfg = _config()
-        assert cfg.model == "claude-sonnet-4-20250514"
+        assert cfg.model == "claude-opus-5"
         assert cfg.max_tokens == 1024
         assert cfg.temperature == 0.7
 

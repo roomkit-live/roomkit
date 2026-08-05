@@ -87,7 +87,7 @@ kit.register_channel(ws)
 
 # Intelligence channel (AI)
 ai = AIChannel("ai", provider=AnthropicAIProvider(AnthropicConfig(
-    api_key="sk-ant-...", model="claude-sonnet-4-20250514",
+    api_key="sk-ant-...", model="claude-opus-5",
 )))
 kit.register_channel(ai)
 

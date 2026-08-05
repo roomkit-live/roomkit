@@ -1,13 +1,18 @@
 """Discover the models each AI provider supports.
 
-Every ``AIProvider`` exposes two model-discovery entry points:
+Every ``AIProvider`` exposes two entry points, and they answer different
+questions:
 
-- ``available_models()`` — a curated, *offline* catalog (a classmethod, so it
-  needs no API key, no network, and no provider SDK). Call it to learn which
-  models you can configure before wiring anything up.
-- ``list_models()`` — a *live* query against the provider's API for the models
-  the account/server actually exposes right now. It falls back to the curated
-  catalog for providers without a models endpoint.
+- ``list_models()`` — **discovery**. A live query against the provider's API,
+  so it is always current and reflects your own account: entitlements,
+  regional availability, whichever weights someone pulled onto a local server.
+  Falls back to the offline list for providers without a models endpoint.
+- ``available_models()`` — what RoomKit knows *without* a network call (a
+  classmethod: no API key, no network, no provider SDK). It exists because
+  ``context_window`` is a sync property — history trimming needs a number
+  before any request goes out and cannot await one. A lineup turns over faster
+  than a release cycle, so treat this as offline metadata, never as the
+  authoritative list of what a provider offers.
 
 Run with:
     uv run python examples/list_models.py

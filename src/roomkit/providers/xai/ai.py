@@ -41,12 +41,14 @@ class XAIAIProvider(OpenAIAIProvider):
     def supports_vision(self) -> bool:
         """Whether the configured Grok model accepts image input.
 
-        The OpenAI parent answers this by prefix-matching *its own* vision model
-        names, which no ``grok-*`` id can satisfy — inheriting it would report
-        every Grok model as text-only and silently drop images. Every Grok text
-        model in the catalog is multimodal, so an id the catalog does not know
-        (an alias like ``grok-latest``, or a model newer than the snapshot)
-        defaults to ``True`` rather than losing a capability the family has.
+        The override is for the miss, not the hit: the OpenAI parent resolves
+        known ids from the catalog — which for this class is Grok's — but falls
+        back to prefix-matching *its own* vision model names, and no ``grok-*``
+        id can satisfy those. Inheriting the fallback would report an unknown
+        Grok model as text-only and silently drop images. Every Grok text model
+        in the catalog is multimodal, so an id the catalog does not know (an
+        alias like ``grok-latest``, or a model newer than the snapshot) defaults
+        to ``True`` rather than losing a capability the family has.
         """
         info = _MODELS_BY_ID.get(self._config.model)
         if info is None or info.supports_vision is None:

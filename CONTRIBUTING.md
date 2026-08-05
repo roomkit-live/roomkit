@@ -55,6 +55,15 @@ uv run pytest                        # Tests
 
 You can run these individually while developing. Use `uv run ruff check --fix` to auto-fix lint issues.
 
+### Model catalogs
+
+`make check-models` compares the offline catalogs in `src/roomkit/providers/*/models.py`
+against a live upstream mirror. It needs the network but no API key, and it is not part
+of `make all` — `make release` runs it, because that is the moment a stale catalog would
+actually ship. Run it by hand if you touch a `models.py`. Nothing in the test suite can
+replace it: a catalog that has fallen a lineup behind is still internally consistent, so
+every test passes while the library hands out model ids the vendor has retired.
+
 ## Code Style
 
 - **Python 3.12+** — use `X | None` unions, not `Optional[X]`

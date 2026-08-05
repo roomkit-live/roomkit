@@ -82,7 +82,7 @@ async def main() -> None:
         provider=AnthropicAIProvider(
             AnthropicConfig(
                 api_key=env["ANTHROPIC_API_KEY"],
-                model="claude-sonnet-4-20250514",
+                model="claude-opus-5",
             )
         ),
         system_prompt=SYSTEM_PROMPT,

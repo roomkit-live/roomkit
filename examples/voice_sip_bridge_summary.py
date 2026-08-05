@@ -30,7 +30,7 @@ Environment variables:
     DEEPGRAM_API_KEY   — Deepgram API key (required)
     ANTHROPIC_API_KEY  — Anthropic API key (required)
     STT_LANGUAGE       — Language code for STT (default: multi = auto-detect)
-    CLAUDE_MODEL       — Claude model ID (default: claude-sonnet-4-20250514)
+    CLAUDE_MODEL       — Claude model ID (default: claude-opus-5)
     SIP_LISTEN_ADDR    — SIP listen IP   (default: 0.0.0.0)
     SIP_LISTEN_PORT    — SIP listen port (default: 5060)
     RTP_IP             — RTP bind IP     (default: 0.0.0.0)
@@ -67,7 +67,7 @@ from roomkit.voice.stt.deepgram import DeepgramConfig, DeepgramSTTProvider
 # ---------------------------------------------------------------------------
 
 STT_LANGUAGE = os.environ.get("STT_LANGUAGE", "multi")
-CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-20250514")
+CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "claude-opus-5")
 SIP_LISTEN_ADDR = os.environ.get("SIP_LISTEN_ADDR", "0.0.0.0")
 SIP_LISTEN_PORT = int(os.environ.get("SIP_LISTEN_PORT", "5060"))
 RTP_IP = os.environ.get("RTP_IP", "0.0.0.0")

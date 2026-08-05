@@ -1,9 +1,13 @@
-"""Curated catalog of xAI Grok text/multimodal models.
+"""Offline metadata for xAI Grok text/multimodal models.
 
-Hand-maintained, offline list returned by ``XAIAIProvider.available_models``.
-Sourced from the xAI model docs (docs.x.ai/developers/models, verified
-2026-07-30). Call :meth:`~roomkit.providers.xai.ai.XAIAIProvider.list_models`
-for what the account's ``/v1/models`` endpoint reports right now.
+Hand-maintained list returned by ``XAIAIProvider.available_models`` — the
+context windows roomkit needs before it can make a network call, not a claim
+about what xAI currently offers. Call
+:meth:`~roomkit.providers.xai.ai.XAIAIProvider.list_models` for that; it reads
+the account's ``/v1/models``.
+
+Sourced from the xAI model docs (docs.x.ai/developers/models), verified
+2026-08-05.
 
 Scope is the chat-capable text + multimodal models. The realtime speech-to-speech
 models (``grok-2-audio``) belong to

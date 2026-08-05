@@ -49,6 +49,7 @@ uv run ruff format src/ tests/   # Format
 uv run ty check src/roomkit/     # Type check (ty)
 uv run bandit -r src/ -c pyproject.toml  # Security scan
 uv run pytest --cov=roomkit --cov-report=term-missing  # Coverage (80% minimum)
+make check-models                # Verify providers/*/models.py against upstream (run by make release)
 make release VERSION=x.y.z      # Release workflow
 ```
 

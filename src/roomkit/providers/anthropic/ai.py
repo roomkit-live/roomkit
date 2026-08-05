@@ -30,11 +30,11 @@ from roomkit.providers.anthropic.config import AnthropicConfig
 from roomkit.providers.anthropic.models import MODELS
 
 # Claude models that support vision (Claude 3 and later)
-_VISION_MODELS = (
-    "claude-3",
-    "claude-sonnet-4",
-    "claude-opus-4",
-)
+# Fallback only, for ids the catalog does not carry — a snapshot newer than
+# this release, or a proxy exposing its own name. Every Claude model since
+# Claude 3 accepts image input, so the family prefix is the honest default;
+# a model that is genuinely in the catalog is answered from there instead.
+_VISION_PREFIXES = ("claude-",)
 
 
 class AnthropicAIProvider(AIProvider):
@@ -74,8 +74,17 @@ class AnthropicAIProvider(AIProvider):
 
     @property
     def supports_vision(self) -> bool:
-        """Claude 3+ models support vision."""
-        return any(self._config.model.startswith(prefix) for prefix in _VISION_MODELS)
+        """Whether the configured Claude model accepts image input.
+
+        Read from the offline catalog, which states it per model, rather than
+        from a prefix table that has to be remembered on every release — the
+        prefix form silently reported the whole 4.5-and-later lineup as
+        text-only, dropping images before they reached the wire.
+        """
+        entry = self.catalog_entry()
+        if entry is not None and entry.supports_vision is not None:
+            return entry.supports_vision
+        return self._config.model.startswith(_VISION_PREFIXES)
 
     @classmethod
     def available_models(cls) -> list[ModelInfo]:

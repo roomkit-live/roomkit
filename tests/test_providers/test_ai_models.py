@@ -14,6 +14,7 @@ from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
+from pydantic import SecretStr
 
 from roomkit.providers.ai import ModelInfo
 from roomkit.providers.ai.base import AIContext, AIProvider, AIResponse
@@ -156,6 +157,67 @@ def test_default_config_model_is_in_catalog(
     default = config_cls.model_fields["model"].default
     ids = {m.id for m in provider_cls.available_models()}
     assert default in ids, f"{provider_cls.__name__} default {default!r} missing from catalog"
+
+
+def test_catalog_entry_returns_the_active_models_metadata() -> None:
+    entry = MockAIProvider().catalog_entry()
+    assert entry is not None
+    assert entry.id == "mock"
+    assert entry.context_window == 8192
+
+
+def test_catalog_entry_is_none_for_an_unknown_model() -> None:
+    class _Bare(AIProvider):
+        @property
+        def model_name(self) -> str:
+            return "some-custom-local-model"
+
+        async def generate(self, context: AIContext) -> AIResponse:
+            return AIResponse(content="")
+
+    assert _Bare().catalog_entry() is None
+
+
+# --- supports_vision follows the catalog, not a parallel prefix table ----------
+#
+# Both providers used to answer this from a hardcoded tuple of prefixes that
+# nothing updated with the lineup: Anthropic's stopped at claude-opus-4 and
+# OpenAI's predated GPT-5 entirely, so every current model reported text-only
+# and images were dropped before reaching the wire. These pin the fix.
+
+
+@pytest.mark.parametrize(
+    ("provider_cls", "config_cls"),
+    [(AnthropicAIProvider, AnthropicConfig), (OpenAIAIProvider, OpenAIConfig)],
+)
+def test_vision_is_reported_for_every_vision_model_in_the_catalog(
+    provider_cls: type[AIProvider], config_cls: type
+) -> None:
+    for model in provider_cls.available_models():
+        if model.supports_vision is not True:
+            continue
+        provider = _bare(provider_cls)
+        provider._config = config_cls(api_key=SecretStr("k"), model=model.id)
+        assert provider.supports_vision, f"{model.id} reported text-only"
+
+
+@pytest.mark.parametrize(
+    ("provider_cls", "config_cls", "model", "expected"),
+    [
+        # Unknown id, right family → keep the family's capability.
+        (AnthropicAIProvider, AnthropicConfig, "claude-something-newer", True),
+        # Unknown id, no family → no claim to vision.
+        (AnthropicAIProvider, AnthropicConfig, "some-local-model", False),
+        (OpenAIAIProvider, OpenAIConfig, "gpt-5.9-unreleased", True),
+        (OpenAIAIProvider, OpenAIConfig, "Qwen/Qwen3-VL-8B-Instruct", False),
+    ],
+)
+def test_vision_falls_back_to_family_prefix_for_unknown_ids(
+    provider_cls: type[AIProvider], config_cls: type, model: str, expected: bool
+) -> None:
+    provider = _bare(provider_cls)
+    provider._config = config_cls(api_key=SecretStr("k"), model=model)
+    assert provider.supports_vision is expected
 
 
 def test_mock_catalog() -> None:

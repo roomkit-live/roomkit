@@ -149,7 +149,80 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   RoomKit stops at the bytes. Which ASR engine transcribes a voice note is the
   application's decision, not the kit's.
 
+- **`make check-models` — a release can no longer ship a stale catalog
+  quietly.** The offline catalogs are the one part of the library a test suite
+  structurally cannot validate: a catalog a lineup behind is still internally
+  consistent, so everything passes while RoomKit hands out ids the vendor
+  retired. `scripts/check_models.py` compares all of them against OpenRouter's
+  public `/api/v1/models` — keyless, and it republishes ids, context windows
+  and modalities for every major vendor in one request — and reports three
+  things: a context window that disagrees, an upstream model newer than
+  anything the catalog knows in a family it already tracks, and an id upstream
+  no longer lists. `make release` runs it before touching anything and stops on
+  a finding; an unreachable mirror only warns, because blocking a release on
+  someone else's outage trades one problem for a worse one. It reads a mirror,
+  not the vendor, so a finding means "go read the vendor's docs" — and a
+  divergence that turns out to be deliberate is recorded in the script with its
+  reason, next to the four already there. `SKIP_MODEL_CHECK=1` for a release
+  that must go out first.
+
+- **`AIProvider.catalog_entry()`** returns the offline `ModelInfo` for the
+  active model, or `None` for an id the catalog does not carry. It is the one
+  place a provider should read its own model's metadata from; `context_window`
+  and both fixed `supports_vision` implementations now go through it.
+
+### Changed
+
+- **The offline catalogs say what they are for, which is not discovery.** Each
+  `providers/*/models.py` presented itself as "the catalog of what this
+  provider offers" — which is what `list_models()` does, against the provider,
+  and precisely the framing that guarantees the file rots. The list cannot go
+  away: `context_window` is a sync property, so history trimming needs a number
+  before any request exists and cannot await one. So the contract narrowed
+  instead — offline metadata for the models RoomKit can describe without a key.
+  Nothing changes at runtime, but a model missing from a catalog is now
+  documented as an ordinary outcome (`context_window is None`, degrade) rather
+  than a gap to be raced against every vendor announcement.
+
+- **`AnthropicConfig.model` now defaults to `claude-opus-5` (was
+  `claude-sonnet-4-20250514`) and `OpenAIConfig.model` to `gpt-5.6-sol` (was
+  `gpt-4o`).** The Anthropic default named a deprecated snapshot whose
+  announced retirement date has passed, so the out-of-the-box path was one
+  vendor cleanup away from a 404 at the first request — and `gpt-4o` was two
+  frontier generations behind. A default that names a dated snapshot ages into
+  a bug; both now track the vendor's current flagship and move when the lineup
+  does. Callers passing `model=` explicitly are unaffected — pin an id to opt
+  out. The snapshot is still listed (flagged deprecated) for anyone who does,
+  but it is gone from the ten examples and the docs that hardcoded it.
+
 ### Fixed
+
+- **Images stopped reaching the wire on every current OpenAI and Anthropic
+  model.** Both providers answered `supports_vision` from a hardcoded tuple of
+  model-name prefixes kept alongside the catalog that already states the same
+  fact per model. Nothing updated the tuples with the lineup, and the two
+  drifted exactly as a duplicated fact does: Anthropic's stopped at
+  `claude-opus-4`, so Opus 5, Sonnet 5, Haiku 4.5, Fable 5 and Mythos 5 all
+  reported text-only, and OpenAI's predated GPT-5 entirely, so every GPT-5.x
+  model did too. A room routing an image to one of them dropped it silently —
+  no error, just a reply that never mentions the picture, on models that can
+  all see. Both now read `ModelInfo.supports_vision` from the catalog via the
+  new `AIProvider.catalog_entry()`, with a family prefix as fallback for ids
+  the catalog does not carry (a snapshot newer than the release, an
+  OpenAI-compatible server naming its own model). No test caught this, because
+  a catalog and a prefix table that disagree are each internally consistent;
+  the regression guard now walks every vision model in both catalogs.
+
+- **The model catalogs had fallen a lineup behind, in the places it costs
+  most.** OpenAI's whole current frontier (`gpt-5.6-sol`, `-terra`, `-luna`)
+  was absent, `gpt-5-codex` was listed as merely deprecated three weeks after
+  it was shut down, and six more models with announced shutdown dates were
+  unflagged; Anthropic was missing `claude-opus-5`; Gemini was missing
+  `gemini-3.6-flash` and `gemini-3.5-flash-lite`; OpenRouter carried
+  `mistralai/mistral-medium-3.5`, a slug that has never existed (the real one
+  spells the version with a hyphen); and Mistral gave Ministral 3 3B a 256k
+  window when it has 128k. All eight catalogs re-verified against the
+  vendors' own docs on 2026-08-05.
 
 - **An agent that owns its own turn is no longer invisible when it answers.**
   `ON_AI_RESPONSE` is the one signal RoomKit gives a host that a turn of

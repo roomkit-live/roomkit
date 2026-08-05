@@ -128,7 +128,7 @@ async def main() -> None:
     ai_provider = AnthropicAIProvider(
         AnthropicConfig(
             api_key=anthropic_key,
-            model=os.environ.get("AI_MODEL", "claude-sonnet-4-20250514"),
+            model=os.environ.get("AI_MODEL", "claude-opus-5"),
             max_tokens=256,
             temperature=0.7,
         )

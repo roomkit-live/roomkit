@@ -16,7 +16,7 @@ ai = AIChannel(
     "ai-assistant",
     provider=AnthropicAIProvider(AnthropicConfig(
         api_key="sk-ant-...",
-        model="claude-sonnet-4-20250514",
+        model="claude-opus-5",
     )),
     system_prompt="You are a helpful customer support agent.",
     temperature=0.7,
@@ -272,7 +272,7 @@ ai = AIChannel(
     "ai",
     provider=AnthropicAIProvider(AnthropicConfig(
         api_key="...",
-        model="claude-sonnet-4-20250514",
+        model="claude-opus-5",
     )),
     system_prompt="Think step by step.",
     thinking_budget=4096,  # Setting a budget enables thinking mode

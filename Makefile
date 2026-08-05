@@ -1,4 +1,4 @@
-.PHONY: audit install lint format typecheck security test coverage all clean docs deploy release
+.PHONY: audit install lint format typecheck security test coverage all clean docs deploy release check-models
 
 install:
 	uv sync --extra dev
@@ -35,6 +35,12 @@ stress:
 
 llms-full:
 	uv run python scripts/build_llms_full.py
+
+# Compare providers/*/models.py against a live upstream mirror. Nothing in the
+# test suite can catch a vendor shipping a new flagship — a stale catalog is
+# self-consistent. `make release` runs this; run it by hand any time.
+check-models:
+	uv run python scripts/check_models.py
 
 all: lint typecheck security test
 
