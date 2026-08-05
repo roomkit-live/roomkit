@@ -84,12 +84,11 @@ class _JoinedEarlierBackend(MockConferenceBackend):
         return bot
 
 
-class _PreAttributesBackend(MockConferenceBackend):
-    """A backend written before `mint_access` grew an ``attributes`` argument.
+class _NoAttributesBackend(MockConferenceBackend):
+    """A backend whose ``mint_access`` does not take an ``attributes`` argument.
 
-    Stands for every integrator's own backend on the day this parameter
-    landed: it keeps working, and only a caller that actually asks for
-    attributes meets its refusal.
+    It serves every mint that does not ask for any, and only a caller that
+    actually asks meets its refusal.
     """
 
     async def mint_access(  # type: ignore[no-untyped-def,override]
@@ -1367,11 +1366,11 @@ class TestMintedAttributesRideTheCredential:
         assert provider["unasserted"]["app.user"] == "user-42"
         assert "app.user" not in provider["asserted"]
 
-    async def test_a_backend_from_before_the_parameter_still_mints(self) -> None:
-        """The parameter is optional on the way in and on the way down: a
-        backend written before it existed is never handed it.
+    async def test_a_backend_that_does_not_take_attributes_still_mints(self) -> None:
+        """The argument is optional on the way in and on the way down: a
+        backend that does not declare it is never handed it.
         """
-        kit, channel, backend = await _kit_with_channel(_PreAttributesBackend())
+        kit, channel, backend = await _kit_with_channel(_NoAttributesBackend())
         await kit.ensure_participant(ROOM, "conf", "p-alice")
 
         access = await channel.mint_access(ROOM, "p-alice")

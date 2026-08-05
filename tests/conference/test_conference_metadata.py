@@ -265,3 +265,23 @@ class TestWhatMayBeMinted:
         """
         with pytest.raises(ValueError, match="carries strings"):
             require_mintable_attributes({"count": 3})  # type: ignore[dict-item]
+
+    def test_what_may_be_minted_is_what_the_room_would_keep(self) -> None:
+        """The two bounds are one claim (RFC §12.10.3), so they are checked
+        against each other rather than each against a number.
+
+        One direction only: what the mint accepts, the room keeps whole. The
+        converse does not hold, and should not — the room keeps a structured
+        value a provider surfaced, and the mint refuses to emit one.
+        """
+        mintable = {
+            "app.user": "user-42",
+            "k" * MAX_KEY_CHARS: "v",
+            "big": "x" * (MAX_VALUE_CHARS - 2),
+            **{f"k{index}": "v" for index in range(MAX_ATTRIBUTES - 3)},
+        }
+        assert len(mintable) == MAX_ATTRIBUTES
+
+        require_mintable_attributes(mintable)
+
+        assert provider_record(_participant(metadata=mintable))[UNASSERTED_KEY] == mintable

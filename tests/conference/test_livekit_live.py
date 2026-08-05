@@ -83,6 +83,23 @@ async def wait_for(predicate: Callable[[], bool], *, timeout: float = TIMEOUT_S)
     raise AssertionError(f"condition still false after {timeout}s")
 
 
+async def joined_participants(
+    backend: LiveKitConferenceBackend, room_id: str, *, timeout: float = TIMEOUT_S
+) -> list[ConferenceParticipant]:
+    """Poll the server until it lists someone, and hand back what it listed.
+
+    Reads the control plane rather than the bot's callbacks, so a test can ask
+    what the server knows about a participant without a bot in the room to hear
+    it announced.
+    """
+    deadline = asyncio.get_running_loop().time() + timeout
+    while asyncio.get_running_loop().time() < deadline:
+        if listed := await backend.list_participants(room_id):
+            return listed
+        await asyncio.sleep(0.05)
+    raise AssertionError(f"nobody listed in room {room_id} after {timeout}s")
+
+
 def tone_frame(step: int) -> Any:
     """One 10 ms stereo frame of a 440 Hz tone, loud enough for a VAD to notice."""
     samples = array("h")
@@ -114,8 +131,16 @@ class Participant:
         self._sink: asyncio.Task[None] | None = None
         self._source: Any | None = None
 
-    async def join(self, backend: LiveKitConferenceBackend, room_id: str) -> None:
-        access = await backend.mint_access(room_id, self.identity, ConferenceGrants())
+    async def join(
+        self,
+        backend: LiveKitConferenceBackend,
+        room_id: str,
+        *,
+        attributes: dict[str, str] | None = None,
+    ) -> None:
+        access = await backend.mint_access(
+            room_id, self.identity, ConferenceGrants(), attributes=attributes
+        )
         self.room.on("track_subscribed", self._on_track_subscribed)
         await self.room.connect(access.url, access.token, rtc.RoomOptions(auto_subscribe=True))
 
@@ -363,6 +388,62 @@ class TestBotSession:
 
         await wait_for(lambda: "roomkit" in alice.room.remote_participants)
         assert "roomkit" in appeared
+
+
+class TestMintedAttributes:
+    """A credential carries more than an identity, and the server proves it.
+
+    The mock can be told to surface what a mint remembered; only a real SFU
+    shows that the claim in the token *becomes* the attribute map the server
+    reports back, which is the whole reason the field is worth having
+    (RFC §12.10.3).
+    """
+
+    async def test_the_server_reports_what_the_credential_carried(
+        self,
+        backend: LiveKitConferenceBackend,
+        room_id: str,
+        observed: Observed,
+        alice: Participant,
+    ) -> None:
+        await backend.join_as_bot(room_id, "roomkit", ConferenceGrants.for_bot())
+
+        await alice.join(backend, room_id, attributes={"app.user": "user-42"})
+
+        await wait_for(lambda: bool(observed.joined))
+        assert observed.joined[0].metadata["app.user"] == "user-42"
+
+    async def test_a_mint_that_carried_nothing_adds_nothing(
+        self,
+        backend: LiveKitConferenceBackend,
+        room_id: str,
+        alice: Participant,
+    ) -> None:
+        await alice.join(backend, room_id)
+
+        listed = await joined_participants(backend, room_id)
+
+        assert not [key for key in listed[0].metadata if not key.startswith("livekit.")]
+
+    async def test_the_server_vouches_for_none_of_it(
+        self,
+        backend: LiveKitConferenceBackend,
+        room_id: str,
+        alice: Participant,
+    ) -> None:
+        """It rode a token, and a token is not something the SFU established.
+
+        LiveKit reports it beside a dial-in's ``sip.*`` in one flat map with
+        nothing in the shape to tell them apart, so provenance is decided on
+        the participant kind — and a browser's kind asserts nothing.
+        """
+        await alice.join(backend, room_id, attributes={"app.user": "user-42"})
+
+        listed = await joined_participants(backend, room_id)
+
+        assert listed[0].metadata["app.user"] == "user-42"
+        assert listed[0].asserted_metadata is not None
+        assert "app.user" not in listed[0].asserted_metadata
 
 
 class TestPresenceAndTracks:

@@ -81,7 +81,16 @@ def require_mintable_attributes(attributes: Mapping[str, str]) -> None:
 
     Values must be strings: they ride a provider's own attribute map, and every
     SFU that carries one carries strings. Anything richer is the integrator's to
-    serialize, so that what comes back is what went out.
+    serialize, so that what comes back is what went out. Stricter than the
+    inbound bound on this one point, which keeps only what serializes — a
+    provider is entitled to surface a structure, and a caller who wants one back
+    is entitled to know it went out as a string.
+
+    What it bounds is the mint, not the bag the mint lands in. That bag also
+    holds whatever the provider surfaced of its own — LiveKit's ``livekit.name``
+    and ``livekit.metadata`` among them — so a mint at the very top of the range
+    can still lose a key on the way back. The bound is what makes the round trip
+    possible, not a guarantee that every key survives a crowded bag.
 
     Raises:
         ValueError: naming the attribute and the limit it failed.

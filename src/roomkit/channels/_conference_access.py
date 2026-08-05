@@ -327,10 +327,10 @@ class ConferenceAccessMixin:
         a shielded network call — and closing the transport under it neither
         stops the mint nor recalls the credential it produces (RFC 12.10.4).
 
-        ``attributes`` is passed only when there are some. A backend written
-        before the parameter existed goes on serving every mint that does not
-        use it, and only a caller actually asking for attributes meets that
-        backend's refusal — which is the right place to meet it, and louder
+        ``attributes`` is passed only when there are some, which is what keeps
+        a backend whose ``mint_access`` does not take the argument serving every
+        mint that does not use it. Only a caller actually asking for attributes
+        meets that backend's refusal — the right place to meet it, and louder
         than a channel quietly dropping what it was asked to carry.
         """
         extra: dict[str, Any] = {"attributes": attributes} if attributes else {}
