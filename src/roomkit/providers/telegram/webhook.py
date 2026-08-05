@@ -14,7 +14,7 @@ lower layer being public.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 from roomkit.models.delivery import InboundMessage
@@ -42,13 +42,15 @@ class TelegramMessageParts:
             ``file_size`` Telegram supplied for a media message.
         message_id: Telegram's message id, as a string.
         sender_id: The Telegram account that typed it. Offered, not imposed —
-            a consumer is free to attribute the message to someone else.
+            a consumer is free to attribute the message to someone else. It is
+            required rather than defaulted so that an unattributed instance is
+            something you write on purpose, not something you forget.
     """
 
     content: TextContent | LocationContent
-    metadata: dict[str, Any] = field(default_factory=dict)
-    message_id: str = ""
-    sender_id: str = ""
+    metadata: dict[str, Any]
+    message_id: str
+    sender_id: str
 
 
 def _parse_media(msg: dict[str, Any]) -> tuple[TextContent, dict[str, Any]] | None:

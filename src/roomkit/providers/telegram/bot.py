@@ -294,7 +294,9 @@ class TelegramBotProvider(TelegramProvider):
             )
             resp.raise_for_status()
             body = resp.json()
-        except self._httpx.HTTPError as exc:
+        except (self._httpx.HTTPError, ValueError) as exc:
+            # ValueError covers a 2xx that is not JSON — an intercepting proxy's
+            # error page reaches raise_for_status intact.
             logger.warning("getFile failed for file_id %s: %s", file_id, self._error_label(exc))
             return None
         return body.get("result", {}).get("file_path") or None
