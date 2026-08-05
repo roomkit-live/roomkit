@@ -117,6 +117,20 @@ class GeminiAIProvider(AIProvider):
             )
         return self._merge_curated(live)
 
+    @staticmethod
+    def _round_signature(parts: list[Any]) -> bytes | None:
+        """Decode the first thought_signature carried by a round's tool calls.
+
+        ``None`` when no call in the round carries one — nothing to borrow,
+        and the request will be rejected if the model was thinking.
+        """
+        for p in parts:
+            if isinstance(p, AIToolCallPart):
+                sig = p.metadata.get("thought_signature")
+                if sig:
+                    return base64.b64decode(sig)
+        return None
+
     def _format_messages(self, messages: list[AIMessage]) -> list[Any]:
         """Convert AIMessage list to Gemini Content format."""
         contents = []
@@ -126,22 +140,25 @@ class GeminiAIProvider(AIProvider):
             ):
                 # Model message with function calls
                 parts = []
-                # Track the round's signature so parallel calls Gemini left
-                # unsigned replay signed anyway: the API emits the
-                # thought_signature on the FIRST functionCall part of a
-                # parallel group only, but its validator rejects any history
-                # functionCall part without one ("Function call is missing a
-                # thought_signature", observed live on gemini-3.5-flash with
-                # a 2-call round). Reusing the group's signature satisfies it.
-                round_sig: bytes | None = None
+                # The round's signature, so parallel calls Gemini left unsigned
+                # replay signed anyway: the API emits the thought_signature on
+                # the FIRST functionCall part of a parallel group only, but its
+                # validator rejects any history functionCall part without one
+                # ("Function call is missing a thought_signature", observed live
+                # on gemini-3.5-flash with a 2-call round). Reusing the group's
+                # signature satisfies it. Resolved by scanning the whole message
+                # up front rather than carried forward as the loop meets it: the
+                # signature is not guaranteed to reach the part that ends up
+                # first, and a call preceding the signed one would otherwise
+                # replay bare — the very 400 this borrowing exists to prevent.
+                round_sig = self._round_signature(msg.content)
                 for p in msg.content:
                     if isinstance(p, AITextPart):
                         parts.append(self._types.Part.from_text(text=p.text))
                     elif isinstance(p, AIToolCallPart):
-                        sig = p.metadata.get("thought_signature")
-                        if sig:
-                            round_sig = base64.b64decode(sig)
-                        if round_sig is not None:
+                        own_sig = p.metadata.get("thought_signature")
+                        sig = base64.b64decode(own_sig) if own_sig else round_sig
+                        if sig is not None:
                             # No ``thought=True`` here — a signed functionCall
                             # part is NOT a thought part, and flagging it as
                             # one desyncs Google's validator from the shape it
@@ -152,7 +169,7 @@ class GeminiAIProvider(AIProvider):
                                         name=p.name,
                                         args=p.arguments,
                                     ),
-                                    thought_signature=round_sig,
+                                    thought_signature=sig,
                                 )
                             )
                         else:
@@ -297,10 +314,42 @@ class GeminiAIProvider(AIProvider):
             status_code=status_code,
         )
 
+    @staticmethod
+    def _reject_model_turn_tail(contents: list[Any]) -> None:
+        """Refuse a request whose history ends with the model speaking.
+
+        Gemini answers a user turn; handed a history ending on a model one it
+        replies ``400 "Requests ending with a model turn are not supported."``,
+        which reaches the conversation as an opaque provider rejection. The
+        cause is upstream — a turn generated with no new input to answer, most
+        often concurrent turns on one room each rebuilding a history that ends
+        on another's reply. Raised here so the report names that, rather than
+        appending a continuation turn the application never wrote: doing so
+        would answer a prompt nobody sent and hide the race that produced it.
+        """
+        tail = 0
+        for content in reversed(contents):
+            if getattr(content, "role", None) != "model":
+                break
+            tail += 1
+        if not tail:
+            return
+        raise ProviderError(
+            "Gemini requires the request to end with a user turn; the history ends "
+            f"with a model turn ({tail} trailing model content(s)). Append the "
+            "triggering user message, or drop the trailing model turn, before "
+            "generating.",
+            retryable=False,
+            provider="gemini",
+        )
+
     async def generate_structured_stream(self, context: AIContext) -> AsyncIterator[StreamEvent]:
         """Yield structured events from the Gemini streaming API."""
         gen_config = self._build_gen_config(context)
         contents = self._format_messages(context.messages)
+        # Before the try below, whose ``_wrap_error`` is for SDK exceptions and
+        # would restate this one as an opaque provider failure.
+        self._reject_model_turn_tail(contents)
 
         t0 = time.monotonic()
         first_token = True
@@ -348,16 +397,16 @@ class GeminiAIProvider(AIProvider):
                     continue
 
                 # Diagnostic: log the chunk's part layout whenever a function
-                # call or a thought_signature is present, so we can see WHERE
-                # Gemini puts the signature in streaming (on the function_call
-                # part, on a thought part, or on a later chunk). Drives the
-                # thought_signature round-trip fix.
-                if any(
+                # call or a thought_signature is present, so WHERE Gemini puts
+                # the signature in streaming (on the function_call part, on a
+                # thought part, or on a later chunk) stays observable when a
+                # round turns out to replay badly.
+                if logger.isEnabledFor(logging.DEBUG) and any(
                     getattr(p, "function_call", None) is not None
                     or getattr(p, "thought_signature", None) is not None
                     for p in parts
                 ):
-                    logger.info("Gemini stream chunk parts: %s", _parts_layout(parts))
+                    logger.debug("Gemini stream chunk parts: %s", _parts_layout(parts))
 
                 for part in parts:
                     if hasattr(part, "text") and part.text:
@@ -399,30 +448,36 @@ class GeminiAIProvider(AIProvider):
                             fcalls[key]["signature"] = sig
 
             if fcall_order:
-                logger.info(
+                logger.debug(
                     "Gemini tool calls finalized: %s",
                     [
                         f"{fcalls[k]['name']}({'sig' if fcalls[k]['signature'] else 'NOSIG'})"
                         for k in fcall_order
                     ],
                 )
+                if not any(fcalls[k]["signature"] for k in fcall_order):
+                    # Gemini signs the first functionCall part of a round only,
+                    # and ``_format_messages`` lends that signature to the
+                    # round's other calls — so a single signature anywhere in
+                    # the round replays fine and is not worth a word. None at
+                    # all is the case with nothing to lend: if the model was
+                    # thinking, Gemini 3 rejects the whole round on the next
+                    # turn ("Function call is missing a thought_signature").
+                    logger.warning(
+                        "Gemini round of %d function call(s) %s carries no "
+                        "thought_signature (thinking_level=%s, thinking_budget=%s) — "
+                        "nothing to replay them signed with; Gemini 3 rejects the next "
+                        "turn when the model was thinking",
+                        len(fcall_order),
+                        [fcalls[k]["name"] for k in fcall_order],
+                        self._config.thinking_level,
+                        context.thinking_budget,
+                    )
             for key in fcall_order:
                 fc_data = fcalls[key]
                 meta: dict[str, Any] = {}
                 if fc_data["signature"] is not None:
                     meta["thought_signature"] = fc_data["signature"]
-                else:
-                    # After merging every emission of this call, still no
-                    # signature — this is the one Gemini 3 will reject on the
-                    # next turn. Logged so a residual 400 is attributable.
-                    logger.warning(
-                        "Gemini function_call '%s' has no thought_signature after "
-                        "merge (thinking_budget=%s, args=%s) — Gemini 3 will reject "
-                        "it on the next turn",
-                        fc_data["name"],
-                        context.thinking_budget,
-                        fc_data["arguments"],
-                    )
                 yield StreamToolCall(
                     id=fc_data["id"],
                     name=fc_data["name"],

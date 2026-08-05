@@ -553,6 +553,146 @@ class TestGeminiAIProvider:
             ).decode("ascii")
 
     @pytest.mark.asyncio
+    async def test_unsigned_call_before_signed_one_still_replays_signed(self) -> None:
+        # Gemini signs one functionCall part of a parallel round, and its
+        # validator then demands a signature on EVERY history functionCall.
+        # The borrowed signature must reach a call that comes BEFORE the signed
+        # one — the round is scanned up front, not carried forward.
+        import base64
+
+        mock_genai = _mock_genai_module()
+        with patch.dict("sys.modules", _genai_modules(mock_genai)):
+            from roomkit.providers.ai.base import AIToolCallPart
+            from roomkit.providers.gemini.ai import GeminiAIProvider
+
+            sig = base64.b64encode(b"sigbytes").decode("ascii")
+            provider = GeminiAIProvider(_config())
+            provider._format_messages(
+                [
+                    AIMessage(
+                        role="assistant",
+                        content=[
+                            AIToolCallPart(id="c1", name="find_tools", arguments={"q": "x"}),
+                            AIToolCallPart(
+                                id="c2",
+                                name="get_status",
+                                arguments={},
+                                metadata={"thought_signature": sig},
+                            ),
+                        ],
+                    )
+                ]
+            )
+
+            signed = [c.kwargs for c in mock_genai.types.Part.call_args_list]
+            assert len(signed) == 2
+            assert all(kw["thought_signature"] == b"sigbytes" for kw in signed)
+            # An unsigned Part would have gone through from_function_call.
+            mock_genai.types.Part.from_function_call.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_each_signed_call_keeps_its_own_signature(self) -> None:
+        # Borrowing is a fallback, not a rewrite: a call that carries its own
+        # signature replays with that one, not the round's first.
+        import base64
+
+        mock_genai = _mock_genai_module()
+        with patch.dict("sys.modules", _genai_modules(mock_genai)):
+            from roomkit.providers.ai.base import AIToolCallPart
+            from roomkit.providers.gemini.ai import GeminiAIProvider
+
+            def _signed(call_id: str, name: str, sig: bytes) -> AIToolCallPart:
+                return AIToolCallPart(
+                    id=call_id,
+                    name=name,
+                    metadata={"thought_signature": base64.b64encode(sig).decode("ascii")},
+                )
+
+            provider = GeminiAIProvider(_config())
+            provider._format_messages(
+                [
+                    AIMessage(
+                        role="assistant",
+                        content=[
+                            _signed("c1", "a", b"first"),
+                            _signed("c2", "b", b"second"),
+                        ],
+                    )
+                ]
+            )
+
+            sigs = [c.kwargs["thought_signature"] for c in mock_genai.types.Part.call_args_list]
+            assert sigs == [b"first", b"second"]
+
+    @pytest.mark.asyncio
+    async def test_round_without_any_signature_warns_once(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        # Nothing to borrow: the round is the one Gemini 3 rejects on the next
+        # turn, and it is worth exactly one warning — not one per call.
+        mock_genai = _mock_genai_module()
+        with patch.dict("sys.modules", _genai_modules(mock_genai)):
+            from roomkit.providers.gemini.ai import GeminiAIProvider
+
+            provider = GeminiAIProvider(_config())
+            provider._client.aio.models.generate_content_stream.return_value = _stream_chunks(
+                tool_calls=[{"name": "alpha"}, {"name": "beta"}],
+            )
+
+            with caplog.at_level("WARNING", logger="roomkit.providers.gemini.ai"):
+                calls = [
+                    e
+                    async for e in provider.generate_structured_stream(
+                        _context(thinking_budget=512)
+                    )
+                    if isinstance(e, StreamToolCall)
+                ]
+
+            assert len(calls) == 2
+            assert all("thought_signature" not in c.metadata for c in calls)
+            warnings = [r for r in caplog.records if r.levelname == "WARNING"]
+            assert len(warnings) == 1
+            assert "no thought_signature" in warnings[0].getMessage()
+
+    @pytest.mark.asyncio
+    async def test_partially_signed_round_does_not_warn(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        # One signature anywhere in the round is enough: _format_messages lends
+        # it to the others, so the replay is valid and there is nothing to say.
+        mock_genai = _mock_genai_module()
+        with patch.dict("sys.modules", _genai_modules(mock_genai)):
+            from roomkit.providers.gemini.ai import GeminiAIProvider
+
+            def _fc_chunk(name: str, sig: bytes | None) -> SimpleNamespace:
+                part = SimpleNamespace(
+                    text=None,
+                    function_call=SimpleNamespace(name=name, args={}),
+                    thought_signature=sig,
+                )
+                return SimpleNamespace(
+                    candidates=[SimpleNamespace(content=SimpleNamespace(parts=[part]))],
+                    usage_metadata=None,
+                )
+
+            provider = GeminiAIProvider(_config())
+            provider._client.aio.models.generate_content_stream.return_value = _FakeStreamIterator(
+                [_fc_chunk("alpha", b"sig"), _fc_chunk("beta", None)]
+            )
+
+            with caplog.at_level("WARNING", logger="roomkit.providers.gemini.ai"):
+                calls = [
+                    e
+                    async for e in provider.generate_structured_stream(
+                        _context(thinking_budget=512)
+                    )
+                    if isinstance(e, StreamToolCall)
+                ]
+
+            assert len(calls) == 2
+            assert [r for r in caplog.records if r.levelname == "WARNING"] == []
+
+    @pytest.mark.asyncio
     async def test_distinct_parallel_function_calls_not_merged(self) -> None:
         # Two web_search calls with different args are distinct — they must NOT
         # be collapsed by the duplicate-merge logic.
@@ -586,6 +726,65 @@ class TestGeminiAIProvider:
             tool_calls = [e for e in events if isinstance(e, StreamToolCall)]
             assert len(tool_calls) == 2
             assert {tc.arguments["q"] for tc in tool_calls} == {"alpha", "beta"}
+
+    @pytest.mark.asyncio
+    async def test_history_ending_with_model_turn_is_refused(self) -> None:
+        # Gemini answers a user turn; a history ending on a model one comes
+        # back as an opaque 400. Refuse it here, naming the condition, and
+        # never reach the API.
+        from roomkit.providers.ai.base import ProviderError
+
+        mock_genai = _mock_genai_module()
+        with patch.dict("sys.modules", _genai_modules(mock_genai)):
+            from roomkit.providers.gemini.ai import GeminiAIProvider
+
+            provider = GeminiAIProvider(_config())
+            context = _context(
+                messages=[
+                    AIMessage(role="user", content="Hi"),
+                    AIMessage(role="assistant", content="Hello!"),
+                ]
+            )
+
+            with pytest.raises(ProviderError) as excinfo:
+                [e async for e in provider.generate_structured_stream(context)]
+
+            assert "ends with a model turn" in str(excinfo.value)
+            assert "(1 trailing model content(s))" in str(excinfo.value)
+            assert excinfo.value.retryable is False
+            assert excinfo.value.provider == "gemini"
+            provider._client.aio.models.generate_content_stream.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_history_ending_with_tool_results_is_not_a_model_turn(self) -> None:
+        # Function responses are sent as role="user" Contents — the guard must
+        # not mistake a tool round mid-flight for a model tail.
+        mock_genai = _mock_genai_module()
+        with patch.dict("sys.modules", _genai_modules(mock_genai)):
+            from roomkit.providers.ai.base import AIToolCallPart, AIToolResultPart
+            from roomkit.providers.gemini.ai import GeminiAIProvider
+
+            provider = GeminiAIProvider(_config())
+            provider._client.aio.models.generate_content_stream.return_value = _stream_chunks(
+                text_parts=["done"],
+            )
+            context = _context(
+                messages=[
+                    AIMessage(role="user", content="Hi"),
+                    AIMessage(
+                        role="assistant",
+                        content=[AIToolCallPart(id="c1", name="foo", arguments={})],
+                    ),
+                    AIMessage(
+                        role="tool",
+                        content=[AIToolResultPart(tool_call_id="c1", name="foo", result="ok")],
+                    ),
+                ]
+            )
+
+            events = [e async for e in provider.generate_structured_stream(context)]
+
+            assert [e.text for e in events if isinstance(e, StreamTextDelta)] == ["done"]
 
     @pytest.mark.asyncio
     async def test_generate_stream_yields_text(self) -> None:
