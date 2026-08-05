@@ -39,6 +39,14 @@ Usage (external / Claude Code)::
     # Inside ExternalToolHandler.process_tool_call():
     pending = await handler.create("AskUserQuestion", arguments, room_id=room_id, ...)
     result = await handler.wait(pending.pending_id, timeout=300)
+
+When the runtime owns its own tool loop and the answer travels back some
+other way — nobody calls ``wait()`` — say so, and free the request when
+done::
+
+    pending = await handler.create_detached("AskUserQuestion", arguments, ...)
+    ...
+    handler.release(pending.pending_id)
 """
 
 from __future__ import annotations
@@ -47,11 +55,13 @@ import asyncio
 import contextvars
 import json
 import logging
+from collections import OrderedDict
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 from uuid import uuid4
 
+from roomkit.core.task_utils import log_task_exception
 from roomkit.models.enums import ChannelType
 from roomkit.models.pending_input import PendingInput, PendingInputEvent, PendingInputStatus
 from roomkit.providers.ai.base import AITool
@@ -104,17 +114,35 @@ class HumanInputHandler:
     Core lifecycle::
 
         pending = await handler.create("AskUser", args, room_id="r1", ...)
-        # → ON_USER_INPUT_REQUIRED hook fires
+        # → request is answerable from here on; the
+        #   ON_USER_INPUT_REQUIRED notification runs alongside
         result  = await handler.wait(pending.pending_id, timeout=300)
         # → blocks until resolve() / reject() / timeout
+
+    Two invariants the caller can rely on:
+
+    * **The notification never gates the answer.** ``create()`` arms the
+      request and returns; the ``_on_input_required`` callback runs in a
+      background task.  A human who answers while that callback is still
+      running — a slow WebSocket broadcast, a hook burning its 30 s budget —
+      is answering a request that is already listening.  A denial coming back
+      from the callback rejects the request, and ``wait()`` reports it.
+    * **A consumed outcome stays readable.** ``wait()`` retires the request
+      into a bounded retention (*retention* entries, newest kept) and replays
+      it for a second ``wait()``.  Only a genuinely unknown id raises
+      ``ValueError``, so a caller that drops its own bookkeeping cannot turn
+      an answer that arrived into a hard failure.
 
     The ``_on_input_required`` callback is injected by the framework
     (via ``register_channel`` hook builder) or set by the application
     directly.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, retention: int = 128) -> None:
         self._pending: dict[str, PendingInput] = {}
+        self._recent: OrderedDict[str, PendingInput] = OrderedDict()
+        self._retention = max(0, retention)
+        self._notify_tasks: set[asyncio.Task[None]] = set()
         self._on_input_required: OnInputRequiredCallback | None = None
 
     @property
@@ -132,11 +160,65 @@ class HumanInputHandler:
         channel_id: str = "",
         channel_type: ChannelType = ChannelType.AI,
     ) -> PendingInput:
-        """Register a new pending input request and fire the callback.
+        """Register a new pending input request and schedule the callback.
 
-        If the ``_on_input_required`` callback returns ``False`` (hook
-        denied), the request is auto-rejected before ``wait()`` is called.
+        Returns as soon as the request is answerable — the
+        ``_on_input_required`` callback runs in a background task and a
+        denial from it rejects the request wherever ``wait()`` has got to.
+
+        ``wait()`` owns this request's cleanup; for a request no one will
+        wait on, use :meth:`create_detached`.
         """
+        return self._arm(
+            tool_name,
+            arguments,
+            room_id=room_id,
+            tool_call_id=tool_call_id,
+            channel_id=channel_id,
+            channel_type=channel_type,
+            detached=False,
+        )
+
+    async def create_detached(
+        self,
+        tool_name: str,
+        arguments: dict[str, Any],
+        *,
+        room_id: str = "",
+        tool_call_id: str = "",
+        channel_id: str = "",
+        channel_type: ChannelType = ChannelType.AI,
+    ) -> PendingInput:
+        """Register a pending request that no one will :meth:`wait` on.
+
+        For runtimes that own their own tool loop — a Claude Code sandbox,
+        say — where ``create()`` exists to raise the request and the answer
+        travels back another way.  Nothing here retires the request, so its
+        creator MUST call :meth:`release` when done with it; otherwise the
+        entry lives as long as the handler.
+        """
+        return self._arm(
+            tool_name,
+            arguments,
+            room_id=room_id,
+            tool_call_id=tool_call_id,
+            channel_id=channel_id,
+            channel_type=channel_type,
+            detached=True,
+        )
+
+    def _arm(
+        self,
+        tool_name: str,
+        arguments: dict[str, Any],
+        *,
+        room_id: str,
+        tool_call_id: str,
+        channel_id: str,
+        channel_type: ChannelType,
+        detached: bool,
+    ) -> PendingInput:
+        """Register the request, then schedule its notification."""
         pending_id = uuid4().hex
         pending = PendingInput(
             pending_id=pending_id,
@@ -145,6 +227,7 @@ class HumanInputHandler:
             room_id=room_id,
             tool_call_id=tool_call_id,
             channel_id=channel_id,
+            detached=detached,
         )
         self._pending[pending_id] = pending
 
@@ -158,45 +241,106 @@ class HumanInputHandler:
                 channel_id=channel_id,
                 channel_type=channel_type,
             )
-            try:
-                allowed = await self._on_input_required(event)
-                if not allowed:
-                    self.reject(pending_id, "Denied by ON_USER_INPUT_REQUIRED hook")
-            except Exception:
-                logger.exception("_on_input_required callback failed for pending %s", pending_id)
+            task = asyncio.get_running_loop().create_task(
+                self._notify(event), name=f"human-input-notify-{pending_id}"
+            )
+            self._notify_tasks.add(task)
+            task.add_done_callback(self._notify_tasks.discard)
+            task.add_done_callback(log_task_exception)
 
         return pending
 
+    async def _notify(self, event: PendingInputEvent) -> None:
+        """Run the ON_USER_INPUT_REQUIRED callback off the waiting path."""
+        callback = self._on_input_required
+        if callback is None:
+            return
+        try:
+            allowed = await callback(event)
+        except Exception:
+            # Fail-open, as RFC §9.3 requires of this trigger: a broken
+            # notification loses the notification, not the request.
+            logger.exception("_on_input_required callback failed for pending %s", event.pending_id)
+            return
+        if not allowed:
+            self.reject(event.pending_id, "Denied by ON_USER_INPUT_REQUIRED hook")
+
     async def wait(self, pending_id: str, *, timeout: float = 300) -> str:
         """Block until the request is resolved, rejected, or times out.
+
+        An outcome already reached and consumed is replayed from the
+        retention, so waiting twice — or waiting after someone else dropped
+        their own record of the request — reports what happened rather than
+        an error.
 
         Returns:
             The result string on resolution.
 
         Raises:
-            asyncio.TimeoutError: If the timeout expires.
+            asyncio.TimeoutError: If the timeout expires, or if a retained
+                request had timed out.
             RuntimeError: If the request was rejected.
-            ValueError: If *pending_id* is not found.
+            ValueError: If *pending_id* is unknown — never seen, or retired
+                long enough ago to have been evicted from the retention.
         """
         pending = self._pending.get(pending_id)
         if pending is None:
-            msg = f"No pending request with id {pending_id}"
-            raise ValueError(msg)
+            retained = self._recent.get(pending_id)
+            if retained is None:
+                msg = f"No pending request with id {pending_id}"
+                raise ValueError(msg)
+            return self._outcome(retained)
 
         try:
             await asyncio.wait_for(pending._event.wait(), timeout=timeout)
         except TimeoutError:
             pending.status = PendingInputStatus.TIMED_OUT
-            self._pending.pop(pending_id, None)
+            self._retire(pending_id)
             raise
 
-        self._pending.pop(pending_id, None)
+        self._retire(pending_id)
+        return self._outcome(pending)
 
+    def release(self, pending_id: str) -> bool:
+        """Drop a request whose cleanup the caller owns.
+
+        The counterpart of :meth:`create_detached`.  A request still
+        unanswered is rejected on the way out, so a stray waiter unblocks
+        instead of hanging; the outcome goes to the retention either way and
+        stays readable by :meth:`wait`.
+
+        Returns ``True`` if an active request was dropped.
+        """
+        pending = self._pending.get(pending_id)
+        if pending is None:
+            return False
+        if pending.status == PendingInputStatus.PENDING:
+            pending.reject_reason = "Released before an answer arrived"
+            pending.status = PendingInputStatus.REJECTED
+            pending._event.set()
+        self._retire(pending_id)
+        return True
+
+    def _retire(self, pending_id: str) -> None:
+        """Move a finished request out of the active set, into retention."""
+        pending = self._pending.pop(pending_id, None)
+        if pending is None or self._retention == 0:
+            return
+        self._recent[pending_id] = pending
+        while len(self._recent) > self._retention:
+            self._recent.popitem(last=False)
+
+    @staticmethod
+    def _outcome(pending: PendingInput) -> str:
+        """Report a terminal request as its result or its failure."""
         if pending.status == PendingInputStatus.REJECTED:
             raise RuntimeError(pending.reject_reason or "Request rejected")
 
         if pending.status == PendingInputStatus.RESOLVED:
             return pending.result or ""
+
+        if pending.status == PendingInputStatus.TIMED_OUT:
+            raise TimeoutError
 
         msg = f"Unexpected pending status: {pending.status}"
         raise RuntimeError(msg)

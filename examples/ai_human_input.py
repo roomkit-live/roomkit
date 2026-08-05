@@ -7,8 +7,9 @@ user's answer.
 Shows:
 - HumanInputToolHandler intercepting specific tool names
 - ON_USER_INPUT_REQUIRED hook for notifications
-- Async resolution simulating a user answering
-- Composition with other tool handlers
+- An answer arriving while the notification is still in flight —
+  the tool resumes on the answer, not on the notification
+- create_detached() / release() for a runtime that owns its tool loop
 
 Run with:
     uv run python examples/ai_human_input.py
@@ -19,12 +20,14 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 
 from roomkit import (
     ChannelCategory,
     HookExecution,
     HookResult,
     HookTrigger,
+    HumanInputHandler,
     HumanInputToolHandler,
     InboundMessage,
     RoomEvent,
@@ -38,6 +41,11 @@ from roomkit.providers.ai.mock import MockAIProvider
 
 logging.basicConfig(level=logging.INFO, format="%(name)s | %(message)s")
 logger = logging.getLogger("example")
+
+# A notification that takes its time — a slow WebSocket fan-out, a hook
+# burning its budget.  The user answers long before it returns.
+SLOW_NOTIFY_SECONDS = 1.0
+USER_ANSWERS_AFTER = 0.1
 
 
 async def main() -> None:
@@ -95,25 +103,34 @@ async def main() -> None:
 
     # --- Hook: notify when human input is needed -----------------
 
+    started = time.perf_counter()
+
+    def elapsed() -> str:
+        return f"t={time.perf_counter() - started:.2f}s"
+
     @kit.hook(HookTrigger.ON_USER_INPUT_REQUIRED, execution=HookExecution.SYNC)
     async def on_input_needed(event, ctx):
         logger.info(
-            "Human input required: pending_id=%s tool=%s args=%s",
+            "%s | notification started: pending_id=%s tool=%s args=%s",
+            elapsed(),
             event.pending_id,
             event.tool_name,
             event.arguments,
         )
-        # In a real app: broadcast to frontend via WebSocket
-        # await ws_manager.broadcast(event.room_id, {...})
 
-        # Simulate user answering after a short delay
+        # Simulate user answering while the notification is still running
         async def _simulate_user_answer():
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(USER_ANSWERS_AFTER)
             answer = json.dumps({"answers": [{"answer": "Dark"}]})
-            logger.info("User answered: %s", answer)
+            logger.info("%s | user answered: %s", elapsed(), answer)
             human.handler.resolve(event.pending_id, answer)
 
         asyncio.create_task(_simulate_user_answer())
+
+        # In a real app: broadcast to frontend via WebSocket
+        # await ws_manager.broadcast(event.room_id, {...})
+        await asyncio.sleep(SLOW_NOTIFY_SECONDS)
+        logger.info("%s | notification finished", elapsed())
         return HookResult.allow()
 
     # --- Collect responses ---------------------------------------
@@ -122,6 +139,9 @@ async def main() -> None:
 
     async def on_recv(_conn: str, event: RoomEvent) -> None:
         inbox.append(event)
+        if hasattr(event.content, "body"):
+            # Lands right after the answer, not after the notification.
+            logger.info("%s | AI reply delivered", elapsed())
 
     ws.register_connection("user-conn", on_recv, room_id="demo-room")
 
@@ -150,11 +170,44 @@ async def main() -> None:
     logger.info("--- AI responses received ---")
     for event in inbox:
         if hasattr(event.content, "body"):
-            logger.info("AI: %s", event.content.body)
+            logger.info("%s | AI: %s", elapsed(), event.content.body)
 
     # --- Cleanup -------------------------------------------------
 
     await kit.close()
+
+    await detached_request()
+
+
+async def detached_request() -> None:
+    """A runtime that owns its tool loop: create_detached() / release().
+
+    Claude Code and other external runtimes raise the request through
+    RoomKit but carry the answer back their own way — nothing here calls
+    wait(), so nothing here would retire the request.  Saying so at the
+    call site is what makes the cleanup someone's job.
+    """
+    logger.info("--- detached request (external runtime path) ---")
+    handler = HumanInputHandler()
+
+    async def notify(event) -> bool:
+        logger.info("notify: pending_id=%s tool=%s", event.pending_id, event.tool_name)
+        return True
+
+    handler._on_input_required = notify
+
+    pending = await handler.create_detached(
+        "AskUserQuestion",
+        {"questions": [{"question": "Ship it?", "options": ["Yes", "No"]}]},
+        room_id="demo-room",
+    )
+    await asyncio.sleep(0)  # the notification runs here, off the answering path
+    handler.resolve(pending.pending_id, json.dumps({"answers": [{"answer": "Yes"}]}))
+    handler.release(pending.pending_id)
+
+    logger.info("active requests after release: %d", len(handler.pending))
+    # The answer outlives the request: a late reader still reads it.
+    logger.info("answer still readable: %s", await handler.wait(pending.pending_id, timeout=1))
 
 
 if __name__ == "__main__":

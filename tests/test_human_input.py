@@ -96,9 +96,11 @@ async def test_resolve_already_resolved_returns_false() -> None:
 
 async def test_callback_fires_on_create() -> None:
     events: list[PendingInputEvent] = []
+    fired = asyncio.Event()
 
     async def capture(e: PendingInputEvent) -> bool:
         events.append(e)
+        fired.set()
         return True
 
     handler = HumanInputHandler()
@@ -112,13 +114,37 @@ async def test_callback_fires_on_create() -> None:
         channel_id="ch1",
         channel_type=ChannelType.AI,
     )
+    await asyncio.wait_for(fired.wait(), timeout=1)
     assert len(events) == 1
     assert events[0].tool_name == "tool1"
     assert events[0].room_id == "r1"
     assert events[0].channel_type == ChannelType.AI
 
 
-async def test_callback_deny_auto_rejects_pending() -> None:
+async def test_notification_does_not_gate_the_answer() -> None:
+    """A human answering mid-notification answers a request already listening."""
+    answered = asyncio.Event()
+
+    async def slow_notify(e: PendingInputEvent) -> bool:
+        # Only returns once the answer has been collected — if create()
+        # awaited this, nothing would ever reach wait().
+        await answered.wait()
+        return True
+
+    handler = HumanInputHandler()
+    handler._on_input_required = slow_notify
+
+    pending = await handler.create("tool", {}, room_id="r1", tool_call_id="tc1", channel_id="ch1")
+    waiter = asyncio.create_task(handler.wait(pending.pending_id, timeout=5))
+    await asyncio.sleep(0)  # let wait() reach the event
+
+    handler.resolve(pending.pending_id, "Dark")
+    assert await asyncio.wait_for(waiter, timeout=1) == "Dark"
+
+    answered.set()  # release the notification task
+
+
+async def test_callback_deny_rejects_the_request() -> None:
     async def deny_callback(e: PendingInputEvent) -> bool:
         return False
 
@@ -126,21 +152,27 @@ async def test_callback_deny_auto_rejects_pending() -> None:
     handler._on_input_required = deny_callback
 
     pending = await handler.create("tool", {}, room_id="r1", tool_call_id="tc1", channel_id="ch1")
-    assert pending.status == PendingInputStatus.REJECTED
     with pytest.raises(RuntimeError, match="Denied by ON_USER_INPUT_REQUIRED hook"):
         await handler.wait(pending.pending_id, timeout=1)
 
 
-async def test_callback_error_does_not_break_create() -> None:
+async def test_callback_error_leaves_the_request_answerable() -> None:
+    exploded = asyncio.Event()
+
     async def broken_callback(e: PendingInputEvent) -> bool:
+        exploded.set()
         raise RuntimeError("callback exploded")
 
     handler = HumanInputHandler()
     handler._on_input_required = broken_callback
 
     pending = await handler.create("tool", {}, room_id="r1", tool_call_id="tc1", channel_id="ch1")
+    await asyncio.wait_for(exploded.wait(), timeout=1)
     assert pending.status == PendingInputStatus.PENDING
     assert pending.pending_id in handler.pending
+
+    handler.resolve(pending.pending_id, "still works")
+    assert await handler.wait(pending.pending_id, timeout=1) == "still works"
 
 
 async def test_concurrent_pending_requests() -> None:
@@ -167,6 +199,120 @@ async def test_pending_property_returns_snapshot() -> None:
     # Mutating the snapshot doesn't affect the handler
     snapshot.clear()
     assert len(handler.pending) == 1
+
+
+# ── Retention of consumed outcomes ──────────────────────────────────
+
+
+async def test_wait_replays_a_consumed_answer() -> None:
+    handler = HumanInputHandler()
+    pending = await handler.create("tool", {}, room_id="r1", tool_call_id="tc1", channel_id="ch1")
+    handler.resolve(pending.pending_id, "Dark")
+
+    assert await handler.wait(pending.pending_id, timeout=1) == "Dark"
+    assert pending.pending_id not in handler.pending
+    # A second waiter reads the answer, not a ValueError.
+    assert await handler.wait(pending.pending_id, timeout=1) == "Dark"
+
+
+async def test_wait_replays_a_rejection() -> None:
+    handler = HumanInputHandler()
+    pending = await handler.create("tool", {}, room_id="r1", tool_call_id="tc1", channel_id="ch1")
+    handler.reject(pending.pending_id, "denied by admin")
+
+    with pytest.raises(RuntimeError, match="denied by admin"):
+        await handler.wait(pending.pending_id, timeout=1)
+    with pytest.raises(RuntimeError, match="denied by admin"):
+        await handler.wait(pending.pending_id, timeout=1)
+
+
+async def test_wait_replays_a_timeout() -> None:
+    handler = HumanInputHandler()
+    pending = await handler.create("tool", {}, room_id="r1", tool_call_id="tc1", channel_id="ch1")
+
+    with pytest.raises(asyncio.TimeoutError):
+        await handler.wait(pending.pending_id, timeout=0.01)
+    with pytest.raises(asyncio.TimeoutError):
+        await handler.wait(pending.pending_id, timeout=0.01)
+
+
+async def test_retention_is_bounded() -> None:
+    handler = HumanInputHandler(retention=1)
+    first = await handler.create("t1", {}, room_id="r1", tool_call_id="tc1", channel_id="ch1")
+    second = await handler.create("t2", {}, room_id="r1", tool_call_id="tc2", channel_id="ch1")
+    handler.resolve(first.pending_id, "one")
+    handler.resolve(second.pending_id, "two")
+
+    assert await handler.wait(first.pending_id, timeout=1) == "one"
+    assert await handler.wait(second.pending_id, timeout=1) == "two"
+
+    # The newest outcome is still readable; the oldest has been evicted.
+    assert await handler.wait(second.pending_id, timeout=1) == "two"
+    with pytest.raises(ValueError, match="No pending request"):
+        await handler.wait(first.pending_id, timeout=1)
+
+
+async def test_retention_can_be_switched_off() -> None:
+    handler = HumanInputHandler(retention=0)
+    pending = await handler.create("tool", {}, room_id="r1", tool_call_id="tc1", channel_id="ch1")
+    handler.resolve(pending.pending_id, "Dark")
+
+    assert await handler.wait(pending.pending_id, timeout=1) == "Dark"
+    with pytest.raises(ValueError, match="No pending request"):
+        await handler.wait(pending.pending_id, timeout=1)
+
+
+# ── Detached requests ───────────────────────────────────────────────
+
+
+async def test_create_detached_marks_the_request() -> None:
+    handler = HumanInputHandler()
+    attached = await handler.create("t1", {}, room_id="r1", tool_call_id="tc1", channel_id="ch1")
+    detached = await handler.create_detached(
+        "t2", {}, room_id="r1", tool_call_id="tc2", channel_id="ch1"
+    )
+    assert attached.detached is False
+    assert detached.detached is True
+
+
+async def test_release_drops_the_request_but_keeps_its_answer() -> None:
+    handler = HumanInputHandler()
+    pending = await handler.create_detached(
+        "tool", {}, room_id="r1", tool_call_id="tc1", channel_id="ch1"
+    )
+    handler.resolve(pending.pending_id, "Dark")
+
+    assert handler.release(pending.pending_id) is True
+    assert pending.pending_id not in handler.pending
+    assert await handler.wait(pending.pending_id, timeout=1) == "Dark"
+
+
+async def test_release_rejects_a_request_still_unanswered() -> None:
+    handler = HumanInputHandler()
+    pending = await handler.create_detached(
+        "tool", {}, room_id="r1", tool_call_id="tc1", channel_id="ch1"
+    )
+    waiter = asyncio.create_task(handler.wait(pending.pending_id, timeout=5))
+    await asyncio.sleep(0)
+
+    assert handler.release(pending.pending_id) is True
+    with pytest.raises(RuntimeError, match="Released before an answer arrived"):
+        await asyncio.wait_for(waiter, timeout=1)
+
+
+async def test_release_unknown_returns_false() -> None:
+    handler = HumanInputHandler()
+    assert handler.release("nonexistent") is False
+
+
+async def test_release_is_idempotent() -> None:
+    handler = HumanInputHandler()
+    pending = await handler.create_detached(
+        "tool", {}, room_id="r1", tool_call_id="tc1", channel_id="ch1"
+    )
+    handler.resolve(pending.pending_id, "Dark")
+    assert handler.release(pending.pending_id) is True
+    assert handler.release(pending.pending_id) is False
 
 
 # ── HumanInputToolHandler ───────────────────────────────────────────

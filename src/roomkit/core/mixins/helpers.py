@@ -788,9 +788,12 @@ class HelpersMixin:
         against the framework's hook engine and emits a
         ``user_input_required`` framework event.
 
-        Sync execution ensures the notification (e.g. WebSocket broadcast)
-        completes before :meth:`HumanInputHandler.wait` starts blocking —
-        avoiding a race where the user never sees the question.
+        Sync execution is what gives these hooks their order and their
+        veto — a BLOCK rejects the request. It does not gate the request
+        being answerable: ``HumanInputHandler`` arms the request first and
+        runs this callback off the waiting path, so a human who answers
+        while a slow notification is still in flight is answering a
+        request that is already listening.
         """
         from roomkit.models.enums import HookTrigger
         from roomkit.models.pending_input import PendingInputEvent

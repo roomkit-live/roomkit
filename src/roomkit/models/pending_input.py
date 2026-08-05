@@ -43,6 +43,10 @@ class PendingInput:
     status: PendingInputStatus = PendingInputStatus.PENDING
     result: str | None = None
     reject_reason: str | None = None
+    detached: bool = False
+    """No one will call ``wait()`` on this request — its creator frees it with
+    :meth:`HumanInputHandler.release`. ``wait()`` owns the cleanup of every
+    other request."""
     created_at: datetime = field(default_factory=_utcnow)
     _event: asyncio.Event = field(default_factory=asyncio.Event, repr=False)
 

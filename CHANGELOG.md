@@ -197,6 +197,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A parallel Gemini tool call replayed unsigned when the signature landed on
+  a later call.** Gemini puts a `thought_signature` on one function call of a
+  parallel round, and its validator then demands one on *every* function call in
+  the history — so the provider lends the round's signature to the calls that
+  came back bare. It resolved that signature by carrying it forward as it walked
+  the message, which works only while the signed call comes first: a call
+  *preceding* it replayed with nothing, and Gemini 3 rejected the whole next turn
+  with `400 "Function call is missing a thought_signature"`. The round is now
+  scanned up front, so the borrowed signature reaches every call whatever the
+  order, and a call carrying its own still replays with that one. The warning
+  that went with this moves to where the fact is known: it fired per unsigned
+  call during streaming, announcing a rejection that the replay then prevented
+  (13 times in one observed conversation, none of them rejected), and now fires
+  once per round, only when *no* call in it carries a signature — the case with
+  nothing to lend. The two `INFO` diagnostics that instrumented this are `DEBUG`.
+
+- **A history ending on a model turn reached the conversation as an opaque
+  provider rejection.** Gemini answers a user turn; handed a history whose last
+  content is a model one it replies `400 "Requests ending with a model turn are
+  not supported."`, and the raw status is what the room read. The provider now
+  refuses the request before it leaves, with a `ProviderError` naming the
+  condition and how many trailing model contents it found. It does not append a
+  continuation turn: the cause is upstream — a turn generated with no new input
+  to answer, most often concurrent turns on one room each rebuilding a history
+  that ends on another's reply — and answering a prompt the application never
+  wrote would hide the race that produced it. Tool results are unaffected; they
+  are sent as user contents.
+
+- **A human-input request only started listening once the notification came
+  back.** `HumanInputHandler.create()` awaited the `ON_USER_INPUT_REQUIRED`
+  callback before returning, and the tool reached `wait()` only after that — so
+  a slow broadcast, or a hook burning its full 30-second budget, left the
+  request armed but unattended for the whole window. Answers arriving in it were
+  still recorded, but a caller that kept its own bookkeeping and dropped the
+  entry on `resolve()` turned an answer that had arrived into
+  `ValueError: No pending request`, handed to the model as a tool failure; one
+  session re-asked the same question six times. `create()` now returns as soon
+  as the request is answerable and runs the callback in a tracked background
+  task. The hooks keep their sync semantics — priority order, and a
+  `HookResult.block()` still rejects the request, reported by `wait()` wherever
+  it has got to.
+
+- **A consumed outcome was indistinguishable from an id that never existed.**
+  `wait()` raised `ValueError` for both, so waiting twice — or waiting after
+  someone else dropped their record of the request — reported a failure instead
+  of what happened. Outcomes are now retired into a bounded retention (the last
+  128, `HumanInputHandler(retention=…)`) and replayed: the same answer, the same
+  rejection, the same timeout. `ValueError` is left to mean what it says.
+  `create_detached()` and `release()` name the other half of the problem: the
+  external-runtime path calls `create()` and never `wait()`, which left the
+  cleanup ownership for each caller to guess at.
+
 - **A vLLM server described itself with OpenAI's model list.**
   `create_vllm_provider()` returned a plain `OpenAIAIProvider`, so
   `available_models()` answered with OpenAI's hosted catalog — someone else's
