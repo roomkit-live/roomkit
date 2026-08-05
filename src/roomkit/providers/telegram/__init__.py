@@ -4,12 +4,18 @@ from roomkit.providers.telegram.base import TelegramProvider
 from roomkit.providers.telegram.bot import TelegramBotProvider
 from roomkit.providers.telegram.config import TelegramConfig
 from roomkit.providers.telegram.mock import MockTelegramProvider
-from roomkit.providers.telegram.webhook import parse_telegram_webhook
+from roomkit.providers.telegram.webhook import (
+    TelegramMessageParts,
+    parse_telegram_message,
+    parse_telegram_webhook,
+)
 
 __all__ = [
     "MockTelegramProvider",
     "TelegramBotProvider",
     "TelegramConfig",
+    "TelegramMessageParts",
     "TelegramProvider",
+    "parse_telegram_message",
     "parse_telegram_webhook",
 ]

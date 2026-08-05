@@ -171,6 +171,11 @@ telegram = TelegramChannel("telegram", provider=TelegramBotProvider(TelegramConf
 
 Webhook parser: `parse_telegram_webhook(request_data, channel_id="telegram")` — returns `list[InboundMessage]`.
 
+- Inbound media (`photo`, `voice`, `audio`, `video_note`, `video`, `document`) parses to a `TextContent` whose body is the caption — empty when there is none, as on a voice note — plus `metadata["file_id"]` and `metadata["media_type"]`, and whichever of `duration`, `mime_type`, `file_name`, `file_size` Telegram sent.
+- `parse_telegram_message(msg)` is the layer below: it reads a Telegram `message` into `TelegramMessageParts` (content, metadata, `message_id`, `sender_id`) and attributes nothing. `parse_telegram_webhook` is that function plus the ordinary attribution — the sender is `message.from.id`. Use the lower one when your identity model is not Telegram's (a one-bot-per-user deployment attributes a DM to the bot's owner), so that reading a `file_id` never costs you your identity model.
+- Resolving that `file_id` to bytes belongs to the provider, which holds the bot token: `path = await provider.get_file(file_id)` then `data = await provider.download_file(path)`. Both return `None` on failure and log a warning that never carries the URL (every Bot API URL embeds the token). Telegram caps Bot API downloads at 20 MB and refuses larger files at the `getFile` step; `metadata["file_size"]` tells you before you spend the call.
+- RoomKit stops at the bytes — transcription and storage are the application's call.
+
 ## Discord
 
 Discord has no webhook parser — it is a source + provider pair sharing one persistent gateway connection. `DiscordGatewaySource` owns the `discord.Client` (inbound); `DiscordBotProvider` reuses that client for outbound sends.

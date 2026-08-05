@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hmac
 import json
+import logging
 from typing import TYPE_CHECKING, Any
 
 from roomkit.models.delivery import ProviderResult
@@ -21,6 +22,8 @@ from roomkit.providers.utils import extract_event_text as _extract_event_text
 
 if TYPE_CHECKING:
     import httpx
+
+logger = logging.getLogger("roomkit.providers.telegram")
 
 # Code blocks with fewer lines than this stay inline as a monospace block;
 # larger dumps are extracted to a file attachment by telegramify. Keeping the
@@ -262,6 +265,68 @@ class TelegramBotProvider(TelegramProvider):
             "audio": content.url,
         }
         return await self._api_call("sendAudio", payload)
+
+    async def get_file(self, file_id: str) -> str | None:
+        """Resolve an inbound ``file_id`` to a Bot API file path.
+
+        The ``file_id`` arrives on an inbound update — both
+        :func:`~roomkit.providers.telegram.webhook.parse_telegram_message` and
+        :func:`~roomkit.providers.telegram.webhook.parse_telegram_webhook` put
+        it in ``metadata["file_id"]`` for every media message. Pair the path
+        this returns with :meth:`download_file` to get the bytes; the bot token
+        needed for both lives here, not in the calling application.
+
+        Telegram keeps the path valid for at least an hour, and refuses any
+        file over 20 MB — the Bot API download ceiling — with a ``400``. An
+        update carries ``metadata["file_size"]``, so a caller can tell which
+        files are past that ceiling without spending the call.
+
+        Args:
+            file_id: Identifier from an inbound Telegram update.
+
+        Returns:
+            The file path to download, or None if Telegram refused the file or
+            the call failed.
+        """
+        try:
+            resp = await self._client.post(
+                f"{self._config.base_url}/getFile", json={"file_id": file_id}
+            )
+            resp.raise_for_status()
+            body = resp.json()
+        except self._httpx.HTTPError as exc:
+            logger.warning("getFile failed for file_id %s: %s", file_id, self._error_label(exc))
+            return None
+        return body.get("result", {}).get("file_path") or None
+
+    async def download_file(self, file_path: str) -> bytes | None:
+        """Download the bytes behind a path returned by :meth:`get_file`.
+
+        Args:
+            file_path: Path returned by :meth:`get_file`.
+
+        Returns:
+            The file content, or None if the download failed. Files over the
+            Bot API's 20 MB ceiling never get this far — :meth:`get_file`
+            already returned None for them.
+        """
+        try:
+            resp = await self._client.get(f"{self._config.file_base_url}/{file_path}")
+            resp.raise_for_status()
+        except self._httpx.HTTPError as exc:
+            logger.warning("download failed for %s: %s", file_path, self._error_label(exc))
+            return None
+        return resp.content
+
+    @staticmethod
+    def _error_label(exc: Exception) -> str:
+        """Describe an httpx failure without its URL — every Bot API URL holds the token.
+
+        ``str(HTTPStatusError)`` names the URL it failed on, which would put the
+        bot token in the logs.
+        """
+        status = getattr(getattr(exc, "response", None), "status_code", None)
+        return f"{type(exc).__name__}({status})" if status else type(exc).__name__
 
     async def _api_call(self, method: str, payload: dict[str, Any]) -> ProviderResult:
         return await self._request(method, json=payload)

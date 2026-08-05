@@ -56,6 +56,19 @@ class _TimeoutTransport(httpx.AsyncBaseTransport):
         raise httpx.ReadTimeout("timed out")
 
 
+class _BytesTransport(httpx.AsyncBaseTransport):
+    """Serves raw bytes — the shape of a Telegram file download, not JSON."""
+
+    def __init__(self, content: bytes, status: int = 200) -> None:
+        self._content = content
+        self._status = status
+        self.requests: list[httpx.Request] = []
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        self.requests.append(request)
+        return httpx.Response(self._status, content=self._content, request=request)
+
+
 class _MethodTransport(httpx.AsyncBaseTransport):
     """Succeeds for every Bot API method except those named in ``errors``."""
 
@@ -243,6 +256,99 @@ class TestTelegramBotProvider:
         provider = TelegramBotProvider(_config())
         await provider.close()
         # Should not raise
+
+
+class TestTelegramInboundFiles:
+    """An inbound file_id is only useful if the side holding the token can resolve it."""
+
+    @pytest.mark.asyncio
+    async def test_get_file_returns_path(self) -> None:
+        transport = _MockTransport(
+            {
+                "ok": True,
+                "result": {
+                    "file_id": "AwACAgIAAxkBAAIC",
+                    "file_unique_id": "AgADbQ4AAlOZAUo",
+                    "file_size": 8342,
+                    "file_path": "voice/file_3.oga",
+                },
+            }
+        )
+        provider = TelegramBotProvider(_config())
+        provider._client = httpx.AsyncClient(transport=transport)
+
+        path = await provider.get_file("AwACAgIAAxkBAAIC")
+
+        assert path == "voice/file_3.oga"
+        req = transport.requests[0]
+        assert "/getFile" in str(req.url)
+        assert json.loads(req.content) == {"file_id": "AwACAgIAAxkBAAIC"}
+
+    @pytest.mark.asyncio
+    async def test_get_file_too_big_returns_none(self) -> None:
+        """Telegram enforces the 20 MB download ceiling on getFile itself."""
+        transport = _MockTransport(
+            _error_response(400, "Bad Request: file is too big"), status=400
+        )
+        provider = TelegramBotProvider(_config())
+        provider._client = httpx.AsyncClient(transport=transport)
+
+        assert await provider.get_file("huge_file_id") is None
+
+    @pytest.mark.asyncio
+    async def test_get_file_timeout_returns_none(self) -> None:
+        provider = TelegramBotProvider(_config())
+        provider._client = httpx.AsyncClient(transport=_TimeoutTransport())
+
+        assert await provider.get_file("some_file_id") is None
+
+    @pytest.mark.asyncio
+    async def test_get_file_missing_path_returns_none(self) -> None:
+        transport = _MockTransport({"ok": True, "result": {"file_id": "x"}})
+        provider = TelegramBotProvider(_config())
+        provider._client = httpx.AsyncClient(transport=transport)
+
+        assert await provider.get_file("x") is None
+
+    @pytest.mark.asyncio
+    async def test_download_file_returns_bytes(self) -> None:
+        audio = b"OggS\x00\x02voice-note-bytes"
+        transport = _BytesTransport(audio)
+        provider = TelegramBotProvider(_config(bot_token="111:AAA"))
+        provider._client = httpx.AsyncClient(transport=transport)
+
+        data = await provider.download_file("voice/file_3.oga")
+
+        assert data == audio
+        assert (
+            str(transport.requests[0].url)
+            == "https://api.telegram.org/file/bot111:AAA/voice/file_3.oga"
+        )
+
+    @pytest.mark.asyncio
+    async def test_download_file_error_returns_none(self) -> None:
+        provider = TelegramBotProvider(_config())
+        provider._client = httpx.AsyncClient(transport=_BytesTransport(b"", status=404))
+
+        assert await provider.download_file("voice/gone.oga") is None
+
+    @pytest.mark.asyncio
+    async def test_failures_never_log_the_bot_token(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Every Bot API URL embeds the token, and httpx puts the URL in its error string."""
+        token = "999888:SUPER-SECRET-TOKEN"
+        provider = TelegramBotProvider(_config(bot_token=token))
+        provider._client = httpx.AsyncClient(transport=_BytesTransport(b"", status=404))
+
+        with caplog.at_level("WARNING", logger="roomkit.providers.telegram"):
+            assert await provider.get_file("some_file_id") is None
+            assert await provider.download_file("voice/file_3.oga") is None
+
+        assert len(caplog.records) == 2
+        assert token not in caplog.text
+        assert "SUPER-SECRET-TOKEN" not in caplog.text
+        assert "404" in caplog.text
 
 
 class TestTelegramMarkdown:

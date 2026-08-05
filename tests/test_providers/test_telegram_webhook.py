@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from roomkit.models.event import LocationContent, TextContent
-from roomkit.providers.telegram import parse_telegram_webhook
+from roomkit.providers.telegram import parse_telegram_message, parse_telegram_webhook
 
 
 class TestParseTelegramWebhook:
@@ -74,6 +74,155 @@ class TestParseTelegramWebhook:
         assert msg.content.latitude == 48.8566
         assert msg.content.longitude == 2.3522
 
+    def test_parse_voice_message(self) -> None:
+        """A voice note has no caption — the file_id carries the message."""
+        payload = {
+            "update_id": 105,
+            "message": {
+                "message_id": 5,
+                "from": {"id": 999},
+                "chat": {"id": 555},
+                "date": 1700000004,
+                "voice": {
+                    "duration": 3,
+                    "mime_type": "audio/ogg",
+                    "file_id": "AwACAgIAAxkBAAIC",
+                    "file_unique_id": "AgADbQ4AAlOZAUo",
+                    "file_size": 8342,
+                },
+            },
+        }
+        messages = parse_telegram_webhook(payload, channel_id="tg-main")
+
+        assert len(messages) == 1
+        msg = messages[0]
+        assert isinstance(msg.content, TextContent)
+        assert msg.content.body == ""
+        assert msg.metadata["file_id"] == "AwACAgIAAxkBAAIC"
+        assert msg.metadata["media_type"] == "voice"
+        assert msg.metadata["duration"] == 3
+        assert msg.metadata["mime_type"] == "audio/ogg"
+        assert msg.metadata["file_size"] == 8342
+
+    def test_parse_audio_message(self) -> None:
+        payload = {
+            "update_id": 106,
+            "message": {
+                "message_id": 6,
+                "from": {"id": 999},
+                "chat": {"id": 555},
+                "date": 1700000005,
+                "audio": {
+                    "duration": 215,
+                    "file_name": "song.mp3",
+                    "mime_type": "audio/mpeg",
+                    "performer": "Artist",
+                    "title": "Song",
+                    "file_id": "CQACAgIAAxkBAAID",
+                    "file_unique_id": "AgADXQ8AAg",
+                    "file_size": 3452160,
+                },
+                "caption": "listen to this",
+            },
+        }
+        messages = parse_telegram_webhook(payload, channel_id="tg-main")
+
+        assert len(messages) == 1
+        msg = messages[0]
+        assert isinstance(msg.content, TextContent)
+        assert msg.content.body == "listen to this"
+        assert msg.metadata["file_id"] == "CQACAgIAAxkBAAID"
+        assert msg.metadata["media_type"] == "audio"
+        assert msg.metadata["duration"] == 215
+        assert msg.metadata["file_name"] == "song.mp3"
+        assert msg.metadata["mime_type"] == "audio/mpeg"
+
+    def test_parse_video_note_message(self) -> None:
+        """Video notes carry a duration but no mime_type — absent keys stay absent."""
+        payload = {
+            "update_id": 107,
+            "message": {
+                "message_id": 7,
+                "from": {"id": 999},
+                "chat": {"id": 555},
+                "date": 1700000006,
+                "video_note": {
+                    "duration": 8,
+                    "length": 384,
+                    "file_id": "DQACAgIAAxkBAAIE",
+                    "file_unique_id": "AgADhw4AAg",
+                    "file_size": 512000,
+                },
+            },
+        }
+        messages = parse_telegram_webhook(payload, channel_id="tg-main")
+
+        assert len(messages) == 1
+        msg = messages[0]
+        assert msg.metadata["file_id"] == "DQACAgIAAxkBAAIE"
+        assert msg.metadata["media_type"] == "video_note"
+        assert msg.metadata["duration"] == 8
+        assert "mime_type" not in msg.metadata
+        assert "file_name" not in msg.metadata
+
+    def test_parse_video_message(self) -> None:
+        payload = {
+            "update_id": 108,
+            "message": {
+                "message_id": 8,
+                "from": {"id": 999},
+                "chat": {"id": 555},
+                "date": 1700000007,
+                "video": {
+                    "duration": 12,
+                    "width": 640,
+                    "height": 480,
+                    "file_name": "IMG_0042.MOV",
+                    "mime_type": "video/quicktime",
+                    "file_id": "BAACAgIAAxkBAAIF",
+                    "file_unique_id": "AgADrg4AAg",
+                    "file_size": 1048576,
+                },
+            },
+        }
+        messages = parse_telegram_webhook(payload, channel_id="tg-main")
+
+        assert len(messages) == 1
+        msg = messages[0]
+        assert msg.metadata["file_id"] == "BAACAgIAAxkBAAIF"
+        assert msg.metadata["media_type"] == "video"
+        assert msg.metadata["duration"] == 12
+        assert msg.metadata["file_name"] == "IMG_0042.MOV"
+        assert msg.metadata["mime_type"] == "video/quicktime"
+
+    def test_parse_document_message(self) -> None:
+        payload = {
+            "update_id": 109,
+            "message": {
+                "message_id": 9,
+                "from": {"id": 999},
+                "chat": {"id": 555},
+                "date": 1700000008,
+                "document": {
+                    "file_name": "rapport.pdf",
+                    "mime_type": "application/pdf",
+                    "file_id": "BQACAgIAAxkBAAIG",
+                    "file_unique_id": "AgADkg4AAg",
+                    "file_size": 240128,
+                },
+            },
+        }
+        messages = parse_telegram_webhook(payload, channel_id="tg-main")
+
+        assert len(messages) == 1
+        msg = messages[0]
+        assert msg.metadata["file_id"] == "BQACAgIAAxkBAAIG"
+        assert msg.metadata["media_type"] == "document"
+        assert msg.metadata["file_name"] == "rapport.pdf"
+        assert msg.metadata["mime_type"] == "application/pdf"
+        assert msg.metadata["file_size"] == 240128
+        assert "duration" not in msg.metadata
+
     def test_parse_empty_payload(self) -> None:
         messages = parse_telegram_webhook({}, channel_id="tg-main")
         assert messages == []
@@ -103,3 +252,78 @@ class TestParseTelegramWebhook:
         }
         messages = parse_telegram_webhook(payload, channel_id="tg-main")
         assert messages == []
+
+
+class TestParseTelegramMessage:
+    """The layer below attribution: a consumer whose sender is not message.from.id."""
+
+    def test_reads_a_voice_note_without_building_an_inbound_message(self) -> None:
+        parts = parse_telegram_message(
+            {
+                "message_id": 5,
+                "from": {"id": 999},
+                "chat": {"id": 555},
+                "date": 1700000004,
+                "voice": {
+                    "duration": 3,
+                    "mime_type": "audio/ogg",
+                    "file_id": "AwACAgIAAxkBAAIC",
+                    "file_size": 8342,
+                },
+            }
+        )
+
+        assert parts is not None
+        assert isinstance(parts.content, TextContent)
+        assert parts.content.body == ""
+        assert parts.metadata["file_id"] == "AwACAgIAAxkBAAIC"
+        assert parts.metadata["media_type"] == "voice"
+        assert parts.metadata["duration"] == 3
+        assert parts.metadata["chat_id"] == "555"
+        assert parts.message_id == "5"
+
+    def test_sender_is_offered_not_imposed(self) -> None:
+        """The Telegram sender is available, and a caller is free to ignore it."""
+        parts = parse_telegram_message(
+            {
+                "message_id": 6,
+                "from": {"id": 999},
+                "chat": {"id": 555},
+                "date": 1700000005,
+                "text": "hi",
+            }
+        )
+
+        assert parts is not None
+        assert parts.sender_id == "999"
+
+    def test_takes_the_message_not_the_update(self) -> None:
+        """A whole Update has no content of its own — the message is nested in it."""
+        assert parse_telegram_message({"update_id": 1, "message": {"text": "hi"}}) is None
+
+    def test_unsupported_message_returns_none(self) -> None:
+        assert parse_telegram_message({"message_id": 7, "sticker": {"file_id": "x"}}) is None
+
+    def test_webhook_is_this_function_plus_attribution(self) -> None:
+        """parse_telegram_webhook must stay a thin layer over this one."""
+        msg = {
+            "message_id": 8,
+            "from": {"id": 999},
+            "chat": {"id": 555},
+            "date": 1700000006,
+            "document": {
+                "file_name": "rapport.pdf",
+                "mime_type": "application/pdf",
+                "file_id": "BQACAgIAAxkBAAIG",
+                "file_size": 240128,
+            },
+        }
+        parts = parse_telegram_message(msg)
+        inbound = parse_telegram_webhook({"update_id": 9, "message": msg}, channel_id="tg-main")
+
+        assert parts is not None
+        assert len(inbound) == 1
+        assert inbound[0].sender_id == parts.sender_id
+        assert inbound[0].content == parts.content
+        assert inbound[0].metadata == parts.metadata
+        assert inbound[0].external_id == parts.message_id

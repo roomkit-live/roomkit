@@ -19,3 +19,13 @@ class TelegramConfig(BaseModel):
     @property
     def base_url(self) -> str:
         return f"https://api.telegram.org/bot{self.bot_token.get_secret_value()}"
+
+    @property
+    def file_base_url(self) -> str:
+        """Base URL for downloading a file resolved by ``getFile``.
+
+        Telegram serves file content from a different path than the one that
+        answers Bot API methods, so this is not a suffix of :attr:`base_url`.
+        Like it, it embeds the bot token and must never reach a log.
+        """
+        return f"https://api.telegram.org/file/bot{self.bot_token.get_secret_value()}"

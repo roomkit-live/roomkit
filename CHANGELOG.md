@@ -5,6 +5,60 @@ All notable changes to RoomKit are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **`parse_telegram_message()` — reading a Telegram message without deciding
+  who sent it.** `parse_telegram_webhook` builds an `InboundMessage`, and in
+  doing so settles the sender as `message.from.id`. That rule is not universal:
+  under a one-bot-per-user model a direct message belongs to the bot's *owner*,
+  not to the account that typed it, and the same process can apply the opposite
+  rule in a group. A consumer holding such a model could not reach the new media
+  metadata at all, because the only door to it was already attributed.
+
+  The parsing is now two layers. `parse_telegram_message(msg)` returns
+  `TelegramMessageParts` — content, metadata, `message_id`, `sender_id` — and
+  imposes nothing; `sender_id` is offered, not applied.
+  `parse_telegram_webhook` is that function plus the ordinary attribution, and
+  its behaviour is unchanged for text, photo and location updates.
+
+- **`TelegramBotProvider.get_file()` and `download_file()`** — the two calls
+  that turn an inbound `file_id` into bytes. `get_file(file_id)` resolves the id
+  to a Bot API path (valid at least an hour), `download_file(path)` fetches the
+  content. They belong here rather than in each application because the bot
+  token does: the provider was purely outbound, so a `file_id` reaching a
+  consumer had nowhere to go.
+
+  Both return `None` on failure and log a warning that never carries the URL —
+  every Bot API URL embeds the token, and httpx names the failing URL in its
+  error string. Telegram caps Bot API downloads at 20 MB and refuses larger
+  files at the `getFile` step, which surfaces as `None`; an update's
+  `metadata["file_size"]` tells a caller before spending the call.
+
+  RoomKit stops at the bytes. Which ASR engine transcribes a voice note is the
+  application's decision, not the kit's.
+
+### Fixed
+
+- **A voice note sent to a Telegram bot no longer vanishes.**
+  `parse_telegram_webhook` knew `text`, `photo` and `location`; every `voice`,
+  `audio`, `video_note`, `video` and `document` update fell through to
+  `content is None` and returned an empty list. No log, no error — the message
+  simply disappeared.
+
+  All six media kinds now parse the way `photo` already did: the caption
+  becomes the body and the file reference goes to metadata as `file_id` and
+  `media_type`, along with whichever of `duration`, `mime_type`, `file_name`
+  and `file_size` Telegram supplied. A voice note has no caption, so its body
+  is empty — that is the right answer, the `file_id` is what carries the
+  message.
+
+  Compatibility: a media update used to yield nothing and now yields one
+  `InboundMessage` whose body may be empty. That is not a new shape — a photo
+  without a caption already produced exactly it — but a consumer that filters
+  on a non-empty body will see one more message.
+
 ## [0.41.4] — 2026-08-05
 
 ### Fixed
