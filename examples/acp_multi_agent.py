@@ -26,6 +26,20 @@ would have delivered to it (RFC §7.5 rule 8) — so a message scoped away from
 the agents stays out of both sessions. ``ACPChannel(..., room_history=0)``
 turns it off.
 
+What the catch-up cannot carry is what only the *host* holds — here the team's
+rules, which are in neither agent's session and nowhere on the shared disk.
+``context_contributor`` (see ``team_rules`` below) is that seam, and its blocks
+open the prompt, ahead of the catch-up::
+
+    ❯ @claude-code write hello.py
+    ❯ @codex when can we deploy what claude just wrote?
+      → [Team rule] Deploys go out on Tuesdays only, and never after 15:00.
+      → [Room context — 1 message you did not receive…]
+      → when can we deploy what claude just wrote?
+
+Codex answers with both: the file the other agent wrote, and a rule nobody in
+the room ever typed.
+
 How you name an agent is this example's business, not RoomKit's: it accepts
 ``@codex review hello.py`` and ``/agent`` for a picker, and passes channel
 ids.
@@ -78,10 +92,13 @@ from shared import console_enabled, existing_directory, setup_logging
 from roomkit import (
     ACPChannel,
     AgentResponsePolicy,
+    Channel,
     ChannelCategory,
     CLIChannel,
     HookExecution,
     HookTrigger,
+    RoomContext,
+    RoomEvent,
     RoomKit,
 )
 from roomkit.console import terminal_input, terminal_select
@@ -104,6 +121,30 @@ AGENTS = (
     AgentSpec(channel_id="claude-code", package=CLAUDE_ACP),
     AgentSpec(channel_id="codex", package=CODEX_ACP),
 )
+
+TEAM_RULES = {
+    "deploy": "Deploys go out on Tuesdays only, and never after 15:00.",
+    "merge": "Two approvals are required before anything lands on main.",
+    "secret": "Secrets are read from the vault at runtime; none may be written to a file.",
+}
+"""Rules this host holds and neither agent can read off the workspace.
+
+A real host would query the organisation's policies or the member's saved
+memories. What matters here is that the answer is nowhere on disk: both agents
+share the working directory, so anything sitting in it would prove nothing.
+"""
+
+
+async def team_rules(context: RoomContext, trigger: RoomEvent) -> list[str]:
+    """The rules this turn's request touches, whichever agent was addressed.
+
+    Request-dependent on purpose. An ACP session keeps whatever it was already
+    told, so a block that never changes is paid for again on every turn — the
+    standing instructions of an agent belong in its own configuration, not
+    here.
+    """
+    asked = Channel.extract_text(trigger).casefold()
+    return [f"[Team rule] {rule}" for topic, rule in TEAM_RULES.items() if topic in asked]
 
 
 class Addressed:
@@ -226,6 +267,11 @@ async def main(args: argparse.Namespace) -> None:
             # session misses what was said meanwhile. It catches up from the
             # room's timeline on its next turn — the default; room_history=0
             # opts out (RFC §19.3.2).
+            #
+            # The rules are the room's, so both agents get the same
+            # contributor. It is set per channel, so a host that owes one
+            # agent something the other must not read gives each its own.
+            context_contributor=team_rules,
         )
         kit.register_channel(channel)
         agents[spec.channel_id] = channel
