@@ -327,3 +327,141 @@ class TestParseTelegramMessage:
         assert inbound[0].content == parts.content
         assert inbound[0].metadata == parts.metadata
         assert inbound[0].external_id == parts.message_id
+
+
+class TestMessageProtocolFacts:
+    """Entities, the reply and the album — read, and kept out of the attribution."""
+
+    def test_entities_are_handed_back_unsliced(self) -> None:
+        """Offsets count UTF-16 units; slicing by them is entity_text's job, not this one's."""
+        entities = [{"type": "mention", "offset": 4, "length": 9}]
+        parts = parse_telegram_message(
+            {"message_id": 1, "chat": {"id": 555}, "text": "hey @luge_bot", "entities": entities}
+        )
+
+        assert parts is not None
+        assert parts.entities == entities
+
+    def test_a_captions_entities_come_from_their_own_key(self) -> None:
+        parts = parse_telegram_message(
+            {
+                "message_id": 2,
+                "chat": {"id": 555},
+                "caption": "look @luge_bot",
+                "caption_entities": [{"type": "mention", "offset": 5, "length": 9}],
+                "photo": [{"file_id": "abc"}],
+            }
+        )
+
+        assert parts is not None
+        assert parts.entities == [{"type": "mention", "offset": 5, "length": 9}]
+
+    def test_a_message_with_no_markup_has_no_entities(self) -> None:
+        parts = parse_telegram_message({"message_id": 3, "chat": {"id": 555}, "text": "plain"})
+
+        assert parts is not None
+        assert parts.entities == []
+
+    def test_the_message_a_reply_answers(self) -> None:
+        """What ties an answer back to the force_reply prompt that asked for it."""
+        parts = parse_telegram_message(
+            {
+                "message_id": 4,
+                "chat": {"id": 555},
+                "text": "because it was wrong",
+                "reply_to_message": {"message_id": 88, "from": {"id": 42}},
+            }
+        )
+
+        assert parts is not None
+        assert parts.reply_to_message_id == "88"
+
+    def test_a_message_that_answers_nothing(self) -> None:
+        parts = parse_telegram_message({"message_id": 5, "chat": {"id": 555}, "text": "hi"})
+
+        assert parts is not None
+        assert parts.reply_to_message_id is None
+
+    def test_an_album_is_one_post_delivered_as_several(self) -> None:
+        parts = parse_telegram_message(
+            {
+                "message_id": 6,
+                "chat": {"id": 555},
+                "media_group_id": "13285469384512",
+                "photo": [{"file_id": "abc"}],
+            }
+        )
+
+        assert parts is not None
+        assert parts.media_group_id == "13285469384512"
+
+    def test_a_lone_photo_belongs_to_no_album(self) -> None:
+        parts = parse_telegram_message(
+            {"message_id": 7, "chat": {"id": 555}, "photo": [{"file_id": "abc"}]}
+        )
+
+        assert parts is not None
+        assert parts.media_group_id is None
+
+    def test_the_new_facts_stay_out_of_the_inbound_metadata(self) -> None:
+        """The InboundMessage a text, photo or location update builds is unchanged.
+
+        These are protocol facts for a consumer reading the lower layer, not
+        payload for every delivery record downstream of parse_telegram_webhook.
+        """
+        text = {
+            "message_id": 1,
+            "from": {"id": 999},
+            "chat": {"id": 555},
+            "date": 1700000000,
+            "text": "hey @luge_bot",
+            "entities": [{"type": "mention", "offset": 4, "length": 9}],
+            "reply_to_message": {"message_id": 88},
+        }
+        photo = {
+            "message_id": 2,
+            "from": {"id": 999},
+            "chat": {"id": 555},
+            "date": 1700000001,
+            "media_group_id": "132854",
+            "photo": [{"file_id": "abc", "file_size": 100}],
+        }
+        location = {
+            "message_id": 3,
+            "from": {"id": 999},
+            "chat": {"id": 555},
+            "date": 1700000002,
+            "location": {"latitude": 45.5, "longitude": -73.5},
+        }
+
+        for msg in (text, photo, location):
+            inbound = parse_telegram_webhook({"update_id": 1, "message": msg}, channel_id="tg")
+            assert len(inbound) == 1
+            assert set(inbound[0].metadata) <= {
+                "chat_id",
+                "date",
+                "file_id",
+                "media_type",
+                "duration",
+                "mime_type",
+                "file_name",
+                "file_size",
+            }
+
+    def test_metadata_is_exactly_what_it_was_for_a_text_message(self) -> None:
+        inbound = parse_telegram_webhook(
+            {
+                "update_id": 1,
+                "message": {
+                    "message_id": 1,
+                    "from": {"id": 999},
+                    "chat": {"id": 555},
+                    "date": 1700000000,
+                    "text": "hey @luge_bot",
+                    "entities": [{"type": "mention", "offset": 4, "length": 9}],
+                },
+            },
+            channel_id="tg",
+        )
+
+        assert inbound[0].metadata == {"chat_id": "555", "date": 1700000000}

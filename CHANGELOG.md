@@ -9,6 +9,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`TelegramBotAPI` — the Bot API as methods, not just the sends a room
+  produces.** The provider could send a message and nothing else, so every
+  application around it grew a second Telegram client: a second base URL
+  holding the same token, a second retry, a second spelling of "Telegram said
+  no". What they all reimplemented is the same eleven calls — `get_me`,
+  `get_updates`, `set_webhook`, `delete_webhook`, `leave_chat`, `send_message`,
+  `send_force_reply`, `send_chat_action`, `answer_callback_query`,
+  `edit_message_text`, `edit_message_reply_markup` — alongside `get_file` and
+  `download_file`, which already lived here.
+
+  They now live on `TelegramBotAPI`, which `TelegramBotProvider` extends;
+  `bot.py` keeps only the translation of a `RoomEvent` into a Telegram message.
+  Every call answers with a `ProviderResult`, so success and failure read the
+  same way whichever call produced them: `telegram_<code>` when Telegram
+  refused, `http_<status>` when the refusal carried no Bot API body, `timeout`
+  when nothing came back, and Telegram's own words under
+  `metadata["description"]` — the only text precise enough to tell a caller
+  that a webhook URL must be HTTPS rather than merely that it was rejected.
+  The two reads, `get_me` and `get_updates`, also carry Telegram's `result`
+  under `metadata["result"]`.
+
+- **`mentions_bot()` and `entity_text()` — being addressed, and the UTF-16
+  arithmetic underneath it.** Telegram marks a message up out of band, and the
+  offsets in that markup count UTF-16 code units. Python indexes strings by
+  code point, so `text[offset:offset + length]` is right until someone puts an
+  emoji in front of the mention, and quietly wrong after. `entity_text` slices
+  on the basis Telegram measured in.
+
+  `mentions_bot(msg, bot_username=..., bot_id=...)` answers the question every
+  bot in a group has: was this meant for me? True on a reply to the bot, a
+  `bot_command`, a `mention` entity, a `text_mention` naming its id, or the
+  handle posted as plain text with no entity at all. It reports the fact and
+  decides no policy — whether a given group answers only when addressed is the
+  application's rule, not the kit's.
+
+- **`parse_telegram_update()` — which of its forms an Update took.** One entry
+  point for the three a webhook receives: a `message`, an `edited_message`
+  (same shape, flagged), and a `callback_query`, whose parts come back as
+  `TelegramCallback` — the query id to answer, the `callback_data`, the
+  sender, and the message the button hangs off, so an outcome can be appended
+  to what was already said. Nothing about who was allowed to press it is
+  decided here: `callback_data` is posted by whoever pressed the button, and
+  is a claim to check rather than a fact.
+
+- **`TelegramMessageParts` now carries `entities`, `reply_to_message_id` and
+  `media_group_id`.** The protocol facts a consumer of the lower layer needed
+  and had to go back to the raw update for: a caption's markup (carried under
+  its own `caption_entities` key), the message a reply answers — what ties an
+  answer to the `force_reply` prompt that asked for it — and the id shared by
+  the several messages Telegram splits one album into. They stay off the
+  `InboundMessage`: `parse_telegram_webhook`'s metadata is unchanged.
+
 - **`parse_telegram_message()` — reading a Telegram message without deciding
   who sent it.** `parse_telegram_webhook` builds an `InboundMessage`, and in
   doing so settles the sender as `message.from.id`. That rule is not universal:

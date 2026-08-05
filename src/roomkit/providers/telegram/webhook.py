@@ -45,12 +45,26 @@ class TelegramMessageParts:
             a consumer is free to attribute the message to someone else. It is
             required rather than defaulted so that an unattributed instance is
             something you write on purpose, not something you forget.
+        entities: The message's entities — ``caption_entities`` for media,
+            since a caption's markup is carried under its own key. Their
+            offsets count UTF-16 code units;
+            :func:`~roomkit.providers.telegram.entities.entity_text` is what
+            slices by them correctly.
+        reply_to_message_id: The message this one replies to, or None. What
+            ties an answer to the question it answers, when the question was
+            asked with a ``force_reply`` prompt.
+        media_group_id: Shared by the several messages Telegram splits one
+            album into, or None. Messages carrying it are one post, delivered
+            as many.
     """
 
     content: TextContent | LocationContent
     metadata: dict[str, Any]
     message_id: str
     sender_id: str
+    entities: list[dict[str, Any]]
+    reply_to_message_id: str | None
+    media_group_id: str | None
 
 
 def _parse_media(msg: dict[str, Any]) -> tuple[TextContent, dict[str, Any]] | None:
@@ -112,6 +126,7 @@ def parse_telegram_message(msg: dict[str, Any]) -> TelegramMessageParts | None:
     if content is None:
         return None
 
+    reply_to = (msg.get("reply_to_message") or {}).get("message_id")
     return TelegramMessageParts(
         content=content,
         metadata={
@@ -121,6 +136,9 @@ def parse_telegram_message(msg: dict[str, Any]) -> TelegramMessageParts | None:
         },
         message_id=str(msg.get("message_id", "")),
         sender_id=str(msg.get("from", {}).get("id", "")),
+        entities=list(msg.get("entities") or msg.get("caption_entities") or []),
+        reply_to_message_id=str(reply_to) if reply_to is not None else None,
+        media_group_id=msg.get("media_group_id"),
     )
 
 

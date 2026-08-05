@@ -12,13 +12,18 @@ you then do with those bytes (transcribe them, store them) is your
 application's call — RoomKit does not pick an ASR engine for you.
 
 It also shows ``parse_telegram_message()``, the layer below the webhook parser,
-which reads a message without deciding who sent it.
+which reads a message without deciding who sent it; ``parse_telegram_update()``,
+which tells apart the three forms an Update takes; ``mentions_bot()``, which
+says whether a group message was addressed to the bot; and the Bot API surface
+the provider carries — ``get_me()`` and the webhook lifecycle — so an
+application never writes a second HTTP client for a token the provider holds.
 
 Setup:
     1. Create a bot via @BotFather on Telegram — it gives you the bot token.
     2. Deploy a web server with a public HTTPS URL.
     3. Register your webhook with Telegram:
-         curl https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://yourdomain.com/webhook/telegram
+         await provider.set_webhook("https://yourdomain.com/webhook/telegram",
+                                    secret=..., allowed_updates=[...])
     4. In your webhook endpoint, parse the POST body and call:
          messages = parse_telegram_webhook(payload, channel_id="tg-main")
          for msg in messages:
@@ -35,6 +40,9 @@ Run this demo with:
     extracted. To exercise the real download path, send a voice note to your
     bot, read the file_id off the update, and set TELEGRAM_FILE_ID to it.
 
+    Set TELEGRAM_WEBHOOK_URL to also register a webhook and tear it down again.
+    That one writes to your real bot; the rest of the demo only reads.
+
 Requires:
     pip install roomkit[telegram]
 """
@@ -42,6 +50,7 @@ Requires:
 from __future__ import annotations
 
 import os
+import secrets
 import sys
 from pathlib import Path
 
@@ -56,7 +65,9 @@ from roomkit.channels import TelegramChannel
 from roomkit.providers.telegram import (
     TelegramBotProvider,
     TelegramConfig,
+    mentions_bot,
     parse_telegram_message,
+    parse_telegram_update,
     parse_telegram_webhook,
 )
 
@@ -160,6 +171,78 @@ async def main() -> None:
             # stops at the bytes.
     else:
         print("\nSet TELEGRAM_FILE_ID to a real file_id to exercise the download path.")
+
+    # --- Who is this bot? ----------------------------------------------------
+    # getMe is the call that tells a good token from a typo. Every Bot API call
+    # answers the same way — a ProviderResult — so a refusal (telegram_401) and
+    # an unreachable Telegram (timeout) are told apart without parsing strings.
+    me = await provider.get_me()
+    if me.success:
+        bot = me.metadata["result"]
+        bot_username, bot_id = bot.get("username"), bot.get("id")
+        print(f"\ngetMe -> @{bot_username} (id={bot_id})")
+    else:
+        bot_username, bot_id = None, None
+        print(f"\ngetMe failed: {me.error} — {me.metadata.get('description', '')}")
+
+    # --- Webhook lifecycle ---------------------------------------------------
+    # The secret is echoed back on every request in the
+    # X-Telegram-Bot-Api-Secret-Token header, which provider.verify_signature
+    # checks. allowed_updates is not optional in practice: Telegram's own
+    # default leaves out callback_query, so a bot with buttons must ask for it.
+    webhook_url = os.environ.get("TELEGRAM_WEBHOOK_URL")
+    if webhook_url:
+        registered = await provider.set_webhook(
+            webhook_url,
+            secret=secrets.token_hex(32),
+            allowed_updates=["message", "edited_message", "callback_query"],
+        )
+        print(f"\nsetWebhook({webhook_url}) -> success={registered.success}")
+        if not registered.success:
+            # Telegram's own words say which rule was broken — HTTPS required,
+            # host unreachable — where the error code alone would not.
+            print(f"  {registered.error}: {registered.metadata.get('description', '')}")
+        await provider.delete_webhook()
+        print("  torn down again")
+    else:
+        print("\nSet TELEGRAM_WEBHOOK_URL to register a webhook and tear it down.")
+
+    # --- The other two update forms ------------------------------------------
+    # parse_telegram_update says which form arrived. A button press carries no
+    # message of its own — what it carries is callback_data, posted by whoever
+    # pressed the button, so treat what it names as a claim to check.
+    press = parse_telegram_update(
+        {
+            "update_id": 100000003,
+            "callback_query": {
+                "id": "4382bfdwdsb323b2d9",
+                "from": sender,
+                "data": "approve:7f3a",
+                "message": {"message_id": 44, "chat": chat, "text": "Approve the draft?"},
+            },
+        }
+    )
+    if press and press.callback:
+        cb = press.callback
+        print(f"\nButton press: data={cb.data!r} by {cb.sender_id} on message {cb.message_id}")
+        print(f"  answer it with: await provider.answer_callback_query({cb.id!r}, 'Approved.')")
+
+    # --- Was that group message for us? --------------------------------------
+    # mentions_bot gives the fact. Whether a group answers only when addressed
+    # is your policy, not the kit's. The emoji is the point: entity offsets
+    # count UTF-16 code units, so a code-point slice would read the wrong
+    # substring and miss the mention entirely.
+    group_message = {
+        "message_id": 45,
+        "from": sender,
+        "chat": {"id": -1001234567890, "type": "supergroup", "title": "Team"},
+        "text": f"🎉 @{bot_username or 'your_bot'} can you summarise this?",
+        "entities": [
+            {"type": "mention", "offset": 3, "length": len(bot_username or "your_bot") + 1}
+        ],
+    }
+    addressed = mentions_bot(group_message, bot_username=bot_username, bot_id=bot_id)
+    print(f"\nGroup message addressed to the bot: {addressed}")
 
     # --- Show conversation history -------------------------------------------
     events = await kit.store.list_events("demo-room")

@@ -1,11 +1,17 @@
-"""Telegram Bot provider — sends messages via the Telegram Bot API."""
+"""Telegram Bot provider — turns a RoomEvent into a Telegram message.
+
+The Bot API calls themselves live in
+:class:`~roomkit.providers.telegram.api.TelegramBotAPI`, which this extends.
+What is here is the translation: Markdown into Telegram entities, a
+``RichContent``'s buttons into an inline keyboard, a ``MediaContent`` into the
+send method its MIME type calls for.
+"""
 
 from __future__ import annotations
 
 import hmac
 import json
-import logging
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from roomkit.models.delivery import ProviderResult
 from roomkit.models.event import (
@@ -16,14 +22,9 @@ from roomkit.models.event import (
     RoomEvent,
     VideoContent,
 )
+from roomkit.providers.telegram.api import TelegramBotAPI
 from roomkit.providers.telegram.base import TelegramProvider
-from roomkit.providers.telegram.config import TelegramConfig
 from roomkit.providers.utils import extract_event_text as _extract_event_text
-
-if TYPE_CHECKING:
-    import httpx
-
-logger = logging.getLogger("roomkit.providers.telegram")
 
 # Code blocks with fewer lines than this stay inline as a monospace block;
 # larger dumps are extracted to a file attachment by telegramify. Keeping the
@@ -32,22 +33,8 @@ logger = logging.getLogger("roomkit.providers.telegram")
 _CODE_BLOCK_FILE_LINES = 40
 
 
-class TelegramBotProvider(TelegramProvider):
+class TelegramBotProvider(TelegramBotAPI, TelegramProvider):
     """Send messages via the Telegram Bot API."""
-
-    def __init__(self, config: TelegramConfig) -> None:
-        try:
-            import httpx as _httpx
-        except ImportError as exc:
-            raise ImportError(
-                "httpx is required for TelegramBotProvider. "
-                "Install it with: pip install roomkit[telegram]"
-            ) from exc
-        self._config = config
-        self._httpx = _httpx
-        self._client: httpx.AsyncClient = _httpx.AsyncClient(
-            timeout=config.timeout,
-        )
 
     async def send(self, event: RoomEvent, to: str) -> ProviderResult:
         content = event.content
@@ -266,137 +253,6 @@ class TelegramBotProvider(TelegramProvider):
         }
         return await self._api_call("sendAudio", payload)
 
-    async def get_file(self, file_id: str) -> str | None:
-        """Resolve an inbound ``file_id`` to a Bot API file path.
-
-        The ``file_id`` arrives on an inbound update — both
-        :func:`~roomkit.providers.telegram.webhook.parse_telegram_message` and
-        :func:`~roomkit.providers.telegram.webhook.parse_telegram_webhook` put
-        it in ``metadata["file_id"]`` for every media message. Pair the path
-        this returns with :meth:`download_file` to get the bytes; the bot token
-        needed for both lives here, not in the calling application.
-
-        Telegram keeps the path valid for at least an hour, and refuses any
-        file over 20 MB — the Bot API download ceiling — with a ``400``. An
-        update carries ``metadata["file_size"]``, so a caller can tell which
-        files are past that ceiling without spending the call.
-
-        Args:
-            file_id: Identifier from an inbound Telegram update.
-
-        Returns:
-            The file path to download, or None if Telegram refused the file or
-            the call failed.
-        """
-        try:
-            resp = await self._client.post(
-                f"{self._config.base_url}/getFile", json={"file_id": file_id}
-            )
-            resp.raise_for_status()
-            body = resp.json()
-        except (self._httpx.HTTPError, ValueError) as exc:
-            # ValueError covers a 2xx that is not JSON — an intercepting proxy's
-            # error page reaches raise_for_status intact.
-            logger.warning("getFile failed for file_id %s: %s", file_id, self._error_label(exc))
-            return None
-        return body.get("result", {}).get("file_path") or None
-
-    async def download_file(self, file_path: str) -> bytes | None:
-        """Download the bytes behind a path returned by :meth:`get_file`.
-
-        Args:
-            file_path: Path returned by :meth:`get_file`.
-
-        Returns:
-            The file content, or None if the download failed. Files over the
-            Bot API's 20 MB ceiling never get this far — :meth:`get_file`
-            already returned None for them.
-        """
-        try:
-            resp = await self._client.get(f"{self._config.file_base_url}/{file_path}")
-            resp.raise_for_status()
-        except self._httpx.HTTPError as exc:
-            logger.warning("download failed for %s: %s", file_path, self._error_label(exc))
-            return None
-        return resp.content
-
-    @staticmethod
-    def _error_label(exc: Exception) -> str:
-        """Describe an httpx failure without its URL — every Bot API URL holds the token.
-
-        ``str(HTTPStatusError)`` names the URL it failed on, which would put the
-        bot token in the logs.
-        """
-        status = getattr(getattr(exc, "response", None), "status_code", None)
-        return f"{type(exc).__name__}({status})" if status else type(exc).__name__
-
-    async def _api_call(self, method: str, payload: dict[str, Any]) -> ProviderResult:
-        return await self._request(method, json=payload)
-
-    async def _api_upload(
-        self, method: str, data: dict[str, Any], files: dict[str, Any]
-    ) -> ProviderResult:
-        """Multipart variant for sending file bytes (sendDocument/sendPhoto)."""
-        return await self._request(method, data=data, files=files)
-
-    async def _request(
-        self,
-        method: str,
-        *,
-        json: dict[str, Any] | None = None,
-        data: dict[str, Any] | None = None,
-        files: dict[str, Any] | None = None,
-    ) -> ProviderResult:
-        url = f"{self._config.base_url}/{method}"
-        try:
-            import time
-
-            t0 = time.monotonic()
-            resp = await self._client.post(url, json=json, data=data, files=files)
-            resp.raise_for_status()
-            send_ms = (time.monotonic() - t0) * 1000
-            body = resp.json()
-
-            from roomkit.telemetry.noop import NoopTelemetryProvider
-
-            _tel = getattr(self, "_telemetry", None) or NoopTelemetryProvider()
-            _tel.record_metric(
-                "roomkit.delivery.send_ms",
-                send_ms,
-                unit="ms",
-                attributes={"provider": "TelegramBotProvider"},
-            )
-        except self._httpx.TimeoutException:
-            return ProviderResult(success=False, error="timeout")
-        except self._httpx.HTTPStatusError as exc:
-            return self._parse_error(exc)
-        except self._httpx.HTTPError as exc:
-            return ProviderResult(success=False, error=str(exc))
-
-        result = body.get("result", {})
-        return ProviderResult(
-            success=True,
-            provider_message_id=str(result.get("message_id", "")),
-        )
-
-    @staticmethod
-    def _parse_error(exc: Any) -> ProviderResult:
-        """Extract a Telegram Bot API error when available."""
-        try:
-            body = exc.response.json()
-            error_code = body.get("error_code", exc.response.status_code)
-            description = body.get("description", "")
-            return ProviderResult(
-                success=False,
-                error=f"telegram_{error_code}",
-                metadata={"description": description},
-            )
-        except Exception:
-            return ProviderResult(
-                success=False,
-                error=f"http_{exc.response.status_code}",
-            )
-
     def verify_signature(
         self,
         payload: bytes,  # noqa: ARG002
@@ -432,6 +288,3 @@ class TelegramBotProvider(TelegramProvider):
     @staticmethod
     def _extract_text(event: RoomEvent) -> str:
         return _extract_event_text(event)
-
-    async def close(self) -> None:
-        await self._client.aclose()

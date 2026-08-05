@@ -175,6 +175,24 @@ Webhook parser: `parse_telegram_webhook(request_data, channel_id="telegram")` �
 - `parse_telegram_message(msg)` is the layer below: it reads a Telegram `message` into `TelegramMessageParts` (content, metadata, `message_id`, `sender_id`) and attributes nothing. `parse_telegram_webhook` is that function plus the ordinary attribution — the sender is `message.from.id`. Use the lower one when your identity model is not Telegram's (a one-bot-per-user deployment attributes a DM to the bot's owner), so that reading a `file_id` never costs you your identity model.
 - Resolving that `file_id` to bytes belongs to the provider, which holds the bot token: `path = await provider.get_file(file_id)` then `data = await provider.download_file(path)`. Both return `None` on failure and log a warning that never carries the URL (every Bot API URL embeds the token). Telegram caps Bot API downloads at 20 MB and refuses larger files at the `getFile` step; `metadata["file_size"]` tells you before you spend the call.
 - RoomKit stops at the bytes — transcription and storage are the application's call.
+- `parse_telegram_message` also gives `entities` (a caption's markup comes from `caption_entities`), `reply_to_message_id` and `media_group_id`. None of them reach the `InboundMessage` — `parse_telegram_webhook`'s metadata is unchanged.
+
+`TelegramBotProvider` is `TelegramBotAPI` plus the rendering of a `RoomEvent`. The API half is the Bot API surface an application needs around its sends, so it never writes a second HTTP client for the same token:
+
+```python
+me = await provider.get_me()                       # metadata["result"] = the bot object
+if not me.success:
+    ...                                            # me.error, me.metadata["description"]
+await provider.set_webhook(url, secret=secret, allowed_updates=["message", "callback_query"])
+await provider.answer_callback_query(cq.id, "Approved.")
+await provider.edit_message_text(chat, msg_id, "Approved", reply_markup={"inline_keyboard": []})
+```
+
+Also `get_updates`, `delete_webhook`, `leave_chat`, `send_message` (plain text, no Markdown pass), `send_force_reply` (its `provider_message_id` is what a later reply is matched against), `send_chat_action` and `edit_message_reply_markup`. Every call answers with a `ProviderResult`: `telegram_<code>` / `http_<status>` / `timeout`, and Telegram's own words under `metadata["description"]`.
+
+Update reading is two levels. `parse_telegram_update(payload)` says which form arrived — a `message`, an `edited_message` (same shape, `edited=True`), or a `callback_query` parsed into a `TelegramCallback` (`id`, `data`, `sender_id`, `chat_id`, `message_id`, `message_text`). `callback_data` is posted by whoever pressed the button, so treat what it names as a claim to check.
+
+`mentions_bot(msg, bot_username=..., bot_id=...)` says whether a group message addressed the bot — a reply to the bot, `bot_command`, `mention`, `text_mention`, or the handle as plain text. It gives the fact; whether that group answers only when addressed is your policy. `entity_text(text, entity)` slices by an entity's offsets, which count **UTF-16 code units** — a code-point slice returns the wrong substring as soon as an emoji precedes the mention.
 
 ## Discord
 
