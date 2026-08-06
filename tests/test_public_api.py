@@ -69,9 +69,7 @@ class TestPublicAPI:
         ):
             obj = getattr(channels, name, None)
             assert obj is not None, f"roomkit.channels.{name} is missing"
-            top_level = getattr(roomkit, name, None)
-            if top_level is not None:
-                assert obj is top_level, f"{name} differs between roomkit and roomkit.channels"
+            assert obj is getattr(roomkit, name), f"{name} differs from the top-level export"
 
     def test_exception_classes(self) -> None:
         assert issubclass(roomkit.RoomNotFoundError, Exception)
