@@ -41,6 +41,7 @@ CONSOLE=1 uv run python examples/<example>.py
 | Example | Feature | Description |
 |---------|---------|-------------|
 | `voice_sip.py` | SIP | Accept SIP calls from a PBX with full hook pipeline |
+| `voice_sip_play_prompt.py` | SIP + prompts | Play a WAV prompt to a caller while the AI is muted (runs on mocks by default) |
 | `voice_sip_bridge.py` | SIP bridge | Bridge two SIP calls with live Deepgram transcription |
 | `voice_sip_bridge_summary.py` | SIP bridge | Bridge SIP calls and summarize transcript with Claude |
 | `voice_sip_dtmf.py` | SIP + DTMF | SIP with DTMF tone detection as AI tool calls for IVR |
