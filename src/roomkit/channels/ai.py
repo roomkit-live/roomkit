@@ -343,8 +343,6 @@ class AIChannel(
         # survives channel-object lifetimes (restarts, cache expiry) — the
         # in-memory store dies with the object while conversations outlive it.
         self._tool_usage_loader: Any = None
-        # Current room ID (set per on_event invocation for tool hook context)
-        self._current_room_id: str | None = None
         # External tool handler for provider-executed tools (e.g. Claude Code)
         self._external_tool_handler = external_tool_handler
 
@@ -429,9 +427,6 @@ class AIChannel(
         if event.type in (EventType.TOOL_CALL_START, EventType.TOOL_CALL_END):
             return ChannelOutput.empty()
 
-        # Track current room for tool call hooks
-        self._current_room_id = context.room.id if context.room else None
-
         # Ingest event into memory provider (enables stateful providers
         # like vector stores to index content as it arrives).
         _ingest_room_id = context.room.id if context.room else event.room_id
@@ -494,6 +489,8 @@ class AIChannel(
 
     async def close(self) -> None:
         """Close the channel, its provider, memory, and executors."""
+        if self._human_input_handler is not None:
+            await self._human_input_handler.handler.close(channel_id=self.channel_id)
         await super().close()
         await self._memory.close()
         if self._script_executor is not None:

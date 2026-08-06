@@ -109,12 +109,64 @@ class HumanInputHandler:
         self._recent: OrderedDict[str, PendingInput] = OrderedDict()
         self._retention = max(0, retention)
         self._notify_tasks: set[asyncio.Task[None]] = set()
+        self._notify_channels: dict[asyncio.Task[None], str] = {}
         self._on_input_required: OnInputRequiredCallback | None = None
+        self._on_input_required_by_channel: dict[str, OnInputRequiredCallback] = {}
+        self._closed_channels: set[str] = set()
+        self._closed = False
 
     @property
     def pending(self) -> dict[str, PendingInput]:
         """Active pending requests (read-only snapshot)."""
         return dict(self._pending)
+
+    async def close(self, *, channel_id: str | None = None) -> None:
+        """Stop notifications and settle requests owned by one channel.
+
+        When ``channel_id`` is omitted, all work owned by this handler is
+        stopped. Channel-scoped closing lets a handler be shared safely by
+        multiple :class:`~roomkit.channels.ai.AIChannel` instances.
+        """
+        # Mark the scope closed before inspecting current work. ``create()``
+        # and this prefix contain no suspension point, so an asyncio caller is
+        # either registered in time to be rejected below or observes the
+        # closed marker and cannot arm a request after the snapshot.
+        if channel_id is None:
+            self._closed = True
+            self._on_input_required_by_channel.clear()
+        else:
+            self._closed_channels.add(channel_id)
+            self._on_input_required_by_channel.pop(channel_id, None)
+
+        for pending_id, pending in list(self._pending.items()):
+            if channel_id is not None and pending.channel_id != channel_id:
+                continue
+            if pending.status == PendingInputStatus.PENDING:
+                pending.reject_reason = "Human input handler closed"
+                pending.status = PendingInputStatus.REJECTED
+                pending._event.set()
+            self._retire(pending_id)
+
+        tasks = [
+            task
+            for task in self._notify_tasks
+            if channel_id is None or self._notify_channels.get(task) == channel_id
+        ]
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+    def _set_on_input_required(self, channel_id: str, callback: OnInputRequiredCallback) -> None:
+        """Register the framework callback belonging to one channel.
+
+        The application-level ``_on_input_required`` fallback remains for
+        direct handler use. Framework callbacks need their own routing table:
+        one shared handler must not let the last registered AI channel replace
+        every earlier channel's hook and observability context.
+        """
+        self._ensure_open(channel_id)
+        self._on_input_required_by_channel[channel_id] = callback
 
     async def create(
         self,
@@ -185,6 +237,7 @@ class HumanInputHandler:
         detached: bool,
     ) -> PendingInput:
         """Register the request, then schedule its notification."""
+        self._ensure_open(channel_id)
         pending_id = uuid4().hex
         pending = PendingInput(
             pending_id=pending_id,
@@ -197,7 +250,7 @@ class HumanInputHandler:
         )
         self._pending[pending_id] = pending
 
-        if self._on_input_required is not None:
+        if self._callback_for(channel_id) is not None:
             event = PendingInputEvent(
                 pending_id=pending_id,
                 tool_name=tool_name,
@@ -211,14 +264,41 @@ class HumanInputHandler:
                 self._notify(event), name=f"human-input-notify-{pending_id}"
             )
             self._notify_tasks.add(task)
-            task.add_done_callback(self._notify_tasks.discard)
+            self._notify_channels[task] = channel_id
+            task.add_done_callback(self._forget_notify_task)
             task.add_done_callback(log_task_exception)
 
         return pending
 
+    def _ensure_open(self, channel_id: str) -> None:
+        """Reject work created after the owning lifecycle has closed."""
+        if self._closed:
+            raise RuntimeError("Human input handler is closed")
+        if channel_id in self._closed_channels:
+            raise RuntimeError(f"Human input handler is closed for channel {channel_id}")
+
+    def _callback_for(self, channel_id: str) -> OnInputRequiredCallback | None:
+        """Resolve a channel callback without misrouting an ambiguous request."""
+        callback = self._on_input_required_by_channel.get(channel_id)
+        if callback is not None:
+            return callback
+        if not channel_id and len(self._on_input_required_by_channel) == 1:
+            # Preserve the convenient single-channel/manual-create behavior;
+            # an empty id with several owners is ambiguous and must not be
+            # attributed to whichever callback happened to register last.
+            return next(iter(self._on_input_required_by_channel.values()))
+        return self._on_input_required
+
+    def _forget_notify_task(self, task: asyncio.Task[None]) -> None:
+        """Drop bookkeeping for a completed notification task."""
+        self._notify_tasks.discard(task)
+        self._notify_channels.pop(task, None)
+
     async def _notify(self, event: PendingInputEvent) -> None:
         """Run the ON_USER_INPUT_REQUIRED callback off the waiting path."""
-        callback = self._on_input_required
+        if self._closed or event.channel_id in self._closed_channels:
+            return
+        callback = self._callback_for(event.channel_id)
         if callback is None:
             return
         try:
@@ -406,15 +486,14 @@ class HumanInputToolHandler:
         tool_call_id = ctx.tool_call_id if ctx else ""
         channel_id = ctx.channel_id if ctx else ""
 
-        pending = await self._handler.create(
-            tool_name=name,
-            arguments=arguments,
-            room_id=room_id,
-            tool_call_id=tool_call_id,
-            channel_id=channel_id,
-        )
-
         try:
+            pending = await self._handler.create(
+                tool_name=name,
+                arguments=arguments,
+                room_id=room_id,
+                tool_call_id=tool_call_id,
+                channel_id=channel_id,
+            )
             return await self._handler.wait(pending.pending_id, timeout=self.timeout)
         except TimeoutError:
             return json.dumps(

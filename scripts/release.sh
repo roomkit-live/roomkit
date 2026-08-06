@@ -14,18 +14,21 @@ VERSION="$1"
 # format/tooling non-reproducible across releases. Bump deliberately.
 CYCLONEDX_BOM_VERSION="7.3.0"
 
-# --- Validate semver format (with optional pre-release suffix) ---
-if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-a-zA-Z0-9.]+)?$ ]]; then
-    echo "Error: VERSION must be in semver format (e.g. 1.2.3 or 1.2.3a1)"
+# --- Validate the PEP 440 forms this Python release workflow supports ---
+# Reject SemVer's hyphenated prerelease spelling (1.2.3-rc.1): Python
+# normalizes it to 1.2.3rc1, which otherwise makes the built filenames differ
+# from DIST_FILES below and leaves a half-finished release.
+if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+((a|b|rc)[0-9]+)?$ ]]; then
+    echo "Error: VERSION must be a PEP 440 release (e.g. 1.2.3 or 1.2.3rc1)"
     exit 1
 fi
 
 # --- Ensure clean working tree ---
 # A re-run after a mid-release failure may have already applied the version bump
-# to these two files (sed runs before the commit). That is the ONLY permitted
+# to this file (sed runs before the commit). That is the ONLY permitted
 # dirt — it lets the script resume; anything else must be committed or stashed.
 UNEXPECTED="$(git status --porcelain \
-    | grep -vE '(src/roomkit/_version\.py|tests/test_public_api\.py)$' || true)"
+    | grep -vE 'src/roomkit/_version\.py$' || true)"
 if [[ -n "$UNEXPECTED" ]]; then
     echo "Error: working tree has changes beyond the version bump. Commit or stash first:"
     echo "$UNEXPECTED"
@@ -39,12 +42,73 @@ if [[ "$BRANCH" != "main" ]]; then
     exit 1
 fi
 
-# A local tag v${VERSION} means a prior run already built, committed, and tagged
-# this release — so this invocation is a RESUME, not a fresh release. That gates
-# the PyPI safety check below and the dev-cycle detection.
+# A valid local tag v${VERSION} means a prior run already built, committed, and
+# tagged this release. Validate its tree and exact position before allowing it
+# to gate the PyPI safety check or the dev-cycle shortcut.
 TAG_EXISTS=0
+RELEASE_COMMIT_EXISTS=0
+RELEASE_TAG_SHA=""
+RELEASE_PARENT_SHA=""
+RESUME_DEV_CHILD=0
 if git rev-parse -q --verify "refs/tags/v${VERSION}" >/dev/null; then
     TAG_EXISTS=1
+    RELEASE_TAG_SHA=$(git rev-parse "v${VERSION}^{}")
+    TAG_VERSION=$(git show "${RELEASE_TAG_SHA}:src/roomkit/_version.py" 2>/dev/null \
+        | sed -n 's/^__version__ = "\(.*\)"/\1/p')
+    if [[ "$TAG_VERSION" != "$VERSION" ]]; then
+        echo "Error: resume tag v${VERSION} contains version '${TAG_VERSION:-missing}', expected '${VERSION}'."
+        exit 1
+    fi
+
+    TAG_CHANGED_FILES=$(git diff-tree --no-commit-id --name-only -r "$RELEASE_TAG_SHA")
+    if [[ "$TAG_CHANGED_FILES" != "src/roomkit/_version.py" ]]; then
+        echo "Error: resume tag v${VERSION} must point to a version-only commit."
+        echo "       Tagged commit changes: ${TAG_CHANGED_FILES:-none}"
+        exit 1
+    fi
+    if ! RELEASE_PARENT_SHA=$(git rev-parse "${RELEASE_TAG_SHA}^" 2>/dev/null); then
+        echo "Error: resume tag v${VERSION} has no code-bearing parent commit."
+        exit 1
+    fi
+
+    HEAD_SHA=$(git rev-parse HEAD)
+    if [[ "$HEAD_SHA" != "$RELEASE_TAG_SHA" ]]; then
+        HEAD_PARENT_SHA=$(git rev-parse HEAD^ 2>/dev/null || true)
+        if [[ "$HEAD_PARENT_SHA" != "$RELEASE_TAG_SHA" ]]; then
+            echo "Error: resume tag v${VERSION} must point to HEAD or its direct parent."
+            echo "       Refusing to mix a stale tag with artifacts built from the current HEAD."
+            exit 1
+        fi
+        HEAD_CHANGED_FILES=$(git diff-tree --no-commit-id --name-only -r HEAD)
+        if [[ "$HEAD_CHANGED_FILES" != "src/roomkit/_version.py" ]]; then
+            echo "Error: the commit after resume tag v${VERSION} must only open the next dev cycle."
+            echo "       HEAD changes: ${HEAD_CHANGED_FILES:-none}"
+            exit 1
+        fi
+        RESUME_DEV_CHILD=1
+    fi
+fi
+
+# A failure between the version commit and tag creation leaves a clean,
+# version-only HEAD but no tag. Recognize that exact state as resumable and use
+# its code-bearing parent for CI, just as the tagged resume path does. Refuse a
+# target version committed together with other files: release tags are required
+# to point at a version-only commit so a re-run can prove what happened.
+HEAD_VERSION=$(git show HEAD:src/roomkit/_version.py 2>/dev/null \
+    | sed -n 's/^__version__ = "\(.*\)"/\1/p')
+if [[ "$TAG_EXISTS" == "0" && "$HEAD_VERSION" == "$VERSION" ]]; then
+    HEAD_CHANGED_FILES=$(git diff-tree --no-commit-id --name-only -r HEAD)
+    if [[ "$HEAD_CHANGED_FILES" != "src/roomkit/_version.py" ]]; then
+        echo "Error: committed release version ${VERSION} must be in a version-only commit."
+        echo "       HEAD changes: ${HEAD_CHANGED_FILES:-none}"
+        exit 1
+    fi
+    if ! RELEASE_PARENT_SHA=$(git rev-parse HEAD^ 2>/dev/null); then
+        echo "Error: version-only release commit for ${VERSION} has no code-bearing parent."
+        exit 1
+    fi
+    RELEASE_COMMIT_EXISTS=1
+    RELEASE_TAG_SHA=$(git rev-parse HEAD)
 fi
 
 # --- Resume shortcut: the release fully completed and the next dev cycle was
@@ -52,9 +116,18 @@ fi
 # worktree): if the dev-cycle commit itself failed, the bump is only staged, so
 # the worktree shows .dev while HEAD is still the release commit — that case
 # must fall through and re-run to finish the commit, not exit here. ---
-HEAD_VERSION=$(git show HEAD:src/roomkit/_version.py 2>/dev/null \
-    | sed -n 's/^__version__ = "\(.*\)"/\1/p')
-if [[ "$HEAD_VERSION" == *.dev* && "$TAG_EXISTS" == "1" ]]; then
+if [[ "$RESUME_DEV_CHILD" == "1" ]]; then
+    if [[ "$VERSION" =~ [a-zA-Z] ]]; then
+        echo "Error: prerelease tag v${VERSION} cannot have an automatic next-dev commit."
+        exit 1
+    fi
+    IFS='.' read -r VERSION_MAJOR VERSION_MINOR _VERSION_PATCH <<< "$VERSION"
+    EXPECTED_DEV_VERSION="${VERSION_MAJOR}.$((VERSION_MINOR + 1)).0.dev0"
+    if [[ "$HEAD_VERSION" != "$EXPECTED_DEV_VERSION" ]]; then
+        echo "Error: the commit after resume tag v${VERSION} has version '${HEAD_VERSION:-missing}'."
+        echo "       Expected the release script's next cycle '${EXPECTED_DEV_VERSION}'."
+        exit 1
+    fi
     echo "==> v${VERSION} already released (HEAD on ${HEAD_VERSION}); re-pushing git state."
     git push && git push --tags
     echo "==> Done."
@@ -86,11 +159,30 @@ echo "    CHANGELOG.md documents ${VERSION}."
 # Filter on the CI workflow: other workflows on main (e.g. Dependabot Updates)
 # can fail for reasons unrelated to code health and must not block a release.
 echo "==> Checking GitHub Actions status..."
-CI_STATUS=$(gh run list --workflow CI --branch main --limit 1 --json status,conclusion --jq '.[0]')
+# A resumed release has already created its version-only commit and tag. The
+# code-bearing parent is the commit whose CI authorized the release; a fresh
+# release checks HEAD directly. Query by commit so a green run for the previous
+# main revision can never win a race with the current run appearing in GitHub.
+if [[ "$TAG_EXISTS" == "1" || "$RELEASE_COMMIT_EXISTS" == "1" ]]; then
+    CI_SHA="$RELEASE_PARENT_SHA"
+else
+    CI_SHA=$(git rev-parse HEAD)
+fi
+CI_STATUS=$(gh run list --workflow CI --branch main --commit "$CI_SHA" --limit 1 \
+    --json status,conclusion,headSha --jq '.[0] // {}')
 CI_CONCLUSION=$(echo "$CI_STATUS" | python3 -c "import sys,json; print(json.load(sys.stdin).get('conclusion',''))")
 CI_STATE=$(echo "$CI_STATUS" | python3 -c "import sys,json; print(json.load(sys.stdin).get('status',''))")
+CI_HEAD_SHA=$(echo "$CI_STATUS" | python3 -c "import sys,json; print(json.load(sys.stdin).get('headSha',''))")
+if [[ -z "$CI_HEAD_SHA" ]]; then
+    echo "Error: no CI run found for commit ${CI_SHA}. Wait for GitHub Actions to start."
+    exit 1
+fi
+if [[ "$CI_HEAD_SHA" != "$CI_SHA" ]]; then
+    echo "Error: CI reported commit ${CI_HEAD_SHA}, expected ${CI_SHA}."
+    exit 1
+fi
 if [[ "$CI_STATE" != "completed" ]]; then
-    echo "Error: latest CI run on main is still '${CI_STATE}'. Wait for it to finish."
+    echo "Error: CI for ${CI_SHA} is still '${CI_STATE}'. Wait for it to finish."
     exit 1
 fi
 if [[ "$CI_CONCLUSION" != "success" ]]; then
@@ -98,7 +190,7 @@ if [[ "$CI_CONCLUSION" != "success" ]]; then
     echo "       See: gh run list --workflow CI --branch main --limit 1"
     exit 1
 fi
-echo "    CI is green."
+echo "    CI is green for ${CI_SHA}."
 
 echo "==> Releasing v${VERSION}"
 
@@ -141,14 +233,6 @@ else
     sed -i "s/^__version__ = .*/__version__ = \"${VERSION}\"/" src/roomkit/_version.py
 fi
 echo "    Updated src/roomkit/_version.py"
-
-# --- Bump version in test ---
-if [[ "$(uname)" == "Darwin" ]]; then
-    sed -i '' "s/assert roomkit.__version__ == .*/assert roomkit.__version__ == \"${VERSION}\"/" tests/test_public_api.py
-else
-    sed -i "s/assert roomkit.__version__ == .*/assert roomkit.__version__ == \"${VERSION}\"/" tests/test_public_api.py
-fi
-echo "    Updated tests/test_public_api.py"
 
 # --- Run tests ---
 echo "==> Running tests..."
@@ -194,7 +278,7 @@ fi
 echo "    Wrote ${SBOM_FILE}"
 
 # --- Commit (idempotent: safe to re-run after a later step failed) ---
-git add src/roomkit/_version.py tests/test_public_api.py
+git add src/roomkit/_version.py
 if git diff --cached --quiet; then
     echo "    Version ${VERSION} already committed — skipping."
 else

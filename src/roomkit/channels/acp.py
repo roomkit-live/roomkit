@@ -530,15 +530,20 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
             )
             prompt_text = compose_prompt(blocks, catch_up, text)
             prompt = [self._sdk().acp.text_block(prompt_text)]
-            # The room is caught up only once the prompt carrying it is on its
-            # way. A generator body that never runs — a muted binding has its
-            # stream closed unconsumed — leaves the mark where it was, so the
-            # next prompt still carries what the silenced turn would have said.
-            self._prompted_index[room_id] = max(
-                event_index, self._prompted_index.get(room_id, _UNSEEN)
-            )
+            # The cursor commits only after the agent accepts the prompt. A
+            # generator body that never runs, or a prompt rejected before
+            # delivery, leaves the mark untouched so the next turn can replay
+            # the missing room context instead of silently losing it.
             turn.runner = asyncio.create_task(
-                self._run_prompt(connection, session_id, event_id, prompt, turn)
+                self._run_prompt(
+                    connection,
+                    session_id,
+                    event_id,
+                    prompt,
+                    turn,
+                    room_id,
+                    event_index,
+                )
             )
 
             try:
@@ -622,12 +627,17 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
         event_id: str,
         prompt: list[Any],
         turn: _TurnState,
+        room_id: str,
+        event_index: int,
     ) -> None:
         try:
             response = await connection.prompt(
                 session_id,
                 prompt,
                 **{"roomkit.live/eventId": event_id},
+            )
+            self._prompted_index[room_id] = max(
+                event_index, self._prompted_index.get(room_id, _UNSEEN)
             )
             # The turn's own accounting, and the only place it is offered:
             # the usage notifications describe the context window, not what

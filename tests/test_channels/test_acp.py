@@ -1513,6 +1513,31 @@ class TestRoomCatchUp:
         assert sent.endswith("second request")
         await channel.close()
 
+    async def test_a_failed_prompt_remains_in_the_next_turns_catch_up(self, tmp_path: Any) -> None:
+        """An unacknowledged prompt was not delivered and must not move the cursor."""
+        channel, connection, _ = _channel(tmp_path, emit_updates=False)
+        original_prompt = connection.prompt
+
+        async def fail_before_delivery(*_args: Any, **_kwargs: Any) -> Any:
+            raise RuntimeError("agent rejected prompt")
+
+        connection.prompt = fail_before_delivery  # type: ignore[method-assign]
+        first = make_event(room_id="room-1", body="first request", index=0)
+        output = await channel.on_event(first, _binding(), _context(first))
+        with pytest.raises(ProviderError, match="agent rejected prompt"):
+            _ = [chunk async for chunk in output.response_stream]
+
+        assert "room-1" not in channel._prompted_index
+
+        connection.prompt = original_prompt  # type: ignore[method-assign]
+        second = make_event(room_id="room-1", body="second request", index=1)
+        await _prompt(channel, second, _context(first, second))
+
+        sent = _sent(connection)
+        assert "first request" in sent
+        assert sent.endswith("second request")
+        await channel.close()
+
     async def test_nothing_missed_sends_the_request_alone(self, tmp_path: Any) -> None:
         # An ordinary back-and-forth pays nothing for the catch-up.
         channel, connection, _ = _channel(tmp_path, emit_updates=False)

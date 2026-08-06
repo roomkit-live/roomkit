@@ -155,6 +155,7 @@ from roomkit.orchestration import (
     set_conversation_state,
     setup_handoff,
 )
+from roomkit.providers.ai import ModelPricing
 from roomkit.sandbox import SandboxExecutor, SandboxResult
 from roomkit.skills import ScriptExecutor, Skill, SkillMetadata, SkillRegistry
 from roomkit.store import ConversationStore, InMemoryStore
@@ -374,6 +375,7 @@ __all__ = [
     "InjectedEvent",
     "InboundMessage",
     "InboundResult",
+    "ModelPricing",
     "Participant",
     "ProviderResult",
     "Room",

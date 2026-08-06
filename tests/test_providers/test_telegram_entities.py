@@ -15,6 +15,13 @@ def _mention(text: str, offset: int, length: int) -> dict[str, Any]:
     return {"text": text, "entities": [{"type": "mention", "offset": offset, "length": length}]}
 
 
+def _command(command: str) -> dict[str, Any]:
+    return {
+        "text": command,
+        "entities": [{"type": "bot_command", "offset": 0, "length": len(command)}],
+    }
+
+
 class TestEntityText:
     def test_slices_a_plain_ascii_mention(self) -> None:
         text = "hey @demo_bot what's up"
@@ -47,6 +54,11 @@ class TestEntityText:
         """Entities are composed by someone else's client, so the bound is theirs."""
         assert entity_text("hey @demo_bot", {"offset": -9, "length": 9}) == ""
         assert entity_text("hey @demo_bot", {"offset": 4, "length": -1}) == ""
+
+    def test_non_integer_bounds_are_empty(self) -> None:
+        assert entity_text("hey @demo_bot", {"offset": "4", "length": 9}) == ""
+        assert entity_text("hey @demo_bot", {"offset": 4, "length": None}) == ""
+        assert entity_text("hey @demo_bot", {"offset": True, "length": 9}) == ""
 
 
 class TestMentionsBot:
@@ -84,10 +96,16 @@ class TestMentionsBot:
         assert mentions_bot(msg, bot_id=BOT_ID) is False
 
     def test_a_bot_command(self) -> None:
-        """Telegram routes commands itself — a delivered one was meant for us."""
-        msg = {"text": "/status", "entities": [{"type": "bot_command", "offset": 0, "length": 7}]}
+        assert mentions_bot(_command("/status"), bot_username=BOT, bot_id=BOT_ID) is True
 
-        assert mentions_bot(msg, bot_username=BOT, bot_id=BOT_ID) is True
+    def test_a_bot_command_explicitly_addressed_to_this_bot(self) -> None:
+        assert mentions_bot(_command("/status@Demo_Bot"), bot_username=BOT) is True
+
+    def test_a_bot_command_addressed_to_another_bot(self) -> None:
+        assert mentions_bot(_command("/status@other_bot"), bot_username=BOT) is False
+
+    def test_a_qualified_bot_command_needs_the_username(self) -> None:
+        assert mentions_bot(_command("/status@demo_bot"), bot_id=BOT_ID) is False
 
     def test_a_reply_to_the_bots_own_message(self) -> None:
         msg = {"text": "yes please", "reply_to_message": {"from": {"id": BOT_ID}}}
@@ -102,6 +120,9 @@ class TestMentionsBot:
     def test_a_handle_posted_as_plain_text_with_no_entity(self) -> None:
         """Some clients post an @-mention without marking it up."""
         assert mentions_bot({"text": "hey @demo_bot"}, bot_username=BOT) is True
+
+    def test_a_longer_username_is_not_a_plain_text_mention(self) -> None:
+        assert mentions_bot({"text": "hey @demo_bot_extra"}, bot_username=BOT) is False
 
     def test_ordinary_group_chatter(self) -> None:
         assert mentions_bot({"text": "lunch at noon?"}, bot_username=BOT, bot_id=BOT_ID) is False
@@ -131,3 +152,23 @@ class TestMentionsBot:
         msg = {"sticker": {"file_id": "x"}}
 
         assert mentions_bot(msg, bot_username=BOT, bot_id=BOT_ID) is False
+
+    def test_malformed_nested_shapes_are_ignored(self) -> None:
+        msg = {
+            "text": "hello",
+            "reply_to_message": "not-a-message",
+            "entities": ["not-an-entity", {"type": "text_mention", "user": "not-a-user"}],
+        }
+
+        assert mentions_bot(msg, bot_username=BOT, bot_id=BOT_ID) is False
+
+    def test_a_malformed_command_does_not_hide_a_valid_mention(self) -> None:
+        msg = {
+            "text": "hey @demo_bot",
+            "entities": [
+                {"type": "bot_command", "offset": "bad", "length": 4},
+                {"type": "mention", "offset": 4, "length": 9},
+            ],
+        }
+
+        assert mentions_bot(msg, bot_username=BOT) is True

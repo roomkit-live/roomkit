@@ -266,7 +266,6 @@ class TestToolUsageInContext:
         ]
         _current_loop_ctx.set(loop_ctx)
         try:
-            ch._current_room_id = "r1"
             await ch._handle_find_tools({"query": "control playback"})
         finally:
             _current_loop_ctx.set(None)

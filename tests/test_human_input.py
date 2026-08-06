@@ -191,6 +191,80 @@ async def test_concurrent_pending_requests() -> None:
     assert len(handler.pending) == 0
 
 
+async def test_close_cancels_only_one_channels_notifications_and_requests() -> None:
+    started = {"ch1": asyncio.Event(), "ch2": asyncio.Event()}
+    cancelled: set[str] = set()
+
+    async def hanging_callback(event: PendingInputEvent) -> bool:
+        started[event.channel_id].set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            cancelled.add(event.channel_id)
+        return True
+
+    handler = HumanInputHandler()
+    handler._on_input_required = hanging_callback
+    first = await handler.create("ask", {}, channel_id="ch1")
+    second = await handler.create("ask", {}, channel_id="ch2")
+    await asyncio.gather(started["ch1"].wait(), started["ch2"].wait())
+
+    await handler.close(channel_id="ch1")
+
+    assert cancelled == {"ch1"}
+    with pytest.raises(RuntimeError, match="handler closed"):
+        await handler.wait(first.pending_id)
+    assert second.pending_id in handler.pending
+
+    handler.resolve(second.pending_id, "ok")
+    assert await handler.wait(second.pending_id) == "ok"
+    await handler.close()
+    assert cancelled == {"ch1", "ch2"}
+
+
+async def test_close_prevents_new_requests_in_the_closed_scope() -> None:
+    handler = HumanInputHandler()
+
+    await handler.close(channel_id="ch1")
+
+    with pytest.raises(RuntimeError, match="closed for channel ch1"):
+        await handler.create("ask", {}, channel_id="ch1")
+
+    other = await handler.create("ask", {}, channel_id="ch2")
+    assert other.pending_id in handler.pending
+
+    await handler.close()
+    with pytest.raises(RuntimeError, match="handler is closed"):
+        await handler.create("ask", {}, channel_id="ch3")
+
+
+async def test_ai_channel_close_stops_its_human_input_notifications() -> None:
+    from roomkit.providers.ai.mock import MockAIProvider
+
+    started = asyncio.Event()
+    cancelled = asyncio.Event()
+
+    async def hanging_callback(event: PendingInputEvent) -> bool:
+        started.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            cancelled.set()
+        return True
+
+    human = HumanInputToolHandler(tool_names={"ask"})
+    human.handler._on_input_required = hanging_callback
+    channel = AIChannel("ai-close", provider=MockAIProvider(), human_input_handler=human)
+    pending = await human.handler.create("ask", {}, channel_id="ai-close")
+    await started.wait()
+
+    await channel.close()
+
+    await asyncio.wait_for(cancelled.wait(), timeout=1)
+    with pytest.raises(RuntimeError, match="handler closed"):
+        await human.handler.wait(pending.pending_id)
+
+
 async def test_pending_property_returns_snapshot() -> None:
     handler = HumanInputHandler()
     await handler.create("t1", {}, room_id="r1", tool_call_id="tc1", channel_id="ch1")
@@ -488,7 +562,61 @@ async def test_register_channel_injects_hook_callback() -> None:
     kit.register_channel(ai)
 
     # After registration, the framework should have injected the hook callback
-    assert human.handler._on_input_required is not None
+    assert "ai-test" in human.handler._on_input_required_by_channel
+
+
+async def test_shared_handler_routes_framework_callbacks_by_channel() -> None:
+    from roomkit import RoomKit
+    from roomkit.providers.ai.mock import MockAIProvider
+
+    shared = HumanInputHandler()
+    first_human = HumanInputToolHandler(tool_names={"AskUser"}, handler=shared)
+    second_human = HumanInputToolHandler(tool_names={"AskUser"}, handler=shared)
+    first_kit = RoomKit()
+    second_kit = RoomKit()
+    first_kit.register_channel(
+        AIChannel("ai-first", provider=MockAIProvider(), human_input_handler=first_human)
+    )
+    second_kit.register_channel(
+        AIChannel("ai-second", provider=MockAIProvider(), human_input_handler=second_human)
+    )
+    await first_kit.create_room(room_id="room-first")
+    await second_kit.create_room(room_id="room-second")
+
+    first_events: list[Any] = []
+    second_events: list[Any] = []
+    first_fired = asyncio.Event()
+    second_fired = asyncio.Event()
+
+    @first_kit.on("user_input_required")
+    async def on_first(event: Any) -> None:
+        first_events.append(event)
+        first_fired.set()
+
+    @second_kit.on("user_input_required")
+    async def on_second(event: Any) -> None:
+        second_events.append(event)
+        second_fired.set()
+
+    first = await shared.create_detached(
+        "AskUser", {}, room_id="room-first", channel_id="ai-first"
+    )
+    second = await shared.create_detached(
+        "AskUser", {}, room_id="room-second", channel_id="ai-second"
+    )
+
+    await asyncio.gather(
+        asyncio.wait_for(first_fired.wait(), timeout=1),
+        asyncio.wait_for(second_fired.wait(), timeout=1),
+    )
+
+    assert [event.channel_id for event in first_events] == ["ai-first"]
+    assert [event.channel_id for event in second_events] == ["ai-second"]
+
+    shared.release(first.pending_id)
+    shared.release(second.pending_id)
+    await first_kit.close()
+    await second_kit.close()
 
 
 async def test_hook_deny_blocks_tool_via_framework() -> None:

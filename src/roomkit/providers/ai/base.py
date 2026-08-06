@@ -292,14 +292,14 @@ class ModelPricing(BaseModel):
         verified: Date the rates were read from the vendor's own price list.
     """
 
-    input_per_million: float
-    output_per_million: float
-    cache_read_per_million: float | None = None
-    cache_write_per_million: float | None = None
-    long_context_threshold_tokens: int | None = None
-    long_context_input_multiplier: float = 1.0
-    long_context_output_multiplier: float = 1.0
-    currency: str = "USD"
+    input_per_million: float = Field(ge=0, allow_inf_nan=False)
+    output_per_million: float = Field(ge=0, allow_inf_nan=False)
+    cache_read_per_million: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    cache_write_per_million: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    long_context_threshold_tokens: int | None = Field(default=None, gt=0)
+    long_context_input_multiplier: float = Field(default=1.0, gt=0, allow_inf_nan=False)
+    long_context_output_multiplier: float = Field(default=1.0, gt=0, allow_inf_nan=False)
+    currency: str = Field(default="USD", min_length=1)
     verified: date
 
     def cost_for(self, usage: Mapping[str, int]) -> float:
@@ -322,17 +322,26 @@ class ModelPricing(BaseModel):
         Returns:
             The cost of that response, in :attr:`currency`.
         """
-        input_total = usage.get("input_tokens", 0) * self.input_per_million
+        counters = {
+            name: self._usage_counter(usage, name)
+            for name in (
+                "input_tokens",
+                "output_tokens",
+                "cache_read_input_tokens",
+                "cache_creation_input_tokens",
+            )
+        }
+        input_total = counters["input_tokens"] * self.input_per_million
         for counter, rate in (
             ("cache_read_input_tokens", self.cache_read_per_million),
             ("cache_creation_input_tokens", self.cache_write_per_million),
         ):
             if rate is not None:
-                input_total += usage.get(counter, 0) * rate
+                input_total += counters[counter] * rate
 
-        output_total = usage.get("output_tokens", 0) * self.output_per_million
+        output_total = counters["output_tokens"] * self.output_per_million
         total_input_tokens = sum(
-            usage.get(counter, 0)
+            counters[counter]
             for counter in (
                 "input_tokens",
                 "cache_read_input_tokens",
@@ -346,6 +355,14 @@ class ModelPricing(BaseModel):
             input_total *= self.long_context_input_multiplier
             output_total *= self.long_context_output_multiplier
         return (input_total + output_total) / 1_000_000
+
+    @staticmethod
+    def _usage_counter(usage: Mapping[str, int], name: str) -> int:
+        """Read one non-negative integer counter from a provider response."""
+        value = usage.get(name, 0)
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise ValueError(f"usage counter {name!r} must be a non-negative integer")
+        return value
 
 
 class ModelInfo(BaseModel):

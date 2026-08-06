@@ -314,14 +314,24 @@ class OpenAIAIProvider(AIProvider):
         """Add temperature and reasoning_effort to a request when applicable.
 
         Temperature is dropped for models that only accept the default
-        (``supports_custom_temperature=False``). reasoning_effort is omitted on
-        tool turns because Chat Completions rejects it alongside function tools
-        for some models (gpt-5.5: "use /v1/responses instead"); the reasoning
-        trace isn't returned here anyway, so this only forgoes depth tuning.
+        (``supports_custom_temperature=False``). GPT-5.6 function tools on the
+        official Chat Completions endpoint require effective reasoning ``none``;
+        omission is not equivalent because that family defaults to ``medium``.
+        Older models keep the existing conservative behavior of omitting an
+        explicitly configured effort on tool turns.
         """
         if context.temperature is not None and self._config.supports_custom_temperature:
             kwargs["temperature"] = context.temperature
-        if self._config.reasoning_effort is not None and not context.tools:
+
+        official_gpt_5_6_tool_turn = (
+            bool(context.tools)
+            and self._provider_name == "openai"
+            and getattr(self._config, "base_url", None) is None
+            and self._config.model.startswith("gpt-5.6")
+        )
+        if official_gpt_5_6_tool_turn:
+            kwargs["reasoning_effort"] = "none"
+        elif self._config.reasoning_effort is not None and not context.tools:
             kwargs["reasoning_effort"] = self._config.reasoning_effort
 
     def _apply_extra_body(self, kwargs: dict[str, Any]) -> None:

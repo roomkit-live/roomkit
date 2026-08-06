@@ -17,6 +17,7 @@ from roomkit.models.room import Room
 from roomkit.providers.ai.base import AIResponse, AIToolCall
 from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.tools import current_tool_allowed_names, current_tool_room_id
+from roomkit.tools.context import _current_tool_call
 from tests.conftest import make_event
 
 
@@ -107,6 +108,45 @@ class TestCurrentToolRoomId:
             )
 
         assert seen == ["room-a", "room-b"]
+
+    async def test_interleaved_streams_keep_tool_and_hook_room(self) -> None:
+        """Starting another room must not overwrite a suspended stream's room."""
+        handler_rooms: list[tuple[str | None, str | None]] = []
+        hook_rooms: list[str | None] = []
+
+        async def tool_handler(name: str, args: dict[str, Any]) -> str:
+            tool_call = _current_tool_call.get()
+            handler_rooms.append(
+                (current_tool_room_id(), tool_call.room_id if tool_call is not None else None)
+            )
+            return "ok"
+
+        async def before_tool_call(event: Any) -> bool:
+            hook_rooms.append(event.room_id)
+            return True
+
+        provider = MockAIProvider(ai_responses=_tool_round_responses(), streaming=True)
+        ch = AIChannel("ai1", provider=provider, tool_handler=tool_handler)
+        ch._before_tool_call_hook = before_tool_call
+
+        output_a = await ch.on_event(
+            make_event(room_id="room-a", body="go", channel_id="sms1"),
+            _binding("room-a"),
+            RoomContext(room=Room(id="room-a")),
+        )
+        output_b = await ch.on_event(
+            make_event(room_id="room-b", body="go", channel_id="sms1"),
+            _binding("room-b"),
+            RoomContext(room=Room(id="room-b")),
+        )
+
+        assert output_a.response_stream is not None
+        _ = [chunk async for chunk in output_a.response_stream]
+        if output_b.response_stream is not None and hasattr(output_b.response_stream, "aclose"):
+            await output_b.response_stream.aclose()
+
+        assert handler_rooms == [("room-a", "room-a")]
+        assert hook_rooms == ["room-a"]
 
     def test_none_outside_tool_loop(self) -> None:
         assert current_tool_room_id() is None

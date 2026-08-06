@@ -276,9 +276,11 @@ class AIContextMixin:
         # Inject planning tool and plan context when enabled
         if self._planner is not None:
             tools.append(TaskPlanner.tool_definition())
-            if self._planner.current_plan:
+            room_id = context.room.id if context.room else event.room_id
+            current_plan = self._planner.plan_for(room_id)
+            if current_plan:
                 system_prompt = (system_prompt or "") + TaskPlanner.format_plan_prompt(
-                    self._planner.current_plan
+                    current_plan
                 )
 
         # "Tools you've already used" digest — the rebuilt context drops

@@ -53,10 +53,13 @@ class OpenAIConfig(BaseModel):
     ``temperature=1`` and reject any other value with HTTP 400."""
     reasoning_effort: str | None = None
     """Reasoning depth for OpenAI reasoning models (o-series, gpt-5):
-    ``"low"`` | ``"medium"`` | ``"high"``. Controls how long the model
-    reasons (quality vs latency/cost); the reasoning trace itself stays
-    hidden in the Chat Completions API. ``None`` = the model's default.
-    Only send it for reasoning models — others reject the parameter."""
+    ``"none"`` | ``"low"`` | ``"medium"`` | ``"high"`` | ``"xhigh"`` |
+    ``"max"`` (availability varies by model). Controls how long the model
+    reasons (quality vs latency/cost); the reasoning trace itself stays hidden
+    in the Chat Completions API. ``None`` = the model's default. GPT-5.6 tool
+    turns on OpenAI's endpoint use ``"none"`` because Chat Completions function
+    tools reject that family at higher effective efforts. Only configure this
+    for reasoning models — others reject the parameter."""
     default_headers: dict[str, str] | None = None
     """Extra HTTP headers sent on every request, passed to the SDK's
     ``default_headers``. Use for an OpenAI-compatible endpoint behind a

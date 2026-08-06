@@ -99,10 +99,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   `mentions_bot(msg, bot_username=..., bot_id=...)` answers the question every
   bot in a group has: was this meant for me? True on a reply to the bot, a
-  `bot_command`, a `mention` entity, a `text_mention` naming its id, or the
-  handle posted as plain text with no entity at all. It reports the fact and
-  decides no policy — whether a given group answers only when addressed is the
-  application's rule, not the kit's.
+  `bot_command` without a target (or qualified with this bot's exact username),
+  a `mention` entity, a `text_mention` naming its id, or the handle posted as
+  boundary-delimited plain text with no entity at all. A command qualified for
+  another bot remains false even when Telegram delivers it here. The helper
+  reports the fact and decides no policy — whether a given group answers only
+  when addressed is the application's rule, not the kit's.
 
 - **`parse_telegram_update()` — which of its forms an Update took.** One entry
   point for the three a webhook receives: a `message`, an `edited_message`
@@ -189,9 +191,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   conversation. An unset rate is a claim, not a gap: OpenAI bills nothing to
   write a cache, Google bills cache storage by the hour, and neither is a
   per-token write. `ModelPricing.cost_for(usage)` prices a response in one
-  call, charging an unpriced counter at the input rate so an unknown overstates
-  rather than disappears. `currency` and `verified` travel with the rates — a
-  price changes without the model changing, and Claude Sonnet 5's introductory
+  call. A cache counter whose rate is unset is omitted because the catalog does
+  not represent a separate per-token charge for it. `currency` and `verified`
+  travel with the rates. Rates must be finite and non-negative and multipliers
+  finite and positive; `cost_for()` rejects non-integer or negative token
+  counters rather than emitting a negative bill. `ModelPricing` is exported
+  from both `roomkit.providers.ai` and the package root. A price changes without
+  the model changing, and Claude Sonnet 5's introductory
   $2/$10 expiring on 2026-08-31 is exactly why a consumer needs the date.
 
   Priced: Anthropic, OpenAI, Gemini, Mistral, xAI, and OpenRouter (its own rate
@@ -229,6 +235,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **GPT-5.6 function tools no longer inherit an incompatible reasoning
+  default.** The OpenAI provider uses Chat Completions, where GPT-5.6 function
+  tools require effective reasoning `none`; omitting the parameter selected the
+  family's `medium` default and made the new out-of-the-box model fail as soon
+  as an `AIChannel` exposed a tool. Official GPT-5.6 tool turns now send
+  `reasoning_effort="none"` explicitly. Custom OpenAI-compatible endpoints are
+  not profiled. The same vendor check corrected Luna's offline metadata from
+  the Sol/Terra 1.05M window to 400k and removed the Sol/Terra-only long-context
+  price multipliers.
+
+- **A release interrupted between its version commit and tag can resume.** The
+  release script recognizes a clean, version-only HEAD without its tag, checks
+  CI on the code-bearing parent, and finishes the tag and publication. It also
+  accepts only the PEP 440 final/prerelease spellings its artifact names can
+  represent, rejecting a hyphenated SemVer prerelease before mutation.
+
+- **AI tool execution and planning are isolated per room.** An `AIChannel` is
+  shared by every room that attaches it, but tool hooks, human-input context,
+  usage memory and plan events read a mutable channel-wide room id. Two
+  interleaved streams could therefore authorize or record room A's tool under
+  room B, while the planner injected its last plan into every room even without
+  concurrency. All of these paths now resolve the invocation-scoped room from
+  the tool-loop context, and plans are stored and rendered by room id in the
+  same bounded 100-room working set as the other channel memories. Model-authored
+  plans are validated and copied before that state changes, so malformed nested
+  arguments return a tool error without poisoning the room's later context.
+
+- **Human-input notifications stop with their owning channel.** The tracked
+  callback tasks introduced in this release had no shutdown path, so a slow or
+  hung hook could outlive `AIChannel.close()`. Closing now rejects and retires
+  that channel's pending requests, cancels and awaits its notification tasks,
+  and leaves work belonging to another channel intact when a handler is shared.
+  It marks the scope closed before taking that snapshot, so a concurrent create
+  cannot slip past and wait until timeout. Framework callbacks are routed per
+  channel rather than the last registered owner replacing every earlier one.
+
+- **Telegram treats malformed success responses as provider failures.** A 2xx
+  response containing valid JSON of the wrong shape escaped as
+  `AttributeError`, despite the API's `ProviderResult` contract. Bot API
+  envelopes, `ok`, `result` and `getFile` payloads are now shape-checked against
+  the operation that produced them — bot, update list, literal `true`, or
+  Message id. A 200 refusal remains a Telegram error and an incomplete or
+  mismatched response becomes `invalid_response` (or `None` for `get_file`).
+
 - **Release compatibility and security review.** The official OpenAI and
   Anthropic defaults now select the request parameters their modern models
   accept, while explicit flags, older model ids and compatible custom
@@ -250,7 +300,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The release path is reproducible again.** Integration CI installs the
   `httpx2` peer imported by the FastRTC/Starlette stack, `make docs` targets the
   sibling documentation repository explicitly, and `.pypirc` credentials are
-  passed to `uv publish` outside the process command line.
+  passed to `uv publish` outside the process command line. A resumed release
+  additionally validates that its tag contains the requested version, points
+  to a version-only commit that is HEAD or the direct parent of the next-dev
+  HEAD, and derives the CI commit from that validated topology; a stale local
+  tag can no longer combine one GitHub source tree with different PyPI artifacts.
 
 - **An activated skill was re-loaded, whole, on every turn.** `activate_skill`
   returned the skill's full body every time it was called, and nothing in the

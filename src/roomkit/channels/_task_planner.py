@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any
+from collections import OrderedDict
+from typing import Any, cast
 
 from roomkit.providers.ai.base import AITool
 from roomkit.realtime.base import EphemeralEvent, EphemeralEventType, RealtimeBackend
@@ -17,10 +18,11 @@ _STATUS_ICONS = {
     "blocked": "[!]",
     "pending": "[ ]",
 }
+_MAX_ROOMS = 100
 
 
 class TaskPlanner:
-    """Manages a structured task plan for an AI agent.
+    """Manages room-scoped structured task plans for an AI agent.
 
     Provides the ``plan_tasks`` tool for creating/updating plans,
     formats the plan into system prompt context, and publishes
@@ -28,7 +30,20 @@ class TaskPlanner:
     """
 
     def __init__(self) -> None:
-        self.current_plan: list[dict[str, Any]] | None = None
+        self._plans: OrderedDict[str, list[dict[str, Any]]] = OrderedDict()
+
+    @property
+    def current_plan(self) -> list[dict[str, Any]] | None:
+        """Plan stored outside a room context, retained for compatibility."""
+        return self.plan_for(None)
+
+    def plan_for(self, room_id: str | None) -> list[dict[str, Any]] | None:
+        """Return the plan for one room without exposing another room's state."""
+        key = room_id or ""
+        plan = self._plans.get(key)
+        if plan is not None:
+            self._plans.move_to_end(key)
+        return plan
 
     async def handle_plan_tasks(
         self,
@@ -39,8 +54,15 @@ class TaskPlanner:
         channel_id: str | None = None,
     ) -> str:
         """Store a task plan and publish an ephemeral update event."""
-        tasks = arguments.get("tasks", [])
-        self.current_plan = tasks
+        tasks, error = self._validated_tasks(arguments.get("tasks", []))
+        if error is not None:
+            return json.dumps({"error": error})
+
+        key = room_id or ""
+        self._plans[key] = tasks
+        self._plans.move_to_end(key)
+        while len(self._plans) > _MAX_ROOMS:
+            self._plans.popitem(last=False)
 
         if realtime and room_id:
             try:
@@ -62,6 +84,33 @@ class TaskPlanner:
             for s in ("pending", "in_progress", "completed", "blocked")
         }
         return json.dumps({"status": "ok", "task_count": len(tasks), **counts})
+
+    @staticmethod
+    def _validated_tasks(value: Any) -> tuple[list[dict[str, Any]], str | None]:
+        """Validate model-authored plan data before it can alter room state.
+
+        ``plan_tasks`` is channel-managed, so the generic tool guard does not
+        validate its nested JSON schema. Treat the model's arguments as
+        untrusted here: a malformed item must become a tool error, not a value
+        stored in the room cache that breaks every later context rebuild.
+        """
+        if not isinstance(value, list):
+            return [], "Invalid plan: 'tasks' must be an array"
+
+        tasks: list[dict[str, Any]] = []
+        for index, task in enumerate(value):
+            if not isinstance(task, dict):
+                return [], f"Invalid plan: task {index} must be an object"
+            title = task.get("title")
+            if not isinstance(title, str):
+                return [], f"Invalid plan: task {index} title must be a string"
+            status = task.get("status")
+            if not isinstance(status, str) or status not in _STATUS_ICONS:
+                return [], (
+                    f"Invalid plan: task {index} status must be one of {', '.join(_STATUS_ICONS)}"
+                )
+            tasks.append(cast(dict[str, Any], task).copy())
+        return tasks, None
 
     @staticmethod
     def format_plan_prompt(tasks: list[dict[str, Any]]) -> str:

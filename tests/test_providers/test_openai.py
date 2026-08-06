@@ -204,9 +204,10 @@ class TestOpenAIAIProvider:
                     assert call_kwargs["reasoning_effort"] == "high"
 
     @pytest.mark.asyncio
-    async def test_reasoning_effort_dropped_when_tools_present(self) -> None:
-        # Chat Completions rejects reasoning_effort + function tools for some
-        # models (gpt-5.5), so it's omitted whenever the turn carries tools.
+    async def test_gpt_5_6_tools_force_effective_reasoning_none(self) -> None:
+        # GPT-5.6 defaults to medium, but Chat Completions function tools only
+        # accept effective reasoning none. An explicit higher config cannot be
+        # allowed to turn the default tool loop into a provider-side 400.
         with patch.dict("sys.modules", {"openai": _mock_openai_module()}):
             from roomkit.providers.openai.ai import OpenAIAIProvider
 
@@ -216,8 +217,40 @@ class TestOpenAIAIProvider:
             tool = AITool(name="get_weather", description="x", parameters={})
             await provider.generate(_context(tools=[tool]))
             call_kwargs = provider._client.chat.completions.create.call_args[1]
-            assert "reasoning_effort" not in call_kwargs
+            assert call_kwargs["reasoning_effort"] == "none"
             assert "tools" in call_kwargs
+
+    @pytest.mark.asyncio
+    async def test_gpt_5_6_default_tools_send_reasoning_none(self) -> None:
+        with patch.dict("sys.modules", {"openai": _mock_openai_module()}):
+            from roomkit.providers.openai.ai import OpenAIAIProvider
+
+            provider = OpenAIAIProvider(_config())
+            provider._client = MagicMock()
+            provider._client.chat.completions.create = AsyncMock(return_value=_mock_response())
+            tool = AITool(name="get_weather", description="x", parameters={})
+
+            await provider.generate(_context(tools=[tool]))
+
+            call_kwargs = provider._client.chat.completions.create.call_args[1]
+            assert call_kwargs["reasoning_effort"] == "none"
+
+    @pytest.mark.asyncio
+    async def test_custom_gpt_5_6_compatible_endpoint_is_not_force_profiled(self) -> None:
+        with patch.dict("sys.modules", {"openai": _mock_openai_module()}):
+            from roomkit.providers.openai.ai import OpenAIAIProvider
+
+            provider = OpenAIAIProvider(
+                _config(model="gpt-5.6-local", base_url="http://localhost:8000/v1")
+            )
+            provider._client = MagicMock()
+            provider._client.chat.completions.create = AsyncMock(return_value=_mock_response())
+            tool = AITool(name="get_weather", description="x", parameters={})
+
+            await provider.generate(_context(tools=[tool]))
+
+            call_kwargs = provider._client.chat.completions.create.call_args[1]
+            assert "reasoning_effort" not in call_kwargs
 
     @pytest.mark.asyncio
     async def test_generate_maps_usage(self) -> None:

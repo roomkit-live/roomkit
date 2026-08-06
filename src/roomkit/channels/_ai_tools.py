@@ -82,7 +82,6 @@ class AIToolsHost(Protocol):
         _skill_activation: Per-room record of the skills active in a conversation.
         _planner: Optional task planner.
         _realtime: Realtime backend for ephemeral events.
-        _current_room_id: Current room ID for tool-call hook events.
         _tool_call_hook: Optional unified ON_TOOL_CALL hook callback.
         channel_id: Unique identifier for this channel.
 
@@ -104,7 +103,6 @@ class AIToolsHost(Protocol):
     _skill_activation: SkillActivationMemory
     _planner: TaskPlanner | None
     _realtime: RealtimeBackend | None
-    _current_room_id: str | None
     _tool_call_hook: ToolCallCallback | None
     _before_tool_call_hook: Any
     _tool_search: bool | None
@@ -144,7 +142,6 @@ class AIToolsMixin:
     _skill_activation: SkillActivationMemory
     _planner: TaskPlanner | None
     _realtime: RealtimeBackend | None
-    _current_room_id: str | None
     _tool_call_hook: ToolCallCallback | None
     _before_tool_call_hook: Any
     _tool_search: bool | None
@@ -183,6 +180,10 @@ class AIToolsMixin:
         if self._tool_handler is None:
             raise RuntimeError("_execute_tools_parallel called without a tool handler")
         handler = self._tool_handler
+        # Capture the invocation-scoped room once. The channel object is shared
+        # across rooms, while the loop context is copied into every task spawned
+        # by gather below.
+        room_id = self._get_loop_ctx().room_id
 
         async def _run_one(tc: Any) -> AIToolResultPart:
             logger.info("Executing tool: %s(%s)", tc.name, tc.id)
@@ -248,7 +249,7 @@ class AIToolsMixin:
                     name=tc.name,
                     arguments=tc.arguments,
                     result=None,
-                    room_id=self._current_room_id,
+                    room_id=room_id,
                 )
                 allowed = await self._before_tool_call_hook(pre_event)
                 if not allowed:
@@ -272,7 +273,7 @@ class AIToolsMixin:
                 # Set contextvar so HumanInputToolHandler can read
                 # room_id / tool_call_id / channel_id without protocol changes.
                 _tc_ctx = ToolCallContext(
-                    room_id=self._current_room_id or "",
+                    room_id=room_id or "",
                     tool_call_id=tc.id,
                     channel_id=self.channel_id,
                 )
@@ -305,7 +306,7 @@ class AIToolsMixin:
                         name=tc.name,
                         arguments=tc.arguments,
                         result=result,
-                        room_id=self._current_room_id,
+                        room_id=room_id,
                     )
                     override = await self._tool_call_hook(event)
                     if override is not None:
@@ -319,7 +320,7 @@ class AIToolsMixin:
             # Remember this call (final result, success or error) so later turns
             # can show "tools you've already used" and re-reveal it under Tool
             # Search. Infra/discovery tools are filtered inside record().
-            self._tool_usage.record(self._current_room_id, tc.name, tc.arguments, result)
+            self._tool_usage.record(room_id, tc.name, tc.arguments, result)
             return AIToolResultPart(
                 tool_call_id=tc.id,
                 name=tc.name,
@@ -519,7 +520,7 @@ class AIToolsMixin:
         # Reveals persist across turns via ToolUsageMemory (the tool's own
         # description promises "the rest of the session") — a tool found in
         # turn N is often only called in turn N+1, after the user confirms.
-        self._tool_usage.record_revealed(self._current_room_id, loop_ctx.revealed_tools)
+        self._tool_usage.record_revealed(loop_ctx.room_id, loop_ctx.revealed_tools)
         # Compact result (name + short description). The matched tools' full
         # schemas reach the model via the next round's re-filtered tool list
         # (loop_ctx.revealed_tools), so inlining them here would only risk
@@ -547,9 +548,10 @@ class AIToolsMixin:
         """Delegate to TaskPlanner."""
         if self._planner is None:
             return json.dumps({"error": "Planning is not enabled"})
+        room_id = self._get_loop_ctx().room_id
         return await self._planner.handle_plan_tasks(
             arguments,
             realtime=self._realtime,
-            room_id=self._current_room_id,
+            room_id=room_id,
             channel_id=self.channel_id,
         )

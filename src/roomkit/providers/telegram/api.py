@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from roomkit.models.delivery import ProviderResult
 from roomkit.providers.telegram.config import TelegramConfig
@@ -25,6 +25,17 @@ if TYPE_CHECKING:
     import httpx
 
 logger = logging.getLogger("roomkit.providers.telegram")
+
+_ResultShape = Literal["bot", "updates", "message", "true"]
+_TRUE_RESULT_METHODS = frozenset(
+    {
+        "setWebhook",
+        "deleteWebhook",
+        "leaveChat",
+        "sendChatAction",
+        "answerCallbackQuery",
+    }
+)
 
 
 class TelegramBotAPI:
@@ -70,7 +81,7 @@ class TelegramBotAPI:
         ``http_*``. On success ``metadata["result"]`` holds the bot object —
         ``id``, ``username``, ``first_name``.
         """
-        return await self._request("getMe", json={}, want_result=True)
+        return await self._request("getMe", json={}, want_result=True, result_shape="bot")
 
     async def get_updates(self, *, limit: int = 100, offset: int | None = None) -> ProviderResult:
         """Pull pending updates — ``getUpdates``.
@@ -89,7 +100,9 @@ class TelegramBotAPI:
         payload: dict[str, Any] = {"limit": limit}
         if offset is not None:
             payload["offset"] = offset
-        return await self._request("getUpdates", json=payload, want_result=True)
+        return await self._request(
+            "getUpdates", json=payload, want_result=True, result_shape="updates"
+        )
 
     # --- Webhook lifecycle ----------------------------------------------
 
@@ -274,7 +287,13 @@ class TelegramBotAPI:
             # error page reaches raise_for_status intact.
             logger.warning("getFile failed for file_id %s: %s", file_id, self._error_label(exc))
             return None
-        return body.get("result", {}).get("file_path") or None
+        if not isinstance(body, dict) or body.get("ok") is not True:
+            return None
+        result = body.get("result")
+        if not isinstance(result, dict):
+            return None
+        file_path = result.get("file_path")
+        return file_path if isinstance(file_path, str) and file_path else None
 
     async def download_file(self, file_path: str) -> bytes | None:
         """Download the bytes behind a path returned by :meth:`get_file`.
@@ -308,13 +327,14 @@ class TelegramBotAPI:
         return f"{type(exc).__name__}({status})" if status else type(exc).__name__
 
     async def _api_call(self, method: str, payload: dict[str, Any]) -> ProviderResult:
-        return await self._request(method, json=payload)
+        result_shape: _ResultShape = "true" if method in _TRUE_RESULT_METHODS else "message"
+        return await self._request(method, json=payload, result_shape=result_shape)
 
     async def _api_upload(
         self, method: str, data: dict[str, Any], files: dict[str, Any]
     ) -> ProviderResult:
         """Multipart variant for sending file bytes (sendDocument/sendPhoto)."""
-        return await self._request(method, data=data, files=files)
+        return await self._request(method, data=data, files=files, result_shape="message")
 
     async def _request(
         self,
@@ -324,6 +344,7 @@ class TelegramBotAPI:
         data: dict[str, Any] | None = None,
         files: dict[str, Any] | None = None,
         want_result: bool = False,
+        result_shape: _ResultShape | None = None,
     ) -> ProviderResult:
         url = f"{self._config.base_url}/{method}"
         try:
@@ -354,15 +375,54 @@ class TelegramBotAPI:
             # ProviderResult, so this cannot be allowed to escape as an exception.
             return ProviderResult(success=False, error="invalid_response")
 
+        if not isinstance(body, dict):
+            return ProviderResult(success=False, error="invalid_response")
+        if body.get("ok") is not True:
+            error_code = body.get("error_code")
+            description = body.get("description")
+            if not isinstance(error_code, int) or isinstance(error_code, bool):
+                return ProviderResult(success=False, error="invalid_response")
+            return ProviderResult(
+                success=False,
+                error=f"telegram_{error_code}",
+                metadata={"description": description if isinstance(description, str) else ""},
+            )
+        if "result" not in body:
+            return ProviderResult(success=False, error="invalid_response")
+
         # A send answers with a Message object; the rest answer with a bare
         # ``true``, a list of updates, or the bot itself. Only a Message has an
         # id to carry, so reach for one only when the result is shaped like one.
         result = body.get("result")
+        if result_shape is not None and not self._valid_result(result, result_shape):
+            return ProviderResult(success=False, error="invalid_response")
         message_id = str(result.get("message_id", "")) if isinstance(result, dict) else ""
         return ProviderResult(
             success=True,
             provider_message_id=message_id,
             metadata={"result": result} if want_result else {},
+        )
+
+    @staticmethod
+    def _valid_result(result: Any, shape: _ResultShape) -> bool:
+        """Validate the operation-specific success payload Telegram promises."""
+
+        def is_int(value: Any) -> bool:
+            return isinstance(value, int) and not isinstance(value, bool)
+
+        if shape == "true":
+            return result is True
+        if shape == "message":
+            return isinstance(result, dict) and is_int(result.get("message_id"))
+        if shape == "bot":
+            return (
+                isinstance(result, dict)
+                and is_int(result.get("id"))
+                and isinstance(result.get("is_bot"), bool)
+                and isinstance(result.get("first_name"), str)
+            )
+        return isinstance(result, list) and all(
+            isinstance(update, dict) and is_int(update.get("update_id")) for update in result
         )
 
     @staticmethod

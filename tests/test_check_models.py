@@ -128,6 +128,27 @@ def test_missing_reports_a_newer_upstream_model_in_a_known_family(
     assert found.missing and "acme-2" in found.missing[0]
 
 
+def test_missing_compares_recency_within_each_known_family(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A newer alpha model must not hide a missing beta model."""
+    name = _catalog(
+        monkeypatch,
+        ModelInfo(id="alpha-2", context_window=200_000),
+        ModelInfo(id="beta-1", context_window=200_000),
+    )
+    found = _check(
+        name,
+        [
+            _upstream("vendor/alpha-2", created=600),
+            _upstream("vendor/beta-1", created=100),
+            _upstream("vendor/beta-2", created=500),
+        ],
+    )
+
+    assert found.missing and "beta-2" in found.missing[0]
+
+
 def test_missing_ignores_an_unrelated_family(monkeypatch: pytest.MonkeyPatch) -> None:
     # A vendor's open-weights line lives in the same namespace as its hosted
     # API models; only one of them belongs in the catalog.

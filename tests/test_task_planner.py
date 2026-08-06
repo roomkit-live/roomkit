@@ -6,7 +6,14 @@ import json
 from unittest.mock import AsyncMock
 
 from roomkit.channels._task_planner import TaskPlanner
+from roomkit.channels.ai import AIChannel
+from roomkit.models.channel import ChannelBinding
+from roomkit.models.context import RoomContext
+from roomkit.models.enums import ChannelCategory, ChannelType
+from roomkit.models.room import Room
 from roomkit.providers.ai.base import AITool
+from roomkit.providers.ai.mock import MockAIProvider
+from tests.conftest import make_event
 
 # ===========================================================================
 # tool_definition
@@ -61,6 +68,51 @@ class TestHandlePlanTasks:
 
         assert planner.current_plan == tasks
 
+    async def test_plans_are_isolated_by_room(self) -> None:
+        planner = TaskPlanner()
+        room_a = [{"title": "Secret A", "status": "pending"}]
+        room_b = [{"title": "Work B", "status": "in_progress"}]
+
+        await planner.handle_plan_tasks({"tasks": room_a}, room_id="room-a")
+        await planner.handle_plan_tasks({"tasks": room_b}, room_id="room-b")
+
+        assert planner.plan_for("room-a") == room_a
+        assert planner.plan_for("room-b") == room_b
+        assert planner.current_plan is None
+
+    async def test_build_context_never_injects_another_rooms_plan(self) -> None:
+        channel = AIChannel("ai", provider=MockAIProvider(), enable_planning=True)
+        assert channel._planner is not None
+        await channel._planner.handle_plan_tasks(
+            {"tasks": [{"title": "Secret A", "status": "pending"}]},
+            room_id="room-a",
+        )
+        binding = ChannelBinding(
+            channel_id="ai",
+            room_id="room-b",
+            channel_type=ChannelType.AI,
+            category=ChannelCategory.INTELLIGENCE,
+        )
+
+        context = await channel._build_context(
+            make_event(room_id="room-b", body="hello", channel_id="sms"),
+            binding,
+            RoomContext(room=Room(id="room-b")),
+        )
+
+        assert "Secret A" not in (context.system_prompt or "")
+
+    async def test_room_plan_memory_is_bounded_by_recency(self) -> None:
+        planner = TaskPlanner()
+        for index in range(101):
+            await planner.handle_plan_tasks(
+                {"tasks": [{"title": str(index), "status": "pending"}]},
+                room_id=f"room-{index}",
+            )
+
+        assert planner.plan_for("room-0") is None
+        assert planner.plan_for("room-100") == [{"title": "100", "status": "pending"}]
+
     async def test_returns_json_with_counts(self) -> None:
         planner = TaskPlanner()
         tasks = [
@@ -95,6 +147,33 @@ class TestHandlePlanTasks:
 
         assert data["task_count"] == 0
         assert planner.current_plan == []
+
+    async def test_malformed_plan_does_not_poison_existing_room_state(self) -> None:
+        planner = TaskPlanner()
+        valid = [{"title": "Keep working", "status": "in_progress"}]
+        await planner.handle_plan_tasks({"tasks": valid}, room_id="room-1")
+
+        for malformed in (
+            "not-an-array",
+            ["not-an-object"],
+            [{"title": 42, "status": "pending"}],
+            [{"title": "Bad status", "status": "unknown"}],
+            [{"title": "Unhashable status", "status": ["pending"]}],
+        ):
+            result = await planner.handle_plan_tasks({"tasks": malformed}, room_id="room-1")
+            assert "error" in json.loads(result)
+            assert planner.plan_for("room-1") == valid
+
+        assert "Keep working" in TaskPlanner.format_plan_prompt(planner.plan_for("room-1") or [])
+
+    async def test_stored_plan_does_not_alias_the_callers_task_dicts(self) -> None:
+        planner = TaskPlanner()
+        tasks = [{"title": "Original", "status": "pending"}]
+
+        await planner.handle_plan_tasks({"tasks": tasks}, room_id="room-1")
+        tasks[0]["title"] = "Mutated later"
+
+        assert planner.plan_for("room-1") == [{"title": "Original", "status": "pending"}]
 
     async def test_publishes_ephemeral_event(self) -> None:
         planner = TaskPlanner()

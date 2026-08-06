@@ -13,6 +13,7 @@ application's call; whether it was *asked* is this module's.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 
@@ -36,6 +37,13 @@ def entity_text(text: str, entity: dict[str, Any]) -> str:
     """
     offset = entity.get("offset", 0)
     length = entity.get("length", 0)
+    if (
+        not isinstance(offset, int)
+        or isinstance(offset, bool)
+        or not isinstance(length, int)
+        or isinstance(length, bool)
+    ):
+        return ""
     if offset < 0 or length < 0:
         # Telegram never sends these, but the entities reaching mentions_bot are
         # composed by someone else's client. A negative bound would slice from
@@ -57,10 +65,9 @@ def mentions_bot(
     reach a bot in a room full of people:
 
     1. A reply to a message the bot itself sent.
-    2. A ``bot_command`` entity. Telegram routes commands itself — under
-       privacy mode a one-bot group delivers every ``/cmd``, a multi-bot group
-       only the ``/cmd@thisbot`` form — so anything delivered as a command was
-       meant for this bot.
+    2. An unqualified ``bot_command`` entity, or one whose ``@username`` suffix
+       names this bot. Administrators and bots without privacy mode can receive
+       commands addressed to other bots, so delivery alone is not attribution.
     3. A ``mention`` entity whose text is ``@bot_username``.
     4. A ``text_mention`` entity naming the bot's user id — how a mention of an
        account with no username is carried.
@@ -85,24 +92,54 @@ def mentions_bot(
     if not bot_username and bot_id is None:
         return False
 
-    reply_from = (msg.get("reply_to_message") or {}).get("from") or {}
+    reply = msg.get("reply_to_message")
+    reply = reply if isinstance(reply, dict) else {}
+    reply_from = reply.get("from")
+    reply_from = reply_from if isinstance(reply_from, dict) else {}
     if bot_id is not None and reply_from.get("id") == bot_id:
         return True
 
-    text = msg.get("text") or msg.get("caption") or ""
-    handle = f"@{bot_username}".lower() if bot_username else None
+    text = msg.get("text")
+    if not isinstance(text, str):
+        text = msg.get("caption")
+    text = text if isinstance(text, str) else ""
+    username = bot_username.removeprefix("@") if bot_username else None
+    handle = f"@{username}" if username else None
 
-    for entity in msg.get("entities") or msg.get("caption_entities") or []:
+    entities = msg.get("entities") or msg.get("caption_entities") or []
+    entities = entities if isinstance(entities, list) else []
+    for entity in entities:
+        if not isinstance(entity, dict):
+            continue
         etype = entity.get("type")
         if etype == "bot_command":
+            command = entity_text(text, entity)
+            _, separator, target = command.partition("@")
+            if not separator:
+                if command:
+                    return True
+                continue
+            if username and target.casefold() == username.casefold():
+                return True
+            continue
+        if (
+            etype == "mention"
+            and handle
+            and entity_text(text, entity).casefold() == handle.casefold()
+        ):
             return True
-        if etype == "mention" and handle and entity_text(text, entity).lower() == handle:
-            return True
+        user = entity.get("user")
         if (
             etype == "text_mention"
             and bot_id is not None
-            and ((entity.get("user") or {}).get("id") == bot_id)
+            and isinstance(user, dict)
+            and user.get("id") == bot_id
         ):
             return True
 
-    return bool(handle and handle in text.lower())
+    if handle is None:
+        return False
+    # Telegram usernames contain ASCII letters, digits, and underscores. The
+    # boundaries prevent @demo_bot from matching @demo_bot_extra or an email.
+    pattern = rf"(?<![A-Za-z0-9_]){re.escape(handle)}(?![A-Za-z0-9_])"
+    return re.search(pattern, text, flags=re.IGNORECASE) is not None

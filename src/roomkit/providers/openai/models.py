@@ -24,8 +24,9 @@ Prices are the standard synchronous rates from OpenAI's pricing page
 column, which is half of them, and not Flex. ``cache_read`` is OpenAI's
 cached-input rate, applied automatically to a repeated prefix; the ``pro``
 tiers publish none because they do not cache. GPT-5.6 also publishes an
-explicit cache-write rate and higher prices beyond 272k input tokens; both
-are represented in its entries. Earlier models leave ``cache_write`` unset.
+explicit cache-write rate. Sol and Terra have higher prices beyond 272k input
+tokens; Luna has a smaller 400k context and no published long-context tier.
+Earlier models leave ``cache_write`` unset.
 """
 
 from __future__ import annotations
@@ -73,16 +74,13 @@ MODELS: list[ModelInfo] = [
     ModelInfo(
         id="gpt-5.6-luna",
         display_name="GPT-5.6 Luna",
-        context_window=_CTX_1M,
+        context_window=400_000,
         supports_vision=True,
         pricing=ModelPricing(
             input_per_million=0.2,
             output_per_million=1.2,
             cache_read_per_million=0.02,
             cache_write_per_million=0.25,
-            long_context_threshold_tokens=272_000,
-            long_context_input_multiplier=2.0,
-            long_context_output_multiplier=1.5,
             verified=_VERIFIED,
         ),
     ),

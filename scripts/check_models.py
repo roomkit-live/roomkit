@@ -25,8 +25,8 @@ Reported:
            failure that bills the wrong amount. A non-zero upstream rate that
            the catalog leaves unset is also reported, unless the units are
            explicitly known to be incomparable.
-  MISSING  an upstream model newer than everything the catalog knows, in a
-           family the catalog already tracks — i.e. the vendor moved on.
+  MISSING  an upstream model newer than everything the catalog knows in that
+           same family — i.e. the vendor moved on.
   GONE     a non-deprecated catalog id upstream no longer lists — a candidate
            retirement, reported as a warning because a mirror lagging is at
            least as likely as a real removal.
@@ -82,6 +82,10 @@ _ROUTING_SUFFIXES = ("-fast",)
 # on one tier and not another: `gpt-5.5-pro` and `gpt-5.4-pro` are genuine
 # OpenAI ids, while the 5.6 tier ships no `-pro` id at all.
 MIRROR_ONLY: dict[str, str] = {
+    "openai/o4-mini-high": (
+        "reasoning-effort route; OpenAI's API catalog lists o4-mini and its dated snapshot, "
+        "not a separate -high model id (official model page, 2026-08-05)"
+    ),
     "openai/gpt-5.6-sol-pro": "no -pro id in OpenAI's 5.6 tier (pricing page, 2026-08-05)",
     "openai/gpt-5.6-terra-pro": "no -pro id in OpenAI's 5.6 tier (pricing page, 2026-08-05)",
     "openai/gpt-5.6-luna-pro": "no -pro id in OpenAI's 5.6 tier (pricing page, 2026-08-05)",
@@ -96,6 +100,9 @@ DELIBERATE: dict[str, str] = {
     # caller actually gets is the default 200K.
     "claude-sonnet-4-5": "200K is the no-beta default; mirror reports the 1M beta ceiling",
     "claude-sonnet-4-5-20250929": "200K is the no-beta default; mirror reports the beta ceiling",
+    # OpenRouter currently mirrors the Sol/Terra ceiling onto the whole 5.6
+    # family. OpenAI's migration guide gives Luna its smaller live limit.
+    "gpt-5.6-luna": "OpenAI documents 400K; mirror reports the 1.05M Sol/Terra ceiling",
     # Project Glasswing only — never published on a public aggregator.
     "claude-mythos-5": "Project Glasswing access only, absent from public mirrors",
     # xAI's dated variant ids; the mirror republishes only the undated forms.
@@ -283,8 +290,7 @@ def check_catalog(
         bare = raw if prefixed else raw[len(prefix) :]
         scope[normalize(bare)] = item
 
-    known_families = {family(normalize(m.id)) for m in curated}
-    newest_known = 0
+    newest_known_by_family: dict[str, int] = {}
 
     for model in curated:
         match = scope.get(normalize(model.id))
@@ -294,7 +300,11 @@ def check_catalog(
             elif not model.deprecated and not is_alias(model.id):
                 found.gone.append(f"{label}: {model.id} not listed upstream — retired?")
             continue
-        newest_known = max(newest_known, int(match.get("created") or 0))
+        model_family = family(normalize(model.id))
+        newest_known_by_family[model_family] = max(
+            newest_known_by_family.get(model_family, 0),
+            int(match.get("created") or 0),
+        )
         window = match.get("context_length")
         if model.id in DELIBERATE:
             found.expected += 1
@@ -312,12 +322,14 @@ def check_catalog(
             found.expected += expected_price_divergences(label, model, match)
             found.price.extend(price_findings(label, model, match))
 
-    if not (track_new and newest_known):
+    if not (track_new and newest_known_by_family):
         return found
 
     curated_ids = {normalize(m.id) for m in curated}
     for key, item in sorted(scope.items(), key=lambda kv: -int(kv[1].get("created") or 0)):
-        if key in curated_ids or family(key) not in known_families:
+        item_family = family(key)
+        newest_known = newest_known_by_family.get(item_family)
+        if key in curated_ids or newest_known is None:
             continue
         if key.endswith(_ROUTING_SUFFIXES):
             continue
@@ -326,7 +338,7 @@ def check_catalog(
             continue
         if int(item.get("created") or 0) > newest_known:
             found.missing.append(
-                f"{label}: {item['id']} is newer than anything in the catalog "
+                f"{label}: {item['id']} is newer than the catalogued {item_family} family "
                 f"(context {item.get('context_length'):,})"
             )
     return found

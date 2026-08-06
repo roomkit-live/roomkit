@@ -28,6 +28,7 @@ class TestPublicAPI:
     def test_core_classes_available(self) -> None:
         assert roomkit.RoomKit is not None
         assert roomkit.Channel is not None
+        assert roomkit.ModelPricing is not None
         assert roomkit.Room is not None
         assert roomkit.RoomEvent is not None
 

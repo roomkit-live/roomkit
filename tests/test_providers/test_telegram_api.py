@@ -65,6 +65,11 @@ class _ConnectionFailure(httpx.AsyncBaseTransport):
         raise httpx.ConnectError(f"could not connect to {request.url}", request=request)
 
 
+class _WrongJsonShape(httpx.AsyncBaseTransport):
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=["valid JSON", "wrong shape"], request=request)
+
+
 def _api(transport: httpx.AsyncBaseTransport) -> TelegramBotAPI:
     api = TelegramBotAPI(_config())
     api._client = httpx.AsyncClient(transport=transport)
@@ -113,6 +118,9 @@ class TestReads:
         await _api(transport).get_updates()
 
         assert transport.last_body == {"limit": 100}
+
+    async def test_get_file_ignores_valid_json_with_the_wrong_shape(self) -> None:
+        assert await _api(_WrongJsonShape()).get_file("file-1") is None
 
     async def test_a_list_result_does_not_become_a_message_id(self) -> None:
         """``result`` is a Message only for a send; reaching into a list would raise."""
@@ -330,6 +338,60 @@ class TestErrorShape:
 
         assert result.success is False
         assert result.error == "invalid_response"
+
+    async def test_valid_json_with_the_wrong_shape_is_invalid(self) -> None:
+        result = await _api(_WrongJsonShape()).get_me()
+
+        assert result.success is False
+        assert result.error == "invalid_response"
+
+    async def test_success_without_a_result_is_invalid(self) -> None:
+        result = await _api(
+            httpx.MockTransport(
+                lambda request: httpx.Response(200, json={"ok": True}, request=request)
+            )
+        ).get_me()
+
+        assert result.success is False
+        assert result.error == "invalid_response"
+
+    @pytest.mark.parametrize(
+        ("call", "wrong_result"),
+        [
+            (lambda api: api.get_me(), {"id": 42, "is_bot": True}),
+            (lambda api: api.get_updates(), {"update_id": 1}),
+            (lambda api: api.set_webhook("https://example.test/hook"), {"message_id": 1}),
+            (lambda api: api.send_message("1", "hi"), True),
+        ],
+    )
+    async def test_success_result_must_match_the_operation(
+        self, call: Any, wrong_result: Any
+    ) -> None:
+        result = await call(_api(_Recorder(result=wrong_result)))
+
+        assert result.success is False
+        assert result.error == "invalid_response"
+
+    async def test_updates_require_integer_update_ids(self) -> None:
+        result = await _api(_Recorder(result=[{"update_id": True}])).get_updates()
+
+        assert result.success is False
+        assert result.error == "invalid_response"
+
+    async def test_a_200_bot_api_refusal_is_still_a_failure(self) -> None:
+        result = await _api(
+            httpx.MockTransport(
+                lambda request: httpx.Response(
+                    200,
+                    json={"ok": False, "error_code": 429, "description": "Too Many Requests"},
+                    request=request,
+                )
+            )
+        ).get_me()
+
+        assert result.success is False
+        assert result.error == "telegram_429"
+        assert result.metadata["description"] == "Too Many Requests"
 
     async def test_a_transport_error_never_exposes_the_token_url(self) -> None:
         result = await _api(_ConnectionFailure()).get_me()

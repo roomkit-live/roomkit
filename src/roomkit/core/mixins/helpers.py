@@ -824,7 +824,7 @@ class HelpersMixin:
             await kit_ref._emit_framework_event(
                 "user_input_required",
                 room_id=event.room_id,
-                channel_id=channel_id,
+                channel_id=event.channel_id or channel_id,
                 data={
                     "pending_id": event.pending_id,
                     "tool_name": event.tool_name,

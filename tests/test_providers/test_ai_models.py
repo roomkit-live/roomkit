@@ -15,7 +15,7 @@ from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
-from pydantic import SecretStr
+from pydantic import SecretStr, ValidationError
 
 from roomkit.providers.ai import ModelInfo, ModelPricing
 from roomkit.providers.ai.base import AIContext, AIProvider, AIResponse
@@ -148,6 +148,40 @@ def test_cost_for_ignores_unknown_counters_and_missing_keys() -> None:
     assert p.cost_for({"reasoning_tokens": 5_000, "input_tokens": 1_000}) == pytest.approx(0.001)
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("input_per_million", -1),
+        ("output_per_million", float("inf")),
+        ("cache_read_per_million", -1),
+        ("cache_write_per_million", float("nan")),
+        ("long_context_threshold_tokens", 0),
+        ("long_context_input_multiplier", 0),
+        ("long_context_output_multiplier", -1),
+        ("currency", ""),
+    ],
+)
+def test_pricing_rejects_invalid_financial_fields(field: str, value: Any) -> None:
+    fields: dict[str, Any] = {
+        "input_per_million": 1.0,
+        "output_per_million": 1.0,
+        "verified": date(2026, 8, 5),
+        field: value,
+    }
+
+    with pytest.raises(ValidationError):
+        ModelPricing(**fields)
+
+
+@pytest.mark.parametrize("value", [-1, True, 1.5, "100"])
+def test_cost_for_rejects_invalid_usage_counters(value: Any) -> None:
+    p = ModelPricing(input_per_million=1.0, output_per_million=1.0, verified=date(2026, 8, 5))
+    usage: Any = {"input_tokens": value}
+
+    with pytest.raises(ValueError, match="non-negative integer"):
+        p.cost_for(usage)
+
+
 def test_merge_curated_backfills_pricing() -> None:
     class _Cat(AIProvider):
         @property
@@ -197,6 +231,16 @@ async def test_base_list_models_falls_back_to_curated() -> None:
 def test_context_window_resolves_from_catalog() -> None:
     # "mock" is in MockAIProvider's catalog with context_window=8192.
     assert MockAIProvider().context_window == 8192
+
+
+def test_openai_gpt_5_6_luna_has_its_smaller_untiered_context() -> None:
+    luna = next(
+        model for model in OpenAIAIProvider.available_models() if model.id == "gpt-5.6-luna"
+    )
+
+    assert luna.context_window == 400_000
+    assert luna.pricing is not None
+    assert luna.pricing.long_context_threshold_tokens is None
 
 
 def test_context_window_none_when_model_absent() -> None:

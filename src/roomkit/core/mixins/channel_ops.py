@@ -166,8 +166,8 @@ class ChannelOpsMixin(HelpersMixin):
 
             # Inject ON_USER_INPUT_REQUIRED hook into human input handler
             if channel._human_input_handler is not None:
-                channel._human_input_handler.handler._on_input_required = (
-                    self._build_on_user_input_required_hook(channel.channel_id)
+                channel._human_input_handler.handler._set_on_input_required(
+                    channel.channel_id, self._build_on_user_input_required_hook(channel.channel_id)
                 )
 
         # ACP agents own their tool loop, but use the same RoomKit permission
