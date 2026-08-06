@@ -803,3 +803,128 @@ class TestAnthropicToolResultImages:
         ).split_for_message()
         assert text == "[see image below]"
         assert images == [img]
+
+
+class TestPerRequestCredential:
+    """A credential carried by the turn, not baked into the shared provider.
+
+    The provider object is built once and shared by every conversation it
+    serves, so a key fixed at construction is everyone's key. When the
+    credential belongs to the individual asking (their own account), the host
+    leaves it on the context and the provider must honour it for that turn
+    alone.
+    """
+
+    @pytest.mark.asyncio
+    async def test_absent_metadata_uses_the_configured_client(self) -> None:
+        with patch.dict("sys.modules", {"anthropic": _mock_anthropic_module()}):
+            from roomkit.providers.anthropic.ai import AnthropicAIProvider
+
+            provider = AnthropicAIProvider(_config())
+            configured = MagicMock()
+            configured.messages.stream = MagicMock(return_value=_mock_stream(text="shared"))
+            provider._client = configured
+
+            result = await provider.generate(_context())
+
+            assert result.content == "shared"
+            assert provider._per_request_clients == {}
+
+    @pytest.mark.asyncio
+    async def test_a_turn_with_its_own_key_never_touches_the_shared_client(self) -> None:
+        with patch.dict("sys.modules", {"anthropic": _mock_anthropic_module()}):
+            from roomkit.providers.ai.base import API_KEY_METADATA_KEY
+            from roomkit.providers.anthropic.ai import AnthropicAIProvider
+
+            provider = AnthropicAIProvider(_config())
+            configured = MagicMock()
+            configured.messages.stream = MagicMock(return_value=_mock_stream(text="shared"))
+            provider._client = configured
+
+            personal = MagicMock()
+            personal.messages.stream = MagicMock(return_value=_mock_stream(text="mine"))
+            provider._build_client = MagicMock(return_value=personal)  # type: ignore[method-assign]
+
+            result = await provider.generate(
+                _context(metadata={API_KEY_METADATA_KEY: "sk-ant-personal"})
+            )
+
+            assert result.content == "mine"
+            provider._build_client.assert_called_once_with("sk-ant-personal")
+            # The shared credential must not have served this turn.
+            configured.messages.stream.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_the_same_key_reuses_its_client(self) -> None:
+        """Rebuilding per turn would discard the connection pool on every message."""
+        with patch.dict("sys.modules", {"anthropic": _mock_anthropic_module()}):
+            from roomkit.providers.ai.base import API_KEY_METADATA_KEY
+            from roomkit.providers.anthropic.ai import AnthropicAIProvider
+
+            provider = AnthropicAIProvider(_config())
+            provider._client = MagicMock()
+            built = []
+
+            def _build(key: str) -> MagicMock:
+                client = MagicMock()
+                client.messages.stream = MagicMock(return_value=_mock_stream(text=key))
+                built.append(key)
+                return client
+
+            provider._build_client = MagicMock(side_effect=_build)  # type: ignore[method-assign]
+
+            ctx = _context(metadata={API_KEY_METADATA_KEY: "sk-ant-personal"})
+            await provider.generate(ctx)
+            await provider.generate(_context(metadata={API_KEY_METADATA_KEY: "sk-ant-personal"}))
+
+            assert built == ["sk-ant-personal"]
+
+    @pytest.mark.asyncio
+    async def test_the_cache_is_bounded_and_closes_what_it_evicts(self) -> None:
+        """Otherwise a busy tenant pins one connection pool per member."""
+        with patch.dict("sys.modules", {"anthropic": _mock_anthropic_module()}):
+            from roomkit.providers.ai.base import API_KEY_METADATA_KEY
+            from roomkit.providers.anthropic.ai import (
+                _MAX_PER_REQUEST_CLIENTS,
+                AnthropicAIProvider,
+            )
+
+            provider = AnthropicAIProvider(_config())
+            provider._client = MagicMock()
+            closed: list[str] = []
+
+            def _build(key: str) -> MagicMock:
+                client = MagicMock()
+                client.messages.stream = MagicMock(return_value=_mock_stream())
+
+                async def _close() -> None:
+                    closed.append(key)
+
+                client.close = _close
+                return client
+
+            provider._build_client = MagicMock(side_effect=_build)  # type: ignore[method-assign]
+
+            for i in range(_MAX_PER_REQUEST_CLIENTS + 2):
+                await provider.generate(_context(metadata={API_KEY_METADATA_KEY: f"sk-{i}"}))
+
+            assert len(provider._per_request_clients) == _MAX_PER_REQUEST_CLIENTS
+            # The two oldest were evicted, oldest first, and actually closed.
+            assert closed == ["sk-0", "sk-1"]
+
+    @pytest.mark.asyncio
+    async def test_an_unusable_metadata_value_falls_back_rather_than_failing(self) -> None:
+        """metadata is an open bag: a non-string must not reach a client constructor."""
+        with patch.dict("sys.modules", {"anthropic": _mock_anthropic_module()}):
+            from roomkit.providers.ai.base import API_KEY_METADATA_KEY
+            from roomkit.providers.anthropic.ai import AnthropicAIProvider
+
+            provider = AnthropicAIProvider(_config())
+            configured = MagicMock()
+            configured.messages.stream = MagicMock(return_value=_mock_stream(text="shared"))
+            provider._client = configured
+
+            for bad in ({}, 42, "", None):
+                result = await provider.generate(_context(metadata={API_KEY_METADATA_KEY: bad}))
+                assert result.content == "shared"
+            assert provider._per_request_clients == {}

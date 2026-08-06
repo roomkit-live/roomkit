@@ -198,6 +198,37 @@ class AIContext(BaseModel):
     )
 
 
+API_KEY_METADATA_KEY = "api_key"
+"""``AIContext.metadata`` key holding the credential to use for *this* request.
+
+A provider is built once, and in a multi-tenant host the object it becomes is
+shared by every conversation it serves — so a key fixed at construction is
+necessarily everyone's key. When the credential belongs to the individual making
+the request (their own subscription or account, which sharing would violate),
+the host resolves it per turn and leaves it here instead, typically from a
+``BEFORE_AI_GENERATION`` hook: the same way it already attaches turn-level
+attribution through :attr:`AIContext.response_metadata`.
+
+Providers that honour it fall back to their configured key when the entry is
+absent, so a host that never sets it sees no change at all.
+"""
+
+
+def request_api_key(context: AIContext) -> str | None:
+    """Return the per-request credential carried by ``context``, or ``None``.
+
+    ``None`` means "use the configured key". An absent entry, an empty string
+    and a non-string value all collapse to it, because each is a host that did
+    not supply a usable credential for this turn — and because metadata is an
+    open bag, so a provider must not hand whatever it finds to a client
+    constructor.
+    """
+    value = context.metadata.get(API_KEY_METADATA_KEY)
+    if isinstance(value, str) and value:
+        return value
+    return None
+
+
 class AIResponse(BaseModel):
     """Response from an AI provider."""
 

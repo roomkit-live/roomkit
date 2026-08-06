@@ -25,6 +25,7 @@ from roomkit.providers.ai.base import (
     StreamTextDelta,
     StreamThinkingDelta,
     StreamToolCall,
+    request_api_key,
 )
 from roomkit.providers.anthropic.config import AnthropicConfig
 from roomkit.providers.anthropic.models import MODELS
@@ -35,6 +36,13 @@ from roomkit.providers.anthropic.models import MODELS
 # Claude 3 accepts image input, so the family prefix is the honest default;
 # a model that is genuinely in the catalog is answered from there instead.
 _VISION_PREFIXES = ("claude-",)
+
+# How many per-request clients to keep alive alongside the configured one.
+# Each holds an HTTP connection pool, so this is a memory/latency trade, not a
+# correctness one: an evicted key simply builds a fresh client next turn. Sized
+# for the realistic case — a handful of members in one room bringing their own
+# credential — rather than for a whole tenant, which would pin a pool per person.
+_MAX_PER_REQUEST_CLIENTS = 8
 
 
 class AnthropicAIProvider(AIProvider):
@@ -50,15 +58,50 @@ class AnthropicAIProvider(AIProvider):
             ) from exc
         self._config = config
         self._api_status_error = _anthropic.APIStatusError
+        self._anthropic = _anthropic
+        self._client = self._build_client(config.api_key.get_secret_value())
+        # Clients for credentials supplied per request (see ``request_api_key``),
+        # keyed by the credential itself. Insertion-ordered so the oldest is the
+        # one evicted; never holds the configured key, which ``self._client``
+        # already owns.
+        self._per_request_clients: dict[str, Any] = {}
+
+    def _build_client(self, api_key: str) -> Any:
+        """Build an Anthropic client for ``api_key`` with this provider's config."""
         client_kwargs: dict[str, Any] = {
-            "api_key": config.api_key.get_secret_value(),
-            "timeout": config.timeout,
+            "api_key": api_key,
+            "timeout": self._config.timeout,
         }
-        if config.base_url:
-            client_kwargs["base_url"] = config.base_url
-        if config.extra_headers:
-            client_kwargs["default_headers"] = config.extra_headers
-        self._client = _anthropic.AsyncAnthropic(**client_kwargs)
+        if self._config.base_url:
+            client_kwargs["base_url"] = self._config.base_url
+        if self._config.extra_headers:
+            client_kwargs["default_headers"] = self._config.extra_headers
+        return self._anthropic.AsyncAnthropic(**client_kwargs)
+
+    async def _client_for(self, context: AIContext) -> Any:
+        """The client this turn must use: the caller's credential, or the configured one.
+
+        The provider object is shared by every conversation it serves, so a turn
+        carrying its own credential cannot be served by the shared client. Clients
+        are cached per credential because building one per turn would throw away
+        the connection pool on every message; the oldest is evicted and closed
+        past ``_MAX_PER_REQUEST_CLIENTS`` so the cache cannot grow with the tenant.
+        """
+        api_key = request_api_key(context)
+        if api_key is None:
+            return self._client
+
+        cached = self._per_request_clients.get(api_key)
+        if cached is not None:
+            return cached
+
+        client = self._build_client(api_key)
+        self._per_request_clients[api_key] = client
+        while len(self._per_request_clients) > _MAX_PER_REQUEST_CLIENTS:
+            # dicts preserve insertion order, so the first key is the oldest.
+            evicted = self._per_request_clients.pop(next(iter(self._per_request_clients)))
+            await evicted.close()
+        return client
 
     @property
     def model_name(self) -> str:
@@ -286,6 +329,9 @@ class AnthropicAIProvider(AIProvider):
         before text deltas.
         """
         kwargs = self._build_kwargs(context)
+        # The one place the turn's credential is chosen. ``generate`` and
+        # ``generate_stream`` both consume this stream, so they inherit it.
+        client = await self._client_for(context)
         t0 = time.monotonic()
         first_token = True
 
@@ -294,7 +340,7 @@ class AnthropicAIProvider(AIProvider):
             _tool_blocks: dict[int, dict[str, Any]] = {}  # index → {id, name, input_json}
             _yielded_tool_ids: set[str] = set()
 
-            async with self._client.messages.stream(**kwargs) as stream:
+            async with client.messages.stream(**kwargs) as stream:
                 async for event in stream:
                     if not hasattr(event, "type"):
                         continue
@@ -431,5 +477,8 @@ class AnthropicAIProvider(AIProvider):
                 yield event.text
 
     async def close(self) -> None:
-        """Close the underlying HTTP client."""
+        """Close the configured client and every per-request one still cached."""
         await self._client.close()
+        for client in self._per_request_clients.values():
+            await client.close()
+        self._per_request_clients.clear()
