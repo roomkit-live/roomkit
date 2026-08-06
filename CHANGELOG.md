@@ -109,6 +109,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `sample_rate` field that the service silently ignores, so the config does not
   expose it; use a resampler stage when the transport needs another rate.
 
+- **An image can be shown to a live OpenAI Realtime session.** `inject_image`
+  was declared on the provider ABC and implemented only for Gemini Live, and
+  `RealtimeVoiceChannel` catches the resulting `NotImplementedError` and logs
+  it — so an image sent to an OpenAI session disappeared with a warning and no
+  error. `gpt-realtime-2.1` reads images, so the gap was the provider's, not
+  the model's.
+
+  The image travels as a data URI in a user message, alongside an optional text
+  prompt in the same item. PNG and JPEG are the only formats the API reads, and
+  an unsupported MIME type now fails immediately rather than on the wire.
+  `provider_config["image_detail"]` (`auto` | `low` | `high`) trades fidelity
+  for tokens; left unset the API's default applies, which resolves to high
+  detail — worth knowing on a session that injects frames repeatedly.
+
+  This is not the `video.vision` path: that one makes a separate model call and
+  returns text. This one puts the picture in the realtime model's own context,
+  next to the audio.
+
+  The implementation sits on the OpenAI provider rather than the shared
+  WebSocket base, so the xAI provider does not inherit a vision capability its
+  models have not been verified to accept.
+
 ### Changed
 
 - **The OpenAI Realtime provider defaults to `gpt-realtime-2.1`**, two
