@@ -9,6 +9,11 @@ Uses CLIChannel for interactive exploration. Try asking:
   - "Review this function: def get_user(id): return db.query(f'SELECT * FROM users WHERE id={id}')"
   - "Write tests for a function that validates email addresses"
 
+Then ask a follow-up in the same skill's area and watch the tool log: an
+activation lasts for the conversation, so the first activate_skill returns the
+skill's full instructions and any later one returns a short ack — the body has
+moved into the system prompt, where each turn's rebuild carries it for free.
+
 Run with:
     ANTHROPIC_API_KEY=sk-... uv run python examples/agent_skills.py
 """

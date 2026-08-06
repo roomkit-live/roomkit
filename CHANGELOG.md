@@ -227,6 +227,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **An activated skill was re-loaded, whole, on every turn.** `activate_skill`
+  returned the skill's full body every time it was called, and nothing in the
+  text channel remembered an activation past the turn that made it. Nothing
+  could: the rebuilt context carries message events, not tool calls, so the
+  body genuinely vanished between turns and a model still working on the task
+  obeyed the preamble and fetched it again. On a Luge onboarding room a 9 KB
+  skill cost 28 KB of reloading over three exchanges — more than the skill
+  itself, and enough to undo the trimming that had just been done to it. The
+  channel now records which skills a room activated and renders their bodies
+  into each turn's system prompt, so `activate_skill` answers later calls with
+  a short ack instead of the body, and the tools a skill gates stay revealed
+  across turns instead of re-hiding. This is the lifecycle the realtime channel
+  already ran per session, now specified in RFC §24.4. Losing the record
+  (restart, a channel object replaced) loses the prompt block with it, so the
+  next activation delivers the body again — the mechanism degrades to
+  reloading, it never leaves the model holding an ack with no rules. The record
+  is hydrated from the room's persisted tool-call history, keeps four skills
+  per room by recency, and is injected regardless of `skills_in_prompt`: that
+  flag governs the static catalogue, while active bodies are runtime state a
+  host cannot know.
+
+- **A large skill body could reach the model as a preview and a pointer.** Tool
+  results over `evict_threshold_tokens` are stored aside and replaced with a
+  head/tail preview plus a `read_stored_result` id — sound for data, wrong for
+  instructions: a skill past the threshold (~20 KB by default) had its binding
+  rules truncated into a summary the model was left to act on. `activate_skill`
+  results are now exempt. `read_skill_reference` still evicts, since a
+  reference is data and paginating data is what eviction is for.
+
 - **An OpenAI-compatible provider counted its cached prefix twice.**
   `prompt_tokens` includes the tokens read from cache, and RoomKit reported it
   as `input_tokens` while also reporting `cache_read_input_tokens` beside it —
