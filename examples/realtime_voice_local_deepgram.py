@@ -18,9 +18,18 @@ Requirements:
 Run with:
     DEEPGRAM_API_KEY=... uv run python examples/realtime_voice_local_deepgram.py
 
+In French — the three stages are set independently, and the prompt matters as much
+as the voice: an Aura French voice reading an English answer is still English.
+
+    DEEPGRAM_API_KEY=... DEEPGRAM_LANGUAGE=fr-CA DEEPGRAM_VOICE=aura-2-agathe-fr \
+    DEEPGRAM_GREETING="Bonjour ! Comment puis-je vous aider ?" \
+    SYSTEM_PROMPT="Tu es un assistant vocal. Réponds toujours en français, brièvement." \
+    uv run python examples/realtime_voice_local_deepgram.py
+
 Environment variables:
     DEEPGRAM_API_KEY      (required) Deepgram API key
     DEEPGRAM_VOICE        Aura voice (default: aura-2-thalia-en)
+    DEEPGRAM_LANGUAGE     Transcription language, e.g. fr-CA (default: the model's own)
     DEEPGRAM_LISTEN_MODEL Speech-to-text model (default: nova-3)
     DEEPGRAM_THINK_MODEL  LLM model (default: gpt-4o-mini)
     DEEPGRAM_GREETING     Line the agent speaks first (default: a short hello)
@@ -71,6 +80,7 @@ async def main() -> None:
     config = DeepgramAgentConfig(
         api_key=env["DEEPGRAM_API_KEY"],
         listen_model=os.environ.get("DEEPGRAM_LISTEN_MODEL", "nova-3"),
+        listen_language=os.environ.get("DEEPGRAM_LANGUAGE"),
         think_model=os.environ.get("DEEPGRAM_THINK_MODEL", "gpt-4o-mini"),
         speak_model=os.environ.get("DEEPGRAM_VOICE", "aura-2-thalia-en"),
         greeting=os.environ.get("DEEPGRAM_GREETING", "Hi! What can I do for you?"),
