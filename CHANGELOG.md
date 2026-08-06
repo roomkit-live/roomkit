@@ -58,6 +58,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`AIChannel`, `VoiceChannel`, `RealtimeVoiceChannel` and `WebSocketChannel`
+  now import from `roomkit.channels`** — where the eleven transport-channel
+  factories already lived. The four channel classes were reachable only from
+  the top-level package, with nothing marking the difference, so
+  `from roomkit.channels import AIChannel` raised `ImportError` while the
+  `SMSChannel` on the line next to it worked.
+
+  Purely additive, and free: importing `roomkit.channels` already executes the
+  top-level `__init__`, which already imports all four. Both entry points
+  return the same object, and a test now asserts that so they cannot drift.
+
 - **Deepgram Voice Agent as a speech-to-speech provider** —
   `DeepgramAgentProvider` in `roomkit.providers.deepgram`, on the new
   `realtime-deepgram` extra (`websockets` only — no SDK).
