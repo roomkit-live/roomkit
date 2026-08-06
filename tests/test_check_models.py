@@ -232,9 +232,38 @@ def test_matching_rates_are_not_a_finding(monkeypatch: pytest.MonkeyPatch) -> No
     assert not found.errors
 
 
-def test_a_rate_the_catalog_leaves_unset_is_not_compared(monkeypatch: pytest.MonkeyPatch) -> None:
-    # Google bills cache by storage-hour; the mirror flattens that into a
-    # per-token figure. Leaving the field unset states that, and is not drift.
+def test_a_nonzero_rate_the_catalog_leaves_unset_is_a_finding(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    name = _catalog(
+        monkeypatch,
+        ModelInfo(id="acme-1", context_window=200_000, pricing=_priced(input=1.5, output=7.5)),
+    )
+    found = _check(
+        name,
+        [
+            _upstream(
+                "vendor/acme-1",
+                pricing={
+                    "prompt": "0.0000015",
+                    "completion": "0.0000075",
+                    "input_cache_write": "0.0000000833",
+                },
+            )
+        ],
+    )
+    assert found.price
+    assert "has no cache write rate" in found.price[0]
+
+
+def test_an_explicitly_uncomparable_rate_is_not_a_finding(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setitem(
+        check_models.UNCOMPARABLE_PRICE_FIELDS,
+        ("fake", "input_cache_write"),
+        "different units",
+    )
     name = _catalog(
         monkeypatch,
         ModelInfo(id="acme-1", context_window=200_000, pricing=_priced(input=1.5, output=7.5)),
@@ -253,6 +282,35 @@ def test_a_rate_the_catalog_leaves_unset_is_not_compared(monkeypatch: pytest.Mon
         ],
     )
     assert not found.errors
+    assert found.expected == 1
+
+
+def test_a_deliberately_normalized_field_does_not_hide_other_rates(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setitem(
+        check_models.PRICE_FIELD_DELIBERATE,
+        ("fake", "acme-1", "input_cache_write"),
+        "upstream quotes only a premium",
+    )
+    model = ModelInfo(
+        id="acme-1",
+        pricing=_priced(input=1.5, output=7.5, cache_write=1.6),
+    )
+    upstream = _upstream(
+        "vendor/acme-1",
+        pricing={
+            "prompt": "0.0000015",
+            "completion": "0.000008",
+            "input_cache_write": "0.0000001",
+        },
+    )
+
+    findings = check_models.price_findings("fake", model, upstream)
+
+    assert len(findings) == 1
+    assert "output" in findings[0]
+    assert check_models.expected_price_divergences("fake", model, upstream) == 1
 
 
 def test_a_rate_upstream_does_not_quote_is_not_compared(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -349,3 +349,9 @@ participants = await kit.store.list_participants("room-id")
 # Query event timeline
 events = await kit.get_timeline("room-id", offset=0, limit=50)
 ```
+
+A participant is one shared record per `(room_id, participant_id)`, even when
+`connected_via` names several channels. Its `status` is therefore global to the
+record, not per-channel presence. When two channel memberships have independent
+connect/disconnect lifecycles, give them distinct participant ids and correlate
+them through `identity_id`.

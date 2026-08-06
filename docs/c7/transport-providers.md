@@ -171,6 +171,10 @@ telegram = TelegramChannel("telegram", provider=TelegramBotProvider(TelegramConf
 
 Webhook parser: `parse_telegram_webhook(request_data, channel_id="telegram")` — returns `list[InboundMessage]`.
 
+Inbound `external_id` and `idempotency_key` are `<chat_id>:<message_id>` because
+Telegram message ids are chat-local. Malformed nested objects and invalid
+coordinates are rejected at the webhook boundary.
+
 - Inbound media (`photo`, `voice`, `audio`, `video_note`, `video`, `document`) parses to a `TextContent` whose body is the caption — empty when there is none, as on a voice note — plus `metadata["file_id"]` and `metadata["media_type"]`, and whichever of `duration`, `mime_type`, `file_name`, `file_size` Telegram sent.
 - `parse_telegram_message(msg)` is the layer below: it reads a Telegram `message` into `TelegramMessageParts` (content, metadata, `message_id`, `sender_id`) and attributes nothing. `parse_telegram_webhook` is that function plus the ordinary attribution — the sender is `message.from.id`. Use the lower one when your identity model is not Telegram's (a one-bot-per-user deployment attributes a DM to the bot's owner), so that reading a `file_id` never costs you your identity model.
 - Resolving that `file_id` to bytes belongs to the provider, which holds the bot token: `path = await provider.get_file(file_id)` then `data = await provider.download_file(path)`. Both return `None` on failure and log a warning that never carries the URL (every Bot API URL embeds the token). Telegram caps Bot API downloads at 20 MB and refuses larger files at the `getFile` step; `metadata["file_size"]` tells you before you spend the call.
@@ -188,7 +192,7 @@ await provider.answer_callback_query(cq.id, "Approved.")
 await provider.edit_message_text(chat, msg_id, "Approved", reply_markup={"inline_keyboard": []})
 ```
 
-Also `get_updates`, `delete_webhook`, `leave_chat`, `send_message` (plain text, no Markdown pass), `send_force_reply` (its `provider_message_id` is what a later reply is matched against), `send_chat_action` and `edit_message_reply_markup`. Every call answers with a `ProviderResult`: `telegram_<code>` / `http_<status>` / `timeout`, and Telegram's own words under `metadata["description"]`.
+Also `get_updates`, `delete_webhook`, `leave_chat`, `send_message` (plain text, no Markdown pass), `send_force_reply` (its `provider_message_id` is what a later reply is matched against), `send_chat_action` and `edit_message_reply_markup`. Every call answers with a `ProviderResult`: `telegram_<code>` / `http_<status>` / `timeout` / a safe transport exception class, and Telegram's own words under `metadata["description"]`. Transport errors never echo the token-bearing request URL.
 
 Update reading is two levels. `parse_telegram_update(payload)` says which form arrived — a `message`, an `edited_message` (same shape, `edited=True`), or a `callback_query` parsed into a `TelegramCallback` (`id`, `data`, `sender_id`, `chat_id`, `message_id`, `message_text`). `callback_data` is posted by whoever pressed the button, so treat what it names as a claim to check.
 

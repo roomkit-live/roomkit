@@ -22,9 +22,9 @@ Reported:
            actively wrong number, the one failure that silently mistrims
            conversation history.
   PRICE    a rate the catalog states and upstream quotes differently — the
-           failure that bills the wrong amount. Only rates the catalog
-           actually states are compared: an unset one says "not billed per
-           token here", which is a claim about the vendor, not a number.
+           failure that bills the wrong amount. A non-zero upstream rate that
+           the catalog leaves unset is also reported, unless the units are
+           explicitly known to be incomparable.
   MISSING  an upstream model newer than everything the catalog knows, in a
            family the catalog already tracks — i.e. the vendor moved on.
   GONE     a non-deprecated catalog id upstream no longer lists — a candidate
@@ -114,6 +114,28 @@ PRICE_DELIBERATE: dict[str, str] = {
     "gpt-5.6-luna": "mirror quotes the Batch rate; roomkit bills the standard one",
 }
 
+# Per-field normalization where the upstream pricing object quotes only one
+# component but RoomKit's disjoint usage counter must carry the complete charge.
+PRICE_FIELD_DELIBERATE: dict[tuple[str, str, str], str] = {
+    (
+        "openrouter",
+        "google/gemini-3.6-flash",
+        "input_cache_write",
+    ): "upstream quotes the 5-minute storage premium; RoomKit adds ordinary input",
+    (
+        "openrouter",
+        "google/gemini-3.5-flash",
+        "input_cache_write",
+    ): "upstream quotes the 5-minute storage premium; RoomKit adds ordinary input",
+}
+
+# Upstream sometimes squeezes a charge with different units into its token
+# pricing object. Those values cannot populate ModelPricing without producing
+# a dimensionally wrong cost. Keep exceptions narrow: provider + exact field.
+UNCOMPARABLE_PRICE_FIELDS: dict[tuple[str, str], str] = {
+    ("gemini", "input_cache_write"): "Google bills cache storage by token-hour, not per write",
+}
+
 # (ModelPricing attribute, upstream pricing key, label) — upstream quotes USD
 # per token, the catalog quotes USD per million.
 _PRICE_FIELDS = (
@@ -139,8 +161,8 @@ class Findings:
     gone: list[str] = field(default_factory=list)
     expected: int = 0
     """Divergences suppressed by ``DELIBERATE`` / ``MIRROR_ONLY`` /
-    ``PRICE_DELIBERATE``. Counted so a growing pile of exceptions stays visible
-    instead of hiding in the source."""
+    ``PRICE_DELIBERATE`` / the field-level price exceptions. Counted so a
+    growing pile of exceptions stays visible instead of hiding in the source."""
 
     @property
     def errors(self) -> list[str]:
@@ -174,26 +196,53 @@ def family(model_id: str) -> str:
 def price_findings(label: str, model: ModelInfo, upstream: dict[str, Any]) -> list[str]:
     """Compare the rates a catalog entry states against upstream's quote.
 
-    Only stated rates are compared. A ``None`` in the catalog means "this
-    vendor does not bill that per token" — OpenAI charges nothing to write a
-    cache, Google bills its cache by storage-hour — and upstream flattening
-    those into a per-token figure is not a disagreement about a number.
+    A positive upstream quote that the catalog leaves unset is a finding. The
+    only exceptions are explicit provider/field pairs whose units cannot be
+    represented by :class:`ModelPricing`.
     """
     if model.pricing is None:
         return []
     quoted = upstream.get("pricing") or {}
     findings: list[str] = []
     for attribute, key, name in _PRICE_FIELDS:
+        if (label, model.id, key) in PRICE_FIELD_DELIBERATE:
+            continue
         ours = getattr(model.pricing, attribute)
         theirs = quoted.get(key)
-        if ours is None or theirs in (None, ""):
+        if theirs in (None, ""):
             continue
         upstream_rate = float(theirs) * 1_000_000
+        if ours is None:
+            if upstream_rate == 0 or (label, key) in UNCOMPARABLE_PRICE_FIELDS:
+                continue
+            findings.append(
+                f"{label}: {model.id} has no {name} rate but upstream quotes ${upstream_rate:g}/M"
+            )
+            continue
         if not math.isclose(ours, upstream_rate, rel_tol=1e-6):
             findings.append(
                 f"{label}: {model.id} {name} ${ours:g}/M but upstream quotes ${upstream_rate:g}/M"
             )
     return findings
+
+
+def expected_price_divergences(label: str, model: ModelInfo, upstream: dict[str, Any]) -> int:
+    """Count explicit field-level suppressions that apply to this quote."""
+    if model.pricing is None:
+        return 0
+    quoted = upstream.get("pricing") or {}
+    expected = 0
+    for attribute, key, _name in _PRICE_FIELDS:
+        theirs = quoted.get(key)
+        if theirs in (None, ""):
+            continue
+        if (label, model.id, key) in PRICE_FIELD_DELIBERATE or (
+            getattr(model.pricing, attribute) is None
+            and float(theirs) != 0
+            and (label, key) in UNCOMPARABLE_PRICE_FIELDS
+        ):
+            expected += 1
+    return expected
 
 
 def fetch_upstream(url: str = UPSTREAM_URL, timeout: float = 30.0) -> list[dict[str, Any]]:
@@ -260,6 +309,7 @@ def check_catalog(
         if model.id in PRICE_DELIBERATE:
             found.expected += 1
         else:
+            found.expected += expected_price_divergences(label, model, match)
             found.price.extend(price_findings(label, model, match))
 
     if not (track_new and newest_known):

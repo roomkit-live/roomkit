@@ -43,6 +43,11 @@ class TestUpdateForms:
     def test_an_empty_payload(self) -> None:
         assert parse_telegram_update({}) is None
 
+    def test_malformed_nested_forms_are_ignored(self) -> None:
+        assert parse_telegram_update({"message": "not-an-object"}) is None
+        assert parse_telegram_update({"edited_message": []}) is None
+        assert parse_telegram_update({"callback_query": "not-an-object"}) is None
+
 
 class TestCallback:
     def test_reads_the_press_and_the_message_it_hangs_off(self) -> None:
@@ -84,3 +89,12 @@ class TestCallback:
         callback = parse_telegram_callback({"id": "cq-4", "data": "a:x", "from": {"id": 999}})
 
         assert callback.sender_id == "999"
+
+    def test_malformed_nested_callback_objects_do_not_raise(self) -> None:
+        callback = parse_telegram_callback(
+            {"id": "cq-5", "from": "bad", "message": {"chat": "bad", "text": []}}
+        )
+
+        assert callback.sender_id == ""
+        assert callback.chat_id == ""
+        assert callback.message_text == ""

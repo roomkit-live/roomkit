@@ -82,6 +82,7 @@ def _stream_events(
     finish_reason: str = "stop",
     prompt_tokens: int = 10,
     completion_tokens: int = 25,
+    cached_tokens: int | None = None,
 ) -> _FakeStream:
     """Build a fake Mistral stream from text chunks and/or tool calls."""
     events: list[SimpleNamespace] = []
@@ -141,6 +142,11 @@ def _stream_events(
                 usage=SimpleNamespace(
                     prompt_tokens=prompt_tokens,
                     completion_tokens=completion_tokens,
+                    prompt_tokens_details=(
+                        None
+                        if cached_tokens is None
+                        else SimpleNamespace(cached_tokens=cached_tokens)
+                    ),
                 ),
             )
         )
@@ -202,6 +208,26 @@ class TestMistralAIProvider:
             result = await provider.generate(_context())
 
             assert result.usage == {"input_tokens": 42, "output_tokens": 7}
+
+    @pytest.mark.asyncio
+    async def test_generate_reports_cached_input_separately(self) -> None:
+        with patch.dict("sys.modules", _mistral_modules()):
+            from roomkit.providers.mistral.ai import MistralAIProvider
+
+            provider = MistralAIProvider(_config())
+            provider._client.chat.stream_async.return_value = _stream_events(
+                text_chunks=["hi"],
+                prompt_tokens=1_000,
+                completion_tokens=7,
+                cached_tokens=900,
+            )
+            result = await provider.generate(_context())
+
+            assert result.usage == {
+                "input_tokens": 100,
+                "output_tokens": 7,
+                "cache_read_input_tokens": 900,
+            }
 
     @pytest.mark.asyncio
     async def test_generate_with_tools(self) -> None:

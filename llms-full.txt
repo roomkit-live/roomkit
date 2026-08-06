@@ -396,7 +396,7 @@ kit.register_channel(ws)
 
 # Intelligence channel (AI)
 ai = AIChannel("ai", provider=AnthropicAIProvider(AnthropicConfig(
-    api_key="sk-ant-...", model="claude-sonnet-4-20250514",
+    api_key="sk-ant-...", model="claude-opus-5",
 )))
 kit.register_channel(ai)
 
@@ -577,7 +577,7 @@ sms = SMSChannel("sms-main", provider=TwilioSMSProvider(TwilioConfig(
 )))
 ai = AIChannel("ai-agent", provider=AnthropicAIProvider(AnthropicConfig(
     api_key="sk-ant-...",
-    model="claude-sonnet-4-20250514",
+    model="claude-opus-5",
 )))
 
 kit.register_channel(sms)
@@ -836,6 +836,12 @@ participants = await kit.store.list_participants("room-id")
 # Query event timeline
 events = await kit.get_timeline("room-id", offset=0, limit=50)
 ```
+
+A participant is one shared record per `(room_id, participant_id)`, even when
+`connected_via` names several channels. Its `status` is therefore global to the
+record, not per-channel presence. When two channel memberships have independent
+connect/disconnect lifecycles, give them distinct participant ids and correlate
+them through `identity_id`.
 ---
 
 Hooks intercept events at specific points in the processing pipeline. They can block messages, modify content, trigger side effects, or observe the conversation.
@@ -1223,7 +1229,7 @@ ai = AIChannel(
     "ai-assistant",
     provider=AnthropicAIProvider(AnthropicConfig(
         api_key="sk-ant-...",
-        model="claude-sonnet-4-20250514",
+        model="claude-opus-5",
     )),
     system_prompt="You are a helpful customer support agent.",
     temperature=0.7,
@@ -1253,6 +1259,13 @@ await kit.attach_channel("support", "ai-assistant", category=ChannelCategory.INT
 
 Provider notes:
 
+- **Modern official defaults** — `OpenAIConfig()` automatically uses
+  `max_completion_tokens` and omits custom temperature for current GPT-5 and
+  o-series ids. `AnthropicConfig()` automatically uses adaptive thinking and
+  omits temperature for current Claude reasoning ids. Explicit flags take
+  precedence, and a custom `base_url` keeps conservative legacy behavior for
+  compatible servers.
+
 - **Gemini on Vertex AI** (`roomkit.providers.gemini.vertex`) — subclass of `GeminiAIProvider` serving the same Gemini models through a Google Cloud project with a pinned region (`GeminiVertexConfig` requires `project` and `location`, e.g. `"northamerica-northeast1"`; auth is ADC, no API key). Use it when data residency matters (Québec Law 25 / PIPEDA). Generation, streaming, thinking, and the model catalog are inherited unchanged.
 - **OpenRouter** (`roomkit.providers.openrouter`) — subclass of `OpenAIAIProvider` pointed at `https://openrouter.ai/api/v1`; `OpenRouterConfig` subclasses `OpenAIConfig` (adds `site_url`/`app_name` attribution headers) and `model` is a required slug like `"anthropic/claude-sonnet-4.5"`. Reasoning is forwarded to any upstream model via OpenRouter's unified `reasoning` object. Model-listing nuance: OpenRouter's `/models` items omit the `object`/`owned_by` fields the OpenAI SDK expects, so `list_models()` reads the raw JSON instead.
 - **xAI (Grok)** (`roomkit.providers.xai`) — subclass of `OpenAIAIProvider` pointed at `https://api.x.ai/v1`; defaults to `max_completion_tokens` and stream usage. `XAIRealtimeProvider` (Grok speech-to-speech) is a separate import from `roomkit.providers.xai.realtime`.
@@ -1278,6 +1291,19 @@ from roomkit.providers.ai.mock import MockAIProvider
 
 provider = MockAIProvider(responses=["Hello!", "How can I help?"])
 ```
+
+## Model Catalog and Pricing
+
+`provider.catalog_entry()` returns the configured model's offline `ModelInfo`.
+When it carries `pricing`, `pricing.cost_for(response.usage)` prices fresh
+input, output, cache reads and represented cache writes. A `None` cache rate
+means no separate per-token charge is represented; it contributes zero rather
+than falling back implicitly. Catalogs repeat the input rate explicitly when a
+vendor bills a cache counter as ordinary input.
+
+Tiered entries also carry a long-context threshold plus input/output
+multipliers. `cost_for()` applies them automatically to GPT-5.6, Gemini Pro and
+current Grok usage after total input crosses the vendor's threshold.
 
 ## Agent Class
 
@@ -1479,7 +1505,7 @@ ai = AIChannel(
     "ai",
     provider=AnthropicAIProvider(AnthropicConfig(
         api_key="...",
-        model="claude-sonnet-4-20250514",
+        model="claude-opus-5",
     )),
     system_prompt="Think step by step.",
     thinking_budget=4096,  # Setting a budget enables thinking mode
@@ -3543,6 +3569,33 @@ telegram = TelegramChannel("telegram", provider=TelegramBotProvider(TelegramConf
 ```
 
 Webhook parser: `parse_telegram_webhook(request_data, channel_id="telegram")` — returns `list[InboundMessage]`.
+
+Inbound `external_id` and `idempotency_key` are `<chat_id>:<message_id>` because
+Telegram message ids are chat-local. Malformed nested objects and invalid
+coordinates are rejected at the webhook boundary.
+
+- Inbound media (`photo`, `voice`, `audio`, `video_note`, `video`, `document`) parses to a `TextContent` whose body is the caption — empty when there is none, as on a voice note — plus `metadata["file_id"]` and `metadata["media_type"]`, and whichever of `duration`, `mime_type`, `file_name`, `file_size` Telegram sent.
+- `parse_telegram_message(msg)` is the layer below: it reads a Telegram `message` into `TelegramMessageParts` (content, metadata, `message_id`, `sender_id`) and attributes nothing. `parse_telegram_webhook` is that function plus the ordinary attribution — the sender is `message.from.id`. Use the lower one when your identity model is not Telegram's (a one-bot-per-user deployment attributes a DM to the bot's owner), so that reading a `file_id` never costs you your identity model.
+- Resolving that `file_id` to bytes belongs to the provider, which holds the bot token: `path = await provider.get_file(file_id)` then `data = await provider.download_file(path)`. Both return `None` on failure and log a warning that never carries the URL (every Bot API URL embeds the token). Telegram caps Bot API downloads at 20 MB and refuses larger files at the `getFile` step; `metadata["file_size"]` tells you before you spend the call.
+- RoomKit stops at the bytes — transcription and storage are the application's call.
+- `parse_telegram_message` also gives `entities` (a caption's markup comes from `caption_entities`), `reply_to_message_id` and `media_group_id`. None of them reach the `InboundMessage` — `parse_telegram_webhook`'s metadata is unchanged.
+
+`TelegramBotProvider` is `TelegramBotAPI` plus the rendering of a `RoomEvent`. The API half is the Bot API surface an application needs around its sends, so it never writes a second HTTP client for the same token:
+
+```python
+me = await provider.get_me()                       # metadata["result"] = the bot object
+if not me.success:
+    ...                                            # me.error, me.metadata["description"]
+await provider.set_webhook(url, secret=secret, allowed_updates=["message", "callback_query"])
+await provider.answer_callback_query(cq.id, "Approved.")
+await provider.edit_message_text(chat, msg_id, "Approved", reply_markup={"inline_keyboard": []})
+```
+
+Also `get_updates`, `delete_webhook`, `leave_chat`, `send_message` (plain text, no Markdown pass), `send_force_reply` (its `provider_message_id` is what a later reply is matched against), `send_chat_action` and `edit_message_reply_markup`. Every call answers with a `ProviderResult`: `telegram_<code>` / `http_<status>` / `timeout` / a safe transport exception class, and Telegram's own words under `metadata["description"]`. Transport errors never echo the token-bearing request URL.
+
+Update reading is two levels. `parse_telegram_update(payload)` says which form arrived — a `message`, an `edited_message` (same shape, `edited=True`), or a `callback_query` parsed into a `TelegramCallback` (`id`, `data`, `sender_id`, `chat_id`, `message_id`, `message_text`). `callback_data` is posted by whoever pressed the button, so treat what it names as a claim to check.
+
+`mentions_bot(msg, bot_username=..., bot_id=...)` says whether a group message addressed the bot — a reply to the bot, `bot_command`, `mention`, `text_mention`, or the handle as plain text. It gives the fact; whether that group answers only when addressed is your policy. `entity_text(text, entity)` slices by an entity's offsets, which count **UTF-16 code units** — a code-point slice returns the wrong substring as soon as an emoji precedes the mention.
 
 ## Discord
 

@@ -20,12 +20,10 @@ Deep Research variants are out of scope for this provider. Google lists
 they are absent rather than flagged, since a retired id is a 404.
 
 Prices are the paid-tier rates from Google's pricing page
-(ai.google.dev/gemini-api/docs/pricing), read 2026-08-05. Two things they
-flatten. Google charges more per token for prompts over 200k on the Pro
-tiers (``gemini-3.1-pro-preview``, ``gemini-2.5-pro``: 2x input, 1.5x
-output) and more for audio input on the Flash tiers; the entries carry the
-text rate at the standard prompt size, which is what a text conversation
-pays. And context caching is billed by *storage time* ($1.00–$4.50 per
+(ai.google.dev/gemini-api/docs/pricing), read 2026-08-05. The Pro entries
+represent Google's higher rates beyond 200k input tokens (2x input, 1.5x
+output). Audio input on Flash has a separate rate that this text-token catalog
+does not represent. Context caching is billed by *storage time* ($1.00–$4.50 per
 million tokens per hour), not per token written — so ``cache_write`` stays
 unset here rather than restating an hourly rate as a per-token one.
 """
@@ -89,6 +87,9 @@ MODELS: list[ModelInfo] = [
             input_per_million=2.0,
             output_per_million=12.0,
             cache_read_per_million=0.2,
+            long_context_threshold_tokens=200_000,
+            long_context_input_multiplier=2.0,
+            long_context_output_multiplier=1.5,
             verified=_VERIFIED,
         ),
     ),
@@ -115,6 +116,9 @@ MODELS: list[ModelInfo] = [
             input_per_million=1.25,
             output_per_million=10.0,
             cache_read_per_million=0.125,
+            long_context_threshold_tokens=200_000,
+            long_context_input_multiplier=2.0,
+            long_context_output_multiplier=1.5,
             verified=_VERIFIED,
         ),
     ),

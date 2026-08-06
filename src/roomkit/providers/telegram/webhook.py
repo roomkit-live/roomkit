@@ -81,13 +81,23 @@ def _parse_media(msg: dict[str, Any]) -> tuple[TextContent, dict[str, Any]] | No
         media = msg[kind]
         if kind == "photo":
             # Telegram sends multiple sizes; take the largest (last).
-            media = media[-1] if media else {}
+            if not isinstance(media, list) or not media:
+                return None
+            media = media[-1]
+        if not isinstance(media, dict):
+            return None
+        file_id = media.get("file_id")
+        if not isinstance(file_id, str) or not file_id:
+            return None
+        caption = msg.get("caption", "")
+        if not isinstance(caption, str):
+            return None
         metadata: dict[str, Any] = {
-            "file_id": media.get("file_id", ""),
+            "file_id": file_id,
             "media_type": kind,
         }
         metadata.update({attr: media[attr] for attr in _MEDIA_ATTRS if attr in media})
-        return TextContent(body=msg.get("caption", "")), metadata
+        return TextContent(body=caption), metadata
     return None
 
 
@@ -112,33 +122,65 @@ def parse_telegram_message(msg: dict[str, Any]) -> TelegramMessageParts | None:
     content: TextContent | LocationContent | None = None
     extra_metadata: dict[str, Any] = {}
 
-    if "text" in msg:
-        content = TextContent(body=msg["text"])
+    if not isinstance(msg, dict):
+        return None
+
+    text = msg.get("text")
+    if isinstance(text, str):
+        content = TextContent(body=text)
+    elif "text" in msg:
+        return None
     elif (media := _parse_media(msg)) is not None:
         content, extra_metadata = media
     elif "location" in msg:
         loc = msg["location"]
+        if not isinstance(loc, dict):
+            return None
+        latitude = loc.get("latitude")
+        longitude = loc.get("longitude")
+        if (
+            not isinstance(latitude, (int, float))
+            or isinstance(latitude, bool)
+            or not -90 <= latitude <= 90
+            or not isinstance(longitude, (int, float))
+            or isinstance(longitude, bool)
+            or not -180 <= longitude <= 180
+        ):
+            return None
         content = LocationContent(
-            latitude=loc["latitude"],
-            longitude=loc["longitude"],
+            latitude=latitude,
+            longitude=longitude,
         )
 
     if content is None:
         return None
 
-    reply_to = (msg.get("reply_to_message") or {}).get("message_id")
+    chat = msg.get("chat")
+    sender = msg.get("from")
+    reply = msg.get("reply_to_message")
+    chat = chat if isinstance(chat, dict) else {}
+    sender = sender if isinstance(sender, dict) else {}
+    reply = reply if isinstance(reply, dict) else {}
+    reply_to = reply.get("message_id")
+    raw_entities = msg.get("entities") or msg.get("caption_entities") or []
+    entities = (
+        [entity for entity in raw_entities if isinstance(entity, dict)]
+        if isinstance(raw_entities, list)
+        else []
+    )
+    media_group_id = msg.get("media_group_id")
     return TelegramMessageParts(
         content=content,
         metadata={
-            "chat_id": str(msg.get("chat", {}).get("id", "")),
+            "chat_id": str(chat.get("id", "")),
             "date": msg.get("date", 0),
             **extra_metadata,
         },
         message_id=str(msg.get("message_id", "")),
-        sender_id=str(msg.get("from", {}).get("id", "")),
-        entities=list(msg.get("entities") or msg.get("caption_entities") or []),
+        sender_id=str(sender.get("id", "")),
+        entities=entities,
         reply_to_message_id=str(reply_to) if reply_to is not None else None,
-        media_group_id=msg.get("media_group_id"),
+        media_group_id=str(media_group_id) if media_group_id is not None else None,
     )
 
 
@@ -165,21 +207,27 @@ def parse_telegram_webhook(
     the ``file_id`` to bytes via :meth:`TelegramBotProvider.get_file` and
     :meth:`TelegramBotProvider.download_file`.
     """
+    if not isinstance(payload, dict):
+        return []
     msg = payload.get("message")
-    if msg is None:
+    if not isinstance(msg, dict):
         return []
 
     parts = parse_telegram_message(msg)
     if parts is None:
         return []
+    chat_id = parts.metadata["chat_id"]
+    if not chat_id or not parts.message_id:
+        return []
+    external_id = f"{chat_id}:{parts.message_id}"
 
     return [
         InboundMessage(
             channel_id=channel_id,
             sender_id=parts.sender_id,
             content=parts.content,
-            external_id=parts.message_id,
-            idempotency_key=parts.message_id,
+            external_id=external_id,
+            idempotency_key=external_id,
             metadata=parts.metadata,
         )
     ]

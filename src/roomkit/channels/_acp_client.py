@@ -359,6 +359,7 @@ class ACPConnectionMixin:
     _sessions: dict[str, str]
     _session_rooms: dict[str, str]
     _session_options: dict[str, list[Any]]
+    _prompted_index: dict[str, int]
     _agent_info: dict[str, Any] | None
     _handler_started: bool
     _closed: bool
@@ -394,6 +395,10 @@ class ACPConnectionMixin:
                 self._sessions.clear()
                 self._session_rooms.clear()
                 self._session_options.clear()
+                # Catch-up state belongs to the sessions that just died. The
+                # replacement agent starts empty and must receive the visible
+                # room history again on its first prompt.
+                self._prompted_index.clear()
 
             sdk = self._sdk()
             if sdk.acp.PROTOCOL_VERSION != _STABLE_PROTOCOL_VERSION:

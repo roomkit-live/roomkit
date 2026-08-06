@@ -6,6 +6,9 @@ from typing import Any
 
 from pydantic import BaseModel, SecretStr
 
+_MAX_COMPLETION_TOKEN_MODEL_PREFIXES = ("gpt-4.1", "gpt-5", "o1", "o3", "o4")
+_FIXED_TEMPERATURE_MODEL_PREFIXES = ("gpt-5", "o1", "o3", "o4")
+
 
 class OpenAIConfig(BaseModel):
     """OpenAI AI provider configuration.
@@ -42,7 +45,8 @@ class OpenAIConfig(BaseModel):
     deprecated ``max_tokens``. OpenAI's newer models (o-series, gpt-5,
     gpt-4.1) reject ``max_tokens`` outright. Leave False for
     OpenAI-compatible servers (vLLM, LM Studio, older Azure deployments)
-    that only understand ``max_tokens``."""
+    that only understand ``max_tokens``. Official modern models are profiled
+    automatically unless this field is explicitly set."""
     supports_custom_temperature: bool = True
     """When False, ``temperature`` is omitted from requests. OpenAI's
     reasoning models (o-series, gpt-5) accept only the default
@@ -65,3 +69,18 @@ class OpenAIConfig(BaseModel):
     OpenAI schema omits — e.g. vLLM guided decoding
     (``guided_json``/``guided_choice``) and extra sampling (``top_k``,
     ``repetition_penalty``, ``min_p``). ``None`` sends a vanilla body."""
+
+    def model_post_init(self, __context: Any) -> None:
+        """Apply safe defaults for modern models on OpenAI's own endpoint."""
+        if self.base_url is not None:
+            return
+        if (
+            self.model.startswith(_MAX_COMPLETION_TOKEN_MODEL_PREFIXES)
+            and "use_max_completion_tokens" not in self.model_fields_set
+        ):
+            self.use_max_completion_tokens = True
+        if (
+            self.model.startswith(_FIXED_TEMPERATURE_MODEL_PREFIXES)
+            and "supports_custom_temperature" not in self.model_fields_set
+        ):
+            self.supports_custom_temperature = False

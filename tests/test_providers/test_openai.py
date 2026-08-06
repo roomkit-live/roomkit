@@ -56,6 +56,7 @@ def _mock_response(
     completion_tokens: int = 25,
     tool_calls: list[dict[str, Any]] | None = None,
     cached_tokens: int | None = None,
+    cache_write_tokens: int | None = None,
 ) -> SimpleNamespace:
     """Build a fake OpenAI chat completion response."""
     mock_tool_calls = None
@@ -82,7 +83,12 @@ def _mock_response(
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
             prompt_tokens_details=(
-                None if cached_tokens is None else SimpleNamespace(cached_tokens=cached_tokens)
+                None
+                if cached_tokens is None and cache_write_tokens is None
+                else SimpleNamespace(
+                    cached_tokens=cached_tokens,
+                    cache_write_tokens=cache_write_tokens,
+                )
             ),
         ),
     )
@@ -133,9 +139,8 @@ class TestOpenAIAIProvider:
 
     @pytest.mark.asyncio
     async def test_token_limit_kwarg_name_follows_config(self) -> None:
-        # Default sends the deprecated max_tokens (OpenAI-compatible servers).
-        # use_max_completion_tokens flips it to the name OpenAI's newer models
-        # require, and never sends both.
+        # An explicit compatibility flag selects the exact argument and never
+        # sends both forms.
         with patch.dict("sys.modules", {"openai": _mock_openai_module()}):
             from roomkit.providers.openai.ai import OpenAIAIProvider
 
@@ -150,6 +155,22 @@ class TestOpenAIAIProvider:
                 call_kwargs = provider._client.chat.completions.create.call_args[1]
                 assert call_kwargs[expected] == 321
                 assert forbidden not in call_kwargs
+
+    @pytest.mark.asyncio
+    async def test_official_default_model_uses_compatible_request_shape(self) -> None:
+        with patch.dict("sys.modules", {"openai": _mock_openai_module()}):
+            from roomkit.providers.openai.ai import OpenAIAIProvider
+
+            provider = OpenAIAIProvider(_config())
+            provider._client = MagicMock()
+            provider._client.chat.completions.create = AsyncMock(return_value=_mock_response())
+
+            await provider.generate(_context(max_tokens=321, temperature=0.7))
+
+            call_kwargs = provider._client.chat.completions.create.call_args[1]
+            assert call_kwargs["max_completion_tokens"] == 321
+            assert "max_tokens" not in call_kwargs
+            assert "temperature" not in call_kwargs
 
     @pytest.mark.asyncio
     async def test_temperature_omitted_when_unsupported(self) -> None:
@@ -238,6 +259,31 @@ class TestOpenAIAIProvider:
             }
 
     @pytest.mark.asyncio
+    async def test_generate_reports_cache_writes_apart_from_fresh_input(self) -> None:
+        with patch.dict("sys.modules", {"openai": _mock_openai_module()}):
+            from roomkit.providers.openai.ai import OpenAIAIProvider
+
+            provider = OpenAIAIProvider(_config())
+            provider._client = MagicMock()
+            provider._client.chat.completions.create = AsyncMock(
+                return_value=_mock_response(
+                    prompt_tokens=1_000,
+                    completion_tokens=20,
+                    cached_tokens=300,
+                    cache_write_tokens=500,
+                )
+            )
+
+            result = await provider.generate(_context())
+
+            assert result.usage == {
+                "input_tokens": 200,
+                "output_tokens": 20,
+                "cache_read_input_tokens": 300,
+                "cache_creation_input_tokens": 500,
+            }
+
+    @pytest.mark.asyncio
     async def test_generate_api_error(self) -> None:
         with patch.dict("sys.modules", {"openai": _mock_openai_module()}):
             from roomkit.providers.openai.ai import OpenAIAIProvider
@@ -257,6 +303,23 @@ class TestOpenAIAIProvider:
         assert cfg.max_tokens == 1024
         assert cfg.temperature == 0.7
         assert cfg.base_url is None
+        assert cfg.use_max_completion_tokens is True
+        assert cfg.supports_custom_temperature is False
+
+    def test_config_profiles_old_and_custom_endpoints_conservatively(self) -> None:
+        old = _config(model="gpt-4o")
+        custom = _config(base_url="http://localhost:11434/v1")
+        explicit = _config(
+            use_max_completion_tokens=False,
+            supports_custom_temperature=True,
+        )
+
+        assert old.use_max_completion_tokens is False
+        assert old.supports_custom_temperature is True
+        assert custom.use_max_completion_tokens is False
+        assert custom.supports_custom_temperature is True
+        assert explicit.use_max_completion_tokens is False
+        assert explicit.supports_custom_temperature is True
 
     def test_config_with_base_url(self) -> None:
         cfg = _config(base_url="http://localhost:11434/v1")

@@ -344,25 +344,21 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
             return ChannelOutput.empty()
 
         room_id = context.room.id if context.room is not None else event.room_id
-        # Both sections are built here, where the context is, and prefixed to
-        # the request they precede: what only the host holds, then what the
-        # room said while this agent was not being asked.
+        # Host-only blocks can be collected now. Catch-up is deliberately
+        # computed inside the lazy stream, after connection recovery: a dead
+        # transport discards its sessions and their prompted-index marks.
         blocks = await contributed_blocks(
             self._context_contributor, context, event, channel_id=self.channel_id
-        )
-        catch_up = room_context_block(
-            context,
-            self.channel_id,
-            after_index=self._prompted_index.get(room_id, _UNSEEN),
-            trigger=event,
-            limit=self._room_history,
         )
         return ChannelOutput(
             responded=True,
             response_stream=self._prompt_stream(
                 room_id,
                 event.id,
-                compose_prompt(blocks, catch_up, text),
+                blocks,
+                context,
+                event,
+                text,
                 event.index,
             ),
             response_metadata={"acp": {"protocol_version": _STABLE_PROTOCOL_VERSION}},
@@ -514,6 +510,9 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
         self,
         room_id: str,
         event_id: str,
+        blocks: Sequence[str],
+        context: RoomContext,
+        trigger: RoomEvent,
         text: str,
         event_index: int,
     ) -> AsyncIterator[StreamDelta]:
@@ -522,7 +521,15 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
             session_id = await self._session_for(room_id, connection)
             turn = _TurnState(room_id=room_id)
             self._turns[session_id] = turn
-            prompt = [self._sdk().acp.text_block(text)]
+            catch_up = room_context_block(
+                context,
+                self.channel_id,
+                after_index=self._prompted_index.get(room_id, _UNSEEN),
+                trigger=trigger,
+                limit=self._room_history,
+            )
+            prompt_text = compose_prompt(blocks, catch_up, text)
+            prompt = [self._sdk().acp.text_block(prompt_text)]
             # The room is caught up only once the prompt carrying it is on its
             # way. A generator body that never runs — a muted binding has its
             # stream closed unconsumed — leaves the mark where it was, so the

@@ -46,6 +46,13 @@ await kit.attach_channel("support", "ai-assistant", category=ChannelCategory.INT
 
 Provider notes:
 
+- **Modern official defaults** — `OpenAIConfig()` automatically uses
+  `max_completion_tokens` and omits custom temperature for current GPT-5 and
+  o-series ids. `AnthropicConfig()` automatically uses adaptive thinking and
+  omits temperature for current Claude reasoning ids. Explicit flags take
+  precedence, and a custom `base_url` keeps conservative legacy behavior for
+  compatible servers.
+
 - **Gemini on Vertex AI** (`roomkit.providers.gemini.vertex`) — subclass of `GeminiAIProvider` serving the same Gemini models through a Google Cloud project with a pinned region (`GeminiVertexConfig` requires `project` and `location`, e.g. `"northamerica-northeast1"`; auth is ADC, no API key). Use it when data residency matters (Québec Law 25 / PIPEDA). Generation, streaming, thinking, and the model catalog are inherited unchanged.
 - **OpenRouter** (`roomkit.providers.openrouter`) — subclass of `OpenAIAIProvider` pointed at `https://openrouter.ai/api/v1`; `OpenRouterConfig` subclasses `OpenAIConfig` (adds `site_url`/`app_name` attribution headers) and `model` is a required slug like `"anthropic/claude-sonnet-4.5"`. Reasoning is forwarded to any upstream model via OpenRouter's unified `reasoning` object. Model-listing nuance: OpenRouter's `/models` items omit the `object`/`owned_by` fields the OpenAI SDK expects, so `list_models()` reads the raw JSON instead.
 - **xAI (Grok)** (`roomkit.providers.xai`) — subclass of `OpenAIAIProvider` pointed at `https://api.x.ai/v1`; defaults to `max_completion_tokens` and stream usage. `XAIRealtimeProvider` (Grok speech-to-speech) is a separate import from `roomkit.providers.xai.realtime`.
@@ -71,6 +78,19 @@ from roomkit.providers.ai.mock import MockAIProvider
 
 provider = MockAIProvider(responses=["Hello!", "How can I help?"])
 ```
+
+## Model Catalog and Pricing
+
+`provider.catalog_entry()` returns the configured model's offline `ModelInfo`.
+When it carries `pricing`, `pricing.cost_for(response.usage)` prices fresh
+input, output, cache reads and represented cache writes. A `None` cache rate
+means no separate per-token charge is represented; it contributes zero rather
+than falling back implicitly. Catalogs repeat the input rate explicitly when a
+vendor bills a cache counter as ordinary input.
+
+Tiered entries also carry a long-context threshold plus input/output
+multipliers. `cost_for()` applies them automatically to GPT-5.6, Gemini Pro and
+current Grok usage after total input crosses the vendor's threshold.
 
 ## Agent Class
 

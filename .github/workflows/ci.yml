@@ -188,12 +188,12 @@ jobs:
       - name: Install dependencies
         run: uv sync --extra dev --extra postgres --extra fastrtc
 
-      # fastapi is a peer dep (WebRTC signaling). `uv run --with` resolves it
-      # against the project's locked deps, keeping a starlette/httpx combo that
-      # works — `uv pip install fastapi` can pull an incompatible newer stack.
+      # fastapi is a peer dep (WebRTC signaling). The project's fastrtc stack
+      # imports the httpx2 compatibility package explicitly, so both transient
+      # test dependencies must be present during collection.
       - name: Run integration tests
         run: >-
-          uv run --with fastapi pytest -v
+          uv run --with fastapi --with httpx2 pytest -v
           tests/test_store_postgres.py
           tests/test_postgres_multiprocess.py
           tests/test_webrtc_offer_auth.py

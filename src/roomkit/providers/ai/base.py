@@ -272,14 +272,21 @@ class ModelPricing(BaseModel):
         input_per_million: Price of a million uncached input tokens.
         output_per_million: Price of a million output tokens.
         cache_read_per_million: Price of a million tokens re-read from the
-            prompt cache. ``None`` when the vendor bills reads at the input
-            rate or publishes no separate figure.
+            prompt cache. ``None`` means this catalog represents no separate
+            per-token charge for that counter. Catalogs must explicitly repeat
+            the input rate when cache reads are billed as ordinary input.
         cache_write_per_million: Price of a million tokens written to the
             prompt cache — Anthropic's 5-minute write premium (1.25x input),
             which is the TTL roomkit's ``ephemeral`` markers request. ``None``
-            where a write is not billed per token: OpenAI does not charge for
-            writes, and Google bills cache *storage* by the hour, a different
-            unit that this field would misstate.
+            where a write is not billed per token. Google cache storage, for
+            example, is billed by time and cannot be represented here.
+        long_context_threshold_tokens: Total input-token threshold above which
+            the model's published long-context multipliers apply. ``None`` for
+            models with flat pricing.
+        long_context_input_multiplier: Multiplier applied to all represented
+            input and cache charges above the long-context threshold.
+        long_context_output_multiplier: Multiplier applied to output charges
+            above the long-context threshold.
         currency: ISO 4217 code the rates are quoted in. Every vendor roomkit
             ships a catalog for publishes in USD.
         verified: Date the rates were read from the vendor's own price list.
@@ -289,6 +296,9 @@ class ModelPricing(BaseModel):
     output_per_million: float
     cache_read_per_million: float | None = None
     cache_write_per_million: float | None = None
+    long_context_threshold_tokens: int | None = None
+    long_context_input_multiplier: float = 1.0
+    long_context_output_multiplier: float = 1.0
     currency: str = "USD"
     verified: date
 
@@ -301,9 +311,10 @@ class ModelPricing(BaseModel):
         provider reporting extra counters neither breaks nor inflates the
         total. Missing keys count as zero.
 
-        Cache counters fall back to the input rate when the model carries no
-        dedicated one: an unknown cache rate should overstate the bill rather
-        than hide it from a budget check.
+        A cache counter with no corresponding rate is omitted: ``None`` means
+        the catalog does not represent a separate per-token charge for it.
+        When the response crosses a published long-context threshold, the
+        configured input and output multipliers are applied automatically.
 
         Args:
             usage: A response's token counters, as reported by the provider.
@@ -311,16 +322,30 @@ class ModelPricing(BaseModel):
         Returns:
             The cost of that response, in :attr:`currency`.
         """
-        total = (
-            usage.get("input_tokens", 0) * self.input_per_million
-            + usage.get("output_tokens", 0) * self.output_per_million
-        )
+        input_total = usage.get("input_tokens", 0) * self.input_per_million
         for counter, rate in (
             ("cache_read_input_tokens", self.cache_read_per_million),
             ("cache_creation_input_tokens", self.cache_write_per_million),
         ):
-            total += usage.get(counter, 0) * (self.input_per_million if rate is None else rate)
-        return total / 1_000_000
+            if rate is not None:
+                input_total += usage.get(counter, 0) * rate
+
+        output_total = usage.get("output_tokens", 0) * self.output_per_million
+        total_input_tokens = sum(
+            usage.get(counter, 0)
+            for counter in (
+                "input_tokens",
+                "cache_read_input_tokens",
+                "cache_creation_input_tokens",
+            )
+        )
+        if (
+            self.long_context_threshold_tokens is not None
+            and total_input_tokens > self.long_context_threshold_tokens
+        ):
+            input_total *= self.long_context_input_multiplier
+            output_total *= self.long_context_output_multiplier
+        return (input_total + output_total) / 1_000_000
 
 
 class ModelInfo(BaseModel):

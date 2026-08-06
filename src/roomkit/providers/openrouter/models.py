@@ -21,11 +21,11 @@ not a mirror of someone else's. It can differ from the upstream vendor's own
 list price, and does: ``openai/gpt-5.6-terra`` resells at $1/$6 where OpenAI
 charges $2/$12. Both are right for whoever bills.
 
-One field is not copied straight through. OpenRouter reports an
-``input_cache_write`` for its Google models derived from Gemini's *hourly*
-cache-storage price, a different unit from the per-token write this field
-means, so those entries leave ``cache_write`` unset. The Anthropic- and
-OpenAI-family entries keep it: there it is a genuine per-token write charge.
+One field needs normalization. OpenRouter reports only the five-minute storage
+premium in ``input_cache_write`` for explicit Gemini caching, while billing a
+write as ordinary input plus that premium. RoomKit's canonical cache-write
+counter is disjoint from ordinary input, so the Google entries carry the full
+sum. Anthropic and OpenAI already report the full per-token write charge.
 """
 
 from __future__ import annotations
@@ -111,6 +111,7 @@ MODELS: list[ModelInfo] = [
             input_per_million=1.5,
             output_per_million=7.5,
             cache_read_per_million=0.15,
+            cache_write_per_million=1.5833333,
             verified=_VERIFIED,
         ),
     ),
@@ -123,6 +124,7 @@ MODELS: list[ModelInfo] = [
             input_per_million=1.5,
             output_per_million=9.0,
             cache_read_per_million=0.15,
+            cache_write_per_million=1.5833333,
             verified=_VERIFIED,
         ),
     ),

@@ -29,10 +29,10 @@ accepts them: ``grok-4.5-latest``/``grok-build-latest`` → ``grok-4.5``;
 ``grok-4.20``/``grok-4.20-reasoning-latest`` → ``grok-4.20-0309-reasoning``;
 ``grok-code-fast``/``grok-code-fast-1`` → ``grok-build-0.1``.
 
-Prices come from the same model docs, read 2026-08-05, and are the rate below
-xAI's 200k-token prompt threshold; past it every rate doubles, which a single
-per-model figure cannot express. ``cache_write`` is unset: xAI publishes a
-cached-input rate but bills nothing for populating the cache.
+Prices come from the same model docs, read 2026-08-05. Every entry represents
+xAI's 200k-token prompt threshold, beyond which all token rates double.
+``cache_write`` is unset: xAI publishes a cached-input rate but bills nothing
+for populating the cache.
 """
 
 from __future__ import annotations
@@ -54,6 +54,9 @@ MODELS: list[ModelInfo] = [
             input_per_million=2.0,
             output_per_million=6.0,
             cache_read_per_million=0.3,
+            long_context_threshold_tokens=200_000,
+            long_context_input_multiplier=2.0,
+            long_context_output_multiplier=2.0,
             verified=_VERIFIED,
         ),
     ),
@@ -67,6 +70,9 @@ MODELS: list[ModelInfo] = [
             input_per_million=1.25,
             output_per_million=2.5,
             cache_read_per_million=0.2,
+            long_context_threshold_tokens=200_000,
+            long_context_input_multiplier=2.0,
+            long_context_output_multiplier=2.0,
             verified=_VERIFIED,
         ),
     ),
@@ -80,6 +86,9 @@ MODELS: list[ModelInfo] = [
             input_per_million=1.25,
             output_per_million=2.5,
             cache_read_per_million=0.2,
+            long_context_threshold_tokens=200_000,
+            long_context_input_multiplier=2.0,
+            long_context_output_multiplier=2.0,
             verified=_VERIFIED,
         ),
     ),
@@ -93,6 +102,9 @@ MODELS: list[ModelInfo] = [
             input_per_million=1.25,
             output_per_million=2.5,
             cache_read_per_million=0.2,
+            long_context_threshold_tokens=200_000,
+            long_context_input_multiplier=2.0,
+            long_context_output_multiplier=2.0,
             verified=_VERIFIED,
         ),
     ),
@@ -108,6 +120,9 @@ MODELS: list[ModelInfo] = [
             input_per_million=1.25,
             output_per_million=2.5,
             cache_read_per_million=0.2,
+            long_context_threshold_tokens=200_000,
+            long_context_input_multiplier=2.0,
+            long_context_output_multiplier=2.0,
             verified=_VERIFIED,
         ),
     ),
@@ -121,6 +136,9 @@ MODELS: list[ModelInfo] = [
             input_per_million=1.0,
             output_per_million=2.0,
             cache_read_per_million=0.2,
+            long_context_threshold_tokens=200_000,
+            long_context_input_multiplier=2.0,
+            long_context_output_multiplier=2.0,
             verified=_VERIFIED,
         ),
     ),

@@ -74,15 +74,26 @@ def parse_telegram_callback(cq: dict[str, Any]) -> TelegramCallback:
     Returns:
         The press, with nothing decided about who was allowed to make it.
     """
-    message = cq.get("message") or {}
-    chat_id = (message.get("chat") or {}).get("id")
+    message = cq.get("message")
+    sender = cq.get("from")
+    message = message if isinstance(message, dict) else {}
+    sender = sender if isinstance(sender, dict) else {}
+    chat = message.get("chat")
+    chat = chat if isinstance(chat, dict) else {}
+    chat_id = chat.get("id")
+    message_id = message.get("message_id")
+    message_text = message.get("text")
     return TelegramCallback(
         id=str(cq.get("id") or ""),
         data=str(cq.get("data") or ""),
-        sender_id=str((cq.get("from") or {}).get("id") or ""),
+        sender_id=str(sender.get("id") or ""),
         chat_id=str(chat_id) if chat_id is not None else "",
-        message_id=message.get("message_id"),
-        message_text=message.get("text") or "",
+        message_id=(
+            message_id
+            if isinstance(message_id, int) and not isinstance(message_id, bool)
+            else None
+        ),
+        message_text=message_text if isinstance(message_text, str) else "",
     )
 
 
@@ -97,10 +108,12 @@ def parse_telegram_update(payload: dict[str, Any]) -> TelegramUpdate | None:
         poll answer, an inline query. Those are kinds a webhook only receives
         when its ``allowed_updates`` asked for them.
     """
-    if (message := payload.get("message")) is not None:
+    if not isinstance(payload, dict):
+        return None
+    if isinstance(message := payload.get("message"), dict):
         return TelegramUpdate(message=message, edited=False, callback=None)
-    if (edited := payload.get("edited_message")) is not None:
+    if isinstance(edited := payload.get("edited_message"), dict):
         return TelegramUpdate(message=edited, edited=True, callback=None)
-    if (cq := payload.get("callback_query")) is not None:
+    if isinstance(cq := payload.get("callback_query"), dict):
         return TelegramUpdate(message=None, edited=False, callback=parse_telegram_callback(cq))
     return None

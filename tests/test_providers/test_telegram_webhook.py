@@ -26,8 +26,8 @@ class TestParseTelegramWebhook:
         assert msg.sender_id == "999"
         assert isinstance(msg.content, TextContent)
         assert msg.content.body == "Hello from Telegram"
-        assert msg.external_id == "1"
-        assert msg.idempotency_key == "1"
+        assert msg.external_id == "555:1"
+        assert msg.idempotency_key == "555:1"
         assert msg.metadata["chat_id"] == "555"
         assert msg.metadata["date"] == 1700000000
 
@@ -253,6 +253,30 @@ class TestParseTelegramWebhook:
         messages = parse_telegram_webhook(payload, channel_id="tg-main")
         assert messages == []
 
+    def test_message_ids_are_scoped_to_the_chat_for_idempotency(self) -> None:
+        first = parse_telegram_webhook(
+            {"message": {"message_id": 1, "chat": {"id": 10}, "text": "a"}},
+            channel_id="tg-main",
+        )[0]
+        second = parse_telegram_webhook(
+            {"message": {"message_id": 1, "chat": {"id": 20}, "text": "b"}},
+            channel_id="tg-main",
+        )[0]
+
+        assert first.idempotency_key == "10:1"
+        assert second.idempotency_key == "20:1"
+        assert first.idempotency_key != second.idempotency_key
+
+    def test_malformed_message_envelopes_are_rejected(self) -> None:
+        assert parse_telegram_webhook({"message": []}, channel_id="tg-main") == []
+        assert (
+            parse_telegram_webhook(
+                {"message": {"message_id": 1, "chat": "bad", "text": "hello"}},
+                channel_id="tg-main",
+            )
+            == []
+        )
+
 
 class TestParseTelegramMessage:
     """The layer below attribution: a consumer whose sender is not message.from.id."""
@@ -326,7 +350,23 @@ class TestParseTelegramMessage:
         assert inbound[0].sender_id == parts.sender_id
         assert inbound[0].content == parts.content
         assert inbound[0].metadata == parts.metadata
-        assert inbound[0].external_id == parts.message_id
+        assert inbound[0].external_id == f"{parts.metadata['chat_id']}:{parts.message_id}"
+
+    def test_malformed_nested_content_returns_none(self) -> None:
+        malformed = [
+            {"message_id": 1, "chat": {"id": 1}, "text": {"body": "no"}},
+            {"message_id": 1, "chat": {"id": 1}, "voice": "not-an-object"},
+            {"message_id": 1, "chat": {"id": 1}, "photo": "not-a-list"},
+            {"message_id": 1, "chat": {"id": 1}, "location": "not-an-object"},
+            {
+                "message_id": 1,
+                "chat": {"id": 1},
+                "location": {"latitude": 91, "longitude": 0},
+            },
+        ]
+
+        for message in malformed:
+            assert parse_telegram_message(message) is None
 
 
 class TestMessageProtocolFacts:

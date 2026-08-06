@@ -225,6 +225,20 @@ class MistralAIProvider(AIProvider):
             ]
         return kwargs
 
+    @staticmethod
+    def _usage_from(raw: Any) -> dict[str, int]:
+        """Separate cached prompt tokens from fresh Mistral input."""
+        prompt = raw.prompt_tokens or 0
+        details = getattr(raw, "prompt_tokens_details", None)
+        cached = (getattr(details, "cached_tokens", 0) if details else 0) or 0
+        usage = {
+            "input_tokens": max(prompt - cached, 0),
+            "output_tokens": raw.completion_tokens or 0,
+        }
+        if cached:
+            usage["cache_read_input_tokens"] = cached
+        return usage
+
     def _resolve_reasoning_effort(self, context: AIContext) -> str | None:
         """Decide ``reasoning_effort`` for this request.
 
@@ -300,10 +314,7 @@ class MistralAIProvider(AIProvider):
                 # (input_tokens / output_tokens) so downstream usage trackers
                 # read one contract — Mistral's SDK calls them prompt/completion.
                 if data.usage:
-                    usage = {
-                        "input_tokens": data.usage.prompt_tokens,
-                        "output_tokens": data.usage.completion_tokens,
-                    }
+                    usage = self._usage_from(data.usage)
 
                 # Accumulate streamed tool call deltas
                 if hasattr(delta, "tool_calls") and delta.tool_calls:

@@ -19,10 +19,11 @@ Both the dated ids and their ``-latest`` aliases are listed so either form
 resolves here.
 
 Prices come from Mistral's API pricing table (mistral.ai/pricing/api), read
-2026-08-05. Mistral publishes no cache rates, so both cache fields stay
-unset. ``pixtral-large-latest`` carries no price at all: it reached its
-retirement date (2026-05-31) and Mistral no longer quotes it — an absent
-price is the honest answer, an invented one is not.
+2026-08-05. Prompt-cache reads on current models cost 10% of ordinary input;
+cache population carries no separate per-token write rate.
+``pixtral-large-latest`` carries no price at all: it reached its retirement
+date (2026-05-31) and Mistral no longer quotes it — an absent price is the
+honest answer, an invented one is not.
 """
 
 from __future__ import annotations
@@ -43,6 +44,7 @@ MODELS: list[ModelInfo] = [
         pricing=ModelPricing(
             input_per_million=0.5,
             output_per_million=1.5,
+            cache_read_per_million=0.05,
             verified=_VERIFIED,
         ),
     ),
@@ -54,6 +56,7 @@ MODELS: list[ModelInfo] = [
         pricing=ModelPricing(
             input_per_million=0.5,
             output_per_million=1.5,
+            cache_read_per_million=0.05,
             verified=_VERIFIED,
         ),
     ),
@@ -65,6 +68,7 @@ MODELS: list[ModelInfo] = [
         pricing=ModelPricing(
             input_per_million=1.5,
             output_per_million=7.5,
+            cache_read_per_million=0.15,
             verified=_VERIFIED,
         ),
     ),
@@ -76,6 +80,7 @@ MODELS: list[ModelInfo] = [
         pricing=ModelPricing(
             input_per_million=1.5,
             output_per_million=7.5,
+            cache_read_per_million=0.15,
             verified=_VERIFIED,
         ),
     ),
@@ -87,6 +92,7 @@ MODELS: list[ModelInfo] = [
         pricing=ModelPricing(
             input_per_million=0.15,
             output_per_million=0.6,
+            cache_read_per_million=0.015,
             verified=_VERIFIED,
         ),
     ),
@@ -98,6 +104,7 @@ MODELS: list[ModelInfo] = [
         pricing=ModelPricing(
             input_per_million=0.15,
             output_per_million=0.6,
+            cache_read_per_million=0.015,
             verified=_VERIFIED,
         ),
     ),
@@ -109,6 +116,7 @@ MODELS: list[ModelInfo] = [
         pricing=ModelPricing(
             input_per_million=0.2,
             output_per_million=0.2,
+            cache_read_per_million=0.02,
             verified=_VERIFIED,
         ),
     ),
@@ -120,6 +128,7 @@ MODELS: list[ModelInfo] = [
         pricing=ModelPricing(
             input_per_million=0.15,
             output_per_million=0.15,
+            cache_read_per_million=0.015,
             verified=_VERIFIED,
         ),
     ),
@@ -131,6 +140,7 @@ MODELS: list[ModelInfo] = [
         pricing=ModelPricing(
             input_per_million=0.1,
             output_per_million=0.1,
+            cache_read_per_million=0.01,
             verified=_VERIFIED,
         ),
     ),

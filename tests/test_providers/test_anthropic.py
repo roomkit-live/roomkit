@@ -268,11 +268,28 @@ class TestAnthropicAIProvider:
         assert cfg.model == "claude-opus-5"
         assert cfg.max_tokens == 1024
         assert cfg.temperature == 0.7
+        assert cfg.use_adaptive_thinking is True
+        assert cfg.supports_custom_temperature is False
+
+    def test_config_preserves_legacy_custom_and_explicit_settings(self) -> None:
+        legacy = _config(model="claude-sonnet-4-5")
+        custom = _config(base_url="http://localhost:8080")
+        explicit = _config(
+            use_adaptive_thinking=False,
+            supports_custom_temperature=True,
+        )
+
+        assert legacy.use_adaptive_thinking is False
+        assert legacy.supports_custom_temperature is True
+        assert custom.use_adaptive_thinking is False
+        assert custom.supports_custom_temperature is True
+        assert explicit.use_adaptive_thinking is False
+        assert explicit.supports_custom_temperature is True
 
     def test_thinking_shape_follows_adaptive_flag(self) -> None:
         # use_adaptive_thinking sends the adaptive shape (newer models 400 on
-        # budget_tokens); the default keeps the fixed budget_tokens shape. Either
-        # way temperature is dropped while thinking.
+        # budget_tokens); an explicit False keeps the legacy fixed-budget shape.
+        # Either way temperature is dropped while thinking.
         with patch.dict("sys.modules", {"anthropic": _mock_anthropic_module()}):
             from roomkit.providers.anthropic.ai import AnthropicAIProvider
 
@@ -282,7 +299,7 @@ class TestAnthropicAIProvider:
             assert "budget_tokens" not in kwargs["thinking"]
             assert "temperature" not in kwargs
 
-            fixed = AnthropicAIProvider(_config())  # use_adaptive_thinking=False
+            fixed = AnthropicAIProvider(_config(use_adaptive_thinking=False))
             kwargs = fixed._build_kwargs(_context(thinking_budget=8192))
             assert kwargs["thinking"] == {"type": "enabled", "budget_tokens": 8192}
 
@@ -545,8 +562,8 @@ class TestAnthropicAIProvider:
 
             call_kwargs = provider._client.messages.stream.call_args[1]
             assert call_kwargs["thinking"] == {
-                "type": "enabled",
-                "budget_tokens": 10_000,
+                "type": "adaptive",
+                "display": "summarized",
             }
             # temperature must NOT be set when thinking is enabled
             assert "temperature" not in call_kwargs

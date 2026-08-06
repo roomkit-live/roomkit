@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.42.0] — 2026-08-05
+
 ### Added
 
 - **An ACP host can contribute context to a turn's prompt.** `ACPChannel`
@@ -226,6 +228,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   but it is gone from the ten examples and the docs that hardcoded it.
 
 ### Fixed
+
+- **Release compatibility and security review.** The official OpenAI and
+  Anthropic defaults now select the request parameters their modern models
+  accept, while explicit flags, older model ids and compatible custom
+  endpoints retain their prior behavior. Token pricing now represents
+  long-context tiers and explicit GPT-5.6 cache writes; usage normalization
+  separates those writes from ordinary input; and the live catalog check flags
+  a positive upstream rate that RoomKit accidentally leaves unset.
+
+- **ACP reconnects no longer lose room history.** A dead transport now clears
+  the catch-up marks together with the dead sessions, and the lazy prompt
+  computes its catch-up only after recovery has completed. The replacement
+  agent therefore receives all visible history its empty session missed.
+
+- **Telegram input boundaries are hardened.** Network errors no longer return
+  an exception string containing the token-bearing Bot API URL, malformed
+  nested webhook objects are rejected without escaping parser exceptions, and
+  inbound idempotency keys are scoped by both chat and message id.
+
+- **The release path is reproducible again.** Integration CI installs the
+  `httpx2` peer imported by the FastRTC/Starlette stack, `make docs` targets the
+  sibling documentation repository explicitly, and `.pypirc` credentials are
+  passed to `uv publish` outside the process command line.
 
 - **An activated skill was re-loaded, whole, on every turn.** `activate_skill`
   returned the skill's full body every time it was called, and nothing in the
@@ -4347,7 +4372,11 @@ See entries `0.7.0a1` through `0.7.0a18` below.
 - `STTProvider.transcribe()` returns `TranscriptionResult` (Phase 3.1)
 - Framework event names enriched with payloads (Phase 4)
 
-[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.41.1...HEAD
+[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.42.0...HEAD
+[0.42.0]: https://github.com/roomkit-live/roomkit/compare/v0.41.4...v0.42.0
+[0.41.4]: https://github.com/roomkit-live/roomkit/compare/v0.41.3...v0.41.4
+[0.41.3]: https://github.com/roomkit-live/roomkit/compare/v0.41.2...v0.41.3
+[0.41.2]: https://github.com/roomkit-live/roomkit/compare/v0.41.1...v0.41.2
 [0.41.1]: https://github.com/roomkit-live/roomkit/compare/v0.41.0...v0.41.1
 [0.41.0]: https://github.com/roomkit-live/roomkit/compare/v0.40.0...v0.41.0
 [0.40.0]: https://github.com/roomkit-live/roomkit/compare/v0.39.0...v0.40.0

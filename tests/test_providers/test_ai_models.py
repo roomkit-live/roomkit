@@ -83,6 +83,9 @@ def test_pricing_defaults_to_usd_without_cache_rates() -> None:
     assert p.currency == "USD"
     assert p.cache_read_per_million is None
     assert p.cache_write_per_million is None
+    assert p.long_context_threshold_tokens is None
+    assert p.long_context_input_multiplier == 1.0
+    assert p.long_context_output_multiplier == 1.0
 
 
 def test_cost_for_prices_input_and_output() -> None:
@@ -113,10 +116,30 @@ def test_cost_for_uses_the_cache_rates_when_the_model_has_them() -> None:
     assert cost == pytest.approx(0.005 + 0.0025 + 0.05 + 0.0625)
 
 
-def test_cost_for_falls_back_to_the_input_rate_for_an_unpriced_cache() -> None:
+def test_cost_for_omits_cache_counter_without_a_per_token_rate() -> None:
     p = ModelPricing(input_per_million=2.0, output_per_million=6.0, verified=date(2026, 8, 5))
-    # Overstating beats hiding the tokens from a budget check.
-    assert p.cost_for({"cache_read_input_tokens": 1_000_000}) == pytest.approx(2.0)
+    assert p.cost_for({"cache_read_input_tokens": 1_000_000}) == 0.0
+
+
+def test_cost_for_applies_long_context_multipliers_to_all_token_classes() -> None:
+    p = ModelPricing(
+        input_per_million=2.0,
+        output_per_million=10.0,
+        cache_read_per_million=0.2,
+        cache_write_per_million=2.5,
+        long_context_threshold_tokens=200_000,
+        long_context_input_multiplier=2.0,
+        long_context_output_multiplier=1.5,
+        verified=date(2026, 8, 5),
+    )
+    usage = {
+        "input_tokens": 100_000,
+        "cache_read_input_tokens": 100_000,
+        "cache_creation_input_tokens": 1,
+        "output_tokens": 10_000,
+    }
+
+    assert p.cost_for(usage) == pytest.approx(((0.2 + 0.02 + 0.0000025) * 2) + 0.15)
 
 
 def test_cost_for_ignores_unknown_counters_and_missing_keys() -> None:

@@ -1634,6 +1634,22 @@ class TestRoomCatchUp:
         assert "first request" in _sent(connection, turn=1)
         await channel.close()
 
+    async def test_a_reconnected_session_starts_over(self, tmp_path: Any) -> None:
+        # A process reconnect creates an empty agent session just like an
+        # explicit close. Its first prompt must therefore carry the history
+        # that the dead session had already seen.
+        channel, connection, transport = _channel(tmp_path, emit_updates=False)
+        first = make_event(room_id="room-1", body="first request", index=0)
+        await _prompt(channel, first, _context(first))
+
+        transport.alive = False
+        second = make_event(room_id="room-1", body="second request", index=1)
+        await _prompt(channel, second, _context(first, second))
+
+        assert "first request" in _sent(connection, turn=1)
+        assert _sent(connection, turn=1).endswith("second request")
+        await channel.close()
+
 
 class TestHostContext:
     """What the host contributes to a turn the agent cannot go and fetch.

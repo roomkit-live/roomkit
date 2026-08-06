@@ -340,24 +340,26 @@ class OpenAIAIProvider(AIProvider):
     def _usage_from(raw: Any) -> dict[str, int]:
         """Map an OpenAI-shaped usage object to roomkit's canonical counters.
 
-        ``prompt_tokens`` includes the cached prefix, while
-        ``cache_read_input_tokens`` reports that prefix on its own. Reported
-        as-is the two overlap, and anything pricing them — a per-tenant
-        budget, a cost dashboard — charges the cached tokens twice, at the
-        full input rate on top of the cached one. So the cached prefix is
-        subtracted out here: ``input_tokens`` counts what was billed at the
-        input rate, matching how Anthropic reports natively and how the
-        Gemini provider normalizes.
+        ``prompt_tokens`` includes cache reads and explicit cache writes, while
+        roomkit reports those counters separately. Subtract both from ordinary
+        input so a budget or cost dashboard cannot charge them twice.
         """
         prompt = raw.prompt_tokens or 0
         details = getattr(raw, "prompt_tokens_details", None)
         cached = (getattr(details, "cached_tokens", 0) if details else 0) or 0
+        written = (
+            (getattr(details, "cache_write_tokens", 0) if details else 0)
+            or getattr(raw, "cache_write_tokens", 0)
+            or 0
+        )
         usage = {
-            "input_tokens": max(prompt - cached, 0),
+            "input_tokens": max(prompt - cached - written, 0),
             "output_tokens": raw.completion_tokens or 0,
         }
         if cached:
             usage["cache_read_input_tokens"] = cached
+        if written:
+            usage["cache_creation_input_tokens"] = written
         return usage
 
     # -- Non-streaming ---------------------------------------------------------

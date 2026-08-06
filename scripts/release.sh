@@ -261,8 +261,12 @@ echo "==> Publishing to PyPI..."
 if [[ -n "${UV_PUBLISH_TOKEN:-}" ]]; then
     uv publish --check-url "$PYPI_INDEX" "${DIST_FILES[@]}"
 elif [[ -f "$HOME/.pypirc" ]]; then
-    PYPI_TOKEN=$(python3 -c "import configparser; c = configparser.ConfigParser(); c.read('$HOME/.pypirc'); print(c.get('pypi', 'password'))")
-    uv publish --check-url "$PYPI_INDEX" --username __token__ --password "$PYPI_TOKEN" "${DIST_FILES[@]}"
+    PYPI_TOKEN=$(python3 -c 'import configparser, sys; c = configparser.ConfigParser(); c.read(sys.argv[1]); print(c.get("pypi", "password"))' "$HOME/.pypirc")
+    # Keep the credential out of argv: command lines are visible to other
+    # processes on many systems, while uv supports dedicated environment vars.
+    UV_PUBLISH_USERNAME=__token__ UV_PUBLISH_PASSWORD="$PYPI_TOKEN" \
+        uv publish --check-url "$PYPI_INDEX" "${DIST_FILES[@]}"
+    unset PYPI_TOKEN
 else
     echo "Error: No PyPI credentials found. Set UV_PUBLISH_TOKEN or create ~/.pypirc"
     exit 1

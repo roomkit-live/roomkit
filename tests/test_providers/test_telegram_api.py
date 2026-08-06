@@ -60,6 +60,11 @@ class _TimingOut(httpx.AsyncBaseTransport):
         raise httpx.ReadTimeout("timed out")
 
 
+class _ConnectionFailure(httpx.AsyncBaseTransport):
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError(f"could not connect to {request.url}", request=request)
+
+
 def _api(transport: httpx.AsyncBaseTransport) -> TelegramBotAPI:
     api = TelegramBotAPI(_config())
     api._client = httpx.AsyncClient(transport=transport)
@@ -325,3 +330,10 @@ class TestErrorShape:
 
         assert result.success is False
         assert result.error == "invalid_response"
+
+    async def test_a_transport_error_never_exposes_the_token_url(self) -> None:
+        result = await _api(_ConnectionFailure()).get_me()
+
+        assert result.success is False
+        assert result.error == "ConnectError"
+        assert "123456:ABC-DEF" not in result.error

@@ -345,7 +345,9 @@ class TelegramBotAPI:
         except self._httpx.HTTPStatusError as exc:
             return self._parse_error(exc)
         except self._httpx.HTTPError as exc:
-            return ProviderResult(success=False, error=str(exc))
+            # httpx error strings commonly include the request URL. Telegram
+            # embeds the bot token in that URL, so expose only a safe label.
+            return ProviderResult(success=False, error=self._error_label(exc))
         except ValueError:
             # A 2xx carrying something other than JSON — an intercepting proxy's
             # error page passes raise_for_status intact. Every call promises a

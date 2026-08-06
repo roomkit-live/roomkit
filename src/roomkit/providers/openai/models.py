@@ -23,8 +23,9 @@ Prices are the standard synchronous rates from OpenAI's pricing page
 (developers.openai.com/api/docs/pricing), read 2026-08-05 — not the Batch
 column, which is half of them, and not Flex. ``cache_read`` is OpenAI's
 cached-input rate, applied automatically to a repeated prefix; the ``pro``
-tiers publish none because they do not cache. ``cache_write`` is unset
-throughout: OpenAI does not bill for populating the cache.
+tiers publish none because they do not cache. GPT-5.6 also publishes an
+explicit cache-write rate and higher prices beyond 272k input tokens; both
+are represented in its entries. Earlier models leave ``cache_write`` unset.
 """
 
 from __future__ import annotations
@@ -46,6 +47,10 @@ MODELS: list[ModelInfo] = [
             input_per_million=5.0,
             output_per_million=30.0,
             cache_read_per_million=0.5,
+            cache_write_per_million=6.25,
+            long_context_threshold_tokens=272_000,
+            long_context_input_multiplier=2.0,
+            long_context_output_multiplier=1.5,
             verified=_VERIFIED,
         ),
     ),
@@ -58,6 +63,10 @@ MODELS: list[ModelInfo] = [
             input_per_million=2.0,
             output_per_million=12.0,
             cache_read_per_million=0.2,
+            cache_write_per_million=2.5,
+            long_context_threshold_tokens=272_000,
+            long_context_input_multiplier=2.0,
+            long_context_output_multiplier=1.5,
             verified=_VERIFIED,
         ),
     ),
@@ -70,6 +79,10 @@ MODELS: list[ModelInfo] = [
             input_per_million=0.2,
             output_per_million=1.2,
             cache_read_per_million=0.02,
+            cache_write_per_million=0.25,
+            long_context_threshold_tokens=272_000,
+            long_context_input_multiplier=2.0,
+            long_context_output_multiplier=1.5,
             verified=_VERIFIED,
         ),
     ),

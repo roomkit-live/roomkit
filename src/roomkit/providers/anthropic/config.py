@@ -2,7 +2,18 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel, SecretStr
+
+_ADAPTIVE_THINKING_MODEL_PREFIXES = (
+    "claude-opus-4-7",
+    "claude-opus-4-8",
+    "claude-opus-5",
+    "claude-sonnet-5",
+    "claude-fable-5",
+    "claude-mythos-5",
+)
 
 
 class AnthropicConfig(BaseModel):
@@ -31,11 +42,22 @@ class AnthropicConfig(BaseModel):
     use_adaptive_thinking: bool = False
     """Send extended thinking as ``{"type": "adaptive"}`` instead of the
     deprecated ``{"type": "enabled", "budget_tokens": N}``. Anthropic's newer
-    models (Opus 4.7/4.8, Fable 5) reject ``budget_tokens`` with HTTP 400;
-    adaptive is the modern, recommended shape on Opus 4.6+ and Sonnet 4.6.
-    Leave False for older models (Sonnet 4.5 and earlier) that only accept
-    ``budget_tokens``."""
+    models reject ``budget_tokens`` with HTTP 400. Official modern models are
+    profiled automatically; an explicit value or custom ``base_url`` is left
+    untouched for compatibility with proxies and older deployments."""
     supports_custom_temperature: bool = True
     """When False, ``temperature`` is omitted from requests. Anthropic's
-    reasoning models (Opus 4.7/4.8, Fable 5) removed the sampling parameters
-    and reject ``temperature`` with HTTP 400."""
+    modern reasoning models removed the sampling parameters and reject
+    ``temperature`` with HTTP 400. Official modern models are profiled
+    automatically unless this field is explicitly set."""
+
+    def model_post_init(self, __context: Any) -> None:
+        """Apply safe defaults for Anthropic's modern first-party models."""
+        if self.base_url is not None or not self.model.startswith(
+            _ADAPTIVE_THINKING_MODEL_PREFIXES
+        ):
+            return
+        if "use_adaptive_thinking" not in self.model_fields_set:
+            self.use_adaptive_thinking = True
+        if "supports_custom_temperature" not in self.model_fields_set:
+            self.supports_custom_temperature = False
