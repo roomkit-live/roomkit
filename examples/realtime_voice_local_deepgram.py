@@ -12,6 +12,9 @@ below, and each can be swapped mid-conversation.
 Requirements:
     pip install roomkit websockets sounddevice numpy aec-audio-processing
 
+    `aec-audio-processing` is not optional on open speakers: without it the mic is
+    muted while the agent talks, so you cannot interrupt it. With it, barge-in works.
+
 Run with:
     DEEPGRAM_API_KEY=... uv run python examples/realtime_voice_local_deepgram.py
 
@@ -22,6 +25,9 @@ Environment variables:
     DEEPGRAM_THINK_MODEL  LLM model (default: gpt-4o-mini)
     DEEPGRAM_GREETING     Line the agent speaks first (default: a short hello)
     SYSTEM_PROMPT         Custom system prompt
+    AEC                   webrtc (default) | speex | 0 to disable
+    MUTE_MIC              0 to keep the mic open during playback, 1 to force muting
+                          (default: muted only when AEC is unavailable)
 
 Press Ctrl+C to stop.
 """
@@ -82,11 +88,20 @@ async def main() -> None:
     aec = build_aec(sample_rate, block_ms, default="webrtc")
     pipeline = build_pipeline(aec=aec)
 
+    # When AEC is active it removes speaker echo from the mic signal, so the mic
+    # can stay open during playback. Without AEC the mic is muted while the agent
+    # speaks: Deepgram's turn detection cannot tell the agent's own voice from the
+    # caller's, so an open mic transcribes the agent back as user speech, fires
+    # UserStartedSpeaking, and the barge-in loop never stops.
+    # MUTE_MIC=0|1 overrides the auto behaviour (same as the OpenAI example).
+    mute_env = os.environ.get("MUTE_MIC")
+    mute_mic = mute_env != "0" if mute_env is not None else aec is None
+
     transport = LocalAudioBackend(
         input_sample_rate=sample_rate,
         output_sample_rate=sample_rate,
         block_duration_ms=block_ms,
-        mute_mic_during_playback=False,
+        mute_mic_during_playback=mute_mic,
         aec=aec,
     )
 
