@@ -232,8 +232,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   text channel remembered an activation past the turn that made it. Nothing
   could: the rebuilt context carries message events, not tool calls, so the
   body genuinely vanished between turns and a model still working on the task
-  obeyed the preamble and fetched it again. On a Luge onboarding room a 9 KB
-  skill cost 28 KB of reloading over three exchanges — more than the skill
+  obeyed the preamble and fetched it again. In one production onboarding room a
+  9 KB skill cost 28 KB of reloading over three exchanges — more than the skill
   itself, and enough to undo the trimming that had just been done to it. The
   channel now records which skills a room activated and renders their bodies
   into each turn's system prompt, so `activate_skill` answers later calls with
