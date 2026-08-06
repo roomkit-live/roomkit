@@ -31,6 +31,7 @@ from roomkit.sandbox.tools import SANDBOX_PREAMBLE as _SANDBOX_PREAMBLE
 from roomkit.sandbox.tools import SANDBOX_TOOL_PREFIX as _SANDBOX_TOOL_PREFIX
 
 if TYPE_CHECKING:
+    from roomkit.channels._skill_activation import SkillActivationMemory
     from roomkit.channels._tool_usage import ToolUsageMemory
     from roomkit.channels.ai import _ContentPart, _ToolLoopContext
     from roomkit.memory.base import MemoryProvider
@@ -62,6 +63,7 @@ class AIContextHost(Protocol):
         _sandbox: Sandbox executor for ad-hoc command execution.
         _memory: Memory provider for conversation retrieval.
         _eviction: Tool result eviction / truncation strategy.
+        _skill_activation: Per-room record of the skills active in a conversation.
         _planner: Optional task planner for planning tools.
         _user_tools: User-provided tool definitions.
         _injected_tools: Orchestration-injected tool definitions.
@@ -88,6 +90,7 @@ class AIContextHost(Protocol):
     _eviction: ToolEviction
     _tool_usage: ToolUsageMemory
     _tool_usage_loader: Any
+    _skill_activation: SkillActivationMemory
     _planner: TaskPlanner | None
     _user_tools: list[AITool]
     _injected_tools: list[AITool]
@@ -125,6 +128,7 @@ class AIContextMixin:
     _eviction: ToolEviction
     _tool_usage: ToolUsageMemory
     _tool_usage_loader: Any
+    _skill_activation: SkillActivationMemory
     _planner: TaskPlanner | None
     _user_tools: list[AITool]
     _injected_tools: list[AITool]
@@ -203,8 +207,22 @@ class AIContextMixin:
                 existing_names = {t.name for t in tools}
                 tools.extend(t for t in hi_tools if t.name not in existing_names)
 
+        # Skill activation is keyed on the tool loop's room — the very id
+        # ``activate_skill`` will write under (``handle_event`` stamps it on this
+        # ctx, and the loop's child ctx inherits it), so what is written and what
+        # is rendered can never drift apart. It is the event's room in practice;
+        # reading it from the ctx is what makes that a fact rather than a hope.
+        loop_ctx = self._get_loop_ctx()
+        activation_room = loop_ctx.room_id
+
+        # Rebuild the room-scoped working memories from persisted history the
+        # first time this process serves the room (see _hydrate_room_memories).
+        # Runs BEFORE the skills block: the active-skill bodies it may restore
+        # are rendered into the prompt just below.
+        await self._hydrate_room_memories(event.room_id, activation_room)
+
         # Inject skill tools and prompt (infra tools added here, gated tools later).
-        # The prompt block is skipped when the host renders its own skills
+        # The manifest block is skipped when the host renders its own skills
         # manifest inside ``system_prompt`` (``skills_in_prompt=False``).
         if self._skills and self._skills.skill_count > 0:
             tools.extend(self._skill_tools())
@@ -215,6 +233,18 @@ class AIContextMixin:
                 skills_xml = self._skills.to_prompt_xml()
                 skill_block = f"\n\n{preamble}\n\n{skills_xml}"
                 system_prompt = (system_prompt or "") + skill_block
+            # Bodies of the skills activated in this room. Unlike the manifest
+            # above, this is RUNTIME state, not the catalogue: a host that
+            # renders its own manifest (``skills_in_prompt=False``) still cannot
+            # know what the model activated mid-conversation, so this block is
+            # injected either way — exactly like the tool-usage digest, the Tool
+            # Search preamble and the sandbox preamble. Its mutability is also
+            # why it belongs here rather than in the host's cache-stable prefix.
+            # This is what makes ``activate_skill``'s later ACKs safe: the rules
+            # are in front of the model without the body being re-sent.
+            active_skills = self._skill_activation.render_prompt(activation_room, self._skills)
+            if active_skills:
+                system_prompt = (system_prompt or "") + f"\n\n{active_skills}"
 
         # Inject sandbox tools and preamble
         if self._sandbox is not None:
@@ -251,19 +281,6 @@ class AIContextMixin:
                     self._planner.current_plan
                 )
 
-        # Rebuild the tool-usage working memory from persisted history the
-        # first time this process serves the room — the in-memory store dies
-        # with the channel object (restart, cache expiry) while conversations
-        # outlive it; without this the agent restarts amnesic mid-conversation
-        # (re-find_tools, re-fetches of data it already had).
-        if self._tool_usage_loader is not None and self._tool_usage.needs_hydration(event.room_id):
-            try:
-                past_calls = await self._tool_usage_loader(event.room_id)
-            except Exception:
-                logger.exception("Tool-usage hydration failed for room %s", event.room_id)
-                past_calls = []
-            self._tool_usage.seed(event.room_id, past_calls)
-
         # "Tools you've already used" digest — the rebuilt context drops
         # tool-call events, so without this the model forgets, across turns,
         # which tools/source it used (it would re-ask the user). Injected for
@@ -279,7 +296,6 @@ class AIContextMixin:
         # Unlike realtime, no provider.reconfigure is needed: the tool loop
         # re-sends its (re-filtered) tool list every round.
         window = self._provider.context_window
-        loop_ctx = self._get_loop_ctx()
         loop_ctx.tool_search_active = should_activate_tool_search(
             mode=self._tool_search,
             catalogue=tools,
@@ -415,6 +431,43 @@ class AIContextMixin:
             target_capabilities=target_caps,
             target_media_types=target_media,
         )
+
+    async def _hydrate_room_memories(
+        self, usage_room_id: str, activation_room_id: str | None
+    ) -> None:
+        """Rebuild the room-scoped working memories from persisted history.
+
+        Both memories live on the channel object, which dies (process restart,
+        cache expiry, the object swapped when another room attaches the same
+        agent) while conversations outlive it. Without this the agent restarts
+        amnesic mid-conversation: re-``find_tools``, re-fetches of data it
+        already had, and a re-activation of every skill it was already running
+        under. One fetch feeds both — they read different rows of the same
+        ``TOOL_CALL_END`` history — and each keeps its own one-shot flag, so a
+        memory already hydrated is never re-seeded from stale history.
+
+        Each memory is keyed the way its own writer keys it: the usage digest
+        on the event's room, the activation record on the tool loop's. The two
+        are the same room in production — the ``RoomContext`` is built for the
+        event — so this is one fetch, not two.
+        """
+        if self._tool_usage_loader is None:
+            return
+        usage_needs = self._tool_usage.needs_hydration(usage_room_id)
+        skills_needs = self._skills is not None and self._skill_activation.needs_hydration(
+            activation_room_id
+        )
+        if not usage_needs and not skills_needs:
+            return
+        try:
+            past_calls = await self._tool_usage_loader(usage_room_id)
+        except Exception:
+            logger.exception("Tool-call hydration failed for room %s", usage_room_id)
+            past_calls = []
+        if usage_needs:
+            self._tool_usage.seed(usage_room_id, past_calls)
+        if skills_needs:
+            self._skill_activation.seed(activation_room_id, past_calls)
 
     def _determine_role(self, event: RoomEvent) -> str:
         if event.source.channel_id == self.channel_id:

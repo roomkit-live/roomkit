@@ -12,6 +12,7 @@ from roomkit.sandbox.tools import SANDBOX_TOOL_PREFIX
 from roomkit.tools.policy import ToolPolicy
 
 if TYPE_CHECKING:
+    from roomkit.channels._skill_activation import SkillActivationMemory
     from roomkit.channels.ai import _ToolLoopContext
     from roomkit.models.context import RoomContext
     from roomkit.models.event import RoomEvent
@@ -25,6 +26,7 @@ class ToolPolicyHost(Protocol):
     Attributes provided by the host's ``__init__``:
         _tool_policy: Global tool access policy (may contain per-role overrides).
         _skills: Skill registry for gated tool resolution.
+        _skill_activation: Per-room record of the skills active in a conversation.
 
     Methods provided by AISteeringMixin (or equivalent):
         _get_loop_ctx: Return the current tool-loop context (activated skills,
@@ -33,6 +35,7 @@ class ToolPolicyHost(Protocol):
 
     _tool_policy: ToolPolicy | None
     _skills: SkillRegistry | None
+    _skill_activation: SkillActivationMemory
     _tool_search_pinned: set[str]
 
     def _get_loop_ctx(self) -> _ToolLoopContext: ...
@@ -46,6 +49,7 @@ class AIToolPolicyMixin:
 
     _tool_policy: ToolPolicy | None
     _skills: SkillRegistry | None
+    _skill_activation: SkillActivationMemory
     _tool_search_pinned: set[str]
     _get_loop_ctx: Callable[[], _ToolLoopContext]
 
@@ -74,10 +78,21 @@ class AIToolPolicyMixin:
 
     @property
     def _gated_tool_names(self) -> set[str]:
-        """Collect tool names gated by skills that have NOT been activated yet."""
+        """Collect tool names gated by skills that have NOT been activated yet.
+
+        An activation counts for the whole conversation, not just the turn that
+        made it: the loop context is only this turn's view, so it is unioned
+        with the room's activation record. Without that, a skill activated in
+        turn N would see its gated tools disappear again in turn N+1 — while
+        its instructions, now carried by the system prompt, still tell the
+        model to use them.
+        """
         if not self._skills:
             return set()
-        activated = self._get_loop_ctx().activated_skills
+        loop_ctx = self._get_loop_ctx()
+        activated = loop_ctx.activated_skills | self._skill_activation.active_names(
+            loop_ctx.room_id
+        )
         gated: set[str] = set()
         for meta in self._skills.all_metadata():
             if meta.name in activated:

@@ -36,6 +36,7 @@ from roomkit.channels._ai_resilience import AIResilienceMixin
 from roomkit.channels._ai_steering import AISteeringMixin
 from roomkit.channels._ai_streaming import AIStreamingMixin
 from roomkit.channels._ai_tools import AIToolsMixin
+from roomkit.channels._skill_activation import SkillActivationMemory
 from roomkit.channels._task_planner import TaskPlanner
 from roomkit.channels._tool_eviction import ToolEviction
 from roomkit.channels._tool_search_constants import (
@@ -249,6 +250,11 @@ class AIChannel(
         # "tools you've already used" digest and re-reveals used tools each turn
         # so a tool used once stays callable under Tool Search. See _tool_usage.
         self._tool_usage = ToolUsageMemory()
+        # Per-conversation record of the skills the model activated. Their bodies
+        # ride the system prompt from the next turn on, so ``activate_skill``
+        # answers with a short ACK instead of re-sending a multi-KB body every
+        # turn (the rebuilt context drops tool results). See _skill_activation.
+        self._skill_activation = SkillActivationMemory()
         self._planner = TaskPlanner() if enable_planning else None
         # Tool Search — progressive tool disclosure for large catalogues.
         # ``None`` auto-enables when the deferrable tools would exceed

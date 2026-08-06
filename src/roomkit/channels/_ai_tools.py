@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 from roomkit.channels._sandbox_handlers import handle_sandbox_command
 from roomkit.channels._skill_constants import (
     ACTIVATE_SKILL_SCHEMA,
+    ALREADY_ACTIVE_NOTE,
     READ_REFERENCE_SCHEMA,
     RUN_SCRIPT_SCHEMA,
     TOOL_ACTIVATE_SKILL,
@@ -17,6 +18,7 @@ from roomkit.channels._skill_constants import (
     TOOL_RUN_SCRIPT,
 )
 from roomkit.channels._skill_handlers import (
+    activation_ack,
     handle_activate_skill,
     handle_read_reference,
     handle_run_script,
@@ -48,6 +50,7 @@ from roomkit.tools.validation import validate_tool_arguments
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
+    from roomkit.channels._skill_activation import SkillActivationMemory
     from roomkit.channels._task_planner import TaskPlanner
     from roomkit.channels._tool_eviction import ToolEviction
     from roomkit.channels._tool_usage import ToolUsageMemory
@@ -76,6 +79,7 @@ class AIToolsHost(Protocol):
         _script_executor: Script executor for skill scripts.
         _sandbox: Sandbox executor for ad-hoc command execution.
         _eviction: Tool result eviction / truncation strategy.
+        _skill_activation: Per-room record of the skills active in a conversation.
         _planner: Optional task planner.
         _realtime: Realtime backend for ephemeral events.
         _current_room_id: Current room ID for tool-call hook events.
@@ -97,6 +101,7 @@ class AIToolsHost(Protocol):
     _sandbox: SandboxExecutor | None
     _eviction: ToolEviction
     _tool_usage: ToolUsageMemory
+    _skill_activation: SkillActivationMemory
     _planner: TaskPlanner | None
     _realtime: RealtimeBackend | None
     _current_room_id: str | None
@@ -136,6 +141,7 @@ class AIToolsMixin:
     _sandbox: SandboxExecutor | None
     _eviction: ToolEviction
     _tool_usage: ToolUsageMemory
+    _skill_activation: SkillActivationMemory
     _planner: TaskPlanner | None
     _realtime: RealtimeBackend | None
     _current_room_id: str | None
@@ -279,7 +285,14 @@ class AIToolsMixin:
                 # BEFORE eviction — the string below may become a placeholder,
                 # but UI surfaces need the structured payload verbatim.
                 structured_content = _tc_ctx.structured_content
-                result = self._maybe_truncate_result(result, tc.id)
+                # A skill's instructions are binding rules the model must hold
+                # whole — never a head/tail preview behind a read_stored_result
+                # pointer, which is what eviction would make of a body over the
+                # threshold (a 20 KB skill crosses it). Every other tool still
+                # evicts, references included: those are data, and paginating
+                # data is exactly what eviction is for.
+                if tc.name != TOOL_ACTIVATE_SKILL:
+                    result = self._maybe_truncate_result(result, tc.id)
 
                 # Fire unified ON_TOOL_CALL hook (if framework injected callback)
                 if self._tool_call_hook is not None:
@@ -423,7 +436,8 @@ class AIToolsMixin:
             return json.dumps({"error": "No skills registry configured"})
         result_str, skill_name = await handle_activate_skill(arguments, self._skills)
         loop_ctx = self._get_loop_ctx()
-        if skill_name and self._skills.get_skill(skill_name) is None:
+        skill = self._skills.get_skill(skill_name) if skill_name else None
+        if skill_name and skill is None:
             # A known-but-unavailable skill already carries its reason in the
             # error — a "this is not a skill" tools hint would contradict it.
             if self._skills.get_unavailable_reason(skill_name) is None:
@@ -446,7 +460,14 @@ class AIToolsMixin:
             return result_str
         # Track activation so gated tools become visible on next round
         loop_ctx.activated_skills.add(skill_name)
-        return result_str
+        # ... and for the rest of the conversation, so the body can ride the
+        # system prompt instead of being re-fetched every turn.
+        if skill is None or self._skill_activation.activate(loop_ctx.room_id, skill_name):
+            return result_str
+        # Already active: _build_context put these very instructions in front of
+        # the model before the turn started, so the body just built above would
+        # be a second copy of rules it already holds. Ack instead.
+        return activation_ack(skill, ALREADY_ACTIVE_NOTE, already_active=True)
 
     async def _handle_read_reference(self, arguments: dict[str, Any]) -> str:
         """Read a reference file from a skill."""

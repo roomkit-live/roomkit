@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from roomkit.skills.executor import ScriptExecutor
+    from roomkit.skills.models import Skill
     from roomkit.skills.registry import SkillRegistry
 
 logger = logging.getLogger("roomkit.channels.skills")
@@ -23,6 +24,26 @@ def missing_skill_error(skills: SkillRegistry, skill_name: str) -> str:
     if reason is not None:
         return f"Skill {skill_name!r} is unavailable in this context: {reason}"
     return f"Skill {skill_name!r} not found"
+
+
+def activation_ack(skill: Skill, note: str, *, already_active: bool = False) -> str:
+    """Acknowledge an activation without re-sending the skill's body.
+
+    The body reaches the model through the system prompt instead — folded into
+    ``system_instruction`` on realtime channels, into the turn's system prompt on
+    the text channel. What the tool still owes the model is the activation itself
+    plus the skill's file inventory, which is what this returns.
+    """
+    payload: dict[str, Any] = {"ok": True, "name": skill.name, "_note": note}
+    if already_active:
+        payload["already_active"] = True
+    scripts = skill.list_scripts()
+    if scripts:
+        payload["scripts"] = scripts
+    refs = skill.list_references()
+    if refs:
+        payload["references"] = refs
+    return json.dumps(payload)
 
 
 async def handle_activate_skill(

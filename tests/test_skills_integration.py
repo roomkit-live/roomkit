@@ -576,3 +576,220 @@ class TestNoSkillsNoop:
         assert output.responded is True
         assert provider.calls[0].system_prompt == "Be nice."
         assert len(provider.calls[0].tools) == 0
+
+
+class PerTurnToolCallProvider(MockAIProvider):
+    """Emits the same tool call at the start of every turn, then answers.
+
+    The channel calls ``generate`` twice per turn when the model uses one tool
+    round — the call, then the answer — so alternating on the call count
+    reproduces a model that re-issues ``activate_skill`` on each new turn,
+    which is the behaviour this suite is about.
+    """
+
+    def __init__(self, name: str, arguments: dict[str, Any], *, streaming: bool = False) -> None:
+        super().__init__(responses=["Done."], streaming=streaming)
+        self._name = name
+        self._arguments = arguments
+        self._n = 0
+
+    async def generate(self, context: AIContext) -> AIResponse:
+        self.calls.append(context)
+        self._n += 1
+        if self._n % 2 == 1:
+            return AIResponse(
+                content="",
+                finish_reason="tool_calls",
+                usage={"prompt_tokens": 10, "completion_tokens": 5},
+                tool_calls=[
+                    AIToolCall(id=f"tc{self._n}", name=self._name, arguments=self._arguments)
+                ],
+            )
+        return AIResponse(
+            content="Done.",
+            finish_reason="stop",
+            usage={"prompt_tokens": 10, "completion_tokens": 5},
+        )
+
+
+def _tool_results(context: AIContext) -> list[dict[str, Any]]:
+    """Decode the tool results carried by a generate call's messages."""
+    results: list[dict[str, Any]] = []
+    for message in context.messages:
+        if message.role != "tool" or not isinstance(message.content, list):
+            continue
+        results.extend(json.loads(part.result) for part in message.content)
+    return results
+
+
+class TestActivationSurvivesTheTurn:
+    """A skill activated once stays active — body in the prompt, ACK on the tool."""
+
+    async def test_body_once_then_ack_with_rules_in_the_prompt(self, tmp_path: Path) -> None:
+        _make_skill_dir_full(
+            tmp_path,
+            "onboarding",
+            references=[("catalog.md", "# Catalog")],
+            body="Greet the member, then walk them through setup.",
+        )
+        registry = SkillRegistry()
+        registry.discover(tmp_path)
+
+        provider = PerTurnToolCallProvider("activate_skill", {"name": "onboarding"})
+        ch = AIChannel("ai1", provider=provider, skills=registry)
+
+        await ch.on_event(make_event(body="hi", channel_id="sms1"), _binding(), _ctx())
+        await ch.on_event(make_event(body="and then?", channel_id="sms1"), _binding(), _ctx())
+
+        # Turn 1: the prompt cannot carry a body nobody has activated yet, so
+        # the tool answers with the full instructions.
+        assert "Active skill instructions" not in (provider.calls[0].system_prompt or "")
+        first = _tool_results(provider.calls[1])[0]
+        assert "Greet the member" in first["instructions"]
+        assert "catalog.md" in first["references"]
+
+        # Turn 2: the rules ride the system prompt, so the tool only acks.
+        second_prompt = provider.calls[2].system_prompt or ""
+        assert "Active skill instructions" in second_prompt
+        assert "Greet the member, then walk them through setup." in second_prompt
+        ack = _tool_results(provider.calls[3])[-1]
+        assert ack["already_active"] is True
+        assert "instructions" not in ack
+        assert "catalog.md" in ack["references"]
+
+    async def test_bodies_reach_a_host_that_renders_its_own_manifest(self, tmp_path: Path) -> None:
+        """``skills_in_prompt=False`` drops the catalogue, never the active rules.
+
+        The flag says "I render the skills manifest myself"; a host cannot know
+        what the model activated mid-conversation, so the runtime state stays
+        RoomKit's to inject.
+        """
+        _make_skill_dir(tmp_path, "onboarding", body="Follow the onboarding script.")
+        registry = SkillRegistry()
+        registry.discover(tmp_path)
+
+        provider = PerTurnToolCallProvider("activate_skill", {"name": "onboarding"})
+        ch = AIChannel("ai1", provider=provider, skills=registry, skills_in_prompt=False)
+
+        await ch.on_event(make_event(body="hi", channel_id="sms1"), _binding(), _ctx())
+        await ch.on_event(make_event(body="next", channel_id="sms1"), _binding(), _ctx())
+
+        prompt = provider.calls[2].system_prompt or ""
+        assert "<available_skills>" not in prompt
+        assert "Follow the onboarding script." in prompt
+
+    async def test_the_streaming_loop_gets_the_same_lifecycle(self, tmp_path: Path) -> None:
+        """Both tool loops run the same round, so streaming acks the same way."""
+        _make_skill_dir(tmp_path, "onboarding", body="Follow the onboarding script.")
+        registry = SkillRegistry()
+        registry.discover(tmp_path)
+
+        provider = PerTurnToolCallProvider(
+            "activate_skill", {"name": "onboarding"}, streaming=True
+        )
+        ch = AIChannel("ai1", provider=provider, skills=registry)
+
+        for body in ("hi", "next"):
+            output = await ch.on_event(
+                make_event(body=body, channel_id="sms1"), _binding(), _ctx()
+            )
+            assert output.response_stream is not None
+            [chunk async for chunk in output.response_stream]
+
+        assert "Follow the onboarding script." in (provider.calls[2].system_prompt or "")
+        assert _tool_results(provider.calls[3])[-1]["already_active"] is True
+
+    async def test_activation_is_scoped_to_its_room(self, tmp_path: Path) -> None:
+        _make_skill_dir(tmp_path, "onboarding", body="Follow the onboarding script.")
+        registry = SkillRegistry()
+        registry.discover(tmp_path)
+
+        provider = PerTurnToolCallProvider("activate_skill", {"name": "onboarding"})
+        ch = AIChannel("ai1", provider=provider, skills=registry)
+
+        await ch.on_event(make_event(body="hi", channel_id="sms1"), _binding(), _ctx())
+
+        other_binding = ChannelBinding(
+            channel_id="ai1",
+            room_id="r2",
+            channel_type=ChannelType.AI,
+            category=ChannelCategory.INTELLIGENCE,
+        )
+        other_ctx = RoomContext(room=Room(id="r2"))
+        await ch.on_event(
+            make_event(body="hi", channel_id="sms1", room_id="r2"), other_binding, other_ctx
+        )
+
+        # Another conversation gets the body, not one room's activation.
+        assert "Active skill instructions" not in (provider.calls[2].system_prompt or "")
+        other_result = _tool_results(provider.calls[3])[0]
+        assert "Follow the onboarding script." in other_result["instructions"]
+
+    async def test_gated_tools_stay_visible_on_later_turns(self, tmp_path: Path) -> None:
+        """Activation counts for the conversation, so its tools stop re-hiding."""
+        skill_dir = tmp_path / "publisher"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text(
+            "---\nname: publisher\ndescription: Publishes\n"
+            "allowed_tools: publish_site\n---\nPublish carefully.",
+            encoding="utf-8",
+        )
+        registry = SkillRegistry()
+        registry.discover(tmp_path)
+
+        provider = PerTurnToolCallProvider("activate_skill", {"name": "publisher"})
+        ch = AIChannel("ai1", provider=provider, skills=registry)
+        binding = ChannelBinding(
+            channel_id="ai1",
+            room_id="r1",
+            channel_type=ChannelType.AI,
+            category=ChannelCategory.INTELLIGENCE,
+            metadata={"tools": [{"name": "publish_site", "description": "Publish"}]},
+        )
+
+        await ch.on_event(make_event(body="hi", channel_id="sms1"), binding, _ctx())
+        await ch.on_event(make_event(body="publish it", channel_id="sms1"), binding, _ctx())
+
+        # Turn 1 round 0: gated. Turn 2 round 0: still visible, no re-activation.
+        assert "publish_site" not in [t.name for t in provider.calls[0].tools]
+        assert "publish_site" in [t.name for t in provider.calls[2].tools]
+
+
+class TestSkillBodyEscapesEviction:
+    """Instructions are binding rules — never a preview behind a pointer."""
+
+    async def test_large_skill_body_is_returned_whole(self, tmp_path: Path) -> None:
+        body = "Follow this rule.\n" * 400  # ~7 KB, well past the threshold below
+        _make_skill_dir(tmp_path, "verbose", body=body)
+        registry = SkillRegistry()
+        registry.discover(tmp_path)
+
+        provider = PerTurnToolCallProvider("activate_skill", {"name": "verbose"})
+        ch = AIChannel("ai1", provider=provider, skills=registry, evict_threshold_tokens=100)
+
+        await ch.on_event(make_event(body="hi", channel_id="sms1"), _binding(), _ctx())
+
+        result = _tool_results(provider.calls[1])[0]
+        assert result["instructions"].count("Follow this rule.") == 400
+        assert "read_stored_result" not in json.dumps(result)
+
+    async def test_large_reference_is_still_evicted(self, tmp_path: Path) -> None:
+        """A reference is data, and paginating data is what eviction is for."""
+        _make_skill_dir_full(
+            tmp_path,
+            "documented",
+            references=[("big.md", "line of reference\n" * 400)],
+        )
+        registry = SkillRegistry()
+        registry.discover(tmp_path)
+
+        provider = PerTurnToolCallProvider(
+            "read_skill_reference", {"skill_name": "documented", "filename": "big.md"}
+        )
+        ch = AIChannel("ai1", provider=provider, skills=registry, evict_threshold_tokens=100)
+
+        await ch.on_event(make_event(body="hi", channel_id="sms1"), _binding(), _ctx())
+
+        messages = provider.calls[1].messages
+        tool_msg = [m for m in messages if m.role == "tool"][0]
+        assert "read_stored_result" in tool_msg.content[0].result

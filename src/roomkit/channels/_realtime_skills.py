@@ -23,6 +23,7 @@ from roomkit.channels._skill_constants import (
     TOOL_RUN_SCRIPT,
 )
 from roomkit.channels._skill_handlers import (
+    activation_ack,
     handle_read_reference,
     handle_run_script,
     missing_skill_error,
@@ -285,18 +286,7 @@ class RealtimeSkillSupport:
                 "tool calls without invoking them."
             )
 
-        payload: dict[str, Any] = {
-            "ok": True,
-            "name": skill.name,
-            "_note": note,
-        }
-        scripts = skill.list_scripts()
-        if scripts:
-            payload["scripts"] = scripts
-        refs = skill.list_references()
-        if refs:
-            payload["references"] = refs
-        return json.dumps(payload)
+        return activation_ack(skill, note)
 
     async def _handle_read_reference(self, arguments: dict[str, Any]) -> str:
         """Read a reference file from a skill."""

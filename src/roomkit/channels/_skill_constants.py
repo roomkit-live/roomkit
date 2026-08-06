@@ -29,6 +29,12 @@ SKILLS_INLINE_PREAMBLE = (
 
 SKILLS_NO_SCRIPTS_NOTE = " Note: Script execution is not available in this environment."
 
+ALREADY_ACTIVE_NOTE = (
+    "This skill is already active — its full instructions are in your system "
+    "rules, under 'Active skill instructions'. Follow them. There is nothing "
+    "more to load: use other tools to act."
+)
+
 # Shared tool schemas — used by both AIChannel (_ai_tools.py) and
 # RealtimeVoiceChannel (_realtime_skills.py) to avoid duplication.
 
