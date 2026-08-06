@@ -360,6 +360,52 @@ class TestInboundDispatch:
 
         await provider.disconnect(session)
 
+    async def test_first_audio_frame_opens_the_turn(
+        self, provider: DeepgramAgentProvider, session: VoiceSession
+    ) -> None:
+        """The channel arms echo cancellation on response_start.
+
+        If audio reaches the speaker first, the AEC is still bypassed and the
+        agent hears itself — so the first frame must open the turn even when
+        AgentStartedSpeaking never arrives.
+        """
+        start = _Recorder()
+        provider.on_response_start(start)
+        ws = await _connect(provider, session)
+
+        ws.push(b"first-frame")
+        assert await start.wait() == (session,)
+        assert provider.is_responding(session.id) is True
+
+        # Idempotent: the rest of the turn does not re-open it.
+        ws.push(b"second-frame")
+        ws.push(json.dumps({"type": "AgentStartedSpeaking"}))
+        ws.push(json.dumps({"type": "AgentAudioDone"}))
+        await asyncio.sleep(0.05)
+        assert len(start.calls) == 1
+
+        await provider.disconnect(session)
+
+    async def test_turn_reopens_after_audio_done(
+        self, provider: DeepgramAgentProvider, session: VoiceSession
+    ) -> None:
+        start = _Recorder()
+        end = _Recorder()
+        provider.on_response_start(start)
+        provider.on_response_end(end)
+        ws = await _connect(provider, session)
+
+        ws.push(b"turn-1")
+        await start.wait()
+        ws.push(json.dumps({"type": "AgentAudioDone"}))
+        await end.wait()
+
+        ws.push(b"turn-2")
+        await start.wait()
+        assert len(start.calls) == 2
+
+        await provider.disconnect(session)
+
     async def test_response_lifecycle(
         self, provider: DeepgramAgentProvider, session: VoiceSession
     ) -> None:

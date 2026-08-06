@@ -55,6 +55,9 @@ class _SessionState:
     receive_task: asyncio.Task[None] | None = None
     keepalive_task: asyncio.Task[None] | None = None
     responding: bool = False
+    # Whether response_start has already fired for the turn being spoken.
+    # Reset by AgentAudioDone, which closes the turn.
+    audio_started: bool = False
     # FunctionCallResponse requires the function name, but the RealtimeVoiceProvider
     # contract only hands submit_tool_result() the call id — so remember the pairing.
     pending_calls: dict[str, str] = field(default_factory=dict)
@@ -287,6 +290,7 @@ class DeepgramAgentProvider(RealtimeVoiceProvider):
     async def _handle_message(self, state: _SessionState, message: Any) -> dict[str, Any] | None:
         """Dispatch one frame; returns the decoded event, or None for audio."""
         if isinstance(message, bytes | bytearray):
+            await self._begin_response(state)
             await self._fire(self._audio_callbacks, state.session, bytes(message), label="audio")
             return None
         try:
@@ -330,14 +334,32 @@ class DeepgramAgentProvider(RealtimeVoiceProvider):
         state.responding = False
         await self._fire(self._speech_start_callbacks, state.session, label="speech_start")
 
-    async def _on_agent_started_speaking(
-        self, state: _SessionState, event: dict[str, Any]
-    ) -> None:
+    async def _begin_response(self, state: _SessionState) -> None:
+        """Open the agent's turn, at the latest on its first audio frame.
+
+        The channel arms echo cancellation on ``on_response_start``
+        (``channels/_realtime_response.py``); the AEC sits in bypass until then,
+        so any speaker output played before it is never cancelled and comes
+        straight back through an open mic — which Deepgram's transcription then
+        reports as user speech. Deepgram does not guarantee that
+        ``AgentStartedSpeaking`` reaches us ahead of the audio it announces, so
+        the first frame opens the turn if that event has not already done it.
+        Idempotent for the rest of the turn; ``AgentAudioDone`` closes it.
+        """
+        if state.audio_started:
+            return
+        state.audio_started = True
         state.responding = True
         await self._fire(self._response_start_callbacks, state.session, label="response_start")
 
+    async def _on_agent_started_speaking(
+        self, state: _SessionState, event: dict[str, Any]
+    ) -> None:
+        await self._begin_response(state)
+
     async def _on_agent_audio_done(self, state: _SessionState, event: dict[str, Any]) -> None:
         state.responding = False
+        state.audio_started = False
         await self._fire(self._response_end_callbacks, state.session, label="response_end")
 
     async def _on_injection_refused(self, state: _SessionState, event: dict[str, Any]) -> None:
