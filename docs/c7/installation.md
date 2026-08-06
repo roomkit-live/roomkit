@@ -93,8 +93,26 @@ pip install roomkit[opentelemetry]     # OpenTelemetry tracing
 ```bash
 pip install roomkit[providers]  # All AI + transport providers
 pip install roomkit[sources]    # All event-driven sources
+pip install roomkit[all]        # Everything installable together
 pip install roomkit[dev]        # Development (test + lint + type check)
 ```
+
+### Incompatible Extras
+
+`qwen-tts`, `qwen-asr` and `neutts` each pin an exact `transformers` version
+(4.57.3, 4.57.6 and 5.1.0), so they cannot be installed together. They are also
+incompatible with `smart-turn`, whose floor is `transformers>=5.5` — the first
+version without GHSA-fgcw-684q-jj6r — and therefore with `all`, which includes
+`smart-turn`.
+
+```bash
+pip install roomkit[all]              # includes smart-turn
+pip install roomkit[qwen-tts]         # in its own environment
+```
+
+`pyproject.toml` declares these conflicts, so an unsatisfiable combination fails
+at resolution naming the two extras rather than backtracking onto an older
+`transformers`.
 
 ## Environment Variables
 

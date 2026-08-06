@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.42.0] — 2026-08-05
+## [0.42.0] — 2026-08-06
 
 ### Added
 
@@ -222,12 +222,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   documented as an ordinary outcome (`context_window is None`, degrade) rather
   than a gap to be raced against every vendor announcement.
 
-- **`model` is now required on `AnthropicConfig` and `OpenAIConfig`.** Their
-  former defaults (`claude-sonnet-4-20250514` and `gpt-4o`) could age into a 404,
-  while silently advancing either one would change a caller's cost, latency and
-  behavior on a library upgrade. RoomKit therefore makes neither product choice:
-  callers select a model explicitly. Existing callers that already pass
-  `model=` are unaffected; every example now shows the choice it makes.
+- **BREAKING — `model` is now required on `AnthropicConfig` and
+  `OpenAIConfig`.** Their former defaults (`claude-sonnet-4-20250514` and
+  `gpt-4o`) could age into a 404, while silently advancing either one would
+  change a caller's cost, latency and behavior on a library upgrade. RoomKit
+  therefore makes neither product choice: callers select a model explicitly.
+  Migration: pass the id at construction —
+  `AnthropicConfig(api_key=..., model="claude-opus-5")`. A caller that already
+  passes `model=` is unaffected; every example now shows the choice it makes.
 
 ### Fixed
 
@@ -550,6 +552,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `InboundMessage` whose body may be empty. That is not a new shape — a photo
   without a caption already produced exactly it — but a consumer that filters
   on a non-empty body will see one more message.
+
+### Security
+
+- **The `smart-turn` extra no longer resolves a `transformers` with a known
+  RCE.** Its floor was `transformers>=4.57`, and every version below 5.5.0
+  carries GHSA-fgcw-684q-jj6r — arbitrary code execution during model
+  initialization. RoomKit's own use is narrow: `SmartTurnDetector` constructs
+  `WhisperFeatureExtractor(chunk_length=...)` directly and never calls
+  `from_pretrained`, so the library does not walk the advisory's path itself.
+  Shipping an extra that resolves to a vulnerable version is still a fact an
+  auditing consumer has to answer for, and an application sharing the
+  environment may well load a model. The floor is now `transformers>=5.5`.
+
+  That has a packaging consequence worth stating plainly. `qwen-tts`,
+  `qwen-asr` and `neutts` pin `transformers` exactly, at 4.57.3, 4.57.6 and
+  5.1.0 — all below the new floor — and the `all` extra includes `smart-turn`.
+  So `roomkit[all,qwen-tts]` and its siblings can no longer resolve, and
+  `pyproject.toml` now declares those six conflicts explicitly: a resolver
+  error naming the two extras, instead of a silent backtrack onto a vulnerable
+  `transformers`. Install those three engines in an environment without
+  `smart-turn` or `all`.
 
 ## [0.41.4] — 2026-08-05
 
