@@ -36,6 +36,7 @@ await kit.attach_channel("voice-room", "realtime-voice", category=ChannelCategor
 | Google Gemini Live | `GeminiLiveProvider` | `roomkit[realtime-gemini]` | Gemini 2.0 speech-to-speech |
 | OpenAI Realtime | `OpenAIRealtimeProvider` | `roomkit[realtime-openai]` | GPT-4o realtime audio |
 | xAI Grok | `XAIRealtimeProvider` | — | Grok speech-to-speech |
+| Deepgram Voice Agent | `DeepgramAgentProvider` | `roomkit[realtime-deepgram]` | Nova listen + LLM think + Aura speak, each chosen separately |
 | Mock | `MockRealtimeProvider` | built-in | Testing |
 
 ```python
