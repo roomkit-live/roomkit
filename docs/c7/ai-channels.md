@@ -46,12 +46,13 @@ await kit.attach_channel("support", "ai-assistant", category=ChannelCategory.INT
 
 Provider notes:
 
-- **Modern official defaults** — `OpenAIConfig()` automatically uses
-  `max_completion_tokens` and omits custom temperature for current GPT-5 and
-  o-series ids. `AnthropicConfig()` automatically uses adaptive thinking and
-  omits temperature for current Claude reasoning ids. Explicit flags take
-  precedence, and a custom `base_url` keeps conservative legacy behavior for
-  compatible servers.
+- **Explicit model selection** — `model=` is required by `OpenAIConfig` and
+  `AnthropicConfig`; upgrading RoomKit therefore cannot silently change cost,
+  latency, or model behavior. For the selected model, `OpenAIConfig`
+  automatically uses `max_completion_tokens` and omits custom temperature for
+  current GPT-5 and o-series ids, while `AnthropicConfig` uses adaptive thinking
+  and omits temperature for current Claude reasoning ids. Explicit flags take
+  precedence, and a custom `base_url` keeps conservative legacy behavior.
 
 - **Gemini on Vertex AI** (`roomkit.providers.gemini.vertex`) — subclass of `GeminiAIProvider` serving the same Gemini models through a Google Cloud project with a pinned region (`GeminiVertexConfig` requires `project` and `location`, e.g. `"northamerica-northeast1"`; auth is ADC, no API key). Use it when data residency matters (Québec Law 25 / PIPEDA). Generation, streaming, thinking, and the model catalog are inherited unchanged.
 - **OpenRouter** (`roomkit.providers.openrouter`) — subclass of `OpenAIAIProvider` pointed at `https://openrouter.ai/api/v1`; `OpenRouterConfig` subclasses `OpenAIConfig` (adds `site_url`/`app_name` attribution headers) and `model` is a required slug like `"anthropic/claude-sonnet-4.5"`. Reasoning is forwarded to any upstream model via OpenRouter's unified `reasoning` object. Model-listing nuance: OpenRouter's `/models` items omit the `object`/`owned_by` fields the OpenAI SDK expects, so `list_models()` reads the raw JSON instead.
@@ -360,7 +361,7 @@ ai = AIChannel(
 )
 ```
 
-When enabled, the AI gets a `_plan_tasks` tool that accepts a list of tasks with `title` and `status` (`pending`, `in_progress`, `completed`, `blocked`). The current plan is:
+When enabled, the AI gets a `plan_tasks` tool that accepts up to 100 tasks with a title of at most 500 characters and a `status` (`pending`, `in_progress`, `completed`, `blocked`). Undeclared task fields are discarded. The current plan is:
 - Injected into the system prompt on each turn (so the AI sees its progress)
 - Published as an ephemeral `CUSTOM` event with `data.type = "plan_updated"` for real-time UI rendering
 

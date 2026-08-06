@@ -81,7 +81,11 @@ async def main() -> None:
     ai = AIChannel(
         "ai-assistant",
         provider=AnthropicAIProvider(
-            AnthropicConfig(api_key=anthropic_key, max_tokens=2048),
+            AnthropicConfig(
+                api_key=anthropic_key,
+                model="claude-opus-5",
+                max_tokens=2048,
+            ),
         ),
         system_prompt=SYSTEM_PROMPT,
         tools=[webcam_tool, list_tool],

@@ -31,7 +31,7 @@ async def main() -> None:
     # --- Configuration -------------------------------------------------------
     env = require_env("ANTHROPIC_API_KEY")
 
-    config = AnthropicConfig(api_key=env["ANTHROPIC_API_KEY"])
+    config = AnthropicConfig(api_key=env["ANTHROPIC_API_KEY"], model="claude-opus-5")
     provider = AnthropicAIProvider(config)
 
     # --- RoomKit setup -------------------------------------------------------

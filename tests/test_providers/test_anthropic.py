@@ -28,7 +28,7 @@ def _mock_anthropic_module() -> MagicMock:
 
 
 def _config(**overrides: Any) -> AnthropicConfig:
-    defaults: dict[str, Any] = {"api_key": "sk-test-key"}
+    defaults: dict[str, Any] = {"api_key": "sk-test-key", "model": "claude-opus-5"}
     defaults.update(overrides)
     return AnthropicConfig(**defaults)
 

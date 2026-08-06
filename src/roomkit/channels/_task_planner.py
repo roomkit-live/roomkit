@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 from collections import OrderedDict
-from typing import Any, cast
+from typing import Any
 
 from roomkit.providers.ai.base import AITool
 from roomkit.realtime.base import EphemeralEvent, EphemeralEventType, RealtimeBackend
@@ -19,6 +19,8 @@ _STATUS_ICONS = {
     "pending": "[ ]",
 }
 _MAX_ROOMS = 100
+_MAX_TASKS = 100
+_MAX_TITLE_LENGTH = 500
 
 
 class TaskPlanner:
@@ -96,6 +98,8 @@ class TaskPlanner:
         """
         if not isinstance(value, list):
             return [], "Invalid plan: 'tasks' must be an array"
+        if len(value) > _MAX_TASKS:
+            return [], f"Invalid plan: at most {_MAX_TASKS} tasks are allowed"
 
         tasks: list[dict[str, Any]] = []
         for index, task in enumerate(value):
@@ -104,12 +108,20 @@ class TaskPlanner:
             title = task.get("title")
             if not isinstance(title, str):
                 return [], f"Invalid plan: task {index} title must be a string"
+            if len(title) > _MAX_TITLE_LENGTH:
+                return [], (
+                    f"Invalid plan: task {index} title must be at most "
+                    f"{_MAX_TITLE_LENGTH} characters"
+                )
             status = task.get("status")
             if not isinstance(status, str) or status not in _STATUS_ICONS:
                 return [], (
                     f"Invalid plan: task {index} status must be one of {', '.join(_STATUS_ICONS)}"
                 )
-            tasks.append(cast(dict[str, Any], task).copy())
+            # Retain only the declared contract. Model-authored extra fields
+            # may contain arbitrarily large nested data and must not reach the
+            # room cache, realtime payload, or next-turn prompt.
+            tasks.append({"title": title, "status": status})
         return tasks, None
 
     @staticmethod
@@ -137,19 +149,25 @@ class TaskPlanner:
                 "properties": {
                     "tasks": {
                         "type": "array",
+                        "maxItems": _MAX_TASKS,
                         "items": {
                             "type": "object",
                             "properties": {
-                                "title": {"type": "string"},
+                                "title": {
+                                    "type": "string",
+                                    "maxLength": _MAX_TITLE_LENGTH,
+                                },
                                 "status": {
                                     "type": "string",
                                     "enum": ["pending", "in_progress", "completed", "blocked"],
                                 },
                             },
                             "required": ["title", "status"],
+                            "additionalProperties": False,
                         },
                     },
                 },
                 "required": ["tasks"],
+                "additionalProperties": False,
             },
         )

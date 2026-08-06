@@ -222,24 +222,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   documented as an ordinary outcome (`context_window is None`, degrade) rather
   than a gap to be raced against every vendor announcement.
 
-- **`AnthropicConfig.model` now defaults to `claude-opus-5` (was
-  `claude-sonnet-4-20250514`) and `OpenAIConfig.model` to `gpt-5.6-sol` (was
-  `gpt-4o`).** The Anthropic default named a deprecated snapshot whose
-  announced retirement date has passed, so the out-of-the-box path was one
-  vendor cleanup away from a 404 at the first request — and `gpt-4o` was two
-  frontier generations behind. A default that names a dated snapshot ages into
-  a bug; both now track the vendor's current flagship and move when the lineup
-  does. Callers passing `model=` explicitly are unaffected — pin an id to opt
-  out. The snapshot is still listed (flagged deprecated) for anyone who does,
-  but it is gone from the ten examples and the docs that hardcoded it.
+- **`model` is now required on `AnthropicConfig` and `OpenAIConfig`.** Their
+  former defaults (`claude-sonnet-4-20250514` and `gpt-4o`) could age into a 404,
+  while silently advancing either one would change a caller's cost, latency and
+  behavior on a library upgrade. RoomKit therefore makes neither product choice:
+  callers select a model explicitly. Existing callers that already pass
+  `model=` are unaffected; every example now shows the choice it makes.
 
 ### Fixed
 
 - **GPT-5.6 function tools no longer inherit an incompatible reasoning
   default.** The OpenAI provider uses Chat Completions, where GPT-5.6 function
   tools require effective reasoning `none`; omitting the parameter selected the
-  family's `medium` default and made the new out-of-the-box model fail as soon
-  as an `AIChannel` exposed a tool. Official GPT-5.6 tool turns now send
+  family's `medium` default and made a configured GPT-5.6 model fail as soon as
+  an `AIChannel` exposed a tool. Official GPT-5.6 tool turns now send
   `reasoning_effort="none"` explicitly. Custom OpenAI-compatible endpoints are
   not profiled. The same vendor check corrected Luna's offline metadata from
   the Sol/Terra 1.05M window to 400k and removed the Sol/Terra-only long-context
@@ -259,8 +255,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   concurrency. All of these paths now resolve the invocation-scoped room from
   the tool-loop context, and plans are stored and rendered by room id in the
   same bounded 100-room working set as the other channel memories. Model-authored
-  plans are validated and copied before that state changes, so malformed nested
-  arguments return a tool error without poisoning the room's later context.
+  plans are validated and copied before that state changes, limited to 100 tasks
+  with 500-character titles, and stripped to their declared fields, so malformed
+  or oversized nested arguments cannot poison the room's later context.
+
+- **An empty per-turn toolset now fails closed.** `current_tool_allowed_names()`
+  returned `None` both before context construction and after resolving a room to
+  zero tools. A host following its fallback contract could therefore replace a
+  deny-all decision with a broader static allowlist. A resolved empty toolset now
+  returns `set()`, and `AIChannel` rejects a provider-authored tool name outside
+  the resolved current-turn toolset before it reaches the shared user handler.
 
 - **Human-input notifications stop with their owning channel.** The tracked
   callback tasks introduced in this release had no shutdown path, so a slow or
@@ -279,10 +283,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Message id. A 200 refusal remains a Telegram error and an incomplete or
   mismatched response becomes `invalid_response` (or `None` for `get_file`).
 
-- **Release compatibility and security review.** The official OpenAI and
-  Anthropic defaults now select the request parameters their modern models
-  accept, while explicit flags, older model ids and compatible custom
-  endpoints retain their prior behavior. Token pricing now represents
+- **Release compatibility and security review.** Official OpenAI and Anthropic
+  configurations now profile the explicitly selected model with request
+  parameters it accepts, while explicit flags, older model ids and compatible
+  custom endpoints retain their prior behavior. The release script pushes only
+  its own tag instead of every local tag. Token pricing now represents
   long-context tiers and explicit GPT-5.6 cache writes; usage normalization
   separates those writes from ordinary input; and the live catalog check flags
   a positive upstream rate that RoomKit accidentally leaves unset.

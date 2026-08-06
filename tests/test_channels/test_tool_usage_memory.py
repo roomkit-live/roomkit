@@ -375,6 +375,7 @@ class TestToolUsageInContext:
             child = _ToolLoopContext.for_loop(parent, "r1")
             assert "SpotifyPlayback" in child.sticky_tools  # inherited by the loop
             _current_loop_ctx.set(child)
+            assert parent.all_context_tools is not None
             kept = {t.name for t in ch._apply_tool_filters(parent.all_context_tools)}
         finally:
             _current_loop_ctx.set(None)

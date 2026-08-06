@@ -181,12 +181,14 @@ def test_resume_accepts_the_direct_next_dev_commit(tmp_path: Path) -> None:
     _git(tmp_path, "init", "--bare", str(remote))
     _git(repo, "remote", "add", "origin", str(remote))
     _git(repo, "push", "-u", "origin", "main")
+    _git(repo, "tag", "local-only")
 
     result = _run(repo)
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert "already released (HEAD on 1.3.0.dev0)" in result.stdout
     assert _git(remote, "show-ref", "--verify", "refs/tags/v1.2.3").returncode == 0
+    assert "local-only" not in _git(remote, "tag").stdout.splitlines()
 
 
 def test_resume_after_version_commit_before_tag(tmp_path: Path) -> None:
@@ -195,6 +197,7 @@ def test_resume_after_version_commit_before_tag(tmp_path: Path) -> None:
     _git(tmp_path, "init", "--bare", str(remote))
     _git(repo, "remote", "add", "origin", str(remote))
     _git(repo, "push", "-u", "origin", "main")
+    _git(repo, "tag", "local-only")
     code_sha = _git(repo, "rev-parse", "HEAD").stdout.strip()
 
     # State left by an interruption after `git commit` and before `git tag`.
@@ -207,6 +210,7 @@ def test_resume_after_version_commit_before_tag(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stdout + result.stderr
     assert f"CI is green for {code_sha}." in result.stdout
     assert _git(repo, "rev-list", "-n", "1", "v1.2.3").stdout.strip() == release_sha
+    assert "local-only" not in _git(remote, "tag").stdout.splitlines()
     assert "1.3.0.dev0" in (repo / VERSION_FILE).read_text(encoding="utf-8")
 
 

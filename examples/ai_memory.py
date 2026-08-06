@@ -90,7 +90,7 @@ async def main() -> None:
     api_key = env["ANTHROPIC_API_KEY"]
 
     # Main provider for generation
-    main_provider = AnthropicAIProvider(AnthropicConfig(api_key=api_key))
+    main_provider = AnthropicAIProvider(AnthropicConfig(api_key=api_key, model="claude-opus-5"))
 
     # Lightweight provider for summarization (Haiku — fast and cheap)
     summary_provider = AnthropicAIProvider(

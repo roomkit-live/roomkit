@@ -1,6 +1,6 @@
-"""AI Planning — structured task tracking with _plan_tasks tool.
+"""AI Planning — structured task tracking with plan_tasks tool.
 
-When ``enable_planning=True``, AIChannel exposes a ``_plan_tasks`` tool
+When ``enable_planning=True``, AIChannel exposes a ``plan_tasks`` tool
 that lets the AI create and update structured task lists. The current
 plan is automatically injected into the system prompt on every turn so
 the AI always knows where it left off.
@@ -37,7 +37,9 @@ async def main() -> None:
     cli = CLIChannel("cli")
     ai = AIChannel(
         "ai-assistant",
-        provider=AnthropicAIProvider(AnthropicConfig(api_key=env["ANTHROPIC_API_KEY"])),
+        provider=AnthropicAIProvider(
+            AnthropicConfig(api_key=env["ANTHROPIC_API_KEY"], model="claude-opus-5")
+        ),
         system_prompt=(
             "You are a project planning assistant.\n"
             "When the user asks you to work on something with multiple steps, "

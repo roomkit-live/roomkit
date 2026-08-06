@@ -14,6 +14,7 @@ from roomkit.models.room import Room
 from roomkit.providers.ai.base import (
     AIContext,
     AIResponse,
+    AITool,
     AIToolCall,
 )
 from roomkit.providers.ai.mock import MockAIProvider
@@ -495,6 +496,7 @@ class TestUserToolHandlerDelegation:
             provider=provider,
             skills=registry,
             tool_handler=user_handler,
+            tools=[AITool(name="custom_search", description="Search", parameters={})],
         )
         await ch.on_event(make_event(body="search", channel_id="sms1"), _binding(), _ctx())
 

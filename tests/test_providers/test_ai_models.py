@@ -43,6 +43,15 @@ CURATED = [
     (OllamaAIProvider, OllamaConfig),
 ]
 
+# Curated providers that deliberately retain a model default. OpenAI and
+# Anthropic require callers to choose explicitly because their model selection
+# materially changes cost, latency, and behavior.
+DEFAULTED_CURATED = [
+    (GeminiAIProvider, GeminiConfig),
+    (MistralAIProvider, MistralConfig),
+    (OllamaAIProvider, OllamaConfig),
+]
+
 # Providers whose vendor publishes a per-token list price, so every model in
 # the catalog must carry one. Ollama (open weights pulled onto your own
 # hardware) and PolarGrid (private edges) publish none — demanding a price
@@ -310,7 +319,7 @@ def test_curated_catalog_is_nonempty_and_unique(
     assert len(ids) == len(set(ids)), f"{provider_cls.__name__} has duplicate model ids"
 
 
-@pytest.mark.parametrize(("provider_cls", "config_cls"), CURATED)
+@pytest.mark.parametrize(("provider_cls", "config_cls"), DEFAULTED_CURATED)
 def test_default_config_model_is_in_catalog(
     provider_cls: type[AIProvider], config_cls: type
 ) -> None:

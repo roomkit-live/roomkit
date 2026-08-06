@@ -18,7 +18,7 @@ from roomkit.core.framework import RoomKit
 from roomkit.models.delivery import InboundMessage
 from roomkit.models.enums import ChannelCategory
 from roomkit.models.event import TextContent
-from roomkit.providers.ai.base import AIResponse, AIToolCall
+from roomkit.providers.ai.base import AIResponse, AITool, AIToolCall
 from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.realtime.base import EphemeralEvent, EphemeralEventType
 from roomkit.tools.external import PolicyExternalToolHandler
@@ -155,7 +155,12 @@ async def test_non_streaming_tool_loop_publishes_tool_events() -> None:
         ],
     )
     kit = RoomKit()
-    ai = AIChannel("ai1", provider=provider, tool_handler=tool_handler)
+    ai = AIChannel(
+        "ai1",
+        provider=provider,
+        tool_handler=tool_handler,
+        tools=[AITool(name="calc", description="Calculate", parameters={})],
+    )
 
     received = await _run_turn(kit, ai)
     starts, ends = _tool_events(received)

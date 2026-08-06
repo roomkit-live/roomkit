@@ -121,7 +121,7 @@ async def show_live_openai() -> None:
 
     from roomkit.providers.openai.config import OpenAIConfig
 
-    provider = OpenAIAIProvider(OpenAIConfig(api_key=api_key))
+    provider = OpenAIAIProvider(OpenAIConfig(api_key=api_key, model="gpt-5.6-sol"))
     try:
         live = await provider.list_models()
         print(f"\nOpenAI live — {len(live)} models reported by the API")

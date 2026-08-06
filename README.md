@@ -51,7 +51,7 @@ async def main():
     # One channel for the user, one for AI
     ws = WebSocketChannel("ws-user")
     ai = AIChannel("assistant", provider=AnthropicAIProvider(
-        AnthropicConfig(api_key="sk-...")
+        AnthropicConfig(api_key="sk-...", model="claude-opus-5")
     ), system_prompt="You are a helpful assistant.")
 
     kit.register_channel(ws)
@@ -167,7 +167,9 @@ from roomkit.memory.sliding_window import SlidingWindowMemory
 
 triage = Agent(
     "agent-triage",
-    provider=AnthropicAIProvider(AnthropicConfig(api_key="sk-...")),
+    provider=AnthropicAIProvider(
+        AnthropicConfig(api_key="sk-...", model="claude-opus-5")
+    ),
     role="Triage receptionist",
     description="Routes callers to the right specialist",
     system_prompt="You triage incoming requests.",

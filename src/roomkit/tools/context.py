@@ -76,6 +76,6 @@ def current_tool_allowed_names() -> set[str] | None:
     from roomkit.channels.ai import _current_loop_ctx
 
     ctx = _current_loop_ctx.get()
-    if ctx is None or not ctx.all_context_tools:
+    if ctx is None or ctx.all_context_tools is None:
         return None
     return {t.name for t in ctx.all_context_tools if getattr(t, "name", None)}

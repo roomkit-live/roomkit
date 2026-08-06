@@ -46,7 +46,7 @@ For each non-self text event, `on_event()` returns `ChannelOutput(responded=True
 - `agent_message_chunk` → `str` deltas → streamed to transports, persisted as the response event.
 - `agent_thought_chunk` → `ThinkingDeltaMarker` in the stream, plus ephemeral `THINKING_START` / `THINKING_DELTA` (thinking truncated to 1000 chars) / `THINKING_END`.
 - `tool_call` / `tool_call_update` → `ToolCallStartMarker` / `ToolCallEndMarker` in the stream (persisted as `TOOL_CALL_START`/`TOOL_CALL_END` RoomEvents) plus matching ephemeral events (`result` truncated to 500 chars, `duration_ms`); non-terminal progress → ephemeral `CUSTOM` `{"type": "acp_tool_progress"}`.
-- `plan` / `plan_update` / `plan_removed` → ephemeral `CUSTOM` `{"type": "acp_plan_update", session_id, update}`. **Not** `ON_PLAN_UPDATED` — that hook belongs to AIChannel's `_plan_tasks` tool.
+- `plan` / `plan_update` / `plan_removed` → ephemeral `CUSTOM` `{"type": "acp_plan_update", session_id, update}`. **Not** `ON_PLAN_UPDATED` — that hook belongs to AIChannel's `plan_tasks` tool.
 - `usage_update` → ephemeral `CUSTOM` `{"type": "acp_usage"}`.
 
 `register_channel()` wires `kit`'s realtime backend in automatically. A failed prompt surfaces as `ProviderError(provider="acp")`; cancellation ends the stream silently and closes any open thinking block.

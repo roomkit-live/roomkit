@@ -43,7 +43,7 @@ def _mock_openai_module() -> MagicMock:
 
 
 def _config(**overrides: Any) -> OpenAIConfig:
-    defaults: dict[str, Any] = {"api_key": "sk-test-key"}
+    defaults: dict[str, Any] = {"api_key": "sk-test-key", "model": "gpt-5.6-sol"}
     defaults.update(overrides)
     return OpenAIConfig(**defaults)
 

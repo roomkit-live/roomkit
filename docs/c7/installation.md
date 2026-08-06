@@ -103,7 +103,7 @@ Provider-specific API keys are passed via configuration objects, not environment
 ```python
 from roomkit.providers.anthropic.config import AnthropicConfig
 
-config = AnthropicConfig(api_key="sk-ant-...")
+config = AnthropicConfig(api_key="sk-ant-...", model="claude-opus-5")
 ```
 
 For voice providers, use lazy loaders to avoid import-time dependency checks:

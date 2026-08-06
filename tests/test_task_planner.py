@@ -38,9 +38,12 @@ class TestToolDefinition:
         tool = TaskPlanner.tool_definition()
         tasks_schema = tool.parameters["properties"]["tasks"]
         assert tasks_schema["type"] == "array"
+        assert tasks_schema["maxItems"] == 100
         items = tasks_schema["items"]
         assert items["type"] == "object"
+        assert items["additionalProperties"] is False
         assert "title" in items["properties"]
+        assert items["properties"]["title"]["maxLength"] == 500
         assert "status" in items["properties"]
         assert items["properties"]["status"]["enum"] == [
             "pending",
@@ -174,6 +177,48 @@ class TestHandlePlanTasks:
         tasks[0]["title"] = "Mutated later"
 
         assert planner.plan_for("room-1") == [{"title": "Original", "status": "pending"}]
+
+    async def test_rejects_too_many_tasks_without_replacing_plan(self) -> None:
+        planner = TaskPlanner()
+        original = [{"title": "Keep", "status": "in_progress"}]
+        await planner.handle_plan_tasks({"tasks": original}, room_id="room-1")
+
+        oversized = [{"title": str(index), "status": "pending"} for index in range(101)]
+        result = await planner.handle_plan_tasks({"tasks": oversized}, room_id="room-1")
+
+        assert "at most 100 tasks" in json.loads(result)["error"]
+        assert planner.plan_for("room-1") == original
+
+    async def test_rejects_an_overlong_title_without_replacing_plan(self) -> None:
+        planner = TaskPlanner()
+        original = [{"title": "Keep", "status": "in_progress"}]
+        await planner.handle_plan_tasks({"tasks": original}, room_id="room-1")
+
+        result = await planner.handle_plan_tasks(
+            {"tasks": [{"title": "x" * 501, "status": "pending"}]},
+            room_id="room-1",
+        )
+
+        assert "at most 500 characters" in json.loads(result)["error"]
+        assert planner.plan_for("room-1") == original
+
+    async def test_discards_model_authored_extra_fields(self) -> None:
+        planner = TaskPlanner()
+
+        await planner.handle_plan_tasks(
+            {
+                "tasks": [
+                    {
+                        "title": "Bounded",
+                        "status": "pending",
+                        "untrusted": {"nested": ["payload"]},
+                    }
+                ]
+            },
+            room_id="room-1",
+        )
+
+        assert planner.plan_for("room-1") == [{"title": "Bounded", "status": "pending"}]
 
     async def test_publishes_ephemeral_event(self) -> None:
         planner = TaskPlanner()

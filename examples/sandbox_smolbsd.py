@@ -67,7 +67,9 @@ async def main() -> None:
     cli = CLIChannel("cli")
     ai = AIChannel(
         "ai-assistant",
-        provider=AnthropicAIProvider(AnthropicConfig(api_key=env["ANTHROPIC_API_KEY"])),
+        provider=AnthropicAIProvider(
+            AnthropicConfig(api_key=env["ANTHROPIC_API_KEY"], model="claude-opus-5")
+        ),
         system_prompt=(
             "You are a helpful developer assistant with a sandboxed environment. "
             "You can read files, search code, run git commands, write files, and "

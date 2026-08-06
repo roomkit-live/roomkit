@@ -129,7 +129,8 @@ if [[ "$RESUME_DEV_CHILD" == "1" ]]; then
         exit 1
     fi
     echo "==> v${VERSION} already released (HEAD on ${HEAD_VERSION}); re-pushing git state."
-    git push && git push --tags
+    git push
+    git push origin "refs/tags/v${VERSION}"
     echo "==> Done."
     exit 0
 fi
@@ -299,7 +300,8 @@ fi
 # Release first means a failed upload leaves git and PyPI consistent and the
 # upload can simply be retried — PyPI is never ahead of the repository.
 echo "==> Pushing..."
-git push && git push --tags
+git push
+git push origin "refs/tags/v${VERSION}"
 echo "    Pushed."
 
 # --- GitHub Release (idempotent) ---

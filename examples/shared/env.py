@@ -54,7 +54,9 @@ def require_env(*names: str) -> dict[str, str]:
     Usage::
 
         env = require_env("ANTHROPIC_API_KEY")
-        config = AnthropicConfig(api_key=env["ANTHROPIC_API_KEY"])
+        config = AnthropicConfig(
+            api_key=env["ANTHROPIC_API_KEY"], model="claude-opus-5"
+        )
 
         # Multiple keys at once:
         env = require_env("OPENAI_API_KEY", "DEEPGRAM_API_KEY")

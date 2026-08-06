@@ -120,7 +120,9 @@ class _ToolLoopContext:
     # into the Tool Search keep-set by ``_apply_tool_filters`` — so a tool
     # used or found once stays callable without re-running find_tools.
     sticky_tools: set[str] = field(default_factory=set)
-    all_context_tools: list[Any] = field(default_factory=list)
+    # ``None`` means context construction has not run. An empty list is a
+    # completed, deny-all toolset and must remain distinguishable from it.
+    all_context_tools: list[Any] | None = None
     # Whether Tool Search is active for this turn (catalogue over threshold).
     # Decided once in ``_build_context`` and read by ``_apply_tool_filters`` on
     # every round, so it is inherited across for_loop like ``all_context_tools``.

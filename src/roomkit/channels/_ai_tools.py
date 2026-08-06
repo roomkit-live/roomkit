@@ -428,6 +428,16 @@ class AIToolsMixin:
         if self._sandbox is not None and name.startswith(SANDBOX_TOOL_PREFIX):
             return await handle_sandbox_command(name, arguments or {}, self._sandbox)
         if self._user_tool_handler:
+            # Provider responses are untrusted and may name a tool outside the
+            # turn's resolved toolset. Once context construction has resolved
+            # that invocation-scoped set, fail closed instead of forwarding a
+            # guessed name to a shared host handler. ``None`` preserves direct
+            # internal loops built without context; [] is a real deny-all set.
+            context_tools = self._get_loop_ctx().all_context_tools
+            if context_tools is not None and name not in {t.name for t in context_tools}:
+                return json.dumps(
+                    {"error": f"Tool '{name}' is not available in the current turn."}
+                )
             return str(await self._user_tool_handler(name, arguments))
         return json.dumps({"error": f"Unknown tool: {name}"})
 
@@ -447,7 +457,7 @@ class AIToolsMixin:
                 # end into the right outcome: reveal the matching tools and say so.
                 wanted = skill_name.lower()
                 matching = sorted(
-                    t.name for t in loop_ctx.all_context_tools if wanted in t.name.lower()
+                    t.name for t in loop_ctx.all_context_tools or () if wanted in t.name.lower()
                 )
                 if matching:
                     loop_ctx.revealed_tools.update(matching)
@@ -491,7 +501,7 @@ class AIToolsMixin:
                 "description": getattr(t, "description", "") or "",
                 "tags": getattr(t, "tags", []) or [],
             }
-            for t in loop_ctx.all_context_tools
+            for t in loop_ctx.all_context_tools or ()
         ]
 
     async def _handle_find_tools(self, arguments: dict[str, Any]) -> str:
