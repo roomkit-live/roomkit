@@ -35,6 +35,8 @@ Environment variables:
     DEEPGRAM_GREETING     Line the agent speaks first (default: a short hello)
     SYSTEM_PROMPT         Custom system prompt
     AEC                   webrtc (default) | speex | 0 to disable
+    AEC_DELAY_MS          Optional measured speaker-to-mic delay (default: auto)
+    AUDIO_PREBUFFER_MS    Speaker jitter buffer (default: 240)
     MUTE_MIC              0 to keep the mic open during playback, 1 to force muting
                           (default: muted only when AEC is unavailable)
 
@@ -112,6 +114,11 @@ async def main() -> None:
         output_sample_rate=sample_rate,
         block_duration_ms=block_ms,
         mute_mic_during_playback=mute_mic,
+        # Deepgram emits Aura audio in network bursts.  A larger buffer than
+        # the generic 120 ms default avoids the mid-response underrun that can
+        # otherwise create an audible cut and force the AEC render path to
+        # bridge a long silence gap. Override for lower-latency networks.
+        rt_prebuffer_ms=max(0, int(os.environ.get("AUDIO_PREBUFFER_MS", "240"))),
         aec=aec,
     )
 

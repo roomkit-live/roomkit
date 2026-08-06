@@ -69,7 +69,7 @@ class TestAECFeedPlayed:
 
         # Output block size: 24000 * 20/1000 * 1 * 2 = 960 bytes
         output_block = bytearray(b"\x01\x00" * (24000 * 20 // 1000))
-        backend._aec_feed_played(output_block)
+        backend._aec_feed_played(output_block, "s1")
 
         assert len(aec.reference_frames) == 1
         assert aec.reference_frames[0].sample_rate == 16000
@@ -87,7 +87,7 @@ class TestAECFeedPlayed:
 
         # Block size: 16000 * 20/1000 * 1 * 2 = 640 bytes
         block = bytearray(b"\x01\x00" * (16000 * 20 // 1000))
-        backend._aec_feed_played(block)
+        backend._aec_feed_played(block, "s1")
 
         assert len(aec.reference_frames) == 1
         assert aec.reference_frames[0].sample_rate == 16000
@@ -104,9 +104,28 @@ class TestAECFeedPlayed:
         )
 
         # Block size = 640 bytes; send less than one block
-        backend._aec_feed_played(bytearray(b"\x01\x00" * 100))  # 200 bytes
+        backend._aec_feed_played(bytearray(b"\x01\x00" * 100), "s1")  # 200 bytes
         assert len(aec.reference_frames) == 0
 
         # Send more to complete the block
-        backend._aec_feed_played(bytearray(b"\x01\x00" * 220))  # 440 bytes, total 640
+        backend._aec_feed_played(bytearray(b"\x01\x00" * 220), "s1")  # 440 bytes, total 640
         assert len(aec.reference_frames) == 1
+
+    def test_partial_reference_buffers_are_isolated_per_stream(self):
+        """A partial Alice block must never be completed with Bob's audio."""
+        aec = MockAECProvider()
+        backend = LocalAudioBackend(
+            input_sample_rate=16000,
+            output_sample_rate=16000,
+            channels=1,
+            block_duration_ms=20,
+            aec=aec,
+        )
+
+        backend._aec_feed_played(bytearray(b"\x01\x00" * 100), "alice")
+        backend._aec_feed_played(bytearray(b"\x02\x00" * 220), "bob")
+
+        assert aec.reference_frames == []
+
+        backend._aec_feed_played(bytearray(b"\x03\x00" * 220), "alice")
+        assert aec.reference_streams == ["alice"]

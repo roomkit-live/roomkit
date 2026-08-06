@@ -7,9 +7,10 @@ and error resilience in the outbound path.
 from __future__ import annotations
 
 from roomkit.voice.audio_frame import AudioFrame
-from roomkit.voice.base import VoiceSession
+from roomkit.voice.base import VoiceCapability, VoiceSession
+from roomkit.voice.pipeline.aec.base import AECProvider
 from roomkit.voice.pipeline.aec.mock import MockAECProvider
-from roomkit.voice.pipeline.config import AudioPipelineConfig
+from roomkit.voice.pipeline.config import AudioFormat, AudioPipelineConfig, AudioPipelineContract
 from roomkit.voice.pipeline.engine import AudioPipeline
 
 
@@ -70,32 +71,129 @@ class TestOutboundAECReference:
         assert pipeline._aec_resampler is None
 
     def test_aec_reference_fed_before_inbound(self):
-        """AEC reference fed even when no inbound frame has set _inbound_sample_rate."""
+        """AEC reference is still fed before capture establishes a format."""
         aec = MockAECProvider()
         config = AudioPipelineConfig(aec=aec)
         pipeline = AudioPipeline(config)
 
-        # Outbound without any prior inbound — _inbound_sample_rate is None
+        # Outbound without a prior capture and without a declared contract.
         pipeline.process_outbound(_session(), _frame(sample_rate=22050))
 
         # Reference still fed (no resample because target_rate is falsy)
         assert len(aec.reference_frames) == 1
 
+    def test_reference_matches_post_resampler_capture_format(self):
+        """AEC reference matches the frame format that actually reaches AEC."""
+        aec = MockAECProvider()
+        contract = AudioPipelineContract(
+            transport_inbound_format=AudioFormat(sample_rate=48000, channels=2),
+            transport_outbound_format=AudioFormat(sample_rate=48000, channels=2),
+            internal_format=AudioFormat(sample_rate=16000, channels=1),
+        )
+        pipeline = AudioPipeline(AudioPipelineConfig(aec=aec, contract=contract))
+        session = _session()
+
+        pipeline.process_inbound(
+            session,
+            AudioFrame(
+                data=b"\x01\x00" * 960,
+                sample_rate=48000,
+                channels=2,
+                sample_width=2,
+            ),
+        )
+        pipeline.process_outbound(
+            session,
+            AudioFrame(
+                data=b"\x02\x00" * 960,
+                sample_rate=48000,
+                channels=2,
+                sample_width=2,
+            ),
+        )
+
+        reference = aec.reference_frames[-1]
+        assert (reference.sample_rate, reference.channels, reference.sample_width) == (16000, 1, 2)
+
+    def test_reference_capture_format_is_tracked_per_stream(self):
+        """One session's native format must not be reused for another session."""
+        aec = MockAECProvider()
+        pipeline = AudioPipeline(AudioPipelineConfig(aec=aec))
+        alice = _session("alice")
+        bob = _session("bob")
+
+        pipeline.process_inbound(alice, _frame(sample_rate=16000))
+        pipeline.process_inbound(
+            bob,
+            AudioFrame(
+                data=b"\x01\x00\x00\x00" * 160,
+                sample_rate=8000,
+                channels=2,
+                sample_width=2,
+            ),
+        )
+        pipeline.process_outbound(
+            bob,
+            AudioFrame(
+                data=b"\x02\x00" * 320,
+                sample_rate=16000,
+                channels=1,
+                sample_width=2,
+            ),
+        )
+
+        reference = aec.reference_frames[-1]
+        assert aec.reference_streams[-1] == "bob"
+        assert (reference.sample_rate, reference.channels, reference.sample_width) == (8000, 2, 2)
+
+    def test_playback_reference_uses_capture_format(self):
+        """Playback-time callbacks use the same format normalization."""
+        aec = MockAECProvider()
+        pipeline = AudioPipeline(AudioPipelineConfig(aec=aec))
+        session = _session()
+        pipeline.enable_playback_aec_feed()
+        pipeline.process_inbound(session, _frame(sample_rate=16000))
+
+        pipeline.feed_aec_reference(
+            AudioFrame(
+                data=b"\x01\x00\x02\x00" * 480,
+                sample_rate=48000,
+                channels=2,
+                sample_width=2,
+            ),
+            session.id,
+        )
+
+        reference = aec.reference_frames[-1]
+        assert (reference.sample_rate, reference.channels, reference.sample_width) == (16000, 1, 2)
+
+    def test_playback_reference_skipped_for_native_aec(self):
+        """A NATIVE_AEC backend must not drive the configured pipeline AEC."""
+        aec = MockAECProvider()
+        pipeline = AudioPipeline(
+            AudioPipelineConfig(aec=aec),
+            backend_capabilities=VoiceCapability.NATIVE_AEC,
+        )
+
+        pipeline.feed_aec_reference(_frame(), "s1")
+
+        assert aec.reference_frames == []
+
 
 class TestPipelineResetWithAEC:
     """Tests for pipeline reset clearing AEC-related state."""
 
-    def test_reset_clears_inbound_sample_rate(self):
-        """reset() clears _inbound_sample_rate."""
+    def test_reset_clears_capture_formats(self):
+        """reset() clears every stream's remembered AEC capture format."""
         aec = MockAECProvider()
         config = AudioPipelineConfig(aec=aec)
         pipeline = AudioPipeline(config)
 
         pipeline.process_inbound(_session(), _frame(sample_rate=16000))
-        assert pipeline._inbound_sample_rate == 16000
+        assert pipeline._aec_capture_formats == {"s1": (16000, 1, 2)}
 
         pipeline.reset()
-        assert pipeline._inbound_sample_rate is None
+        assert pipeline._aec_capture_formats == {}
 
     def test_reset_resets_aec_resampler(self):
         """reset() resets the AEC resampler if it was created."""
@@ -112,6 +210,72 @@ class TestPipelineResetWithAEC:
         # LinearResamplerProvider doesn't track reset_count, but the
         # resampler should still be present (just reset, not destroyed)
         assert pipeline._aec_resampler is not None
+
+
+class TestAECActivityLifecycle:
+    """AEC activity follows all concurrent playback sources per stream."""
+
+    def test_last_playback_source_controls_bypass_without_reset(self):
+        """Stopping sources bypasses AEC without discarding its learned filter."""
+        aec = MockAECProvider()
+        pipeline = AudioPipeline(AudioPipelineConfig(aec=aec))
+
+        pipeline.set_aec_active("s1", True, source="bridge")
+        pipeline.set_aec_active("s1", True)
+        pipeline.set_aec_active("s1", False)
+
+        assert aec.active_changes == [("s1", True)]
+        assert aec.reset_count == 0
+
+        pipeline.set_aec_active("s1", False, source="bridge")
+
+        assert aec.active_changes == [("s1", True), ("s1", False)]
+        assert aec.reset_count == 0
+
+    def test_repeated_bridge_frames_do_not_repeat_provider_activation(self):
+        """The realtime bridge path changes provider state only once."""
+        aec = MockAECProvider()
+        pipeline = AudioPipeline(AudioPipelineConfig(aec=aec))
+
+        pipeline.set_aec_active("s1", True, source="bridge")
+        pipeline.set_aec_active("s1", True, source="bridge")
+
+        assert aec.active_changes == [("s1", True)]
+
+    def test_native_aec_owns_activity_state(self):
+        """Pipeline lifecycle must not manipulate a backend-native AEC."""
+        aec = MockAECProvider()
+        pipeline = AudioPipeline(
+            AudioPipelineConfig(aec=aec),
+            backend_capabilities=VoiceCapability.NATIVE_AEC,
+        )
+
+        pipeline.set_aec_active("s1", True)
+        pipeline.set_aec_active("s1", False)
+
+        assert aec.active_changes == []
+        assert aec.reset_count == 0
+
+    def test_legacy_global_provider_stays_active_for_other_streams(self):
+        """A global-only custom provider is disabled after its final stream."""
+
+        class GlobalAEC(MockAECProvider):
+            set_stream_active = AECProvider.set_stream_active
+
+        aec = GlobalAEC()
+        pipeline = AudioPipeline(AudioPipelineConfig(aec=aec))
+
+        pipeline.set_aec_active("alice", True)
+        pipeline.set_aec_active("bob", True)
+        pipeline.set_aec_active("alice", False)
+
+        assert aec.active_changes == [(None, True)]
+        assert aec.reset_streams == []
+
+        pipeline.set_aec_active("bob", False)
+
+        assert aec.active_changes == [(None, True), (None, False)]
+        assert aec.reset_streams == []
 
 
 class TestBackendFeedsFlag:
@@ -137,7 +301,7 @@ class TestAECOutboundErrorResilience:
         """AEC feed_reference error doesn't crash the outbound pipeline."""
 
         class FailingAEC(MockAECProvider):
-            def feed_reference(self, frame):
+            def feed_reference(self, frame, stream):
                 raise RuntimeError("AEC feed boom")
 
         aec = FailingAEC()

@@ -60,6 +60,20 @@ class AECProvider(ABC):
         active).
         """
 
+    def set_stream_active(self, stream: str, active: bool) -> None:
+        """Enable or disable AEC processing for one stream.
+
+        Providers with stream-local bypass state should override this method.
+        The default preserves compatibility with providers whose activation is
+        global by delegating to :meth:`set_active`.
+
+        Args:
+            stream: Identity passed to :meth:`process` and
+                :meth:`feed_reference` for this playback stream.
+            active: Whether echo cancellation should run for the stream.
+        """
+        self.set_active(active)
+
     def reset(self, stream: str) -> None:  # noqa: B027
         """Drop a stream's state.
 

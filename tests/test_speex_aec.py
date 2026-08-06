@@ -55,7 +55,7 @@ class TestSpeexAECProcess:
 
         aec = SpeexAECProvider(frame_size=320)
         frame_in = _frame(320, value=100)
-        frame_out = aec.process(frame_in)
+        frame_out = aec.process(frame_in, "s1")
 
         # Must return a *new* AudioFrame, not the same object.
         assert isinstance(frame_out, AudioFrame)
@@ -71,7 +71,7 @@ class TestSpeexAECProcess:
         aec = SpeexAECProvider(frame_size=320)
         frame_in = _frame(320)
         frame_in.timestamp_ms = 42.5
-        frame_out = aec.process(frame_in)
+        frame_out = aec.process(frame_in, "s1")
         assert frame_out.timestamp_ms == 42.5
         aec.close()
 
@@ -81,7 +81,7 @@ class TestSpeexAECProcess:
         aec = SpeexAECProvider(frame_size=320)
         frame_in = _frame(320)
         frame_in.metadata["source"] = "test"
-        frame_out = aec.process(frame_in)
+        frame_out = aec.process(frame_in, "s1")
         assert frame_out.metadata["source"] == "test"
         # Mutation of output metadata must not affect input.
         frame_out.metadata["extra"] = True
@@ -94,7 +94,7 @@ class TestSpeexAECProcess:
 
         aec = SpeexAECProvider(frame_size=320)
         wrong_frame = _frame(160)  # Half the expected size
-        result = aec.process(wrong_frame)
+        result = aec.process(wrong_frame, "s1")
         assert result is wrong_frame  # Same object returned
         aec.close()
 
@@ -104,7 +104,7 @@ class TestSpeexAECProcess:
         aec = SpeexAECProvider(frame_size=320)
         aec.close()
         frame = _frame(320)
-        result = aec.process(frame)
+        result = aec.process(frame, "s1")
         assert result is frame
 
     def test_silence_in_silence_out(self):
@@ -113,7 +113,7 @@ class TestSpeexAECProcess:
 
         aec = SpeexAECProvider(frame_size=320)
         frame_in = _frame(320, value=0)
-        frame_out = aec.process(frame_in)
+        frame_out = aec.process(frame_in, "s1")
         samples = struct.unpack(f"<{320}h", frame_out.data)
         assert all(s == 0 for s in samples)
         aec.close()
@@ -130,7 +130,7 @@ class TestSpeexAECFeedReference:
 
         aec = SpeexAECProvider(frame_size=320)
         ref = _frame(320, value=500)
-        aec.feed_reference(ref)  # Should not raise
+        aec.feed_reference(ref, "s1")  # Should not raise
         aec.close()
 
     def test_feed_reference_wrong_size_ignored(self):
@@ -138,7 +138,7 @@ class TestSpeexAECFeedReference:
 
         aec = SpeexAECProvider(frame_size=320)
         wrong = _frame(160)
-        aec.feed_reference(wrong)  # Should log warning, not raise
+        aec.feed_reference(wrong, "s1")  # Should log warning, not raise
         aec.close()
 
     def test_feed_reference_after_close(self):
@@ -146,7 +146,7 @@ class TestSpeexAECFeedReference:
 
         aec = SpeexAECProvider(frame_size=320)
         aec.close()
-        aec.feed_reference(_frame(320))  # Should not raise
+        aec.feed_reference(_frame(320), "s1")  # Should not raise
 
 
 # ---------------------------------------------------------------------------
@@ -159,9 +159,9 @@ class TestSpeexAECLifecycle:
         from roomkit.voice.pipeline.aec.speex import SpeexAECProvider
 
         aec = SpeexAECProvider(frame_size=320)
-        aec.reset()
+        aec.reset("s1")
         # Should still be usable after reset.
-        result = aec.process(_frame(320))
+        result = aec.process(_frame(320), "s1")
         assert isinstance(result, AudioFrame)
         aec.close()
 
@@ -177,7 +177,7 @@ class TestSpeexAECLifecycle:
 
         aec = SpeexAECProvider(frame_size=320)
         aec.close()
-        aec.reset()  # Must not raise
+        aec.reset("s1")  # Must not raise
 
 
 # ---------------------------------------------------------------------------
@@ -205,12 +205,12 @@ class TestSpeexAECEchoCancellation:
         # Interleave feed_reference + process so the adaptive filter
         # converges on the echo path.
         for _ in range(50):
-            aec.feed_reference(ref)
-            aec.process(capture)
+            aec.feed_reference(ref, "s1")
+            aec.process(capture, "s1")
 
         # One more round — this is the result we check.
-        aec.feed_reference(ref)
-        result = aec.process(capture)
+        aec.feed_reference(ref, "s1")
+        result = aec.process(capture, "s1")
 
         # The output energy should be lower than the input energy.
         in_samples = struct.unpack("<320h", capture.data)

@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any
 from roomkit.core.task_utils import log_task_exception
 from roomkit.voice.base import VoiceCapability
 from roomkit.voice.pipeline._telemetry import _PipelineTelemetry, active_stage_names
+from roomkit.voice.pipeline.aec.base import AECProvider
 from roomkit.voice.pipeline.vad.base import VADEventType
 
 if TYPE_CHECKING:
@@ -151,11 +152,20 @@ class AudioPipeline:
         self._recording_started_callbacks: list[RecordingStartedCallback] = []
         self._recording_stopped_callbacks: list[RecordingStoppedCallback] = []
         self._last_speaker_id: dict[str, str | None] = {}
-        # Inbound sample rate — tracked from first frame, used to resample
-        # AEC reference (outbound) to match inbound processing rate.
-        self._inbound_sample_rate: int | None = None
+        # Format that actually reaches AEC after inbound normalization, keyed
+        # by stream. A channel can carry sessions with different native
+        # formats, and the pre-resampler transport format is not what AEC sees.
+        self._aec_capture_formats: dict[str, tuple[int, int, int]] = {}
+        self._aec_capture_formats_lock = threading.Lock()
+        # A stream may have more than one concurrent playback source (for
+        # example TTS layered onto a human-to-human bridge).  Keep the AEC
+        # active until the last source stops; resetting it when only TTS ends
+        # would destroy the bridge's still-live adaptive filter.
+        self._aec_active_sources: dict[str, set[str]] = {}
+        self._aec_active_sources_lock = threading.Lock()
         # Lazy resampler for AEC reference (created on first mismatch)
         self._aec_resampler: ResamplerProvider | None = None
+        self._aec_resampler_lock = threading.Lock()
         # Active recording handle (per session, keyed by session_id)
         self._recording_handles: dict[str, RecordingHandle] = {}
         # Per-session lock for process_outbound — serializes concurrent
@@ -345,10 +355,6 @@ class AudioPipeline:
         # stream now, and the engine is the only thing that knows the keys.
         self._stage_streams.add(stream)
 
-        # Track inbound sample rate for AEC reference resampling
-        if self._inbound_sample_rate is None:
-            self._inbound_sample_rate = frame.sample_rate
-
         self._telemetry.count_frame(stream)
 
         # Stage 0: Inbound resampler (transport → internal format)
@@ -364,6 +370,21 @@ class AudioPipeline:
                     int_fmt.sample_width,
                     stream,
                 )
+
+        # AEC reference and capture MUST share the exact PCM format. Record the
+        # post-resampler frame rather than the transport frame that entered the
+        # method, and keep it per stream.
+        if (
+            self._config.aec is not None
+            and VoiceCapability.NATIVE_AEC not in self._backend_capabilities
+        ):
+            capture_format = (
+                current_frame.sample_rate,
+                current_frame.channels,
+                current_frame.sample_width,
+            )
+            with self._aec_capture_formats_lock:
+                self._aec_capture_formats[stream] = capture_format
 
         # Stage 1: Recorder inbound tap
         handle = self._recording_handles.get(stream)
@@ -574,18 +595,11 @@ class AudioPipeline:
             and not self._playback_aec_wired
         ):
             try:
-                ref_frame = current_frame
-                target_rate = self._inbound_sample_rate
-                if target_rate and ref_frame.sample_rate != target_rate:
-                    if self._aec_resampler is None:
-                        self._aec_resampler = _create_default_resampler()
-                    ref_frame = self._aec_resampler.resample(
-                        ref_frame,
-                        target_rate,
-                        ref_frame.channels,
-                        ref_frame.sample_width,
-                        session.id,
-                    )
+                ref_frame = self._normalize_aec_reference(
+                    current_frame,
+                    session.id,
+                    playback=False,
+                )
                 self._config.aec.feed_reference(ref_frame, session.id)
             except Exception:
                 logger.exception("AEC feed_reference error")
@@ -634,25 +648,110 @@ class AudioPipeline:
         a separate resampler instance from ``process_outbound`` to
         avoid thread-safety issues.
         """
-        if self._config.aec is None:
+        if (
+            self._config.aec is None
+            or VoiceCapability.NATIVE_AEC in self._backend_capabilities
+            or self._backend_feeds_aec_ref
+        ):
             return
         try:
-            ref_frame = frame
-            target_rate = self._inbound_sample_rate
-            if target_rate and ref_frame.sample_rate != target_rate:
-                with self._playback_aec_resampler_lock:
-                    if self._playback_aec_resampler is None:
-                        self._playback_aec_resampler = _create_default_resampler()
-                ref_frame = self._playback_aec_resampler.resample(
-                    ref_frame,
-                    target_rate,
-                    ref_frame.channels,
-                    ref_frame.sample_width,
-                    stream,
-                )
+            ref_frame = self._normalize_aec_reference(frame, stream, playback=True)
             self._config.aec.feed_reference(ref_frame, stream)
         except Exception:
             logger.exception("AEC feed_reference error (playback)")
+
+    def _normalize_aec_reference(
+        self,
+        frame: AudioFrame,
+        stream: str,
+        *,
+        playback: bool,
+    ) -> AudioFrame:
+        """Convert a reference to the exact PCM format AEC sees on capture."""
+        with self._aec_capture_formats_lock:
+            target = self._aec_capture_formats.get(stream)
+        if target is None and self._config.contract is not None:
+            internal = self._config.contract.internal_format
+            target = (internal.sample_rate, internal.channels, internal.sample_width)
+        if target is None:
+            return frame
+
+        target_rate, target_channels, target_width = target
+        if (
+            frame.sample_rate == target_rate
+            and frame.channels == target_channels
+            and frame.sample_width == target_width
+        ):
+            return frame
+
+        lock = self._playback_aec_resampler_lock if playback else self._aec_resampler_lock
+        with lock:
+            if playback:
+                if self._playback_aec_resampler is None:
+                    self._playback_aec_resampler = _create_default_resampler()
+                resampler = self._playback_aec_resampler
+            else:
+                if self._aec_resampler is None:
+                    self._aec_resampler = _create_default_resampler()
+                resampler = self._aec_resampler
+            return resampler.resample(
+                frame,
+                target_rate,
+                target_channels,
+                target_width,
+                stream,
+            )
+
+    def set_aec_active(
+        self,
+        stream: str,
+        active: bool,
+        *,
+        source: str = "playback",
+    ) -> None:
+        """Track one playback source and update per-stream AEC activity.
+
+        Multiple sources can play into the same session concurrently.  AEC is
+        bypassed only after the final source stops.  Its converged adaptive
+        filter is preserved for the next playback turn; session teardown owns
+        the destructive reset.
+        """
+        aec = self._config.aec
+        if aec is None or VoiceCapability.NATIVE_AEC in self._backend_capabilities:
+            return
+        with self._aec_active_sources_lock:
+            was_globally_active = any(self._aec_active_sources.values())
+            sources = self._aec_active_sources.setdefault(stream, set())
+            was_active = bool(sources)
+            if active:
+                sources.add(source)
+            else:
+                sources.discard(source)
+            is_active = bool(sources)
+            if not is_active:
+                self._aec_active_sources.pop(stream, None)
+            is_globally_active = any(self._aec_active_sources.values())
+
+            # Repeated audio frames from one source must not repeatedly touch
+            # provider state on the realtime audio thread.
+            stream_state_changed = was_active != is_active
+            supports_stream_activity = (
+                type(aec).set_stream_active is not AECProvider.set_stream_active
+            )
+            provider_state_changed = (
+                stream_state_changed
+                if supports_stream_activity
+                else was_globally_active != is_globally_active
+            )
+            if not provider_state_changed:
+                return
+            try:
+                if supports_stream_activity:
+                    aec.set_stream_active(stream, is_active)
+                else:
+                    aec.set_active(is_globally_active)
+            except Exception:
+                logger.exception("AEC activation error for stream %s", stream)
 
     # -----------------------------------------------------------------
     # Session lifecycle
@@ -744,6 +843,10 @@ class AudioPipeline:
                 # Best effort: one stage failing to release must not strand
                 # the others, which is the leak this method exists to prevent.
                 logger.exception("Stage '%s' reset error for session %s", stage.name, session_id)
+        with self._aec_capture_formats_lock:
+            self._aec_capture_formats.pop(session_id, None)
+        with self._aec_active_sources_lock:
+            self._aec_active_sources.pop(session_id, None)
         self._stage_streams.discard(session_id)
 
     def on_session_ended(self, session: VoiceSession) -> None:
@@ -786,7 +889,10 @@ class AudioPipeline:
         self._in_speech_sessions.clear()
         self._telemetry.clear()
         self._outbound_locks.clear()
-        self._inbound_sample_rate = None
+        with self._aec_capture_formats_lock:
+            self._aec_capture_formats.clear()
+        with self._aec_active_sources_lock:
+            self._aec_active_sources.clear()
         if self._aec_resampler is not None:
             self._aec_resampler.reset()
         if self._playback_aec_resampler is not None:
@@ -823,6 +929,8 @@ class AudioPipeline:
             ExceptionGroup: if any provider's ``close()`` raised.
         """
         self._outbound_locks.clear()
+        with self._aec_active_sources_lock:
+            self._aec_active_sources.clear()
         # Stop active recordings before closing providers
         for handle in self._recording_handles.values():
             if self._config.recorder is not None:

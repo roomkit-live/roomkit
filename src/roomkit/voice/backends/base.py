@@ -393,6 +393,9 @@ class VoiceBackend(ABC):
         Note:
             Callbacks may be invoked from the audio I/O thread —
             implementations must be thread-safe.
+            A backend with a persistent output stream may mark the final
+            drained frame with ``frame.metadata["playback_ended"] = True`` so
+            pipeline AEC can leave bypass mode at the physical boundary.
 
         Args:
             callback: Function called with (session, audio_frame).

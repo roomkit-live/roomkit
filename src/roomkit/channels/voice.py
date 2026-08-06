@@ -635,6 +635,7 @@ class VoiceChannel(
             sample_width=frame.sample_width,
         )
         if self._pipeline is not None:
+            self._pipeline.set_aec_active(target_session.id, True, source="bridge")
             outbound_frame = self._pipeline.process_outbound(target_session, outbound_frame)
         return AudioChunk(
             data=outbound_frame.data,
@@ -973,6 +974,20 @@ class VoiceChannel(
         # Unregister from audio bridge
         if self._bridge is not None:
             self._bridge.remove_session(session.id)
+            room_id, _ = binding_info
+            if self._bridge.get_participant_count(room_id) < 2 and self._pipeline is not None:
+                with self._state_lock:
+                    remaining_session_ids = [
+                        sid
+                        for sid, (bound_room_id, _) in self._session_bindings.items()
+                        if bound_room_id == room_id
+                    ]
+                for remaining_session_id in remaining_session_ids:
+                    self._pipeline.set_aec_active(
+                        remaining_session_id,
+                        False,
+                        source="bridge",
+                    )
         # Notify pipeline of session end
         self._pipeline_session_ended(session)
         # Clear pending turns, audio, and interrupt cooldown
@@ -1135,13 +1150,10 @@ class VoiceChannel(
         if self._backend and VoiceCapability.INTERRUPTION in self._backend.capabilities:
             await self._backend.cancel_audio(session)
 
-        # Deactivate AEC — after TTS stops the adaptive filter is stale
-        # and will suppress the user's voice.  Reset + bypass so audio
-        # passes through cleanly until the next TTS starts.
+        # Bypass AEC after TTS stops so user audio passes unchanged.  Keep the
+        # converged hardware echo path for the next playback turn.
         if self._pipeline is not None and self._pipeline._config.aec is not None:
-            aec = self._pipeline._config.aec
-            aec.reset(session.id)
-            aec.set_active(False)
+            self._pipeline.set_aec_active(session.id, False)
 
         if self._framework:
             binding_info = self._session_bindings.get(session.id)

@@ -227,22 +227,20 @@ class VoiceTTSMixin:
         ``_playing_sessions`` alive so continuous STT discards any echo
         transcribed during that window.
 
-        AEC is deactivated immediately (before the drain delay) so the
-        stale adaptive filter doesn't suppress user speech.  The
-        ``_playing_sessions`` flag stays alive during the delay to gate
-        echo transcriptions on the STT side.
+        AEC is bypassed immediately (before the drain delay) so it cannot
+        suppress user speech.  Its converged adaptive filter is preserved for
+        the next playback turn.  The ``_playing_sessions`` flag stays alive
+        during the delay to gate echo transcriptions on the STT side.
 
         If ``interrupt()`` fires during the delay, it pops
         ``_playing_sessions`` immediately — the delayed pop becomes a no-op.
         """
         import time as _time
 
-        # Deactivate AEC immediately — don't wait for drain delay.
-        # The adaptive filter is stale and will suppress user speech.
+        # Bypass AEC immediately — don't wait for drain delay.  Bypass protects
+        # user speech while retaining the echo path learned from this hardware.
         if self._pipeline is not None and self._pipeline._config.aec is not None:
-            aec = self._pipeline._config.aec
-            aec.reset(session_id)
-            aec.set_active(False)
+            self._pipeline.set_aec_active(session_id, False)
 
         await asyncio.sleep(_PLAYBACK_DRAIN_S)
         with self._state_lock:
@@ -348,8 +346,7 @@ class VoiceTTSMixin:
                     done_ev.clear()
             # Activate AEC so echo cancellation runs during playback
             if self._pipeline is not None and self._pipeline._config.aec is not None:
-                aec = self._pipeline._config.aec
-                aec.set_active(True)
+                self._pipeline.set_aec_active(session.id, True)
             t0 = _time.monotonic()
             logger.info("Streaming TTS playback started for session %s", session.id)
 
@@ -512,8 +509,7 @@ class VoiceTTSMixin:
                 done_ev.clear()
         # Activate AEC so echo cancellation runs during playback
         if self._pipeline is not None and self._pipeline._config.aec is not None:
-            aec = self._pipeline._config.aec
-            aec.set_active(True)
+            self._pipeline.set_aec_active(session.id, True)
 
         # Resolve telemetry provider
         _t = getattr(self._framework, "_telemetry", None) if self._framework else None

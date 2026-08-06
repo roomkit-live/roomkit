@@ -205,6 +205,7 @@ class LocalAudioBackend(VoiceBackend):
 
         # --- AEC (transport-level reference feeding) ---
         self._aec = aec
+        self._aec_active_sessions: set[str] = set()
         self._aec_needs_resample = aec is not None and output_sample_rate != input_sample_rate
         if aec is not None:
             # Block size in bytes at the *input* sample rate — the rate the
@@ -217,7 +218,7 @@ class LocalAudioBackend(VoiceBackend):
             self._aec_out_block_bytes = (
                 int(output_sample_rate * block_duration_ms / 1000) * channels * 2
             )
-            self._ref_buffer = bytearray()
+            self._ref_buffers: dict[str, bytearray] = {}
             if self._aec_needs_resample:
                 from roomkit.voice.pipeline.resampler.linear import (
                     LinearResamplerProvider,
@@ -235,7 +236,7 @@ class LocalAudioBackend(VoiceBackend):
             self._aec_block_bytes = 0
             self._aec_out_block_bytes = 0
             self._aec_resampler = None
-            self._ref_buffer = bytearray()
+            self._ref_buffers = {}
 
     @property
     def name(self) -> str:
@@ -304,6 +305,10 @@ class LocalAudioBackend(VoiceBackend):
         self._playing_sessions.discard(session.id)
         self._gated_sessions.discard(session.id)
         self._muted_sessions.discard(session.id)
+        self._ref_buffers.pop(session.id, None)
+        self._aec_active_sessions.discard(session.id)
+        if self._aec is not None:
+            self._aec.reset(session.id)
         logger.info("Local audio session ended: session=%s", session.id)
 
     def get_session(self, session_id: str) -> VoiceSession | None:
@@ -560,8 +565,11 @@ class LocalAudioBackend(VoiceBackend):
             # every output frame — skipping silence frames causes the
             # internal ring buffer to lose sync with the actual speaker
             # output and prevents the adaptive filter from converging.
-            if self._aec is not None:
-                self._aec_feed_played(bytearray(bytes(outdata)), session.id)
+            if self._aec is not None and not self._aec_capture_paused(session.id):
+                if n > 0:
+                    self._aec_begin_playback(session.id)
+                if session.id in self._aec_active_sessions:
+                    self._aec_feed_played(bytearray(bytes(outdata)), session.id)
 
             # Notify listeners about played audio (time-aligned reference
             # for pipeline AEC).  The frame is created once and shared.
@@ -643,6 +651,10 @@ class LocalAudioBackend(VoiceBackend):
                     with contextlib.suppress(Exception):
                         ostream.abort()
                 ostream.close()
+            # Transport-level AEC is owned here (NATIVE_AEC), so the pipeline
+            # deliberately cannot end its playback lifecycle.  Bypass after
+            # PortAudio drains, but preserve the converged hardware filter.
+            self._aec_end_playback(session.id)
 
     async def send_transcription(
         self, session: VoiceSession, text: str, role: str = "user"
@@ -852,6 +864,7 @@ class LocalAudioBackend(VoiceBackend):
         bytes_needed = frames * self._channels * 2
         written = 0
         underrun_no = 0
+        response_drained = False
 
         with self._rt_buf_lock:
             buf = self._rt_output_buffer
@@ -864,6 +877,11 @@ class LocalAudioBackend(VoiceBackend):
             # reference and played callbacks must see silence blocks too.
             draining = not self._rt_interrupted
             if draining and self._rt_priming:
+                if self._rt_response_complete and self._rt_buffered_bytes == 0:
+                    # A response with no audio still has an AEC activation
+                    # from response_start that must be released.
+                    self._rt_response_complete = False
+                    response_drained = True
                 release = (
                     self._rt_buffered_bytes >= max(self._rt_prebuffer_bytes, 1)
                     or (self._rt_response_complete and self._rt_buffered_bytes > 0)
@@ -902,6 +920,7 @@ class LocalAudioBackend(VoiceBackend):
                     self._rt_prime_idle_blocks = 0
                     if self._rt_response_complete:
                         self._rt_response_complete = False
+                        response_drained = True
                     else:
                         self._rt_underruns += 1
                         underrun_no = self._rt_underruns
@@ -922,18 +941,26 @@ class LocalAudioBackend(VoiceBackend):
         # session the capture callback tags its frames with.
         session = next(iter(self._sessions.values()), None)
 
-        # AEC: feed the output frame as reference — but only when audio
-        # was actually written AND mic is not muted.  Feeding silence
-        # confuses AEC3's nonlinear suppressor.  Feeding reference while
-        # mic is muted desyncs AEC3's delay estimation (reference runs
-        # ahead of capture, destroying the adaptive filter).
+        # Once playback starts, feed EVERY hardware block, including silence
+        # inserted for network jitter or interruption. Capture keeps advancing
+        # on the mic thread, so skipping render-silence compresses AEC3's
+        # reference timeline and makes it cancel the wrong point in history.
+        # When capture is muted, gated, or half-duplex, both timelines pause.
         if (
             self._aec is not None
             and session is not None
-            and written > 0
-            and not self._muted_sessions
+            and not self._aec_capture_paused(session.id)
         ):
-            self._aec_feed_played(bytearray(bytes(outdata)), session.id)
+            if written > 0:
+                self._aec_begin_playback(session.id)
+            if session.id in self._aec_active_sessions:
+                self._aec_feed_played(bytearray(bytes(outdata)), session.id)
+
+        if session is not None and response_drained:
+            # The persistent realtime stream stays open across responses, so
+            # playback is bypassed at the drained response boundary rather
+            # than at stream close. The learned hardware filter survives.
+            self._aec_end_playback(session.id)
 
         # Notify listeners about played audio — every block, silence
         # included.  The pipeline AEC reference (wired via on_audio_played)
@@ -948,6 +975,7 @@ class LocalAudioBackend(VoiceBackend):
                 sample_rate=self._output_sample_rate,
                 channels=self._channels,
                 sample_width=2,
+                metadata={"playback_ended": response_drained},
             )
             for cb in self._audio_played_callbacks:
                 with contextlib.suppress(Exception):
@@ -983,6 +1011,29 @@ class LocalAudioBackend(VoiceBackend):
     # AEC helpers
     # -------------------------------------------------------------------------
 
+    def _aec_capture_paused(self, stream: str) -> bool:
+        """Whether capture is paused, so reference time must pause as well."""
+        return (
+            stream in self._muted_sessions
+            or stream in self._gated_sessions
+            or (self._mute_mic_during_playback and bool(self._playing_sessions))
+        )
+
+    def _aec_begin_playback(self, stream: str) -> None:
+        """Activate transport AEC once, when physical playback starts."""
+        if self._aec is None or stream in self._aec_active_sessions:
+            return
+        self._aec_active_sessions.add(stream)
+        self._aec.set_stream_active(stream, True)
+
+    def _aec_end_playback(self, stream: str) -> None:
+        """Pause transport AEC without destroying its learned echo path."""
+        if self._aec is None or stream not in self._aec_active_sessions:
+            return
+        self._aec_active_sessions.discard(stream)
+        self._ref_buffers.pop(stream, None)
+        self._aec.set_stream_active(stream, False)
+
     def _aec_feed_played(self, played: bytearray, stream: str) -> None:
         """Feed actually-played speaker bytes to the AEC as reference.
 
@@ -997,14 +1048,15 @@ class LocalAudioBackend(VoiceBackend):
             stream: The session this playback belongs to — the same key the
                 capture path passes to ``aec.process()``.
         """
-        self._ref_buffer.extend(played)
+        ref_buffer = self._ref_buffers.setdefault(stream, bytearray())
+        ref_buffer.extend(played)
 
         if self._aec_needs_resample:
             # Chunk at the output rate, then resample each block to input rate
             block = self._aec_out_block_bytes
-            while len(self._ref_buffer) >= block:
-                chunk = bytes(self._ref_buffer[:block])
-                del self._ref_buffer[:block]
+            while len(ref_buffer) >= block:
+                chunk = bytes(ref_buffer[:block])
+                del ref_buffer[:block]
                 out_frame = AudioFrame(
                     data=chunk,
                     sample_rate=self._output_sample_rate,
@@ -1021,9 +1073,9 @@ class LocalAudioBackend(VoiceBackend):
                 self._aec.feed_reference(ref_frame, stream)  # ty: ignore[unresolved-attribute]
         else:
             block = self._aec_block_bytes
-            while len(self._ref_buffer) >= block:
-                chunk = bytes(self._ref_buffer[:block])
-                del self._ref_buffer[:block]
+            while len(ref_buffer) >= block:
+                chunk = bytes(ref_buffer[:block])
+                del ref_buffer[:block]
                 frame = AudioFrame(
                     data=chunk,
                     sample_rate=self._input_sample_rate,

@@ -17,6 +17,7 @@ import threading
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from roomkit.models.enums import Access
+from roomkit.voice.base import VoiceCapability
 from roomkit.voice.pipeline.engine import AudioPipeline
 from roomkit.voice.pipeline.offload import InboundFrameOffload
 
@@ -98,11 +99,14 @@ class VoicePipelineMixin:
             config.aec is not None
             and backend.supports_playback_callback
             and not backend.feeds_aec_reference
+            and VoiceCapability.NATIVE_AEC not in backend.capabilities
         ):
 
             def _on_audio_played(session: VoiceSession, frame: AudioFrame) -> None:
                 if self._pipeline is not None:
                     self._pipeline.feed_aec_reference(frame, session.id)
+                    if frame.metadata.get("playback_ended"):
+                        self._pipeline.set_aec_active(session.id, False)
 
             backend.on_audio_played(_on_audio_played)
             pipeline.enable_playback_aec_feed()

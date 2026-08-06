@@ -339,6 +339,35 @@ class TestLocalAudioSpeakerPlayback:
         mock_stream.stop.assert_called_once()
         mock_stream.close.assert_called_once()
 
+    async def test_streaming_transport_aec_bypasses_after_hardware_drain(self) -> None:
+        """Local native AEC preserves its filter after the output stream drains."""
+        aec = MagicMock()
+        backend, sd = _make_backend(aec=aec, mute_mic_during_playback=False)
+        captured_callback = None
+        mock_stream = MagicMock()
+
+        def fake_raw_output_stream(**kwargs):
+            nonlocal captured_callback
+            captured_callback = kwargs["callback"]
+            return mock_stream
+
+        sd.RawOutputStream = fake_raw_output_stream
+        session = await backend.connect("room-1", "user-1", "voice-1")
+
+        async def audio_gen():
+            yield AudioChunk(data=b"\x00\x01" * 320)
+
+        send_task = asyncio.create_task(backend.send_audio(session, audio_gen()))
+        await asyncio.sleep(0.05)
+        assert captured_callback is not None
+        with pytest.raises(sd.CallbackStop):
+            captured_callback(bytearray(1024), 512, None, None)
+        await send_task
+
+        aec.set_stream_active.assert_any_call(session.id, True)
+        aec.reset.assert_not_called()
+        assert aec.set_stream_active.call_args_list[-1].args == (session.id, False)
+
     async def test_is_playing_tracks_state(self) -> None:
         backend, _ = _make_backend()
         session = await backend.connect("room-1", "user-1", "voice-1")
@@ -563,18 +592,45 @@ class TestContinuousPlayedCallbacks:
         _drain_block(backend)  # interrupted mute
         assert played == [b"\x00" * _BLOCK, b"\x00" * _BLOCK]
 
-    async def test_transport_aec_reference_still_skips_silence(self) -> None:
+    async def test_empty_response_still_signals_playback_end(self) -> None:
+        """A response_start without audio must not leave pipeline AEC active."""
+        backend, session = await _rt_backend()
+        ended: list[bool] = []
+        backend.on_audio_played(
+            lambda _session, frame: ended.append(bool(frame.metadata.get("playback_ended")))
+        )
+
+        backend.end_of_response(session)
+        _drain_block(backend)
+
+        assert ended == [True]
+
+    async def test_transport_aec_reference_tracks_silence_after_activation(self) -> None:
         aec = MagicMock()
         backend, _ = _make_backend(
             input_sample_rate=24000,
             output_sample_rate=24000,
             block_duration_ms=20,
+            rt_prebuffer_ms=0,
             aec=aec,
+            mute_mic_during_playback=False,
         )
         session = await backend.connect("room-1", "user-1", "voice-1")
         await backend.accept(session, None)
         _drain_block(backend)  # idle silence — transport-level policy unchanged
         aec.feed_reference.assert_not_called()
-        await backend.send_audio(session, _PCM * (5760 // 2))
+        await backend.send_audio(session, _PCM * (_BLOCK // 2))
         _drain_block(backend)  # real audio
-        aec.feed_reference.assert_called()
+        assert aec.feed_reference.call_count == 1
+        aec.set_stream_active.assert_called_with(session.id, True)
+
+        _drain_block(backend)  # mid-response underrun: capture still advances
+        assert aec.feed_reference.call_count == 2
+        silence_frame = aec.feed_reference.call_args_list[-1].args[0]
+        assert silence_frame.data == b"\x00" * _BLOCK
+
+        backend.end_of_response(session)
+        _drain_block(backend)
+
+        aec.reset.assert_not_called()
+        assert aec.set_stream_active.call_args_list[-1].args == (session.id, False)

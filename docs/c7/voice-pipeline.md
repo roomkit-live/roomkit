@@ -104,6 +104,11 @@ aec = SpeexAEC(sample_rate=16000, frame_size=160, filter_length=1024)
 ```
 
 The pipeline feeds TTS audio as reference to the AEC via `process_outbound()`.
+Reference audio is converted to the exact post-resampler capture format, and
+AEC state and playback activation are isolated per voice session.
+While playback is active, realtime backends keep the render timeline aligned
+with capture by feeding hardware silence during jitter gaps. Ending playback
+bypasses AEC but preserves its converged filter until the session ends.
 
 ### AGC (Automatic Gain Control)
 

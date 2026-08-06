@@ -118,9 +118,9 @@ class RealtimeResponseMixin:
         self._update_idle_event(session.id)
         # Activate AEC: echo cancellation is bypassed until playback starts
         # to avoid the stale adaptive filter suppressing user speech.
-        pipeline_cfg = getattr(self, "_pipeline_config", None)
-        if pipeline_cfg is not None and pipeline_cfg.aec is not None:
-            pipeline_cfg.aec.set_active(True)
+        pipeline = getattr(self, "_pipeline", None)
+        if pipeline is not None and pipeline._config.aec is not None:
+            pipeline.set_aec_active(session.id, True)
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
@@ -190,6 +190,17 @@ class RealtimeResponseMixin:
             if flushed and flushed.data:
                 await self._transport.send_audio(session, flushed.data)
         self._transport.end_of_response(session)
+        # Backends with playback callbacks deactivate on their actual drained
+        # boundary.  For queued transports without that signal, this ordered
+        # marker is the last safe lifecycle point; otherwise AEC remains active
+        # with a stale adaptive filter until the next response (or forever).
+        pipeline = getattr(self, "_pipeline", None)
+        if (
+            pipeline is not None
+            and pipeline._config.aec is not None
+            and not self._transport.supports_playback_callback
+        ):
+            pipeline.set_aec_active(session.id, False)
 
     async def _handle_response_indicator(
         self, session: VoiceSession, *, is_speaking: bool

@@ -71,7 +71,9 @@ class _StreamState:
 
     ap: Any
     capture_buf: bytearray = field(default_factory=bytearray)
+    capture_output_buf: bytearray = field(default_factory=bytearray)
     ref_buf: bytearray = field(default_factory=bytearray)
+    chunking_capture: bool = False
     lock: threading.Lock = field(default_factory=threading.Lock)
 
     # Diagnostics
@@ -110,6 +112,13 @@ class WebRTCAECProvider(AECProvider):
         enable_ns: bool = False,
         enable_agc: bool = False,
     ) -> None:
+        if not 8000 <= sample_rate <= 192000:
+            raise ValueError("sample_rate must be between 8000 and 192000 Hz")
+        if channels not in (1, 2):
+            raise ValueError("channels must be 1 or 2")
+        if stream_delay_ms < 0:
+            raise ValueError("stream_delay_ms must be non-negative")
+
         # Resolved once: streams are created lazily on the audio thread, and
         # re-importing there would put a module lookup in the realtime path.
         self._ap_cls = _import_webrtc()
@@ -133,12 +142,18 @@ class WebRTCAECProvider(AECProvider):
         # Closed instances refuse new streams rather than resurrecting.
         self._closed = False
 
+        # Stream-local activation is required because one provider instance
+        # serves every session in a channel.  A global bypass lets Alice ending
+        # playback disable Bob's still-active canceller.
+        self._stream_active: dict[str, bool] = {}
+        self._warned_formats: set[tuple[str, int, int, int]] = set()
+
         # When True, process() passes audio through without AEC processing.
         # Activated automatically when reference stops (TTS ends) and
         # deactivated when reference resumes (TTS starts).  Avoids the
         # stale adaptive filter suppressing user speech after playback.
-        # A channel-wide mode driven by the TTS lifecycle, not adaptive
-        # state — process() never mutates it, so it stays off _StreamState.
+        # Kept as the default for backwards-compatible set_active() callers;
+        # channel integrations use set_stream_active().
         self._bypass = True  # Start bypassed — no echo to cancel yet
 
         logger.info(
@@ -163,30 +178,47 @@ class WebRTCAECProvider(AECProvider):
 
     def process(self, frame: AudioFrame, stream: str) -> AudioFrame:
         """Remove echo from a captured (mic) audio frame."""
-        if self._bypass:
+        if not self._matches_format(frame, direction="capture"):
+            return frame
+
+        st = self._active_state_for(stream)
+        if st is None:
             return frame  # no active playback — passthrough
 
-        st = self._state_for(stream)
-        if st is None:
-            return frame  # closed
-
         pcm_in = frame.data
-        output_chunks: list[bytes] = []
         in_processed: list[bytes] = []
         out_processed: list[bytes] = []
         fb = self._frame_bytes
 
         with st.lock:
-            st.capture_buf.extend(pcm_in)
-            while len(st.capture_buf) >= fb:
-                chunk = bytes(st.capture_buf[:fb])
-                del st.capture_buf[:fb]
-
-                result = st.ap.process_stream(chunk)
-                output_chunks.append(result)
-                in_processed.append(chunk)
-                out_processed.append(result)
-                st.process_count += 1
+            if not st.chunking_capture and not st.capture_buf and len(pcm_in) % fb == 0:
+                output_chunks: list[bytes] = []
+                for offset in range(0, len(pcm_in), fb):
+                    chunk = pcm_in[offset : offset + fb]
+                    result = st.ap.process_stream(chunk)
+                    output_chunks.append(result)
+                    in_processed.append(chunk)
+                    out_processed.append(result)
+                    st.process_count += 1
+                out_data = b"".join(output_chunks)
+            else:
+                # Once an irregular chunk is seen, keep a fixed 10 ms delay.
+                # Returning the unprocessed tail while also buffering it would
+                # emit those bytes twice when the block is completed later.
+                if not st.chunking_capture:
+                    st.chunking_capture = True
+                    st.capture_output_buf.extend(b"\x00" * fb)
+                st.capture_buf.extend(pcm_in)
+                while len(st.capture_buf) >= fb:
+                    chunk = bytes(st.capture_buf[:fb])
+                    del st.capture_buf[:fb]
+                    result = st.ap.process_stream(chunk)
+                    st.capture_output_buf.extend(result)
+                    in_processed.append(chunk)
+                    out_processed.append(result)
+                    st.process_count += 1
+                out_data = bytes(st.capture_output_buf[: len(pcm_in)])
+                del st.capture_output_buf[: len(pcm_in)]
 
         # Energy diagnostics OUTSIDE the lock: the PortAudio speaker callback
         # blocks on this lock in feed_reference(), and the previous per-sample
@@ -202,16 +234,15 @@ class WebRTCAECProvider(AECProvider):
         if st.process_count > 0 and st.process_count % _LOG_INTERVAL == 0:
             self._log_stats(stream, st)
 
-        if not output_chunks:
-            return frame
-
+        metadata = dict(frame.metadata)
+        metadata["echo_cancelled"] = True
         return AudioFrame(
-            data=b"".join(output_chunks),
+            data=out_data,
             sample_rate=frame.sample_rate,
             channels=frame.channels,
             sample_width=frame.sample_width,
             timestamp_ms=frame.timestamp_ms,
-            metadata=dict(frame.metadata),
+            metadata=metadata,
         )
 
     def set_active(self, active: bool) -> None:
@@ -221,21 +252,51 @@ class WebRTCAECProvider(AECProvider):
         without echo cancellation (bypass mode).  Call with ``True``
         when TTS playback starts, and ``False`` when it ends.
 
-        Channel-wide: bypass follows the TTS lifecycle, which is not a
-        per-stream property.
+        This compatibility method changes the default and every stream known
+        to the provider. Channel integrations should prefer
+        :meth:`set_stream_active` so concurrent sessions remain independent.
         """
-        was_bypass = self._bypass
-        self._bypass = not active
+        states_to_clear: list[_StreamState] = []
+        with self._streams_lock:
+            was_bypass = self._bypass
+            self._bypass = not active
+            for stream in self._stream_active:
+                self._stream_active[stream] = active
+            if not active:
+                states_to_clear = list(self._streams.values())
+        for st in states_to_clear:
+            self._clear_io_buffers(st)
         if was_bypass != (not active):
             logger.info(
                 "AEC %s (streams=%d)", "activated" if active else "bypassed", len(self._streams)
             )
 
+    def set_stream_active(self, stream: str, active: bool) -> None:
+        """Enable or bypass echo cancellation for one playback stream."""
+        state_to_clear: _StreamState | None = None
+        with self._streams_lock:
+            previous = self._stream_active.get(stream, not self._bypass)
+            self._stream_active[stream] = active
+            stream_count = len(self._streams)
+            if not active:
+                state_to_clear = self._streams.get(stream)
+        if state_to_clear is not None:
+            self._clear_io_buffers(state_to_clear)
+        if previous != active:
+            logger.info(
+                "AEC %s for stream=%s (streams=%d)",
+                "activated" if active else "bypassed",
+                stream,
+                stream_count,
+            )
+
     def feed_reference(self, frame: AudioFrame, stream: str) -> None:
         """Feed a reference (playback / TTS) frame for echo modelling."""
-        st = self._state_for(stream)
+        if not self._matches_format(frame, direction="reference"):
+            return
+        st = self._active_state_for(stream)
         if st is None:
-            return  # closed
+            return  # closed or no playback to model
 
         pcm = frame.data
         fb = self._frame_bytes
@@ -262,7 +323,7 @@ class WebRTCAECProvider(AECProvider):
                 fed_this_call,
                 stream,
                 total_fed,
-                self._bypass,
+                not self._is_stream_active(stream),
             )
 
     def _new_processor(self) -> Any:
@@ -289,15 +350,60 @@ class WebRTCAECProvider(AECProvider):
                 self._streams[stream] = st
             return st
 
+    def _active_state_for(self, stream: str) -> _StreamState | None:
+        """Return this stream's processor only while its AEC is active."""
+        with self._streams_lock:
+            if self._closed or not self._stream_active.get(stream, not self._bypass):
+                return None
+            st = self._streams.get(stream)
+            if st is None:
+                st = _StreamState(ap=self._new_processor())
+                self._streams[stream] = st
+            return st
+
+    def _is_stream_active(self, stream: str) -> bool:
+        with self._streams_lock:
+            return self._stream_active.get(stream, not self._bypass)
+
+    @staticmethod
+    def _clear_io_buffers(st: _StreamState) -> None:
+        """Pause transport timelines without discarding the learned filter."""
+        with st.lock:
+            st.capture_buf.clear()
+            st.capture_output_buf.clear()
+            st.ref_buf.clear()
+            st.chunking_capture = False
+
+    def _matches_format(self, frame: AudioFrame, *, direction: str) -> bool:
+        """Reject PCM that the configured native processor would misread."""
+        actual = (frame.sample_rate, frame.channels, frame.sample_width)
+        expected = (self._sample_rate, self._channels, 2)
+        if actual == expected:
+            return True
+        key = (direction, *actual)
+        if key not in self._warned_formats:
+            self._warned_formats.add(key)
+            logger.warning(
+                "AEC %s format mismatch: got %dHz/%dch/%d-byte, expected "
+                "%dHz/%dch/2-byte; %s frame ignored",
+                direction,
+                *actual,
+                self._sample_rate,
+                self._channels,
+                direction,
+            )
+        return False
+
     def reset(self, stream: str) -> None:
         """Drop this stream's processor, discarding its adaptive filter.
 
-        Critical after barge-in: once TTS stops the old filter is stale and
-        will suppress the user's voice for many seconds while it reconverges.
-        The next frame builds a fresh processor.
+        Playback boundaries use :meth:`set_stream_active` instead so the
+        learned hardware echo path survives. Reset is reserved for stream
+        teardown or a real format/device change.
         """
         with self._streams_lock:
             existed = self._streams.pop(stream, None) is not None
+            self._stream_active.pop(stream, None)
         if existed:
             logger.info("WebRTC AEC reset for stream=%s (adaptive filter cleared)", stream)
 
@@ -306,6 +412,7 @@ class WebRTCAECProvider(AECProvider):
         with self._streams_lock:
             self._closed = True
             self._streams.clear()
+            self._stream_active.clear()
 
     # ------------------------------------------------------------------
     # Internals
@@ -328,7 +435,7 @@ class WebRTCAECProvider(AECProvider):
             stream,
             st.process_count,
             st.ref_fed_count,
-            self._bypass,
+            not self._is_stream_active(stream),
             in_rms,
             out_rms,
             attenuation_db,

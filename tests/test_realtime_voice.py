@@ -1273,6 +1273,37 @@ class TestEndOfResponseOrdering:
             f"Audio after end_of_response: {call_log}"
         )
 
+    async def test_end_of_response_deactivates_aec_without_playback_callback(self) -> None:
+        """Queued transports release AEC after their ordered response marker."""
+        from roomkit.voice.pipeline.aec.mock import MockAECProvider
+        from roomkit.voice.pipeline.config import AudioPipelineConfig
+
+        provider = MockRealtimeProvider()
+        transport = MockRealtimeTransport()
+        aec = MockAECProvider()
+        channel = RealtimeVoiceChannel(
+            "rt-aec",
+            provider=provider,
+            transport=transport,
+            pipeline=AudioPipelineConfig(aec=aec),
+        )
+        kit = RoomKit()
+        kit.register_channel(channel)
+        room = await kit.create_room()
+        await kit.attach_channel(room.id, channel.channel_id)
+        session = await channel.start_session(room.id, "user-1", "fake-ws")
+        aec.reset_streams.clear()  # Ignore the normal session-start cleanup.
+
+        await provider.simulate_response_start(session)
+        await provider.simulate_audio(session, b"\x01\x00" * 160)
+        await provider.simulate_response_end(session)
+        await asyncio.sleep(0.1)
+
+        assert aec.active_changes == [(session.id, True), (session.id, False)]
+        assert aec.reset_streams == []
+
+        await kit.close()
+
 
 class TestInjectImageGracefulHandling:
     """inject_image should not crash when the provider doesn't support it."""

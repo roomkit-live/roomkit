@@ -43,8 +43,21 @@ def build_aec(
         try:
             from roomkit.voice.pipeline.aec.webrtc import WebRTCAECProvider
 
-            logger.info("AEC enabled (WebRTC AEC3%s)", " + NS" if enable_ns else "")
-            return WebRTCAECProvider(sample_rate=sample_rate, enable_ns=enable_ns)
+            try:
+                stream_delay_ms = max(0, int(os.environ.get("AEC_DELAY_MS", "0")))
+            except ValueError:
+                logger.warning("Invalid AEC_DELAY_MS; using automatic delay estimation")
+                stream_delay_ms = 0
+            logger.info(
+                "AEC enabled (WebRTC AEC3%s, delay=%dms)",
+                " + NS" if enable_ns else "",
+                stream_delay_ms,
+            )
+            return WebRTCAECProvider(
+                sample_rate=sample_rate,
+                enable_ns=enable_ns,
+                stream_delay_ms=stream_delay_ms,
+            )
         except ImportError:
             print("\n  >>> Install AEC: pip install aec-audio-processing <<<\n")
             return None

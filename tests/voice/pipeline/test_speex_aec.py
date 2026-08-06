@@ -93,6 +93,7 @@ class TestSpeexAECProviderProcess:
 
         assert result.sample_rate == frame.sample_rate
         assert len(result.data) == len(frame.data)
+        assert result.metadata["echo_cancelled"] is True
         mock_lib.speex_echo_capture.assert_called_once()
 
     def test_process_frame_size_mismatch(self):
@@ -102,6 +103,21 @@ class TestSpeexAECProviderProcess:
 
         frame = _make_frame(n_bytes=160)
         result = provider.process(frame, "s1")
+        assert result is frame
+        mock_lib.speex_echo_capture.assert_not_called()
+
+    def test_mismatched_pcm_format_passes_through(self):
+        mock_lib = _make_mock_speexdsp()
+        provider, _ = _make_provider(mock_lib)
+        frame = AudioFrame(
+            data=b"\x01\x00" * 320,
+            sample_rate=8000,
+            channels=1,
+            sample_width=2,
+        )
+
+        result = provider.process(frame, "s1")
+
         assert result is frame
         mock_lib.speex_echo_capture.assert_not_called()
 
@@ -122,6 +138,20 @@ class TestSpeexAECProviderFeedReference:
 
         frame = _make_frame(n_bytes=160)
         provider.feed_reference(frame, "s1")
+        mock_lib.speex_echo_playback.assert_not_called()
+
+    def test_mismatched_reference_format_is_ignored(self):
+        mock_lib = _make_mock_speexdsp()
+        provider, _ = _make_provider(mock_lib)
+        frame = AudioFrame(
+            data=b"\x01\x00" * 320,
+            sample_rate=16000,
+            channels=2,
+            sample_width=2,
+        )
+
+        provider.feed_reference(frame, "s1")
+
         mock_lib.speex_echo_playback.assert_not_called()
 
 
@@ -200,3 +230,14 @@ class TestSpeexAECProviderClose:
         provider.close()
         provider.close()
         mock_lib.speex_echo_state_destroy.assert_called_once()
+
+    def test_process_after_close_does_not_resurrect_native_state(self):
+        mock_lib = _make_mock_speexdsp()
+        provider, _ = _make_provider(mock_lib)
+        provider.close()
+        frame = _make_frame()
+
+        result = provider.process(frame, "s1")
+
+        assert result is frame
+        mock_lib.speex_echo_state_init.assert_not_called()

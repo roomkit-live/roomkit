@@ -33,6 +33,7 @@ logger = logging.getLogger("roomkit.voice.pipeline.speex_aec")
 # ---------------------------------------------------------------------------
 
 _lib: ctypes.CDLL | None = None
+_stderr_fd_lock = threading.Lock()
 
 
 def _load_speexdsp() -> ctypes.CDLL:
@@ -120,26 +121,35 @@ class _StderrSuppressor:
     """
 
     def __init__(self) -> None:
-        self._devnull_fd = os.open(os.devnull, os.O_WRONLY)
-        self._orig_fd = os.dup(2)
-        self._lock = threading.Lock()
+        # fd 2 belongs to the process, not one provider instance. Construction,
+        # redirection and restoration therefore share one module-level lock.
+        with _stderr_fd_lock:
+            self._devnull_fd = os.open(os.devnull, os.O_WRONLY)
+            self._orig_fd = os.dup(2)
 
     def __enter__(self) -> _StderrSuppressor:
-        self._lock.acquire()
-        os.dup2(self._devnull_fd, 2)
+        _stderr_fd_lock.acquire()
+        try:
+            os.dup2(self._devnull_fd, 2)
+        except BaseException:
+            _stderr_fd_lock.release()
+            raise
         return self
 
     def __exit__(self, *args: object) -> None:
-        os.dup2(self._orig_fd, 2)
-        self._lock.release()
+        try:
+            os.dup2(self._orig_fd, 2)
+        finally:
+            _stderr_fd_lock.release()
 
     def close(self) -> None:
-        if self._devnull_fd >= 0:
-            os.close(self._devnull_fd)
-            self._devnull_fd = -1
-        if self._orig_fd >= 0:
-            os.close(self._orig_fd)
-            self._orig_fd = -1
+        with _stderr_fd_lock:
+            if self._devnull_fd >= 0:
+                os.close(self._devnull_fd)
+                self._devnull_fd = -1
+            if self._orig_fd >= 0:
+                os.close(self._orig_fd)
+                self._orig_fd = -1
 
 
 @dataclass
@@ -197,6 +207,13 @@ class SpeexAECProvider(AECProvider):
         filter_length: int = 3200,
         sample_rate: int = 16000,
     ) -> None:
+        if frame_size <= 0:
+            raise ValueError("frame_size must be positive")
+        if filter_length <= 0:
+            raise ValueError("filter_length must be positive")
+        if sample_rate <= 0:
+            raise ValueError("sample_rate must be positive")
+
         self._lib = _load_speexdsp()
         self._frame_size = frame_size
         self._filter_length = filter_length
@@ -207,6 +224,8 @@ class SpeexAECProvider(AECProvider):
         self._streams: dict[str, _StreamState] = {}
         # Guards _streams itself — the per-stream lock guards its contents.
         self._streams_lock = threading.Lock()
+        self._closed = False
+        self._warned_formats: set[tuple[str, int, int, int]] = set()
 
         # Process-level file descriptors, not stream state: the suppressor
         # redirects fd 2 for the whole process, so one instance serves every
@@ -231,6 +250,8 @@ class SpeexAECProvider(AECProvider):
 
     def process(self, frame: AudioFrame, stream: str) -> AudioFrame:
         """Remove echo from a captured (mic) audio frame."""
+        if not self._matches_format(frame, direction="capture"):
+            return frame
         pcm_in = frame.data
 
         if len(pcm_in) != self._frame_bytes:
@@ -243,6 +264,8 @@ class SpeexAECProvider(AECProvider):
             return frame
 
         st = self._state_for(stream)
+        if st is None:
+            return frame
 
         with st.lock:
             if st.state is None:
@@ -282,13 +305,15 @@ class SpeexAECProvider(AECProvider):
         if should_log:
             self._log_stats(stream, st)
 
+        metadata = dict(frame.metadata)
+        metadata["echo_cancelled"] = True
         return AudioFrame(
             data=out_data,
             sample_rate=frame.sample_rate,
             channels=frame.channels,
             sample_width=frame.sample_width,
             timestamp_ms=frame.timestamp_ms,
-            metadata=dict(frame.metadata),
+            metadata=metadata,
         )
 
     def feed_reference(self, frame: AudioFrame, stream: str) -> None:
@@ -297,6 +322,8 @@ class SpeexAECProvider(AECProvider):
         Calls ``speex_echo_playback()`` directly so the internal ring
         buffer tracks the speaker output timing.
         """
+        if not self._matches_format(frame, direction="reference"):
+            return
         pcm = frame.data
         n_bytes = len(pcm)
         n_samples = n_bytes // 2
@@ -310,6 +337,8 @@ class SpeexAECProvider(AECProvider):
             return
 
         st = self._state_for(stream)
+        if st is None:
+            return
 
         with st.lock:
             if st.state is None:
@@ -321,9 +350,11 @@ class SpeexAECProvider(AECProvider):
             st.playback_fed = True
             st.refs_fed += 1
 
-    def _state_for(self, stream: str) -> _StreamState:
-        """Get or create this stream's echo canceller."""
+    def _state_for(self, stream: str) -> _StreamState | None:
+        """Get or create this stream's echo canceller, unless closed."""
         with self._streams_lock:
+            if self._closed:
+                return None
             st = self._streams.get(stream)
             if st is None:
                 fs = self._frame_size
@@ -335,6 +366,25 @@ class SpeexAECProvider(AECProvider):
                 )
                 self._streams[stream] = st
             return st
+
+    def _matches_format(self, frame: AudioFrame, *, direction: str) -> bool:
+        """Reject PCM that the mono int16 Speex state would misinterpret."""
+        actual = (frame.sample_rate, frame.channels, frame.sample_width)
+        expected = (self._sample_rate, 1, 2)
+        if actual == expected:
+            return True
+        key = (direction, *actual)
+        if key not in self._warned_formats:
+            self._warned_formats.add(key)
+            logger.warning(
+                "Speex AEC %s format mismatch: got %dHz/%dch/%d-byte, expected "
+                "%dHz/1ch/2-byte; %s frame ignored",
+                direction,
+                *actual,
+                self._sample_rate,
+                direction,
+            )
+        return False
 
     def _destroy(self, st: _StreamState) -> None:
         """Destroy one stream's native state, once, under its own lock.
@@ -358,6 +408,7 @@ class SpeexAECProvider(AECProvider):
     def close(self) -> None:
         """Destroy every stream's echo canceller and release resources."""
         with self._streams_lock:
+            self._closed = True
             states = list(self._streams.values())
             self._streams.clear()
         for st in states:
@@ -415,4 +466,6 @@ class SpeexAECProvider(AECProvider):
         return ctypes.c_void_p(state)
 
     def __del__(self) -> None:
-        self.close()
+        # Construction may fail before native resources and locks exist.
+        if hasattr(self, "_streams_lock"):
+            self.close()

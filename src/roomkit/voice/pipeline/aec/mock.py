@@ -18,6 +18,7 @@ class MockAECProvider(AECProvider):
         self.reference_frames: list[AudioFrame] = []
         self.streams: list[str] = []
         self.reference_streams: list[str] = []
+        self.active_changes: list[tuple[str | None, bool]] = []
         self.reset_streams: list[str] = []
         self.reset_count = 0
         self.closed = False
@@ -34,6 +35,12 @@ class MockAECProvider(AECProvider):
     def feed_reference(self, frame: AudioFrame, stream: str) -> None:
         self.reference_frames.append(frame)
         self.reference_streams.append(stream)
+
+    def set_active(self, active: bool) -> None:
+        self.active_changes.append((None, active))
+
+    def set_stream_active(self, stream: str, active: bool) -> None:
+        self.active_changes.append((stream, active))
 
     def reset(self, stream: str) -> None:
         self.reset_count += 1
