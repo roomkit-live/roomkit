@@ -225,9 +225,10 @@ def _build_voice_provider(voice_choice: str) -> object:
     if voice_choice == "openai":
         from roomkit.providers.openai.realtime import OpenAIRealtimeProvider
 
+        model = os.environ.get("OPENAI_MODEL")
         return OpenAIRealtimeProvider(
             api_key=os.environ["OPENAI_API_KEY"],
-            model=os.environ.get("OPENAI_MODEL", "gpt-realtime-1.5"),
+            **({"model": model} if model else {}),
         )
     from roomkit.providers.gemini.realtime import GeminiLiveProvider
 

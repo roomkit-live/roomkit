@@ -39,7 +39,7 @@ Environment variables:
     GEMINI_MODEL         Gemini speech model
     GEMINI_VOICE         Gemini voice preset (default: Aoede)
     GEMINI_VISION_MODEL  Vision model (default: gemini-3.1-flash-image-preview)
-    OPENAI_MODEL         OpenAI speech model (default: gpt-realtime-1.5)
+    OPENAI_MODEL         OpenAI speech model (default: the provider's own default)
     OPENAI_VOICE         OpenAI voice preset (default: alloy)
     OPENAI_VISION_MODEL  OpenAI tool model (default: gpt-4o)
     SCALE                Capture scale 0.0-1.0 (default: 0.75)

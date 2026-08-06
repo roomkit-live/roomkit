@@ -34,7 +34,7 @@ await kit.attach_channel("voice-room", "realtime-voice", category=ChannelCategor
 | Provider | Class | Extra | Description |
 |----------|-------|-------|-------------|
 | Google Gemini Live | `GeminiLiveProvider` | `roomkit[realtime-gemini]` | Gemini 2.0 speech-to-speech |
-| OpenAI Realtime | `OpenAIRealtimeProvider` | `roomkit[realtime-openai]` | GPT-4o realtime audio |
+| OpenAI Realtime | `OpenAIRealtimeProvider` | `roomkit[realtime-openai]` | GPT Realtime audio (reasoning-capable) |
 | xAI Grok | `XAIRealtimeProvider` | — | Grok speech-to-speech |
 | Deepgram Voice Agent | `DeepgramAgentProvider` | `roomkit[realtime-deepgram]` | Nova listen + LLM think + Aura speak, each chosen separately |
 | Mock | `MockRealtimeProvider` | built-in | Testing |
@@ -44,7 +44,7 @@ await kit.attach_channel("voice-room", "realtime-voice", category=ChannelCategor
 from roomkit.voice import get_openai_realtime_provider
 
 OpenAIRealtime = get_openai_realtime_provider()
-provider = OpenAIRealtime(api_key="sk-...", model="gpt-4o-realtime-preview")
+provider = OpenAIRealtime(api_key="sk-...")  # defaults to gpt-realtime-2.1
 
 # xAI Grok
 from roomkit.voice import get_xai_realtime_provider, get_xai_realtime_config
@@ -156,7 +156,7 @@ Some providers support session resumption after disconnection:
 # OpenAI Realtime supports session resumption
 provider = OpenAIRealtime(
     api_key="sk-...",
-    model="gpt-4o-realtime-preview",
+    model="gpt-realtime-2.1",
 )
 # Sessions automatically resume when possible
 ```

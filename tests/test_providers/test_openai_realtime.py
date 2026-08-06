@@ -65,11 +65,17 @@ class TestOpenAIRealtimeProvider:
         mod = _load_provider()
         provider = mod.OpenAIRealtimeProvider(
             api_key="sk-test",
-            model="gpt-realtime-2.0",
+            model="gpt-realtime-2.1-mini",
             base_url="wss://custom.api.com/v1/realtime",
         )
-        assert provider._model == "gpt-realtime-2.0"
+        assert provider._model == "gpt-realtime-2.1-mini"
         assert provider._base_url == "wss://custom.api.com/v1/realtime"
+
+    def test_default_model_is_current_generation(self):
+        """The default silently aged two generations behind — pin it."""
+        mod = _load_provider()
+        provider = mod.OpenAIRealtimeProvider(api_key="sk-test")
+        assert provider._model == "gpt-realtime-2.1"
 
     def test_is_responding_default(self):
         mod = _load_provider()
@@ -208,6 +214,41 @@ class TestOpenAIRealtimeProvider:
                 "parameters": {"type": "object", "properties": {}},
             }
         ]
+
+    # ── _build_session_config reasoning effort ───────────────────
+
+    def test_session_config_includes_reasoning_effort(self):
+        """``reasoning`` is a session-level sibling of instructions/audio/tools."""
+        mod = _load_provider()
+        provider = mod.OpenAIRealtimeProvider(api_key="sk-test")
+        config = provider._build_session_config(
+            system_prompt=None,
+            voice=None,
+            tools=None,
+            temperature=None,
+            input_sample_rate=24000,
+            output_sample_rate=24000,
+            server_vad=True,
+            pc={"reasoning_effort": "low"},
+        )
+        assert config["reasoning"] == {"effort": "low"}
+        assert "reasoning" not in config["audio"]["input"]
+
+    def test_session_config_omits_reasoning_by_default(self):
+        """Non-reasoning models must not receive the field at all."""
+        mod = _load_provider()
+        provider = mod.OpenAIRealtimeProvider(api_key="sk-test")
+        config = provider._build_session_config(
+            system_prompt=None,
+            voice=None,
+            tools=None,
+            temperature=None,
+            input_sample_rate=24000,
+            output_sample_rate=24000,
+            server_vad=True,
+            pc={},
+        )
+        assert "reasoning" not in config
 
     def test_format_session_tools_defaults_type_and_passes_native(self):
         """Function tools default to ``type: function``; non-function native

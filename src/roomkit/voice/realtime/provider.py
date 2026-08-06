@@ -67,7 +67,7 @@ class RealtimeVoiceProvider(ABC):
     AI service. Callbacks are registered for events the provider emits.
 
     Example:
-        provider = OpenAIRealtimeProvider(api_key="sk-...", model="gpt-realtime-1.5")
+        provider = OpenAIRealtimeProvider(api_key="sk-...", model="gpt-realtime-2.1")
 
         provider.on_audio(handle_audio)
         provider.on_transcription(handle_transcription)

@@ -19,7 +19,7 @@ from roomkit.voice.base import VoiceSession, VoiceSessionState
 
 @pytest.fixture
 def provider() -> OpenAIRealtimeProvider:
-    return OpenAIRealtimeProvider(api_key="sk-test", model="gpt-realtime-1.5")
+    return OpenAIRealtimeProvider(api_key="sk-test", model="gpt-realtime-2.1")
 
 
 @pytest.fixture

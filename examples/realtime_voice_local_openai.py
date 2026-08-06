@@ -13,7 +13,7 @@ Run with:
 
 Environment variables:
     OPENAI_API_KEY      (required) OpenAI API key
-    OPENAI_MODEL        Model name (default: gpt-realtime-1.5)
+    OPENAI_MODEL        Model name (default: the provider's own default)
     OPENAI_VOICE        Voice preset (default: alloy)
     SYSTEM_PROMPT       Custom system prompt
     AEC                 Echo cancellation: webrtc | speex | 1 (=webrtc) | 0
@@ -66,9 +66,12 @@ async def main() -> None:
     console_cleanup = setup_console(kit)
 
     # --- OpenAI Realtime provider (speech-to-speech) ---
+    # No model id hardcoded here: OPENAI_MODEL overrides, otherwise the
+    # provider's default applies, so the id lives in exactly one place.
+    model = os.environ.get("OPENAI_MODEL")
     provider = OpenAIRealtimeProvider(
         api_key=api_key,
-        model=os.environ.get("OPENAI_MODEL", "gpt-realtime-2"),
+        **({"model": model} if model else {}),
     )
 
     # --- Audio pipeline stages ---

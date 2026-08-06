@@ -40,10 +40,16 @@ class OpenAIRealtimeProvider(OpenAIRealtimeBase):
     **Note:** the GA API does not accept ``temperature``; passing it
     logs a warning and is ignored.
 
+    **Reasoning effort:** reasoning-capable models (``gpt-realtime-2`` and
+    later) accept ``provider_config["reasoning_effort"]`` — one of
+    ``minimal``, ``low``, ``medium``, ``high``, ``xhigh``. It trades latency
+    for depth and is omitted from the session unless set, so non-reasoning
+    models keep working untouched.
+
     Requires the ``websockets`` package.
 
     Example:
-        provider = OpenAIRealtimeProvider(api_key="sk-...", model="gpt-realtime-1.5")
+        provider = OpenAIRealtimeProvider(api_key="sk-...", model="gpt-realtime-2.1")
         provider.on_audio(handle_output_audio)
         provider.on_transcription(handle_transcription)
 
@@ -55,7 +61,7 @@ class OpenAIRealtimeProvider(OpenAIRealtimeBase):
         self,
         *,
         api_key: str | SecretStr,
-        model: str = "gpt-realtime-1.5",
+        model: str = "gpt-realtime-2.1",
         base_url: str | None = None,
     ) -> None:
         super().__init__()
@@ -155,6 +161,11 @@ class OpenAIRealtimeProvider(OpenAIRealtimeBase):
             session_config["instructions"] = system_prompt
         if tools:
             session_config["tools"] = self._format_session_tools(tools)
+        # Sibling of instructions/audio/tools, not nested under audio.input.
+        # Only reasoning-capable models (gpt-realtime-2+) honour it, so the
+        # field stays out of the payload unless the caller asks for it.
+        if pc.get("reasoning_effort"):
+            session_config["reasoning"] = {"effort": str(pc["reasoning_effort"])}
 
         logger.info("Sending session.update: turn_detection=%s, voice=%s", turn_detection, voice)
         return session_config

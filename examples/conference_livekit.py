@@ -269,10 +269,15 @@ def build_realtime(notes: list[str]) -> Any | None:
     if os.getenv("OPENAI_API_KEY"):
         from roomkit.providers.openai.realtime import OpenAIRealtimeProvider
 
-        model = os.getenv("OPENAI_MODEL", "gpt-realtime-2")
-        notes.append(f"REALTIME: OpenAI {model}, voice {spoken} (ROOMKIT_VOICE=)")
+        model = os.getenv("OPENAI_MODEL")
+        notes.append(
+            f"REALTIME: OpenAI {model or 'default model'}, voice {spoken} (ROOMKIT_VOICE=)"
+        )
         return ConferenceRealtimeConfig(
-            provider=OpenAIRealtimeProvider(api_key=os.environ["OPENAI_API_KEY"], model=model),
+            provider=OpenAIRealtimeProvider(
+                api_key=os.environ["OPENAI_API_KEY"],
+                **({"model": model} if model else {}),
+            ),
             system_prompt=system_prompt,
             voice=voice,
         )
