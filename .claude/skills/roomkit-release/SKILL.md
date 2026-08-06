@@ -1,6 +1,6 @@
 ---
 name: roomkit-release
-description: Cut a roomkit release end to end — pre-flight state, version choice, full CHANGELOG review and promote, docs/derived artifacts, local gates, CI green on HEAD, `make release VERSION=x.y.z`, then verify tag + GitHub Release + SBOM + PyPI + next dev cycle all landed. Use for /roomkit-release, "release roomkit", "sors la x.y.z", "on publie une version".
+description: Cut a roomkit release end to end — pre-flight state, version choice, full CHANGELOG review and promote, docs/derived artifacts, local gates, CI green on HEAD, `make release VERSION=x.y.z`, then verify tag + GitHub Release + SBOM + PyPI + next dev cycle all landed. Use for /roomkit-release, "release roomkit", "cut a release", "publish x.y.z".
 ---
 
 # Release roomkit
@@ -21,10 +21,9 @@ sanity-check, not an order — step 2 still runs.
 
 ## Guardrails (read once, hold for the whole run)
 
-- **Narrate in French.** Everything the user reads — step headers, findings,
-  questions, the final report — in French. Everything written into the repo
-  (CHANGELOG prose, commit messages, code) stays in **English**, matching
-  `git log`.
+- **Everything in English** — the narration, the questions, the final report, and
+  everything written into the repo (CHANGELOG prose, commit messages, code),
+  matching `git log`.
 - **Never pipe a gate through `tail`/`head`.** `make all 2>&1 | tail -20` reports
   *tail's* exit code; a green "exit 0" then proves nothing. Run gates unpiped and
   read the real exit status.
@@ -36,35 +35,37 @@ sanity-check, not an order — step 2 still runs.
   (step 3), and launching `make release` (step 7, the tail of which is
   irreversible). Everything else is autonomous.
 - **The working tree must be empty in `git status --porcelain`, untracked files
-  included** — the script only tolerates a dirty `src/roomkit/_version.py`.
-  `.claude/` is gitignored, so this skill's own file never counts.
+  included** — the script only tolerates a dirty `src/roomkit/_version.py`. This
+  skill's own file is tracked (`.claude/skills/` is the one exception to the
+  ignored `.claude/*`), so an edit to it is a change like any other: commit it
+  before releasing.
 - **Never fake completion.** A run ends *published + verified*, or *stopped* with
   the exact blocker and the state main was left in.
 
 ## Step-by-step tracking (do this first)
 
-The user wants to see where the release is at every moment.
+The run must show where it stands at every moment.
 
 1. Load the task tools once: `ToolSearch("select:TaskCreate,TaskUpdate,TaskList")`.
 2. Create the nine tasks below **before step 1**, in order:
-   `1. État des lieux` · `2. Numéro de version` · `3. Revue du CHANGELOG` ·
-   `4. Docs et artefacts dérivés` · `5. Portes locales` · `6. Push + CI verte` ·
-   `7. make release` · `8. Vérification post-release` · `9. Suites`
+   `1. State of play` · `2. Version number` · `3. CHANGELOG review` ·
+   `4. Docs and derived artifacts` · `5. Local gates` · `6. Push + CI green` ·
+   `7. make release` · `8. Post-release verification` · `9. Follow-ups`
 3. Exactly one task `in_progress` at a time; mark it `completed` before starting
    the next.
-4. Close every step with one line in the transcript, in French, in this shape:
+4. Close every step with one line in the transcript, in this shape:
 
    ```
-   ✅ Étape 3/9 — CHANGELOG : 11 commits depuis v0.41.4, 9 couverts, 2 chore ignorés. Promu en [0.42.0] — 2026-08-06.
-   ⚠️  Étape 4/9 — Docs : llms-full.txt régénéré (docs/c7 avait bougé), à committer.
-   ⛔ Étape 6/9 — CI : run 1234 rouge sur test_voice_pipeline. Release arrêtée.
+   ✅ Step 3/9 — CHANGELOG: 11 commits since v0.41.4, 9 covered, 2 chore skipped. Promoted to [0.42.0] — 2026-08-06.
+   ⚠️  Step 4/9 — Docs: llms-full.txt regenerated (docs/c7 had drifted), to commit.
+   ⛔ Step 6/9 — CI: run 1234 red on test_voice_pipeline. Release stopped.
    ```
 
    A skipped step gets a line too, saying why it was skipped.
 
 ---
 
-## 1. État des lieux
+## 1. State of play
 
 Read-only. Establish the truth before touching anything:
 
@@ -82,14 +83,13 @@ curl -s https://pypi.org/pypi/roomkit/json | python3 -c "import sys,json;print(j
 Report a compact table: branch · tree · HEAD sha · dev version · last tag · last
 GitHub Release · latest on PyPI.
 
-**Flag any disagreement between those last four** — a tag with no GitHub Release,
-PyPI ahead of the tags, a `## [x.y.z]` section in the CHANGELOG with no tag. This
-repo has a history of partial releases; an inconsistency found here is a decision
-for the user, not something to silently release on top of.
+**Any disagreement between those last four is a blocker** — a tag with no GitHub
+Release, PyPI ahead of the tags, a `## [x.y.z]` section with no tag. Report it and
+let the user decide; do not release on top of it.
 
 Blockers: dirty tree, not on main, unpushed commits. Stop and report.
 
-## 2. Numéro de version
+## 2. Version number
 
 ```bash
 LAST=$(git describe --tags --abbrev=0)
@@ -97,11 +97,10 @@ git log --oneline "$LAST"..HEAD
 git diff --stat "$LAST"..HEAD -- src/ pyproject.toml
 ```
 
-Classify the range: breaking public-API change, new feature, fix only. The
-convention in this 0.x history is **minor for features or breaking changes, patch
-for a fix-only cut** (0.41.1 was the first patch and the flow handled it
-unchanged: the next dev cycle is always `{minor+1}.0.dev0`, so a patch cut from an
-open minor cycle returns main to the same dev version).
+Classify the range: breaking public-API change, new feature, fix only. In this 0.x
+line **features and breaking changes take a minor, a fix-only cut takes a patch**.
+Either way the script reopens main on `{minor+1}.0.dev0`, so a patch cut from an
+open minor cycle returns main to the dev version it already had.
 
 Then verify the candidate is free:
 
@@ -115,10 +114,10 @@ Propose the number with the one-line rationale (`AskUserQuestion` when there is 
 real choice) and get an explicit confirmation. PEP 440 only: `1.2.3` or `1.2.3rc1`
 — the script rejects `1.2.3-rc.1`.
 
-## 3. Revue du CHANGELOG
+## 3. CHANGELOG review
 
-The step the user cares most about. `CHANGELOG.md` is **hand-maintained** — the
-script only greps for `## [X.Y.Z]`, it cannot tell you the content is right.
+`CHANGELOG.md` is **hand-maintained**; the script only greps for `## [X.Y.Z]` and
+cannot judge what is under it.
 
 **a. Coverage.** List every commit in `$LAST..HEAD` and map each to a bullet in
 `## [Unreleased]`. Report the unmapped ones explicitly. Only `chore`, `test`,
@@ -132,15 +131,15 @@ it is deliberate.
   `### Deprecated`, `### Removed`, `### Fixed`, `### Security`.
 - **The house voice**: entries are prose that state the motivating case and what
   changed for the reader — the bold lead sentence, then why the workaround did not
-  exist, then the contract. Read the `## [0.42.0]` entry as the model. Commit
-  subjects pasted as bullets are not acceptable.
+  exist, then the contract. Read the most recent released entry as the model.
+  Commit subjects pasted as bullets are not acceptable.
 - Breaking changes marked as this file marks them — `### Changed — BREAKING` or a
   `**BREAKING — …**` lead — with the migration spelled out.
 - New public API mentioned, and actually exported from `roomkit/__init__.py`.
-- An optional-dependency floor raised in `pyproject.toml` gets its own entry (the
-  0.37.0 lesson: code adopted a `buzzkit` 0.1.4-only API while the extra still
-  declared `>=0.1.3` → TypeError for anyone resolving the floor; a lockfile bump
-  does not protect installs).
+- A raised optional-dependency floor gets its own entry — and check the reverse:
+  code that adopted a new API of an optional dep without raising that extra's
+  floor in `pyproject.toml` ships an AttributeError/TypeError to anyone resolving
+  the old floor. A lockfile bump does not protect installs.
 - Nothing internal or private leaks into a public file.
 
 **c. Promote.** Show the user the exact edit, then apply it:
@@ -157,7 +156,7 @@ If the promote was already done in an earlier session (a `## [X.Y.Z] — DATE`
 section with no tag), do not redo it: verify the date is still right, verify the
 two footer links, and say so.
 
-## 4. Docs et artefacts dérivés
+## 4. Docs and derived artifacts
 
 ```bash
 make llms-full                 # rebuilds llms-full.txt from docs/c7/
@@ -178,15 +177,9 @@ make docs                      # strict MkDocs build of ../roomkit-docs
 - Check `README.md` / `llms.txt` for counts or minimum versions this release makes
   stale.
 
-## 5. Portes locales
+## 5. Local gates
 
-Unpiped, in this order — cheapest signal first:
-
-Unpiped, cheapest signal first. **Pick the lane first** — the suite runs three
-times across a release (here, on CI at step 6, and inside `release.sh` at step 7),
-and a doc-only cut does not need all three.
-
-Decide with:
+Unpiped. **Pick the lane first**, with:
 
 ```bash
 git diff --name-only HEAD                      # what this release prep is about to commit
@@ -214,43 +207,40 @@ make check-models   # providers/*/models.py vs upstream
 make audit          # pip-audit: core gates, extras only report
 ```
 
-State in the step's closing line which lane ran and why.
+State in the step's closing line which lane ran.
 
-What the fast lane skips is covered twice over: CI re-runs the whole suite and
-both `pip-audit` passes on the release-prep commit at step 6, and `release.sh`
-re-runs `ty` + `pytest` at step 7 — a Markdown edit cannot break either
-differently. What it keeps is what is *not* covered elsewhere in time to matter:
-lint/format (a stray formatting error would fail CI at step 6 and cost a whole
-cycle) and `check-models`, the one thing the test suite structurally cannot catch
-— a catalog a lineup behind is still self-consistent, and it kills the release at
-step 7 instead. Exit 1 = stale catalogs, fix `providers/*/models.py`; exit 2 =
-mirror unreachable, only a warning.
+The fast lane is sound because what it drops runs twice more anyway: CI covers the
+suite and both `pip-audit` passes on the prep commit at step 6, and `release.sh`
+re-runs `ty` + `pytest` at step 7. It keeps the two things those cover too late —
+lint/format, which would fail CI at step 6 and cost a full cycle, and
+`check-models`, which no test can replace (a catalog a release behind is still
+self-consistent) and which aborts `make release` at step 7. `check-models` exit 1
+= stale catalogs, fix `providers/*/models.py`; exit 2 = mirror unreachable, warning
+only.
 
-## 6. Push + CI verte
+## 6. Push + CI green
 
 Commit the release prep (CHANGELOG promote, regenerated `llms-full.txt`, doc
-fixes) with an English `docs(changelog):`-style message, staging **explicit
-paths**, and **push it**.
+fixes) with a `docs(changelog):`-style message, staging **explicit paths**, and
+**push it**.
 
-**This is the step where the old habit is now wrong.** `release.sh` gates on the
-CI run for the *exact HEAD sha*:
+`release.sh` resolves the CI run for the *exact HEAD sha*:
 
 ```bash
 gh run list --workflow CI --branch main --commit "$(git rev-parse HEAD)" --limit 1
 ```
 
-So the previously-used "commit the changelog locally and let the release push
-carry it" pattern now aborts with `no CI run found for commit …`. HEAD must be
-pushed, and its CI run must be `completed` + `success`, before `make release`.
+HEAD must therefore be pushed, and its run `completed` + `success`, before
+`make release`. A prep commit left local aborts the release with
+`no CI run found for commit …`.
 
 ```bash
 gh run list --workflow CI --branch main --limit 1        # get the run id
 gh run watch <id> --exit-status                          # blocks until it settles
 ```
 
-Red CI stops the release. Note that only the `CI` workflow counts — a failing
-*Dependabot Updates* run on main is not a blocker (the guard filters on
-`--workflow CI` for exactly that reason).
+Red CI stops the release. Only the `CI` workflow counts — the guard filters on
+`--workflow CI`, so a failing *Dependabot Updates* run on main is not a blocker.
 
 ## 7. `make release VERSION=X.Y.Z`
 
@@ -276,7 +266,7 @@ with the user's agreement, and say so in the final report.
 On failure: read the error, fix the cause, re-run the identical command. Do not
 improvise around it.
 
-## 8. Vérification post-release
+## 8. Post-release verification
 
 Prove all five faces agree — do not take the script's last line as proof:
 
@@ -290,20 +280,19 @@ grep -n "^## \[X.Y.Z\]" CHANGELOG.md
 ```
 
 The GitHub Release must carry the `roomkit-X.Y.Z.cdx.json` SBOM asset. Report the
-final table in French: tag ✅ · Release + SBOM ✅ · PyPI ✅ · main sur `A.B.0.dev0`
-✅ · CHANGELOG ✅. Any ✗ is stated plainly with what is missing.
+final table: tag ✅ · Release + SBOM ✅ · PyPI ✅ · main on `A.B.0.dev0` ✅ ·
+CHANGELOG ✅. Any ✗ is stated plainly with what is missing.
 
-## 9. Suites
+## 9. Follow-ups
 
 - **Downstream consumers that pin roomkit**: if the release ships an API they
-  already call, their floor bump is *required*, not cosmetic — bump the pin and
-  relock in the same commit. Gotcha: right after a publish,
-  `uv lock --upgrade-package roomkit` fails with "only roomkit<=PREV is available"
-  (stale index cache); add `--refresh-package roomkit` and it resolves at once.
-  Deployment is a separate, explicit step — never assumed done.
-- Record the release wherever this repo's release history is kept: version, date,
-  what shipped, the lane and flow variant used, and anything new learned. Append to
-  the existing record rather than starting a new one.
+  already call, bump the pin and relock in the same commit — required, not
+  cosmetic. Right after a publish, `uv lock --upgrade-package roomkit` fails with
+  "only roomkit<=PREV is available" (stale index cache); add
+  `--refresh-package roomkit`. Deploying is a separate, explicit step — never
+  report it as done.
+- Record the release wherever this repo keeps its release history: version, date,
+  what shipped.
 
 ---
 
