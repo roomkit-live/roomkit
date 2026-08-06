@@ -56,6 +56,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   provider now supervises the session and reports `connection_failed` /
   `session_ended` through `on_error`, with the session marked `ENDED`.
 
+### Added
+
+- **Deepgram Voice Agent as a speech-to-speech provider** —
+  `DeepgramAgentProvider` in `roomkit.providers.deepgram`, on the new
+  `realtime-deepgram` extra (`websockets` only — no SDK).
+
+  Where the other speech-to-speech providers hand you one end-to-end model,
+  Deepgram composes an agent from three stages picked independently: `listen`
+  (Nova/Flux), `think` (an LLM, managed or pointed at your own OpenAI-compatible
+  endpoint) and `speak` (Aura). Swapping the model without touching the voice is
+  the reason to reach for it. `mulaw` at 8 kHz is accepted in both directions, so
+  a SIP or Twilio leg needs no resampling at all.
+
+  `reconfigure()` is overridden to patch the live session — `UpdateThink` carries
+  prompt, model and functions in one message, `UpdateSpeak` swaps the voice — so
+  an agent handoff keeps the WebSocket and the conversation context instead of
+  reconnecting. The curated catalog is the full Aura-2 set across seven
+  languages, plus the twelve Aura-1 voices flagged `deprecated`.
+
+  Three constraints are the protocol's, and are documented rather than papered
+  over: turn detection is always Deepgram's (`server_vad=False` warns and is
+  ignored), `ConversationText` is final-only so there are no interim
+  transcriptions, and there is no client-side interrupt message. That last one
+  costs nothing in practice — Deepgram signals barge-in the other way, with
+  `UserStartedSpeaking`, which the provider surfaces as `on_speech_start`, and
+  that is already what makes the channel flush playback and send `clear_audio`.
+  `interrupt()` therefore only clears local state. The provider also fires
+  `on_speech_end` on the user's own transcript, since Deepgram has no
+  speech-stopped event and idle detection would otherwise never fire again.
+
+- **Google Gemini as a TTS provider** — `GeminiTTSProvider` in
+  `roomkit.voice.tts.gemini`, on the `gemini` extra roomkit already ships for
+  the Gemini AI provider and Gemini Live, so no new dependency.
+
+  Gemini TTS is a generative speech model rather than a voice engine: the
+  prompt it receives is an instruction. A `style_prompt` like *"Lis ce texte
+  d'une voix calme"* steers delivery and is verifiably not spoken, which no
+  other TTS in roomkit can do without markup. 30 prebuilt voices, shared with
+  Gemini Live native audio — `available_voices()` reads the one existing
+  catalog rather than restating it.
+
+  What it is not is a conversational TTS. Measured against the live API,
+  time-to-first-audio is 3–8 seconds depending on the model, so the provider is
+  documented for prompts, announcements and generated audio messages, and
+  `supports_streaming_input` reports `False` — the API takes a complete prompt,
+  and claiming otherwise would route a `VoiceChannel` into a streaming path the
+  service cannot honour. The default model is the only one of the three that
+  streams as it generates, so playback can start on the first 40 ms frame.
+
+  Output is fixed by the service at 24 kHz mono PCM. The request accepts a
+  `sample_rate` field that the service silently ignores, so the config does not
+  expose it; use a resampler stage when the transport needs another rate.
+
 ## [0.43.0] — 2026-08-06
 
 ### Added
