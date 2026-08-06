@@ -7,6 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **An ElevenLabs agent can finally call a tool.** `ElevenLabsRealtimeProvider`
+  logged that `tools=` was ignored and answered `submit_tool_result` with a
+  debug line, so a `tool_handler` on a `RealtimeVoiceChannel` was never
+  invoked — while the shipped example and the guide both described tool
+  calling as working. Two documents promising a behaviour no code performed.
+
+  The ElevenLabs SDK does not forward JSON schemas the way OpenAI Realtime
+  does: it runs **client tools** through a `ClientTools` registry keyed by
+  name. The provider now registers a handler per declared tool on that
+  registry and parks it on a future, so a call travels the normal RoomKit
+  path — `on_tool_call`, the channel's gates and hooks, `submit_tool_result` —
+  and the value the handler returns is what the agent receives. The names must
+  match the client tools declared on the agent, which is the one half of this
+  that lives on ElevenLabs' side rather than in RoomKit. A call nobody answers
+  within `tool_timeout_s` (new, default 30 s) is reported to the agent as an
+  error rather than hanging its turn.
+
+  The registry is per session and bound to the loop RoomKit runs on. Left to
+  itself the SDK starts its own loop in a private thread and would ship the
+  tool result from that thread onto a WebSocket owned by ours; and its
+  `end_session` stops the registry for good, so a shared instance would break
+  on the second connect.
+
+- **ElevenLabs no longer accepts a mid-session reconfigure it cannot honour.**
+  `supports_mid_session_reconfigure` was inherited as `True`, so activating a
+  skill mid-turn reached the base `reconfigure`, which disconnects and
+  reconnects. On ConvAI that ends the conversation server-side and opens a
+  different one, dropping the transcript and every pending `tool_call_id`. It
+  now reports `False`, which routes callers to the delivery modes meant for
+  providers whose session is fixed at connect.
+
+- **A turn on ElevenLabs now ends.** ConvAI sends the agent's text *before* its
+  synthesis, and the provider took that text for the end of the response:
+  `response_end` fired before the first audio chunk, the chunk then reopened
+  the response, and nothing ever closed it — the speaking indicator stayed lit
+  and the session never went idle. A response now opens on the first audio
+  chunk and closes once the stream has been quiet for `response_idle_ms`
+  (new, default 800 ms), with a tool call in flight holding the turn open and
+  an interruption closing it.
+
+- **A dead ElevenLabs session no longer looks healthy.** `start_session` only
+  spawns the task that opens the WebSocket, so a rejected key, an unknown
+  `agent_id` or a dropped connection surfaced nowhere: `connect` returned, the
+  session sat in `ACTIVE`, and the failure died inside an unobserved task. The
+  provider now supervises the session and reports `connection_failed` /
+  `session_ended` through `on_error`, with the session marked `ENDED`.
+
 ## [0.43.0] — 2026-08-06
 
 ### Added

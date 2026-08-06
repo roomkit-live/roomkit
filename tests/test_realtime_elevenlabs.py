@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -12,6 +14,20 @@ from roomkit.providers.elevenlabs.realtime import (
     _AsyncBridgeAudioInterface,
 )
 from roomkit.voice.base import VoiceSession, VoiceSessionState
+
+
+class _FakeClientTools:
+    """Stand-in for the SDK registry — records what the provider registers."""
+
+    def __init__(self) -> None:
+        self.handlers: dict[str, Any] = {}
+        self.is_async: dict[str, bool] = {}
+
+    def register(self, tool_name: str, handler: Any, is_async: bool = False) -> None:
+        if tool_name in self.handlers:
+            raise ValueError(f"Tool '{tool_name}' is already registered")
+        self.handlers[tool_name] = handler
+        self.is_async[tool_name] = is_async
 
 
 @pytest.fixture
@@ -219,6 +235,11 @@ class TestSDKCallbackHandlers:
     async def test_agent_response_callback(
         self, provider: ElevenLabsRealtimeProvider, session: VoiceSession
     ) -> None:
+        """Agent text opens the turn; it must not close the response.
+
+        ConvAI sends the text before the synthesis, so ending the response
+        here would fire ``response_end`` ahead of the first audio chunk.
+        """
         provider._responding.add(session.id)
 
         tx_cb = AsyncMock()
@@ -230,8 +251,8 @@ class TestSDKCallbackHandlers:
         await cb("Hello there!")
 
         tx_cb.assert_awaited_once_with(session, "Hello there!", "assistant", True)
-        end_cb.assert_awaited_once_with(session)
-        assert session.id not in provider._responding
+        end_cb.assert_not_awaited()
+        assert session.id in provider._responding
 
     async def test_correction_callback(
         self, provider: ElevenLabsRealtimeProvider, session: VoiceSession
@@ -259,3 +280,233 @@ class TestSDKCallbackHandlers:
         tx_cb.assert_awaited_once_with(session, "Hello world", "user", True)
         # User transcript arrival also fires speech_end
         end_cb.assert_awaited_once_with(session)
+
+
+class TestReconfigure:
+    def test_mid_session_reconfigure_is_refused(
+        self, provider: ElevenLabsRealtimeProvider
+    ) -> None:
+        """The base reconfigure reconnects, which on ConvAI is a new conversation."""
+        assert provider.supports_mid_session_reconfigure is False
+
+
+class TestClientToolBridge:
+    """Tools reach the agent through the SDK's ClientTools registry."""
+
+    def test_registers_one_handler_per_declared_tool(
+        self, provider: ElevenLabsRealtimeProvider, session: VoiceSession
+    ) -> None:
+        registry = _FakeClientTools()
+
+        provider._register_client_tools(
+            registry,
+            session,
+            [
+                {"name": "get_weather", "description": "Weather", "parameters": {}},
+                {"name": "get_weather", "description": "Duplicate"},
+                {"description": "nameless"},
+            ],
+        )
+
+        # The SDK refuses a name twice, and a definition without a name has
+        # nothing to register under.
+        assert list(registry.handlers) == ["get_weather"]
+        assert registry.is_async["get_weather"] is True
+
+    def test_no_tools_registers_nothing(
+        self, provider: ElevenLabsRealtimeProvider, session: VoiceSession
+    ) -> None:
+        registry = _FakeClientTools()
+        provider._register_client_tools(registry, session, None)
+        assert registry.handlers == {}
+
+    async def test_call_reaches_on_tool_call_and_returns_the_submitted_result(
+        self, provider: ElevenLabsRealtimeProvider, session: VoiceSession
+    ) -> None:
+        seen: dict[str, Any] = {}
+        tasks: list[asyncio.Task[None]] = []
+
+        def on_tool_call(
+            s: VoiceSession, call_id: str, name: str, arguments: dict[str, Any]
+        ) -> None:
+            seen.update(session=s, call_id=call_id, name=name, arguments=arguments)
+            tasks.append(
+                asyncio.create_task(provider.submit_tool_result(s, call_id, '{"temp": 22}'))
+            )
+
+        provider.on_tool_call(on_tool_call)
+        handler = provider._make_tool_handler(session, "get_weather")
+
+        result = await handler({"tool_call_id": "call-1", "city": "Montreal"})
+
+        assert result == '{"temp": 22}'
+        assert seen["session"] is session
+        assert seen["call_id"] == "call-1"
+        assert seen["name"] == "get_weather"
+        # tool_call_id is SDK plumbing, not a declared parameter of the tool.
+        assert seen["arguments"] == {"city": "Montreal"}
+        assert provider._pending_tools[session.id] == {}
+        await asyncio.gather(*tasks)
+
+    async def test_call_without_an_id_still_correlates(
+        self, provider: ElevenLabsRealtimeProvider, session: VoiceSession
+    ) -> None:
+        tasks: list[asyncio.Task[None]] = []
+
+        def on_tool_call(
+            s: VoiceSession, call_id: str, name: str, arguments: dict[str, Any]
+        ) -> None:
+            assert call_id
+            tasks.append(asyncio.create_task(provider.submit_tool_result(s, call_id, "ok")))
+
+        provider.on_tool_call(on_tool_call)
+        handler = provider._make_tool_handler(session, "ping")
+
+        assert await handler({}) == "ok"
+        await asyncio.gather(*tasks)
+
+    async def test_a_call_nobody_answers_times_out_as_an_error(
+        self, session: VoiceSession
+    ) -> None:
+        provider = ElevenLabsRealtimeProvider(
+            ElevenLabsRealtimeConfig(api_key="k", agent_id="a", tool_timeout_s=0.01)
+        )
+        provider.on_tool_call(lambda *_: None)
+        handler = provider._make_tool_handler(session, "slow")
+
+        # Raising is what the SDK turns into is_error=True; a returned string
+        # would reach the agent as a successful call.
+        with pytest.raises(RuntimeError, match="did not return within"):
+            await handler({"tool_call_id": "call-1"})
+
+        assert provider._pending_tools[session.id] == {}
+
+    async def test_result_for_an_unknown_call_is_dropped(
+        self, provider: ElevenLabsRealtimeProvider, session: VoiceSession
+    ) -> None:
+        # A late result from a call that already timed out must not raise.
+        await provider.submit_tool_result(session, "gone", "late")
+
+    async def test_disconnect_fails_the_calls_still_in_flight(
+        self, provider: ElevenLabsRealtimeProvider, session: VoiceSession
+    ) -> None:
+        future: asyncio.Future[str] = asyncio.get_running_loop().create_future()
+        provider._sessions[session.id] = session
+        provider._pending_tools[session.id] = {"call-1": future}
+
+        await provider.disconnect(session)
+
+        assert future.done()
+        with pytest.raises(RuntimeError, match="abandoned"):
+            future.result()
+
+
+class TestResponseLifecycle:
+    """ConvAI sends no end-of-audio marker, so silence closes the turn."""
+
+    async def test_response_ends_once_the_audio_goes_quiet(self, session: VoiceSession) -> None:
+        provider = ElevenLabsRealtimeProvider(
+            ElevenLabsRealtimeConfig(api_key="k", agent_id="a", response_idle_ms=20)
+        )
+        end_cb = AsyncMock()
+        provider.on_response_end(end_cb)
+        bridge = _AsyncBridgeAudioInterface(provider, session)
+
+        await bridge.output(b"\x00")
+        await asyncio.sleep(0.15)
+
+        end_cb.assert_awaited_once_with(session)
+        assert session.id not in provider._responding
+
+    async def test_a_pending_tool_call_holds_the_turn_open(self, session: VoiceSession) -> None:
+        provider = ElevenLabsRealtimeProvider(
+            ElevenLabsRealtimeConfig(api_key="k", agent_id="a", response_idle_ms=20)
+        )
+        end_cb = AsyncMock()
+        provider.on_response_end(end_cb)
+        bridge = _AsyncBridgeAudioInterface(provider, session)
+
+        await bridge.output(b"\x00")
+        provider._pending_tools[session.id] = {
+            "call-1": asyncio.get_running_loop().create_future()
+        }
+        await asyncio.sleep(0.1)
+
+        # The agent resumes speaking on this same turn once it has the result.
+        end_cb.assert_not_awaited()
+
+        provider._pending_tools[session.id].clear()
+        await asyncio.sleep(0.1)
+
+        end_cb.assert_awaited_once_with(session)
+
+    async def test_interrupted_turn_still_ends(
+        self, provider: ElevenLabsRealtimeProvider, session: VoiceSession
+    ) -> None:
+        end_cb = AsyncMock()
+        provider.on_response_end(end_cb)
+        bridge = _AsyncBridgeAudioInterface(provider, session)
+
+        await bridge.output(b"\x00")
+        await bridge.interrupt()
+
+        end_cb.assert_awaited_once_with(session)
+        assert session.id not in provider._responding
+
+
+class TestSessionSupervision:
+    """A session that dies on its own must not look healthy."""
+
+    async def test_connect_failure_inside_the_sdk_task_surfaces(
+        self, provider: ElevenLabsRealtimeProvider, session: VoiceSession
+    ) -> None:
+        err_cb = AsyncMock()
+        provider.on_error(err_cb)
+        provider._sessions[session.id] = session
+        session.state = VoiceSessionState.ACTIVE
+
+        conversation = AsyncMock()
+        conversation.wait_for_session_end.side_effect = RuntimeError("401 Unauthorized")
+
+        await provider._supervise_session(session, conversation)
+
+        err_cb.assert_awaited_once_with(session, "connection_failed", "401 Unauthorized")
+        assert session.state == VoiceSessionState.ENDED
+        assert session.id not in provider._sessions
+
+    async def test_service_closed_session_surfaces(
+        self, provider: ElevenLabsRealtimeProvider, session: VoiceSession
+    ) -> None:
+        err_cb = AsyncMock()
+        provider.on_error(err_cb)
+        provider._sessions[session.id] = session
+
+        await provider._make_end_session_cb(session)()
+
+        err_cb.assert_awaited_once()
+        assert err_cb.await_args is not None
+        assert err_cb.await_args.args[1] == "session_ended"
+
+    async def test_our_own_disconnect_is_not_an_error(
+        self, provider: ElevenLabsRealtimeProvider, session: VoiceSession
+    ) -> None:
+        err_cb = AsyncMock()
+        provider.on_error(err_cb)
+        provider._sessions[session.id] = session
+        provider._closing.add(session.id)
+
+        await provider._make_end_session_cb(session)()
+
+        err_cb.assert_not_awaited()
+
+    async def test_failure_is_reported_once(
+        self, provider: ElevenLabsRealtimeProvider, session: VoiceSession
+    ) -> None:
+        err_cb = AsyncMock()
+        provider.on_error(err_cb)
+        provider._sessions[session.id] = session
+
+        await provider._fail_session(session, "session_ended", "gone")
+        await provider._fail_session(session, "connection_failed", "gone again")
+
+        assert err_cb.await_count == 1

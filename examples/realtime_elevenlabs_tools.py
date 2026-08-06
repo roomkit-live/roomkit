@@ -1,13 +1,18 @@
 """RoomKit — ElevenLabs Conversational AI with client-side tool calling.
 
 Demonstrates how to handle tool calls from an ElevenLabs agent.
-Tools are configured on the ElevenLabs dashboard as "client tools";
-the agent invokes them and this script executes the handler.
+
+Tool calling here takes both halves. ElevenLabs never carries tool schemas
+over the WebSocket: the agent must declare the tool itself, and the ``tools``
+passed to the channel register the handlers the SDK dispatches to, matched by
+name. Declare a tool on only one side and it is either refused (the agent
+calls a name RoomKit never registered) or never called (RoomKit registered a
+name the agent does not know).
 
 Setup:
     1. Create an agent on the ElevenLabs dashboard
-    2. Add a client tool named "get_weather" with a "city" string parameter
-    3. Set the agent_id below
+    2. Add a *client* tool named "get_weather" with a "city" string parameter
+    3. Export its id as ELEVENLABS_AGENT_ID
 
 Requirements:
     pip install roomkit[realtime-elevenlabs,local-audio]
@@ -76,6 +81,19 @@ async def main() -> None:
         transport=transport,
         system_prompt=os.environ.get("SYSTEM_PROMPT"),
         voice=os.environ.get("ELEVENLABS_VOICE_ID"),
+        # Same name as the client tool declared on the agent. The schema is
+        # the agent's business; this is what registers the handler.
+        tools=[
+            {
+                "name": "get_weather",
+                "description": "Current weather for a city",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"city": {"type": "string"}},
+                    "required": ["city"],
+                },
+            }
+        ],
         tool_handler=handle_tool,
         input_sample_rate=sample_rate,
         output_sample_rate=sample_rate,
