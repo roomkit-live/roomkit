@@ -11,9 +11,12 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from pydantic import SecretStr
 
+from roomkit import RoomKit
+from roomkit.channels.realtime_voice import RealtimeVoiceChannel
 from roomkit.providers.deepgram.config import DeepgramAgentConfig
 from roomkit.providers.deepgram.realtime import DeepgramAgentProvider
 from roomkit.voice.base import VoiceSession, VoiceSessionState
+from roomkit.voice.realtime.mock import MockRealtimeTransport
 
 _SETTINGS_APPLIED = json.dumps({"type": "SettingsApplied"})
 
@@ -698,3 +701,80 @@ class TestLifecycle:
 
         assert await error.wait() == (session, "connection_error", "socket died")
         await provider.disconnect(session)
+
+
+class TestChannelIntegration:
+    """End-to-end through a real RealtimeVoiceChannel, only the socket faked."""
+
+    async def test_tool_call_round_trip(self) -> None:
+        """Tools declared on the channel reach Deepgram, results come back.
+
+        Deepgram needs no dashboard registration, unlike ElevenLabs: the schema
+        travels in Settings, so declaring the tool on the channel is the whole
+        setup.
+        """
+        calls: list[tuple[str, dict[str, Any]]] = []
+
+        async def handler(name: str, arguments: dict[str, Any]) -> str:
+            calls.append((name, arguments))
+            return json.dumps({"temperature_c": 21})
+
+        provider = DeepgramAgentProvider(DeepgramAgentConfig(api_key=SecretStr("dg")))
+        channel = RealtimeVoiceChannel(
+            "rt-dg",
+            provider=provider,
+            transport=MockRealtimeTransport(),
+            tools=[
+                {
+                    "name": "get_weather",
+                    "description": "Current weather for a city",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"city": {"type": "string"}},
+                        "required": ["city"],
+                    },
+                }
+            ],
+            tool_handler=handler,
+        )
+        kit = RoomKit()
+        kit.register_channel(channel)
+        room = await kit.create_room()
+        await kit.attach_channel(room.id, "rt-dg")
+
+        ws = _FakeWS()
+        with patch("websockets.connect", AsyncMock(return_value=ws)):
+            session = await channel.start_session(room.id, "user-1", "fake-ws")
+
+        functions = ws.last_of_type("Settings")["agent"]["think"]["functions"]
+        assert [f["name"] for f in functions] == ["get_weather"]
+        assert functions[0]["parameters"]["required"] == ["city"]
+
+        ws.push(
+            json.dumps(
+                {
+                    "type": "FunctionCallRequest",
+                    "functions": [
+                        {
+                            "id": "fc_1",
+                            "name": "get_weather",
+                            "arguments": '{"city": "Montreal"}',
+                            "client_side": True,
+                        }
+                    ],
+                }
+            )
+        )
+
+        for _ in range(100):
+            await asyncio.sleep(0.02)
+            if any(m.get("type") == "FunctionCallResponse" for m in ws.json_sent):
+                break
+
+        assert calls == [("get_weather", {"city": "Montreal"})]
+        response = ws.last_of_type("FunctionCallResponse")
+        assert response["id"] == "fc_1"
+        assert response["name"] == "get_weather"
+        assert json.loads(response["content"]) == {"temperature_c": 21}
+
+        await channel.end_session(session)
