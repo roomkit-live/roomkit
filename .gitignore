@@ -33,7 +33,8 @@ Thumbs.db
 *.swo
 *~
 site
-.claude/
+.claude/*
+!.claude/skills/
 examples/debug_audio/
 examples/recordings/
 examples/piper/
