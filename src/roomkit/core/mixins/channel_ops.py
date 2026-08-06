@@ -164,10 +164,17 @@ class ChannelOpsMixin(HelpersMixin):
                     channel.channel_id, channel._external_tool_handler
                 )
 
-            # Inject ON_USER_INPUT_REQUIRED hook into human input handler
+            # Inject ON_USER_INPUT_REQUIRED hook into human input handler.
+            # Registering makes this object the owner of the id's human-input
+            # scope; the token it gets back is what its own close() presents,
+            # so a channel replaced under the same id and torn down afterwards
+            # closes nothing.
             if channel._human_input_handler is not None:
-                channel._human_input_handler.handler._set_on_input_required(
-                    channel.channel_id, self._build_on_user_input_required_hook(channel.channel_id)
+                channel._human_input_registration = (
+                    channel._human_input_handler.handler._set_on_input_required(
+                        channel.channel_id,
+                        self._build_on_user_input_required_hook(channel.channel_id),
+                    )
                 )
 
         # ACP agents own their tool loop, but use the same RoomKit permission

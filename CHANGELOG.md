@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.42.1] — 2026-08-06
+
+### Fixed
+
+- **A channel torn down after being replaced no longer strands the id its
+  replacement serves.** A host that rebuilds the channel behind an agent —
+  the same agent attached to a second room, an edited configuration — swaps
+  the object under the same `channel_id` and closes the old one afterwards,
+  once its in-flight turns are done. When both share one `HumanInputHandler`
+  (the shape the handler documents as safe), that late close was read as *the
+  id is finished*: `AskUserQuestion` requests already armed by the live
+  channel were rejected, its `ON_USER_INPUT_REQUIRED` callback was dropped,
+  and the next `register_channel` for that id raised
+  `RuntimeError: Human input handler is closed for channel <id>` — a crash the
+  host could only escape by restarting the process, since nothing ever
+  re-opened a closed scope.
+
+  A channel scope now belongs to the channel *object*, not to the id it uses.
+  Registering re-opens the scope and returns a token naming that owner;
+  `close(channel_id=..., registration=...)` is a no-op once a newer owner
+  holds the id, so a departing predecessor closes nothing. `AIChannel` carries
+  its token from `register_channel` to `close()` on its own. Handlers used
+  directly, and `close()` called without a token, keep closing the scope
+  unconditionally, which is what a lone owner wants; the handler-wide
+  `close()` still refuses everything after it, because that lifecycle has no
+  successor.
+
 ## [0.42.0] — 2026-08-06
 
 ### Added
@@ -4454,7 +4481,8 @@ See entries `0.7.0a1` through `0.7.0a18` below.
 - `STTProvider.transcribe()` returns `TranscriptionResult` (Phase 3.1)
 - Framework event names enriched with payloads (Phase 4)
 
-[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.42.0...HEAD
+[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.42.1...HEAD
+[0.42.1]: https://github.com/roomkit-live/roomkit/compare/v0.42.0...v0.42.1
 [0.42.0]: https://github.com/roomkit-live/roomkit/compare/v0.41.4...v0.42.0
 [0.41.4]: https://github.com/roomkit-live/roomkit/compare/v0.41.3...v0.41.4
 [0.41.3]: https://github.com/roomkit-live/roomkit/compare/v0.41.2...v0.41.3

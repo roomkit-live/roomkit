@@ -238,6 +238,46 @@ async def test_close_prevents_new_requests_in_the_closed_scope() -> None:
         await handler.create("ask", {}, channel_id="ch3")
 
 
+async def test_registering_reopens_a_closed_channel_scope() -> None:
+    async def callback(event: PendingInputEvent) -> bool:
+        return True
+
+    handler = HumanInputHandler()
+    await handler.close(channel_id="ch1")
+    with pytest.raises(RuntimeError, match="closed for channel ch1"):
+        await handler.create("ask", {}, channel_id="ch1")
+
+    # A channel object registering under that id is a new owner, not late
+    # work from the one that closed.
+    handler._set_on_input_required("ch1", callback)
+
+    reopened = await handler.create("ask", {}, channel_id="ch1")
+    assert reopened.pending_id in handler.pending
+
+
+async def test_displaced_owner_close_spares_the_live_channel() -> None:
+    async def callback(event: PendingInputEvent) -> bool:
+        return True
+
+    handler = HumanInputHandler()
+    displaced = handler._set_on_input_required("ch1", callback)
+    live = handler._set_on_input_required("ch1", callback)
+    assert displaced != live
+
+    pending = await handler.create("ask", {}, channel_id="ch1")
+    await handler.close(channel_id="ch1", registration=displaced)
+
+    assert "ch1" in handler._on_input_required_by_channel
+    assert pending.status == PendingInputStatus.PENDING
+    still_armable = await handler.create("ask", {}, channel_id="ch1")
+    assert still_armable.pending_id in handler.pending
+
+    # The owner that does hold the id still closes it.
+    await handler.close(channel_id="ch1", registration=live)
+    with pytest.raises(RuntimeError, match="closed for channel ch1"):
+        await handler.create("ask", {}, channel_id="ch1")
+
+
 async def test_ai_channel_close_stops_its_human_input_notifications() -> None:
     from roomkit.providers.ai.mock import MockAIProvider
 
@@ -617,6 +657,46 @@ async def test_shared_handler_routes_framework_callbacks_by_channel() -> None:
     shared.release(second.pending_id)
     await first_kit.close()
     await second_kit.close()
+
+
+async def test_rebuilt_channel_survives_its_predecessors_teardown() -> None:
+    """A displaced channel must not strand the id its replacement now serves.
+
+    A host that rebuilds the channel serving an agent — the same agent
+    attached to a second room — registers the new object over the old one and
+    closes the old one afterwards, once its in-flight turns are done. With a
+    handler shared by both, that late close used to mark the id closed for
+    good: the live channel lost its callback and the next rebuild raised.
+    """
+    from roomkit import RoomKit
+    from roomkit.providers.ai.mock import MockAIProvider
+
+    shared = HumanInputHandler()
+    kit = RoomKit()
+
+    def build() -> AIChannel:
+        return AIChannel(
+            "agent:a1",
+            provider=MockAIProvider(),
+            human_input_handler=HumanInputToolHandler(tool_names={"AskUser"}, handler=shared),
+        )
+
+    displaced = build()
+    kit.register_channel(displaced)
+    kit.unregister_channel("agent:a1")
+    kit.register_channel(build())
+
+    await displaced.close()
+
+    assert "agent:a1" in shared._on_input_required_by_channel
+    pending = await shared.create_detached("AskUser", {}, channel_id="agent:a1")
+    assert pending.pending_id in shared.pending
+    shared.release(pending.pending_id)
+
+    kit.unregister_channel("agent:a1")
+    kit.register_channel(build())
+
+    await kit.close()
 
 
 async def test_hook_deny_blocks_tool_via_framework() -> None:

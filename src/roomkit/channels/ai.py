@@ -294,6 +294,12 @@ class AIChannel(
         # Human-input handler: compose first (highest priority) so it
         # intercepts matching tools before the user handler chain.
         self._human_input_handler = human_input_handler
+        # Token identifying this channel object as the owner of its id's
+        # human-input scope; set at register_channel time (see
+        # ``ChannelOpsMixin.register_channel``) and handed back on close so a
+        # displaced predecessor cannot close the scope out from under the
+        # object that replaced it.
+        self._human_input_registration: int | None = None
         if human_input_handler:
             from roomkit.tools.compose import compose_tool_handlers
 
@@ -492,7 +498,10 @@ class AIChannel(
     async def close(self) -> None:
         """Close the channel, its provider, memory, and executors."""
         if self._human_input_handler is not None:
-            await self._human_input_handler.handler.close(channel_id=self.channel_id)
+            await self._human_input_handler.handler.close(
+                channel_id=self.channel_id,
+                registration=self._human_input_registration,
+            )
         await super().close()
         await self._memory.close()
         if self._script_executor is not None:

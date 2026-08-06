@@ -98,6 +98,12 @@ class HumanInputHandler:
       left the active set.  Only a genuinely unknown id raises
       ``ValueError``, so neither a second read nor a host that keeps its own
       bookkeeping can turn an answer that arrived into a hard failure.
+    * **A channel scope belongs to a channel object, not to its id.** A host
+      that rebuilds the channel serving an id — the same agent re-attached to
+      a second room — hands the same shared handler a succession of owners.
+      Registering re-opens the scope, and the departing owner's ``close()``
+      is a no-op once a newer one has taken over, so a predecessor being
+      torn down cannot silence its live successor.
 
     The ``_on_input_required`` callback is injected by the framework
     (via ``register_channel`` hook builder) or set by the application
@@ -112,6 +118,7 @@ class HumanInputHandler:
         self._notify_channels: dict[asyncio.Task[None], str] = {}
         self._on_input_required: OnInputRequiredCallback | None = None
         self._on_input_required_by_channel: dict[str, OnInputRequiredCallback] = {}
+        self._registrations: dict[str, int] = {}
         self._closed_channels: set[str] = set()
         self._closed = False
 
@@ -120,12 +127,21 @@ class HumanInputHandler:
         """Active pending requests (read-only snapshot)."""
         return dict(self._pending)
 
-    async def close(self, *, channel_id: str | None = None) -> None:
+    async def close(
+        self, *, channel_id: str | None = None, registration: int | None = None
+    ) -> None:
         """Stop notifications and settle requests owned by one channel.
 
         When ``channel_id`` is omitted, all work owned by this handler is
         stopped. Channel-scoped closing lets a handler be shared safely by
         multiple :class:`~roomkit.channels.ai.AIChannel` instances.
+
+        ``registration`` is the token :meth:`_set_on_input_required` handed
+        the closing channel. Passing it makes the close belong to that channel
+        object rather than to the id it used: a channel displaced from the
+        registry and torn down later closes nothing, because the id is already
+        serving its replacement. Omitting it closes the scope unconditionally,
+        which is what a lone owner and a manual host call both want.
         """
         # Mark the scope closed before inspecting current work. ``create()``
         # and this prefix contain no suspension point, so an asyncio caller is
@@ -134,9 +150,13 @@ class HumanInputHandler:
         if channel_id is None:
             self._closed = True
             self._on_input_required_by_channel.clear()
+            self._registrations.clear()
         else:
+            if registration is not None and self._registrations.get(channel_id) != registration:
+                return
             self._closed_channels.add(channel_id)
             self._on_input_required_by_channel.pop(channel_id, None)
+            self._registrations.pop(channel_id, None)
 
         for pending_id, pending in list(self._pending.items()):
             if channel_id is not None and pending.channel_id != channel_id:
@@ -157,16 +177,25 @@ class HumanInputHandler:
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
 
-    def _set_on_input_required(self, channel_id: str, callback: OnInputRequiredCallback) -> None:
+    def _set_on_input_required(self, channel_id: str, callback: OnInputRequiredCallback) -> int:
         """Register the framework callback belonging to one channel.
 
         The application-level ``_on_input_required`` fallback remains for
         direct handler use. Framework callbacks need their own routing table:
         one shared handler must not let the last registered AI channel replace
         every earlier channel's hook and observability context.
+
+        A registration re-opens the id's scope: a channel object registering
+        under an id whose previous owner closed is a new owner, and refusing
+        it would strand the id for the handler's whole life. Returns the token
+        identifying this owner, to be handed back to :meth:`close`.
         """
-        self._ensure_open(channel_id)
+        self._ensure_open(channel_id, reopening=True)
+        self._closed_channels.discard(channel_id)
         self._on_input_required_by_channel[channel_id] = callback
+        registration = self._registrations.get(channel_id, 0) + 1
+        self._registrations[channel_id] = registration
+        return registration
 
     async def create(
         self,
@@ -270,11 +299,17 @@ class HumanInputHandler:
 
         return pending
 
-    def _ensure_open(self, channel_id: str) -> None:
-        """Reject work created after the owning lifecycle has closed."""
+    def _ensure_open(self, channel_id: str, *, reopening: bool = False) -> None:
+        """Reject work created after the owning lifecycle has closed.
+
+        ``reopening`` is for the one caller that legitimately outlives a
+        closed channel scope — a fresh registration under the same id, which
+        is a new owner rather than late work from the old one. The handler's
+        own close still refuses everything: that lifecycle has no successor.
+        """
         if self._closed:
             raise RuntimeError("Human input handler is closed")
-        if channel_id in self._closed_channels:
+        if not reopening and channel_id in self._closed_channels:
             raise RuntimeError(f"Human input handler is closed for channel {channel_id}")
 
     def _callback_for(self, channel_id: str) -> OnInputRequiredCallback | None:
