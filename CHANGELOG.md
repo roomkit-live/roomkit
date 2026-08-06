@@ -109,6 +109,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `sample_rate` field that the service silently ignores, so the config does not
   expose it; use a resampler stage when the transport needs another rate.
 
+### Changed
+
+- **The OpenAI Realtime provider defaults to `gpt-realtime-2.1`**, two
+  generations up from `gpt-realtime-1.5`. Upstream reports lower p95 latency,
+  better alphanumeric recognition — order numbers, phone numbers, confirmation
+  codes read back correctly — and more reliable interruption when the caller
+  speaks over the model. `gpt-realtime-2.1-mini` remains available as an
+  explicit, cheaper choice; a pinned `model=` is unaffected.
+
+  A default that ages is a default that eventually 404s, which is why it is now
+  covered by a test. The audio contract is unchanged (PCM at 24 kHz, G.711
+  μ-law/A-law at 8 kHz), so telephony paths need nothing.
+
+- **Reasoning effort reaches the OpenAI Realtime session.** Reasoning-capable
+  models (`gpt-realtime-2` and later) accept an effort level that trades
+  latency for depth, and RoomKit had no way to send it. It is now
+  `provider_config={"reasoning_effort": "minimal|low|medium|high|xhigh"}`,
+  carried as the session's own `reasoning` field and omitted entirely when
+  unset, so models without reasoning are untouched.
+
 ## [0.43.0] — 2026-08-06
 
 ### Added
