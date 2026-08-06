@@ -5,8 +5,12 @@ from __future__ import annotations
 from typing import Any
 
 from roomkit.channels.acp import ACPChannel as ACPChannel
+from roomkit.channels.ai import AIChannel as AIChannel
 from roomkit.channels.cli import CLIChannel as CLIChannel
+from roomkit.channels.realtime_voice import RealtimeVoiceChannel as RealtimeVoiceChannel
 from roomkit.channels.transport import TransportChannel
+from roomkit.channels.voice import VoiceChannel as VoiceChannel
+from roomkit.channels.websocket import WebSocketChannel as WebSocketChannel
 from roomkit.models.channel import ChannelCapabilities
 from roomkit.models.enums import ChannelMediaType, ChannelType
 

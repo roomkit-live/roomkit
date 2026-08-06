@@ -45,6 +45,34 @@ class TestPublicAPI:
         assert memory is not None
         assert mock is not None
 
+    def test_channels_importable_from_channels_package(self) -> None:
+        """Every channel resolves from ``roomkit.channels``, factories included.
+
+        The transport factories always lived here; the channel classes only in
+        the top-level package, so a reader had no rule telling one from the
+        other and half the documented imports raised ImportError.
+        """
+        import roomkit.channels as channels
+
+        for name in (
+            "ACPChannel",
+            "AIChannel",
+            "CLIChannel",
+            "EmailChannel",
+            "HTTPChannel",
+            "RCSChannel",
+            "RealtimeVoiceChannel",
+            "SMSChannel",
+            "TransportChannel",
+            "VoiceChannel",
+            "WebSocketChannel",
+        ):
+            obj = getattr(channels, name, None)
+            assert obj is not None, f"roomkit.channels.{name} is missing"
+            top_level = getattr(roomkit, name, None)
+            if top_level is not None:
+                assert obj is top_level, f"{name} differs between roomkit and roomkit.channels"
+
     def test_exception_classes(self) -> None:
         assert issubclass(roomkit.RoomNotFoundError, Exception)
         assert issubclass(roomkit.ChannelNotFoundError, Exception)
