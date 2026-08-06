@@ -19,6 +19,7 @@ from roomkit.providers.ai.base import AIResponse, AIToolCall
 from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.tools import current_tool_allowed_names, current_tool_room_id
 from roomkit.tools.context import _current_tool_call
+from roomkit.tools.external import BeforeToolDecision
 from tests.conftest import make_event
 
 
@@ -131,9 +132,9 @@ class TestCurrentToolRoomId:
             )
             return "ok"
 
-        async def before_tool_call(event: Any) -> bool:
+        async def before_tool_call(event: Any) -> BeforeToolDecision:
             hook_rooms.append(event.room_id)
-            return True
+            return BeforeToolDecision(allowed=True)
 
         provider = MockAIProvider(ai_responses=_tool_round_responses(), streaming=True)
         ch = AIChannel("ai1", provider=provider, tool_handler=tool_handler)

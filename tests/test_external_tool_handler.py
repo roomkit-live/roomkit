@@ -23,6 +23,7 @@ from roomkit.models.event import EventSource, RoomEvent
 from roomkit.providers.ai.base import AIResponse, AITool, AIToolCall
 from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.tools.external import (
+    BeforeToolDecision,
     PolicyExternalToolHandler,
     ToolDecision,
 )
@@ -151,8 +152,8 @@ class TestPolicyExternalToolHandler:
     async def test_before_hook_denies(self) -> None:
         handler = PolicyExternalToolHandler()
 
-        async def deny_all(event: ToolCallEvent) -> bool:
-            return False
+        async def deny_all(event: ToolCallEvent) -> BeforeToolDecision:
+            return BeforeToolDecision(allowed=False)
 
         handler._before_tool_hook = deny_all
         handler._channel_id = "ai-1"
@@ -164,8 +165,8 @@ class TestPolicyExternalToolHandler:
     async def test_before_hook_allows(self) -> None:
         handler = PolicyExternalToolHandler()
 
-        async def allow_all(event: ToolCallEvent) -> bool:
-            return True
+        async def allow_all(event: ToolCallEvent) -> BeforeToolDecision:
+            return BeforeToolDecision(allowed=True)
 
         handler._before_tool_hook = allow_all
         handler._channel_id = "ai-1"
@@ -177,8 +178,8 @@ class TestPolicyExternalToolHandler:
         """Hook allows but policy denies — should be denied."""
         handler = PolicyExternalToolHandler(policy=ToolPolicy(deny=["Bash"]))
 
-        async def allow_all(event: ToolCallEvent) -> bool:
-            return True
+        async def allow_all(event: ToolCallEvent) -> BeforeToolDecision:
+            return BeforeToolDecision(allowed=True)
 
         handler._before_tool_hook = allow_all
         handler._channel_id = "ai-1"
@@ -203,7 +204,8 @@ class TestExternalToolHandlerABC:
         handler = PolicyExternalToolHandler()
         handler._before_tool_hook = None
         result = await handler._fire_before_hook("Read", {})
-        assert result is True  # fail-open
+        assert result.allowed is True  # fail-open
+        assert result.arguments is None
 
     async def test_fire_on_tool_hook_no_callback(self) -> None:
         handler = PolicyExternalToolHandler()
@@ -215,13 +217,13 @@ class TestExternalToolHandlerABC:
         handler = PolicyExternalToolHandler()
         handler._channel_id = "ch-1"
 
-        callback = AsyncMock(return_value=False)
+        callback = AsyncMock(return_value=BeforeToolDecision(allowed=False))
         handler._before_tool_hook = callback
 
         result = await handler._fire_before_hook(
             "Bash", {"cmd": "ls"}, tool_call_id="tc-1", room_id="room-1"
         )
-        assert result is False
+        assert result.allowed is False
         callback.assert_awaited_once()
         event = callback.call_args[0][0]
         assert isinstance(event, ToolCallEvent)
@@ -323,6 +325,94 @@ class TestBeforeToolUseHook:
         await _trigger_ai(kit, ai, room.id)
 
         assert "get_weather" in observed_tools
+
+    async def test_hook_rewrites_arguments_before_the_handler_runs(self) -> None:
+        """``metadata["arguments"]`` replaces what the tool actually receives.
+
+        The mirror of ON_TOOL_CALL's result override: a redaction hook hands
+        the model tokenised text and puts the real value back on the way in.
+        """
+        seen_by_tool: list[dict[str, Any]] = []
+
+        async def recording_handler(name: str, args: dict[str, Any]) -> str:
+            seen_by_tool.append(args)
+            return json.dumps({"ok": True})
+
+        provider = MockAIProvider(ai_responses=_make_tool_responses())
+        ai = AIChannel(
+            "ai-1",
+            provider=provider,
+            system_prompt="Test.",
+            tool_handler=recording_handler,
+            tools=TOOLS,
+        )
+
+        kit = RoomKit()
+        kit.register_channel(ai)
+        room = await kit.create_room()
+        await kit.attach_channel(room.id, "ai-1", category=ChannelCategory.INTELLIGENCE)
+
+        observed_by_on_tool_call: list[dict[str, Any]] = []
+
+        @kit.hook(HookTrigger.BEFORE_TOOL_USE, execution=HookExecution.SYNC, name="rewrite")
+        async def rewrite(event: ToolCallEvent, ctx: RoomContext) -> HookResult:
+            return HookResult(action="allow", metadata={"arguments": {"city": "Montreal"}})
+
+        @kit.hook(HookTrigger.ON_TOOL_CALL, execution=HookExecution.SYNC, name="observe")
+        async def observe(event: ToolCallEvent, ctx: RoomContext) -> HookResult:
+            observed_by_on_tool_call.append(event.arguments)
+            return HookResult(action="allow")
+
+        await _trigger_ai(kit, ai, room.id)
+
+        assert seen_by_tool == [{"city": "Montreal"}]
+        # The downstream observer sees what ran, not what the model asked for.
+        assert observed_by_on_tool_call == [{"city": "Montreal"}]
+
+    async def test_hook_without_rewrite_leaves_arguments_alone(self) -> None:
+        """An allow with no ``arguments`` key keeps the model's own input."""
+        seen_by_tool: list[dict[str, Any]] = []
+
+        async def recording_handler(name: str, args: dict[str, Any]) -> str:
+            seen_by_tool.append(args)
+            return json.dumps({"ok": True})
+
+        provider = MockAIProvider(ai_responses=_make_tool_responses())
+        ai = AIChannel(
+            "ai-1",
+            provider=provider,
+            system_prompt="Test.",
+            tool_handler=recording_handler,
+            tools=TOOLS,
+        )
+
+        kit = RoomKit()
+        kit.register_channel(ai)
+        room = await kit.create_room()
+        await kit.attach_channel(room.id, "ai-1", category=ChannelCategory.INTELLIGENCE)
+
+        @kit.hook(HookTrigger.BEFORE_TOOL_USE, execution=HookExecution.SYNC, name="plain-allow")
+        async def plain_allow(event: ToolCallEvent, ctx: RoomContext) -> HookResult:
+            return HookResult(action="allow")
+
+        await _trigger_ai(kit, ai, room.id)
+
+        assert seen_by_tool == [{"city": "Paris"}]
+
+    async def test_external_handler_forwards_rewritten_arguments(self) -> None:
+        """A rewrite reaches an ExternalToolHandler as ``modified_input``."""
+        handler = PolicyExternalToolHandler()
+        handler._channel_id = "ai-1"
+
+        async def rewriting_callback(event: ToolCallEvent) -> BeforeToolDecision:
+            return BeforeToolDecision(allowed=True, arguments={"city": "Montreal"})
+
+        handler._before_tool_hook = rewriting_callback
+
+        decision = await handler.process_tool_call("get_weather", {"city": "[CITY_1]"})
+
+        assert decision.approved is True
+        assert decision.modified_input == {"city": "Montreal"}
 
     async def test_hook_wired_to_external_handler(self) -> None:
         """BEFORE_TOOL_USE hooks are wired into ExternalToolHandler on register."""

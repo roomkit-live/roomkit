@@ -238,7 +238,12 @@ class AIToolsMixin:
                     ),
                 )
 
-            # Pre-execution gate: BEFORE_TOOL_USE hook can deny the tool call
+            # Pre-execution gate: BEFORE_TOOL_USE hook can deny the tool call,
+            # or hand back rewritten arguments (a redaction hook putting real
+            # values back before the tool acts on the model's tokenised text).
+            # Everything downstream — the handler, ON_TOOL_CALL, the usage
+            # record — reads ``arguments``, so it reports what actually ran.
+            arguments = tc.arguments
             if self._before_tool_call_hook is not None:
                 from roomkit.models.tool_call import ToolCallEvent
 
@@ -247,12 +252,12 @@ class AIToolsMixin:
                     channel_type=ChannelType.AI,
                     tool_call_id=tc.id,
                     name=tc.name,
-                    arguments=tc.arguments,
+                    arguments=arguments,
                     result=None,
                     room_id=room_id,
                 )
-                allowed = await self._before_tool_call_hook(pre_event)
-                if not allowed:
+                decision = await self._before_tool_call_hook(pre_event)
+                if not decision:
                     logger.info("Tool %s denied by BEFORE_TOOL_USE hook", tc.name)
                     return AIToolResultPart(
                         tool_call_id=tc.id,
@@ -261,6 +266,8 @@ class AIToolsMixin:
                             {"error": f"Tool '{tc.name}' denied by pre-execution hook."}
                         ),
                     )
+                if decision.arguments is not None:
+                    arguments = decision.arguments
 
             tool_span_id = telemetry.start_span(
                 SpanKind.LLM_TOOL_CALL,
@@ -279,7 +286,7 @@ class AIToolsMixin:
                 )
                 _tc_tok = _current_tool_call.set(_tc_ctx)
                 try:
-                    result = await handler(tc.name, tc.arguments)
+                    result = await handler(tc.name, arguments)
                 finally:
                     _current_tool_call.reset(_tc_tok)
                 # Capture the handler's structured result (MCP structuredContent)
@@ -304,7 +311,7 @@ class AIToolsMixin:
                         channel_type=ChannelType.AI,
                         tool_call_id=tc.id,
                         name=tc.name,
-                        arguments=tc.arguments,
+                        arguments=arguments,
                         result=result,
                         room_id=room_id,
                     )
@@ -320,7 +327,7 @@ class AIToolsMixin:
             # Remember this call (final result, success or error) so later turns
             # can show "tools you've already used" and re-reveal it under Tool
             # Search. Infra/discovery tools are filtered inside record().
-            self._tool_usage.record(room_id, tc.name, tc.arguments, result)
+            self._tool_usage.record(room_id, tc.name, arguments, result)
             return AIToolResultPart(
                 tool_call_id=tc.id,
                 name=tc.name,

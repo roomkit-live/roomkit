@@ -63,8 +63,32 @@ class ToolDecision:
     """Human-readable reason for the decision (used in deny messages)."""
 
 
+@dataclass(frozen=True)
+class BeforeToolDecision:
+    """What the ``BEFORE_TOOL_USE`` hooks decided about one tool call.
+
+    Mirrors what ``ON_TOOL_CALL`` already offers on the way out: that hook
+    can replace a tool's *result*, this one can replace its *arguments*.
+    A redaction hook needs both halves — it hands the model tokenised text
+    and must put the real values back before the tool acts on them.
+
+    Truthiness is :attr:`allowed`, so a handler can gate on the decision
+    directly (``if not decision:``) and only reach for :attr:`arguments`
+    when it cares about a rewrite.
+    """
+
+    allowed: bool
+    """Whether the tool call may proceed."""
+
+    arguments: dict[str, Any] | None = None
+    """Rewritten arguments, or ``None`` to keep the model's own."""
+
+    def __bool__(self) -> bool:
+        return self.allowed
+
+
 # Callback type injected by the framework.
-BeforeToolCallback = Callable[[ToolCallEvent], Awaitable[bool]]
+BeforeToolCallback = Callable[[ToolCallEvent], Awaitable["BeforeToolDecision"]]
 OnToolCallback = Callable[[ToolCallEvent], Awaitable[str | None]]
 
 
@@ -191,10 +215,16 @@ class ExternalToolHandler(ABC):
         *,
         tool_call_id: str = "",
         room_id: str | None = None,
-    ) -> bool:
-        """Fire BEFORE_TOOL_USE hooks. Returns True if allowed."""
+    ) -> BeforeToolDecision:
+        """Fire BEFORE_TOOL_USE hooks.
+
+        The returned decision is truthy when the call is allowed, so
+        ``if not await self._fire_before_hook(...)`` still reads correctly;
+        read :attr:`BeforeToolDecision.arguments` to honour a hook that
+        rewrote the input (pass it back as ``ToolDecision.modified_input``).
+        """
         if self._before_tool_hook is None:
-            return True
+            return BeforeToolDecision(allowed=True)
         event = ToolCallEvent(
             channel_id=self._channel_id,
             channel_type=ChannelType.AI,
@@ -258,10 +288,10 @@ class PolicyExternalToolHandler(ExternalToolHandler):
         room_id: str | None = None,
     ) -> ToolDecision:
         # Fire BEFORE_TOOL_USE hook first
-        hook_allowed = await self._fire_before_hook(
+        decision = await self._fire_before_hook(
             tool_name, tool_input, tool_call_id=tool_call_id, room_id=room_id
         )
-        if not hook_allowed:
+        if not decision:
             return ToolDecision(approved=False, reason="Denied by BEFORE_TOOL_USE hook")
 
         # Apply policy
@@ -271,7 +301,7 @@ class PolicyExternalToolHandler(ExternalToolHandler):
                 reason=f"Tool '{tool_name}' denied by policy",
             )
 
-        return ToolDecision(approved=True)
+        return ToolDecision(approved=True, modified_input=decision.arguments)
 
     async def on_tool_result(
         self,

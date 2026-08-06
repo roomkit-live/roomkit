@@ -734,16 +734,19 @@ class HelpersMixin:
 
         The returned callback runs BEFORE_TOOL_USE sync hooks against the
         framework's hook engine. If any hook blocks, the tool call is denied.
-        Returns True if the tool call is allowed, False if denied.
+        A hook may also rewrite the call's arguments by returning them under
+        ``metadata["arguments"]`` — the mirror of what ON_TOOL_CALL already
+        does with ``metadata["result"]`` on the way out.
         """
         from roomkit.models.enums import HookTrigger
         from roomkit.models.tool_call import ToolCallEvent
+        from roomkit.tools.external import BeforeToolDecision
 
         kit_ref = self
 
-        async def _callback(event: ToolCallEvent) -> bool:
+        async def _callback(event: ToolCallEvent) -> BeforeToolDecision:
             if not event.room_id:
-                return True  # Allow if no room context
+                return BeforeToolDecision(allowed=True)  # Allow if no room context
             try:
                 context = await kit_ref._build_context(event.room_id)
             except Exception:
@@ -755,7 +758,7 @@ class HelpersMixin:
                 )
                 # Fail-closed: an authorization failure MUST NOT silently permit
                 # the tool call. Denying is the safe default.
-                return False
+                return BeforeToolDecision(allowed=False)
 
             hook_result = await kit_ref._hook_engine.run_sync_hooks(
                 event.room_id,
@@ -777,7 +780,11 @@ class HelpersMixin:
                 },
             )
 
-            return hook_result.allowed
+            rewritten = hook_result.metadata.get("arguments")
+            return BeforeToolDecision(
+                allowed=hook_result.allowed,
+                arguments=rewritten if isinstance(rewritten, dict) else None,
+            )
 
         return _callback
 

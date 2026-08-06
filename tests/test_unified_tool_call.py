@@ -423,7 +423,7 @@ class TestToolAuthorizationH1:
             arguments={},
             room_id="r1",
         )
-        assert await callback(event) is False
+        assert (await callback(event)).allowed is False
 
     async def test_ai_invalid_tool_args_rejected_before_handler(
         self, ai_provider: MockAIProvider
