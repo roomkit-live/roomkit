@@ -11,6 +11,8 @@ import sys
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
 from roomkit.voice.base import VoiceSession, VoiceSessionState
 
 
@@ -411,8 +413,6 @@ class TestOpenAIRealtimeProvider:
 
     async def test_connect_rejects_unsupported_rate(self):
         """16 kHz isn't a valid OpenAI Realtime rate — must raise."""
-        import pytest
-
         mod = _load_provider()
         provider = mod.OpenAIRealtimeProvider(api_key="sk-test")
         session = _make_session()
@@ -518,6 +518,80 @@ class TestOpenAIRealtimeProvider:
         session = _make_session()
         # Should return without error
         await provider.inject_text(session, "No connection")
+
+    # ── inject_image() ─────────────────────────────────────────
+
+    async def test_inject_image_sends_data_uri_in_user_item(self):
+        mod = _load_provider()
+        provider, ws, session = _make_connected_provider(mod)
+
+        await provider.inject_image(session, b"\x89PNG-bytes", "image/png")
+
+        assert ws.send.await_count == 2  # conversation.item.create + response.create
+        item = json.loads(ws.send.call_args_list[0][0][0])["item"]
+        # An image item has no other role available on the wire.
+        assert item["role"] == "user"
+        part = item["content"][0]
+        assert part["type"] == "input_image"
+        assert part["image_url"] == (
+            "data:image/png;base64," + base64.b64encode(b"\x89PNG-bytes").decode("ascii")
+        )
+        # Unset image_detail must stay off the wire rather than guess a level.
+        assert "detail" not in part
+
+    async def test_inject_image_prompt_shares_the_item(self):
+        mod = _load_provider()
+        provider, ws, session = _make_connected_provider(mod)
+
+        await provider.inject_image(session, b"jpeg", "image/jpeg", prompt="What is this?")
+
+        content = json.loads(ws.send.call_args_list[0][0][0])["item"]["content"]
+        assert [p["type"] for p in content] == ["input_text", "input_image"]
+        assert content[0]["text"] == "What is this?"
+
+    async def test_inject_image_detail_from_provider_config(self):
+        mod = _load_provider()
+        provider, ws, session = _make_connected_provider(mod)
+        provider._provider_configs[session.id] = {"image_detail": "low"}
+
+        await provider.inject_image(session, b"png", "image/png")
+
+        part = json.loads(ws.send.call_args_list[0][0][0])["item"]["content"][0]
+        assert part["detail"] == "low"
+
+    async def test_inject_image_silent(self):
+        mod = _load_provider()
+        provider, ws, session = _make_connected_provider(mod)
+
+        await provider.inject_image(session, b"png", "image/png", silent=True)
+
+        assert ws.send.await_count == 1
+        assert json.loads(ws.send.call_args[0][0])["type"] == "conversation.item.create"
+
+    async def test_inject_image_skips_response_when_responding(self):
+        mod = _load_provider()
+        provider, ws, session = _make_connected_provider(mod)
+        provider._responding.add(session.id)
+
+        await provider.inject_image(session, b"png", "image/png")
+
+        assert ws.send.await_count == 1
+
+    async def test_inject_image_rejects_unsupported_mime(self):
+        mod = _load_provider()
+        provider, ws, session = _make_connected_provider(mod)
+
+        with pytest.raises(ValueError, match="PNG and JPEG"):
+            await provider.inject_image(session, b"webp", "image/webp")
+
+        ws.send.assert_not_awaited()
+
+    async def test_inject_image_no_connection(self):
+        mod = _load_provider()
+        provider = mod.OpenAIRealtimeProvider(api_key="sk-test")
+        session = _make_session()
+        # Same contract as inject_text: a dead session is a no-op.
+        await provider.inject_image(session, b"png", "image/png")
 
     # ── submit_tool_result() ────────────────────────────────────
 

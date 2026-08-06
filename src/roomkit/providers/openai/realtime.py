@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import logging
 from typing import Any
@@ -17,6 +18,9 @@ logger = logging.getLogger("roomkit.providers.openai.realtime")
 
 # Default OpenAI Realtime API endpoint
 _DEFAULT_BASE_URL = "wss://api.openai.com/v1/realtime"
+
+# The Realtime API reads an image from a data URI, and only these two formats.
+_IMAGE_MIME_TYPES = frozenset({"image/png", "image/jpeg"})
 
 
 class OpenAIRealtimeProvider(OpenAIRealtimeBase):
@@ -45,6 +49,10 @@ class OpenAIRealtimeProvider(OpenAIRealtimeBase):
     ``minimal``, ``low``, ``medium``, ``high``, ``xhigh``. It trades latency
     for depth and is omitted from the session unless set, so non-reasoning
     models keep working untouched.
+
+    **Image input:** ``gpt-realtime-2.1`` and later read images, which
+    :meth:`inject_image` sends into the live conversation;
+    ``provider_config["image_detail"]`` sets the fidelity.
 
     Requires the ``websockets`` package.
 
@@ -229,6 +237,82 @@ class OpenAIRealtimeProvider(OpenAIRealtimeBase):
             session.id,
         )
         await ws.send(json.dumps({"type": "session.update", "session": session_patch}))
+
+    # -- Image injection -----------------------------------------------------
+
+    async def inject_image(
+        self,
+        session: VoiceSession,
+        image_data: bytes,
+        mime_type: str = "image/png",
+        *,
+        prompt: str = "",
+        silent: bool = False,
+    ) -> None:
+        """Put an image in front of the model, inside the live conversation.
+
+        Image input arrived with the reasoning-era models (``gpt-realtime-2.1``
+        and later); older snapshots reject it. The image travels as a data URI
+        inside a user message — the wire has no other slot for one, which is
+        why ``role`` is always ``user`` here even though ``inject_text``
+        accepts ``system`` — and PNG and JPEG are the only formats the API
+        reads.
+
+        ``provider_config["image_detail"]`` (``auto`` | ``low`` | ``high``)
+        trades fidelity for tokens. Left unset, the API's own default applies,
+        which resolves to high detail: worth setting explicitly on a session
+        that injects frames repeatedly, since image input is billed per token
+        like the rest.
+
+        Args:
+            session: The active voice session.
+            image_data: Raw image bytes.
+            mime_type: ``image/png`` or ``image/jpeg``.
+            prompt: Optional text sent alongside the image, in the same item.
+            silent: Add to context without asking for a response.
+
+        Raises:
+            ValueError: The MIME type is not one the API reads.
+        """
+        if mime_type not in _IMAGE_MIME_TYPES:
+            raise ValueError(f"OpenAI Realtime reads PNG and JPEG images only, got {mime_type!r}")
+
+        ws = self._connections.get(session.id)
+        if ws is None:
+            return
+
+        content: list[dict[str, Any]] = []
+        if prompt:
+            content.append({"type": "input_text", "text": prompt})
+
+        encoded = base64.b64encode(image_data).decode("ascii")
+        image_part: dict[str, Any] = {
+            "type": "input_image",
+            "image_url": f"data:{mime_type};base64,{encoded}",
+        }
+        if detail := self._provider_configs.get(session.id, {}).get("image_detail"):
+            image_part["detail"] = str(detail)
+        content.append(image_part)
+
+        logger.debug(
+            "[OpenAI →] conversation.item.create (input_image, %s, %d bytes, "
+            "prompt=%s, detail=%s, silent=%s)",
+            mime_type,
+            len(image_data),
+            bool(prompt),
+            image_part.get("detail", "unset"),
+            silent,
+        )
+        await ws.send(
+            json.dumps(
+                {
+                    "type": "conversation.item.create",
+                    "item": {"type": "message", "role": "user", "content": content},
+                }
+            )
+        )
+
+        await self._maybe_request_response(session, ws, silent=silent)
 
     # -- Builders ------------------------------------------------------------
 

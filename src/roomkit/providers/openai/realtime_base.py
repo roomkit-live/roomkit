@@ -43,6 +43,9 @@ class OpenAIRealtimeBase(OpenAIRealtimeEventHandlersMixin):
         self._sessions: dict[str, VoiceSession] = {}
         # Track active responses per session to avoid inject_text conflicts
         self._responding: set[str] = set()
+        # provider_config as passed to connect, kept so mid-session calls
+        # (image injection, for one) can read settings fixed at connect time
+        self._provider_configs: dict[str, dict[str, Any]] = {}
 
     def is_responding(self, session_id: str) -> bool:
         return session_id in self._responding
@@ -163,6 +166,7 @@ class OpenAIRealtimeBase(OpenAIRealtimeEventHandlersMixin):
 
         self._connections[session.id] = ws
         self._sessions[session.id] = session
+        self._provider_configs[session.id] = pc
 
         await ws.send(json.dumps({"type": "session.update", "session": session_config}))
 
@@ -220,12 +224,21 @@ class OpenAIRealtimeBase(OpenAIRealtimeEventHandlersMixin):
             )
         )
 
-        # Silent: add to context without requesting a response.
+        await self._maybe_request_response(session, ws, silent=silent)
+
+    async def _maybe_request_response(
+        self, session: VoiceSession, ws: Any, *, silent: bool
+    ) -> None:
+        """Ask the model to answer what was just added to the conversation.
+
+        A silent injection is context only, and a response already in flight
+        must not be doubled — the API answers a second ``response.create``
+        with an error.
+        """
         if silent:
             logger.debug("[%s] Silent inject — no response.create", self._log_tag)
             return
 
-        # Only request a new response if none is in progress.
         if session.id in self._responding:
             logger.debug(
                 "[%s] Skipping response.create — response already active (session %s)",
@@ -302,6 +315,7 @@ class OpenAIRealtimeBase(OpenAIRealtimeEventHandlersMixin):
         # Close WebSocket (short timeout to avoid blocking on close handshake)
         ws = self._connections.pop(session.id, None)
         self._sessions.pop(session.id, None)
+        self._provider_configs.pop(session.id, None)
         self._responding.discard(session.id)
         if ws is not None:
             with contextlib.suppress(Exception):

@@ -1,6 +1,6 @@
 """RoomKit — Speech-to-speech with OpenAI Realtime using local mic/speakers.
 
-Talk to GPT Realtime 1.5 using your system microphone — AI audio plays
+Talk to GPT Realtime using your system microphone — AI audio plays
 through your speakers.  OpenAI handles turn detection server-side.
 
 Requirements:

@@ -92,6 +92,18 @@ class TestProviderBasics:
         with pytest.raises(ValueError, match="Either config or api_key"):
             XAIRealtimeProvider()
 
+    async def test_does_not_claim_image_injection(
+        self, provider: XAIRealtimeProvider, session: VoiceSession
+    ) -> None:
+        """Image input belongs to the OpenAI provider, not the shared transport.
+
+        Both providers sit on ``OpenAIRealtimeBase``. Implementing image
+        injection there would have xAI advertising a capability its models
+        have not been verified to accept.
+        """
+        with pytest.raises(NotImplementedError):
+            await provider.inject_image(session, b"png", "image/png")
+
 
 class TestCallbackRegistration:
     def test_on_audio(self, provider: XAIRealtimeProvider) -> None:
