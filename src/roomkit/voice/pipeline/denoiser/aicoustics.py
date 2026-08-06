@@ -65,6 +65,7 @@ class AICousticsDenoiserConfig:
         enhancement_level: Enhancement strength from 0.0 (off) to 1.0
             (maximum).  0.8 gives the best WER for voice AI workloads.
         num_channels: Number of audio channels (1 = mono, 2 = stereo).
+        sample_rate: PCM sample rate expected by the selected model.
     """
 
     model: str = "quail-vf-2.0-l-16khz"
@@ -72,9 +73,16 @@ class AICousticsDenoiserConfig:
     license_key: str = field(default="", repr=False)
     enhancement_level: float = 0.8
     num_channels: int = 1
+    sample_rate: int = 16000
     _resolved_license_key: str = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
+        if not 0.0 <= self.enhancement_level <= 1.0:
+            raise ValueError("enhancement_level must be between 0 and 1")
+        if self.num_channels not in (1, 2):
+            raise ValueError("num_channels must be 1 or 2")
+        if self.sample_rate <= 0:
+            raise ValueError("sample_rate must be positive")
         self._resolved_license_key = self.license_key or os.environ.get("AIC_SDK_LICENSE", "")
 
 
@@ -90,6 +98,8 @@ class _StreamState:
     processor: Any = None
     frame_size: int = 0
     buffer: bytes = b""
+    output_buffer: bytes = b""
+    chunking: bool = False
     lock: threading.Lock = field(default_factory=threading.Lock)
 
 
@@ -117,14 +127,18 @@ class AICousticsDenoiserProvider(DenoiserProvider):
         self._streams: dict[str, _StreamState] = {}
         # Guards _streams itself — the per-stream lock guards its contents.
         self._streams_lock = threading.Lock()
+        self._warned_formats: set[tuple[int, int, int, int]] = set()
+        self._closed = False
 
     @property
     def name(self) -> str:
         return "aicoustics"
 
-    def _state_for(self, stream: str) -> _StreamState:
+    def _state_for(self, stream: str) -> _StreamState | None:
         """Get or create this stream's state (without its processor)."""
         with self._streams_lock:
+            if self._closed:
+                return None
             return self._streams.setdefault(stream, _StreamState())
 
     def _ensure_processor(self, st: _StreamState) -> None:
@@ -165,7 +179,11 @@ class AICousticsDenoiserProvider(DenoiserProvider):
         then processes complete chunks.  Any remainder is held for
         the next call.
         """
+        if not self._matches_format(frame):
+            return frame
         st = self._state_for(stream)
+        if st is None:
+            return frame
         with st.lock:
             return self._process_locked(frame, st)
 
@@ -181,62 +199,66 @@ class AICousticsDenoiserProvider(DenoiserProvider):
                 return frame
 
         try:
-            import numpy as np
-
             from roomkit.voice.audio_frame import AudioFrame
-
-            # Accumulate raw PCM bytes into the buffer.
-            st.buffer += frame.data
 
             # Each Quail frame is frame_size samples × 2 bytes (int16).
             chunk_bytes = st.frame_size * 2 * self._config.num_channels
             if chunk_bytes <= 0:
                 return frame
 
-            processed_parts: list[bytes] = []
+            if not st.chunking and not st.buffer and len(frame.data) % chunk_bytes == 0:
+                out_data = b"".join(
+                    self._process_chunk(st, frame.data[offset : offset + chunk_bytes])
+                    for offset in range(0, len(frame.data), chunk_bytes)
+                )
+            else:
+                if not st.chunking:
+                    st.chunking = True
+                    st.output_buffer += b"\x00" * chunk_bytes
+                st.buffer += frame.data
+                while len(st.buffer) >= chunk_bytes:
+                    chunk = st.buffer[:chunk_bytes]
+                    st.buffer = st.buffer[chunk_bytes:]
+                    st.output_buffer += self._process_chunk(st, chunk)
+                out_data = st.output_buffer[: len(frame.data)]
+                st.output_buffer = st.output_buffer[len(frame.data) :]
 
-            while len(st.buffer) >= chunk_bytes:
-                chunk = st.buffer[:chunk_bytes]
-                st.buffer = st.buffer[chunk_bytes:]
-
-                float_samples = _pcm_s16le_to_float32(chunk)
-
-                # Quail expects shape (channels, frames).
-                samples_2d = float_samples.reshape(self._config.num_channels, st.frame_size)
-                result = st.processor.process(samples_2d)
-
-                # Result is (channels, frames) — flatten back.
-                out_flat = np.asarray(result, dtype=np.float32).flatten()
-                processed_parts.append(_float32_to_pcm_s16le(out_flat))
-
-            if not processed_parts:
-                # Not enough data for a full chunk yet — pass through
-                # the raw frame so downstream stages (VAD, STT) still
-                # receive audio rather than silence.
-                return frame
-
-            out_data = b"".join(processed_parts)
-
-            # Ensure output length matches input length.
-            if len(out_data) > len(frame.data):
-                out_data = out_data[: len(frame.data)]
-            elif len(out_data) < len(frame.data):
-                out_data += b"\x00" * (len(frame.data) - len(out_data))
-
+            metadata = dict(frame.metadata)
+            metadata["noise_suppressed"] = True
             return AudioFrame(
                 data=out_data,
                 sample_rate=frame.sample_rate,
                 channels=frame.channels,
                 sample_width=frame.sample_width,
                 timestamp_ms=frame.timestamp_ms,
-                metadata=dict(frame.metadata),
+                metadata=metadata,
             )
         except Exception:
+            st.buffer = b""
+            st.output_buffer = b""
+            st.chunking = False
             logger.warning(
                 "AICoustics: error during processing, passing through",
                 exc_info=True,
             )
             return frame
+
+    def _process_chunk(self, st: _StreamState, chunk: bytes) -> bytes:
+        """Enhance one exact Quail block. Caller holds ``st.lock``."""
+        import numpy as np
+
+        float_samples = _pcm_s16le_to_float32(chunk)
+        # Input PCM is frame-interleaved. Quail expects (channels, frames).
+        samples_2d = float_samples.reshape(st.frame_size, self._config.num_channels).T
+        result = st.processor.process(samples_2d)
+        # Convert (channels, frames) back to frame-interleaved PCM.
+        out_interleaved = np.asarray(result, dtype=np.float32).T.reshape(-1)
+        output = _float32_to_pcm_s16le(out_interleaved)
+        if len(output) != len(chunk):
+            raise RuntimeError(
+                f"AICoustics returned {len(output)} bytes for a {len(chunk)}-byte block"
+            )
+        return output
 
     def reset(self, stream: str) -> None:
         """Drop this stream's processor and its buffer.
@@ -250,4 +272,26 @@ class AICousticsDenoiserProvider(DenoiserProvider):
     def close(self) -> None:
         """Release every stream's processor."""
         with self._streams_lock:
+            self._closed = True
             self._streams.clear()
+
+    def _matches_format(self, frame: AudioFrame) -> bool:
+        actual = (frame.sample_rate, frame.channels, frame.sample_width)
+        valid = (
+            actual == (self._config.sample_rate, self._config.num_channels, 2)
+            and len(frame.data) % (2 * self._config.num_channels) == 0
+        )
+        if valid:
+            return True
+        key = (*actual, len(frame.data))
+        if key not in self._warned_formats:
+            self._warned_formats.add(key)
+            logger.warning(
+                "AICoustics requires %dHz/%dch/2-byte aligned PCM; got "
+                "%dHz/%dch/%d-byte with %d bytes; frame ignored",
+                self._config.sample_rate,
+                self._config.num_channels,
+                *actual,
+                len(frame.data),
+            )
+        return False

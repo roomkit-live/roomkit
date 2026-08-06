@@ -38,7 +38,10 @@ def active_stage_names(
         ("resampler", resampling),
         ("dtmf", config.dtmf is not None),
         ("aec", config.aec is not None and not native_aec),
-        ("agc", config.agc is not None and not native_agc),
+        (
+            "agc",
+            (config.agc is not None or config.agc_config is not None) and not native_agc,
+        ),
         ("denoiser", config.denoiser is not None),
         ("vad", config.vad is not None),
         ("diarization", config.diarization is not None),

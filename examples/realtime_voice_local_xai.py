@@ -15,6 +15,7 @@ Environment variables:
     XAI_MODEL           Model name (default: grok-2-audio)
     XAI_VOICE           Voice preset: eve | ara | rex | sal | leo (default: eve)
     SYSTEM_PROMPT       Custom system prompt
+    DENOISE             webrtc (default) | rnnoise | sherpa | 0 to disable
 
 Press Ctrl+C to stop.
 """
@@ -30,6 +31,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from shared import (
     build_aec,
+    build_denoiser,
     build_pipeline,
     require_env,
     run_until_stopped,
@@ -66,7 +68,8 @@ async def main() -> None:
     block_ms = 20
 
     aec = build_aec(sample_rate, block_ms, default="webrtc")
-    pipeline = build_pipeline(aec=aec)
+    denoiser = build_denoiser(sample_rate, default="webrtc")
+    pipeline = build_pipeline(aec=aec, denoiser=denoiser)
 
     transport = LocalAudioBackend(
         input_sample_rate=sample_rate,

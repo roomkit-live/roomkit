@@ -11,6 +11,7 @@ from roomkit.voice.pipeline.denoiser.sherpa_onnx import (
     SherpaOnnxDenoiserConfig,
     SherpaOnnxDenoiserProvider,
 )
+from roomkit.voice.pipeline.denoiser.webrtc import WebRTCNoiseSuppressorProvider
 
 __all__ = [
     "AICousticsDenoiserConfig",
@@ -20,4 +21,5 @@ __all__ = [
     "RNNoiseDenoiserProvider",
     "SherpaOnnxDenoiserConfig",
     "SherpaOnnxDenoiserProvider",
+    "WebRTCNoiseSuppressorProvider",
 ]

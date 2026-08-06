@@ -1,7 +1,7 @@
 """Audio processing pipeline for voice (RFC §12.3)."""
 
 from roomkit.voice.pipeline.aec import AECProvider, MockAECProvider, SpeexAECProvider
-from roomkit.voice.pipeline.agc import AGCConfig, AGCProvider, MockAGCProvider
+from roomkit.voice.pipeline.agc import AGCConfig, AGCProvider, MockAGCProvider, SimpleAGCProvider
 from roomkit.voice.pipeline.backchannel import (
     BackchannelContext,
     BackchannelDecision,
@@ -22,6 +22,7 @@ from roomkit.voice.pipeline.denoiser import (
     RNNoiseDenoiserProvider,
     SherpaOnnxDenoiserConfig,
     SherpaOnnxDenoiserProvider,
+    WebRTCNoiseSuppressorProvider,
 )
 from roomkit.voice.pipeline.diarization import (
     DiarizationProvider,
@@ -84,6 +85,7 @@ __all__ = [
     "SherpaOnnxVADConfig",
     "SherpaOnnxVADProvider",
     "AGCProvider",
+    "SimpleAGCProvider",
     "AudioPostProcessor",
     "ResamplerProvider",
     "LinearResamplerProvider",
@@ -96,6 +98,7 @@ __all__ = [
     "RNNoiseDenoiserProvider",
     "SherpaOnnxDenoiserConfig",
     "SherpaOnnxDenoiserProvider",
+    "WebRTCNoiseSuppressorProvider",
     "DiarizationProvider",
     "DTMFDetector",
     "TurnDetector",

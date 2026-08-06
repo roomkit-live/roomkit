@@ -70,6 +70,7 @@ class _StreamState:
     """
 
     ap: Any
+    effects_ap: Any | None = None
     capture_buf: bytearray = field(default_factory=bytearray)
     capture_output_buf: bytearray = field(default_factory=bytearray)
     ref_buf: bytearray = field(default_factory=bytearray)
@@ -93,6 +94,10 @@ class WebRTCAECProvider(AECProvider):
     WebRTC requires exactly 10 ms audio frames.  This provider handles
     chunking transparently — callers can pass any frame size and the
     provider will buffer and process in 10 ms increments.
+
+    When ``enable_ns`` or ``enable_agc`` is set, those capture effects use a
+    separate WebRTC processor after AEC and remain active while echo
+    cancellation is bypassed between playback turns.
 
     Args:
         sample_rate: Audio sample rate in Hz (default 16000).
@@ -146,7 +151,7 @@ class WebRTCAECProvider(AECProvider):
         # serves every session in a channel.  A global bypass lets Alice ending
         # playback disable Bob's still-active canceller.
         self._stream_active: dict[str, bool] = {}
-        self._warned_formats: set[tuple[str, int, int, int]] = set()
+        self._warned_formats: set[tuple[str, int, int, int, int]] = set()
 
         # When True, process() passes audio through without AEC processing.
         # Activated automatically when reference stops (TTS ends) and
@@ -181,44 +186,56 @@ class WebRTCAECProvider(AECProvider):
         if not self._matches_format(frame, direction="capture"):
             return frame
 
-        st = self._active_state_for(stream)
+        active = self._is_stream_active(stream)
+        try:
+            st = self._capture_state_for(stream, active=active)
+        except Exception:
+            logger.warning("WebRTC AEC initialization failed; frame bypassed", exc_info=True)
+            return frame
         if st is None:
-            return frame  # no active playback — passthrough
+            return frame  # no active playback or capture effects — passthrough
 
         pcm_in = frame.data
         in_processed: list[bytes] = []
         out_processed: list[bytes] = []
         fb = self._frame_bytes
 
-        with st.lock:
-            if not st.chunking_capture and not st.capture_buf and len(pcm_in) % fb == 0:
-                output_chunks: list[bytes] = []
-                for offset in range(0, len(pcm_in), fb):
-                    chunk = pcm_in[offset : offset + fb]
-                    result = st.ap.process_stream(chunk)
-                    output_chunks.append(result)
-                    in_processed.append(chunk)
-                    out_processed.append(result)
-                    st.process_count += 1
-                out_data = b"".join(output_chunks)
-            else:
-                # Once an irregular chunk is seen, keep a fixed 10 ms delay.
-                # Returning the unprocessed tail while also buffering it would
-                # emit those bytes twice when the block is completed later.
-                if not st.chunking_capture:
-                    st.chunking_capture = True
-                    st.capture_output_buf.extend(b"\x00" * fb)
-                st.capture_buf.extend(pcm_in)
-                while len(st.capture_buf) >= fb:
-                    chunk = bytes(st.capture_buf[:fb])
-                    del st.capture_buf[:fb]
-                    result = st.ap.process_stream(chunk)
-                    st.capture_output_buf.extend(result)
-                    in_processed.append(chunk)
-                    out_processed.append(result)
-                    st.process_count += 1
-                out_data = bytes(st.capture_output_buf[: len(pcm_in)])
-                del st.capture_output_buf[: len(pcm_in)]
+        try:
+            with st.lock:
+                if not st.chunking_capture and not st.capture_buf and len(pcm_in) % fb == 0:
+                    output_chunks: list[bytes] = []
+                    for offset in range(0, len(pcm_in), fb):
+                        chunk = pcm_in[offset : offset + fb]
+                        result = self._process_capture_chunk(st, chunk, active=active)
+                        output_chunks.append(result)
+                        if active:
+                            in_processed.append(chunk)
+                            out_processed.append(result)
+                            st.process_count += 1
+                    out_data = b"".join(output_chunks)
+                else:
+                    # Once an irregular chunk is seen, keep a fixed 10 ms delay.
+                    # Returning the unprocessed tail while also buffering it would
+                    # emit those bytes twice when the block is completed later.
+                    if not st.chunking_capture:
+                        st.chunking_capture = True
+                        st.capture_output_buf.extend(b"\x00" * fb)
+                    st.capture_buf.extend(pcm_in)
+                    while len(st.capture_buf) >= fb:
+                        chunk = bytes(st.capture_buf[:fb])
+                        del st.capture_buf[:fb]
+                        result = self._process_capture_chunk(st, chunk, active=active)
+                        st.capture_output_buf.extend(result)
+                        if active:
+                            in_processed.append(chunk)
+                            out_processed.append(result)
+                            st.process_count += 1
+                    out_data = bytes(st.capture_output_buf[: len(pcm_in)])
+                    del st.capture_output_buf[: len(pcm_in)]
+        except Exception:
+            logger.warning("WebRTC capture processing failed; frame bypassed", exc_info=True)
+            self._clear_io_buffers(st)
+            return frame
 
         # Energy diagnostics OUTSIDE the lock: the PortAudio speaker callback
         # blocks on this lock in feed_reference(), and the previous per-sample
@@ -235,7 +252,12 @@ class WebRTCAECProvider(AECProvider):
             self._log_stats(stream, st)
 
         metadata = dict(frame.metadata)
-        metadata["echo_cancelled"] = True
+        if active:
+            metadata["echo_cancelled"] = True
+        if self._enable_ns:
+            metadata["noise_suppressed"] = True
+        if self._enable_agc:
+            metadata["automatic_gain_control"] = True
         return AudioFrame(
             data=out_data,
             sample_rate=frame.sample_rate,
@@ -330,8 +352,8 @@ class WebRTCAECProvider(AECProvider):
         """Create and configure a fresh WebRTC AudioProcessing object."""
         ap = self._ap_cls(
             enable_aec=True,
-            enable_ns=self._enable_ns,
-            enable_agc=self._enable_agc,
+            enable_ns=False,
+            enable_agc=False,
         )
         ap.set_stream_format(self._sample_rate, self._channels, self._sample_rate, self._channels)
         ap.set_reverse_stream_format(self._sample_rate, self._channels)
@@ -339,16 +361,39 @@ class WebRTCAECProvider(AECProvider):
             ap.set_stream_delay(self._stream_delay_ms)
         return ap
 
-    def _state_for(self, stream: str) -> _StreamState | None:
-        """Get or create this stream's processor, or None once closed."""
-        with self._streams_lock:
-            if self._closed:
-                return None
-            st = self._streams.get(stream)
-            if st is None:
-                st = _StreamState(ap=self._new_processor())
-                self._streams[stream] = st
-            return st
+    def _new_effects_processor(self) -> Any | None:
+        """Build the capture-only NS/AGC path used with and without playback."""
+        if not self._enable_ns and not self._enable_agc:
+            return None
+        ap = self._ap_cls(
+            enable_aec=False,
+            enable_ns=self._enable_ns,
+            enable_agc=self._enable_agc,
+        )
+        ap.set_stream_format(
+            self._sample_rate,
+            self._channels,
+            self._sample_rate,
+            self._channels,
+        )
+        return ap
+
+    @staticmethod
+    def _process_capture_chunk(st: _StreamState, chunk: bytes, *, active: bool) -> bytes:
+        """Apply AEC when active, then continuous capture effects."""
+        result = st.ap.process_stream(chunk) if active else chunk
+        if len(result) != len(chunk):
+            raise RuntimeError(
+                f"WebRTC AEC returned {len(result)} bytes for a {len(chunk)}-byte block"
+            )
+        if st.effects_ap is not None:
+            result = st.effects_ap.process_stream(result)
+            if len(result) != len(chunk):
+                raise RuntimeError(
+                    "WebRTC capture effects returned "
+                    f"{len(result)} bytes for a {len(chunk)}-byte block"
+                )
+        return result
 
     def _active_state_for(self, stream: str) -> _StreamState | None:
         """Return this stream's processor only while its AEC is active."""
@@ -357,7 +402,24 @@ class WebRTCAECProvider(AECProvider):
                 return None
             st = self._streams.get(stream)
             if st is None:
-                st = _StreamState(ap=self._new_processor())
+                st = _StreamState(
+                    ap=self._new_processor(),
+                    effects_ap=self._new_effects_processor(),
+                )
+                self._streams[stream] = st
+            return st
+
+    def _capture_state_for(self, stream: str, *, active: bool) -> _StreamState | None:
+        """Return state for AEC or for capture effects that remain always on."""
+        with self._streams_lock:
+            if self._closed or (not active and not self._enable_ns and not self._enable_agc):
+                return None
+            st = self._streams.get(stream)
+            if st is None:
+                st = _StreamState(
+                    ap=self._new_processor(),
+                    effects_ap=self._new_effects_processor(),
+                )
                 self._streams[stream] = st
             return st
 
@@ -378,16 +440,18 @@ class WebRTCAECProvider(AECProvider):
         """Reject PCM that the configured native processor would misread."""
         actual = (frame.sample_rate, frame.channels, frame.sample_width)
         expected = (self._sample_rate, self._channels, 2)
-        if actual == expected:
+        aligned = len(frame.data) % (2 * self._channels) == 0
+        if actual == expected and aligned:
             return True
-        key = (direction, *actual)
+        key = (direction, *actual, len(frame.data))
         if key not in self._warned_formats:
             self._warned_formats.add(key)
             logger.warning(
-                "AEC %s format mismatch: got %dHz/%dch/%d-byte, expected "
-                "%dHz/%dch/2-byte; %s frame ignored",
+                "AEC %s format mismatch: got %dHz/%dch/%d-byte with %d bytes, expected "
+                "%dHz/%dch/2-byte aligned PCM; %s frame ignored",
                 direction,
                 *actual,
+                len(frame.data),
                 self._sample_rate,
                 self._channels,
                 direction,

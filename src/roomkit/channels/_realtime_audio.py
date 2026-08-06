@@ -59,6 +59,8 @@ class RealtimeAudioHost(Protocol):
         _user_speaking: Whether the user is currently speaking per session.
         _user_turn_start_at: Wall-clock of the last user-turn start, per session.
         _barge_in_active: Session IDs with an active barge-in.
+        _barge_in_guard_ms: Initial playback interval hidden from provider VAD.
+        _playback_started_at: Physical playback start time per session.
 
     Cross-mixin methods (implemented elsewhere in the MRO):
         _track_task: Schedule an async task with exception handling.
@@ -91,6 +93,8 @@ class RealtimeAudioHost(Protocol):
     _user_speaking: dict[str, bool]
     _user_turn_start_at: dict[str, Any]
     _barge_in_active: set[str]
+    _barge_in_guard_ms: int
+    _playback_started_at: dict[str, float]
 
     def _track_task(self, loop: Any, coro: Any, *, name: str) -> Any: ...
 
@@ -136,6 +140,8 @@ class RealtimeAudioMixin:
     _user_speaking: dict[str, bool]
     _user_turn_start_at: dict[str, Any]
     _barge_in_active: set[str]
+    _barge_in_guard_ms: int
+    _playback_started_at: dict[str, float]
 
     _track_task: Any  # see RealtimeAudioHost — cross-mixin
     _pipeline_submit_inbound: Any  # see VoicePipelineMixin — cross-mixin
@@ -340,12 +346,40 @@ class RealtimeAudioMixin:
                 rec_room_id, audio_track, audio, time.monotonic() * 1000
             )
 
+        # Provider-side VAD (notably OpenAI Realtime) cancels an active
+        # response as soon as it sees speech. At physical speaker onset the
+        # AEC filter may need a short convergence interval, so keep processing
+        # real capture through AEC/NS but send equal-duration silence to the
+        # provider during the configured interruption guard. Keeping the byte
+        # count preserves the provider's input timeline.
+        audio = self._guard_provider_input(session, audio)
+
         self._fire_audio_level_task(
             session,
             rms_db(audio),
             HookTrigger.ON_INPUT_AUDIO_LEVEL,
         )
         await self._provider.send_audio(session, audio)
+
+    def _guard_provider_input(self, session: VoiceSession, audio: bytes) -> bytes:
+        """Hide AEC onset convergence from provider-side VAD.
+
+        The boundary is based on actual transport playback rather than queued
+        provider audio. Transports without playback callbacks leave the guard
+        inactive because their physical playback time is unknown.
+        """
+        if self._barge_in_guard_ms <= 0:
+            return audio
+
+        with self._state_lock:
+            started_at = self._playback_started_at.get(session.id)
+        if started_at is None:
+            return audio
+
+        elapsed_ms = (time.monotonic() - started_at) * 1000
+        if elapsed_ms >= self._barge_in_guard_ms:
+            return audio
+        return b"\x00" * len(audio)
 
     # -----------------------------------------------------------------
     # Pipeline VAD callbacks
@@ -380,6 +414,7 @@ class RealtimeAudioMixin:
 
         with self._state_lock:
             self._user_speaking[session.id] = True
+            self._playback_started_at.pop(session.id, None)
             # Stamp the start-of-turn so transcription emission can use it
             # as created_at — keeps user utterances sorted before any
             # tool_calls the agent fires mid-turn.
@@ -738,6 +773,16 @@ class RealtimeAudioMixin:
             )
 
     def _on_transport_audio_played(self, session: VoiceSession, audio: AudioFrame | bytes) -> None:
-        """Fire ON_OUTPUT_AUDIO_LEVEL at real playback pace (PortAudio callback)."""
+        """Track physical playback and fire its output-level hook."""
         raw = audio if isinstance(audio, bytes) else audio.data
+        playback_ended = not isinstance(audio, bytes) and bool(
+            audio.metadata.get("playback_ended")
+        )
+
+        with self._state_lock:
+            if playback_ended:
+                self._playback_started_at.pop(session.id, None)
+            elif any(raw):
+                self._playback_started_at.setdefault(session.id, time.monotonic())
+
         self._fire_audio_level_task(session, rms_db(raw), HookTrigger.ON_OUTPUT_AUDIO_LEVEL)

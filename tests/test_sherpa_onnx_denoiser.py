@@ -107,6 +107,19 @@ class TestProcess:
         for s in out_samples:
             assert s == expected
 
+    def test_short_native_result_is_padded_to_input_duration(self) -> None:
+        sherpa = _mock_sherpa_module()
+        denoiser = _denoiser_that_returns([0.25] * 80)
+        provider = _make_provider(sherpa, denoiser, silence_threshold=0)
+        frame = _frame(160, value=1000)
+
+        result = provider.process(frame, "s1")
+
+        assert len(result.data) == len(frame.data)
+        samples = struct.unpack("<160h", result.data)
+        assert all(sample > 0 for sample in samples[:80])
+        assert samples[80:] == (0,) * 80
+
     def test_process_preserves_timestamp(self) -> None:
         sherpa = _mock_sherpa_module()
         denoiser = _denoiser_that_returns([0.0] * 160)
@@ -140,10 +153,9 @@ class TestProcess:
         frame = _frame(160)
         result = provider.process(frame, "s1")
 
-        # After close, _denoiser is None, _ensure_denoiser re-inits
-        # but since we're mocked, it will work. Let's test the other
-        # path: close sets _denoiser = None, process calls _ensure_denoiser.
-        assert isinstance(result, AudioFrame)
+        assert result is frame
+        assert provider._streams == {}
+        sherpa.OfflineSpeechDenoiser.assert_not_called()
 
     def test_process_error_returns_original(self) -> None:
         sherpa = _mock_sherpa_module()
@@ -273,6 +285,21 @@ class TestConfig:
 
             assert SherpaOnnxDenoiserConfig().context_frames == 3
 
+    @pytest.mark.parametrize(
+        ("kwargs", "match"),
+        [
+            ({"num_threads": 0}, "num_threads"),
+            ({"context_frames": 0}, "context_frames"),
+            ({"silence_threshold": -0.1}, "silence_threshold"),
+        ],
+    )
+    def test_invalid_config_fails_fast(self, kwargs: dict[str, Any], match: str) -> None:
+        with patch.dict("sys.modules", {"sherpa_onnx": _mock_sherpa_module()}):
+            from roomkit.voice.pipeline.denoiser.sherpa_onnx import SherpaOnnxDenoiserConfig
+
+            with pytest.raises(ValueError, match=match):
+                SherpaOnnxDenoiserConfig(**kwargs)
+
     def test_config_populates_gtcrn(self) -> None:
         sherpa = _mock_sherpa_module()
         denoiser = _denoiser_that_returns([0.0] * 160)
@@ -354,6 +381,24 @@ class TestLifecycle:
 
         provider.close()
         provider.close()  # Must not raise
+
+
+class TestFormatValidation:
+    @pytest.mark.parametrize(
+        "frame",
+        [
+            AudioFrame(b"\x00\x00" * 320, 16000, 2, 2),
+            AudioFrame(b"\x00" * 160, 16000, 1, 1),
+        ],
+    )
+    def test_unsupported_pcm_is_bypassed_without_model(self, frame: AudioFrame) -> None:
+        sherpa = _mock_sherpa_module()
+        denoiser = _denoiser_that_returns([0.0] * 160)
+        provider = _make_provider(sherpa, denoiser, silence_threshold=0)
+
+        assert provider.process(frame, "s1") is frame
+        sherpa.OfflineSpeechDenoiser.assert_not_called()
+        assert provider._streams == {}
 
 
 # ---------------------------------------------------------------------------

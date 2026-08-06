@@ -171,6 +171,8 @@ from roomkit.video.pipeline.filter import (
     FaceZone,
     MockFaceTouchFilter,
 )
+from roomkit.voice.pipeline.agc.simple import SimpleAGCProvider
+from roomkit.voice.pipeline.denoiser.webrtc import WebRTCNoiseSuppressorProvider
 
 # Console (optional — requires `rich`)
 with contextlib.suppress(ImportError):
@@ -265,6 +267,8 @@ __all__ = [
     "TransportChannel",
     "VideoChannel",
     "VoiceChannel",
+    "SimpleAGCProvider",
+    "WebRTCNoiseSuppressorProvider",
     "WebSocketChannel",
     "WhatsAppChannel",
     "WhatsAppPersonalChannel",

@@ -21,7 +21,10 @@ from roomkit import (
 from roomkit.channels.realtime_voice import RealtimeVoiceChannel
 from roomkit.models.enums import ChannelType
 from roomkit.models.event import EventSource, RoomEvent
+from roomkit.voice.audio_frame import AudioFrame
 from roomkit.voice.base import VoiceSession, VoiceSessionState
+from roomkit.voice.interruption import InterruptionConfig
+from roomkit.voice.pipeline.config import AudioPipelineConfig
 from roomkit.voice.realtime.events import RealtimeTranscriptionEvent
 from roomkit.voice.realtime.mock import MockRealtimeProvider, MockRealtimeTransport
 
@@ -99,10 +102,12 @@ class TestSessionLifecycle:
         room_id: str,
     ) -> None:
         session = await channel.start_session(room_id, "user-1", "fake-ws")
+        channel._playback_started_at[session.id] = 1.0
 
         await channel.end_session(session)
 
         assert session.state == VoiceSessionState.ENDED
+        assert session.id not in channel._playback_started_at
 
         # Verify provider and transport were disconnected
         disconnect_provider = [c for c in provider.calls if c.method == "disconnect"]
@@ -149,6 +154,109 @@ class TestAudioForwarding:
         # Verify transport sent audio to client
         assert len(transport.sent_audio) == 1
         assert transport.sent_audio[0] == (session.id, b"provider-audio-data")
+
+
+class TestRealtimeBargeInGuard:
+    """Provider VAD is shielded while AEC converges at playback onset."""
+
+    @staticmethod
+    def _make_guarded_channel(
+        provider: MockRealtimeProvider,
+        transport: MockRealtimeTransport,
+        *,
+        guard_ms: int = 600,
+    ) -> RealtimeVoiceChannel:
+        return RealtimeVoiceChannel(
+            "rt-guard",
+            provider=provider,
+            transport=transport,
+            pipeline=AudioPipelineConfig(
+                interruption=InterruptionConfig(allow_during_first_ms=guard_ms)
+            ),
+        )
+
+    async def test_sends_timeline_preserving_silence_during_guard(self) -> None:
+        provider = MockRealtimeProvider()
+        channel = self._make_guarded_channel(provider, MockRealtimeTransport())
+        session = _make_session()
+        mic_audio = b"\x34\x12" * 240
+        channel._framework = MagicMock()
+
+        channel._on_transport_audio_played(
+            session,
+            AudioFrame(data=b"\x01\x00" * 240, sample_rate=24000),
+        )
+        await channel._forward_pipeline_frame(
+            session,
+            mic_audio,
+            None,
+            None,
+            ("mic-track", "room-1"),
+        )
+
+        assert provider.sent_audio == [(session.id, b"\x00" * len(mic_audio))]
+        recording_call = channel._framework._room_recorder_mgr.on_data.call_args
+        assert recording_call.args[0:3] == ("room-1", "mic-track", mic_audio)
+
+    async def test_forwards_real_audio_after_guard_expires(self) -> None:
+        provider = MockRealtimeProvider()
+        channel = self._make_guarded_channel(provider, MockRealtimeTransport())
+        session = _make_session()
+        mic_audio = b"\x34\x12" * 240
+
+        channel._on_transport_audio_played(
+            session,
+            AudioFrame(data=b"\x01\x00" * 240, sample_rate=24000),
+        )
+        channel._playback_started_at[session.id] -= 1.0
+        await channel._forward_pipeline_frame(session, mic_audio, None, None, None)
+
+        assert provider.sent_audio == [(session.id, mic_audio)]
+
+    async def test_silence_does_not_start_guard_and_playback_end_clears_it(self) -> None:
+        provider = MockRealtimeProvider()
+        channel = self._make_guarded_channel(provider, MockRealtimeTransport())
+        session = _make_session()
+
+        channel._on_transport_audio_played(
+            session,
+            AudioFrame(data=b"\x00" * 480, sample_rate=24000),
+        )
+        assert session.id not in channel._playback_started_at
+
+        channel._on_transport_audio_played(
+            session,
+            AudioFrame(data=b"\x01\x00" * 240, sample_rate=24000),
+        )
+        assert session.id in channel._playback_started_at
+
+        channel._on_transport_audio_played(
+            session,
+            AudioFrame(
+                data=b"\x00" * 480,
+                sample_rate=24000,
+                metadata={"playback_ended": True},
+            ),
+        )
+        assert session.id not in channel._playback_started_at
+
+    async def test_zero_guard_never_replaces_input(self) -> None:
+        provider = MockRealtimeProvider()
+        channel = self._make_guarded_channel(
+            provider,
+            MockRealtimeTransport(),
+            guard_ms=0,
+        )
+        session = _make_session()
+        mic_audio = b"\x34\x12" * 240
+
+        channel._on_transport_audio_played(
+            session,
+            AudioFrame(data=b"\x01\x00" * 240, sample_rate=24000),
+        )
+        await channel._forward_pipeline_frame(session, mic_audio, None, None, None)
+
+        assert provider.sent_audio == [(session.id, mic_audio)]
 
 
 class TestTranscriptions:

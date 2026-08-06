@@ -108,7 +108,7 @@ class AudioPipelineConfig:
     """Optional Automatic Gain Control provider."""
 
     agc_config: AGCConfig | None = None
-    """Optional AGC-specific configuration override."""
+    """Create the built-in SimpleAGCProvider when no explicit AGC is set."""
 
     dtmf: DTMFDetector | None = None
     """Optional DTMF tone detector (runs in parallel with main chain)."""

@@ -25,6 +25,7 @@ Environment variables:
     DEEPGRAM_LANGUAGE     Transcription language, e.g. fr-CA
     DEEPGRAM_THINK_MODEL  LLM model (default: gpt-4o-mini)
     AEC                   webrtc (default) | speex | 0 to disable
+    DENOISE               webrtc (default) | rnnoise | sherpa | 0 to disable
     AEC_DELAY_MS          Optional measured speaker-to-mic delay (default: auto)
     AUDIO_PREBUFFER_MS    Speaker jitter buffer (default: 240)
     MUTE_MIC              0 to keep the mic open during playback, 1 to force muting
@@ -45,6 +46,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from shared import (
     build_aec,
+    build_denoiser,
     build_pipeline,
     require_env,
     run_until_stopped,
@@ -138,7 +140,8 @@ async def main() -> None:
     block_ms = 20
 
     aec = build_aec(sample_rate, block_ms, default="webrtc")
-    pipeline = build_pipeline(aec=aec)
+    denoiser = build_denoiser(sample_rate, default="webrtc")
+    pipeline = build_pipeline(aec=aec, denoiser=denoiser)
     mute_env = os.environ.get("MUTE_MIC")
     mute_mic = mute_env != "0" if mute_env is not None else aec is None
 

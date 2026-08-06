@@ -115,6 +115,9 @@ class _StreamState:
     state: ctypes.c_void_p | None
     in_buf: Any
     out_buf: Any
+    input_buffer: bytearray = field(default_factory=bytearray)
+    output_buffer: bytearray = field(default_factory=bytearray)
+    chunking: bool = False
     lock: threading.Lock = field(default_factory=threading.Lock)
 
 
@@ -128,8 +131,8 @@ class RNNoiseDenoiserProvider(DenoiserProvider):
     afterward (exact 1:3 ratio).
 
     Args:
-        sample_rate: Expected input sample rate.  Must divide evenly
-            into 48000 (supports 16000, 24000, and 48000).
+        sample_rate: Expected input sample rate. Supports 16000, 24000,
+            and 48000 Hz.
     """
 
     def __init__(self, sample_rate: int = 16000) -> None:
@@ -139,12 +142,11 @@ class RNNoiseDenoiserProvider(DenoiserProvider):
         # native state and one of them leaks.
         self._streams_lock = threading.Lock()
 
-        # RNNoise operates at 48 kHz.  We support any rate that divides
-        # evenly into 48000 (16 kHz → 3×, 24 kHz → 2×, 48 kHz → 1×).
-        if 48000 % sample_rate != 0:
+        # These are the rates exercised by RNNoise's exact integer-ratio path.
+        if sample_rate not in (16000, 24000, 48000):
             raise ValueError(
-                f"RNNoiseDenoiserProvider requires a sample rate that divides "
-                f"evenly into 48000, got {sample_rate}"
+                "RNNoiseDenoiserProvider sample_rate must be 16000, 24000, or "
+                f"48000, got {sample_rate}"
             )
 
         self._lib = _load_rnnoise()
@@ -163,6 +165,8 @@ class RNNoiseDenoiserProvider(DenoiserProvider):
         self._input_frame_samples = _RNNOISE_FRAME_SIZE // self._resample_factor
 
         self._input_frame_bytes = self._input_frame_samples * 2  # int16
+        self._warned_formats: set[tuple[int, int, int, int]] = set()
+        self._closed = False
 
         logger.info(
             "RNNoise init: sample_rate=%d, input_frame_samples=%d",
@@ -181,80 +185,99 @@ class RNNoiseDenoiserProvider(DenoiserProvider):
     def process(self, frame: AudioFrame, stream: str) -> AudioFrame:
         """Denoise an audio frame.
 
-        Accepts frames of any size that is a multiple of the internal
-        chunk size (e.g. 240 samples at 24 kHz).  Larger frames are
-        split into chunks, each processed by RNNoise independently.
+        Exact chunks are processed without added delay. Once an irregular
+        chunk is observed, a fixed 10 ms output delay preserves byte-for-byte
+        timeline continuity while complete native chunks are accumulated.
         """
-        st = self._state_for(stream)
-
-        pcm = frame.data
-        n_samples = len(pcm) // 2
-        chunk = self._input_frame_samples
-
-        if n_samples == 0 or n_samples % chunk != 0:
-            logger.warning(
-                "Frame size %d is not a multiple of %d samples. Passing frame through unchanged.",
-                n_samples,
-                chunk,
-            )
+        if not self._matches_format(frame):
+            return frame
+        try:
+            st = self._state_for(stream)
+        except Exception:
+            logger.warning("RNNoise initialization failed; frame bypassed", exc_info=True)
+            return frame
+        if st is None:
             return frame
 
-        # Unpack int16 PCM.
-        samples_i16 = struct.unpack(f"<{n_samples}h", pcm)
-        out_i16: list[int] = []
-        factor = self._resample_factor
-
-        with st.lock:
-            if st.state is None:
-                return frame  # reset() destroyed it between the lookup and here
-
-            for offset in range(0, n_samples, chunk):
-                # Fill the 480-sample RNNoise input buffer.
-                if factor == 1:
-                    for i in range(chunk):
-                        st.in_buf[i] = float(samples_i16[offset + i])
+        try:
+            with st.lock:
+                if st.state is None:
+                    return frame  # reset() destroyed it between the lookup and here
+                if (
+                    not st.chunking
+                    and not st.input_buffer
+                    and len(frame.data) % self._input_frame_bytes == 0
+                ):
+                    out_data = b"".join(
+                        self._process_chunk(
+                            st,
+                            frame.data[offset : offset + self._input_frame_bytes],
+                        )
+                        for offset in range(0, len(frame.data), self._input_frame_bytes)
+                    )
                 else:
-                    # Upsample with linear interpolation to avoid
-                    # spectral images that corrupt the RNNoise output.
-                    for i in range(chunk):
-                        cur = float(samples_i16[offset + i])
-                        nxt = float(samples_i16[offset + i + 1]) if i + 1 < chunk else cur
-                        base = i * factor
-                        for j in range(factor):
-                            # lerp: cur at j=0, nxt at j=factor
-                            st.in_buf[base + j] = cur + (nxt - cur) * j / factor
+                    if not st.chunking:
+                        st.chunking = True
+                        st.output_buffer.extend(b"\x00" * self._input_frame_bytes)
+                    st.input_buffer.extend(frame.data)
+                    while len(st.input_buffer) >= self._input_frame_bytes:
+                        chunk = bytes(st.input_buffer[: self._input_frame_bytes])
+                        del st.input_buffer[: self._input_frame_bytes]
+                        st.output_buffer.extend(self._process_chunk(st, chunk))
+                    out_data = bytes(st.output_buffer[: len(frame.data)])
+                    del st.output_buffer[: len(frame.data)]
+        except Exception:
+            logger.warning("RNNoise processing failed; frame bypassed", exc_info=True)
+            with st.lock:
+                st.input_buffer.clear()
+                st.output_buffer.clear()
+                st.chunking = False
+            return frame
 
-                self._lib.rnnoise_process_frame(st.state, st.out_buf, st.in_buf)
-
-                # Read the 480-sample output, downsampling back.
-                if factor == 1:
-                    for i in range(chunk):
-                        out_i16.append(max(-32768, min(32767, int(st.out_buf[i]))))
-                else:
-                    # Downsample by averaging each group of `factor`
-                    # samples — acts as a box-car anti-alias filter.
-                    for i in range(chunk):
-                        base = i * factor
-                        avg = 0.0
-                        for j in range(factor):
-                            avg += st.out_buf[base + j]
-                        avg /= factor
-                        out_i16.append(max(-32768, min(32767, int(avg))))
-
-        out_data = struct.pack(f"<{n_samples}h", *out_i16)
-
+        metadata = dict(frame.metadata)
+        metadata["noise_suppressed"] = True
         return AudioFrame(
             data=out_data,
             sample_rate=frame.sample_rate,
             channels=frame.channels,
             sample_width=frame.sample_width,
             timestamp_ms=frame.timestamp_ms,
-            metadata=dict(frame.metadata),
+            metadata=metadata,
         )
 
-    def _state_for(self, stream: str) -> _StreamState:
-        """Get or create this stream's native state."""
+    def _process_chunk(self, st: _StreamState, pcm: bytes) -> bytes:
+        """Run one exact native RNNoise block. Caller holds ``st.lock``."""
+        samples_i16 = struct.unpack(f"<{self._input_frame_samples}h", pcm)
+        factor = self._resample_factor
+        chunk = self._input_frame_samples
+        if factor == 1:
+            for index, sample in enumerate(samples_i16):
+                st.in_buf[index] = float(sample)
+        else:
+            for index, sample in enumerate(samples_i16):
+                current = float(sample)
+                following = float(samples_i16[index + 1]) if index + 1 < chunk else current
+                base = index * factor
+                for offset in range(factor):
+                    st.in_buf[base + offset] = current + (following - current) * offset / factor
+
+        self._lib.rnnoise_process_frame(st.state, st.out_buf, st.in_buf)
+        output: list[int] = []
+        if factor == 1:
+            for index in range(chunk):
+                output.append(max(-32768, min(32767, int(st.out_buf[index]))))
+        else:
+            for index in range(chunk):
+                base = index * factor
+                average = sum(st.out_buf[base + offset] for offset in range(factor)) / factor
+                output.append(max(-32768, min(32767, int(average))))
+        return struct.pack(f"<{chunk}h", *output)
+
+    def _state_for(self, stream: str) -> _StreamState | None:
+        """Get or create this stream's native state unless closed."""
         with self._streams_lock:
+            if self._closed:
+                return None
             st = self._streams.get(stream)
             if st is None:
                 st = _StreamState(
@@ -287,6 +310,7 @@ class RNNoiseDenoiserProvider(DenoiserProvider):
     def close(self) -> None:
         """Destroy every stream's native state."""
         with self._streams_lock:
+            self._closed = True
             states = list(self._streams.values())
             self._streams.clear()
         for st in states:
@@ -302,5 +326,23 @@ class RNNoiseDenoiserProvider(DenoiserProvider):
             raise RuntimeError("rnnoise_create returned NULL")
         return ctypes.c_void_p(state)
 
+    def _matches_format(self, frame: AudioFrame) -> bool:
+        actual = (frame.sample_rate, frame.channels, frame.sample_width)
+        valid = actual == (self._sample_rate, 1, 2) and len(frame.data) % 2 == 0
+        if valid:
+            return True
+        key = (*actual, len(frame.data))
+        if key not in self._warned_formats:
+            self._warned_formats.add(key)
+            logger.warning(
+                "RNNoise requires %dHz/1ch/2-byte aligned PCM; got "
+                "%dHz/%dch/%d-byte with %d bytes; frame ignored",
+                self._sample_rate,
+                *actual,
+                len(frame.data),
+            )
+        return False
+
     def __del__(self) -> None:
-        self.close()
+        if hasattr(self, "_streams_lock"):
+            self.close()

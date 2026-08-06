@@ -55,6 +55,7 @@ from roomkit.providers.xai.realtime import XAIRealtimeProvider
 from roomkit.voice.backends.local import LocalAudioBackend
 from roomkit.voice.pipeline.aec.webrtc import WebRTCAECProvider
 from roomkit.voice.pipeline.config import AudioPipelineConfig
+from roomkit.voice.pipeline.denoiser.webrtc import WebRTCNoiseSuppressorProvider
 
 logger = setup_logging("voice_parallel")
 logging.getLogger("roomkit").setLevel(logging.WARNING)
@@ -68,8 +69,9 @@ async def main() -> None:
     # --- Voice transport (local mic/speakers) --------------------------------
 
     sample_rate = 24000
-    aec = WebRTCAECProvider(sample_rate=sample_rate, enable_ns=True)
-    pipeline = AudioPipelineConfig(aec=aec)
+    aec = WebRTCAECProvider(sample_rate=sample_rate)
+    denoiser = WebRTCNoiseSuppressorProvider(sample_rate=sample_rate)
+    pipeline = AudioPipelineConfig(aec=aec, denoiser=denoiser)
 
     transport = LocalAudioBackend(
         input_sample_rate=sample_rate,

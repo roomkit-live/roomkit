@@ -18,7 +18,7 @@ Environment variables:
     SYSTEM_PROMPT       Custom system prompt
     AEC                 Echo cancellation: webrtc | speex | 1 (=webrtc) | 0
                         (default: webrtc)
-    DENOISE             Enable RNNoise noise suppression: 1 | 0 (default: 0)
+    DENOISE             webrtc | rnnoise | sherpa | 0 (default: 0)
     MUTE_MIC            Mute mic during playback: 1 | 0 (default: auto,
                         off with AEC)
     DEBUG_AUDIO         Save pipeline stage WAVs to ./debug_audio/: 1 | 0
@@ -38,6 +38,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from shared import (
     build_aec,
+    build_denoiser,
     build_pipeline,
     run_until_stopped,
     setup_console,
@@ -86,7 +87,8 @@ async def main() -> None:
     # its own voice.  No local VAD — Gemini's server-side VAD handles
     # barge-in detection on the cleaned audio (like Chrome's native AEC).
     aec = build_aec(sample_rate, block_ms, default="webrtc", enable_ns=False)
-    pipeline = build_pipeline(aec=aec) if aec else None
+    denoiser = build_denoiser(sample_rate, default="0")
+    pipeline = build_pipeline(aec=aec, denoiser=denoiser) if aec or denoiser else None
     # Mute mic during playback when no AEC (feedback prevention).
     # MUTE_MIC=0|1 overrides the auto behavior (same as the OpenAI example).
     mute_env = os.environ.get("MUTE_MIC")

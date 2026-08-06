@@ -11,7 +11,9 @@ from roomkit.telemetry.mock import MockTelemetryProvider
 from roomkit.voice.audio_frame import AudioFrame
 from roomkit.voice.base import VoiceCapability, VoiceSession
 from roomkit.voice.pipeline.aec.mock import MockAECProvider
+from roomkit.voice.pipeline.agc.base import AGCConfig
 from roomkit.voice.pipeline.agc.mock import MockAGCProvider
+from roomkit.voice.pipeline.agc.simple import SimpleAGCProvider
 from roomkit.voice.pipeline.config import (
     AudioFormat,
     AudioPipelineConfig,
@@ -127,6 +129,67 @@ class TestInboundOrder:
 
         pipeline.process_inbound(_session(), _frame())
         assert len(agc.frames) == 1
+
+    def test_agc_config_selects_builtin_provider(self):
+        """AGCConfig alone must enable the RFC-required built-in AGC."""
+        config = AudioPipelineConfig(
+            agc_config=AGCConfig(
+                target_level_dbfs=-12.0,
+                attack_ms=0.0,
+                release_ms=0.0,
+            )
+        )
+        pipeline = AudioPipeline(config)
+
+        result = pipeline.process_inbound_stream("s1", _frame(b"\xe8\x03" * 160)).frame
+
+        assert isinstance(pipeline._agc, SimpleAGCProvider)
+        assert result.metadata["agc"] == "simple_agc"
+        assert result.metadata["gain_applied_db"] > 0
+
+    def test_native_agc_skips_auto_selected_builtin_provider(self):
+        config = AudioPipelineConfig(agc_config=AGCConfig(attack_ms=0.0))
+        pipeline = AudioPipeline(
+            config,
+            backend_capabilities=VoiceCapability.NATIVE_AGC,
+        )
+        source = _frame(b"\xe8\x03" * 160)
+
+        result = pipeline.process_inbound_stream("s1", source).frame
+
+        assert result is source
+        assert isinstance(pipeline._agc, SimpleAGCProvider)
+        assert pipeline._agc._streams == {}
+
+    def test_explicit_agc_provider_takes_precedence_over_agc_config(self):
+        agc = MockAGCProvider()
+        pipeline = AudioPipeline(
+            AudioPipelineConfig(
+                agc=agc,
+                agc_config=AGCConfig(target_level_dbfs=-20.0),
+            )
+        )
+
+        pipeline.process_inbound(_session(), _frame())
+
+        assert pipeline._agc is agc
+        assert len(agc.frames) == 1
+
+    def test_auto_selected_agc_is_reported_in_pipeline_telemetry(self):
+        telemetry = MockTelemetryProvider()
+        vad = MockVADProvider(events=[VADEvent(type=VADEventType.SPEECH_START)])
+        pipeline = AudioPipeline(
+            AudioPipelineConfig(
+                agc_config=AGCConfig(),
+                vad=vad,
+                telemetry=telemetry,
+            )
+        )
+
+        pipeline.process_inbound(_session(), _frame())
+
+        spans = telemetry.get_active_spans()
+        assert spans[0].attributes["pipeline.stages"] == "agc,vad"
 
 
 # ---------------------------------------------------------------------------

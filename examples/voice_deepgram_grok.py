@@ -42,7 +42,7 @@ from roomkit import ChannelCategory, HookExecution, HookResult, HookTrigger, Roo
 from roomkit.channels.ai import AIChannel
 from roomkit.providers.anthropic import AnthropicAIProvider, AnthropicConfig
 from roomkit.voice.backends.local import LocalAudioBackend
-from roomkit.voice.pipeline import AudioPipelineConfig
+from roomkit.voice.pipeline import AudioPipelineConfig, WebRTCNoiseSuppressorProvider
 from roomkit.voice.pipeline.aec.webrtc import WebRTCAECProvider
 from roomkit.voice.stt.deepgram import DeepgramConfig, DeepgramSTTProvider
 from roomkit.voice.tts.grok import GrokTTSConfig, GrokTTSProvider
@@ -57,8 +57,9 @@ async def main() -> None:
     sample_rate = int(os.environ.get("SAMPLE_RATE", "16000"))
     block_ms = 20
 
-    # --- WebRTC AEC (echo cancellation + noise suppression) -------------------
-    aec = WebRTCAECProvider(sample_rate=sample_rate, enable_ns=True)
+    # --- WebRTC echo cancellation + continuous noise suppression --------------
+    aec = WebRTCAECProvider(sample_rate=sample_rate)
+    denoiser = WebRTCNoiseSuppressorProvider(sample_rate=sample_rate)
 
     # --- Backend: local mic + speakers ----------------------------------------
     backend = LocalAudioBackend(
@@ -75,7 +76,7 @@ async def main() -> None:
     console_cleanup = setup_console(kit)
 
     # --- Pipeline config ------------------------------------------------------
-    pipeline_config = AudioPipelineConfig(aec=aec)
+    pipeline_config = AudioPipelineConfig(aec=aec, denoiser=denoiser)
 
     # --- Language (shared by STT + TTS) ----------------------------------------
     language = os.environ.get("LANGUAGE", "en")

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ctypes
 import importlib
+import struct
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -21,7 +22,13 @@ def _make_mock_librnnoise():
     lib.rnnoise_get_frame_size = MagicMock(return_value=480)
     lib.rnnoise_create = MagicMock(return_value=0xBEEF)
     lib.rnnoise_destroy = MagicMock()
-    lib.rnnoise_process_frame = MagicMock(return_value=ctypes.c_float(0.9))
+
+    def process_frame(_state, output, input_):
+        for index in range(480):
+            output[index] = input_[index]
+        return ctypes.c_float(0.9)
+
+    lib.rnnoise_process_frame = MagicMock(side_effect=process_frame)
     return lib
 
 
@@ -80,13 +87,18 @@ class TestRNNoiseDenoiserProviderConstructor:
 class TestRNNoiseDenoiserSampleRateValidation:
     def test_invalid_sample_rate(self):
         mock_lib = _make_mock_librnnoise()
-        with pytest.raises(ValueError, match="divides evenly into 48000"):
+        with pytest.raises(ValueError, match="16000, 24000, or 48000"):
             _make_provider(mock_lib, sample_rate=44100)
 
     def test_another_invalid_rate(self):
         mock_lib = _make_mock_librnnoise()
-        with pytest.raises(ValueError, match="divides evenly into 48000"):
+        with pytest.raises(ValueError, match="16000, 24000, or 48000"):
             _make_provider(mock_lib, sample_rate=22050)
+
+    def test_unadvertised_divisor_is_rejected(self):
+        mock_lib = _make_mock_librnnoise()
+        with pytest.raises(ValueError, match="16000, 24000, or 48000"):
+            _make_provider(mock_lib, sample_rate=8000)
 
 
 class TestRNNoiseDenoiserProviderProcess:
@@ -102,15 +114,69 @@ class TestRNNoiseDenoiserProviderProcess:
         assert len(result.data) == len(frame.data)
         mock_lib.rnnoise_process_frame.assert_called_once()
 
-    def test_process_wrong_size_passthrough(self):
+    def test_process_irregular_size_enters_fixed_delay_chunking(self):
         mock_lib = _make_mock_librnnoise()
         provider, _ = _make_provider(mock_lib, sample_rate=16000)
 
         # 100 samples is not a multiple of 160
         frame = _make_frame(n_samples=100, sample_rate=16000)
         result = provider.process(frame, "s1")
-        assert result is frame
+        assert result is not frame
+        assert len(result.data) == len(frame.data)
+        assert result.data == b"\x00" * len(frame.data)
         mock_lib.rnnoise_process_frame.assert_not_called()
+
+    def test_irregular_chunks_preserve_timeline_without_duplication(self):
+        mock_lib = _make_mock_librnnoise()
+        provider, _ = _make_provider(mock_lib, sample_rate=16000)
+
+        first = provider.process(AudioFrame(struct.pack("<80h", *([100] * 80)), 16000, 1, 2), "s1")
+        second = provider.process(
+            AudioFrame(struct.pack("<80h", *([200] * 80)), 16000, 1, 2), "s1"
+        )
+        third = provider.process(
+            AudioFrame(struct.pack("<160h", *([300] * 160)), 16000, 1, 2), "s1"
+        )
+
+        assert len(first.data) == 160
+        assert len(second.data) == 160
+        assert len(third.data) == 320
+        assert first.data + second.data == b"\x00" * 320
+        delayed = struct.unpack("<160h", third.data)
+        assert delayed[:79] == (100,) * 79
+        assert 100 < delayed[79] < 200
+        assert delayed[80:] == (200,) * 80
+        assert mock_lib.rnnoise_process_frame.call_count == 2
+
+    @pytest.mark.parametrize(
+        "frame",
+        [
+            AudioFrame(b"\x00\x00" * 160, 8000, 1, 2),
+            AudioFrame(b"\x00\x00" * 320, 16000, 2, 2),
+            AudioFrame(b"\x00" * 160, 16000, 1, 1),
+        ],
+    )
+    def test_mismatched_pcm_format_is_bypassed(self, frame: AudioFrame):
+        mock_lib = _make_mock_librnnoise()
+        provider, _ = _make_provider(mock_lib, sample_rate=16000)
+
+        assert provider.process(frame, "s1") is frame
+        assert provider._streams == {}
+        mock_lib.rnnoise_process_frame.assert_not_called()
+
+    def test_native_failure_returns_original_and_clears_chunking(self):
+        mock_lib = _make_mock_librnnoise()
+        mock_lib.rnnoise_process_frame.side_effect = RuntimeError("boom")
+        provider, _ = _make_provider(mock_lib, sample_rate=16000)
+        frame = _make_frame(160)
+
+        result = provider.process(frame, "s1")
+
+        assert result is frame
+        state = provider._streams["s1"]
+        assert state.input_buffer == bytearray()
+        assert state.output_buffer == bytearray()
+        assert state.chunking is False
 
 
 class TestRNNoiseDenoiserProviderStreams:
@@ -175,3 +241,13 @@ class TestRNNoiseDenoiserProviderClose:
         provider.close()
         provider.close()
         mock_lib.rnnoise_destroy.assert_called_once()
+
+    def test_process_after_close_does_not_resurrect_native_state(self):
+        mock_lib = _make_mock_librnnoise()
+        provider, _ = _make_provider(mock_lib, sample_rate=16000)
+        provider.close()
+        frame = _make_frame(160)
+
+        assert provider.process(frame, "s1") is frame
+        mock_lib.rnnoise_create.assert_not_called()
+        assert provider._streams == {}

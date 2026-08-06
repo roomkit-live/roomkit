@@ -117,8 +117,8 @@ class TestAICousticsDenoiserProviderProcess:
         assert provider._streams["s1"].processor is not None
         assert isinstance(result, AudioFrame)
 
-    def test_process_short_frame_passthrough(self):
-        """Frame smaller than chunk size passes through."""
+    def test_process_short_frame_uses_fixed_delay(self):
+        """Frame smaller than a chunk returns silence of the same duration."""
         mock_mod, processor = _make_mock_aic_sdk()
         provider, _ = _make_provider(mock_mod)
 
@@ -127,7 +127,8 @@ class TestAICousticsDenoiserProviderProcess:
 
         small_frame = _make_frame(n_bytes=100)
         result = provider.process(small_frame, "s1")
-        assert result is small_frame
+        assert result is not small_frame
+        assert result.data == b"\x00" * 100
 
 
 class TestAICousticsDenoiserProviderStreams:
@@ -162,7 +163,8 @@ class TestAICousticsDenoiserProviderStreams:
         result = provider.process(half, "bob")
 
         # Bob has only half a chunk of his own — passthrough, not Alice's tail.
-        assert result is half
+        assert result is not half
+        assert result.data == b"\x00" * len(half.data)
         assert len(provider._streams["alice"].buffer) == 160
         assert len(provider._streams["bob"].buffer) == 160
 
@@ -191,3 +193,12 @@ class TestAICousticsDenoiserProviderClose:
 
         provider.close()
         assert provider._streams == {}
+
+    def test_process_after_close_does_not_recreate_processor(self):
+        mock_mod, _ = _make_mock_aic_sdk()
+        provider, _ = _make_provider(mock_mod)
+        provider.close()
+        frame = _make_frame()
+
+        assert provider.process(frame, "s1") is frame
+        mock_mod.Processor.assert_not_called()

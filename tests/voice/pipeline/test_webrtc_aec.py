@@ -5,7 +5,7 @@ from __future__ import annotations
 import importlib
 import sys
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 from roomkit.voice.audio_frame import AudioFrame
 
@@ -80,6 +80,10 @@ class TestWebRTCAECProviderConstructor:
         provider.set_active(True)
         provider.process(_make_frame(n_bytes=960, sample_rate=48000), "s1")
         processor.set_stream_delay.assert_called_once_with(50)
+        assert ap_cls.call_args_list == [
+            call(enable_aec=True, enable_ns=False, enable_agc=False),
+            call(enable_aec=False, enable_ns=True, enable_agc=True),
+        ]
 
 
 class TestWebRTCAECProviderProcess:
@@ -91,6 +95,20 @@ class TestWebRTCAECProviderProcess:
         frame = _make_frame()
         result = provider.process(frame, "s1")
         assert result is frame
+
+    def test_noise_suppression_remains_active_while_aec_is_bypassed(self):
+        """Capture NS must not disappear between assistant playback turns."""
+        mock_mod, ap_cls, processor = _make_mock_aec_module()
+        provider, _ = _make_provider(mock_mod, enable_ns=True)
+        frame = _make_frame()
+
+        result = provider.process(frame, "s1")
+
+        assert result is not frame
+        assert result.metadata["noise_suppressed"] is True
+        assert "echo_cancelled" not in result.metadata
+        assert ap_cls.call_count == 2
+        processor.process_stream.assert_called_once_with(frame.data)
 
     def test_process_active(self):
         """When activated, process() passes frames through the AP."""
@@ -150,6 +168,23 @@ class TestWebRTCAECProviderProcess:
 
         assert result is frame
         processor.process_stream.assert_not_called()
+
+    def test_invalid_native_output_fails_open_and_clears_chunking(self):
+        mock_mod, _, processor = _make_mock_aec_module()
+        provider, _ = _make_provider(mock_mod)
+        provider.set_active(True)
+        provider.process(_make_frame(n_bytes=100), "s1")
+        state = provider._streams["s1"]
+        processor.process_stream.return_value = b""
+        processor.process_stream.side_effect = None
+
+        frame = _make_frame(n_bytes=300)
+        result = provider.process(frame, "s1")
+
+        assert result is frame
+        assert state.capture_buf == bytearray()
+        assert state.capture_output_buf == bytearray()
+        assert state.chunking_capture is False
 
 
 class TestWebRTCAECProviderFeedReference:

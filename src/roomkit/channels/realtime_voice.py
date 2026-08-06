@@ -255,6 +255,11 @@ class RealtimeVoiceChannel(
         self._framework: RoomKit | None = None
         self._pipeline_config = pipeline
         self._pipeline: AudioPipeline | None = None
+        interruption = pipeline.interruption if pipeline is not None else None
+        self._barge_in_guard_ms = max(
+            0,
+            interruption.allow_during_first_ms if interruption is not None else 0,
+        )
 
         # Skills support — skill defs are composed into the tool list at
         # session-start / reconfigure time, NOT stored in self._tools, to
@@ -358,6 +363,10 @@ class RealtimeVoiceChannel(
         self._last_assistant_text: dict[str, str] = {}
         # Barge-in state: set when user interrupts AI, cleared on next final transcription
         self._barge_in_active: set[str] = set()
+        # Physical playback start used to keep residual onset echo away from
+        # provider-side VAD while the local AEC converges. Populated only by
+        # transports that report actually-played audio.
+        self._playback_started_at: dict[str, float] = {}
         # Throttle audio level hooks to ~10/sec per direction
         self._last_input_level_at: float = 0.0
         self._last_output_level_at: float = 0.0
@@ -991,6 +1000,7 @@ class RealtimeVoiceChannel(
             self._last_assistant_text.pop(session.id, None)
             self._recording_tracks.pop(session.id, None)
             self._barge_in_active.discard(session.id)
+            self._playback_started_at.pop(session.id, None)
             self._has_pipeline_vad.pop(session.id, None)
             idle = self._idle_events.pop(session.id, None)
             if idle is not None:

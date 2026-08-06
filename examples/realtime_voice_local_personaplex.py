@@ -23,6 +23,7 @@ Environment variables:
     TEXT_PROMPT          Persona description (default: friendly assistant)
     SEED                Random seed (-1 = disabled, default: -1)
     AEC                 Echo cancellation: webrtc | speex | 0 (default: webrtc)
+    DENOISE             webrtc (default) | rnnoise | sherpa | 0 to disable
     MUTE_MIC            Mute mic during playback: 1 | 0 (default: auto)
 
 Press Ctrl+C to stop.
@@ -37,7 +38,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from shared import build_aec, build_pipeline, run_until_stopped, setup_console, setup_logging
+from shared import (
+    build_aec,
+    build_denoiser,
+    build_pipeline,
+    run_until_stopped,
+    setup_console,
+    setup_logging,
+)
 
 from roomkit import RealtimeVoiceChannel, RoomKit
 from roomkit.providers.personaplex.realtime import PersonaPlexRealtimeProvider
@@ -69,7 +77,8 @@ async def main() -> None:
     block_ms = 20
 
     aec = build_aec(sample_rate, block_ms, default="webrtc")
-    pipeline = build_pipeline(aec=aec)
+    denoiser = build_denoiser(sample_rate, default="webrtc")
+    pipeline = build_pipeline(aec=aec, denoiser=denoiser)
 
     mute_env = os.environ.get("MUTE_MIC")
     mute_mic = mute_env != "0" if mute_env is not None else aec is None

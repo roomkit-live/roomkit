@@ -526,6 +526,25 @@ class TestRealtimePrebuffer:
         assert _drain_block(backend) == b"\x00" * _BLOCK
         assert backend._rt_buffered_bytes == _BLOCK
 
+    async def test_interrupt_bypasses_transport_aec_without_reset(self) -> None:
+        """A cancelled response closes AEC playback without losing its filter."""
+        aec = MagicMock()
+        backend, session = await _rt_backend(
+            input_sample_rate=24000,
+            rt_prebuffer_ms=0,
+            aec=aec,
+            mute_mic_during_playback=False,
+        )
+        await backend.send_audio(session, _PCM * (_BLOCK // 2))
+        _drain_block(backend)
+        assert session.id in backend._aec_active_sessions
+
+        backend.interrupt(session)
+
+        assert session.id not in backend._aec_active_sessions
+        assert aec.set_stream_active.call_args_list[-1].args == (session.id, False)
+        aec.reset.assert_not_called()
+
     async def test_stale_end_of_response_ignored_after_interrupt(self) -> None:
         backend, session = await _rt_backend()
         backend.interrupt(session)

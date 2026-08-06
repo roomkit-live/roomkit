@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
@@ -28,6 +29,17 @@ class AGCConfig:
 
     metadata: dict[str, object] = field(default_factory=dict)
     """Provider-specific configuration."""
+
+    def __post_init__(self) -> None:
+        """Reject settings that cannot describe a stable gain controller."""
+        if not math.isfinite(self.target_level_dbfs) or not -100.0 <= self.target_level_dbfs <= 0:
+            raise ValueError("target_level_dbfs must be finite and between -100 and 0")
+        if not math.isfinite(self.max_gain_db) or self.max_gain_db < 0:
+            raise ValueError("max_gain_db must be finite and non-negative")
+        if not math.isfinite(self.attack_ms) or self.attack_ms < 0:
+            raise ValueError("attack_ms must be finite and non-negative")
+        if not math.isfinite(self.release_ms) or self.release_ms < 0:
+            raise ValueError("release_ms must be finite and non-negative")
 
 
 class AGCProvider(ABC):

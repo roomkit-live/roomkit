@@ -154,16 +154,17 @@ class TestProcess:
 
 
 class TestFrameBuffering:
-    def test_partial_frame_passed_through(self) -> None:
-        """Frames smaller than the SDK chunk size are buffered; raw audio passes through."""
+    def test_partial_frame_uses_fixed_delay_instead_of_reemitting_raw_audio(self) -> None:
+        """A buffered fragment is represented by delay, not raw duplicate audio."""
         provider = _make_provider()
 
-        # Send half a chunk — original frame returned (pass-through).
         half = _FRAME_SIZE // 2
         frame = _frame(half, value=100)
         result = provider.process(frame, "s1")
 
-        assert result is frame
+        assert result is not frame
+        assert len(result.data) == len(frame.data)
+        assert result.data == b"\x00" * len(frame.data)
 
     def test_exact_chunk_processed(self) -> None:
         """Frames exactly matching the SDK chunk size are processed."""
@@ -191,6 +192,43 @@ class TestFrameBuffering:
 
         provider.process(frame2, "s1")
         assert processor.process.call_count == 1
+
+    def test_irregular_chunks_preserve_sample_order_with_one_chunk_delay(self) -> None:
+        aic = _mock_aic_module()
+        processor = aic.Processor.return_value
+        processor.process.side_effect = lambda samples: samples
+        provider = _make_provider(aic)
+        half = _FRAME_SIZE // 2
+
+        first = provider.process(_frame(half, value=100), "s1")
+        second = provider.process(_frame(half, value=200), "s1")
+        third = provider.process(_frame(_FRAME_SIZE, value=300), "s1")
+
+        assert first.data + second.data == b"\x00" * (_FRAME_SIZE * 2)
+        delayed = struct.unpack(f"<{_FRAME_SIZE}h", third.data)
+        assert all(abs(sample - 100) <= 1 for sample in delayed[:half])
+        assert all(abs(sample - 200) <= 1 for sample in delayed[half:])
+
+    def test_stereo_pcm_is_deinterleaved_and_reinterleaved_correctly(self) -> None:
+        aic = _mock_aic_module()
+        processor = aic.Processor.return_value
+        left = np.linspace(-0.5, 0.5, _FRAME_SIZE, dtype=np.float32)
+        right = np.linspace(0.5, -0.5, _FRAME_SIZE, dtype=np.float32)
+        expected = np.stack([left, right])
+
+        def identity(samples: np.ndarray[Any, Any]) -> np.ndarray[Any, Any]:
+            assert np.allclose(samples, expected, atol=1 / 32768)
+            return samples
+
+        processor.process.side_effect = identity
+        provider = _make_provider(aic, num_channels=2)
+        interleaved = expected.T.reshape(-1)
+        pcm = bytes(np.clip(interleaved * 32767, -32767, 32767).astype(np.int16).tobytes())
+        frame = AudioFrame(pcm, 16000, 2, 2)
+
+        result = provider.process(frame, "stereo")
+
+        assert result.data == frame.data
 
     def test_double_chunk_processed_twice(self) -> None:
         """A frame with 2x the chunk size triggers two process() calls."""
@@ -220,6 +258,21 @@ class TestConfig:
             )
 
             assert AICousticsDenoiserConfig().model == "quail-vf-2.0-l-16khz"
+
+    @pytest.mark.parametrize(
+        ("kwargs", "match"),
+        [
+            ({"enhancement_level": 1.1}, "enhancement_level"),
+            ({"num_channels": 3}, "num_channels"),
+            ({"sample_rate": 0}, "sample_rate"),
+        ],
+    )
+    def test_invalid_config_fails_fast(self, kwargs: dict[str, Any], match: str) -> None:
+        with patch.dict("sys.modules", {"aic_sdk": _mock_aic_module()}):
+            from roomkit.voice.pipeline.denoiser.aicoustics import AICousticsDenoiserConfig
+
+            with pytest.raises(ValueError, match=match):
+                AICousticsDenoiserConfig(**kwargs)
 
     def test_config_flows_to_sdk(self) -> None:
         aic = _mock_aic_module()
@@ -356,6 +409,27 @@ class TestLifecycle:
     def test_reset_before_init_is_safe(self) -> None:
         provider = _make_provider()
         provider.reset("s1")  # Must not raise.
+
+    def test_process_after_close_does_not_recreate_processor(self) -> None:
+        aic = _mock_aic_module()
+        provider = _make_provider(aic)
+        provider.close()
+        frame = _frame()
+
+        assert provider.process(frame, "s1") is frame
+        aic.Processor.assert_not_called()
+        assert provider._streams == {}
+
+
+class TestFormatValidation:
+    def test_wrong_sample_rate_is_bypassed_without_processor(self) -> None:
+        aic = _mock_aic_module()
+        provider = _make_provider(aic)
+        frame = _frame(sample_rate=24000)
+
+        assert provider.process(frame, "s1") is frame
+        aic.Processor.assert_not_called()
+        assert provider._streams == {}
 
 
 # ---------------------------------------------------------------------------

@@ -29,6 +29,7 @@ class RealtimeSpeechHost(Protocol):
         _audio_generation: Generation counter per session for stale audio detection.
         _audio_forward_count: Count of audio chunks forwarded per session.
         _barge_in_active: Session IDs with an active barge-in.
+        _playback_started_at: Physical playback start time per session.
         _last_assistant_text: Last assistant utterance per session.
         _session_resamplers: Per-session (inbound, outbound) resampler pairs.
         _has_pipeline_vad: Per-session flag — whether local pipeline VAD is active.
@@ -52,6 +53,7 @@ class RealtimeSpeechHost(Protocol):
     _audio_generation: dict[str, int]
     _audio_forward_count: dict[str, int]
     _barge_in_active: set[str]
+    _playback_started_at: dict[str, float]
     _last_assistant_text: dict[str, str]
     _session_resamplers: dict[str, Any]
     _has_pipeline_vad: dict[str, bool]
@@ -88,6 +90,7 @@ class RealtimeSpeechMixin:
     _audio_generation: dict[str, int]
     _audio_forward_count: dict[str, int]
     _barge_in_active: set[str]
+    _playback_started_at: dict[str, float]
     _last_assistant_text: dict[str, str]
     _session_resamplers: dict[str, Any]
     _has_pipeline_vad: dict[str, bool]
@@ -121,6 +124,7 @@ class RealtimeSpeechMixin:
             return
         with self._state_lock:
             self._user_speaking[session.id] = True
+            self._playback_started_at.pop(session.id, None)
             self._audio_generation[session.id] = self._audio_generation.get(session.id, 0) + 1
             resamplers = self._session_resamplers.get(session.id)
             is_barge_in = self._audio_forward_count.get(session.id, 0) > 0

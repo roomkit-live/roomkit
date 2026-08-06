@@ -758,6 +758,10 @@ class LocalAudioBackend(VoiceBackend):
             self._rt_response_complete = False
             self._rt_prime_idle_blocks = 0
             self._rt_interrupted = True
+        # A cancelled response never reaches the normal drained-response
+        # boundary. End the playback lifecycle here so capture stops consuming
+        # a stale reference timeline; preserve the converged adaptive filter.
+        self._aec_end_playback(session.id)
         logger.info(
             "[INTERRUPT] flushed %d chunks, speaker muted (session %s)",
             queued,

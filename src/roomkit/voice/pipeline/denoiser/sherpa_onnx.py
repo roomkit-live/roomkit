@@ -22,7 +22,9 @@ Usage::
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+import math
+import threading
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from roomkit.voice.pipeline.denoiser.base import DenoiserProvider
@@ -95,6 +97,14 @@ class SherpaOnnxDenoiserConfig:
     context_frames: int = 3
     silence_threshold: float = 0.005
 
+    def __post_init__(self) -> None:
+        if self.num_threads <= 0:
+            raise ValueError("num_threads must be positive")
+        if self.context_frames <= 0:
+            raise ValueError("context_frames must be positive")
+        if not math.isfinite(self.silence_threshold) or self.silence_threshold < 0:
+            raise ValueError("silence_threshold must be finite and non-negative")
+
 
 @dataclass
 class _StreamState:
@@ -108,6 +118,7 @@ class _StreamState:
     denoiser: Any = None
     native_rate: int = 0
     context: Any = None  # np.ndarray, allocated on first use
+    lock: threading.Lock = field(default_factory=threading.Lock)
 
 
 class SherpaOnnxDenoiserProvider(DenoiserProvider):
@@ -132,20 +143,26 @@ class SherpaOnnxDenoiserProvider(DenoiserProvider):
         self._config = config
         self._sherpa: Any = __import__("sherpa_onnx")
         self._streams: dict[str, _StreamState] = {}
+        self._streams_lock = threading.Lock()
+        self._warned_formats: set[tuple[int, int, int, int]] = set()
+        self._closed = False
 
     @property
     def name(self) -> str:
         return "SherpaOnnxDenoiser"
 
-    def _state_for(self, stream: str) -> _StreamState:
+    def _state_for(self, stream: str) -> _StreamState | None:
         """Get or create this stream's state (without its denoiser)."""
         import numpy as np
 
-        st = self._streams.get(stream)
-        if st is None:
-            st = _StreamState(context=np.array([], dtype=np.float32))
-            self._streams[stream] = st
-        return st
+        with self._streams_lock:
+            if self._closed:
+                return None
+            st = self._streams.get(stream)
+            if st is None:
+                st = _StreamState(context=np.array([], dtype=np.float32))
+                self._streams[stream] = st
+            return st
 
     def _ensure_denoiser(self, st: _StreamState) -> None:
         """Lazily create this stream's sherpa-onnx OfflineSpeechDenoiser."""
@@ -175,14 +192,24 @@ class SherpaOnnxDenoiserProvider(DenoiserProvider):
         )
 
     def process(self, frame: AudioFrame, stream: str) -> AudioFrame:
+        """Validate and serialize one stream's recurrent model state."""
+        if not self._matches_format(frame):
+            return frame
+        if not frame.data:
+            return frame
+        st = self._state_for(stream)
+        if st is None:
+            return frame
+        with st.lock:
+            return self._process_locked(frame, st)
+
+    def _process_locked(self, frame: AudioFrame, st: _StreamState) -> AudioFrame:
         """Denoise an audio frame using GTCRN speech enhancement.
 
         Uses a sliding context window so the model sees preceding frames
         for temporal context.  Only the current frame's portion of the
         denoised output is returned — no latency is added.
         """
-        st = self._state_for(stream)
-
         if st.denoiser is None:
             try:
                 self._ensure_denoiser(st)
@@ -226,13 +253,15 @@ class SherpaOnnxDenoiserProvider(DenoiserProvider):
                 if rms < threshold:
                     from roomkit.voice.audio_frame import AudioFrame
 
+                    metadata = dict(frame.metadata)
+                    metadata["noise_suppressed"] = True
                     return AudioFrame(
                         data=b"\x00" * len(frame.data),
                         sample_rate=frame.sample_rate,
                         channels=frame.channels,
                         sample_width=frame.sample_width,
                         timestamp_ms=frame.timestamp_ms,
-                        metadata=dict(frame.metadata),
+                        metadata=metadata,
                     )
 
             # Pad at the START to GTCRN block size (256 samples).
@@ -260,13 +289,15 @@ class SherpaOnnxDenoiserProvider(DenoiserProvider):
             if need_resample:
                 out_arr = np.asarray(out_samples, dtype=np.float32)
                 out_samples = _resample_linear(out_arr, native_rate, frame.sample_rate)
-                # Ensure exact sample count matches the input frame
-                out_samples = np.asarray(out_samples, dtype=np.float32)
-                if len(out_samples) != n_frame_orig:
-                    if len(out_samples) > n_frame_orig:
-                        out_samples = out_samples[:n_frame_orig]
-                    else:
-                        out_samples = np.pad(out_samples, (0, n_frame_orig - len(out_samples)))
+
+            # Native providers must preserve the transport timeline even if a
+            # model returns a short or long result for a padded context.
+            out_samples = np.asarray(out_samples, dtype=np.float32)
+            if len(out_samples) != n_frame_orig:
+                if len(out_samples) > n_frame_orig:
+                    out_samples = out_samples[:n_frame_orig]
+                else:
+                    out_samples = np.pad(out_samples, (0, n_frame_orig - len(out_samples)))
 
             out_data = _float32_to_pcm_s16le(out_samples)
         except Exception:
@@ -278,19 +309,45 @@ class SherpaOnnxDenoiserProvider(DenoiserProvider):
 
         from roomkit.voice.audio_frame import AudioFrame
 
+        metadata = dict(frame.metadata)
+        metadata["noise_suppressed"] = True
         return AudioFrame(
             data=out_data,
             sample_rate=frame.sample_rate,
             channels=frame.channels,
             sample_width=frame.sample_width,
             timestamp_ms=frame.timestamp_ms,
-            metadata=dict(frame.metadata),
+            metadata=metadata,
         )
 
     def reset(self, stream: str) -> None:
         """Drop this stream's denoiser and its context window."""
-        self._streams.pop(stream, None)
+        with self._streams_lock:
+            self._streams.pop(stream, None)
 
     def close(self) -> None:
         """Release every stream's denoiser."""
-        self._streams.clear()
+        with self._streams_lock:
+            self._closed = True
+            self._streams.clear()
+
+    def _matches_format(self, frame: AudioFrame) -> bool:
+        actual = (frame.sample_rate, frame.channels, frame.sample_width)
+        valid = (
+            frame.sample_rate > 0
+            and frame.channels == 1
+            and frame.sample_width == 2
+            and len(frame.data) % 2 == 0
+        )
+        if valid:
+            return True
+        key = (*actual, len(frame.data))
+        if key not in self._warned_formats:
+            self._warned_formats.add(key)
+            logger.warning(
+                "SherpaOnnxDenoiser requires mono aligned PCM16; got "
+                "%dHz/%dch/%d-byte with %d bytes; frame ignored",
+                *actual,
+                len(frame.data),
+            )
+        return False

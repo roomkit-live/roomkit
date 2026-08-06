@@ -87,6 +87,7 @@ from roomkit.voice.pipeline import (
     SherpaOnnxDenoiserProvider,
     SherpaOnnxVADConfig,
     SherpaOnnxVADProvider,
+    SimpleAGCProvider,
     SpeexAECProvider,
     TurnContext,
     TurnDecision,
@@ -97,6 +98,7 @@ from roomkit.voice.pipeline import (
     VADEventType,
     VADProvider,
     WavFileRecorder,
+    WebRTCNoiseSuppressorProvider,
 )
 from roomkit.voice.stt.base import STTProvider
 from roomkit.voice.tts.base import TTSProvider
@@ -149,6 +151,7 @@ __all__ = [
     "SherpaOnnxVADConfig",
     "SherpaOnnxVADProvider",
     "AGCProvider",
+    "SimpleAGCProvider",
     "AudioPostProcessor",
     "AudioRecorder",
     "WavFileRecorder",
@@ -157,6 +160,7 @@ __all__ = [
     "RNNoiseDenoiserProvider",
     "SherpaOnnxDenoiserConfig",
     "SherpaOnnxDenoiserProvider",
+    "WebRTCNoiseSuppressorProvider",
     "DiarizationProvider",
     "DTMFDetector",
     "MixerProvider",

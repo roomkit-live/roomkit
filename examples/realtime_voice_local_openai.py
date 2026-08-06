@@ -4,9 +4,7 @@ Talk to GPT Realtime using your system microphone — AI audio plays
 through your speakers.  OpenAI handles turn detection server-side.
 
 Requirements:
-    pip install roomkit[realtime-openai,local-audio]
-    System (optional): libspeexdsp for Speex AEC (apt install libspeexdsp1)
-    System (optional): librnnoise for noise suppression
+    pip install roomkit[realtime-openai,local-audio,webrtc-aec]
 
 Run with:
     OPENAI_API_KEY=... uv run python examples/realtime_voice_local_openai.py
@@ -18,7 +16,10 @@ Environment variables:
     SYSTEM_PROMPT       Custom system prompt
     AEC                 Echo cancellation: webrtc | speex | 1 (=webrtc) | 0
                         (default: webrtc)
-    DENOISE             Enable RNNoise noise suppression: 1 | 0 (default: 0)
+    DENOISE             webrtc (default) | rnnoise | sherpa | 0 to disable
+    AEC_DELAY_MS        Optional measured speaker-to-mic delay (default: auto)
+    BARGE_IN_GUARD_MS   Hide capture from server VAD while AEC converges
+                        after playback starts (default: 600; 0 disables)
     MUTE_MIC            Mute mic during playback: 1 | 0 (default: auto,
                         off with AEC)
     DEBUG_AUDIO         Save pipeline stage WAVs to ./debug_audio/: 1 | 0
@@ -49,6 +50,7 @@ from shared import (
 from roomkit import RealtimeVoiceChannel, RoomKit
 from roomkit.providers.openai.realtime import OpenAIRealtimeProvider
 from roomkit.voice.backends.local import LocalAudioBackend
+from roomkit.voice.interruption import InterruptionConfig
 
 logger = setup_logging("realtime_voice_local_openai")
 
@@ -79,9 +81,30 @@ async def main() -> None:
     block_ms = 20
 
     aec = build_aec(sample_rate, block_ms, default="webrtc")
-    denoiser = build_denoiser(sample_rate, default="rnnoise")
+    # Keep noise suppression separate from AEC so it remains active between
+    # playback turns. OpenAI cancels a response as soon as its server VAD sees
+    # speech, so passing residual echo/noise through here causes cut/reply loops.
+    denoiser = build_denoiser(sample_rate, default="webrtc")
     debug_taps = build_debug_taps()
-    pipeline = build_pipeline(aec=aec, denoiser=denoiser, debug_taps=debug_taps)
+    try:
+        barge_in_guard_ms = max(0, int(os.environ.get("BARGE_IN_GUARD_MS", "600")))
+    except ValueError:
+        logger.warning("Invalid BARGE_IN_GUARD_MS; using 600ms")
+        barge_in_guard_ms = 600
+    interruption = (
+        InterruptionConfig(allow_during_first_ms=barge_in_guard_ms) if barge_in_guard_ms else None
+    )
+    pipeline = build_pipeline(
+        aec=aec,
+        denoiser=denoiser,
+        debug_taps=debug_taps,
+        interruption=interruption,
+    )
+    if barge_in_guard_ms:
+        logger.info(
+            "Barge-in guard enabled (%dms after physical playback starts)",
+            barge_in_guard_ms,
+        )
 
     # When AEC is active it removes speaker echo from the mic signal, so we
     # can keep the mic open during playback.  Without AEC the mic is muted

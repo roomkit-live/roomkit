@@ -138,6 +138,11 @@ class AudioPipeline:
         backend_feeds_aec_reference: bool = False,
     ) -> None:
         self._config = config
+        self._agc = config.agc
+        if self._agc is None and config.agc_config is not None:
+            from roomkit.voice.pipeline.agc.simple import SimpleAGCProvider
+
+            self._agc = SimpleAGCProvider(config.agc_config)
         self._backend_capabilities = backend_capabilities
         self._backend_feeds_aec_ref = backend_feeds_aec_reference
         self._speech_end_callbacks: list[SpeechEndPipelineCallback] = []
@@ -429,13 +434,10 @@ class AudioPipeline:
         self._debug_tap(stream, "post_aec", current_frame)
 
         # Stage 3: AGC (skip if backend has NATIVE_AGC)
-        if (
-            self._config.agc is not None
-            and VoiceCapability.NATIVE_AGC not in self._backend_capabilities
-        ):
+        if self._agc is not None and VoiceCapability.NATIVE_AGC not in self._backend_capabilities:
             with self._timed_stage(stream, "agc"):
-                current_frame = self._config.agc.process(current_frame, stream)
-                current_frame.metadata["agc"] = self._config.agc.name
+                current_frame = self._agc.process(current_frame, stream)
+                current_frame.metadata["agc"] = self._agc.name
 
         # Debug tap: post_agc
         self._debug_tap(stream, "post_agc", current_frame)
@@ -829,7 +831,7 @@ class AudioPipeline:
             self._config.vad,
             self._config.denoiser,
             self._config.aec,
-            self._config.agc,
+            self._agc,
             self._config.dtmf,
             self._config.diarization,
             *self._config.postprocessors,
@@ -963,7 +965,7 @@ class AudioPipeline:
         _close(self._config.denoiser)
         _close(self._config.diarization)
         _close(self._config.aec)
-        _close(self._config.agc)
+        _close(self._agc)
         _close(self._config.dtmf)
         _close(self._config.recorder)
         for pp in self._config.postprocessors:

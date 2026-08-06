@@ -112,20 +112,33 @@ bypasses AEC but preserves its converged filter until the session ends.
 
 ### AGC (Automatic Gain Control)
 
-Normalizes audio volume levels.
+Normalizes audio volume levels. AGC does not remove background noise; it makes
+quiet and loud speech reach downstream denoising, VAD, and STT at a predictable
+level.
 
 ```python
-from roomkit.voice.pipeline.agc import AGCConfig
-from roomkit.voice.pipeline.agc.mock import MockAGCProvider
+from roomkit.voice.pipeline import AGCConfig, AudioPipelineConfig, SimpleAGCProvider
 
-agc = MockAGCProvider()
+agc = SimpleAGCProvider(AGCConfig(target_level_dbfs=-12.0))
+
+# Or let the pipeline create the built-in provider from the config:
+pipeline = AudioPipelineConfig(agc_config=AGCConfig(target_level_dbfs=-12.0))
 ```
+
+Gain state is isolated per stream, near-silence is not amplified, and a peak
+limiter prevents PCM clipping. Processed frames expose
+`metadata.gain_applied_db`. Backends declaring `NATIVE_AGC` skip this stage.
 
 ### Denoiser
 
 Removes background noise from audio.
 
 ```python
+# Continuous WebRTC NS (same optional dependency as WebRTC AEC)
+from roomkit.voice.pipeline import WebRTCNoiseSuppressorProvider
+
+denoiser = WebRTCNoiseSuppressorProvider(sample_rate=24000)
+
 # RNNoise (local, CPU-based)
 from roomkit.voice import get_rnnoise_denoiser_provider
 
@@ -142,6 +155,11 @@ SherpaDenoiser = get_sherpa_onnx_denoiser_provider()
 SherpaDenoiserConfig = get_sherpa_onnx_denoiser_config()
 denoiser = SherpaDenoiser(SherpaDenoiserConfig())
 ```
+
+WebRTC NS, RNNoise, and ai|coustics accept arbitrary caller chunk sizes without
+duplicating or dropping audio; an irregular stream uses a fixed one-native-block
+delay (10 ms for WebRTC NS and RNNoise). All built-in denoisers validate PCM
+format before creating native state and keep model history isolated per stream.
 
 ### Diarization
 
@@ -226,8 +244,18 @@ from roomkit.voice.interruption import InterruptionConfig, InterruptionStrategy
 config = InterruptionConfig(
     strategy=InterruptionStrategy.CONFIRMED,
     min_speech_ms=300,
+    allow_during_first_ms=600,
 )
 ```
+
+For `RealtimeVoiceChannel` with provider-side VAD, `allow_during_first_ms`
+guards the provider input after physical playback begins. RoomKit continues to
+process the real microphone signal through AEC, AGC, denoising, and recording,
+but forwards equal-duration PCM silence to the provider until the guard expires.
+This gives an acoustic echo canceller time to converge without letting residual
+onset echo trigger a server-side interruption. The guard requires a transport
+with playback callbacks; set it to `0` on a headset or another already-clean
+audio path when immediate barge-in is more important.
 
 | Strategy | When to Use |
 |----------|-------------|

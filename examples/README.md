@@ -215,7 +215,7 @@ The `shared/` directory provides reusable utilities for examples:
 | `build_pipeline(...)` | Audio pipeline assembly from env vars |
 | `build_aec(rate, block_ms)` | AEC provider factory (`AEC=webrtc\|speex\|0`) |
 | `build_vad(rate)` | VAD provider factory (`VAD=energy\|silero\|ten\|0`) |
-| `build_denoiser(rate)` | Denoiser factory (`DENOISE=rnnoise\|sherpa\|0`) |
+| `build_denoiser(rate)` | Denoiser factory (`DENOISE=webrtc\|rnnoise\|sherpa\|0`) |
 | `build_turn_detector()` | Turn detector factory (`TURN_DETECTOR=smart-turn\|0`) |
 | `build_debug_taps()` | Debug audio taps (`DEBUG_AUDIO=1`) |
 | `auto_select_provider(env, label)` | Interactive provider selection (OpenAI/Gemini) |

@@ -35,6 +35,7 @@ Environment variables:
     DEEPGRAM_GREETING     Line the agent speaks first (default: a short hello)
     SYSTEM_PROMPT         Custom system prompt
     AEC                   webrtc (default) | speex | 0 to disable
+    DENOISE               webrtc (default) | rnnoise | sherpa | 0 to disable
     AEC_DELAY_MS          Optional measured speaker-to-mic delay (default: auto)
     AUDIO_PREBUFFER_MS    Speaker jitter buffer (default: 240)
     MUTE_MIC              0 to keep the mic open during playback, 1 to force muting
@@ -54,6 +55,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from shared import (
     build_aec,
+    build_denoiser,
     build_pipeline,
     require_env,
     run_until_stopped,
@@ -98,7 +100,8 @@ async def main() -> None:
     block_ms = 20
 
     aec = build_aec(sample_rate, block_ms, default="webrtc")
-    pipeline = build_pipeline(aec=aec)
+    denoiser = build_denoiser(sample_rate, default="webrtc")
+    pipeline = build_pipeline(aec=aec, denoiser=denoiser)
 
     # When AEC is active it removes speaker echo from the mic signal, so the mic
     # can stay open during playback. Without AEC the mic is muted while the agent

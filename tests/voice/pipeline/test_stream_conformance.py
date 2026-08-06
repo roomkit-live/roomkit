@@ -1,6 +1,6 @@
 """Every pipeline stage in the repo must keep its state per stream.
 
-One check, applied to all 18 stage implementations: a stream's output sequence
+One check, applied to every stage implementation: a stream's output sequence
 must not change when a second stream is interleaved with it.  See
 ``stream_conformance.assert_stage_keeps_state_per_stream`` for the contract.
 
@@ -30,6 +30,7 @@ import pytest
 from roomkit.voice.audio_frame import AudioFrame
 from roomkit.voice.pipeline.aec.mock import MockAECProvider
 from roomkit.voice.pipeline.agc.mock import MockAGCProvider
+from roomkit.voice.pipeline.agc.simple import SimpleAGCProvider
 from roomkit.voice.pipeline.denoiser.mock import MockDenoiserProvider
 from roomkit.voice.pipeline.diarization.base import DiarizationResult
 from roomkit.voice.pipeline.diarization.mock import MockDiarizationProvider
@@ -197,6 +198,15 @@ def _make_webrtc():
         return provider
 
 
+def _make_webrtc_denoiser():
+    mod = SimpleNamespace(AudioProcessor=_FakeAudioProcessor)
+    with patch.dict(sys.modules, {"aec_audio_processing": mod}):
+        import roomkit.voice.pipeline.denoiser.webrtc as webrtc_mod
+
+        importlib.reload(webrtc_mod)
+        return webrtc_mod.WebRTCNoiseSuppressorProvider()
+
+
 class _FakeSherpaVAD:
     """Speech is reported once this detector alone has seen enough audio."""
 
@@ -329,7 +339,7 @@ def _make_sherpa_diarization():
 
 
 # ---------------------------------------------------------------------------
-# The 14 stage implementations
+# Stage implementations
 # ---------------------------------------------------------------------------
 
 
@@ -402,10 +412,12 @@ _STAGES = [
     ("denoiser/rnnoise", _make_rnnoise, _plain_frame),
     ("denoiser/sherpa_onnx", _make_sherpa_denoiser, _plain_frame),
     ("denoiser/aicoustics", _make_aicoustics, _plain_frame),
+    ("denoiser/webrtc", _make_webrtc_denoiser, _plain_frame),
     ("aec/mock", MockAECProvider, _plain_frame),
     ("aec/speex", _make_speex, _speex_frame),
     ("aec/webrtc", _make_webrtc, _plain_frame),
     ("agc/mock", MockAGCProvider, _plain_frame),
+    ("agc/simple", SimpleAGCProvider, _plain_frame),
     ("dtmf/mock", _mock_dtmf, _plain_frame),
     ("diarization/mock", _mock_diarization, _plain_frame),
     ("diarization/sherpa_onnx", _make_sherpa_diarization, _diarization_frame),
