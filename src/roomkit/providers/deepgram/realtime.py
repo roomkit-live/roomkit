@@ -27,6 +27,7 @@ from typing import Any
 from pydantic import SecretStr
 
 from roomkit.providers.deepgram.config import DeepgramAgentConfig
+from roomkit.providers.deepgram.settings import build_settings, build_speak, build_think
 from roomkit.providers.deepgram.voices import VOICES as _VOICES
 from roomkit.voice.base import VoiceSession, VoiceSessionState
 from roomkit.voice.realtime.provider import RealtimeVoiceProvider, VoiceInfo
@@ -57,18 +58,6 @@ class _SessionState:
     # FunctionCallResponse requires the function name, but the RealtimeVoiceProvider
     # contract only hands submit_tool_result() the call id — so remember the pairing.
     pending_calls: dict[str, str] = field(default_factory=dict)
-
-
-def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
-    """Recursively merge ``override`` into ``base``, returning a new dict."""
-    merged = dict(base)
-    for key, value in override.items():
-        current = merged.get(key)
-        if isinstance(current, dict) and isinstance(value, dict):
-            merged[key] = _deep_merge(current, value)
-        else:
-            merged[key] = value
-    return merged
 
 
 class DeepgramAgentProvider(RealtimeVoiceProvider):
@@ -150,134 +139,6 @@ class DeepgramAgentProvider(RealtimeVoiceProvider):
         state = self._states.get(session_id)
         return state is not None and state.responding
 
-    # -- Settings construction ----------------------------------------------
-
-    @staticmethod
-    def _format_functions(tools: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
-        """Project RoomKit tool dicts to Deepgram's ``think.functions`` shape.
-
-        Tool dicts reaching the provider carry extra keys the caller uses elsewhere
-        (notably ``tags``, added for cross-lingual Tool Search); Deepgram rejects
-        unknown fields, so only name/description/parameters survive. A function
-        carrying an ``endpoint`` is executed by Deepgram server-side; without one it
-        comes back as a ``client_side`` call for RoomKit to run.
-        """
-        functions: list[dict[str, Any]] = []
-        for tool in tools or []:
-            name = tool.get("name")
-            if not name:
-                continue
-            function: dict[str, Any] = {"name": name, "description": tool.get("description", "")}
-            if tool.get("parameters") is not None:
-                function["parameters"] = tool["parameters"]
-            if tool.get("endpoint"):
-                function["endpoint"] = tool["endpoint"]
-            functions.append(function)
-        return functions
-
-    def _build_think(
-        self,
-        *,
-        system_prompt: str | None,
-        tools: list[dict[str, Any]] | None,
-        temperature: float | None,
-        pc: dict[str, Any],
-    ) -> dict[str, Any]:
-        cfg = self._config
-        provider: dict[str, Any] = {
-            "type": pc.get("think_provider", cfg.think_provider),
-            "model": pc.get("think_model", cfg.think_model),
-        }
-        if temperature is not None:
-            provider["temperature"] = temperature
-
-        think: dict[str, Any] = {"provider": provider}
-        if pc.get("think_endpoint"):
-            think["endpoint"] = pc["think_endpoint"]
-        if pc.get("context_length") is not None:
-            think["context_length"] = pc["context_length"]
-        if system_prompt:
-            think["prompt"] = system_prompt
-        functions = self._format_functions(tools)
-        if functions:
-            think["functions"] = functions
-        return think
-
-    def _build_speak(self, *, voice: str | None, pc: dict[str, Any]) -> dict[str, Any]:
-        cfg = self._config
-        provider: dict[str, Any] = {
-            "type": "deepgram",
-            "model": voice or pc.get("speak_model", cfg.speak_model),
-        }
-        language = pc.get("speak_language", cfg.speak_language)
-        if language:
-            provider["language"] = language
-        return {"provider": provider}
-
-    def _build_settings(
-        self,
-        *,
-        system_prompt: str | None,
-        voice: str | None,
-        tools: list[dict[str, Any]] | None,
-        temperature: float | None,
-        input_sample_rate: int,
-        output_sample_rate: int,
-        pc: dict[str, Any],
-    ) -> dict[str, Any]:
-        cfg = self._config
-
-        listen_provider: dict[str, Any] = {
-            "type": "deepgram",
-            "model": pc.get("listen_model", cfg.listen_model),
-        }
-        version = pc.get("listen_version", cfg.listen_version)
-        if version:
-            listen_provider["version"] = version
-        listen_language = pc.get("listen_language", cfg.listen_language)
-        if listen_language:
-            listen_provider["language"] = listen_language
-        if pc.get("keyterms"):
-            listen_provider["keyterms"] = list(pc["keyterms"])
-        if pc.get("smart_format") is not None:
-            listen_provider["smart_format"] = bool(pc["smart_format"])
-
-        output: dict[str, Any] = {
-            "encoding": pc.get("output_encoding", "linear16"),
-            "sample_rate": output_sample_rate,
-            "container": pc.get("output_container", "none"),
-        }
-        if pc.get("output_bitrate") is not None:
-            output["bitrate"] = int(pc["output_bitrate"])
-
-        agent: dict[str, Any] = {
-            "listen": {"provider": listen_provider},
-            "think": self._build_think(
-                system_prompt=system_prompt, tools=tools, temperature=temperature, pc=pc
-            ),
-            "speak": self._build_speak(voice=voice, pc=pc),
-        }
-        greeting = pc.get("greeting", cfg.greeting)
-        if greeting:
-            agent["greeting"] = greeting
-
-        settings: dict[str, Any] = {
-            "type": "Settings",
-            "audio": {
-                "input": {
-                    "encoding": pc.get("input_encoding", "linear16"),
-                    "sample_rate": input_sample_rate,
-                },
-                "output": output,
-            },
-            "agent": agent,
-        }
-        if pc.get("tags"):
-            settings["tags"] = list(pc["tags"])
-        if pc.get("settings"):
-            settings = _deep_merge(settings, pc["settings"])
-        return settings
-
     # -- Connection lifecycle -----------------------------------------------
 
     def _import_websockets(self) -> Any:
@@ -317,7 +178,8 @@ class DeepgramAgentProvider(RealtimeVoiceProvider):
             )
 
         # Built before opening the socket so validation errors fail fast.
-        settings = self._build_settings(
+        settings = build_settings(
+            self._config,
             system_prompt=system_prompt,
             voice=voice,
             tools=tools,
@@ -439,37 +301,58 @@ class DeepgramAgentProvider(RealtimeVoiceProvider):
         await self._dispatch(state, event)
         return event
 
+    # Maps each server event type to the handler method that processes it.
+    # Acknowledgements (Welcome, SettingsApplied, *Updated) and telemetry
+    # (LatencyReport, History) have no handler and fall through to a debug line.
+    _EVENT_HANDLERS: dict[str, str] = {
+        "ConversationText": "_on_conversation_text",
+        "UserStartedSpeaking": "_on_user_started_speaking",
+        "AgentStartedSpeaking": "_on_agent_started_speaking",
+        "AgentAudioDone": "_on_agent_audio_done",
+        "FunctionCallRequest": "_on_function_call_request",
+        "Error": "_on_diagnostic",
+        "Warning": "_on_diagnostic",
+        "InjectionRefused": "_on_injection_refused",
+    }
+
     async def _dispatch(self, state: _SessionState, event: dict[str, Any]) -> None:
-        etype = event.get("type")
-        session = state.session
+        """Route a server event to its handler via the dispatch table."""
+        etype = str(event.get("type") or "")
+        handler_name = self._EVENT_HANDLERS.get(etype)
+        if handler_name is None:
+            logger.debug("[Deepgram ←] %s (session %s)", etype, state.session.id)
+            return
+        await getattr(self, handler_name)(state, event)
 
-        if etype == "ConversationText":
-            await self._handle_conversation_text(state, event)
-        elif etype == "UserStartedSpeaking":
-            # The agent may still be generating, but from here on RoomKit treats
-            # the turn as the user's — the channel flushes playback on this.
-            state.responding = False
-            await self._fire(self._speech_start_callbacks, session, label="speech_start")
-        elif etype == "AgentStartedSpeaking":
-            state.responding = True
-            await self._fire(self._response_start_callbacks, session, label="response_start")
-        elif etype == "AgentAudioDone":
-            state.responding = False
-            await self._fire(self._response_end_callbacks, session, label="response_end")
-        elif etype == "FunctionCallRequest":
-            await self._handle_function_calls(state, event)
-        elif etype in ("Error", "Warning"):
-            code = str(event.get("code") or etype.lower())
-            description = str(event.get("description") or "")
-            log = logger.error if etype == "Error" else logger.warning
-            log("Deepgram %s [%s] (session %s): %s", etype, code, session.id, description)
-            await self._fire(self._error_callbacks, session, code, description, label="error")
-        elif etype == "InjectionRefused":
-            logger.warning("Deepgram refused a text injection (session %s)", session.id)
-        else:
-            logger.debug("[Deepgram ←] %s (session %s)", etype, session.id)
+    async def _on_user_started_speaking(self, state: _SessionState, event: dict[str, Any]) -> None:
+        # The agent may still be generating, but from here on RoomKit treats
+        # the turn as the user's — the channel flushes playback on this.
+        state.responding = False
+        await self._fire(self._speech_start_callbacks, state.session, label="speech_start")
 
-    async def _handle_conversation_text(self, state: _SessionState, event: dict[str, Any]) -> None:
+    async def _on_agent_started_speaking(
+        self, state: _SessionState, event: dict[str, Any]
+    ) -> None:
+        state.responding = True
+        await self._fire(self._response_start_callbacks, state.session, label="response_start")
+
+    async def _on_agent_audio_done(self, state: _SessionState, event: dict[str, Any]) -> None:
+        state.responding = False
+        await self._fire(self._response_end_callbacks, state.session, label="response_end")
+
+    async def _on_injection_refused(self, state: _SessionState, event: dict[str, Any]) -> None:
+        logger.warning("Deepgram refused a text injection (session %s)", state.session.id)
+
+    async def _on_diagnostic(self, state: _SessionState, event: dict[str, Any]) -> None:
+        """Surface an Error or a Warning — both share one payload shape."""
+        etype = str(event.get("type") or "Error")
+        code = str(event.get("code") or etype.lower())
+        description = str(event.get("description") or "")
+        log = logger.error if etype == "Error" else logger.warning
+        log("Deepgram %s [%s] (session %s): %s", etype, code, state.session.id, description)
+        await self._fire(self._error_callbacks, state.session, code, description, label="error")
+
+    async def _on_conversation_text(self, state: _SessionState, event: dict[str, Any]) -> None:
         """Emit a final transcript, and close the user's turn when it is theirs.
 
         Deepgram has no "user stopped speaking" event: the user's transcript *is*
@@ -490,7 +373,7 @@ class DeepgramAgentProvider(RealtimeVoiceProvider):
                 label="transcription",
             )
 
-    async def _handle_function_calls(self, state: _SessionState, event: dict[str, Any]) -> None:
+    async def _on_function_call_request(self, state: _SessionState, event: dict[str, Any]) -> None:
         for function in event.get("functions") or []:
             if not isinstance(function, dict):
                 continue
@@ -651,8 +534,12 @@ class DeepgramAgentProvider(RealtimeVoiceProvider):
             prompt: str | None = (
                 system_prompt if system_prompt is not None else state.think.get("prompt")
             )
-            think = self._build_think(
-                system_prompt=prompt, tools=tools, temperature=temperature, pc=pc
+            think = build_think(
+                self._config,
+                system_prompt=prompt,
+                tools=tools,
+                temperature=temperature,
+                pc=pc,
             )
             # Keep the previous functions when the caller did not restate them.
             if tools is None and state.think.get("functions"):
@@ -662,7 +549,7 @@ class DeepgramAgentProvider(RealtimeVoiceProvider):
             await state.ws.send(json.dumps({"type": "UpdateThink", "think": think}))
 
         if voice is not None:
-            speak = self._build_speak(voice=voice, pc=pc)
+            speak = build_speak(self._config, voice=voice, pc=pc)
             state.speak = speak
             logger.debug("[Deepgram →] UpdateSpeak (session %s)", session.id)
             await state.ws.send(json.dumps({"type": "UpdateSpeak", "speak": speak}))
