@@ -10,12 +10,12 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from roomkit.models.enums import Access, HookTrigger
+from roomkit.voice.audio_frame import AudioFrame
 from roomkit.voice.base import VoiceSessionState
 from roomkit.voice.utils import rms_db
 
 if TYPE_CHECKING:
     from roomkit.core.framework import RoomKit
-    from roomkit.voice.audio_frame import AudioFrame
     from roomkit.voice.backends.base import VoiceBackend
     from roomkit.voice.base import VoiceSession
     from roomkit.voice.pipeline.engine import AudioPipeline
@@ -31,6 +31,12 @@ _MAX_QUEUED_AUDIO_CHUNKS = 500
 # How often a session that is dropping is logged, in dropped chunks. A backlog
 # that is full drops continuously, so per-chunk logging would bury the process.
 _DROP_LOG_INTERVAL = 100
+
+# The transport is accepted before the AI provider finishes its handshake, so
+# real callers (notably SIP) can already be speaking.  Keep at most roughly
+# thirty seconds of 16 kHz mono PCM while the provider connects; a dead
+# handshake must not turn microphone input into an unbounded allocation.
+_MAX_PRECONNECT_AUDIO_BYTES = 1024 * 1024
 
 
 @runtime_checkable
@@ -84,9 +90,13 @@ class RealtimeAudioHost(Protocol):
     _audio_send_queues: dict[str, asyncio.Queue[Any]]
     _audio_dropped: dict[str, int]
     _audio_send_workers: dict[str, Any]
+    _preconnect_audio: dict[str, list[tuple[bool, bytes, float]]]
+    _preconnect_audio_bytes: dict[str, int]
+    _preconnect_audio_dropped: set[str]
     _sessions: dict[str, Any]
     _input_sample_rate: int
     _output_sample_rate: int
+    _transport_sample_rate: int | None
     _pipeline: AudioPipeline | None
     _provider: RealtimeVoiceProvider
     _transport: VoiceBackend
@@ -133,9 +143,13 @@ class RealtimeAudioMixin:
     _audio_send_queues: dict[str, asyncio.Queue[Any]]
     _audio_dropped: dict[str, int]
     _audio_send_workers: dict[str, Any]
+    _preconnect_audio: dict[str, list[tuple[bool, bytes, float]]]
+    _preconnect_audio_bytes: dict[str, int]
+    _preconnect_audio_dropped: set[str]
     _sessions: dict[str, Any]
     _input_sample_rate: int
     _output_sample_rate: int
+    _transport_sample_rate: int | None
     _pipeline: AudioPipeline | None
     _provider: RealtimeVoiceProvider
     _transport: VoiceBackend
@@ -279,7 +293,7 @@ class RealtimeAudioMixin:
     def _pipeline_on_audio_received(
         self,
         session: VoiceSession,
-        frame: AudioFrame,
+        frame: AudioFrame | bytes,
     ) -> None:
         """Handle raw audio from transport — gate by binding, feed pipeline.
 
@@ -293,6 +307,26 @@ class RealtimeAudioMixin:
             binding.access in (Access.READ_ONLY, Access.NONE) or binding.muted
         ):
             return
+
+        # Voice backends deliver AudioFrame, while realtime transports
+        # (WebSocket, SIP and FastRTC) intentionally expose raw PCM bytes.
+        # Normalize that transport contract at the channel boundary before
+        # entering a pipeline whose stages require format metadata.
+        if isinstance(frame, bytes):
+            with self._state_lock:
+                negotiated_rate = self._session_transport_rates.get(session.id)
+            transport_rate = (
+                negotiated_rate
+                or session.metadata.get("transport_sample_rate")
+                or self._transport_sample_rate
+                or self._input_sample_rate
+            )
+            frame = AudioFrame(
+                data=frame,
+                sample_rate=transport_rate,
+                channels=1,
+                sample_width=2,
+            )
 
         self._pipeline_submit_inbound(session, frame)
 
@@ -308,6 +342,8 @@ class RealtimeAudioMixin:
         so inbound resampling runs off the event loop; task-creation order
         plus the single-thread resample executor keep frames in order.
         """
+        if self._buffer_preconnect_audio(session, frame.data, processed=True):
+            return
         if session.state != VoiceSessionState.ACTIVE:
             return
 
@@ -557,17 +593,14 @@ class RealtimeAudioMixin:
         if not isinstance(audio, bytes):
             audio = audio.data
 
-        # Recording tap: send mic audio to room recorder
-        with self._state_lock:
-            rec = self._recording_tracks.get(session.id)
-        if rec is not None and self._framework is not None:
-            audio_track, rec_room_id = rec
-            self._framework._room_recorder_mgr.on_data(
-                rec_room_id,
-                audio_track,
-                audio,
-                time.monotonic() * 1000,
-            )
+        enqueued_at = time.monotonic()
+        if self._buffer_preconnect_audio(
+            session,
+            audio,
+            processed=False,
+            enqueued_at=enqueued_at,
+        ):
+            return
 
         try:
             loop = asyncio.get_running_loop()
@@ -575,9 +608,85 @@ class RealtimeAudioMixin:
             return
         self._track_task(
             loop,
-            self._forward_client_audio(session, audio, time.monotonic()),
+            self._forward_client_audio(session, audio, enqueued_at),
             name=f"rt_client_audio:{session.id}",
         )
+
+    def _buffer_preconnect_audio(
+        self,
+        session: VoiceSession,
+        audio: bytes,
+        *,
+        processed: bool,
+        enqueued_at: float | None = None,
+    ) -> bool:
+        """Buffer transport audio while this session's provider connects.
+
+        Membership in ``_preconnect_audio`` is the handshake flag.  Provider
+        implementations update ``session.state`` themselves, sometimes just
+        before ``connect()`` returns, so the enum alone cannot close the race.
+        """
+        dropped = False
+        with self._state_lock:
+            pending = self._preconnect_audio.get(session.id)
+            if pending is None:
+                return False
+            used = self._preconnect_audio_bytes.get(session.id, 0)
+            if used + len(audio) > _MAX_PRECONNECT_AUDIO_BYTES:
+                first_drop = session.id not in self._preconnect_audio_dropped
+                self._preconnect_audio_dropped.add(session.id)
+                dropped = True
+            else:
+                pending.append(
+                    (
+                        processed,
+                        bytes(audio),
+                        enqueued_at if enqueued_at is not None else time.monotonic(),
+                    )
+                )
+                self._preconnect_audio_bytes[session.id] = used + len(audio)
+                first_drop = False
+        if dropped and first_drop:
+            logger.warning(
+                "Pre-connect audio buffer full for session %s (%d bytes); dropping input",
+                session.id,
+                _MAX_PRECONNECT_AUDIO_BYTES,
+            )
+        return True
+
+    async def _flush_preconnect_audio(self, session: VoiceSession) -> None:
+        """Forward every handshake frame in order, including frames arriving mid-flush."""
+        while True:
+            with self._state_lock:
+                pending = self._preconnect_audio.get(session.id)
+                if pending is None:
+                    return
+                batch = list(pending)
+                pending.clear()
+                self._preconnect_audio_bytes[session.id] = 0
+                if not batch:
+                    # Removing the key under the same lock atomically switches
+                    # subsequent callbacks to the normal live path.
+                    self._preconnect_audio.pop(session.id, None)
+                    self._preconnect_audio_bytes.pop(session.id, None)
+                    self._preconnect_audio_dropped.discard(session.id)
+                    return
+
+            for processed, audio, enqueued_at in batch:
+                if processed:
+                    with self._state_lock:
+                        resamplers = self._session_resamplers.get(session.id)
+                        transport_rate = self._session_transport_rates.get(session.id)
+                        rec = self._recording_tracks.get(session.id)
+                    await self._forward_pipeline_frame(
+                        session,
+                        audio,
+                        resamplers,
+                        transport_rate,
+                        rec,
+                    )
+                else:
+                    await self._forward_client_audio(session, audio, enqueued_at)
 
     async def _forward_client_audio(
         self,
@@ -591,6 +700,7 @@ class RealtimeAudioMixin:
             binding = self._session_bindings.get(session.id)
             resamplers = self._session_resamplers.get(session.id)
             transport_rate = self._session_transport_rates.get(session.id)
+            rec = self._recording_tracks.get(session.id)
         if binding is not None and (
             binding.access in (Access.READ_ONLY, Access.NONE) or binding.muted
         ):
@@ -613,6 +723,17 @@ class RealtimeAudioMixin:
                     stream=session.id,
                 )
                 audio = frame.data
+
+            # Recording belongs after handshake buffering and resampling so
+            # early caller audio is captured exactly once in provider format.
+            if rec is not None and self._framework is not None:
+                audio_track, rec_room_id = rec
+                self._framework._room_recorder_mgr.on_data(
+                    rec_room_id,
+                    audio_track,
+                    audio,
+                    enqueued_at * 1000,
+                )
 
             self._fire_audio_level_task(
                 session,

@@ -67,6 +67,25 @@ async def room_id(kit: RoomKit) -> str:
 
 
 class TestSessionLifecycle:
+    @pytest.mark.parametrize(
+        "kwargs",
+        [
+            {"input_sample_rate": 0},
+            {"output_sample_rate": -1},
+            {"transport_sample_rate": True},
+            {"tool_result_max_length": 0},
+            {"tool_search_threshold": 0},
+        ],
+    )
+    def test_invalid_numeric_configuration_is_rejected(self, kwargs: dict[str, Any]) -> None:
+        with pytest.raises(ValueError, match="positive integer"):
+            RealtimeVoiceChannel(
+                "rt-invalid",
+                provider=MockRealtimeProvider(),
+                transport=MockRealtimeTransport(),
+                **kwargs,
+            )
+
     async def test_start_session(
         self,
         kit: RoomKit,
@@ -116,6 +135,47 @@ class TestSessionLifecycle:
         disconnect_transport = [c for c in transport.calls if c.method == "disconnect"]
         assert len(disconnect_provider) == 1
         assert len(disconnect_transport) == 1
+
+    async def test_end_session_cleans_up_when_client_notification_fails(self) -> None:
+        class BrokenNotificationTransport(MockRealtimeTransport):
+            async def send_message(self, session: VoiceSession, message: dict[str, Any]) -> None:
+                if message.get("type") == "session_ended":
+                    raise ConnectionError("client is gone")
+                await super().send_message(session, message)
+
+        provider = MockRealtimeProvider()
+        transport = BrokenNotificationTransport()
+        channel = RealtimeVoiceChannel("rt-dead-client", provider=provider, transport=transport)
+        session = await channel.start_session("room-1", "user-1", "fake-ws")
+
+        await channel.end_session(session)
+
+        assert session.state == VoiceSessionState.ENDED
+        assert channel._sessions == {}
+        assert channel._session_spans == {}
+        assert [call.method for call in provider.calls].count("disconnect") == 1
+        assert [call.method for call in transport.calls].count("disconnect") == 1
+
+    async def test_start_notification_failure_rolls_back_live_session(self) -> None:
+        class BrokenStartNotificationTransport(MockRealtimeTransport):
+            async def send_message(self, session: VoiceSession, message: dict[str, Any]) -> None:
+                if message.get("type") == "session_started":
+                    raise ConnectionError("cannot notify client")
+                await super().send_message(session, message)
+
+        provider = MockRealtimeProvider()
+        transport = BrokenStartNotificationTransport()
+        channel = RealtimeVoiceChannel(
+            "rt-start-notify-fail", provider=provider, transport=transport
+        )
+
+        with pytest.raises(ConnectionError, match="cannot notify client"):
+            await channel.start_session("room-1", "user-1", "fake-ws")
+
+        assert channel._sessions == {}
+        assert channel._session_spans == {}
+        assert [call.method for call in provider.calls].count("disconnect") == 1
+        assert [call.method for call in transport.calls].count("disconnect") == 1
 
 
 class TestAudioForwarding:
@@ -1599,6 +1659,239 @@ class TestStartSessionCancellation:
         assert len(error_msgs) == 1
         disconnect_calls = [c for c in transport.calls if c.method == "disconnect"]
         assert len(disconnect_calls) == 1
+
+    async def test_transport_accept_failure_cleans_every_partial_session_map(
+        self,
+    ) -> None:
+        class FailingTransport(MockRealtimeTransport):
+            async def accept(self, session: VoiceSession, connection: Any) -> None:
+                await super().accept(session, connection)
+                raise RuntimeError("transport blew up")
+
+        channel = RealtimeVoiceChannel(
+            "rt-accept-fail",
+            provider=MockRealtimeProvider(),
+            transport=FailingTransport(),
+            pipeline=AudioPipelineConfig(),
+        )
+
+        with pytest.raises(RuntimeError, match="transport blew up"):
+            await channel.start_session("room-1", "user-1", "fake-ws")
+
+        assert channel._session_spans == {}
+        assert channel._session_tools == {}
+        assert channel._has_pipeline_vad == {}
+        assert channel._preconnect_audio == {}
+        assert channel._idle_events == {}
+        assert [c.method for c in channel.transport.calls].count("disconnect") == 1
+
+    async def test_provider_failure_releases_pipeline_and_handshake_state(
+        self,
+    ) -> None:
+        class FailingProvider(MockRealtimeProvider):
+            async def connect(self, session: VoiceSession, **kwargs: Any) -> None:
+                raise RuntimeError("provider blew up")
+
+        channel = RealtimeVoiceChannel(
+            "rt-provider-fail",
+            provider=FailingProvider(),
+            transport=MockRealtimeTransport(),
+            pipeline=AudioPipelineConfig(),
+            transport_sample_rate=8000,
+        )
+
+        with pytest.raises(RuntimeError, match="provider blew up"):
+            await channel.start_session("room-1", "user-1", "fake-ws")
+
+        assert channel._session_spans == {}
+        assert channel._session_resamplers == {}
+        assert channel._session_transport_rates == {}
+        assert channel._preconnect_audio == {}
+        assert channel._pipeline is not None
+        assert channel._pipeline._outbound_locks == {}
+
+    async def test_invalid_negotiated_rate_rolls_back_accepted_transport(self) -> None:
+        class InvalidRateTransport(MockRealtimeTransport):
+            async def accept(self, session: VoiceSession, connection: Any) -> None:
+                await super().accept(session, connection)
+                session.metadata["transport_sample_rate"] = "8000"
+
+        provider = MockRealtimeProvider()
+        transport = InvalidRateTransport()
+        channel = RealtimeVoiceChannel(
+            "rt-invalid-rate",
+            provider=provider,
+            transport=transport,
+            pipeline=AudioPipelineConfig(),
+        )
+
+        with pytest.raises(ValueError, match="negotiated transport_sample_rate"):
+            await channel.start_session("room-1", "user-1", "fake-ws")
+
+        assert [call.method for call in provider.calls].count("connect") == 0
+        assert [call.method for call in transport.calls].count("disconnect") == 1
+        assert channel._session_spans == {}
+        assert channel._session_transport_rates == {}
+
+
+class TestHandshakeAudioLifecycle:
+    async def test_caller_audio_during_provider_handshake_is_flushed_in_order(self) -> None:
+        connecting = asyncio.Event()
+        release = asyncio.Event()
+        captured: list[VoiceSession] = []
+
+        class SlowProvider(MockRealtimeProvider):
+            async def connect(self, session: VoiceSession, **kwargs: Any) -> None:
+                captured.append(session)
+                connecting.set()
+                await release.wait()
+                await super().connect(session, **kwargs)
+
+        provider = SlowProvider()
+        transport = MockRealtimeTransport()
+        channel = RealtimeVoiceChannel("rt-handshake", provider=provider, transport=transport)
+
+        start = asyncio.create_task(channel.start_session("room-1", "user-1", "fake-ws"))
+        await connecting.wait()
+        await transport.simulate_client_audio(captured[0], b"first")
+        await transport.simulate_client_audio(captured[0], b"second")
+        assert provider.sent_audio == []
+
+        release.set()
+        session = await start
+
+        assert provider.sent_audio == [
+            (session.id, b"first"),
+            (session.id, b"second"),
+        ]
+        assert session.id not in channel._preconnect_audio
+        await channel.end_session(session)
+
+    async def test_pipeline_transport_callback_is_registered_only_once(self) -> None:
+        provider = MockRealtimeProvider()
+        transport = MockRealtimeTransport()
+        channel = RealtimeVoiceChannel(
+            "rt-shared-pipeline",
+            provider=provider,
+            transport=transport,
+            pipeline=AudioPipelineConfig(),
+        )
+
+        first = await channel.start_session("room-1", "user-1", "first")
+        second = await channel.start_session("room-1", "user-2", "second")
+
+        assert len(transport._audio_callbacks) == 1
+        await transport.simulate_client_audio(second, b"\x01\x02" * 80)
+        await asyncio.sleep(0)
+        assert provider.sent_audio == [(second.id, b"\x01\x02" * 80)]
+
+        await channel.end_session(first)
+        await channel.end_session(second)
+
+    async def test_pipeline_audio_during_handshake_is_flushed_after_processing(
+        self,
+    ) -> None:
+        connecting = asyncio.Event()
+        release = asyncio.Event()
+        captured: list[VoiceSession] = []
+
+        class SlowProvider(MockRealtimeProvider):
+            async def connect(self, session: VoiceSession, **kwargs: Any) -> None:
+                captured.append(session)
+                connecting.set()
+                await release.wait()
+                await super().connect(session, **kwargs)
+
+        provider = SlowProvider()
+        transport = MockRealtimeTransport()
+        channel = RealtimeVoiceChannel(
+            "rt-pipeline-handshake",
+            provider=provider,
+            transport=transport,
+            pipeline=AudioPipelineConfig(),
+        )
+        start = asyncio.create_task(channel.start_session("room-1", "user-1", "fake-ws"))
+        await connecting.wait()
+
+        await transport.simulate_client_audio(captured[0], b"\x01\x02" * 80)
+        for _ in range(100):
+            pending = channel._preconnect_audio.get(captured[0].id, [])
+            if pending:
+                break
+            await asyncio.sleep(0.001)
+        assert pending and pending[0][0] is True
+        assert provider.sent_audio == []
+
+        release.set()
+        session = await start
+
+        assert provider.sent_audio == [(session.id, b"\x01\x02" * 80)]
+        assert session.id not in channel._preconnect_audio
+        await channel.end_session(session)
+
+    async def test_preconnect_audio_is_bounded(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        connecting = asyncio.Event()
+        release = asyncio.Event()
+        captured: list[VoiceSession] = []
+
+        class SlowProvider(MockRealtimeProvider):
+            async def connect(self, session: VoiceSession, **kwargs: Any) -> None:
+                captured.append(session)
+                connecting.set()
+                await release.wait()
+                await super().connect(session, **kwargs)
+
+        monkeypatch.setattr(
+            "roomkit.channels._realtime_audio._MAX_PRECONNECT_AUDIO_BYTES",
+            3,
+        )
+        provider = SlowProvider()
+        transport = MockRealtimeTransport()
+        channel = RealtimeVoiceChannel("rt-handshake", provider=provider, transport=transport)
+        start = asyncio.create_task(channel.start_session("room-1", "user-1", "fake-ws"))
+        await connecting.wait()
+
+        await transport.simulate_client_audio(captured[0], b"four")
+        release.set()
+        session = await start
+
+        assert provider.sent_audio == []
+        assert channel._preconnect_audio == {}
+        await channel.end_session(session)
+
+
+class TestFatalProviderCleanup:
+    async def test_fatal_provider_error_ends_channel_and_transport(
+        self,
+        channel: RealtimeVoiceChannel,
+        provider: MockRealtimeProvider,
+        transport: MockRealtimeTransport,
+        room_id: str,
+        advance,
+    ) -> None:
+        session = await channel.start_session(room_id, "user-1", "fake-ws")
+        session.state = VoiceSessionState.ENDED
+
+        await provider.simulate_error(session, "connection_closed", "peer closed")
+        await advance()
+
+        assert channel.get_room_sessions(room_id) == []
+        assert [c.method for c in transport.calls].count("disconnect") == 1
+
+    async def test_recoverable_provider_error_keeps_active_session(
+        self,
+        channel: RealtimeVoiceChannel,
+        provider: MockRealtimeProvider,
+        room_id: str,
+        advance,
+    ) -> None:
+        session = await channel.start_session(room_id, "user-1", "fake-ws")
+
+        await provider.simulate_error(session, "warning", "recoverable")
+        await advance()
+
+        assert channel.get_room_sessions(room_id) == [session]
+        await channel.end_session(session)
 
 
 class TestSendWorkerOrdering:

@@ -204,6 +204,30 @@ class RealtimeVoiceChannel(
                 to 20 to match Google's published recommendation.
         """
         super().__init__(channel_id)
+        for name, rate in (
+            ("input_sample_rate", input_sample_rate),
+            ("output_sample_rate", output_sample_rate),
+        ):
+            if not isinstance(rate, int) or isinstance(rate, bool) or rate <= 0:
+                raise ValueError(f"{name} must be a positive integer")
+        if transport_sample_rate is not None and (
+            not isinstance(transport_sample_rate, int)
+            or isinstance(transport_sample_rate, bool)
+            or transport_sample_rate <= 0
+        ):
+            raise ValueError("transport_sample_rate must be a positive integer")
+        if (
+            not isinstance(tool_result_max_length, int)
+            or isinstance(tool_result_max_length, bool)
+            or tool_result_max_length <= 0
+        ):
+            raise ValueError("tool_result_max_length must be a positive integer")
+        if (
+            not isinstance(tool_search_threshold, int)
+            or isinstance(tool_search_threshold, bool)
+            or tool_search_threshold <= 0
+        ):
+            raise ValueError("tool_search_threshold must be a positive integer")
         self._provider: RealtimeVoiceProvider = provider
         self._transport = transport
         self._recording = recording
@@ -359,6 +383,12 @@ class RealtimeVoiceChannel(
         # Outbound chunks dropped per session because the transport fell behind.
         self._audio_dropped: dict[str, int] = {}
         self._audio_send_workers: dict[str, asyncio.Task[Any]] = {}
+        # Inbound frames received after transport.accept() but before the AI
+        # provider handshake completes.  The audio mixin owns the bounded
+        # buffering/flush mechanics; these maps mark sessions still connecting.
+        self._preconnect_audio: dict[str, list[tuple[bool, bytes, float]]] = {}
+        self._preconnect_audio_bytes: dict[str, int] = {}
+        self._preconnect_audio_dropped: set[str] = set()
         # Last assistant text per session (for barge-in event context)
         self._last_assistant_text: dict[str, str] = {}
         # Barge-in state: set when user interrupts AI, cleared on next final transcription
@@ -652,6 +682,133 @@ class RealtimeVoiceChannel(
 
     # -- Session lifecycle --
 
+    def _prepare_session_audio(self, session: VoiceSession) -> None:
+        """Validate the negotiated rate and build per-session resamplers."""
+        # Prefer the per-session rate set by transports such as SIP after
+        # codec negotiation. A malformed transport value must fail before it
+        # reaches AudioFrame/resampler arithmetic; the caller's start-session
+        # rollback then releases the already accepted transport.
+        transport_rate = session.metadata.get("transport_sample_rate", self._transport_sample_rate)
+        if transport_rate is None:
+            return
+        if (
+            not isinstance(transport_rate, int)
+            or isinstance(transport_rate, bool)
+            or not 1 <= transport_rate <= 192_000
+        ):
+            raise ValueError(
+                "negotiated transport_sample_rate must be an integer between 1 and 192000"
+            )
+
+        self._session_transport_rates[session.id] = transport_rate
+        needs_inbound = transport_rate != self._input_sample_rate
+        needs_outbound = transport_rate != self._output_sample_rate
+        if not (needs_inbound or needs_outbound):
+            return
+
+        # NumPy first — vectorised interpolation releases the GIL. The sinc
+        # fallback preserves correctness but can starve realtime pacing.
+        try:
+            from roomkit.voice.pipeline.resampler.numpy import (
+                NumpyResamplerProvider as _Resampler,
+            )
+        except ImportError:
+            from roomkit.voice.pipeline.resampler.sinc import (
+                SincResamplerProvider as _Resampler,
+            )
+
+            logger.warning(
+                "numpy unavailable — falling back to the pure-Python "
+                "sinc resampler for session %s. Realtime pacing may "
+                "underrun under load; install numpy for GIL-releasing "
+                "resampling.",
+                session.id,
+            )
+
+        self._session_resamplers[session.id] = (_Resampler(), _Resampler())
+        logger.info(
+            "Realtime resampler for session %s: %s (transport=%d, "
+            "provider_in=%d, provider_out=%d)",
+            session.id,
+            _Resampler.__name__,
+            transport_rate,
+            self._input_sample_rate,
+            self._output_sample_rate,
+        )
+
+    async def _finish_session_start(
+        self,
+        session: VoiceSession,
+        room_id: str,
+        participant_id: str,
+    ) -> None:
+        """Publish an active session and flush audio captured during handshake."""
+        if self._framework:
+            stored_binding = await self._framework._store.get_binding(room_id, self.channel_id)
+            if stored_binding is not None:
+                with self._state_lock:
+                    self._session_bindings[session.id] = stored_binding
+
+            await self._framework._emit_framework_event(
+                "voice_session_started",
+                room_id=room_id,
+                channel_id=self.channel_id,
+                data={
+                    "session_id": session.id,
+                    "participant_id": participant_id,
+                    "channel_id": self.channel_id,
+                    "provider": self._provider.name,
+                },
+            )
+
+        self._wire_realtime_recording(room_id, session)
+
+        # The transport was live throughout the provider handshake. Flush
+        # caller speech before exposing the session-start notification; new
+        # frames continue joining the bounded buffer until this drain ends.
+        await self._flush_preconnect_audio(session)
+
+        logger.info(
+            "Realtime session %s started: room=%s, participant=%s, provider=%s",
+            session.id,
+            room_id,
+            participant_id,
+            self._provider.name,
+        )
+
+        # Hook failures are observational and do not roll back a live session.
+        if self._framework:
+            try:
+                from roomkit.models.session_event import SessionStartedEvent
+
+                context = await self._framework._build_context(room_id)
+                ready_event = SessionStartedEvent(
+                    room_id=room_id,
+                    channel_id=self.channel_id,
+                    channel_type=ChannelType.REALTIME_VOICE,
+                    participant_id=session.participant_id,
+                    session=session,
+                )
+                await self._framework.hook_engine.run_async_hooks(
+                    room_id,
+                    HookTrigger.ON_SESSION_STARTED,
+                    ready_event,
+                    context,
+                    skip_event_filter=True,
+                )
+                await self._framework._emit_framework_event(
+                    "session_started",
+                    room_id=room_id,
+                    data={
+                        "session_id": session.id,
+                        "channel_id": self.channel_id,
+                    },
+                )
+            except Exception:
+                logger.exception("Error firing ON_SESSION_STARTED hook")
+
+        await self._send_client_message(session, {"type": "session_started"})
+
     async def start_session(
         self,
         room_id: str,
@@ -708,6 +865,9 @@ class RealtimeVoiceChannel(
         self._idle_events[session.id] = idle
         self._user_speaking[session.id] = False
         self._provider_idle[session.id] = True
+        with self._state_lock:
+            self._preconnect_audio[session.id] = []
+            self._preconnect_audio_bytes[session.id] = 0
 
         # Initialize skill activation state for this session
         if self._skill_support:
@@ -759,79 +919,59 @@ class RealtimeVoiceChannel(
             # arriving early see the correct flag and don't double-fire.
             with self._state_lock:
                 self._has_pipeline_vad[session.id] = has_pipeline_vad
-            pl = self._create_pipeline(self._pipeline_config, self._transport)
-            pl.on_vad_event(self._on_pipeline_vad_event)
-            pl.on_processed_frame(self._on_pipeline_processed_frame)
+            # The pipeline belongs to the channel, not to a session. Creating
+            # it again would register another transport callback and forward
+            # every later microphone frame once per session ever started.
+            if self._pipeline is None:
+                pl = self._create_pipeline(self._pipeline_config, self._transport)
+                pl.on_vad_event(self._on_pipeline_vad_event)
+                pl.on_processed_frame(self._on_pipeline_processed_frame)
 
-        # Accept client connection (with telemetry span)
-        with telemetry.span(
-            SpanKind.BACKEND_CONNECT,
-            "transport.accept",
-            parent_id=session_span_id,
-            session_id=session.id,
-            attributes={Attr.BACKEND_TYPE: self._transport.name},
-        ):
-            await self._transport.accept(session, connection)
-
-        # Activate pipeline session after accept (session is now ready)
+        # Some transports start their microphone inside accept(). Activate
+        # per-session pipeline state first so the earliest callback cannot run
+        # through an uninitialized recorder/AEC/debug stream.
         if self._pipeline is not None:
             self._pipeline_session_active(session)
 
-        # Determine transport sample rate: prefer per-session (set by
-        # transport during accept, e.g. SIP codec negotiation) over the
-        # channel-level default.
-        transport_rate = session.metadata.get("transport_sample_rate", self._transport_sample_rate)
-
-        # Create per-session resamplers if transport rate differs from provider
-        if transport_rate is not None:
-            self._session_transport_rates[session.id] = transport_rate
-            needs_inbound = transport_rate != self._input_sample_rate
-            needs_outbound = transport_rate != self._output_sample_rate
-            if needs_inbound or needs_outbound:
-                # NumPy first — vectorised linear interp runs 6–15× faster
-                # than the pure-Python sinc fallback, which blocks the event
-                # loop long enough at 24 k → 8/16 k to starve the SIP RTP
-                # pacer (60 ms jitter headroom burns in a single resample
-                # call on a realtime-provider burst). See voice/bridge.py
-                # for the same preference order used elsewhere.
-                try:
-                    from roomkit.voice.pipeline.resampler.numpy import (
-                        NumpyResamplerProvider as _Resampler,
-                    )
-                except ImportError:
-                    from roomkit.voice.pipeline.resampler.sinc import (
-                        SincResamplerProvider as _Resampler,
-                    )
-
-                    # Pure-Python resampling holds the GIL even inside the
-                    # resample executor — the event loop stalls with it, and
-                    # realtime pacing (SIP headroom 60ms) audibly suffers.
-                    logger.warning(
-                        "numpy unavailable — falling back to the pure-Python "
-                        "sinc resampler for session %s. Realtime pacing may "
-                        "underrun under load; install numpy for GIL-releasing "
-                        "resampling.",
-                        session.id,
-                    )
-
-                self._session_resamplers[session.id] = (
-                    _Resampler(),  # inbound: transport → provider
-                    _Resampler(),  # outbound: provider → transport
-                )
-                logger.info(
-                    "Realtime resampler for session %s: %s (transport=%d, "
-                    "provider_in=%d, provider_out=%d)",
-                    session.id,
-                    _Resampler.__name__,
-                    transport_rate,
-                    self._input_sample_rate,
-                    self._output_sample_rate,
-                )
+        # Accept client connection (with telemetry span)
+        try:
+            with telemetry.span(
+                SpanKind.BACKEND_CONNECT,
+                "transport.accept",
+                parent_id=session_span_id,
+                session_id=session.id,
+                attributes={Attr.BACKEND_TYPE: self._transport.name},
+            ):
+                await self._transport.accept(session, connection)
+        except (Exception, asyncio.CancelledError):
+            self._pipeline_session_ended(session)
+            with self._state_lock:
+                self._preconnect_audio.pop(session.id, None)
+                self._preconnect_audio_bytes.pop(session.id, None)
+                self._preconnect_audio_dropped.discard(session.id)
+                self._idle_events.pop(session.id, None)
+                self._user_speaking.pop(session.id, None)
+                self._provider_idle.pop(session.id, None)
+                self._session_tools.pop(session.id, None)
+                self._has_pipeline_vad.pop(session.id, None)
+                span_id = self._session_spans.pop(session.id, None)
+            if self._skill_support:
+                self._skill_support.cleanup_session(session.id)
+            if self._tool_search_support:
+                self._tool_search_support.cleanup_session(session.id)
+            with contextlib.suppress(Exception):
+                await self._transport.disconnect(session)
+            session.state = VoiceSessionState.ENDED
+            if span_id:
+                telemetry.end_span(span_id)
+                telemetry.flush()
+            raise
 
         # Connect to provider (with telemetry span).
         # If provider.connect fails, clean up the already-accepted transport
         # session to avoid leaking the connection.
         try:
+            self._prepare_session_audio(session)
             with telemetry.span(
                 SpanKind.BACKEND_CONNECT,
                 "provider.connect",
@@ -851,11 +991,19 @@ class RealtimeVoiceChannel(
                     provider_config=provider_config,
                 )
         except (Exception, asyncio.CancelledError) as exc:
-            self._session_resamplers.pop(session.id, None)
-            self._session_transport_rates.pop(session.id, None)
-            self._idle_events.pop(session.id, None)
-            self._user_speaking.pop(session.id, None)
-            self._provider_idle.pop(session.id, None)
+            self._pipeline_session_ended(session)
+            with self._state_lock:
+                resamplers = self._session_resamplers.pop(session.id, None)
+                self._session_transport_rates.pop(session.id, None)
+                self._preconnect_audio.pop(session.id, None)
+                self._preconnect_audio_bytes.pop(session.id, None)
+                self._preconnect_audio_dropped.discard(session.id)
+                self._idle_events.pop(session.id, None)
+                self._user_speaking.pop(session.id, None)
+                self._provider_idle.pop(session.id, None)
+                self._session_tools.pop(session.id, None)
+                self._has_pipeline_vad.pop(session.id, None)
+                span_id = self._session_spans.pop(session.id, None)
             if self._skill_support:
                 self._skill_support.cleanup_session(session.id)
             if self._tool_search_support:
@@ -864,6 +1012,14 @@ class RealtimeVoiceChannel(
                 await self._provider.disconnect(session)
             with contextlib.suppress(Exception):
                 await self._transport.disconnect(session)
+            if resamplers:
+                for resampler in resamplers:
+                    with contextlib.suppress(Exception):
+                        resampler.close()
+            session.state = VoiceSessionState.ENDED
+            if span_id:
+                telemetry.end_span(span_id)
+                telemetry.flush()
             # CancelledError here is the orchestrator deliberately aborting
             # a still-handshaking session (e.g. carrier hung up before the
             # provider WS connected). It's expected control flow, not a
@@ -886,73 +1042,15 @@ class RealtimeVoiceChannel(
             self._sessions[session.id] = session
             self._session_rooms[session.id] = room_id
 
-        # Cache the channel binding for audio gating
-        if self._framework:
-            stored_binding = await self._framework._store.get_binding(room_id, self.channel_id)
-            if stored_binding is not None:
-                with self._state_lock:
-                    self._session_bindings[session.id] = stored_binding
-
-        # Fire framework event
-        if self._framework:
-            await self._framework._emit_framework_event(
-                "voice_session_started",
-                room_id=room_id,
-                channel_id=self.channel_id,
-                data={
-                    "session_id": session.id,
-                    "participant_id": participant_id,
-                    "channel_id": self.channel_id,
-                    "provider": self._provider.name,
-                },
-            )
-
-        # Wire room-level audio recording if configured
-        self._wire_realtime_recording(room_id, session)
-
-        logger.info(
-            "Realtime session %s started: room=%s, participant=%s, provider=%s",
-            session.id,
-            room_id,
-            participant_id,
-            self._provider.name,
-        )
-
-        # Fire ON_SESSION_STARTED — session is fully active, provider
-        # connected, transport ready.  No dual-signal needed for realtime
-        # channels: the session is live as soon as provider.connect() succeeds.
-        if self._framework:
-            try:
-                from roomkit.models.session_event import SessionStartedEvent
-
-                context = await self._framework._build_context(room_id)
-                ready_event = SessionStartedEvent(
-                    room_id=room_id,
-                    channel_id=self.channel_id,
-                    channel_type=ChannelType.REALTIME_VOICE,
-                    participant_id=session.participant_id,
-                    session=session,
-                )
-                await self._framework.hook_engine.run_async_hooks(
-                    room_id,
-                    HookTrigger.ON_SESSION_STARTED,
-                    ready_event,
-                    context,
-                    skip_event_filter=True,
-                )
-                await self._framework._emit_framework_event(
-                    "session_started",
-                    room_id=room_id,
-                    data={
-                        "session_id": session.id,
-                        "channel_id": self.channel_id,
-                    },
-                )
-            except Exception:
-                logger.exception("Error firing ON_SESSION_STARTED hook")
-
-        # Notify the connected client that the session is ready
-        await self._send_client_message(session, {"type": "session_started"})
+        try:
+            await self._finish_session_start(session, room_id, participant_id)
+        except (Exception, asyncio.CancelledError):
+            # The provider and transport are already live. Any failure while
+            # publishing the session or flushing handshake audio must roll the
+            # whole session back instead of leaving a hidden active connection.
+            with contextlib.suppress(Exception, asyncio.CancelledError):
+                await self.end_session(session)
+            raise
 
         return session
 
@@ -968,7 +1066,17 @@ class RealtimeVoiceChannel(
             room_id = self._session_rooms.get(session.id, session.room_id)
 
         # Notify client before tearing down the connection
-        await self._send_client_message(session, {"type": "session_ended"})
+        try:
+            await self._send_client_message(session, {"type": "session_ended"})
+        except Exception:
+            # A dead client is the common reason a session ends. Notification
+            # failure must never skip provider, transport, pipeline and span
+            # cleanup below.
+            logger.debug(
+                "Could not notify client that session %s ended",
+                session.id,
+                exc_info=True,
+            )
 
         # Disconnect provider and transport
         try:
@@ -1019,6 +1127,9 @@ class RealtimeVoiceChannel(
             send_queue = self._audio_send_queues.pop(session.id, None)
             self._audio_send_workers.pop(session.id, None)
             self._audio_dropped.pop(session.id, None)
+            self._preconnect_audio.pop(session.id, None)
+            self._preconnect_audio_bytes.pop(session.id, None)
+            self._preconnect_audio_dropped.discard(session.id)
 
         # Release the send worker — it exits on the sentinel; anything still
         # queued belongs to the closed session and is dropped with it.

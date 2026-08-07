@@ -9,6 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from roomkit.telemetry.base import Attr, SpanKind
+from roomkit.voice.base import VoiceSessionState
 
 if TYPE_CHECKING:
     from roomkit.core.framework import RoomKit
@@ -75,6 +76,8 @@ class RealtimeResponseHost(Protocol):
 
     async def _set_idle(self, session: Any) -> None: ...
 
+    async def end_session(self, session: Any) -> None: ...
+
     async def _run_in_resample_executor(self, fn: Any, *args: Any) -> Any: ...
 
 
@@ -106,6 +109,7 @@ class RealtimeResponseMixin:
     _send_client_message: Any  # see RealtimeResponseHost — cross-mixin
     _update_idle_event: Any  # see RealtimeResponseHost — cross-mixin
     _set_idle: Any  # see RealtimeResponseHost — cross-mixin
+    end_session: Any  # see RealtimeResponseHost — host lifecycle
     _run_in_resample_executor: Any  # see RealtimeResponseHost — cross-mixin
 
     def _on_provider_response_start(self, session: VoiceSession) -> Any:
@@ -273,3 +277,29 @@ class RealtimeResponseMixin:
             code,
             message,
         )
+        # Providers also surface recoverable protocol errors and warnings via
+        # this callback.  A fatal transport loss is distinguished without a
+        # public callback-signature change: providers mark the shared session
+        # ENDED before firing.  Tear the channel/transport down asynchronously
+        # so provider receive loops never cancel or await themselves.
+        if session.state != VoiceSessionState.ENDED:
+            return None
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return None
+        self._track_task(
+            loop,
+            self._end_failed_provider_session(session),
+            name=f"rt_provider_failed:{session.id}",
+        )
+        return None
+
+    async def _end_failed_provider_session(self, session: VoiceSession) -> None:
+        """Release channel and transport state after a fatal provider loss."""
+        # Yield once so the provider can finish its own map/socket retirement.
+        await asyncio.sleep(0)
+        with self._state_lock:
+            active = session.id in getattr(self, "_sessions", {})
+        if active:
+            await self.end_session(session)
