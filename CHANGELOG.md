@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.45.0] — 2026-08-07
+
 ### Added
 
 - **Deepgram Voice Agent — any TTS vendor in the `speak` stage.** Deepgram
@@ -18,10 +20,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `agent.speak.provider` dict verbatim — each vendor has its own field shape
   (`model` vs `model_id`/`voice_id` vs `voice` objects), so RoomKit passes the
   dict through rather than modelling five schemas that would rot.
-  `speak_endpoint` rides alongside for the BYO-key endpoint vendors like
-  ElevenLabs require (Deepgram-managed ones need none). Mid-session `reconfigure()` swaps
-  vendors wholesale, and a `voice` argument naming an Aura model is ignored
-  with a warning when another vendor holds the stage.
+  `speak_endpoint` rides alongside, carrying the BYO-key endpoint that
+  vendors like ElevenLabs require (Deepgram-managed ones need none).
+  Mid-session `reconfigure()` swaps vendors wholesale, and a `voice` argument
+  naming an Aura model is ignored with a warning when another vendor holds
+  the stage.
 
 - **ElevenLabs ConvAI — TTS speed override.** `provider_config["speed"]`
   rides `conversation_config_override.tts`, clamped into the 0.7–1.2 range
@@ -5065,7 +5068,8 @@ See entries `0.7.0a1` through `0.7.0a18` below.
 - `STTProvider.transcribe()` returns `TranscriptionResult` (Phase 3.1)
 - Framework event names enriched with payloads (Phase 4)
 
-[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.44.0...HEAD
+[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.45.0...HEAD
+[0.45.0]: https://github.com/roomkit-live/roomkit/compare/v0.44.0...v0.45.0
 [0.44.0]: https://github.com/roomkit-live/roomkit/compare/v0.43.0...v0.44.0
 [0.43.0]: https://github.com/roomkit-live/roomkit/compare/v0.42.1...v0.43.0
 [0.42.1]: https://github.com/roomkit-live/roomkit/compare/v0.42.0...v0.42.1
