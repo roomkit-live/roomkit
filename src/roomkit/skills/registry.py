@@ -59,7 +59,8 @@ class SkillRegistry:
             The number of skills registered.
 
         Raises:
-            SkillDiscoveryError: In strict mode, when a directory is missing.
+            SkillDiscoveryError: In strict mode, when a directory cannot be
+                scanned or a candidate escapes it through a symlink.
             SkillParseError: In strict mode, when a SKILL.md cannot be parsed.
             SkillValidationError: In strict mode, when metadata is invalid.
         """
@@ -79,17 +80,48 @@ class SkillRegistry:
         """Skill directories found under ``directories``, in a stable order."""
         candidates: list[Path] = []
         for directory in directories:
-            dir_path = Path(directory).resolve()
+            try:
+                dir_path = Path(directory).resolve()
+            except (OSError, RuntimeError) as exc:
+                message = f"Skill directory cannot be resolved: {directory}"
+                if strict:
+                    raise SkillDiscoveryError(message) from exc
+                logger.warning("%s: %s", message, exc)
+                continue
             if not dir_path.is_dir():
                 if strict:
                     raise SkillDiscoveryError(f"Skill directory not found: {dir_path}")
                 logger.warning("Skill directory not found: %s", dir_path)
                 continue
-            candidates.extend(
-                child
-                for child in sorted(dir_path.iterdir())
-                if child.is_dir() and find_skill_md(child) is not None
-            )
+            try:
+                children = sorted(dir_path.iterdir())
+            except (OSError, RuntimeError) as exc:
+                message = f"Skill directory cannot be scanned: {dir_path}"
+                if strict:
+                    raise SkillDiscoveryError(message) from exc
+                logger.warning("%s: %s", message, exc)
+                continue
+
+            for child in children:
+                try:
+                    if not child.is_dir():
+                        continue
+                    resolved_child = child.resolve()
+                    if dir_path not in resolved_child.parents:
+                        raise SkillDiscoveryError(
+                            f"Skill candidate escapes discovery directory: {child}"
+                        )
+                    if find_skill_md(resolved_child) is not None:
+                        candidates.append(resolved_child)
+                except SkillDiscoveryError:
+                    if strict:
+                        raise
+                    logger.warning("Skipping skill candidate outside %s: %s", dir_path, child)
+                except (OSError, RuntimeError) as exc:
+                    message = f"Skill candidate cannot be inspected: {child}"
+                    if strict:
+                        raise SkillDiscoveryError(message) from exc
+                    logger.warning("%s: %s", message, exc)
         return candidates
 
     def register(self, skill_dir: str | Path) -> SkillMetadata:
@@ -102,7 +134,10 @@ class SkillRegistry:
             SkillParseError: If SKILL.md cannot be found or parsed.
             SkillValidationError: If metadata fails validation.
         """
-        skill_path = Path(skill_dir).resolve()
+        try:
+            skill_path = Path(skill_dir).resolve()
+        except (OSError, RuntimeError) as exc:
+            raise SkillDiscoveryError(f"Skill directory cannot be resolved: {skill_dir}") from exc
         metadata = parse_skill_metadata(skill_path)
         self._commit(skill_path, metadata)
         return metadata

@@ -1,16 +1,17 @@
 """Exceptions raised by the skills framework.
 
-All skill failures derive from :class:`SkillError`, so a caller that wants to
-treat "something is wrong with the skills on disk" as one condition can catch a
-single type. The specific classes stay meaningful on their own — a deployment
-that fails to start wants to read *which* kind of wrong it was.
+All framework-defined skill failures derive from :class:`SkillError`, so a
+caller can catch malformed metadata, discovery and containment errors as one
+condition. Ordinary filesystem outcomes that are part of a method's public
+contract (for example ``FileNotFoundError`` from ``read_reference``) retain
+their standard Python types.
 """
 
 from __future__ import annotations
 
 
 class SkillError(Exception):
-    """Base class for every skill failure."""
+    """Base class for framework-defined skill failures."""
 
 
 class SkillParseError(SkillError):

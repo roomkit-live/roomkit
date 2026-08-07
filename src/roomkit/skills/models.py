@@ -9,7 +9,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from roomkit.skills.paths import safe_join_filename
+from roomkit.skills.paths import _resolve_contained_directory, safe_join_filename
 
 logger = logging.getLogger("roomkit.skills")
 
@@ -58,25 +58,32 @@ class Skill:
 
     @property
     def has_scripts(self) -> bool:
-        scripts_dir = self.path / _SCRIPTS_DIR
-        return scripts_dir.is_dir() and any(scripts_dir.iterdir())
+        scripts_dir = self._bundled_directory(_SCRIPTS_DIR, kind="script")
+        return scripts_dir is not None and any(scripts_dir.iterdir())
 
     @property
     def has_references(self) -> bool:
-        refs_dir = self.path / _REFERENCES_DIR
-        return refs_dir.is_dir() and any(refs_dir.iterdir())
+        refs_dir = self._bundled_directory(_REFERENCES_DIR, kind="reference")
+        return refs_dir is not None and any(refs_dir.iterdir())
+
+    def _bundled_directory(self, name: str, *, kind: str) -> Path | None:
+        """Return one real directory contained by the skill, if it exists."""
+        directory = self.path / name
+        if not directory.is_dir():
+            return None
+        return _resolve_contained_directory(directory, kind=kind)
 
     def list_scripts(self) -> list[str]:
         """List script filenames in the skill's scripts/ directory."""
-        scripts_dir = self.path / _SCRIPTS_DIR
-        if not scripts_dir.is_dir():
+        scripts_dir = self._bundled_directory(_SCRIPTS_DIR, kind="script")
+        if scripts_dir is None:
             return []
         return sorted(f.name for f in scripts_dir.iterdir() if f.is_file())
 
     def list_references(self) -> list[str]:
         """List reference filenames in the skill's references/ directory."""
-        refs_dir = self.path / _REFERENCES_DIR
-        if not refs_dir.is_dir():
+        refs_dir = self._bundled_directory(_REFERENCES_DIR, kind="reference")
+        if refs_dir is None:
             return []
         return sorted(f.name for f in refs_dir.iterdir() if f.is_file())
 

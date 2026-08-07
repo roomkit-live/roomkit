@@ -234,6 +234,27 @@ class TestParseSkillMetadata:
         assert meta.license == "MIT"
         assert meta.extra_metadata["custom_key"] == "custom_val"
 
+    def test_invalid_utf8_uses_skill_error_hierarchy(self, tmp_path: Path) -> None:
+        skill_dir = tmp_path / "bad-encoding"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_bytes(b"\xff\xfe")
+
+        with pytest.raises(SkillParseError, match="Unable to read"):
+            parse_skill_metadata(skill_dir)
+
+    def test_skill_md_symlink_cannot_escape_skill_directory(self, tmp_path: Path) -> None:
+        outside = tmp_path / "outside.md"
+        outside.write_text(
+            "---\nname: linked\ndescription: Outside\n---\nDo not load me",
+            encoding="utf-8",
+        )
+        skill_dir = tmp_path / "linked"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").symlink_to(outside)
+
+        with pytest.raises(SkillParseError, match="escapes"):
+            parse_skill_metadata(skill_dir)
+
 
 class TestParseSkill:
     def test_full_parse(self, tmp_path: Path) -> None:
@@ -297,6 +318,20 @@ class TestSkillModel:
         with pytest.raises(SkillPathError, match="escapes"):
             skill.read_reference("notes.md")
 
+    def test_read_reference_directory_symlink_escape_blocked(self, tmp_path: Path) -> None:
+        """The references directory cannot redirect the whole lookup outside."""
+        outside = tmp_path / "outside-references"
+        outside.mkdir()
+        (outside / "secret.txt").write_text("classified", encoding="utf-8")
+        skill_dir = _make_skill_dir_full(tmp_path, "redirected-references")
+        (skill_dir / "references").symlink_to(outside, target_is_directory=True)
+
+        skill = parse_skill(skill_dir)
+        with pytest.raises(SkillPathError, match="skill directory"):
+            skill.read_reference("secret.txt")
+        with pytest.raises(SkillPathError, match="skill directory"):
+            skill.list_references()
+
     def test_read_reference_rejects_fullwidth_traversal(self, tmp_path: Path) -> None:
         """Full-width look-alikes are normalised before the separator check."""
         skill_dir = _make_skill_dir_full(
@@ -340,6 +375,20 @@ class TestSkillModel:
         skill = parse_skill(skill_dir)
         with pytest.raises(SkillPathError, match="escapes"):
             skill.resolve_script("innocent.sh")
+
+    def test_resolve_script_directory_symlink_escape_blocked(self, tmp_path: Path) -> None:
+        """The scripts directory cannot redirect execution outside the skill."""
+        outside = tmp_path / "outside-scripts"
+        outside.mkdir()
+        (outside / "payload.sh").write_text("#!/bin/sh\necho pwned", encoding="utf-8")
+        skill_dir = _make_skill_dir_full(tmp_path, "redirected-scripts")
+        (skill_dir / "scripts").symlink_to(outside, target_is_directory=True)
+
+        skill = parse_skill(skill_dir)
+        with pytest.raises(SkillPathError, match="skill directory"):
+            skill.resolve_script("payload.sh")
+        with pytest.raises(SkillPathError, match="skill directory"):
+            skill.list_scripts()
 
     def test_resolve_script_traversal_blocked(self, tmp_path: Path) -> None:
         skill_dir = _make_skill_dir_full(tmp_path, "guarded", scripts=["ok.sh"])
@@ -577,6 +626,51 @@ class TestSkillRegistry:
         assert count == 1
         assert registry.skill_count == 1
 
+    def test_discover_invalid_utf8_is_atomic_or_skipped(self, tmp_path: Path) -> None:
+        _make_skill_dir(tmp_path, "valid-one")
+        broken = tmp_path / "zz-broken"
+        broken.mkdir()
+        (broken / "SKILL.md").write_bytes(b"\xff")
+
+        strict_registry = SkillRegistry()
+        with pytest.raises(SkillParseError, match="Unable to read"):
+            strict_registry.discover(tmp_path)
+        assert strict_registry.skill_count == 0
+
+        lenient_registry = SkillRegistry()
+        assert lenient_registry.discover(tmp_path, strict=False) == 1
+        assert lenient_registry.skill_names == ["valid-one"]
+
+    def test_discover_rejects_candidate_symlink_escape(self, tmp_path: Path) -> None:
+        root = tmp_path / "skills"
+        root.mkdir()
+        outside = _make_skill_dir(tmp_path, "outside")
+        (root / "outside").symlink_to(outside, target_is_directory=True)
+
+        registry = SkillRegistry()
+        with pytest.raises(SkillDiscoveryError, match="escapes"):
+            registry.discover(root)
+        assert registry.discover(root, strict=False) == 0
+
+    def test_discover_rejects_skill_md_symlink_escape(self, tmp_path: Path) -> None:
+        outside = tmp_path / "outside.md"
+        outside.write_text(
+            "---\nname: linked\ndescription: Outside\n---\nDo not load me",
+            encoding="utf-8",
+        )
+        root = tmp_path / "skills"
+        skill_dir = root / "linked"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").symlink_to(outside)
+
+        strict_registry = SkillRegistry()
+        with pytest.raises(SkillParseError, match="escapes"):
+            strict_registry.discover(root)
+        assert strict_registry.skill_count == 0
+
+        lenient_registry = SkillRegistry()
+        assert lenient_registry.discover(root, strict=False) == 0
+
     def test_discover_raises_on_nonexistent_dir(self) -> None:
         """A missing skills directory is a deployment error, not an empty result."""
         registry = SkillRegistry()
@@ -613,3 +707,11 @@ class TestSkillRegistry:
         skill2 = registry.get_skill("cached")
         assert skill2 is not None
         assert "v2" in skill2.instructions
+
+    def test_lazy_load_invalid_encoding_returns_none(self, tmp_path: Path) -> None:
+        skill_dir = _make_skill_dir(tmp_path, "encoding-change")
+        registry = SkillRegistry()
+        registry.register(skill_dir)
+        (skill_dir / "SKILL.md").write_bytes(b"\xff")
+
+        assert registry.get_skill("encoding-change") is None

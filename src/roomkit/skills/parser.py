@@ -30,6 +30,23 @@ _SKILL_FILENAMES = ("SKILL.md", "skill.md")
 _KNOWN_KEYS = {"name", "description", "license", "compatibility", "allowed_tools"}
 
 
+def _read_skill_md(skill_dir: Path) -> tuple[Path, str]:
+    """Resolve and decode one SKILL.md using the public error hierarchy."""
+    try:
+        resolved_dir = skill_dir.resolve()
+        md_path = find_skill_md(resolved_dir)
+        if md_path is None:
+            raise SkillParseError(f"No SKILL.md found in {resolved_dir}")
+        resolved_md = md_path.resolve()
+        if resolved_dir not in resolved_md.parents:
+            raise SkillParseError(f"SKILL.md escapes its skill directory: {md_path}")
+        return resolved_dir, resolved_md.read_text(encoding="utf-8")
+    except SkillParseError:
+        raise
+    except (OSError, RuntimeError, UnicodeError) as exc:
+        raise SkillParseError(f"Unable to read SKILL.md in {skill_dir}: {exc}") from exc
+
+
 def find_skill_md(skill_dir: Path) -> Path | None:
     """Find SKILL.md in a directory (case-insensitive)."""
     for name in _SKILL_FILENAMES:
@@ -123,12 +140,7 @@ def parse_skill_metadata(skill_dir: Path) -> SkillMetadata:
         SkillParseError: If SKILL.md cannot be found or parsed.
         SkillValidationError: If metadata fails validation.
     """
-    skill_dir = skill_dir.resolve()
-    md_path = find_skill_md(skill_dir)
-    if md_path is None:
-        raise SkillParseError(f"No SKILL.md found in {skill_dir}")
-
-    content = md_path.read_text(encoding="utf-8")
+    skill_dir, content = _read_skill_md(skill_dir)
     data, _ = parse_frontmatter(content)
 
     errors = validate_metadata(data, skill_dir)
@@ -153,12 +165,7 @@ def parse_skill(skill_dir: Path) -> Skill:
         SkillParseError: If SKILL.md cannot be found or parsed.
         SkillValidationError: If metadata fails validation.
     """
-    skill_dir = skill_dir.resolve()
-    md_path = find_skill_md(skill_dir)
-    if md_path is None:
-        raise SkillParseError(f"No SKILL.md found in {skill_dir}")
-
-    content = md_path.read_text(encoding="utf-8")
+    skill_dir, content = _read_skill_md(skill_dir)
     data, body = parse_frontmatter(content)
 
     errors = validate_metadata(data, skill_dir)

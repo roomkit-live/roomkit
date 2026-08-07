@@ -33,6 +33,26 @@ def _is_absolute_anywhere(name: str) -> bool:
     return bool(pure.drive) or pure.is_absolute()
 
 
+def _resolve_contained_directory(directory: Path, *, kind: str) -> Path:
+    """Resolve a bundled directory without letting the directory itself escape.
+
+    Checking only the final filename is insufficient when ``references/`` or
+    ``scripts/`` is itself a symlink.  Anchor the resolved directory in its
+    lexical parent before resolving any child selected by the model.
+    """
+    try:
+        resolved_parent = directory.parent.resolve()
+        resolved_directory = directory.resolve()
+    except (OSError, RuntimeError) as exc:
+        raise SkillPathError(f"Invalid {kind} directory: cannot be resolved") from exc
+
+    if resolved_directory == resolved_parent or resolved_parent not in resolved_directory.parents:
+        raise SkillPathError(
+            f"Invalid {kind} directory: {directory.name!r} escapes the skill directory"
+        )
+    return resolved_directory
+
+
 def safe_join_filename(directory: Path, filename: str, *, kind: str = "file") -> Path:
     """Resolve ``filename`` inside ``directory``, or raise.
 
@@ -45,7 +65,8 @@ def safe_join_filename(directory: Path, filename: str, *, kind: str = "file") ->
     execute directly without re-deriving it.
 
     Args:
-        directory: Directory the result must stay within.
+        directory: Bundled directory the result must stay within. The directory
+            itself must also resolve inside its lexical parent.
         filename: Single-component name to resolve inside it.
         kind: Word used in the error message ("reference", "script").
 
@@ -74,9 +95,9 @@ def safe_join_filename(directory: Path, filename: str, *, kind: str = "file") ->
         raise SkillPathError(f"Invalid {kind} filename: {filename!r}")
 
     try:
-        resolved_base = directory.resolve()
-        resolved_target = (directory / normalized).resolve()
-    except OSError as exc:
+        resolved_base = _resolve_contained_directory(directory, kind=kind)
+        resolved_target = (resolved_base / normalized).resolve()
+    except (OSError, RuntimeError) as exc:
         raise SkillPathError(f"Invalid {kind} filename: {filename!r} cannot be resolved") from exc
 
     # resolve() follows symlinks, so this is where a planted link is caught.
