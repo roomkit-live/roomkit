@@ -201,9 +201,11 @@ class SQLiteStore(ConversationStore):
                            parent_event_id, idempotency_key, created_ts, data)
         VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """
-    _EVENT_UPSERT = (
-        _EVENT_INSERT
-        + """
+    _EVENT_UPSERT = """
+        INSERT INTO events(id, room_id, idx, type, visibility, source_channel_id,
+                           source_channel_type, participant_id, correlation_id,
+                           parent_event_id, idempotency_key, created_ts, data)
+        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
             room_id=excluded.room_id, idx=excluded.idx, type=excluded.type,
             visibility=excluded.visibility,
@@ -215,7 +217,6 @@ class SQLiteStore(ConversationStore):
             idempotency_key=excluded.idempotency_key,
             created_ts=excluded.created_ts, data=excluded.data
     """
-    )
 
     def _write_event_row(
         self, conn: sqlite3.Connection, event: RoomEvent, *, replace: bool = False
@@ -395,7 +396,7 @@ class SQLiteStore(ConversationStore):
                 "idempotency",
                 "events_fts",
             ):
-                conn.execute(f"DELETE FROM {table} WHERE room_id = ?", (room_id,))  # noqa: S608
+                conn.execute(f"DELETE FROM {table} WHERE room_id = ?", (room_id,))  # nosec B608 — fragments are internal, values parameterised
             conn.execute("COMMIT")
         except BaseException:
             conn.execute("ROLLBACK")
@@ -440,7 +441,7 @@ class SQLiteStore(ConversationStore):
             where.append("status = ?")
             params.append(status)
         rows = self._db().execute(
-            f"SELECT * FROM rooms WHERE {' AND '.join(where)} ORDER BY rowid",  # noqa: S608
+            f"SELECT * FROM rooms WHERE {' AND '.join(where)} ORDER BY rowid",  # nosec B608 — fragments are internal, values parameterised
             params,
         )
         results = [self._row_to_room(r) for r in rows]
@@ -481,7 +482,7 @@ class SQLiteStore(ConversationStore):
         row = (
             self._db()
             .execute(
-                f"SELECT * FROM rooms WHERE {' AND '.join(where)}"  # noqa: S608
+                f"SELECT * FROM rooms WHERE {' AND '.join(where)}"  # nosec B608 — fragments are internal, values parameterised
                 " ORDER BY created_ts DESC LIMIT 1",
                 params,
             )
@@ -512,7 +513,7 @@ class SQLiteStore(ConversationStore):
         rows = self._db().execute(
             f"""SELECT r.id FROM bindings b JOIN rooms r ON r.id = b.room_id
                 WHERE {" AND ".join(where)}
-                ORDER BY r.created_ts, r.id LIMIT ?""",  # noqa: S608
+                ORDER BY r.created_ts, r.id LIMIT ?""",  # nosec B608 — fragments are internal, values parameterised
             params,
         )
         return [row[0] for row in rows]
@@ -579,7 +580,7 @@ class SQLiteStore(ConversationStore):
                 deleted.extend(row[0] for row in rows)
             marks = ",".join("?" for _ in deleted)
             keys = conn.execute(
-                f"SELECT idempotency_key FROM events WHERE id IN ({marks})"  # noqa: S608
+                f"SELECT idempotency_key FROM events WHERE id IN ({marks})"  # nosec B608 — fragments are internal, values parameterised
                 " AND idempotency_key IS NOT NULL",
                 deleted,
             ).fetchall()
@@ -587,8 +588,8 @@ class SQLiteStore(ConversationStore):
                 conn.execute(
                     "DELETE FROM idempotency WHERE room_id = ? AND key = ?", (room_id, key)
                 )
-            conn.execute(f"DELETE FROM events WHERE id IN ({marks})", deleted)  # noqa: S608
-            conn.execute(f"DELETE FROM events_fts WHERE event_id IN ({marks})", deleted)  # noqa: S608
+            conn.execute(f"DELETE FROM events WHERE id IN ({marks})", deleted)  # nosec B608 — fragments are internal, values parameterised
+            conn.execute(f"DELETE FROM events_fts WHERE event_id IN ({marks})", deleted)  # nosec B608 — fragments are internal, values parameterised
             conn.execute("COMMIT")
         except BaseException:
             conn.execute("ROLLBACK")
@@ -679,7 +680,7 @@ class SQLiteStore(ConversationStore):
                 where.append("created_ts < ?")
                 params.append(_ts(ef.before_time))
 
-        base = f"SELECT data FROM events WHERE {' AND '.join(where)}"  # noqa: S608
+        base = f"SELECT data FROM events WHERE {' AND '.join(where)}"  # nosec B608 — fragments are internal, values parameterised
         if before_index is not None or (
             before_index is None and after_index is None and newest_first
         ):
@@ -710,7 +711,7 @@ class SQLiteStore(ConversationStore):
         rows = self._db().execute(
             f"""SELECT parent_event_id, COUNT(*), MAX(created_ts) FROM events
                 WHERE room_id = ? AND parent_event_id IN ({marks})
-                GROUP BY parent_event_id""",  # noqa: S608
+                GROUP BY parent_event_id""",  # nosec B608 — fragments are internal, values parameterised
             [room_id, *root_event_ids],
         )
         return {
@@ -827,7 +828,7 @@ class SQLiteStore(ConversationStore):
         params.append(limit)
         rows = self._db().execute(
             f"""SELECT e.data FROM events_fts JOIN events e ON e.id = events_fts.event_id
-                WHERE {" AND ".join(where)} ORDER BY events_fts.rank LIMIT ?""",  # noqa: S608
+                WHERE {" AND ".join(where)} ORDER BY events_fts.rank LIMIT ?""",  # nosec B608 — fragments are internal, values parameterised
             params,
         )
         return [_load_event(r[0]) for r in rows]
@@ -1124,7 +1125,7 @@ class SQLiteStore(ConversationStore):
             where.append("status = ?")
             params.append(str(status))
         rows = self._db().execute(
-            f"SELECT data FROM tasks WHERE {' AND '.join(where)} ORDER BY rowid",  # noqa: S608
+            f"SELECT data FROM tasks WHERE {' AND '.join(where)} ORDER BY rowid",  # nosec B608 — fragments are internal, values parameterised
             params,
         )
         return [Task.model_validate_json(r[0]) for r in rows]
