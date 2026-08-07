@@ -103,10 +103,21 @@ class VoicePipelineMixin:
         ):
 
             def _on_audio_played(session: VoiceSession, frame: AudioFrame) -> None:
-                if self._pipeline is not None:
+                if self._pipeline is None:
+                    return
+                # Timeline pairing: while capture is paused (session mute,
+                # gating, half-duplex) the backend drops mic frames, so the
+                # reference must pause too — feeding it alone desyncs AEC3's
+                # render/capture alignment by the mute's full duration
+                # (measured: a 6 s mute left the filter cancelling against
+                # audio the capture never saw, then a false barge-in).  The
+                # backend keeps broadcasting the frames because playback
+                # genuinely continues — levels and position stay live — and
+                # states the pause in metadata for this consumer to honour.
+                if not frame.metadata.get("capture_paused"):
                     self._pipeline.feed_aec_reference(frame, session.id)
-                    if frame.metadata.get("playback_ended"):
-                        self._pipeline.set_aec_active(session.id, False)
+                if frame.metadata.get("playback_ended"):
+                    self._pipeline.set_aec_active(session.id, False)
 
             backend.on_audio_played(_on_audio_played)
             pipeline.enable_playback_aec_feed()

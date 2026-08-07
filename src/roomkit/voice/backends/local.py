@@ -1018,6 +1018,13 @@ class LocalAudioBackend(VoiceBackend):
                 metadata={
                     "playback_ended": response_drained,
                     "played_bytes": written,
+                    # While capture is paused (mute/gate/half-duplex) the mic
+                    # thread drops frames, so the pipeline-AEC reference must
+                    # pause in step — the transport-AEC feed above already
+                    # does.  The broadcast itself continues: playback is
+                    # physically ongoing, and level/position listeners must
+                    # keep seeing it.  The pipeline consumer honours the flag.
+                    "capture_paused": self._aec_capture_paused(session.id),
                 },
             )
             for cb in self._audio_played_callbacks:

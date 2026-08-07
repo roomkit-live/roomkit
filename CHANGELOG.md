@@ -134,6 +134,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A muted mic desynchronized the pipeline AEC by the mute's full
+  duration.** Pausing capture pauses the AEC's world, and the transport-AEC
+  feed honoured that — but the pipeline-AEC reference rides
+  `on_audio_played`, which kept flowing while `set_input_muted` dropped the
+  mic frames.  A 6-second mute measured live left `refs_fed` 736 frames
+  ahead of `processed`: on unmute the filter cancelled against audio the
+  capture never saw, attenuation collapsed to −12 dB, and the provider's
+  server VAD read the leaked echo as user speech — a false barge-in as the
+  direct product of pressing mute.  The backend now stamps
+  `capture_paused` on every played frame (the broadcast itself continues:
+  playback is physically ongoing and level/position listeners must keep
+  seeing it), and the pipeline's reference consumer holds its feed while
+  the flag is up — both timelines pause and resume together, which the AEC
+  bench verifies as the `refs ≈ processed` invariant.
+
 - **`inbound_dsp_threads` silently unplugged every async pipeline callback —
   in a realtime session, that is the microphone.** The pool's workers run
   the stage chain with no event loop, and `_maybe_schedule` answered a

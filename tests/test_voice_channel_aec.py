@@ -226,3 +226,59 @@ class TestBridgeAECActivity:
 
         assert aec.active_changes == [("bob", True), ("bob", False)]
         assert "bob" not in aec.reset_streams
+
+
+class TestPlaybackReferencePausesWithCapture:
+    """The pipeline-AEC reference honours the backend's capture_paused flag.
+
+    While capture is paused (session mute, gating, half-duplex) the mic
+    thread drops frames; feeding the reference alone desyncs AEC3's
+    render/capture alignment by the pause's full duration — measured live
+    as a 6 s mute leaving the filter cancelling against audio the capture
+    never saw, then a false barge-in on unmute.
+    """
+
+    def _wired_channel(self):
+        from roomkit.channels.voice import VoiceChannel
+
+        aec = MockAECProvider()
+        backend = _StubBackend(supports_playback=True)
+        channel = VoiceChannel(
+            "voice",
+            backend=backend,
+            pipeline=AudioPipelineConfig(aec=aec),
+        )
+        assert backend.audio_played_callbacks, "playback→AEC wiring did not register"
+        return aec, backend, channel
+
+    def _played(self, paused: bool) -> AudioFrame:
+        return AudioFrame(
+            data=b"\x01\x00" * 240,
+            sample_rate=24000,
+            channels=1,
+            sample_width=2,
+            metadata={"playback_ended": False, "capture_paused": paused},
+        )
+
+    def test_reference_flows_while_capture_runs(self):
+        aec, backend, _channel = self._wired_channel()
+        backend.audio_played_callbacks[0](_session(), self._played(paused=False))
+        assert len(aec.reference_frames) == 1
+
+    def test_reference_pauses_while_capture_is_paused(self):
+        aec, backend, _channel = self._wired_channel()
+        cb = backend.audio_played_callbacks[0]
+        cb(_session(), self._played(paused=False))
+        cb(_session(), self._played(paused=True))
+        cb(_session(), self._played(paused=True))
+        cb(_session(), self._played(paused=False))
+        assert len(aec.reference_frames) == 2  # the two paused blocks were held
+
+    def test_playback_ended_still_deactivates_during_pause(self):
+        aec, backend, channel = self._wired_channel()
+        channel._pipeline.set_aec_active(_session().id, True)
+        frame = self._played(paused=True)
+        frame.metadata["playback_ended"] = True
+        backend.audio_played_callbacks[0](_session(), frame)
+        assert aec.reference_frames == []  # paused: no reference fed
+        assert (_session().id, False) in aec.active_changes  # ...but still deactivated
