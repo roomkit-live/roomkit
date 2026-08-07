@@ -34,8 +34,13 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-# Windowing: AEC frames are 10 ms; score in 100 ms windows.
+# Windowing: score in buckets of this many capture frames (pipeline frames
+# are typically 10 or 20 ms — durations are derived from the data length).
 WINDOW_FRAMES = 10
+# A window this close before an AEC deactivation toggle sits on a barge-in:
+# the interrupt path deactivates cancellation when playback is flushed, so
+# the user was speaking over the response — doubletalk by construction.
+BARGE_IN_GUARD_S = 1.0
 # Trailing reference RMS above this int16 level marks a window echo-active.
 REF_ACTIVE_RMS = 200.0
 # Echo-active windows whose capture is quieter than this carry nothing
@@ -78,6 +83,7 @@ class Window:
     ref_rms: float
     in_rms: float
     out_rms: float
+    near_barge_in: bool = False
 
     @property
     def attenuation_db(self) -> float:
@@ -105,10 +111,15 @@ class Classified:
 def classify(windows: list[Window]) -> Classified:
     """Split windows by regime, self-calibrated on the dump's echo level.
 
-    Doubletalk is judged against the median capture level of the plainly
-    echo-active windows: playback time vastly outweighs overlap time in a
-    real session, so that median is the echo's acoustic level, and a
-    window well above it carries the user's voice on top.
+    Doubletalk is recognized two ways.  Level: judged against the median
+    capture level of the plainly echo-active windows — playback time
+    vastly outweighs overlap time in a real session, so that median is
+    the echo's acoustic level, and a window well above it carries the
+    user's voice on top.  Structure: a window sitting just before an AEC
+    deactivation toggle is a barge-in moment by construction (the
+    interrupt path deactivates cancellation when playback is flushed), so
+    the user was speaking whatever its level — low attenuation there is
+    the canceller *protecting* the user's voice, not leaking echo.
     """
     echo = [w for w in windows if w.echo_active and w.in_rms >= IN_FLOOR_RMS]
     quiet = [w for w in windows if not w.echo_active]
@@ -117,7 +128,7 @@ def classify(windows: list[Window]) -> Classified:
         return Classified(active=[], quiet=quiet, faint=faint, doubletalk=[])
     levels = sorted(w.in_rms for w in echo)
     echo_median = levels[len(levels) // 2]
-    doubletalk = [w for w in echo if w.in_rms > DOUBLETALK_RATIO * echo_median]
+    doubletalk = [w for w in echo if w.near_barge_in or w.in_rms > DOUBLETALK_RATIO * echo_median]
     active = [w for w in echo if w not in doubletalk]
     return Classified(active=active, quiet=quiet, faint=faint, doubletalk=doubletalk)
 
@@ -175,27 +186,36 @@ def measure(dump: Dump, outputs: list[bytes] | None = None) -> list[Window]:
     the dump format.
     """
     windows: list[Window] = []
-    frame_s = 0.0
     cap_index = 0
     ref_tail: list[float] = []
     bucket_in: list[bytes] = []
     bucket_out: list[bytes] = []
     bucket_ref_rms: list[float] = []
+    bucket_start_ns = 0
+    # Wall-clock anchoring: the pipeline only routes capture through the
+    # AEC while it is active, so frame counting compresses the session's
+    # idle stretches.  The recorded ns timestamps are what line up with
+    # the application's logs.
+    origin_ns = dump.events[0].ns if dump.events else 0
 
     def close_bucket() -> None:
         nonlocal bucket_in, bucket_out, bucket_ref_rms
         if not bucket_in:
             return
+        guard_ns = int(BARGE_IN_GUARD_S * 1e9)
         windows.append(
             Window(
                 index=len(windows),
-                start_s=frame_s - len(bucket_in) * 0.01,
+                start_s=(bucket_start_ns - origin_ns) / 1e9,
                 ref_rms=max(bucket_ref_rms) if bucket_ref_rms else 0.0,
                 in_rms=_rms(b"".join(bucket_in)),
                 out_rms=_rms(b"".join(bucket_out)),
+                near_barge_in=any(0 <= d - bucket_start_ns <= guard_ns for d in deactivations),
             )
         )
         bucket_in, bucket_out, bucket_ref_rms = [], [], []
+
+    deactivations = [e.ns for e in dump.events if e.kind == "act" and e.active is False]
 
     refs_since_cap = 0
     for event in dump.events:
@@ -218,10 +238,11 @@ def measure(dump: Dump, outputs: list[bytes] | None = None) -> list[Window]:
         refs_since_cap = 0
         out = outputs[cap_index] if outputs is not None else (event.out or b"")
         cap_index += 1
+        if not bucket_in:
+            bucket_start_ns = event.ns
         bucket_in.append(event.data)
         bucket_out.append(out)
         bucket_ref_rms.append(max(ref_tail) if ref_tail else 0.0)
-        frame_s += 0.01
         if len(bucket_in) >= WINDOW_FRAMES:
             close_bucket()
     close_bucket()
@@ -320,12 +341,14 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     dump = load_dump(args.dump)
+    caps = [e for e in dump.events if e.kind == "cap"]
     n_ref = sum(1 for e in dump.events if e.kind == "ref")
-    n_cap = len(dump.events) - n_ref
+    bytes_per_s = dump.sample_rate * dump.channels * dump.sample_width
+    capture_s = sum(len(e.data) for e in caps) / bytes_per_s if bytes_per_s else 0.0
     print(
         f"dump: {dump.provider} @ {dump.sample_rate} Hz — "
-        f"{n_cap} capture frames, {n_ref} reference frames "
-        f"({n_cap / 100:.1f}s of capture)"
+        f"{len(caps)} capture frames, {n_ref} reference frames "
+        f"({capture_s:.1f}s of capture)"
     )
 
     _print_report("recorded", measure(dump))
