@@ -54,10 +54,10 @@ clean:
 DOCS_DIR ?= ../roomkit-docs
 
 docs:
-	uv run mkdocs build --strict -f $(DOCS_DIR)/mkdocs.yml
+	uv run --extra docs mkdocs build --strict -f $(DOCS_DIR)/mkdocs.yml
 
 docs-serve:
-	uv run mkdocs serve -f $(DOCS_DIR)/mkdocs.yml
+	uv run --extra docs mkdocs serve -f $(DOCS_DIR)/mkdocs.yml
 
 # --- Website deployment ---
 
