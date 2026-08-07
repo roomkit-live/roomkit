@@ -163,12 +163,12 @@ class WebRTCAECProvider(AECProvider):
 
         logger.info(
             "WebRTC AEC init: sample_rate=%d, channels=%d, "
-            "frame=%d samples (%d ms), delay=%d ms, ns=%s, agc=%s",
+            "frame=%d samples (%d ms), delay=%s, ns=%s, agc=%s",
             sample_rate,
             channels,
             self._frame_samples,
             _WEBRTC_FRAME_MS,
-            stream_delay_ms,
+            f"{stream_delay_ms} ms" if stream_delay_ms else "auto",
             enable_ns,
             enable_agc,
         )
@@ -180,6 +180,34 @@ class WebRTCAECProvider(AECProvider):
     @property
     def name(self) -> str:
         return "webrtc_aec3"
+
+    @property
+    def stream_delay_ms(self) -> int:
+        """Configured render-to-capture delay in milliseconds.
+
+        A value of zero means that no platform delay has been supplied yet.
+        ``LocalAudioBackend`` uses this to seed AEC3 from the actual PortAudio
+        input and output latencies before playback begins.
+        """
+        return self._stream_delay_ms
+
+    def set_stream_delay_ms(self, delay_ms: int) -> None:
+        """Update the platform render-to-capture delay without resetting AEC."""
+        if delay_ms < 0:
+            raise ValueError("delay_ms must be non-negative")
+
+        with self._streams_lock:
+            self._stream_delay_ms = delay_ms
+            states = list(self._streams.values())
+
+        # A state may already exist when capture-only NS/AGC is enabled.
+        # Update it in place so automatic device calibration never discards
+        # the learned echo path or races process_stream().
+        for state in states:
+            with state.lock:
+                state.ap.set_stream_delay(delay_ms)
+
+        logger.info("WebRTC AEC stream delay set to %d ms", delay_ms)
 
     def process(self, frame: AudioFrame, stream: str) -> AudioFrame:
         """Remove echo from a captured (mic) audio frame."""

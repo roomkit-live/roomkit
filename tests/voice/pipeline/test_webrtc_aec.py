@@ -7,6 +7,8 @@ import sys
 from types import SimpleNamespace
 from unittest.mock import MagicMock, call, patch
 
+import pytest
+
 from roomkit.voice.audio_frame import AudioFrame
 
 # ---------------------------------------------------------------------------
@@ -84,6 +86,24 @@ class TestWebRTCAECProviderConstructor:
             call(enable_aec=True, enable_ns=False, enable_agc=False),
             call(enable_aec=False, enable_ns=True, enable_agc=True),
         ]
+
+    def test_runtime_stream_delay_updates_existing_processor(self):
+        mock_mod, _, processor = _make_mock_aec_module()
+        provider, _ = _make_provider(mock_mod)
+        provider.set_stream_active("s1", True)
+        provider.process(_make_frame(), "s1")
+
+        provider.set_stream_delay_ms(56)
+
+        assert provider.stream_delay_ms == 56
+        processor.set_stream_delay.assert_called_once_with(56)
+
+    def test_runtime_stream_delay_rejects_negative_value(self):
+        mock_mod, _, _ = _make_mock_aec_module()
+        provider, _ = _make_provider(mock_mod)
+
+        with pytest.raises(ValueError, match="non-negative"):
+            provider.set_stream_delay_ms(-1)
 
 
 class TestWebRTCAECProviderProcess:

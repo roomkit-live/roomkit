@@ -55,7 +55,7 @@ def test_openai_local_example_guards_initial_provider_vad_input() -> None:
 
     assert len(env_gets) == 1
     assert isinstance(env_gets[0].args[1], ast.Constant)
-    assert env_gets[0].args[1].value == "600"
+    assert env_gets[0].args[1].value == "2000"
     assert len(guard_configs) == 1
     assert any(keyword.arg == "allow_during_first_ms" for keyword in guard_configs[0].keywords)
 

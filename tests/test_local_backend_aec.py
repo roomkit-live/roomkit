@@ -8,6 +8,9 @@ Tests are skipped when sounddevice/numpy are not installed.
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+from unittest.mock import MagicMock
+
 import pytest
 
 sd = pytest.importorskip("sounddevice")
@@ -129,3 +132,35 @@ class TestAECFeedPlayed:
 
         backend._aec_feed_played(bytearray(b"\x03\x00" * 220), "alice")
         assert aec.reference_streams == ["alice"]
+
+
+class TestAECDelayAutoConfiguration:
+    def test_uses_combined_portaudio_input_and_output_latency(self):
+        aec = MagicMock()
+        aec.stream_delay_ms = 0
+        backend = LocalAudioBackend(aec=aec)
+        backend._rt_output_stream = SimpleNamespace(latency=0.0181)
+
+        backend._configure_aec_delay_from_streams(SimpleNamespace(latency=0.0378))
+
+        aec.set_stream_delay_ms.assert_called_once_with(56)
+
+    def test_preserves_explicit_stream_delay(self):
+        aec = MagicMock()
+        aec.stream_delay_ms = 80
+        backend = LocalAudioBackend(aec=aec)
+        backend._rt_output_stream = SimpleNamespace(latency=0.02)
+
+        backend._configure_aec_delay_from_streams(SimpleNamespace(latency=0.04))
+
+        aec.set_stream_delay_ms.assert_not_called()
+
+    def test_caps_portaudio_delay_at_webrtc_limit(self):
+        aec = MagicMock()
+        aec.stream_delay_ms = 0
+        backend = LocalAudioBackend(aec=aec)
+        backend._rt_output_stream = SimpleNamespace(latency=0.3)
+
+        backend._configure_aec_delay_from_streams(SimpleNamespace(latency=0.4))
+
+        aec.set_stream_delay_ms.assert_called_once_with(500)

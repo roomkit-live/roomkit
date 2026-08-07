@@ -142,11 +142,21 @@ class OpenAIRealtimeEventHandlersMixin(RealtimeVoiceProvider):
             await getattr(self, handler_name)(session, event)
 
     async def _on_speech_started(self, session: VoiceSession, event: dict[str, Any]) -> None:
-        logger.info("[VAD] speech_start (session %s)", session.id)
+        logger.info(
+            "[VAD] speech_start audio_start=%sms item=%s (session %s)",
+            event.get("audio_start_ms", "?"),
+            event.get("item_id", "?"),
+            session.id,
+        )
         await self._fire(self._speech_start_callbacks, session, label="speech_start")
 
     async def _on_speech_stopped(self, session: VoiceSession, event: dict[str, Any]) -> None:
-        logger.info("[VAD] speech_end (session %s)", session.id)
+        logger.info(
+            "[VAD] speech_end audio_end=%sms item=%s (session %s)",
+            event.get("audio_end_ms", "?"),
+            event.get("item_id", "?"),
+            session.id,
+        )
         await self._fire(self._speech_end_callbacks, session, label="speech_end")
 
     async def _on_audio_delta(self, session: VoiceSession, event: dict[str, Any]) -> None:

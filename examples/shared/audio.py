@@ -46,12 +46,12 @@ def build_aec(
             try:
                 stream_delay_ms = max(0, int(os.environ.get("AEC_DELAY_MS", "0")))
             except ValueError:
-                logger.warning("Invalid AEC_DELAY_MS; using automatic delay estimation")
+                logger.warning("Invalid AEC_DELAY_MS; using automatic delay configuration")
                 stream_delay_ms = 0
             logger.info(
-                "AEC enabled (WebRTC AEC3%s, delay=%dms)",
+                "AEC enabled (WebRTC AEC3%s, delay=%s)",
                 " + NS" if enable_ns else "",
-                stream_delay_ms,
+                f"{stream_delay_ms}ms" if stream_delay_ms else "auto",
             )
             return WebRTCAECProvider(
                 sample_rate=sample_rate,

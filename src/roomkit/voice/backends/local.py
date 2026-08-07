@@ -400,6 +400,7 @@ class LocalAudioBackend(VoiceBackend):
             device=self._input_device,
             callback=_audio_callback,
         )
+        self._configure_aec_delay_from_streams(stream)
         stream.start()
         self._input_streams[session.id] = stream
         logger.info(
@@ -1017,6 +1018,43 @@ class LocalAudioBackend(VoiceBackend):
     # -------------------------------------------------------------------------
     # AEC helpers
     # -------------------------------------------------------------------------
+
+    def _configure_aec_delay_from_streams(self, input_stream: Any) -> None:
+        """Seed an unset WebRTC delay from PortAudio's actual stream latencies."""
+        if self._aec is None or self._rt_output_stream is None:
+            return
+
+        setter = getattr(self._aec, "set_stream_delay_ms", None)
+        configured_delay = getattr(self._aec, "stream_delay_ms", None)
+        if not callable(setter) or configured_delay != 0:
+            return
+
+        try:
+            input_latency_ms = float(input_stream.latency) * 1000
+            output_latency_ms = float(self._rt_output_stream.latency) * 1000
+        except Exception:
+            logger.debug("AEC delay auto-configuration unavailable", exc_info=True)
+            return
+
+        # WebRTC clamps reported stream delay at 500 ms. The acoustic travel
+        # time for a local device is negligible next to PortAudio buffering,
+        # whose input + output latency is the relevant render/capture offset.
+        delay_ms = min(500, max(0, round(input_latency_ms + output_latency_ms)))
+        if delay_ms == 0:
+            return
+
+        try:
+            setter(delay_ms)
+        except Exception:
+            logger.warning("AEC delay auto-configuration failed", exc_info=True)
+            return
+
+        logger.info(
+            "AEC delay auto-configured from PortAudio: input=%.1fms output=%.1fms total=%dms",
+            input_latency_ms,
+            output_latency_ms,
+            delay_ms,
+        )
 
     def _aec_capture_paused(self, stream: str) -> bool:
         """Whether capture is paused, so reference time must pause as well."""

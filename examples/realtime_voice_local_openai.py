@@ -13,13 +13,14 @@ Environment variables:
     OPENAI_API_KEY      (required) OpenAI API key
     OPENAI_MODEL        Model name (default: the provider's own default)
     OPENAI_VOICE        Voice preset (default: alloy)
+    OPENAI_LANGUAGE     Optional input transcription language, e.g. fr
     SYSTEM_PROMPT       Custom system prompt
     AEC                 Echo cancellation: webrtc | speex | 1 (=webrtc) | 0
                         (default: webrtc)
     DENOISE             webrtc (default) | rnnoise | sherpa | 0 to disable
     AEC_DELAY_MS        Optional measured speaker-to-mic delay (default: auto)
     BARGE_IN_GUARD_MS   Hide capture from server VAD while AEC converges
-                        after playback starts (default: 600; 0 disables)
+                        after playback starts (default: 2000; 0 disables)
     MUTE_MIC            Mute mic during playback: 1 | 0 (default: 1).
                         Set 0 for full-duplex/barge-in; a calibrated AEC delay
                         and headphones or a well-controlled room are advised.
@@ -88,10 +89,10 @@ async def main() -> None:
     denoiser = build_denoiser(sample_rate, default="webrtc")
     debug_taps = build_debug_taps()
     try:
-        barge_in_guard_ms = max(0, int(os.environ.get("BARGE_IN_GUARD_MS", "600")))
+        barge_in_guard_ms = max(0, int(os.environ.get("BARGE_IN_GUARD_MS", "2000")))
     except ValueError:
-        logger.warning("Invalid BARGE_IN_GUARD_MS; using 600ms")
-        barge_in_guard_ms = 600
+        logger.warning("Invalid BARGE_IN_GUARD_MS; using 2000ms")
+        barge_in_guard_ms = 2000
     interruption = (
         InterruptionConfig(allow_during_first_ms=barge_in_guard_ms) if barge_in_guard_ms else None
     )
@@ -118,9 +119,16 @@ async def main() -> None:
         logger.info("OpenAI local playback guard: microphone muted while assistant speaks")
     else:
         logger.warning(
-            "OpenAI full-duplex enabled: server VAD may react to residual speaker echo; "
-            "calibrate AEC_DELAY_MS if false interruptions occur"
+            "OpenAI full-duplex enabled by MUTE_MIC=%r: server VAD may react to residual "
+            "speaker echo; unset MUTE_MIC for stable half-duplex",
+            mute_env,
         )
+
+    provider_config: dict[str, str] = {}
+    transcription_language = os.environ.get("OPENAI_LANGUAGE")
+    if transcription_language:
+        provider_config["language"] = transcription_language
+        logger.info("OpenAI input transcription language pinned to %s", transcription_language)
 
     transport = LocalAudioBackend(
         input_sample_rate=sample_rate,
@@ -155,6 +163,7 @@ async def main() -> None:
         "local-demo",
         "local-user",
         connection=None,
+        metadata={"provider_config": provider_config} if provider_config else None,
     )
 
     logger.info("OpenAI Realtime session started")
