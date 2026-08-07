@@ -103,3 +103,57 @@ async def test_partials_are_untouched_by_the_guard(provider, session, calls):
 
     partials = [(text, final) for text, _, final in calls]
     assert partials == [("Sal", False), ("Sal", False)]
+
+
+async def test_user_final_is_emitted_before_the_replys_first_chunk(provider, session, calls):
+    """Captured wire case: no VAD events, and one server message carries both
+    the reply's first transcript chunk and model_turn. The user final must go
+    out before ANY assistant transcription — emitted after, it reads
+    downstream as new user speech (phantom barge-in, duplicated user entry).
+    """
+    state = provider._sessions[session.id]
+    await provider._handle_transcription_chunk(session, "Salut, comment ça va ?", "user", False)
+    await provider._on_server_content(
+        session,
+        state,
+        SimpleNamespace(
+            input_transcription=None,
+            output_transcription=SimpleNamespace(text="Hey, salut", finished=False),
+            model_turn=object(),
+            interrupted=None,
+            turn_complete=None,
+        ),
+    )
+
+    assert calls == [
+        ("Salut, comment ça va ?", "user", False),
+        ("Salut, comment ça va ?", "user", True),
+        ("Hey, salut", "assistant", False),
+    ]
+    assert state.response_started is True
+
+
+async def test_reply_chunk_ahead_of_model_turn_still_flushes_the_user_first(
+    provider, session, calls
+):
+    """Same inversion when the first output transcript arrives in a message
+    of its own, before model_turn."""
+    state = provider._sessions[session.id]
+    await provider._handle_transcription_chunk(session, "Oui", "user", False)
+    await provider._on_server_content(
+        session,
+        state,
+        SimpleNamespace(
+            input_transcription=None,
+            output_transcription=SimpleNamespace(text="D'accord", finished=False),
+            model_turn=None,
+            interrupted=None,
+            turn_complete=None,
+        ),
+    )
+
+    assert calls == [
+        ("Oui", "user", False),
+        ("Oui", "user", True),
+        ("D'accord", "assistant", False),
+    ]

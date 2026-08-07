@@ -1361,16 +1361,26 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
         if tr and tr.text:
             await self._handle_transcription_chunk(session, tr.text, "user", bool(tr.finished))
 
+        out_tr = getattr(content, "output_transcription", None)
+        model_turn = getattr(content, "model_turn", None)
+
+        # The user's utterance is over the moment the model starts replying —
+        # flush it BEFORE any assistant transcription goes out. One server
+        # message can carry both the reply's first transcript chunk and
+        # model_turn; emitting that chunk ahead of the user final inverts the
+        # conversation downstream, where the late final reads as *new* user
+        # speech (phantom barge-in, duplicated user entry).
+        if not state.response_started and ((out_tr and out_tr.text) or model_turn):
+            await self._flush_transcription_buffer(session, "user")
+
         # Output transcription (model speech-to-text)
-        tr = getattr(content, "output_transcription", None)
-        if tr and tr.text:
+        if out_tr and out_tr.text:
             await self._handle_transcription_chunk(
-                session, tr.text, "assistant", bool(tr.finished)
+                session, out_tr.text, "assistant", bool(out_tr.finished)
             )
 
         # Model started generating
-        if getattr(content, "model_turn", None) and not state.response_started:
-            await self._flush_transcription_buffer(session, "user")
+        if model_turn and not state.response_started:
             state.response_started = True
             # New response: an assistant reply identical to the previous one
             # is now legitimate.

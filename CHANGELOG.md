@@ -25,6 +25,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Gemini Live emitted the reply's transcript ahead of the user's final.**
+  Without VAD events, Gemini only finalises the user transcript when the model
+  starts replying — and one server message can carry both the reply's first
+  transcript chunk and `model_turn`. The handler emitted that chunk before
+  flushing the user buffer, so the channel saw the conversation inverted: the
+  late user final read downstream as *new* user speech, producing a phantom
+  barge-in and a duplicated user entry. The user buffer now flushes before any
+  assistant transcription goes out.
 - **Gemini Live re-emitted final transcriptions as duplicates.** Gemini
   re-sends a finished utterance after the provider's buffer already flushed it
   at a lifecycle boundary (speech end, model turn); each re-emission reached
