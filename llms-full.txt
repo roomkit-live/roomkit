@@ -2073,6 +2073,7 @@ stt = DeepgramSTTProvider(DeepgramConfig(
 | Qwen3 | `Qwen3TTSProvider` | `Qwen3TTSConfig` | `roomkit[qwen-tts]` |
 | NeuTTS | `NeuTTSProvider` | `NeuTTSConfig` | `roomkit[neutts]` |
 | Grok TTS | `GrokTTSProvider` | `GrokTTSConfig` | xAI |
+| Gemini TTS | `GeminiTTSProvider` | `GeminiTTSConfig` | `roomkit[gemini]` |
 | Mock | `MockTTSProvider` | — | built-in |
 
 ```python
@@ -2319,23 +2320,41 @@ aec = SpeexAEC(sample_rate=16000, frame_size=160, filter_length=1024)
 ```
 
 The pipeline feeds TTS audio as reference to the AEC via `process_outbound()`.
+Reference audio is converted to the exact post-resampler capture format, and
+AEC state and playback activation are isolated per voice session.
+While playback is active, realtime backends keep the render timeline aligned
+with capture by feeding hardware silence during jitter gaps. Ending playback
+bypasses AEC but preserves its converged filter until the session ends.
 
 ### AGC (Automatic Gain Control)
 
-Normalizes audio volume levels.
+Normalizes audio volume levels. AGC does not remove background noise; it makes
+quiet and loud speech reach downstream denoising, VAD, and STT at a predictable
+level.
 
 ```python
-from roomkit.voice.pipeline.agc import AGCConfig
-from roomkit.voice.pipeline.agc.mock import MockAGCProvider
+from roomkit.voice.pipeline import AGCConfig, AudioPipelineConfig, SimpleAGCProvider
 
-agc = MockAGCProvider()
+agc = SimpleAGCProvider(AGCConfig(target_level_dbfs=-12.0))
+
+# Or let the pipeline create the built-in provider from the config:
+pipeline = AudioPipelineConfig(agc_config=AGCConfig(target_level_dbfs=-12.0))
 ```
+
+Gain state is isolated per stream, near-silence is not amplified, and a peak
+limiter prevents PCM clipping. Processed frames expose
+`metadata.gain_applied_db`. Backends declaring `NATIVE_AGC` skip this stage.
 
 ### Denoiser
 
 Removes background noise from audio.
 
 ```python
+# Continuous WebRTC NS (same optional dependency as WebRTC AEC)
+from roomkit.voice.pipeline import WebRTCNoiseSuppressorProvider
+
+denoiser = WebRTCNoiseSuppressorProvider(sample_rate=24000)
+
 # RNNoise (local, CPU-based)
 from roomkit.voice import get_rnnoise_denoiser_provider
 
@@ -2352,6 +2371,11 @@ SherpaDenoiser = get_sherpa_onnx_denoiser_provider()
 SherpaDenoiserConfig = get_sherpa_onnx_denoiser_config()
 denoiser = SherpaDenoiser(SherpaDenoiserConfig())
 ```
+
+WebRTC NS, RNNoise, and ai|coustics accept arbitrary caller chunk sizes without
+duplicating or dropping audio; an irregular stream uses a fixed one-native-block
+delay (10 ms for WebRTC NS and RNNoise). All built-in denoisers validate PCM
+format before creating native state and keep model history isolated per stream.
 
 ### Diarization
 
@@ -2436,8 +2460,18 @@ from roomkit.voice.interruption import InterruptionConfig, InterruptionStrategy
 config = InterruptionConfig(
     strategy=InterruptionStrategy.CONFIRMED,
     min_speech_ms=300,
+    allow_during_first_ms=600,
 )
 ```
+
+For `RealtimeVoiceChannel` with provider-side VAD, `allow_during_first_ms`
+guards the provider input after physical playback begins. RoomKit continues to
+process the real microphone signal through AEC, AGC, denoising, and recording,
+but forwards equal-duration PCM silence to the provider until the guard expires.
+This gives an acoustic echo canceller time to converge without letting residual
+onset echo trigger a server-side interruption. The guard requires a transport
+with playback callbacks; set it to `0` on a headset or another already-clean
+audio path when immediate barge-in is more important.
 
 | Strategy | When to Use |
 |----------|-------------|
@@ -2529,8 +2563,9 @@ await kit.attach_channel("voice-room", "realtime-voice", category=ChannelCategor
 | Provider | Class | Extra | Description |
 |----------|-------|-------|-------------|
 | Google Gemini Live | `GeminiLiveProvider` | `roomkit[realtime-gemini]` | Gemini 2.0 speech-to-speech |
-| OpenAI Realtime | `OpenAIRealtimeProvider` | `roomkit[realtime-openai]` | GPT-4o realtime audio |
+| OpenAI Realtime | `OpenAIRealtimeProvider` | `roomkit[realtime-openai]` | GPT Realtime audio (reasoning-capable) |
 | xAI Grok | `XAIRealtimeProvider` | — | Grok speech-to-speech |
+| Deepgram Voice Agent | `DeepgramAgentProvider` | `roomkit[realtime-deepgram]` | Nova listen + LLM think + Aura speak, each chosen separately |
 | Mock | `MockRealtimeProvider` | built-in | Testing |
 
 ```python
@@ -2538,7 +2573,7 @@ await kit.attach_channel("voice-room", "realtime-voice", category=ChannelCategor
 from roomkit.voice import get_openai_realtime_provider
 
 OpenAIRealtime = get_openai_realtime_provider()
-provider = OpenAIRealtime(api_key="sk-...", model="gpt-4o-realtime-preview")
+provider = OpenAIRealtime(api_key="sk-...")  # defaults to gpt-realtime-2.1
 
 # xAI Grok
 from roomkit.voice import get_xai_realtime_provider, get_xai_realtime_config
@@ -2650,7 +2685,7 @@ Some providers support session resumption after disconnection:
 # OpenAI Realtime supports session resumption
 provider = OpenAIRealtime(
     api_key="sk-...",
-    model="gpt-4o-realtime-preview",
+    model="gpt-realtime-2.1",
 )
 # Sessions automatically resume when possible
 ```
@@ -4870,6 +4905,7 @@ from roomkit.providers.sms.mock import MockSMSProvider
 from roomkit.voice import (
     get_deepgram_provider, get_deepgram_config,
     get_elevenlabs_provider, get_elevenlabs_config,
+    get_gemini_tts_provider, get_gemini_tts_config,
     get_sherpa_onnx_stt_provider, get_sherpa_onnx_tts_provider,
     get_local_audio_backend,
     get_fastrtc_backend,

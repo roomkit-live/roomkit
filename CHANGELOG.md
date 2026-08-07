@@ -7,96 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.43.0] — 2026-08-06
-
-### Fixed
-
-- **Realtime voice startup is now transactional.** Audio arriving while the
-  provider performs its handshake is retained in a bounded buffer and flushed
-  in order; a failed transport, provider, negotiated sample rate or client-ready
-  notification tears down every partial map, DSP stream, resampler, socket and
-  telemetry span. Raw PCM from WebSocket, SIP and FastRTC transports is now
-  normalised to `AudioFrame` before entering a configured pipeline, and that
-  channel-owned pipeline registers its transport callback only once instead of
-  duplicating delivery after every new session.
-
-- **Tool authorization now covers the payload that actually executes.** The
-  effective per-room/per-turn catalogue supplies argument schemas (not only
-  tools declared in the channel constructor), post-hook rewrites are validated
-  in classic, streaming and realtime-voice paths, and a provider cannot invoke
-  an undeclared name once a catalogue exists. Provider-executed tools carrying
-  `_result` no longer fire a misleading retroactive `BEFORE_TOOL_USE`; they are
-  observed through `ON_TOOL_CALL`, because their side effect has already
-  happened.
-
-- **Realtime provider teardown no longer strands live resources.** Clean peer
-  closes and fatal errors retire OpenAI and Deepgram connections and notify the
-  channel; recoverable Deepgram warnings stay active. OpenAI audio truncation is
-  reserved atomically under concurrent barge-ins, and failed `session.update`
-  sends roll back their connection state. ElevenLabs rejects duplicate in-flight
-  tool ids and exposes its fixed 16 kHz input/output contract instead of silently
-  accepting a mismatched channel clock.
-
-- **Local audio and AEC state are bounded and paired.** The realtime speaker
-  buffer is capped, playback start/stop cannot race a new enqueue, and every AEC
-  activation is matched by deactivation on interrupt, disconnect, reset and
-  pipeline teardown. A provider failure rolls activity bookkeeping back so a
-  later frame can retry rather than leaving cancellation permanently bypassed.
-
-- **The release script verifies the exact dirty file it permits.** A path merely
-  ending in `src/roomkit/_version.py` no longer bypasses the clean-tree gate, and
-  the real version file must contain exactly one valid assignment so unrelated
-  code cannot be swept into the version-only release commit.
-
-- **An ElevenLabs agent can finally call a tool.** `ElevenLabsRealtimeProvider`
-  logged that `tools=` was ignored and answered `submit_tool_result` with a
-  debug line, so a `tool_handler` on a `RealtimeVoiceChannel` was never
-  invoked — while the shipped example and the guide both described tool
-  calling as working. Two documents promising a behaviour no code performed.
-
-  The ElevenLabs SDK does not forward JSON schemas the way OpenAI Realtime
-  does: it runs **client tools** through a `ClientTools` registry keyed by
-  name. The provider now registers a handler per declared tool on that
-  registry and parks it on a future, so a call travels the normal RoomKit
-  path — `on_tool_call`, the channel's gates and hooks, `submit_tool_result` —
-  and the value the handler returns is what the agent receives. The names must
-  match the client tools declared on the agent, which is the one half of this
-  that lives on ElevenLabs' side rather than in RoomKit. A call nobody answers
-  within `tool_timeout_s` (new, default 30 s) is reported to the agent as an
-  error rather than hanging its turn.
-
-  The registry is per session and bound to the loop RoomKit runs on. Left to
-  itself the SDK starts its own loop in a private thread and would ship the
-  tool result from that thread onto a WebSocket owned by ours; and its
-  `end_session` stops the registry for good, so a shared instance would break
-  on the second connect.
-
-- **ElevenLabs no longer accepts a mid-session reconfigure it cannot honour.**
-  `supports_mid_session_reconfigure` was inherited as `True`, so activating a
-  skill mid-turn reached the base `reconfigure`, which disconnects and
-  reconnects. On ConvAI that ends the conversation server-side and opens a
-  different one, dropping the transcript and every pending `tool_call_id`. It
-  now reports `False`, which routes callers to the delivery modes meant for
-  providers whose session is fixed at connect.
-
-- **A turn on ElevenLabs now ends.** ConvAI sends the agent's text *before* its
-  synthesis, and the provider took that text for the end of the response:
-  `response_end` fired before the first audio chunk, the chunk then reopened
-  the response, and nothing ever closed it — the speaking indicator stayed lit
-  and the session never went idle. A response now opens on the first audio
-  chunk and closes once the stream has been quiet for `response_idle_ms`
-  (new, default 800 ms), with a tool call in flight holding the turn open and
-  an interruption closing it.
-
-- **A dead ElevenLabs session no longer looks healthy.** `start_session` only
-  spawns the task that opens the WebSocket, so a rejected key, an unknown
-  `agent_id` or a dropped connection surfaced nowhere: `connect` returned, the
-  session sat in `ACTIVE`, and the failure died inside an unobserved task. The
-  provider now supervises the session and reports `connection_failed` /
-  `session_ended` through `on_error`, with the session marked `ENDED`.
-  `connect` also waits until the SDK has installed its audio-input callback
-  before marking the session active, so speech arriving immediately after a
-  successful connection is not silently dropped.
+## [0.43.0] — 2026-08-07
 
 ### Added
 
@@ -225,6 +136,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   WebSocket base, so the xAI provider does not inherit a vision capability its
   models have not been verified to accept.
 
+- **The two pipeline stages you could configure but not run.** `AGCProvider`
+  and `DenoiserProvider` shipped ABCs and mocks, but every real implementation
+  needed something first — a native library, an ONNX model or a cloud key. A
+  quiet microphone or a noisy room meant adding a dependency to fix what the
+  audio path could already measure.
+
+  `SimpleAGCProvider` is dependency-free adaptive gain: it measures each frame's
+  RMS, walks a stream-local gain toward `AGCConfig.target_level_dbfs` on the
+  configured attack/release constants, and limits the peak before converting
+  back to PCM. Near-silence is left alone, so an idle mic's noise floor is not
+  amplified into apparent speech, and `metadata["gain_applied_db"]` reports what
+  was done. `silence_threshold_dbfs` and `min_gain_db` are tunable through
+  `AGCConfig.metadata`.
+
+  `WebRTCNoiseSuppressorProvider` runs WebRTC noise suppression on the inbound
+  path with no echo canceller attached, on the `webrtc-aec` extra roomkit
+  already ships — both bind the same upstream library.
+
+- **Two hooks for provider authors.** `AECProvider.set_stream_active()` toggles
+  cancellation for one playback stream rather than globally, and
+  `RealtimeVoiceProvider.truncate_audio()` lets a provider drop the unheard tail
+  of an interrupted response from its server-side context. Both have defaults
+  that preserve existing behaviour, so third-party providers need no change.
+
 ### Changed
 
 - **A broken skill now stops discovery instead of disappearing.**
@@ -264,6 +199,120 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `provider_config={"reasoning_effort": "minimal|low|medium|high|xhigh"}`,
   carried as the session's own `reasoning` field and omitted entirely when
   unset, so models without reasoning are untouched.
+
+- **`AudioPipelineConfig.agc_config` now builds the stage it describes.** It was
+  documented as an override and read by nothing: a pipeline that set
+  `agc_config` without also constructing an `agc` provider ran no gain control
+  at all, and said so nowhere. It now creates a `SimpleAGCProvider` from that
+  config when no explicit provider is given. Passing `agc=` is unaffected, and a
+  backend declaring `NATIVE_AGC` still skips the stage.
+
+- **BREAKING — `RNNoiseDenoiserProvider` accepts 16, 24 and 48 kHz only.** It
+  previously accepted any rate dividing evenly into 48000, which admitted 8 and
+  12 kHz into a path RNNoise's exact integer-ratio arithmetic does not exercise.
+  Those rates now raise `ValueError` at construction instead of degrading
+  quietly. An 8 kHz telephony leg needs a resampler stage ahead of the denoiser.
+
+- **An audio stage bypasses a frame it cannot process instead of mangling it.**
+  AGC and every denoiser now check a frame's sample rate, channel count and
+  sample width against what they were configured for, pass a mismatch through
+  untouched, and warn once per distinct format rather than once per frame.
+  Sizes that are not whole native chunks are buffered behind a fixed one-block
+  delay rather than dropped or passed through raw, so every input byte has
+  exactly one output byte and the timeline stays continuous. The configs
+  validate at construction too — `AGCConfig`, `AICousticsDenoiserConfig` (which
+  gains an explicit `sample_rate`) and the SherpaOnnx denoiser config raise
+  `ValueError` on levels, gains and time constants that cannot describe a stable
+  controller.
+
+### Fixed
+
+- **Realtime voice startup is now transactional.** Audio arriving while the
+  provider performs its handshake is retained in a bounded buffer and flushed
+  in order; a failed transport, provider, negotiated sample rate or client-ready
+  notification tears down every partial map, DSP stream, resampler, socket and
+  telemetry span. Raw PCM from WebSocket, SIP and FastRTC transports is now
+  normalised to `AudioFrame` before entering a configured pipeline, and that
+  channel-owned pipeline registers its transport callback only once instead of
+  duplicating delivery after every new session.
+
+- **Tool authorization now covers the payload that actually executes.** The
+  effective per-room/per-turn catalogue supplies argument schemas (not only
+  tools declared in the channel constructor), post-hook rewrites are validated
+  in classic, streaming and realtime-voice paths, and a provider cannot invoke
+  an undeclared name once a catalogue exists. Provider-executed tools carrying
+  `_result` no longer fire a misleading retroactive `BEFORE_TOOL_USE`; they are
+  observed through `ON_TOOL_CALL`, because their side effect has already
+  happened.
+
+- **Realtime provider teardown no longer strands live resources.** Clean peer
+  closes and fatal errors retire OpenAI and Deepgram connections and notify the
+  channel; recoverable Deepgram warnings stay active. OpenAI audio truncation is
+  reserved atomically under concurrent barge-ins, and failed `session.update`
+  sends roll back their connection state. ElevenLabs rejects duplicate in-flight
+  tool ids and exposes its fixed 16 kHz input/output contract instead of silently
+  accepting a mismatched channel clock.
+
+- **Local audio and AEC state are bounded and paired.** The realtime speaker
+  buffer is capped, playback start/stop cannot race a new enqueue, and every AEC
+  activation is matched by deactivation on interrupt, disconnect, reset and
+  pipeline teardown. A provider failure rolls activity bookkeeping back so a
+  later frame can retry rather than leaving cancellation permanently bypassed.
+
+- **The release script verifies the exact dirty file it permits.** A path merely
+  ending in `src/roomkit/_version.py` no longer bypasses the clean-tree gate, and
+  the real version file must contain exactly one valid assignment so unrelated
+  code cannot be swept into the version-only release commit.
+
+- **An ElevenLabs agent can finally call a tool.** `ElevenLabsRealtimeProvider`
+  logged that `tools=` was ignored and answered `submit_tool_result` with a
+  debug line, so a `tool_handler` on a `RealtimeVoiceChannel` was never
+  invoked — while the shipped example and the guide both described tool
+  calling as working. Two documents promising a behaviour no code performed.
+
+  The ElevenLabs SDK does not forward JSON schemas the way OpenAI Realtime
+  does: it runs **client tools** through a `ClientTools` registry keyed by
+  name. The provider now registers a handler per declared tool on that
+  registry and parks it on a future, so a call travels the normal RoomKit
+  path — `on_tool_call`, the channel's gates and hooks, `submit_tool_result` —
+  and the value the handler returns is what the agent receives. The names must
+  match the client tools declared on the agent, which is the one half of this
+  that lives on ElevenLabs' side rather than in RoomKit. A call nobody answers
+  within `tool_timeout_s` (new, default 30 s) is reported to the agent as an
+  error rather than hanging its turn.
+
+  The registry is per session and bound to the loop RoomKit runs on. Left to
+  itself the SDK starts its own loop in a private thread and would ship the
+  tool result from that thread onto a WebSocket owned by ours; and its
+  `end_session` stops the registry for good, so a shared instance would break
+  on the second connect.
+
+- **ElevenLabs no longer accepts a mid-session reconfigure it cannot honour.**
+  `supports_mid_session_reconfigure` was inherited as `True`, so activating a
+  skill mid-turn reached the base `reconfigure`, which disconnects and
+  reconnects. On ConvAI that ends the conversation server-side and opens a
+  different one, dropping the transcript and every pending `tool_call_id`. It
+  now reports `False`, which routes callers to the delivery modes meant for
+  providers whose session is fixed at connect.
+
+- **A turn on ElevenLabs now ends.** ConvAI sends the agent's text *before* its
+  synthesis, and the provider took that text for the end of the response:
+  `response_end` fired before the first audio chunk, the chunk then reopened
+  the response, and nothing ever closed it — the speaking indicator stayed lit
+  and the session never went idle. A response now opens on the first audio
+  chunk and closes once the stream has been quiet for `response_idle_ms`
+  (new, default 800 ms), with a tool call in flight holding the turn open and
+  an interruption closing it.
+
+- **A dead ElevenLabs session no longer looks healthy.** `start_session` only
+  spawns the task that opens the WebSocket, so a rejected key, an unknown
+  `agent_id` or a dropped connection surfaced nowhere: `connect` returned, the
+  session sat in `ACTIVE`, and the failure died inside an unobserved task. The
+  provider now supervises the session and reports `connection_failed` /
+  `session_ended` through `on_error`, with the session marked `ENDED`.
+  `connect` also waits until the SDK has installed its audio-input callback
+  before marking the session active, so speech arriving immediately after a
+  successful connection is not silently dropped.
 
 ### Security
 
