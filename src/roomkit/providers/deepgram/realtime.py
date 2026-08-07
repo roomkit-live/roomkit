@@ -83,6 +83,10 @@ class _SessionState:
     callbacks_ready: bool = False
     deferred_messages: list[Any] = field(default_factory=list)
     deferred_bytes: int = 0
+    # The agent's transcript for the turn in progress.  Deepgram delivers
+    # ConversationText sentence by sentence; sentences accumulate here (fired
+    # as delta partials) and one full final goes out when the turn closes.
+    assistant_text: str = ""
 
 
 class DeepgramAgentProvider(RealtimeVoiceProvider):
@@ -454,6 +458,9 @@ class DeepgramAgentProvider(RealtimeVoiceProvider):
     async def _on_user_started_speaking(self, state: _SessionState, event: dict[str, Any]) -> None:
         # The agent may still be generating, but from here on RoomKit treats
         # the turn as the user's — the channel flushes playback on this.
+        # Close the agent's transcript first so its entry lands complete
+        # before the user's turn opens.
+        await self._flush_assistant_transcript(state)
         state.responding = False
         await self._fire(self._speech_start_callbacks, state.session, label="speech_start")
 
@@ -481,6 +488,7 @@ class DeepgramAgentProvider(RealtimeVoiceProvider):
         await self._begin_response(state)
 
     async def _on_agent_audio_done(self, state: _SessionState, event: dict[str, Any]) -> None:
+        await self._flush_assistant_transcript(state)
         state.responding = False
         state.audio_started = False
         await self._fire(self._response_end_callbacks, state.session, label="response_end")
@@ -505,25 +513,62 @@ class DeepgramAgentProvider(RealtimeVoiceProvider):
             await self._finalize_session(state.session.id, state)
 
     async def _on_conversation_text(self, state: _SessionState, event: dict[str, Any]) -> None:
-        """Emit a final transcript, and close the user's turn when it is theirs.
+        """Emit transcripts, translating Deepgram's cadence to the contract.
 
-        Deepgram has no "user stopped speaking" event: the user's transcript *is*
-        the end of their turn. Without firing speech_end here the channel would
-        hold ``_user_speaking`` forever and never go idle again.
+        The user's transcript arrives once per utterance and *is* the end of
+        their turn (Deepgram has no "user stopped speaking" event; without
+        firing speech_end here the channel would hold ``_user_speaking``
+        forever).  The agent's transcript, though, arrives *sentence by
+        sentence* — final-only on the wire.  Fired as-is, every sentence
+        became its own final entry downstream (RoomKit UI rendered a
+        paragraph gap per sentence).  Sentences therefore accumulate as
+        delta partials, and one full final closes the turn — at
+        ``AgentAudioDone``, on a barge-in, or when the session ends.
         """
         role = str(event.get("role") or "assistant")
         content = str(event.get("content") or "")
         if role == "user":
             await self._fire(self._speech_end_callbacks, state.session, label="speech_end")
-        if content:
-            await self._fire(
-                self._transcription_callbacks,
-                state.session,
-                content,
-                role,
-                True,
-                label="transcription",
-            )
+            # A user transcript proves the agent's turn is over even if
+            # AgentAudioDone was lost — close the pending transcript first.
+            await self._flush_assistant_transcript(state)
+            if content:
+                await self._fire(
+                    self._transcription_callbacks,
+                    state.session,
+                    content,
+                    role,
+                    True,
+                    label="transcription",
+                )
+            return
+        if not content:
+            return
+        delta = (" " if state.assistant_text else "") + content
+        state.assistant_text += delta
+        await self._fire(
+            self._transcription_callbacks,
+            state.session,
+            delta,
+            role,
+            False,
+            label="transcription",
+        )
+
+    async def _flush_assistant_transcript(self, state: _SessionState) -> None:
+        """Fire the accumulated agent transcript as the turn's one final."""
+        if not state.assistant_text:
+            return
+        text = state.assistant_text
+        state.assistant_text = ""
+        await self._fire(
+            self._transcription_callbacks,
+            state.session,
+            text,
+            "assistant",
+            True,
+            label="transcription",
+        )
 
     async def _on_function_call_request(self, state: _SessionState, event: dict[str, Any]) -> None:
         for function in event.get("functions") or []:
@@ -764,6 +809,10 @@ class DeepgramAgentProvider(RealtimeVoiceProvider):
         if self._states.get(session_id) is not state:
             return
         self._states.pop(session_id, None)
+        with contextlib.suppress(Exception):
+            # A session dying mid-response still owes its consumers the
+            # final for whatever the agent managed to say.
+            await self._flush_assistant_transcript(state)
         state.responding = False
         state.audio_started = False
         state.pending_calls.clear()

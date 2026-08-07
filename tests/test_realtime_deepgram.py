@@ -405,8 +405,17 @@ class TestInboundDispatch:
         provider.on_speech_end(speech_end)
         ws = await _connect(provider, session)
 
+        # Sentences stream as delta partials; AgentAudioDone closes the turn
+        # with one full final (Deepgram delivers ConversationText sentence by
+        # sentence — fired as finals, every sentence became its own entry).
         ws.push(json.dumps({"type": "ConversationText", "role": "assistant", "content": "Salut"}))
-        assert await transcription.wait() == (session, "Salut", "assistant", True)
+        assert await transcription.wait() == (session, "Salut", "assistant", False)
+        ws.push(
+            json.dumps({"type": "ConversationText", "role": "assistant", "content": "Ça va ?"})
+        )
+        assert await transcription.wait() == (session, " Ça va ?", "assistant", False)
+        ws.push(json.dumps({"type": "AgentAudioDone"}))
+        assert await transcription.wait() == (session, "Salut Ça va ?", "assistant", True)
         assert speech_end.calls == []
 
         await provider.disconnect(session)
@@ -420,8 +429,13 @@ class TestInboundDispatch:
         provider.on_speech_end(speech_end)
         ws = await _connect(provider, session)
 
+        # A pending agent transcript is finalized before the user's lands.
+        ws.push(json.dumps({"type": "ConversationText", "role": "assistant", "content": "Hop."}))
+        assert await transcription.wait() == (session, "Hop.", "assistant", False)
         ws.push(json.dumps({"type": "ConversationText", "role": "user", "content": "Bonjour"}))
         assert await transcription.wait() == (session, "Bonjour", "user", True)
+        # …and the pending agent transcript was finalized just before it.
+        assert transcription.calls[-2] == (session, "Hop.", "assistant", True)
         # Deepgram has no speech-stopped event; the user's transcript ends the turn.
         assert speech_end.calls == [(session,)]
 
@@ -438,6 +452,24 @@ class TestInboundDispatch:
         ws.push(json.dumps({"type": "UserStartedSpeaking"}))
         assert await speech_start.wait() == (session,)
         assert provider.is_responding(session.id) is False
+
+    async def test_barge_in_finalizes_the_agent_transcript_first(
+        self, provider: DeepgramAgentProvider, session: VoiceSession
+    ) -> None:
+        transcription = _Recorder()
+        speech_start = _Recorder()
+        provider.on_transcription(transcription)
+        provider.on_speech_start(speech_start)
+        ws = await _connect(provider, session)
+
+        ws.push(
+            json.dumps({"type": "ConversationText", "role": "assistant", "content": "Je disais"})
+        )
+        assert await transcription.wait() == (session, "Je disais", "assistant", False)
+        ws.push(json.dumps({"type": "UserStartedSpeaking"}))
+        # The truncated agent entry completes before the user's turn opens.
+        assert await transcription.wait() == (session, "Je disais", "assistant", True)
+        assert await speech_start.wait() == (session,)
 
         await provider.disconnect(session)
 

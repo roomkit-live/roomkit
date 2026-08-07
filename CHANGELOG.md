@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.44.0] — 2026-08-07
+
 ### Added
 
 - **Deepgram managed-LLM prompt cap — configurable, and honest about what
@@ -127,8 +129,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   recording becomes speaker turns, enters a room, and an AI channel writes the
   minutes.
 
-### Added
-
 - **Offline AEC bench — `scripts/aec_bench.py`.** The upcoming echo-path
   work needs a judge that is not an ear: the bench consumes an
   `aec-dump/1` capture (a JSONL event stream preserving, in arrival
@@ -146,6 +146,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   UI's `AECDumpRecorder`) — the format header is the contract.
 
 ### Fixed
+
+- **A realtime session's audio-level hooks no longer log tracebacks on
+  shutdown.** Levels stream off the audio thread until the very last frame,
+  so a few `ON_INPUT_AUDIO_LEVEL`/`ON_OUTPUT_AUDIO_LEVEL` firings are always
+  in flight when `close()` seals the framework's resources. Each one then
+  failed inside its context build and logged a full `ERROR` traceback —
+  every clean shutdown with a level hook registered ended on alarm bells
+  that meant nothing. A level during teardown carries nothing: the hook
+  path now checks the seal and skips, and a firing that slips past the
+  check — sealing races it by construction — is recognised as the framework
+  closing and logged at `DEBUG`.
 
 - **xAI's streaming input transcription no longer arrives as a pile of
   "finals".** Grok's realtime server re-emits
@@ -5010,7 +5021,8 @@ See entries `0.7.0a1` through `0.7.0a18` below.
 - `STTProvider.transcribe()` returns `TranscriptionResult` (Phase 3.1)
 - Framework event names enriched with payloads (Phase 4)
 
-[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.43.0...HEAD
+[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.44.0...HEAD
+[0.44.0]: https://github.com/roomkit-live/roomkit/compare/v0.43.0...v0.44.0
 [0.43.0]: https://github.com/roomkit-live/roomkit/compare/v0.42.1...v0.43.0
 [0.42.1]: https://github.com/roomkit-live/roomkit/compare/v0.42.0...v0.42.1
 [0.42.0]: https://github.com/roomkit-live/roomkit/compare/v0.41.4...v0.42.0
