@@ -178,6 +178,10 @@ class ElevenLabsRealtimeProvider(RealtimeVoiceProvider):
         tts_override: dict[str, Any] = {}
         if voice:
             tts_override["voice_id"] = voice
+        if pc.get("speed") is not None:
+            # ElevenLabs accepts 0.7-1.2; the agent must whitelist the speed
+            # override in its security settings or the session is rejected.
+            tts_override["speed"] = min(1.2, max(0.7, float(pc["speed"])))
         if tts_override:
             config_override["tts"] = tts_override
 

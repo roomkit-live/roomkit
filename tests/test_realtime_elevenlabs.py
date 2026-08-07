@@ -48,6 +48,7 @@ class _FakeAsyncConversation:
     ) -> None:
         self.audio_interface = audio_interface
         self.callback_end_session = callback_end_session
+        self.config = kwargs.get("config")
         self.started = asyncio.Event()
         self.ended = asyncio.Event()
         self.__class__.instances.append(self)
@@ -182,6 +183,29 @@ class TestConnectReadiness:
         assert session.state == VoiceSessionState.ACTIVE
         await provider.send_audio(session, b"ready")
         assert input_callback.await_args_list == [call(b"early"), call(b"ready")]
+        await provider.disconnect(session)
+
+    async def test_connect_clamps_voice_speed_into_the_tts_override(
+        self,
+        provider: ElevenLabsRealtimeProvider,
+        session: VoiceSession,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        _install_fake_sdk(monkeypatch)
+
+        connect_task = asyncio.create_task(
+            provider.connect(session, voice="voice-1", provider_config={"speed": 2.0})
+        )
+        while not _FakeAsyncConversation.instances:
+            await asyncio.sleep(0)
+        conversation = _FakeAsyncConversation.instances[0]
+        await conversation.started.wait()
+        await conversation.audio_interface.start(AsyncMock())
+        await connect_task
+
+        assert conversation.config is not None
+        tts = conversation.config.conversation_config_override["tts"]
+        assert tts == {"voice_id": "voice-1", "speed": 1.2}
         await provider.disconnect(session)
 
     async def test_connect_surfaces_a_background_failure_before_readiness(
