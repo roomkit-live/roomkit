@@ -781,6 +781,13 @@ class HelpersMixin:
             )
 
             rewritten = hook_result.metadata.get("arguments")
+            if "arguments" in hook_result.metadata and not isinstance(rewritten, dict):
+                logger.error(
+                    "BEFORE_TOOL_USE hook returned non-object arguments for %s — "
+                    "denying tool call",
+                    event.name,
+                )
+                return BeforeToolDecision(allowed=False)
             return BeforeToolDecision(
                 allowed=hook_result.allowed,
                 arguments=rewritten if isinstance(rewritten, dict) else None,

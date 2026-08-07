@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 from collections.abc import AsyncIterator
@@ -484,6 +485,7 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                             handler = self._external_tool_handler
                             # Extract result from arguments if embedded by proxy
                             args = dict(event.arguments)
+                            provider_already_executed = "_result" in args
                             tool_result = args.pop("_result", None)
                             tool_is_error = args.pop("_is_error", False)
 
@@ -502,19 +504,34 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                                 )
 
                             t0_ext = time.monotonic()
-                            decision = await handler.process_tool_call(
-                                event.name,
-                                args,
-                                tool_call_id=event.id,
-                                room_id=room_id,
-                            )
-                            # Use decision.result if handler provided one
-                            # (e.g. human input answer), otherwise use
-                            # the result embedded by the external provider.
                             effective_result = tool_result or ""
-                            if decision and decision.result is not None:
-                                effective_result = decision.result
-                                tool_is_error = False
+                            if not provider_already_executed:
+                                # Some external transports expose a pending call
+                                # through the stream. Only those calls can still
+                                # be gated or rewritten. A proxy that embeds
+                                # ``_result`` has already performed the side
+                                # effect; firing BEFORE_TOOL_USE then would give
+                                # a dangerous, retroactive illusion of control.
+                                decision = await handler.process_tool_call(
+                                    event.name,
+                                    args,
+                                    tool_call_id=event.id,
+                                    room_id=room_id,
+                                )
+                                if not decision.approved:
+                                    effective_result = json.dumps(
+                                        {
+                                            "error": decision.reason
+                                            or f"Tool '{event.name}' was denied"
+                                        }
+                                    )
+                                    tool_is_error = True
+                                else:
+                                    if decision.modified_input is not None:
+                                        args = decision.modified_input
+                                    if decision.result is not None:
+                                        effective_result = decision.result
+                                        tool_is_error = False
                             # Fire on_tool_result with actual result
                             await handler.on_tool_result(
                                 event.name,
@@ -601,27 +618,52 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
 
                 _saw_tool_call_any = True
 
-                # External tools: provider executed them internally.
-                # If ExternalToolHandler is set, hooks were already fired
-                # inline during streaming (see StreamToolCall handling above).
-                # Only fire hooks here if no handler was set.
+                # Calls without a local handler are owned by an external
+                # provider. An ExternalToolHandler observes them inline above.
+                # Without one, dispatch the correct lifecycle hook directly:
+                # BEFORE only for a still-pending call, ON_TOOL_CALL when the
+                # provider embedded ``_result`` after executing it.
                 if self._tool_handler is None:
                     if self._external_tool_handler is None:
-                        # No handler — fire hooks directly for observability
                         for tc in tool_calls:
-                            if self._before_tool_call_hook is not None:
-                                from roomkit.models.tool_call import ToolCallEvent
+                            from roomkit.models.tool_call import ToolCallEvent
 
-                                pre_event = ToolCallEvent(
-                                    channel_id=self.channel_id,
-                                    channel_type=ChannelType.AI,
-                                    tool_call_id=tc.id,
-                                    name=tc.name,
-                                    arguments=tc.arguments,
-                                    result=None,
-                                    room_id=room_id,
+                            external_args = dict(tc.arguments)
+                            provider_already_executed = "_result" in external_args
+                            external_result = external_args.pop("_result", None)
+                            external_args.pop("_is_error", None)
+                            external_event = ToolCallEvent(
+                                channel_id=self.channel_id,
+                                channel_type=ChannelType.AI,
+                                tool_call_id=tc.id,
+                                name=tc.name,
+                                arguments=external_args,
+                                result=(
+                                    external_result
+                                    if isinstance(external_result, (str, list))
+                                    else json.dumps(external_result)
+                                    if external_result is not None
+                                    else None
+                                ),
+                                room_id=room_id,
+                            )
+                            if provider_already_executed and self._tool_call_hook is not None:
+                                await self._tool_call_hook(external_event)
+                            elif (
+                                not provider_already_executed
+                                and self._before_tool_call_hook is not None
+                            ):
+                                await self._before_tool_call_hook(
+                                    ToolCallEvent(
+                                        channel_id=self.channel_id,
+                                        channel_type=ChannelType.AI,
+                                        tool_call_id=tc.id,
+                                        name=tc.name,
+                                        arguments=external_args,
+                                        result=None,
+                                        room_id=room_id,
+                                    )
                                 )
-                                await self._before_tool_call_hook(pre_event)
 
                     # External tools were handled inline during streaming.
                     # Persistence markers were yielded alongside hook callbacks.
@@ -668,7 +710,7 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                         tool_id=tc.id,
                         arguments=tc.arguments,
                     )
-                result_parts, duration_ms = await self._execute_round_tools(
+                result_parts, duration_ms, executed_arguments = await self._execute_round_tools(
                     context,
                     tool_calls,
                     telemetry,
@@ -685,7 +727,7 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                     yield ToolCallEndMarker(
                         tool_name=tc.name,
                         tool_id=tc.id,
-                        arguments=tc.arguments,
+                        arguments=executed_arguments.get(tc.id, tc.arguments),
                         result=result_val,
                         status="failed" if is_error else "completed",
                         duration_ms=duration_ms,

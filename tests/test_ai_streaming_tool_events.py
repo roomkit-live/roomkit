@@ -12,7 +12,9 @@ from __future__ import annotations
 
 import asyncio
 from typing import Any
+from unittest.mock import AsyncMock
 
+from roomkit import HookExecution, HookResult, HookTrigger, RoomContext, ToolCallEvent
 from roomkit.channels.ai import AIChannel
 from roomkit.core.framework import RoomKit
 from roomkit.models.delivery import InboundMessage
@@ -193,7 +195,10 @@ async def test_external_handler_streaming_publishes_tool_events() -> None:
         ],
     )
     kit = RoomKit()
-    ai = AIChannel("ai1", provider=provider, external_tool_handler=PolicyExternalToolHandler())
+    handler = PolicyExternalToolHandler()
+    process_tool_call = AsyncMock(wraps=handler.process_tool_call)
+    handler.process_tool_call = process_tool_call  # type: ignore[method-assign]
+    ai = AIChannel("ai1", provider=provider, external_tool_handler=handler)
 
     received = await _run_turn(kit, ai)
     starts, ends = _tool_events(received)
@@ -205,6 +210,52 @@ async def test_external_handler_streaming_publishes_tool_events() -> None:
     ]
     assert len(ends) == 1
     assert ends[0].data["tool_calls"] == [{"id": "tc1", "name": "Bash", "result": "file.txt"}]
+    # The provider embedded ``_result``, so the side effect already happened.
+    # A retroactive BEFORE_TOOL_USE decision would be misleading and unsafe.
+    process_tool_call.assert_not_awaited()
+
+    await kit.close()
+
+
+async def test_provider_executed_tool_never_fires_retroactive_before_hook() -> None:
+    """An embedded result is observable, but can no longer be authorized."""
+    provider = MockAIProvider(
+        streaming=True,
+        ai_responses=[
+            AIResponse(
+                content="done",
+                finish_reason="stop",
+                tool_calls=[
+                    AIToolCall(
+                        id="tc1",
+                        name="Write",
+                        arguments={"path": "/tmp/out", "_result": "written"},
+                    )
+                ],
+            )
+        ],
+    )
+    kit = RoomKit()
+    ai = AIChannel("ai1", provider=provider)
+    before_events: list[ToolCallEvent] = []
+    observed_events: list[ToolCallEvent] = []
+
+    @kit.hook(HookTrigger.BEFORE_TOOL_USE, execution=HookExecution.SYNC)
+    async def before(event: ToolCallEvent, ctx: RoomContext) -> HookResult:
+        before_events.append(event)
+        return HookResult.block("too late")
+
+    @kit.hook(HookTrigger.ON_TOOL_CALL, execution=HookExecution.SYNC)
+    async def observe(event: ToolCallEvent, ctx: RoomContext) -> HookResult:
+        observed_events.append(event)
+        return HookResult.allow()
+
+    await _run_turn(kit, ai)
+
+    assert before_events == []
+    assert len(observed_events) == 1
+    assert observed_events[0].arguments == {"path": "/tmp/out"}
+    assert observed_events[0].result == "written"
 
     await kit.close()
 
@@ -217,7 +268,6 @@ async def test_no_streaming_target_error_fires_on_error() -> None:
     from collections.abc import AsyncIterator
 
     from roomkit.core.hooks import HookRegistration
-    from roomkit.models.context import RoomContext
     from roomkit.models.enums import HookExecution, HookTrigger
     from roomkit.models.event import RoomEvent
     from roomkit.providers.ai.base import AIContext, StreamEvent

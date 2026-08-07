@@ -265,7 +265,7 @@ class RealtimeToolsMixin:
                 # Pre-execution gate (parity with the classic AI path): validate
                 # arguments and run BEFORE_TOOL_USE BEFORE the handler, so a block
                 # prevents the side effect instead of only hiding the result.
-                denial = await self._authorize_realtime_tool(
+                arguments, denial = await self._authorize_realtime_tool(
                     name, arguments, call_id, room_id, session
                 )
                 if denial is not None:
@@ -388,6 +388,18 @@ class RealtimeToolsMixin:
                 return params if isinstance(params, dict) else None
         return None
 
+    def _is_declared_realtime_tool(self, name: str, session: VoiceSession) -> bool:
+        """Return whether *name* is in a non-empty session tool catalogue.
+
+        An empty catalogue retains the historical hook-only/dynamic-handler
+        mode. Once declarations exist, however, a provider cannot invent an
+        undeclared name and reach a generic dispatcher.
+        """
+        tools = self._session_tools.get(session.id) or self._tools or []
+        if not tools:
+            return True
+        return any(isinstance(tool, dict) and tool.get("name") == name for tool in tools)
+
     async def _authorize_realtime_tool(
         self,
         name: str,
@@ -395,26 +407,33 @@ class RealtimeToolsMixin:
         call_id: str,
         room_id: str | None,
         session: VoiceSession,
-    ) -> str | None:
+    ) -> tuple[dict[str, Any], str | None]:
         """Pre-execution gate for realtime tool calls (parity with the classic
         AI path).
 
         Validates arguments against the declared schema and runs BEFORE_TOOL_USE
         so a block prevents the side effect rather than only hiding the result.
-        Returns a denial result string to reject the call, or ``None`` to
-        proceed with the handler.
+        Returns the effective arguments and an optional denial result. Hooks
+        may replace the arguments through ``metadata["arguments"]``; the
+        replacement is validated before it can reach the handler.
         """
+        if not self._is_declared_realtime_tool(name, session):
+            logger.warning("Realtime provider requested undeclared tool %s", name)
+            return arguments, json.dumps({"error": f"Tool '{name}' is not declared"})
+
         # Argument validation against the declared schema (fail-closed).
         params = self._tool_parameters(name, session)
         if params is not None:
             arg_error = validate_tool_arguments(params, arguments)
             if arg_error is not None:
                 logger.warning("Realtime tool %s arguments rejected: %s", name, arg_error)
-                return json.dumps({"error": f"Invalid arguments for '{name}': {arg_error}"})
+                return arguments, json.dumps(
+                    {"error": f"Invalid arguments for '{name}': {arg_error}"}
+                )
 
         # BEFORE_TOOL_USE gate (needs a framework + room to run room hooks).
         if self._framework is None or not room_id:
-            return None
+            return arguments, None
         from roomkit.models.tool_call import ToolCallEvent
 
         pre_event = ToolCallEvent(
@@ -436,10 +455,32 @@ class RealtimeToolsMixin:
         )
         if not hook_result.allowed:
             logger.info("Realtime tool %s denied by BEFORE_TOOL_USE hook", name)
-            return json.dumps(
+            return arguments, json.dumps(
                 {"error": hook_result.reason or f"Tool '{name}' denied by pre-execution hook."}
             )
-        return None
+
+        rewritten = hook_result.metadata.get("arguments")
+        if "arguments" in hook_result.metadata and not isinstance(rewritten, dict):
+            logger.error(
+                "BEFORE_TOOL_USE hook returned non-object arguments for realtime tool %s "
+                "— denying tool call",
+                name,
+            )
+            return arguments, json.dumps(
+                {"error": f"Invalid rewritten arguments for '{name}': expected an object"}
+            )
+
+        effective_arguments = rewritten if isinstance(rewritten, dict) else arguments
+        if params is not None:
+            arg_error = validate_tool_arguments(params, effective_arguments)
+            if arg_error is not None:
+                logger.warning(
+                    "Realtime tool %s post-hook arguments rejected: %s", name, arg_error
+                )
+                return effective_arguments, json.dumps(
+                    {"error": f"Invalid rewritten arguments for '{name}': {arg_error}"}
+                )
+        return effective_arguments, None
 
     async def _fire_tool_hook(
         self,

@@ -191,7 +191,7 @@ async def test_force_stop_ends_loop_when_model_ignores_guard() -> None:
         executions += 1
         return json.dumps({"ok": True})
 
-    args = {"command": ""}
+    args = {"value": ""}
     # The model insists on the same call far more than the guard tolerates;
     # after force-stop it must produce the final answer.
     repeats = [_same_call_response(f"t{i}", args) for i in range(10)]

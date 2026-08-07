@@ -11,6 +11,7 @@ from roomkit.models.enums import ChannelCategory, ChannelType
 from roomkit.models.room import Room
 from roomkit.providers.ai.base import (
     AIResponse,
+    AITool,
     AIToolCall,
     StreamDone,
     StreamEvent,
@@ -18,6 +19,7 @@ from roomkit.providers.ai.base import (
     StreamToolCall,
 )
 from roomkit.providers.ai.mock import MockAIProvider
+from roomkit.tools.external import BeforeToolDecision
 from tests.conftest import make_event
 
 
@@ -468,6 +470,62 @@ class TestToolCallEphemeralEvents:
         assert ends[0].tool_id == "tc1"
         assert ends[0].status == "completed"
         assert ends[0].duration_ms >= 0
+
+    async def test_end_marker_records_post_hook_arguments_that_executed(self) -> None:
+        """Persistence keeps the request marker and the actual execution distinct."""
+        from roomkit.models.streaming import ToolCallEndMarker, ToolCallStartMarker
+
+        seen: list[dict[str, Any]] = []
+
+        async def tool_handler(name: str, args: dict[str, Any]) -> str:
+            seen.append(args)
+            return "ok"
+
+        async def rewrite(_event: Any) -> BeforeToolDecision:
+            return BeforeToolDecision(allowed=True, arguments={"q": "redacted-value"})
+
+        provider = MockAIProvider(
+            ai_responses=[
+                AIResponse(
+                    content="",
+                    finish_reason="tool_calls",
+                    tool_calls=[AIToolCall(id="tc1", name="search", arguments={"q": "token"})],
+                ),
+                AIResponse(content="done", finish_reason="stop"),
+            ],
+            streaming=True,
+        )
+        ch = AIChannel(
+            "ai1",
+            provider=provider,
+            tool_handler=tool_handler,
+            tools=[
+                AITool(
+                    name="search",
+                    description="Search",
+                    parameters={
+                        "type": "object",
+                        "properties": {"q": {"type": "string"}},
+                        "required": ["q"],
+                    },
+                )
+            ],
+        )
+        ch._before_tool_call_hook = rewrite
+
+        output = await ch.on_event(
+            make_event(body="search", channel_id="sms1"),
+            _binding(),
+            _ctx(),
+        )
+        assert output.response_stream is not None
+        items = [item async for item in output.response_stream]
+        start = next(item for item in items if isinstance(item, ToolCallStartMarker))
+        end = next(item for item in items if isinstance(item, ToolCallEndMarker))
+
+        assert seen == [{"q": "redacted-value"}]
+        assert start.arguments == {"q": "token"}
+        assert end.arguments == {"q": "redacted-value"}
 
     async def test_non_streaming_returns_tool_events(self) -> None:
         """Non-streaming tool loop returns tool call events in response_events."""

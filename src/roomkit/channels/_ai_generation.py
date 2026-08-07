@@ -509,7 +509,7 @@ class AIGenerationMixin(AIToolLoopRulesMixin):
                 )
                 context.messages.append(AIMessage(role="assistant", content=parts))
 
-                result_parts, duration_ms = await self._execute_round_tools(
+                result_parts, duration_ms, _executed_arguments = await self._execute_round_tools(
                     context,
                     response.tool_calls,
                     telemetry,

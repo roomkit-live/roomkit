@@ -398,6 +398,65 @@ class TestBeforeToolUseHook:
 
         assert seen_by_tool == []
 
+    async def test_invalid_rewrite_shape_fails_closed(self) -> None:
+        """An attempted non-object rewrite cannot fall back to original input."""
+        seen_by_tool: list[dict[str, Any]] = []
+
+        async def recording_handler(name: str, args: dict[str, Any]) -> str:
+            seen_by_tool.append(args)
+            return json.dumps({"ok": True})
+
+        provider = MockAIProvider(ai_responses=_make_tool_responses())
+        ai = AIChannel(
+            "ai-1",
+            provider=provider,
+            system_prompt="Test.",
+            tool_handler=recording_handler,
+            tools=TOOLS,
+        )
+        kit = RoomKit()
+        kit.register_channel(ai)
+        room = await kit.create_room()
+        await kit.attach_channel(room.id, "ai-1", category=ChannelCategory.INTELLIGENCE)
+
+        @kit.hook(HookTrigger.BEFORE_TOOL_USE, execution=HookExecution.SYNC, name="bad-shape")
+        async def bad_shape(event: ToolCallEvent, ctx: RoomContext) -> HookResult:
+            return HookResult(action="allow", metadata={"arguments": ["not", "an", "object"]})
+
+        await _trigger_ai(kit, ai, room.id)
+
+        assert seen_by_tool == []
+
+    async def test_in_place_hook_mutation_is_revalidated(self) -> None:
+        """Mutating the event's dict cannot bypass post-hook schema checks."""
+        seen_by_tool: list[dict[str, Any]] = []
+
+        async def recording_handler(name: str, args: dict[str, Any]) -> str:
+            seen_by_tool.append(args)
+            return json.dumps({"ok": True})
+
+        provider = MockAIProvider(ai_responses=_make_tool_responses())
+        ai = AIChannel(
+            "ai-1",
+            provider=provider,
+            system_prompt="Test.",
+            tool_handler=recording_handler,
+            tools=TOOLS,
+        )
+        kit = RoomKit()
+        kit.register_channel(ai)
+        room = await kit.create_room()
+        await kit.attach_channel(room.id, "ai-1", category=ChannelCategory.INTELLIGENCE)
+
+        @kit.hook(HookTrigger.BEFORE_TOOL_USE, execution=HookExecution.SYNC, name="mutate")
+        async def mutate(event: ToolCallEvent, ctx: RoomContext) -> HookResult:
+            event.arguments["city"] = 42
+            return HookResult(action="allow")
+
+        await _trigger_ai(kit, ai, room.id)
+
+        assert seen_by_tool == []
+
     async def test_hook_without_rewrite_leaves_arguments_alone(self) -> None:
         """An allow with no ``arguments`` key keeps the model's own input."""
         seen_by_tool: list[dict[str, Any]] = []

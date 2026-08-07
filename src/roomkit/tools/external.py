@@ -108,7 +108,8 @@ class ExternalToolHandler(ABC):
         6. ``stop()`` is called on shutdown
 
     Attributes set by the framework (do not override):
-        _before_tool_hook: Fires BEFORE_TOOL_USE sync hooks. Returns True if allowed.
+        _before_tool_hook: Fires BEFORE_TOOL_USE sync hooks. Returns a truthy
+            :class:`BeforeToolDecision` when allowed, optionally with arguments.
         _on_tool_hook: Fires ON_TOOL_CALL sync hooks. Returns optional result override.
         _channel_id: Channel ID this handler is attached to.
     """

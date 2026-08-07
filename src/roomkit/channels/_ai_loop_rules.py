@@ -116,7 +116,9 @@ class AIToolLoopRulesHost(Protocol):
         tool_calls: list[Any],
         telemetry: Any,
         *,
+        declared_tools: list[Any] | None = ...,
         parent_span_id: str | None = ...,
+        executed_arguments: dict[str, dict[str, Any]] | None = ...,
     ) -> list[_ContentPart]: ...
 
 
@@ -258,7 +260,7 @@ class AIToolLoopRulesMixin:
         round_idx: int,
         *,
         parent_span_id: str | None = None,
-    ) -> tuple[list[AIToolResultPart], int]:
+    ) -> tuple[list[AIToolResultPart], int, dict[str, dict[str, Any]]]:
         """Publish TOOL_CALL_START, execute the calls, append the tool message.
 
         The TOOL_CALL_END publish (and, in streaming, the persistence
@@ -273,9 +275,14 @@ class AIToolLoopRulesMixin:
                 round_idx,
             )
         t0 = time.monotonic()
+        executed_arguments: dict[str, dict[str, Any]] = {}
         result_parts = await self._execute_tools_parallel(
-            tool_calls, telemetry, parent_span_id=parent_span_id
+            tool_calls,
+            telemetry,
+            declared_tools=context.tools,
+            parent_span_id=parent_span_id,
+            executed_arguments=executed_arguments,
         )
         duration_ms = int((time.monotonic() - t0) * 1000)
         context.messages.append(AIMessage(role="tool", content=result_parts))
-        return result_parts, duration_ms
+        return result_parts, duration_ms, executed_arguments

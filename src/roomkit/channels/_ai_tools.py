@@ -158,13 +158,15 @@ class AIToolsMixin:
     _get_loop_ctx: Any  # see AIToolsHost
     extra_tools: Any  # AIChannel property: user + orchestration-injected tools
 
-    def _tool_parameters(self, name: str) -> dict[str, Any] | None:
+    def _tool_parameters(
+        self, name: str, declared_tools: list[AITool] | None = None
+    ) -> dict[str, Any] | None:
         """Return the declared JSON-Schema ``parameters`` for tool *name*.
 
         ``None`` when the tool's schema is not known to this channel (infra,
         skill, or sandbox tools) — those skip argument validation.
         """
-        for tool in self.extra_tools:
+        for tool in declared_tools if declared_tools is not None else self.extra_tools:
             if tool.name == name:
                 return tool.parameters
         return None
@@ -174,7 +176,9 @@ class AIToolsMixin:
         tool_calls: list[Any],
         telemetry: Any,
         *,
+        declared_tools: list[AITool] | None = None,
         parent_span_id: str | None = None,
+        executed_arguments: dict[str, dict[str, Any]] | None = None,
     ) -> list[_ContentPart]:
         """Execute tool calls concurrently and return result parts."""
         if self._tool_handler is None:
@@ -190,7 +194,20 @@ class AIToolsMixin:
 
             # Execution guard: argument validation against the declared schema
             # (fail-closed) — reject malformed calls before any other gate.
-            params = self._tool_parameters(tc.name)
+            params = self._tool_parameters(tc.name, declared_tools)
+            declared_names = {tool.name for tool in declared_tools or []}
+            channel_managed = (
+                tc.name in self._SKILL_INFRA_TOOLS
+                or tc.name in TOOL_SEARCH_INFRA_TOOL_NAMES
+                or tc.name.startswith(SANDBOX_TOOL_PREFIX)
+            )
+            if declared_names and tc.name not in declared_names and not channel_managed:
+                logger.warning("Provider requested undeclared tool %s", tc.name)
+                return AIToolResultPart(
+                    tool_call_id=tc.id,
+                    name=tc.name,
+                    result=json.dumps({"error": f"Unknown tool '{tc.name}': it is not declared"}),
+                )
             if params is not None:
                 arg_error = validate_tool_arguments(params, tc.arguments)
                 if arg_error is not None:
@@ -244,6 +261,7 @@ class AIToolsMixin:
             # Everything downstream — the handler, ON_TOOL_CALL, the usage
             # record — reads ``arguments``, so it reports what actually ran.
             arguments = tc.arguments
+            arguments_rewritten = False
             if self._before_tool_call_hook is not None:
                 from roomkit.models.tool_call import ToolCallEvent
 
@@ -268,28 +286,30 @@ class AIToolsMixin:
                     )
                 if decision.arguments is not None:
                     arguments = decision.arguments
-                    # The hook is allowed to replace the payload completely.
-                    # Validate what will actually execute as well as what the
-                    # model originally proposed; otherwise a rewrite silently
-                    # bypasses this fail-closed boundary.
-                    if params is not None:
-                        arg_error = validate_tool_arguments(params, arguments)
-                        if arg_error is not None:
-                            logger.warning(
-                                "Tool %s rewritten arguments rejected: %s", tc.name, arg_error
-                            )
-                            return AIToolResultPart(
-                                tool_call_id=tc.id,
-                                name=tc.name,
-                                result=json.dumps(
-                                    {
-                                        "error": (
-                                            f"Invalid rewritten arguments for "
-                                            f"'{tc.name}': {arg_error}"
-                                        )
-                                    }
-                                ),
-                            )
+                    arguments_rewritten = True
+
+            # Validate the payload after every hook, even when it did not
+            # explicitly return a replacement. ToolCallEvent is frozen but its
+            # nested dict is mutable, so an in-place edit must not bypass this
+            # fail-closed boundary either.
+            if params is not None:
+                arg_error = validate_tool_arguments(params, arguments)
+                if arg_error is not None:
+                    qualifier = "rewritten " if arguments_rewritten else ""
+                    logger.warning(
+                        "Tool %s %sarguments rejected: %s", tc.name, qualifier, arg_error
+                    )
+                    return AIToolResultPart(
+                        tool_call_id=tc.id,
+                        name=tc.name,
+                        result=json.dumps(
+                            {
+                                "error": (
+                                    f"Invalid {qualifier}arguments for '{tc.name}': {arg_error}"
+                                )
+                            }
+                        ),
+                    )
 
             tool_span_id = telemetry.start_span(
                 SpanKind.LLM_TOOL_CALL,
@@ -298,6 +318,11 @@ class AIToolsMixin:
                 attributes={"tool.name": tc.name, "tool.id": tc.id},
             )
             structured_content: dict[str, Any] | None = None
+            if executed_arguments is not None:
+                # Snapshot the post-hook payload before handing it to user
+                # code. Streaming persistence can then distinguish what the
+                # model requested from what actually executed.
+                executed_arguments[tc.id] = dict(arguments)
             try:
                 # Set contextvar so HumanInputToolHandler can read
                 # room_id / tool_call_id / channel_id without protocol changes.

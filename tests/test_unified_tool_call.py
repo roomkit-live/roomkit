@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 from typing import Any
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -487,6 +488,100 @@ class TestToolAuthorizationH1:
         # The malformed call never reached the handler.
         assert called == []
 
+    async def test_ai_binding_tool_schema_is_enforced(self, ai_provider: MockAIProvider) -> None:
+        """Room-bound tools use the same validation as constructor tools."""
+        from roomkit.models.channel import ChannelBinding
+        from roomkit.models.enums import ChannelDirection
+        from roomkit.models.event import EventSource, RoomEvent, TextContent
+        from roomkit.providers.ai.base import AIResponse, AIToolCall
+
+        handler = AsyncMock(return_value="should not run")
+        ch = AIChannel("ai-binding", provider=ai_provider, tool_handler=handler)
+        kit = RoomKit()
+        kit.register_channel(ch)
+        room = await kit.create_room()
+        await kit.attach_channel(room.id, "ai-binding")
+        ai_provider._ai_responses = [
+            AIResponse(
+                content="",
+                tool_calls=[AIToolCall(id="tc-binding", name="lookup", arguments={})],
+            ),
+            AIResponse(content="done"),
+        ]
+        event = RoomEvent(
+            room_id=room.id,
+            source=EventSource(
+                channel_id="sms-1",
+                channel_type=ChannelType.SMS,
+                direction=ChannelDirection.INBOUND,
+            ),
+            content=TextContent(body="lookup"),
+        )
+        binding = ChannelBinding(
+            channel_id="ai-binding",
+            room_id=room.id,
+            channel_type=ChannelType.AI,
+            metadata={
+                "tools": [
+                    {
+                        "name": "lookup",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {"city": {"type": "string"}},
+                            "required": ["city"],
+                        },
+                    }
+                ]
+            },
+        )
+
+        await ch.on_event(event, binding, await kit._build_context(room.id))
+
+        handler.assert_not_awaited()
+
+    async def test_ai_provider_cannot_invent_a_tool_name(
+        self, ai_provider: MockAIProvider
+    ) -> None:
+        from roomkit.models.channel import ChannelBinding
+        from roomkit.models.enums import ChannelDirection
+        from roomkit.models.event import EventSource, RoomEvent, TextContent
+        from roomkit.providers.ai.base import AIResponse, AITool, AIToolCall
+
+        handler = AsyncMock(return_value="should not run")
+        ch = AIChannel(
+            "ai-declared",
+            provider=ai_provider,
+            tools=[AITool(name="lookup", description="safe", parameters={})],
+            tool_handler=handler,
+        )
+        kit = RoomKit()
+        kit.register_channel(ch)
+        room = await kit.create_room()
+        await kit.attach_channel(room.id, "ai-declared")
+        ai_provider._ai_responses = [
+            AIResponse(
+                content="",
+                tool_calls=[AIToolCall(id="tc-unknown", name="delete_all", arguments={})],
+            ),
+            AIResponse(content="done"),
+        ]
+        event = RoomEvent(
+            room_id=room.id,
+            source=EventSource(
+                channel_id="sms-1",
+                channel_type=ChannelType.SMS,
+                direction=ChannelDirection.INBOUND,
+            ),
+            content=TextContent(body="do it"),
+        )
+        binding = ChannelBinding(
+            channel_id="ai-declared", room_id=room.id, channel_type=ChannelType.AI
+        )
+
+        await ch.on_event(event, binding, await kit._build_context(room.id))
+
+        handler.assert_not_awaited()
+
     async def test_realtime_before_tool_use_blocks_before_handler(
         self,
         rt_provider: MockRealtimeProvider,
@@ -525,3 +620,117 @@ class TestToolAuthorizationH1:
         result = json.loads(result_str)
         assert "error" in result
         assert "not allowed" in result["error"]
+
+    async def test_realtime_before_tool_use_rewrites_arguments_before_handler(
+        self,
+        rt_provider: MockRealtimeProvider,
+        rt_transport: MockRealtimeTransport,
+    ) -> None:
+        """Realtime tools execute and report the hook's effective arguments."""
+        received: list[dict[str, Any]] = []
+        observed: list[dict[str, Any]] = []
+
+        async def handler(name: str, args: dict[str, Any]) -> str:
+            received.append(args)
+            return "ok"
+
+        ch = RealtimeVoiceChannel(
+            "rt-rewrite",
+            provider=rt_provider,
+            transport=rt_transport,
+            tools=[
+                {
+                    "name": "lookup",
+                    "description": "Look up a city",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"city": {"type": "string"}},
+                        "required": ["city"],
+                    },
+                }
+            ],
+            tool_handler=handler,
+        )
+        kit = RoomKit()
+        kit.register_channel(ch)
+        room = await kit.create_room()
+        await kit.attach_channel(room.id, "rt-rewrite")
+        session = await ch.start_session(room.id, "u1", "ws")
+
+        @kit.hook(HookTrigger.BEFORE_TOOL_USE, execution=HookExecution.SYNC, name="restore")
+        async def restore(event: ToolCallEvent, ctx: RoomContext) -> HookResult:
+            return HookResult(action="allow", metadata={"arguments": {"city": "Montreal"}})
+
+        @kit.hook(HookTrigger.ON_TOOL_CALL, execution=HookExecution.SYNC, name="observe")
+        async def observe(event: ToolCallEvent, ctx: RoomContext) -> HookResult:
+            observed.append(event.arguments)
+            return HookResult.allow()
+
+        await rt_provider.simulate_tool_call(session, "c10", "lookup", {"city": "[CITY_1]"})
+        await asyncio.sleep(0.1)
+
+        assert received == [{"city": "Montreal"}]
+        assert observed == [{"city": "Montreal"}]
+
+    async def test_realtime_before_tool_use_rejects_invalid_rewrite(
+        self,
+        rt_provider: MockRealtimeProvider,
+        rt_transport: MockRealtimeTransport,
+    ) -> None:
+        """A hook cannot bypass a realtime tool's declared input schema."""
+        handler = AsyncMock(return_value="should not run")
+        ch = RealtimeVoiceChannel(
+            "rt-invalid-rewrite",
+            provider=rt_provider,
+            transport=rt_transport,
+            tools=[
+                {
+                    "name": "lookup",
+                    "description": "Look up a city",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"city": {"type": "string"}},
+                        "required": ["city"],
+                    },
+                }
+            ],
+            tool_handler=handler,
+        )
+        kit = RoomKit()
+        kit.register_channel(ch)
+        room = await kit.create_room()
+        await kit.attach_channel(room.id, "rt-invalid-rewrite")
+        session = await ch.start_session(room.id, "u1", "ws")
+
+        @kit.hook(HookTrigger.BEFORE_TOOL_USE, execution=HookExecution.SYNC, name="bad")
+        async def bad_rewrite(event: ToolCallEvent, ctx: RoomContext) -> HookResult:
+            return HookResult(action="allow", metadata={"arguments": {"city": 42}})
+
+        await rt_provider.simulate_tool_call(session, "c11", "lookup", {"city": "Paris"})
+        await asyncio.sleep(0.1)
+
+        handler.assert_not_awaited()
+        result = json.loads(rt_provider.tool_results[0][2])
+        assert "Invalid rewritten arguments" in result["error"]
+
+    async def test_realtime_provider_cannot_invent_a_tool_name(
+        self,
+        rt_provider: MockRealtimeProvider,
+        rt_transport: MockRealtimeTransport,
+    ) -> None:
+        handler = AsyncMock(return_value="should not run")
+        ch = RealtimeVoiceChannel(
+            "rt-undeclared",
+            provider=rt_provider,
+            transport=rt_transport,
+            tools=[{"name": "lookup", "description": "safe", "parameters": {}}],
+            tool_handler=handler,
+        )
+        session = await ch.start_session("room-1", "u1", "ws")
+
+        await rt_provider.simulate_tool_call(session, "c12", "delete_everything", {})
+        await asyncio.sleep(0.1)
+
+        handler.assert_not_awaited()
+        result = json.loads(rt_provider.tool_results[0][2])
+        assert result == {"error": "Tool 'delete_everything' is not declared"}
