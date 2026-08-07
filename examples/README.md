@@ -151,6 +151,7 @@ CONSOLE=1 uv run python examples/<example>.py
 | `agent_skills.py` | Skills | Agent skills discovery and registration |
 | `streaming_tools.py` | Streaming | Streaming text delivery with interleaved tool calls |
 | `tool_call_events.py` | Tool events | Tool call ephemeral event tracking |
+| `image_generation.py` | Image gen | An agent that draws: `generate_image` tool → `ImageProvider` → image in the room, PNG on disk |
 | `guardrails.py` | Safety | Multi-layer safety: PII redaction, jailbreak detection, output guards |
 
 ## Orchestration (Multi-Agent)

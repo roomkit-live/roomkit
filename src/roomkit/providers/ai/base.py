@@ -386,6 +386,17 @@ class ModelPricing(BaseModel):
             which is the TTL roomkit's ``ephemeral`` markers request. ``None``
             where a write is not billed per token. Google cache storage, for
             example, is billed by time and cannot be represented here.
+        image_input_per_million: Price of a million image *input* tokens, where
+            the vendor quotes them apart from text — a reference image handed
+            to an image model, say. ``None`` where the catalog represents no
+            separate charge, which is every conversational model here: they
+            bill a vision token as an ordinary input token.
+        image_output_per_million: Price of a million *generated*-image tokens.
+            An image model is billed per token like any other, only with the
+            picture counted on its own meter and at a rate an order of
+            magnitude above the text one — which is why it is a field and not
+            an approximation folded into ``output_per_million``. ``None`` for
+            a model that generates no images.
         long_context_threshold_tokens: Total input-token threshold above which
             the model's published long-context multipliers apply. ``None`` for
             models with flat pricing.
@@ -402,6 +413,8 @@ class ModelPricing(BaseModel):
     output_per_million: float = Field(ge=0, allow_inf_nan=False)
     cache_read_per_million: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     cache_write_per_million: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    image_input_per_million: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    image_output_per_million: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     long_context_threshold_tokens: int | None = Field(default=None, gt=0)
     long_context_input_multiplier: float = Field(default=1.0, gt=0, allow_inf_nan=False)
     long_context_output_multiplier: float = Field(default=1.0, gt=0, allow_inf_nan=False)
@@ -413,14 +426,20 @@ class ModelPricing(BaseModel):
 
         Reads the keys roomkit's providers report — ``input_tokens``,
         ``output_tokens``, ``cache_read_input_tokens``,
-        ``cache_creation_input_tokens`` — and ignores anything else, so a
-        provider reporting extra counters neither breaks nor inflates the
-        total. Missing keys count as zero.
+        ``cache_creation_input_tokens``, plus ``input_image_tokens`` and
+        ``output_image_tokens`` from an image generation
+        (:class:`~roomkit.providers.image.base.ImageProvider`) — and ignores
+        anything else, so a provider reporting extra counters neither breaks
+        nor inflates the total. Missing keys count as zero.
 
-        A cache counter with no corresponding rate is omitted: ``None`` means
-        the catalog does not represent a separate per-token charge for it.
-        When the response crosses a published long-context threshold, the
-        configured input and output multipliers are applied automatically.
+        Every counter is **disjoint**: a token is charged under exactly one of
+        them. Providers that receive image tokens nested inside a total
+        subtract them before reporting, so summing here bills each token once.
+
+        A counter with no corresponding rate is omitted: ``None`` means the
+        catalog does not represent a separate per-token charge for it. When the
+        response crosses a published long-context threshold, the configured
+        input and output multipliers are applied automatically.
 
         Args:
             usage: A response's token counters, as reported by the provider.
@@ -435,23 +454,29 @@ class ModelPricing(BaseModel):
                 "output_tokens",
                 "cache_read_input_tokens",
                 "cache_creation_input_tokens",
+                "input_image_tokens",
+                "output_image_tokens",
             )
         }
         input_total = counters["input_tokens"] * self.input_per_million
         for counter, rate in (
             ("cache_read_input_tokens", self.cache_read_per_million),
             ("cache_creation_input_tokens", self.cache_write_per_million),
+            ("input_image_tokens", self.image_input_per_million),
         ):
             if rate is not None:
                 input_total += counters[counter] * rate
 
         output_total = counters["output_tokens"] * self.output_per_million
+        if self.image_output_per_million is not None:
+            output_total += counters["output_image_tokens"] * self.image_output_per_million
         total_input_tokens = sum(
             counters[counter]
             for counter in (
                 "input_tokens",
                 "cache_read_input_tokens",
                 "cache_creation_input_tokens",
+                "input_image_tokens",
             )
         )
         if (

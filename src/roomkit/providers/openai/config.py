@@ -86,3 +86,45 @@ class OpenAIConfig(BaseModel):
             and "supports_custom_temperature" not in self.model_fields_set
         ):
             self.supports_custom_temperature = False
+
+
+class OpenAIImageConfig(BaseModel):
+    """OpenAI image-generation provider configuration (RFC §25).
+
+    Separate from :class:`OpenAIConfig` because it configures a different
+    endpoint with a disjoint model lineup — sampling temperature, reasoning
+    effort and completion caps mean nothing to ``/v1/images``, and an image
+    model means nothing to Chat Completions.
+
+    Attributes:
+        api_key: API key for authentication.
+        base_url: Custom base URL for an OpenAI-compatible images endpoint.
+            ``None`` uses the default OpenAI API.
+        model: Image model identifier (e.g. ``"gpt-image-2"``). Required, for
+            the same reason the chat config requires one: upgrading RoomKit
+            must not silently change a caller's cost or output.
+        quality: ``"low"`` | ``"medium"`` | ``"high"`` | ``"auto"``, or ``None``
+            for the model's default. Multiplies both the token count and the
+            latency, so it is a deployment decision rather than a per-call one.
+        background: ``"transparent"`` | ``"opaque"`` | ``"auto"``. Transparent
+            requires a ``png`` or ``webp`` output format.
+        output_format: ``"png"`` | ``"jpeg"`` | ``"webp"``. ``None`` leaves the
+            vendor default, which the response reports back and this provider
+            reads rather than assuming.
+        timeout: HTTP request timeout in seconds. Higher than the chat default
+            because a high-quality image routinely takes more than 30s.
+        max_retries: SDK-level retry count. 0 because RoomKit's RetryPolicy
+            handles retries at the right layer.
+    """
+
+    api_key: SecretStr
+    base_url: str | None = None
+    model: str
+    quality: str | None = None
+    background: str | None = None
+    output_format: str | None = None
+    timeout: float = 120.0
+    max_retries: int = 0
+    default_headers: dict[str, str] | None = None
+    """Extra HTTP headers sent on every request, passed to the SDK's
+    ``default_headers`` — same role as on :class:`OpenAIConfig`."""

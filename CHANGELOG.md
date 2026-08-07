@@ -9,6 +9,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`ImageProvider` — an agent can draw, whatever provider holds the
+  conversation.** Nothing in RoomKit generated an image: `AIResponse.content` is
+  a `str`, and both model catalogs excluded the image lineups on purpose. Images
+  travelled inbound only, as `AIImagePart`.
+
+  The capability lands as its own surface (RFC §25), not as a widening of the
+  conversational response. That is the whole design: reached *through*
+  `AIResponse`, image generation would inherit the provider holding the
+  conversation, and would then exist only for the conversations already run by a
+  model that draws — acquiring it would mean migrating the conversation. Kept
+  apart, an Anthropic agent draws with a Gemini or OpenAI key exactly as it
+  transcribes with a Deepgram one. `AIResponse` and every `AIProvider` signature
+  are untouched.
+
+  `generate(prompt, size=…, n=…, reference_images=…)` returns `ImageResult`
+  objects whose `data` is *always* a `data:` URI — never bare base64, never a
+  link that expires — so a result feeds `MediaContent.url` and enters a room with
+  no conversion, and `to_image_part()` hands it straight back as the next edit's
+  reference. Editing is in the signature from the start rather than bolted on:
+  `reference_images` routes to OpenAI's separate edit endpoint or rides Gemini's
+  same call, and the caller never sees the difference. `size` is one
+  `"WIDTHxHEIGHT"` string everywhere, translated per vendor (Gemini speaks
+  aspect ratios and resolution tiers); a size a model cannot produce raises
+  rather than silently becoming another one.
+
+  `OpenAIImageProvider` (`/v1/images`) and `GeminiImageProvider` (Interactions
+  API) ship with offline catalogs — `ImageProvider.available_models()`, disjoint
+  from the conversational one, because no id draws *and* converses and merging
+  them would only oblige every consumer of the chat catalog to filter. These
+  models are billed **per token**, with the pixels metered apart and an order of
+  magnitude above text, so `ModelPricing` gains two optional fields
+  (`image_input_per_million`, `image_output_per_million`) and `cost_for()` two
+  disjoint counters. Both default to `None`, so every existing catalog and every
+  existing call price exactly as before.
+
+  `MockImageProvider` returns a real 1×1 PNG, so a consumer exercises the whole
+  path — decode, write, measure — with no key. `examples/image_generation.py`
+  runs it end to end: a `generate_image` tool draws, the picture lands in the
+  room as `MediaContent` and on disk as a PNG.
+
 - **`GeminiSTTProvider` — batch transcription that returns speaker turns and
   timestamps in the same pass as the words.** Gemini has no speech-to-text
   endpoint; transcription is an instruction to a multimodal model that accepts

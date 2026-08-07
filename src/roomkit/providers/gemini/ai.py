@@ -11,7 +11,6 @@ from typing import Any, cast
 from uuid import uuid4
 
 from roomkit.providers.ai.base import (
-    RETRYABLE_STATUS_CODES,
     AIContext,
     AIImagePart,
     AIMessage,
@@ -31,6 +30,7 @@ from roomkit.providers.ai.base import (
     StreamToolCall,
 )
 from roomkit.providers.gemini.config import GeminiConfig
+from roomkit.providers.gemini.errors import wrap_gemini_error
 from roomkit.providers.gemini.models import MODELS
 
 logger = logging.getLogger(__name__)
@@ -309,20 +309,7 @@ class GeminiAIProvider(AIProvider):
 
     def _wrap_error(self, exc: Exception) -> ProviderError:
         """Wrap an SDK exception into a ProviderError."""
-        status_code = getattr(exc, "code", None) or getattr(exc, "status_code", None)
-        retryable = (
-            status_code in RETRYABLE_STATUS_CODES
-            if status_code
-            else any(
-                term in str(exc).lower() for term in ["rate", "limit", "429", "500", "502", "503"]
-            )
-        )
-        return ProviderError(
-            str(exc),
-            retryable=retryable,
-            provider="gemini",
-            status_code=status_code,
-        )
+        return wrap_gemini_error(exc)
 
     @staticmethod
     def _reject_model_turn_tail(contents: list[Any]) -> None:

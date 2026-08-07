@@ -156,6 +156,7 @@ from roomkit.orchestration import (
     setup_handoff,
 )
 from roomkit.providers.ai import ModelPricing
+from roomkit.providers.image import ImageProvider, ImageResult, MockImageProvider
 from roomkit.sandbox import SandboxExecutor, SandboxResult
 from roomkit.skills import ScriptExecutor, Skill, SkillMetadata, SkillRegistry
 from roomkit.store import ConversationStore, InMemoryStore
@@ -376,9 +377,12 @@ __all__ = [
     "EventSource",
     "FrameworkEvent",
     "HookResult",
+    "ImageProvider",
+    "ImageResult",
     "InjectedEvent",
     "InboundMessage",
     "InboundResult",
+    "MockImageProvider",
     "ModelPricing",
     "Participant",
     "ProviderResult",
