@@ -9,6 +9,10 @@ Synthesizes speech three ways and writes each result to a playable WAV file:
    generative model, so the instruction is intended to steer the voice rather
    than be spoken (the 3.1 preview model can still occasionally read it).
 
+This is the provider-level view — the API surface and its real latencies. For
+the framework view, where a room speaks what is typed into it, see
+``examples/gemini_tts_room.py``.
+
 Gemini TTS trades latency for expressiveness: expect seconds, not
 milliseconds, before the first audio byte. That makes it a good fit for
 prompts, announcements and generated audio messages, and a poor one for live
@@ -47,7 +51,7 @@ from roomkit.voice.tts.gemini import (
 )
 
 OUT_DIR = Path(tempfile.mkdtemp(prefix="roomkit_gemini_tts_"))
-TEXT = "Bonjour, vous êtes bien chez RoomKit. Comment puis-je vous aider aujourd'hui?"
+TEXT = "Hello, you have reached RoomKit. How can I help you today?"
 
 
 def _write_wav(name: str, wav_bytes: bytes) -> Path:
@@ -69,12 +73,13 @@ async def main() -> None:
         GeminiTTSConfig(
             api_key=env["GEMINI_API_KEY"],
             voice="Kore",
-            language="fr-CA",
+            language="en-US",
         )
     )
 
     # ── One-shot synthesis ───────────────────────────────────────────
     print("\n=== synthesize() ===")
+    print("  synthesizing (expect seconds of silence — this is the model, not a hang)", flush=True)
     t0 = time.monotonic()
     result = await provider.synthesize(TEXT)
     print(f"  latency    : {(time.monotonic() - t0):.1f}s")
@@ -85,6 +90,7 @@ async def main() -> None:
 
     # ── Streaming synthesis ──────────────────────────────────────────
     print("\n=== synthesize_stream() ===")
+    print("  waiting for the first audio delta…", flush=True)
     t0 = time.monotonic()
     ttfa: float | None = None
     frames: list[bytes] = []
@@ -107,11 +113,12 @@ async def main() -> None:
 
     # ── Style direction ─────────────────────────────────────────────
     print("\n=== style_prompt ===")
+    print("  synthesizing with a delivery direction…", flush=True)
     styled = GeminiTTSProvider(
         GeminiTTSConfig(
             api_key=env["GEMINI_API_KEY"],
             voice="Puck",
-            style_prompt="Lis ce texte d'une voix très joyeuse et enthousiaste",
+            style_prompt="Read this in a very cheerful, enthusiastic voice",
         )
     )
     result = await styled.synthesize(TEXT)
