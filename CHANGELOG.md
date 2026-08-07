@@ -11,6 +11,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Realtime voice startup is now transactional.** Audio arriving while the
+  provider performs its handshake is retained in a bounded buffer and flushed
+  in order; a failed transport, provider, negotiated sample rate or client-ready
+  notification tears down every partial map, DSP stream, resampler, socket and
+  telemetry span. Raw PCM from WebSocket, SIP and FastRTC transports is now
+  normalised to `AudioFrame` before entering a configured pipeline, and that
+  channel-owned pipeline registers its transport callback only once instead of
+  duplicating delivery after every new session.
+
+- **Tool authorization now covers the payload that actually executes.** The
+  effective per-room/per-turn catalogue supplies argument schemas (not only
+  tools declared in the channel constructor), post-hook rewrites are validated
+  in classic, streaming and realtime-voice paths, and a provider cannot invoke
+  an undeclared name once a catalogue exists. Provider-executed tools carrying
+  `_result` no longer fire a misleading retroactive `BEFORE_TOOL_USE`; they are
+  observed through `ON_TOOL_CALL`, because their side effect has already
+  happened.
+
+- **Realtime provider teardown no longer strands live resources.** Clean peer
+  closes and fatal errors retire OpenAI and Deepgram connections and notify the
+  channel; recoverable Deepgram warnings stay active. OpenAI audio truncation is
+  reserved atomically under concurrent barge-ins, and failed `session.update`
+  sends roll back their connection state. ElevenLabs rejects duplicate in-flight
+  tool ids and exposes its fixed 16 kHz input/output contract instead of silently
+  accepting a mismatched channel clock.
+
+- **Local audio and AEC state are bounded and paired.** The realtime speaker
+  buffer is capped, playback start/stop cannot race a new enqueue, and every AEC
+  activation is matched by deactivation on interrupt, disconnect, reset and
+  pipeline teardown. A provider failure rolls activity bookkeeping back so a
+  later frame can retry rather than leaving cancellation permanently bypassed.
+
+- **The release script verifies the exact dirty file it permits.** A path merely
+  ending in `src/roomkit/_version.py` no longer bypasses the clean-tree gate, and
+  the real version file must contain exactly one valid assignment so unrelated
+  code cannot be swept into the version-only release commit.
+
 - **An ElevenLabs agent can finally call a tool.** `ElevenLabsRealtimeProvider`
   logged that `tools=` was ignored and answered `submit_tool_result` with a
   debug line, so a `tool_handler` on a `RealtimeVoiceChannel` was never
@@ -57,6 +94,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   session sat in `ACTIVE`, and the failure died inside an unobserved task. The
   provider now supervises the session and reports `connection_failed` /
   `session_ended` through `on_error`, with the session marked `ENDED`.
+  `connect` also waits until the SDK has installed its audio-input callback
+  before marking the session active, so speech arriving immediately after a
+  successful connection is not silently dropped.
 
 ### Added
 
@@ -93,7 +133,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   their own Anthropic subscriptions can set `AIContext.metadata["api_key"]`
   in `BEFORE_AI_GENERATION` for that turn alone. Per-key clients are cached in
   a bounded pool, and the credential is represented as a secret so context
-  logging and serialization cannot disclose it.
+  logging and serialization cannot disclose it. Cache eviction leases clients
+  to active turns: a burst of distinct credentials may exceed the soft bound
+  briefly, but cannot close the HTTP client underneath an in-flight stream.
 
 - **`AIChannel`, `VoiceChannel`, `RealtimeVoiceChannel` and `WebSocketChannel`
   now import from `roomkit.channels`** — where the eleven transport-channel
@@ -120,8 +162,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `reconfigure()` is overridden to patch the live session — `UpdateThink` carries
   prompt, model and functions in one message, `UpdateSpeak` swaps the voice — so
   an agent handoff keeps the WebSocket and the conversation context instead of
-  reconnecting. The curated catalog is the full Aura-2 set across seven
-  languages, plus the twelve Aura-1 voices flagged `deprecated`.
+  reconnecting. Because Deepgram replaces the complete Think/Speak block, each
+  update starts from the live session state: omitted per-session models,
+  endpoints, temperatures and context settings are preserved, and a
+  `provider_config`-only update is applied. The curated catalog is the full
+  Aura-2 set across seven languages, plus the twelve Aura-1 voices flagged
+  `deprecated`.
 
   Three constraints are the protocol's, and are documented rather than papered
   over: turn detection is always Deepgram's (`server_vad=False` warns and is
@@ -239,6 +285,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   command from it rather than joining `scripts/` and a model-supplied name
   themselves. Execution policy — sandboxing, timeouts, allowed interpreters —
   remains entirely the integrator's call; *which file runs* does not.
+
+  The containing directory is checked too: replacing all of `references/` or
+  `scripts/` with a symlink is rejected before listing, reading or resolving a
+  child. Checking only the child would otherwise make the resolved external
+  directory look like the trusted containment root.
 
   `SkillPathError` subclasses `ValueError`, so integrators already catching the
   `ValueError` this used to raise keep working.
@@ -4717,7 +4768,8 @@ See entries `0.7.0a1` through `0.7.0a18` below.
 - `STTProvider.transcribe()` returns `TranscriptionResult` (Phase 3.1)
 - Framework event names enriched with payloads (Phase 4)
 
-[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.42.1...HEAD
+[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.43.0...HEAD
+[0.43.0]: https://github.com/roomkit-live/roomkit/compare/v0.42.1...v0.43.0
 [0.42.1]: https://github.com/roomkit-live/roomkit/compare/v0.42.0...v0.42.1
 [0.42.0]: https://github.com/roomkit-live/roomkit/compare/v0.41.4...v0.42.0
 [0.41.4]: https://github.com/roomkit-live/roomkit/compare/v0.41.3...v0.41.4
