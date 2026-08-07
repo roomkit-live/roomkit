@@ -21,7 +21,9 @@ outbound pipeline when the transport needs another rate.
 from __future__ import annotations
 
 import base64
+import binascii
 import logging
+import math
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
@@ -69,10 +71,16 @@ class GeminiTTSConfig:
         voice: Prebuilt voice name — see :meth:`GeminiTTSProvider.available_voices`.
         language: Optional BCP-47 hint (e.g. ``"fr-CA"``). Left unset, the model
             infers the language from the text.
-        style_prompt: Natural-language delivery direction supplied separately
-            from the labelled transcript (e.g. ``"Lis ce texte d'une voix calme
-            et rassurante"``). Gemini 3.1 is a preview model and can occasionally
-            read prompt directions despite the explicit separation.
+        style_prompt: Natural-language delivery direction (e.g. ``"Read this in
+            a calm, reassuring voice"``). The API has no style field — style is
+            only expressible inside the prompt — so this is written as a
+            labelled ``Delivery direction:`` line above the ``Transcript:``
+            label in the same ``input`` string, which is what keeps the model
+            reciting the transcript instead of the direction. Gemini 3.1 is a
+            preview model and can occasionally read directions aloud anyway.
+            For cues that steer a word or a phrase rather than the whole
+            utterance, put audio tags such as ``[laughs]`` or ``[whispers]``
+            inline in the text itself.
         timeout: Per-request timeout in seconds. Generous by design: measured
             time-to-first-audio for a one-sentence prompt ranges from ~1.2 s to
             ~8 s on the default model, and long text is slower still.
@@ -84,6 +92,18 @@ class GeminiTTSConfig:
     language: str | None = None
     style_prompt: str | None = None
     timeout: float = 120.0
+
+    def __post_init__(self) -> None:
+        if not self.api_key.strip():
+            raise ValueError("api_key must not be empty")
+        if not self.model.strip():
+            raise ValueError("model must not be empty")
+        if not self.voice.strip():
+            raise ValueError("voice must not be empty")
+        if self.language is not None and not self.language.strip():
+            raise ValueError("language must not be blank when provided")
+        if not math.isfinite(self.timeout) or self.timeout <= 0:
+            raise ValueError("timeout must be a positive finite number")
 
 
 class GeminiTTSProvider(TTSProvider):
@@ -145,10 +165,43 @@ class GeminiTTSProvider(TTSProvider):
         return "\n".join(lines)
 
     def _generation_config(self, voice: str | None) -> dict[str, Any]:
-        speech: dict[str, Any] = {"voice": voice or self._config.voice}
+        selected_voice = voice or self._config.voice
+        if not selected_voice.strip():
+            raise ValueError("voice must not be empty")
+        speech: dict[str, Any] = {"voice": selected_voice}
         if self._config.language:
             speech["language"] = self._config.language
         return {"speech_config": [speech]}
+
+    @staticmethod
+    def _decode_audio(
+        data: str, sample_rate: int | None, channels: int | None
+    ) -> tuple[bytes, int, int]:
+        """Decode and validate service audio before exposing it downstream."""
+        try:
+            pcm = base64.b64decode(data, validate=True)
+        except (binascii.Error, ValueError) as exc:
+            raise RuntimeError("Gemini TTS returned invalid base64 audio") from exc
+
+        effective_rate = sample_rate or OUTPUT_SAMPLE_RATE
+        effective_channels = channels or _OUTPUT_CHANNELS
+        if (
+            not isinstance(effective_rate, int)
+            or isinstance(effective_rate, bool)
+            or effective_rate <= 0
+        ):
+            raise RuntimeError(f"Gemini TTS returned invalid sample rate: {effective_rate!r}")
+        if (
+            not isinstance(effective_channels, int)
+            or isinstance(effective_channels, bool)
+            or effective_channels <= 0
+        ):
+            raise RuntimeError(
+                f"Gemini TTS returned invalid channel count: {effective_channels!r}"
+            )
+        if len(pcm) % (2 * effective_channels):
+            raise RuntimeError("Gemini TTS returned a truncated PCM frame")
+        return pcm, effective_rate, effective_channels
 
     async def _create(self, text: str, voice: str | None, *, stream: bool) -> Any:
         return await self._get_client().aio.interactions.create(
@@ -192,9 +245,9 @@ class GeminiTTSProvider(TTSProvider):
                 f"Gemini TTS returned no audio (status={getattr(interaction, 'status', None)})"
             )
 
-        pcm = base64.b64decode(audio.data)
-        sample_rate = audio.sample_rate or OUTPUT_SAMPLE_RATE
-        channels = audio.channels or _OUTPUT_CHANNELS
+        pcm, sample_rate, channels = self._decode_audio(
+            audio.data, audio.sample_rate, audio.channels
+        )
         wav = wrap_wav(pcm, sample_rate, channels)
 
         return AudioContentModel(
@@ -231,10 +284,11 @@ class GeminiTTSProvider(TTSProvider):
             delta = getattr(event, "delta", None)
             if delta is None or getattr(delta, "type", None) != "audio" or not delta.data:
                 continue
-            sample_rate = delta.sample_rate or sample_rate
-            channels = delta.channels or channels
+            pcm, sample_rate, channels = self._decode_audio(
+                delta.data, delta.sample_rate or sample_rate, delta.channels or channels
+            )
             yield AudioChunk(
-                data=base64.b64decode(delta.data),
+                data=pcm,
                 sample_rate=sample_rate,
                 channels=channels,
                 format=_AUDIO_FORMAT,

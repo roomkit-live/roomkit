@@ -146,6 +146,22 @@ class TestMetadata:
         config = GeminiTTSConfig(api_key="super-secret")
         assert "super-secret" not in repr(config)
 
+    @pytest.mark.parametrize(
+        ("overrides", "message"),
+        [
+            ({"api_key": "  "}, "api_key"),
+            ({"model": "  "}, "model"),
+            ({"voice": "  "}, "voice"),
+            ({"language": "  "}, "language"),
+            ({"timeout": 0}, "timeout"),
+            ({"timeout": float("inf")}, "timeout"),
+        ],
+    )
+    def test_invalid_config_is_rejected(self, overrides: dict[str, Any], message: str) -> None:
+        values: dict[str, Any] = {"api_key": "test-key", **overrides}
+        with pytest.raises(ValueError, match=message):
+            GeminiTTSConfig(**values)
+
 
 # ---------------------------------------------------------------------------
 # synthesize()
@@ -157,10 +173,10 @@ class TestSynthesize:
         pcm = _pcm(0.5)
         provider, _ = _provider(pcm)
 
-        audio = await provider.synthesize("Bonjour")
+        audio = await provider.synthesize("Hello")
 
         assert audio.mime_type == "audio/wav"
-        assert audio.transcript == "Bonjour"
+        assert audio.transcript == "Hello"
         assert audio.duration_seconds == pytest.approx(0.5)
         assert audio.url.startswith("data:audio/wav;base64,")
 
@@ -174,14 +190,14 @@ class TestSynthesize:
     async def test_request_shape_matches_what_the_api_accepts(self) -> None:
         provider, client = _provider()
 
-        await provider.synthesize("Bonjour", voice="Puck")
+        await provider.synthesize("Hello", voice="Puck")
 
         call = client.interactions.calls[0]
         assert call["model"] == "gemini-3.1-flash-tts-preview"
         assert call["input"] == (
             "Synthesize speech from the transcript below.\n"
             "Speak only the transcript; do not read these instructions or labels aloud.\n"
-            "Transcript:\nBonjour"
+            "Transcript:\nHello"
         )
         assert call["stream"] is False
         # ``mime_type``/``delivery`` are 400s on the live API — only ``type``.
@@ -192,21 +208,21 @@ class TestSynthesize:
     async def test_language_is_forwarded_when_configured(self) -> None:
         provider, client = _provider(language="fr-CA")
 
-        await provider.synthesize("Bonjour")
+        await provider.synthesize("Hello")
 
         speech = client.interactions.calls[0]["generation_config"]["speech_config"][0]
         assert speech == {"voice": "Kore", "language": "fr-CA"}
 
     async def test_style_prompt_is_separated_from_the_transcript(self) -> None:
-        provider, client = _provider(style_prompt="Lis ceci joyeusement")
+        provider, client = _provider(style_prompt="Read this cheerfully")
 
-        await provider.synthesize("Bonjour")
+        await provider.synthesize("Hello")
 
         assert client.interactions.calls[0]["input"] == (
             "Synthesize speech from the transcript below.\n"
             "Speak only the transcript; do not read these instructions or labels aloud.\n"
-            "Delivery direction: Lis ceci joyeusement\n"
-            "Transcript:\nBonjour"
+            "Delivery direction: Read this cheerfully\n"
+            "Transcript:\nHello"
         )
 
     async def test_blank_text_is_rejected(self) -> None:
@@ -226,7 +242,29 @@ class TestSynthesize:
         client.interactions.create = _no_audio  # type: ignore[method-assign]
 
         with pytest.raises(RuntimeError, match="no audio.*failed"):
-            await provider.synthesize("Bonjour")
+            await provider.synthesize("Hello")
+
+    @pytest.mark.parametrize(
+        ("audio", "message"),
+        [
+            (_FakeAudio(data="not base64"), "invalid base64"),
+            (_FakeAudio(data="AQI=", sample_rate=-1), "invalid sample rate"),
+            (_FakeAudio(data="AQI=", channels=-1), "invalid channel count"),
+            (_FakeAudio(data="AQ=="), "truncated PCM"),
+        ],
+    )
+    async def test_malformed_service_audio_is_rejected(
+        self, audio: _FakeAudio, message: str
+    ) -> None:
+        provider, client = _provider()
+
+        async def _malformed(**kwargs: Any) -> _FakeInteraction:
+            return _FakeInteraction(output_audio=audio)
+
+        client.interactions.create = _malformed  # type: ignore[method-assign]
+
+        with pytest.raises(RuntimeError, match=message):
+            await provider.synthesize("Hello")
 
     async def test_service_reported_rate_wins_over_the_documented_one(self) -> None:
         """The documented rate is a default, not an assertion — trust the response."""
@@ -241,7 +279,7 @@ class TestSynthesize:
 
         client.interactions.create = _at_16k  # type: ignore[method-assign]
 
-        audio = await provider.synthesize("Bonjour")
+        audio = await provider.synthesize("Hello")
 
         raw = base64.b64decode(audio.url.split(",", 1)[1])
         assert struct.unpack("<I", raw[24:28])[0] == 16000
@@ -261,7 +299,7 @@ class TestSynthesizeStream:
         pcm = _pcm(0.2)  # 9600 bytes → 5 frames of 1920
         provider, _ = _provider(pcm)
 
-        chunks = await self._collect(provider, "Bonjour")
+        chunks = await self._collect(provider, "Hello")
 
         assert [c.is_final for c in chunks] == [False] * 5 + [True]
         assert b"".join(c.data for c in chunks) == pcm
@@ -273,7 +311,7 @@ class TestSynthesizeStream:
     async def test_non_audio_deltas_are_ignored(self) -> None:
         provider, _ = _provider(_pcm(0.04))
 
-        chunks = await self._collect(provider, "Bonjour")
+        chunks = await self._collect(provider, "Hello")
 
         # One audio frame + terminator: the trailing text delta is dropped.
         assert len(chunks) == 2
@@ -282,7 +320,7 @@ class TestSynthesizeStream:
     async def test_stream_is_requested_with_stream_true(self) -> None:
         provider, client = _provider()
 
-        await self._collect(provider, "Bonjour")
+        await self._collect(provider, "Hello")
 
         assert client.interactions.calls[0]["stream"] is True
 
@@ -310,7 +348,7 @@ class TestSynthesizeStream:
 
         client.interactions.create = _at_16k  # type: ignore[method-assign]
 
-        chunks = await self._collect(provider, "Bonjour")
+        chunks = await self._collect(provider, "Hello")
 
         assert [c.sample_rate for c in chunks] == [16000, 16000]
 
