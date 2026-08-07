@@ -12,6 +12,7 @@ from typing import Any, cast
 
 from pydantic import SecretStr
 
+from roomkit.providers.ai.base import ModelInfo
 from roomkit.providers.gemini.voices import VOICES as _VOICES
 from roomkit.voice.base import VoiceSession, VoiceSessionState
 from roomkit.voice.realtime.provider import RealtimeVoiceProvider, VoiceInfo
@@ -175,6 +176,13 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
     def available_voices(cls) -> list[VoiceInfo]:
         """Curated, offline catalog of Gemini Live native-audio voices (fixed set)."""
         return list(_VOICES)
+
+    @classmethod
+    def available_models(cls) -> list[ModelInfo]:
+        """Curated, offline catalog of Gemini Live models."""
+        from roomkit.providers.gemini.realtime_models import MODELS
+
+        return list(MODELS)
 
     @property
     def supports_mid_session_reconfigure(self) -> bool:

@@ -19,6 +19,7 @@ from typing import Any
 
 from pydantic import SecretStr
 
+from roomkit.providers.ai.base import ModelInfo
 from roomkit.providers.openai.realtime_base import OpenAIRealtimeBase
 from roomkit.providers.xai.config import XAIRealtimeConfig
 from roomkit.providers.xai.voices import VOICES as _VOICES
@@ -90,6 +91,13 @@ class XAIRealtimeProvider(OpenAIRealtimeBase):
         Not a closed set — the ``voice`` field also accepts custom voice ids.
         """
         return list(_VOICES)
+
+    @classmethod
+    def available_models(cls) -> list[ModelInfo]:
+        """Curated, offline catalog of xAI Grok realtime models."""
+        from roomkit.providers.xai.realtime_models import MODELS
+
+        return list(MODELS)
 
     # -- Provider-specific extension points ---------------------------------
 

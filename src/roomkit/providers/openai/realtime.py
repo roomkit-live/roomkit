@@ -9,6 +9,7 @@ from typing import Any
 
 from pydantic import SecretStr
 
+from roomkit.providers.ai.base import ModelInfo
 from roomkit.providers.openai.realtime_base import OpenAIRealtimeBase
 from roomkit.providers.openai.voices import VOICES as _VOICES
 from roomkit.voice.base import VoiceSession
@@ -87,6 +88,13 @@ class OpenAIRealtimeProvider(OpenAIRealtimeBase):
     def available_voices(cls) -> list[VoiceInfo]:
         """Curated, offline catalog of OpenAI Realtime voices (fixed set)."""
         return list(_VOICES)
+
+    @classmethod
+    def available_models(cls) -> list[ModelInfo]:
+        """Curated, offline catalog of OpenAI Realtime models."""
+        from roomkit.providers.openai.realtime_models import MODELS
+
+        return list(MODELS)
 
     # -- Provider-specific extension points ---------------------------------
 

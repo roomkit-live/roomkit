@@ -115,6 +115,21 @@ UNMIRRORED_CATALOGS: dict[str, str] = {
         "endpoint and are absent from it (checked 2026-08-07). Rates come from OpenAI's "
         "own pricing page and are only as fresh as the `verified` date they carry."
     ),
+    "openai-realtime": (
+        "the mirror routes chat completions; the gpt-realtime-* lineup lives on the "
+        "Realtime WebSocket API and is absent from it — its gpt-audio/gpt-audio-mini "
+        "are the chat-completions audio models, not these (checked 2026-08-07). Ids "
+        "come from OpenAI's Realtime API docs."
+    ),
+    "gemini-realtime": (
+        "no public aggregator mirrors the Live API lineup (checked 2026-08-07). Ids "
+        "come from Google's Live API docs and are the ones this repo's examples run."
+    ),
+    "xai-realtime": (
+        "the mirror lists xAI's chat models only; grok-2-audio is a Realtime "
+        "WebSocket id absent from it (checked 2026-08-07). Sourced from the xAI "
+        "audio capability docs."
+    ),
 }
 
 # Upstream slugs that are routing lanes rather than distinct vendor models.

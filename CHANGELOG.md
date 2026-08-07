@@ -9,6 +9,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Realtime model catalogs — `RealtimeVoiceProvider.available_models()`.**
+  The speech-to-speech model ids were the one lineup RoomKit knew only as
+  constructor defaults: the chat catalogs exclude them on purpose (the xAI
+  catalog's scope note even names `grok-2-audio` as belonging elsewhere — an
+  elsewhere that did not exist), so a host building a model picker had
+  nothing to enumerate and hardcoded its own list, which then rotted
+  independently of the defaults it mirrored.
+
+  The catalog lands as the realtime counterpart of `available_voices()`: a
+  classmethod on the provider, answering offline, backed by pure-data
+  modules — `providers/{openai,gemini,xai}/realtime_models.py` — that follow
+  the image-catalog separation (RFC §25.6): disjoint sets are kept apart
+  rather than merged into `AIProvider.available_models`, because no realtime
+  id answers a chat completion and no chat id opens a realtime session.
+  Entries state what the vendor documents: `supports_vision` follows the
+  image-input cut (`gpt-realtime-2.1`+ and every Live model; xAI stays
+  `False`, restating 0.43.0's deliberate withholding), `"thinking"` marks the
+  `gpt-realtime-2`+ models whose sessions accept `reasoning_effort`, and the
+  retired `gpt-4o-*-realtime-preview` pair is flagged `deprecated`. Context
+  windows and pricing are omitted deliberately — the realtime channel never
+  trims by window, and audio-token rates are a unit `ModelPricing` does not
+  model, so restating text rates would price the wrong unit.
+
+  Two providers keep the empty base default on purpose: Deepgram composes
+  its agent from stages that have catalogs of their own (`speak` is the
+  voice catalog, `think` reads the vendors' *chat* catalogs), and ElevenLabs
+  binds a dashboard-configured agent. `scripts/check_models.py` names all
+  three new catalogs in `UNMIRRORED_CATALOGS` — the aggregator mirrors chat
+  completions, and its `gpt-audio`/`gpt-audio-mini` are that other lineup —
+  so every `make check-models` run states who verifies them and when,
+  instead of reading silence as coverage. Tests pin the invariant nothing
+  else would notice: each provider's constructor default appears in its own
+  catalog.
+
 - **`ImageProvider` — an agent can draw, whatever provider holds the
   conversation.** Nothing in RoomKit generated an image: `AIResponse.content` is
   a `str`, and both model catalogs excluded the image lineups on purpose. Images

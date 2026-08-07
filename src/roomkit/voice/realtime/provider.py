@@ -14,6 +14,7 @@ from roomkit.voice.base import VoiceSession
 logger = logging.getLogger("roomkit.voice.realtime.provider")
 
 if TYPE_CHECKING:
+    from roomkit.providers.ai.base import ModelInfo
     from roomkit.video.video_frame import VideoFrame
 
 # Callback type aliases
@@ -128,6 +129,27 @@ class RealtimeVoiceProvider(ABC):
         No API key or network required — call it on the class to discover the
         ``voice`` ids that :meth:`connect` accepts. The base returns an empty
         list; each provider overrides it with its catalog.
+        """
+        return []
+
+    @classmethod
+    def available_models(cls) -> list[ModelInfo]:
+        """Curated, offline catalog of speech-to-speech models this provider runs.
+
+        The realtime counterpart of :meth:`available_voices` — call it on the
+        class to discover the ``model`` ids the constructor accepts.
+        Deliberately *not* folded into
+        :meth:`~roomkit.providers.ai.base.AIProvider.available_models` for the
+        reason the image catalog gives (RFC §25.6): the sets are disjoint — no
+        realtime id answers a chat completion, and no chat id opens a realtime
+        session — so merging them would oblige every consumer of the
+        conversational catalog to filter out models it can never use.
+
+        The base returns an empty list, and two providers keep it on purpose:
+        Deepgram composes its agent from stages that have catalogs of their own
+        (``speak`` is the voice catalog, ``think`` reads the vendors' *chat*
+        catalogs), and ElevenLabs binds a dashboard-configured agent, so
+        neither has an end-to-end model id to list.
         """
         return []
 
