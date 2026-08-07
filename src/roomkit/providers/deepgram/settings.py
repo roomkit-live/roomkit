@@ -15,11 +15,21 @@ from roomkit.providers.deepgram.config import DeepgramAgentConfig
 
 
 def deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
-    """Recursively merge ``override`` into ``base``, returning a new dict."""
+    """Recursively merge ``override`` into ``base``, returning a new dict.
+
+    Deepgram's provider objects are type-discriminated unions, so an override
+    that names a different ``type`` replaces the whole dict instead of merging:
+    blending fields from two vendors (an Aura ``model`` next to an ElevenLabs
+    ``model_id``) produces a payload Deepgram rejects.
+    """
     merged = dict(base)
     for key, value in override.items():
         current = merged.get(key)
-        if isinstance(current, dict) and isinstance(value, dict):
+        if (
+            isinstance(current, dict)
+            and isinstance(value, dict)
+            and ("type" not in value or value.get("type") == current.get("type"))
+        ):
             merged[key] = deep_merge(current, value)
         else:
             merged[key] = value
@@ -81,15 +91,30 @@ def build_think(
 def build_speak(
     cfg: DeepgramAgentConfig, *, voice: str | None, pc: dict[str, Any]
 ) -> dict[str, Any]:
-    """Build the ``agent.speak`` block — the TTS stage."""
-    provider: dict[str, Any] = {
-        "type": "deepgram",
-        "model": voice or pc.get("speak_model", cfg.speak_model),
-    }
-    language = pc.get("speak_language", cfg.speak_language)
-    if language:
-        provider["language"] = language
-    return {"provider": provider}
+    """Build the ``agent.speak`` block — the TTS stage.
+
+    A ``speak_provider`` dict (per-session or from config) is passed through
+    verbatim, so any TTS vendor Deepgram supports can be named with that
+    vendor's own field shape. It takes precedence over ``voice`` and
+    ``speak_model``, which describe Aura voices. ``speak_endpoint`` rides
+    alongside — the URL + auth headers that BYO-key vendors require.
+    """
+    custom = pc.get("speak_provider", cfg.speak_provider)
+    if custom is not None:
+        provider: dict[str, Any] = deepcopy(custom)
+    else:
+        provider = {
+            "type": "deepgram",
+            "model": voice or pc.get("speak_model", cfg.speak_model),
+        }
+        language = pc.get("speak_language", cfg.speak_language)
+        if language:
+            provider["language"] = language
+    speak: dict[str, Any] = {"provider": provider}
+    endpoint = pc.get("speak_endpoint", cfg.speak_endpoint)
+    if endpoint:
+        speak["endpoint"] = deepcopy(endpoint)
+    return speak
 
 
 def patch_think(
@@ -149,19 +174,34 @@ def patch_speak(
     voice: str | None,
     pc: dict[str, Any],
 ) -> dict[str, Any]:
-    """Patch a live Speak block while preserving omitted provider settings."""
+    """Patch a live Speak block while preserving omitted provider settings.
+
+    A ``speak_provider`` in ``pc`` replaces the provider block wholesale —
+    provider types are discriminated unions, and merging fields across vendors
+    would send Deepgram a hybrid it rejects. ``voice`` and ``speak_model`` name
+    Aura voices, so they only apply when the resulting provider is Deepgram's.
+    """
     speak = deepcopy(current)
-    provider = dict(speak.get("provider") or {})
-    if voice is not None:
-        provider["model"] = voice
-    elif "speak_model" in pc:
-        provider["model"] = pc["speak_model"]
-    if "speak_language" in pc:
-        if pc["speak_language"]:
-            provider["language"] = pc["speak_language"]
-        else:
-            provider.pop("language", None)
+    if pc.get("speak_provider") is not None:
+        provider: dict[str, Any] = deepcopy(pc["speak_provider"])
+    else:
+        provider = dict(speak.get("provider") or {})
+    if provider.get("type", "deepgram") == "deepgram":
+        if voice is not None:
+            provider["model"] = voice
+        elif "speak_model" in pc:
+            provider["model"] = pc["speak_model"]
+        if "speak_language" in pc:
+            if pc["speak_language"]:
+                provider["language"] = pc["speak_language"]
+            else:
+                provider.pop("language", None)
     speak["provider"] = provider
+    if "speak_endpoint" in pc:
+        if pc["speak_endpoint"]:
+            speak["endpoint"] = deepcopy(pc["speak_endpoint"])
+        else:
+            speak.pop("endpoint", None)
     return speak
 
 

@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Deepgram Voice Agent — any TTS vendor in the `speak` stage.** Deepgram
+  composes its agent from independently chosen stages, and its `speak` stage
+  accepts five provider types (`deepgram`, `eleven_labs`, `cartesia`,
+  `open_ai`, `aws_polly`) — but RoomKit hardcoded `type: "deepgram"`, so only
+  Aura voices were reachable. `DeepgramAgentConfig.speak_provider` (also a
+  per-session `provider_config` key) now carries the full
+  `agent.speak.provider` dict verbatim — each vendor has its own field shape
+  (`model` vs `model_id`/`voice_id` vs `voice` objects), so RoomKit passes the
+  dict through rather than modelling five schemas that would rot.
+  `speak_endpoint` rides alongside for the BYO-key endpoint vendors like
+  ElevenLabs require (Deepgram-managed ones need none). Mid-session `reconfigure()` swaps
+  vendors wholesale, and a `voice` argument naming an Aura model is ignored
+  with a warning when another vendor holds the stage.
+
+- **ElevenLabs ConvAI — TTS speed override.** `provider_config["speed"]`
+  rides `conversation_config_override.tts`, clamped into the 0.7–1.2 range
+  ElevenLabs accepts. The agent must whitelist the speed override in its
+  security settings for the value to take effect.
+
+### Fixed
+
+- **Deepgram settings escape hatch — vendor switches no longer blend
+  provider fields.** `provider_config["settings"]` is deep-merged into the
+  built payload, which used to *merge* a replacement provider into the
+  default one — overriding `agent.speak.provider` with an ElevenLabs block
+  left the default Aura `model` key inside it, a hybrid Deepgram rejects.
+  Deepgram's provider objects are type-discriminated unions, so the merge now
+  replaces a dict wholesale whenever the override names a different `type`.
+
 ## [0.44.0] — 2026-08-07
 
 ### Added

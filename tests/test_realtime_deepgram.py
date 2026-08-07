@@ -170,6 +170,7 @@ class TestConfig:
             {"think_provider": ""},
             {"think_model": ""},
             {"speak_model": ""},
+            {"speak_provider": {"model_id": "eleven_multilingual_v2"}},
             {"keepalive_interval": -1},
         ],
     )
@@ -380,6 +381,172 @@ class TestConnect:
             await provider.connect(session)
 
         assert await audio.wait() == (session, b"\x01\x02")
+        await provider.disconnect(session)
+
+
+_ELEVEN_LABS_PROVIDER = {
+    "type": "eleven_labs",
+    "model_id": "eleven_turbo_v2_5",
+    "language_code": "en-US",
+}
+_ELEVEN_LABS_ENDPOINT = {
+    "url": "wss://api.elevenlabs.io/v1/text-to-speech/cgSgspJ2msm6clMCkdW9/multi-stream-input",
+    "headers": {"xi-api-key": "el-key"},
+}
+
+
+class TestSpeakVendor:
+    """Non-Deepgram TTS vendors selected through speak_provider/speak_endpoint."""
+
+    async def test_session_speak_provider_is_sent_verbatim(
+        self, provider: DeepgramAgentProvider, session: VoiceSession
+    ) -> None:
+        ws = await _connect(
+            provider,
+            session,
+            provider_config={
+                "speak_provider": dict(_ELEVEN_LABS_PROVIDER),
+                "speak_endpoint": dict(_ELEVEN_LABS_ENDPOINT),
+            },
+        )
+
+        speak = ws.last_of_type("Settings")["agent"]["speak"]
+        # Verbatim: the vendor's own field shape, no Aura ``model`` leftover.
+        assert speak == {"provider": _ELEVEN_LABS_PROVIDER, "endpoint": _ELEVEN_LABS_ENDPOINT}
+        await provider.disconnect(session)
+
+    async def test_config_level_speak_provider_applies(self, session: VoiceSession) -> None:
+        cfg = DeepgramAgentConfig(
+            api_key=SecretStr("dg-key"),
+            speak_provider=dict(_ELEVEN_LABS_PROVIDER),
+            speak_endpoint=dict(_ELEVEN_LABS_ENDPOINT),
+        )
+        provider = DeepgramAgentProvider(cfg)
+        ws = await _connect(provider, session)
+
+        speak = ws.last_of_type("Settings")["agent"]["speak"]
+        assert speak == {"provider": _ELEVEN_LABS_PROVIDER, "endpoint": _ELEVEN_LABS_ENDPOINT}
+        await provider.disconnect(session)
+
+    async def test_session_speak_provider_overrides_config(self, session: VoiceSession) -> None:
+        cfg = DeepgramAgentConfig(
+            api_key=SecretStr("dg-key"), speak_provider=dict(_ELEVEN_LABS_PROVIDER)
+        )
+        provider = DeepgramAgentProvider(cfg)
+        cartesia = {"type": "cartesia", "model_id": "sonic-2", "voice": {"mode": "id", "id": "v1"}}
+        ws = await _connect(provider, session, provider_config={"speak_provider": cartesia})
+
+        assert ws.last_of_type("Settings")["agent"]["speak"]["provider"] == cartesia
+        await provider.disconnect(session)
+
+    async def test_voice_is_ignored_and_warned_for_foreign_vendor(
+        self,
+        provider: DeepgramAgentProvider,
+        session: VoiceSession,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        with caplog.at_level(logging.WARNING, logger="roomkit.providers.deepgram.realtime"):
+            ws = await _connect(
+                provider,
+                session,
+                voice="aura-2-hera-en",
+                provider_config={"speak_provider": dict(_ELEVEN_LABS_PROVIDER)},
+            )
+
+        # ``voice`` names an Aura model; it must not leak into another vendor's block.
+        assert ws.last_of_type("Settings")["agent"]["speak"]["provider"] == _ELEVEN_LABS_PROVIDER
+        assert "ignored" in caplog.text
+        await provider.disconnect(session)
+
+    async def test_escape_hatch_type_change_replaces_wholesale(
+        self, provider: DeepgramAgentProvider, session: VoiceSession
+    ) -> None:
+        ws = await _connect(
+            provider,
+            session,
+            provider_config={
+                "settings": {"agent": {"speak": {"provider": dict(_ELEVEN_LABS_PROVIDER)}}}
+            },
+        )
+
+        # The default Aura ``model`` must not survive a vendor switch — Deepgram
+        # rejects provider objects blending fields from two vendors.
+        assert ws.last_of_type("Settings")["agent"]["speak"]["provider"] == _ELEVEN_LABS_PROVIDER
+        await provider.disconnect(session)
+
+    async def test_escape_hatch_same_type_still_merges(
+        self, provider: DeepgramAgentProvider, session: VoiceSession
+    ) -> None:
+        ws = await _connect(
+            provider,
+            session,
+            provider_config={
+                "settings": {"agent": {"speak": {"provider": {"type": "deepgram", "speed": 1.2}}}}
+            },
+        )
+
+        speak_provider = ws.last_of_type("Settings")["agent"]["speak"]["provider"]
+        assert speak_provider["model"] == "aura-2-thalia-en"
+        assert speak_provider["speed"] == 1.2
+        await provider.disconnect(session)
+
+    async def test_reconfigure_swaps_vendor_wholesale(
+        self, provider: DeepgramAgentProvider, session: VoiceSession
+    ) -> None:
+        ws = await _connect(provider, session)
+
+        await provider.reconfigure(
+            session,
+            provider_config={
+                "speak_provider": dict(_ELEVEN_LABS_PROVIDER),
+                "speak_endpoint": dict(_ELEVEN_LABS_ENDPOINT),
+            },
+        )
+
+        speak = ws.last_of_type("UpdateSpeak")["speak"]
+        assert speak == {"provider": _ELEVEN_LABS_PROVIDER, "endpoint": _ELEVEN_LABS_ENDPOINT}
+        await provider.disconnect(session)
+
+    async def test_reconfigure_voice_alone_leaves_foreign_vendor_untouched(
+        self,
+        provider: DeepgramAgentProvider,
+        session: VoiceSession,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        ws = await _connect(
+            provider, session, provider_config={"speak_provider": dict(_ELEVEN_LABS_PROVIDER)}
+        )
+
+        with caplog.at_level(logging.WARNING, logger="roomkit.providers.deepgram.realtime"):
+            await provider.reconfigure(session, voice="aura-2-zeus-en")
+
+        assert ws.last_of_type("UpdateSpeak")["speak"]["provider"] == _ELEVEN_LABS_PROVIDER
+        assert "ignored" in caplog.text
+        await provider.disconnect(session)
+
+    async def test_reconfigure_returns_to_aura_and_drops_endpoint(
+        self, provider: DeepgramAgentProvider, session: VoiceSession
+    ) -> None:
+        ws = await _connect(
+            provider,
+            session,
+            provider_config={
+                "speak_provider": dict(_ELEVEN_LABS_PROVIDER),
+                "speak_endpoint": dict(_ELEVEN_LABS_ENDPOINT),
+            },
+        )
+
+        await provider.reconfigure(
+            session,
+            provider_config={
+                "speak_provider": {"type": "deepgram", "model": "aura-2-zeus-en"},
+                "speak_endpoint": None,
+            },
+        )
+
+        # Aura needs no BYO endpoint: an explicit ``None`` removes the stored one.
+        speak = ws.last_of_type("UpdateSpeak")["speak"]
+        assert speak == {"provider": {"type": "deepgram", "model": "aura-2-zeus-en"}}
         await provider.disconnect(session)
 
 

@@ -7,7 +7,10 @@ WebRTC AEC strips speaker echo so the mic stays open during playback.
 Unlike single-model speech-to-speech APIs, a Deepgram agent is assembled from
 three stages you pick independently: ``listen`` (Nova/Flux transcription),
 ``think`` (the LLM) and ``speak`` (an Aura voice).  Each is a separate env var
-below, and each can be swapped mid-conversation.
+below, and each can be swapped mid-conversation.  The speak stage can even be
+another vendor entirely — set the ELEVENLABS_* variables to put an ElevenLabs
+voice behind Deepgram's turn-taking (BYO key: the endpoint carries your
+ElevenLabs key, and the voice id rides in the endpoint URL).
 
 Requirements:
     pip install roomkit websockets sounddevice numpy aec-audio-processing
@@ -33,6 +36,9 @@ Environment variables:
     DEEPGRAM_LISTEN_MODEL Speech-to-text model (default: nova-3)
     DEEPGRAM_THINK_MODEL  LLM model (default: gpt-4o-mini)
     DEEPGRAM_GREETING     Line the agent speaks first (default: a short hello)
+    ELEVENLABS_API_KEY    Use an ElevenLabs voice for the speak stage (BYO key)
+    ELEVENLABS_VOICE_ID   ElevenLabs voice id (required with ELEVENLABS_API_KEY)
+    ELEVENLABS_MODEL_ID   ElevenLabs model (default: eleven_turbo_v2_5)
     SYSTEM_PROMPT         Custom system prompt
     AEC                   webrtc (default) | speex | 0 to disable
     DENOISE               webrtc (default) | rnnoise | sherpa | 0 to disable
@@ -50,6 +56,7 @@ import asyncio
 import os
 import sys
 from pathlib import Path
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -81,6 +88,27 @@ async def main() -> None:
     # --- Deepgram Voice Agent provider (speech-to-speech) ---
     # The three stages are configured independently — that is the point of this
     # provider. Swap the LLM without touching the voice, or vice versa.
+    # The speak stage may even be another vendor: with an ElevenLabs key + voice
+    # id, the speak_provider dict goes to Deepgram verbatim and the BYO-key
+    # endpoint (voice id in the URL) rides alongside.
+    speak_vendor: dict[str, Any] = {}
+    elevenlabs_key = os.environ.get("ELEVENLABS_API_KEY")
+    elevenlabs_voice = os.environ.get("ELEVENLABS_VOICE_ID")
+    if elevenlabs_key and elevenlabs_voice:
+        speak_vendor = {
+            "speak_provider": {
+                "type": "eleven_labs",
+                "model_id": os.environ.get("ELEVENLABS_MODEL_ID", "eleven_turbo_v2_5"),
+            },
+            "speak_endpoint": {
+                "url": (
+                    "wss://api.elevenlabs.io/v1/text-to-speech/"
+                    f"{elevenlabs_voice}/multi-stream-input"
+                ),
+                "headers": {"xi-api-key": elevenlabs_key},
+            },
+        }
+
     config = DeepgramAgentConfig(
         api_key=env["DEEPGRAM_API_KEY"],
         listen_model=os.environ.get("DEEPGRAM_LISTEN_MODEL", "nova-3"),
@@ -88,6 +116,7 @@ async def main() -> None:
         think_model=os.environ.get("DEEPGRAM_THINK_MODEL", "gpt-4o-mini"),
         speak_model=os.environ.get("DEEPGRAM_VOICE", "aura-2-thalia-en"),
         greeting=os.environ.get("DEEPGRAM_GREETING", "Hi! What can I do for you?"),
+        **speak_vendor,
     )
     provider = DeepgramAgentProvider(config)
 
@@ -134,7 +163,9 @@ async def main() -> None:
             "SYSTEM_PROMPT",
             "You are a friendly voice assistant. Be concise and helpful.",
         ),
-        voice=config.speak_model,
+        # ``voice`` names an Aura model; when another vendor holds the speak
+        # stage the voice is chosen by speak_provider/speak_endpoint instead.
+        voice=None if config.speak_provider else config.speak_model,
         input_sample_rate=sample_rate,
         output_sample_rate=sample_rate,
         pipeline=pipeline,
@@ -156,7 +187,7 @@ async def main() -> None:
         "Deepgram Voice Agent session started (listen=%s, think=%s, speak=%s)",
         config.listen_model,
         config.think_model,
-        config.speak_model,
+        config.speak_provider["type"] if config.speak_provider else config.speak_model,
     )
     logger.info("Speak into your microphone! Press Ctrl+C to stop.\n")
 

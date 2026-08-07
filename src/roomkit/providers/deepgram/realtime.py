@@ -44,7 +44,9 @@ _KEEPALIVE = json.dumps({"type": "KeepAlive"})
 _THINK_RECONFIGURE_KEYS = frozenset(
     {"think_provider", "think_model", "think_endpoint", "context_length"}
 )
-_SPEAK_RECONFIGURE_KEYS = frozenset({"speak_model", "speak_language"})
+_SPEAK_RECONFIGURE_KEYS = frozenset(
+    {"speak_model", "speak_language", "speak_provider", "speak_endpoint"}
+)
 
 
 @dataclass
@@ -112,6 +114,12 @@ class DeepgramAgentProvider(RealtimeVoiceProvider):
             override the LLM stage — ``think_endpoint`` points at a self-hosted,
             OpenAI-compatible server.
         speak_model, speak_language (str): override the TTS stage.
+        speak_provider (dict): full ``agent.speak.provider`` replacement, sent
+            verbatim — names a non-Deepgram TTS vendor (``eleven_labs``,
+            ``cartesia``…) with that vendor's own fields. Takes precedence over
+            ``voice``/``speak_model``.
+        speak_endpoint (dict): ``agent.speak.endpoint`` (URL + auth headers) —
+            required for BYO-key TTS vendors; Deepgram-managed ones need none.
         max_prompt_chars (int | None): per-session override of the managed-LLM
             prompt-size warning threshold; ``None`` disables the warning.
         greeting (str): line the agent speaks when the session opens.
@@ -249,6 +257,7 @@ class DeepgramAgentProvider(RealtimeVoiceProvider):
 
         max_prompt_chars = pc.get("max_prompt_chars", self._config.max_prompt_chars)
         self._warn_prompt_over_limit(session.id, think, max_prompt_chars)
+        self._warn_voice_ignored(session.id, voice, speak_provider)
 
         ws = await asyncio.wait_for(
             websockets.connect(self._config.base_url, additional_headers=self._auth_headers()),
@@ -287,12 +296,17 @@ class DeepgramAgentProvider(RealtimeVoiceProvider):
             self._keepalive_loop(session.id), name=f"deepgram_agent_ka:{session.id}"
         )
 
+        speak_label = (
+            speak_provider.get("model")
+            or speak_provider.get("model_id")
+            or speak_provider.get("type")
+        )
         logger.info(
             "Deepgram Agent session connected: %s (listen=%s, think=%s, speak=%s)",
             session.id,
             listen_provider.get("model"),
             think_provider.get("model"),
-            speak_provider.get("model"),
+            speak_label,
         )
 
     async def _await_welcome(self, state: _SessionState) -> None:
@@ -684,6 +698,25 @@ class DeepgramAgentProvider(RealtimeVoiceProvider):
                 limit,
             )
 
+    @staticmethod
+    def _warn_voice_ignored(
+        session_id: str, voice: str | None, speak_provider: dict[str, Any]
+    ) -> None:
+        """Flag a ``voice`` that cannot apply because the TTS vendor is not Deepgram.
+
+        ``voice`` names an Aura model; when a ``speak_provider`` (or the raw
+        settings escape hatch) selects another vendor, the voice belongs in
+        that vendor's own fields instead and the argument is dropped.
+        """
+        if voice and speak_provider.get("type", "deepgram") != "deepgram":
+            logger.warning(
+                "voice=%r names a Deepgram Aura model but the speak provider is %r "
+                "— ignored (session %s)",
+                voice,
+                speak_provider.get("type"),
+                session_id,
+            )
+
     async def _append_to_prompt(self, state: _SessionState, text: str) -> None:
         """Append to the live system prompt without dropping what was there."""
         async with state.update_lock:
@@ -794,6 +827,7 @@ class DeepgramAgentProvider(RealtimeVoiceProvider):
             speak_changed = voice is not None or any(key in pc for key in _SPEAK_RECONFIGURE_KEYS)
             if speak_changed:
                 speak = patch_speak(state.speak, voice=voice, pc=pc)
+                self._warn_voice_ignored(session.id, voice, speak.get("provider") or {})
                 logger.debug("[Deepgram →] UpdateSpeak (session %s)", session.id)
                 await state.ws.send(json.dumps({"type": "UpdateSpeak", "speak": speak}))
                 state.speak = speak

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel, Field, SecretStr, field_validator
 
 
@@ -29,6 +31,13 @@ class DeepgramAgentConfig(BaseModel):
         think_model: LLM model id served by ``think_provider``.
         speak_model: Aura voice id — see :mod:`roomkit.providers.deepgram.voices`.
         speak_language: Language code for synthesis, when the voice supports it.
+        speak_provider: Full ``agent.speak.provider`` dict, sent verbatim — names
+            any TTS vendor Deepgram supports (``eleven_labs``, ``cartesia``,
+            ``open_ai``, ``aws_polly``…) with that vendor's own field shape.
+            Takes precedence over ``speak_model``/``speak_language``.
+        speak_endpoint: ``agent.speak.endpoint`` dict (URL + auth headers).
+            Required for BYO-key TTS vendors (e.g. ElevenLabs, whose voice id
+            rides in the endpoint URL); Deepgram-managed vendors need none.
         greeting: Optional line the agent speaks as soon as the session opens.
         keepalive_interval: Seconds between ``KeepAlive`` messages. Deepgram closes
             connections that go silent; its docs prescribe one every 8 seconds.
@@ -48,6 +57,8 @@ class DeepgramAgentConfig(BaseModel):
     think_model: str = Field(default="gpt-4o-mini", min_length=1)
     speak_model: str = Field(default="aura-2-thalia-en", min_length=1)
     speak_language: str | None = None
+    speak_provider: dict[str, Any] | None = None
+    speak_endpoint: dict[str, Any] | None = None
     greeting: str | None = None
     keepalive_interval: float = Field(default=8.0, ge=0)
     max_prompt_chars: int | None = Field(default=25_000, ge=1)
@@ -57,4 +68,11 @@ class DeepgramAgentConfig(BaseModel):
     def _validate_websocket_url(cls, value: str) -> str:
         if not value.startswith(("ws://", "wss://")):
             raise ValueError("base_url must use ws:// or wss://")
+        return value
+
+    @field_validator("speak_provider")
+    @classmethod
+    def _validate_speak_provider(cls, value: dict[str, Any] | None) -> dict[str, Any] | None:
+        if value is not None and not value.get("type"):
+            raise ValueError("speak_provider must include a 'type' field")
         return value
