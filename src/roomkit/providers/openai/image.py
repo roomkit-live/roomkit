@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import base64
-import binascii
 from typing import Any
 
 from roomkit.providers.ai.base import (
@@ -12,7 +10,12 @@ from roomkit.providers.ai.base import (
     ModelInfo,
     ProviderError,
 )
-from roomkit.providers.image.base import ImageProvider, ImageResult, parse_size
+from roomkit.providers.image.base import (
+    ImageProvider,
+    ImageResult,
+    parse_data_uri,
+    parse_size,
+)
 from roomkit.providers.openai.config import OpenAIImageConfig
 from roomkit.providers.openai.image_models import MODELS
 
@@ -136,19 +139,13 @@ class OpenAIImageProvider(ImageProvider):
         ``images.edit`` is a multipart endpoint: it takes file content, not a
         URL, so a reference that is not inline bytes cannot be forwarded.
         """
-        url = part.url
-        if not url.startswith("data:"):
-            raise ValueError(
-                "OpenAI image editing needs inline image bytes; "
-                f"reference image {index} is a {url.split(':', 1)[0]} URL. "
-                "Fetch it and pass a data: URI."
-            )
-        header, _, payload = url.partition(",")
-        mime_type = header[len("data:") :].split(";", 1)[0] or part.mime_type or "image/png"
         try:
-            data = base64.b64decode(payload, validate=True)
-        except (binascii.Error, ValueError) as exc:
-            raise ValueError(f"reference image {index} is not valid base64") from exc
+            mime_type, data = parse_data_uri(part.url, fallback_mime=part.mime_type)
+        except ValueError as exc:
+            raise ValueError(
+                f"reference image {index}: {exc}. OpenAI image editing uploads file "
+                "content, so a reference must carry inline bytes as a data: URI."
+            ) from exc
         return (f"reference-{index}.{_EXTENSIONS.get(mime_type, 'png')}", data, mime_type)
 
     def _results(self, response: Any, expected: int) -> list[ImageResult]:

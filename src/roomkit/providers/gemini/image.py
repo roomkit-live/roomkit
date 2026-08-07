@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import asyncio
 import base64
-import binascii
 from math import gcd
 from typing import Any
 
@@ -20,7 +19,12 @@ from roomkit.providers.ai.base import AIImagePart, ModelInfo, ProviderError
 from roomkit.providers.gemini.config import GeminiImageConfig
 from roomkit.providers.gemini.errors import wrap_gemini_error
 from roomkit.providers.gemini.image_models import MODELS
-from roomkit.providers.image.base import ImageProvider, ImageResult, parse_size
+from roomkit.providers.image.base import (
+    ImageProvider,
+    ImageResult,
+    parse_data_uri,
+    parse_size,
+)
 
 # Aspect ratios the Interactions image format accepts. A requested size is
 # reduced to its ratio and looked up here; an unlisted one is refused rather
@@ -90,10 +94,20 @@ class GeminiImageProvider(ImageProvider):
         if n < 1:
             raise ValueError(f"n must be at least 1, got {n}")
         request = self._build_request(prompt, size, reference_images or [])
-        interactions = await asyncio.gather(
-            *(self._create(request) for _ in range(n)),
-        )
-        return [self._result(interaction) for interaction in interactions]
+        # A task group rather than ``gather``: when one interaction fails the
+        # siblings are cancelled instead of running to completion for a result
+        # nobody will read. Each one is a billed image.
+        try:
+            async with asyncio.TaskGroup() as group:
+                tasks = [group.create_task(self._create(request)) for _ in range(n)]
+        except BaseExceptionGroup as failures:
+            # The caller asked for images and gets the failure that stopped
+            # them, not a group wrapper it would have to unpack to find the
+            # ProviderError its retry policy reads. Re-chained to its own cause
+            # so the SDK exception underneath survives the unwrapping.
+            first = failures.exceptions[0]
+            raise first from first.__cause__
+        return [self._result(task.result()) for task in tasks]
 
     def _build_request(
         self,
@@ -157,17 +171,26 @@ class GeminiImageProvider(ImageProvider):
 
     @staticmethod
     def _image_content(part: AIImagePart, index: int) -> dict[str, Any]:
-        """Turn a reference image into an Interactions image content block."""
-        url = part.url
-        if not url.startswith("data:"):
-            return {"type": "image", "uri": url, "mime_type": part.mime_type or "image/png"}
-        header, _, payload = url.partition(",")
-        mime_type = header[len("data:") :].split(";", 1)[0] or part.mime_type or "image/png"
+        """Turn a reference image into an Interactions image content block.
+
+        A remote URI is forwarded as-is — Google dereferences it, roomkit never
+        does. Inline bytes make the round trip through :func:`parse_data_uri`
+        rather than being copied across: decoding is what proves the payload is
+        valid before it reaches the wire, and re-encoding from those bytes is
+        what guarantees the string sent is canonical base64 even when the
+        caller's URI carried line breaks or padding of its own.
+        """
+        if not part.url.startswith("data:"):
+            return {"type": "image", "uri": part.url, "mime_type": part.mime_type or "image/png"}
         try:
-            base64.b64decode(payload, validate=True)
-        except (binascii.Error, ValueError) as exc:
-            raise ValueError(f"reference image {index} is not valid base64") from exc
-        return {"type": "image", "data": payload, "mime_type": mime_type}
+            mime_type, data = parse_data_uri(part.url, fallback_mime=part.mime_type)
+        except ValueError as exc:
+            raise ValueError(f"reference image {index}: {exc}") from exc
+        return {
+            "type": "image",
+            "data": base64.b64encode(data).decode("ascii"),
+            "mime_type": mime_type,
+        }
 
     def _result(self, interaction: Any) -> ImageResult:
         """Map one ``Interaction`` onto an :class:`ImageResult`."""

@@ -4,6 +4,7 @@ from roomkit.providers.image.base import (
     IMAGE_GEN_CAPABILITY,
     ImageProvider,
     ImageResult,
+    parse_data_uri,
     parse_size,
     to_data_uri,
 )
@@ -14,6 +15,7 @@ __all__ = [
     "ImageProvider",
     "ImageResult",
     "MockImageProvider",
+    "parse_data_uri",
     "parse_size",
     "to_data_uri",
 ]

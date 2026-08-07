@@ -188,7 +188,7 @@ async def test_an_edit_reference_must_carry_inline_bytes() -> None:
     provider = _provider()
     provider._client.images.edit = AsyncMock(return_value=_response())
 
-    with pytest.raises(ValueError, match="needs inline image bytes"):
+    with pytest.raises(ValueError, match="reference image 0: expected a data: URI, got a https"):
         await provider.generate(
             "make it blue",
             reference_images=[AIImagePart(url="https://example.com/fox.png")],

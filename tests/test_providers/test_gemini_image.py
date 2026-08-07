@@ -191,6 +191,20 @@ async def test_n_images_are_n_interactions() -> None:
     assert create.await_count == 3
 
 
+async def test_one_failure_among_several_surfaces_as_a_provider_error() -> None:
+    """The task group must not hand its caller an ExceptionGroup to unpack."""
+    provider = _provider()
+    provider._client.aio.interactions.create = AsyncMock(
+        side_effect=[_interaction(), RuntimeError("429 rate limit exceeded"), _interaction()]
+    )
+
+    with pytest.raises(ProviderError) as exc_info:
+        await provider.generate("three foxes", n=3)
+    assert exc_info.value.retryable is True
+    # The SDK exception underneath survives the unwrapping.
+    assert isinstance(exc_info.value.__cause__, RuntimeError)
+
+
 async def test_generate_rejects_n_below_one() -> None:
     provider = _provider()
     create = _arm(provider, _interaction())

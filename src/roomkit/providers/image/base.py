@@ -62,6 +62,40 @@ def to_data_uri(data: bytes, mime_type: str) -> str:
     return f"data:{mime_type};base64,{base64.b64encode(data).decode('ascii')}"
 
 
+def parse_data_uri(url: str, *, fallback_mime: str | None = None) -> tuple[str, bytes]:
+    """Split a ``data:`` URI into its media type and its decoded bytes.
+
+    The counterpart of :func:`to_data_uri`, and the one place a payload is
+    validated: every provider that accepts a reference image has to reject a
+    corrupt one, and each doing it itself is how one of them ends up handing
+    malformed bytes to a vendor and reporting the rejection as a provider
+    failure rather than a caller error.
+
+    Args:
+        url: The URI to split.
+        fallback_mime: Media type to use when the URI declares none. ``None``
+            falls back to ``image/png``.
+
+    Returns:
+        ``(mime_type, data)``.
+
+    Raises:
+        ValueError: If *url* is not a ``data:`` URI, or its payload is not
+            valid base64.
+    """
+    if not url.startswith("data:"):
+        raise ValueError(f"expected a data: URI, got a {url.split(':', 1)[0]} URL")
+    header, separator, payload = url.partition(",")
+    if not separator or not payload:
+        raise ValueError("data URI carries no payload")
+    mime_type = header[len("data:") :].split(";", 1)[0] or fallback_mime or "image/png"
+    try:
+        data = base64.b64decode(payload, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise ValueError("data URI payload is not valid base64") from exc
+    return mime_type, data
+
+
 class ImageResult(BaseModel):
     """One generated image.
 
@@ -114,11 +148,7 @@ class ImageResult(BaseModel):
                 is worth an error at the point it is read, not a truncated file
                 on disk.
         """
-        payload = self.data.partition(",")[2]
-        try:
-            return base64.b64decode(payload, validate=True)
-        except (binascii.Error, ValueError) as exc:
-            raise ValueError("ImageResult.data payload is not valid base64") from exc
+        return parse_data_uri(self.data, fallback_mime=self.mime_type)[1]
 
     def to_image_part(self) -> AIImagePart:
         """The result as a message part — an AI input, or the next edit's reference."""
