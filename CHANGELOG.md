@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`SQLiteStore` — the embedded persistent conversation store.** One `.db`
+  file, stdlib `sqlite3` only: the backend for single-process deployments
+  (desktop apps, edge boxes, small bots) where `PostgresStore` is a burden and
+  `InMemoryStore` forgets everything on exit. Models are stored as their
+  pydantic JSON with the queryable fields extracted into indexed columns, and
+  message text is mirrored into an FTS5 table, so history is full-text
+  searchable via `SQLiteStore.search_events(query, room_id=…)` — the raw
+  material for "what did we talk about last week?" recall. Every call runs on
+  one dedicated worker thread (the event loop never blocks on disk I/O) and
+  multi-statement operations commit as one `BEGIN IMMEDIATE` transaction, so
+  the index-assignment path is serialised by the database file itself — which
+  is why the framework's InMemoryLockManager pairing warning exempts it. The
+  whole `InMemoryStore` behavioural suite runs against it unchanged.
+
+### Fixed
+
+- **Realtime transcriptions could render out of wire order.** Each
+  transcription event runs in its own task and the partial path awaits one hop
+  more than the final path, so a final could overtake the partial that
+  preceded it on the wire; the late partial then resurrected the
+  already-finalised utterance downstream — Gemini ships a short utterance as
+  one chunk plus its final in the same server message, and chat UIs rendered
+  both as identical duplicate bubbles. A per-session FIFO lock in
+  `_process_transcription` keeps hook delivery in arrival order.
+
 ## [0.45.0] — 2026-08-07
 
 ### Added

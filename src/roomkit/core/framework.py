@@ -254,7 +254,12 @@ class RoomKit(
         # A persistent store paired with an in-process lock is unsafe if the
         # store is shared across processes: per-process locks do not coordinate,
         # so concurrent workers can assign duplicate event indices (RFC §13.5).
-        if not isinstance(self._store, InMemoryStore) and isinstance(
+        # SQLite is exempt: its commit path assigns the index inside a BEGIN
+        # IMMEDIATE transaction, so the database file itself serialises
+        # writers — other processes included.
+        from roomkit.store.sqlite import SQLiteStore
+
+        if not isinstance(self._store, InMemoryStore | SQLiteStore) and isinstance(
             self._lock_manager, InMemoryLockManager
         ):
             logger.warning(
