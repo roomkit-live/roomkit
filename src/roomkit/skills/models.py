@@ -9,6 +9,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from roomkit.skills.paths import safe_join_filename
+
 logger = logging.getLogger("roomkit.skills")
 
 _SCRIPTS_DIR = "scripts"
@@ -82,16 +84,33 @@ class Skill:
         """Read a reference file by name.
 
         Raises:
-            ValueError: If filename contains path traversal characters.
+            SkillPathError: If filename is not a plain name inside the skill's
+                ``references/`` directory. Subclasses ValueError.
             FileNotFoundError: If the reference file does not exist.
         """
-        if ".." in filename or "/" in filename or "\\" in filename:
-            raise ValueError(f"Invalid reference filename: {filename!r}")
-        refs_dir = self.path / _REFERENCES_DIR
-        ref_path = refs_dir / filename
+        ref_path = safe_join_filename(self.path / _REFERENCES_DIR, filename, kind="reference")
         if not ref_path.is_file():
             raise FileNotFoundError(f"Reference not found: {filename}")
         return ref_path.read_text(encoding="utf-8")
+
+    def resolve_script(self, script_name: str) -> Path:
+        """Resolve a script inside the skill's ``scripts/`` directory.
+
+        ``ScriptExecutor`` implementations should build their command from this
+        rather than joining the name themselves. Execution policy — sandboxing,
+        timeouts, allowed interpreters — stays the integrator's call, but which
+        file gets run should not depend on each integrator repeating the same
+        containment check.
+
+        Raises:
+            SkillPathError: If script_name is not a plain name inside the
+                skill's ``scripts/`` directory. Subclasses ValueError.
+            FileNotFoundError: If the script does not exist.
+        """
+        script_path = safe_join_filename(self.path / _SCRIPTS_DIR, script_name, kind="script")
+        if not script_path.is_file():
+            raise FileNotFoundError(f"Script not found: {script_name}")
+        return script_path
 
 
 class ScriptResult(BaseModel):

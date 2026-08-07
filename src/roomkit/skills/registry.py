@@ -6,10 +6,13 @@ import logging
 from html import escape
 from pathlib import Path
 
-from roomkit.skills.models import Skill, SkillMetadata
-from roomkit.skills.parser import (
+from roomkit.skills.errors import (
+    SkillDiscoveryError,
     SkillParseError,
     SkillValidationError,
+)
+from roomkit.skills.models import Skill, SkillMetadata
+from roomkit.skills.parser import (
     find_skill_md,
     parse_skill,
     parse_skill_metadata,
@@ -32,29 +35,62 @@ class SkillRegistry:
         self._paths: dict[str, Path] = {}
         self._unavailable: dict[str, str] = {}
 
-    def discover(self, *directories: str | Path) -> int:
+    def discover(self, *directories: str | Path, strict: bool = True) -> int:
         """Scan directories for subdirectories containing SKILL.md.
 
-        Returns the number of newly discovered skills. Invalid skills
-        are warned and skipped.
+        A malformed skill is a deployment error, not a runtime condition, so
+        the default is to stop. Skipping it instead removes the skill from the
+        catalogue while the agent keeps answering: the model is never told the
+        capability is missing, and neither is anyone reading the conversation.
+        The failure surfaces hours later as an agent that quietly cannot do
+        something it was configured to do.
+
+        Discovery commits only once every candidate has parsed, so a strict
+        failure leaves the registry exactly as it was rather than half filled.
+
+        Args:
+            directories: Directories to scan. Only immediate subdirectories
+                containing a SKILL.md are considered.
+            strict: Stop on the first unreadable directory or invalid skill.
+                Set False to log and skip each instead — appropriate when
+                skills come from a source you do not control.
+
+        Returns:
+            The number of skills registered.
+
+        Raises:
+            SkillDiscoveryError: In strict mode, when a directory is missing.
+            SkillParseError: In strict mode, when a SKILL.md cannot be parsed.
+            SkillValidationError: In strict mode, when metadata is invalid.
         """
-        count = 0
+        parsed: list[tuple[Path, SkillMetadata]] = []
+        for skill_dir in self._candidates(directories, strict=strict):
+            try:
+                parsed.append((skill_dir, parse_skill_metadata(skill_dir)))
+            except (SkillParseError, SkillValidationError) as exc:
+                if strict:
+                    raise
+                logger.warning("Skipping invalid skill %s: %s", skill_dir.name, exc)
+        for skill_dir, metadata in parsed:
+            self._commit(skill_dir, metadata)
+        return len(parsed)
+
+    def _candidates(self, directories: tuple[str | Path, ...], *, strict: bool) -> list[Path]:
+        """Skill directories found under ``directories``, in a stable order."""
+        candidates: list[Path] = []
         for directory in directories:
             dir_path = Path(directory).resolve()
             if not dir_path.is_dir():
+                if strict:
+                    raise SkillDiscoveryError(f"Skill directory not found: {dir_path}")
                 logger.warning("Skill directory not found: %s", dir_path)
                 continue
-            for child in sorted(dir_path.iterdir()):
-                if not child.is_dir():
-                    continue
-                if find_skill_md(child) is None:
-                    continue
-                try:
-                    self.register(child)
-                    count += 1
-                except (SkillParseError, SkillValidationError) as exc:
-                    logger.warning("Skipping invalid skill %s: %s", child.name, exc)
-        return count
+            candidates.extend(
+                child
+                for child in sorted(dir_path.iterdir())
+                if child.is_dir() and find_skill_md(child) is not None
+            )
+        return candidates
 
     def register(self, skill_dir: str | Path) -> SkillMetadata:
         """Register a single skill directory.
@@ -68,6 +104,11 @@ class SkillRegistry:
         """
         skill_path = Path(skill_dir).resolve()
         metadata = parse_skill_metadata(skill_path)
+        self._commit(skill_path, metadata)
+        return metadata
+
+    def _commit(self, skill_path: Path, metadata: SkillMetadata) -> None:
+        """Record a parsed skill, replacing any earlier one of the same name."""
         self._metadata[metadata.name] = metadata
         self._paths[metadata.name] = skill_path
         # Invalidate cached full skill if re-registering
@@ -75,7 +116,6 @@ class SkillRegistry:
         # Registering makes the skill usable again — drop any stale mark
         self._unavailable.pop(metadata.name, None)
         logger.info("Registered skill: %s", metadata.name)
-        return metadata
 
     def get_metadata(self, name: str) -> SkillMetadata | None:
         """Get metadata for a skill by name."""

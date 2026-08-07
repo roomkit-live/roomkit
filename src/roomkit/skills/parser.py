@@ -6,7 +6,18 @@ import logging
 import re
 from pathlib import Path
 
+from roomkit.skills.errors import SkillParseError, SkillValidationError
 from roomkit.skills.models import Skill, SkillMetadata
+
+__all__ = [
+    "SkillParseError",
+    "SkillValidationError",
+    "find_skill_md",
+    "parse_frontmatter",
+    "parse_skill",
+    "parse_skill_metadata",
+    "validate_metadata",
+]
 
 logger = logging.getLogger("roomkit.skills")
 
@@ -17,14 +28,6 @@ _SKILL_FILENAMES = ("SKILL.md", "skill.md")
 
 # Known frontmatter keys that map to SkillMetadata fields
 _KNOWN_KEYS = {"name", "description", "license", "compatibility", "allowed_tools"}
-
-
-class SkillParseError(Exception):
-    """Failed to parse SKILL.md content."""
-
-
-class SkillValidationError(Exception):
-    """SKILL.md metadata failed validation."""
 
 
 def find_skill_md(skill_dir: Path) -> Path | None:

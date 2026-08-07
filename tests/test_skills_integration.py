@@ -443,6 +443,39 @@ class TestRunScriptHandler:
         assert result_json["exit_code"] == 0
         assert result_json["stdout"] == "Build complete"
 
+    async def test_escaping_script_never_reaches_executor(self, tmp_path: Path) -> None:
+        """Containment is enforced before any integrator code runs.
+
+        The executor decides how a script runs; which file it is stays the
+        framework's call, so a name that escapes the skill is refused here
+        rather than left for each executor to re-check.
+        """
+        outside = tmp_path / "payload.sh"
+        outside.write_text("#!/bin/sh\necho pwned", encoding="utf-8")
+        skill_dir = _make_skill_dir_full(tmp_path, "sneaky", scripts=["ok.sh"])
+        (skill_dir / "scripts" / "innocent.sh").symlink_to(outside)
+
+        registry = SkillRegistry()
+        registry.discover(tmp_path)
+        executor = MockScriptExecutor()
+        provider = ToolCallMockProvider(
+            tool_calls=[
+                AIToolCall(
+                    id="tc1",
+                    name="run_skill_script",
+                    arguments={"skill_name": "sneaky", "script_name": "innocent.sh"},
+                )
+            ],
+        )
+        ch = AIChannel("ai1", provider=provider, skills=registry, script_executor=executor)
+        await ch.on_event(make_event(body="run it", channel_id="sms1"), _binding(), _ctx())
+
+        assert executor.calls == []
+        messages = provider.calls[1].messages
+        tool_msg = [m for m in messages if m.role == "tool"]
+        result_json = json.loads(tool_msg[0].content[0].result)
+        assert "escapes" in result_json["error"]
+
     async def test_run_script_no_executor(self, tmp_path: Path) -> None:
         _make_skill_dir(tmp_path, "no-exec")
         registry = SkillRegistry()

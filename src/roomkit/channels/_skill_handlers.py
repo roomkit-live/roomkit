@@ -6,6 +6,8 @@ import json
 import logging
 from typing import TYPE_CHECKING, Any
 
+from roomkit.skills.errors import SkillPathError
+
 if TYPE_CHECKING:
     from roomkit.skills.executor import ScriptExecutor
     from roomkit.skills.models import Skill
@@ -114,6 +116,14 @@ async def handle_run_script(
     skill = skills.get_skill(skill_name)
     if skill is None:
         return json.dumps({"error": missing_skill_error(skills, skill_name)})
+
+    # Which file runs is the framework's call; how it runs is the executor's.
+    # Resolving here means a name that escapes the skill never reaches an
+    # integrator's executor, rather than relying on each one to re-check it.
+    try:
+        skill.resolve_script(script_name)
+    except (SkillPathError, FileNotFoundError) as exc:
+        return json.dumps({"error": str(exc)})
 
     try:
         result = await script_executor.execute(skill, script_name, arguments=script_args)

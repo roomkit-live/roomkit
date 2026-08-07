@@ -144,6 +144,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **A broken skill now stops discovery instead of disappearing.**
+  `SkillRegistry.discover()` logged a warning and skipped any skill whose
+  `SKILL.md` failed to parse or validate, and did the same for a directory that
+  did not exist. The result was the worst kind of quiet: the skill simply was
+  not in the catalogue, the model was never told the capability existed, and
+  the agent kept answering as though nothing were missing. A typo in a
+  frontmatter name surfaced hours later as an agent that inexplicably could not
+  do its job.
+
+  Discovery is now strict by default — an unreadable directory raises
+  `SkillDiscoveryError`, an invalid skill re-raises its own `SkillParseError`
+  or `SkillValidationError`. It also commits only after every candidate has
+  parsed, so a failure leaves the registry exactly as it was rather than half
+  filled. Pass `discover(..., strict=False)` for the previous behaviour, which
+  remains the right call when skills come from a source you do not control.
+
+  All skill exceptions now derive from a new `SkillError` base, so "something is
+  wrong with the skills on disk" is one `except` clause. Existing
+  `except SkillParseError` / `except SkillValidationError` are unaffected.
+
 - **The OpenAI Realtime provider defaults to `gpt-realtime-2.1`**, two
   generations up from `gpt-realtime-1.5`. Upstream reports lower p95 latency,
   better alphanumeric recognition — order numbers, phone numbers, confirmation
@@ -161,6 +181,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `provider_config={"reasoning_effort": "minimal|low|medium|high|xhigh"}`,
   carried as the session's own `reasoning` field and omitted entirely when
   unset, so models without reasoning are untouched.
+
+### Security
+
+- **A symlink in a skill can no longer read or run a file outside it.**
+  `Skill.read_reference()` filtered the *name* — rejecting `..`, `/` and `\` —
+  which is no defence against a symlink: `notes.md` contains none of those
+  characters and still served `/etc/passwd` when a link of that name sat in
+  `references/`. Both ends are now resolved and the result must still be inside
+  the skill's directory, so the escape is caught by construction rather than by
+  enumerating the spellings of an attack. Full-width look-alikes are normalised
+  (NFKC) before inspection, and absolute paths are rejected on POSIX and Windows
+  spellings alike.
+
+  The same containment now guards execution. `run_skill_script` resolves the
+  name before it calls the executor, so one that escapes the skill is refused
+  and no integrator code ever sees it — a check every integrator is expected to
+  rediscover is a check some integrator will omit. `Skill.resolve_script()`
+  exposes it directly, and `ScriptExecutor` implementations should build their
+  command from it rather than joining `scripts/` and a model-supplied name
+  themselves. Execution policy — sandboxing, timeouts, allowed interpreters —
+  remains entirely the integrator's call; *which file runs* does not.
+
+  `SkillPathError` subclasses `ValueError`, so integrators already catching the
+  `ValueError` this used to raise keep working.
 
 ## [0.43.0] — 2026-08-06
 

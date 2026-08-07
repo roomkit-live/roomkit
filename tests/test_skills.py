@@ -6,10 +6,15 @@ from pathlib import Path
 
 import pytest
 
+from roomkit.skills.errors import (
+    SkillDiscoveryError,
+    SkillError,
+    SkillParseError,
+    SkillPathError,
+    SkillValidationError,
+)
 from roomkit.skills.models import ScriptResult
 from roomkit.skills.parser import (
-    SkillParseError,
-    SkillValidationError,
     find_skill_md,
     parse_frontmatter,
     parse_skill,
@@ -30,6 +35,22 @@ def _make_skill_dir(tmp_path: Path, name: str, body: str = "Do the thing.") -> P
     skill_md = skill_dir / "SKILL.md"
     skill_md.write_text(
         f"---\nname: {name}\ndescription: A test skill\n---\n{body}",
+        encoding="utf-8",
+    )
+    return skill_dir
+
+
+def _make_invalid_skill_dir(tmp_path: Path, dirname: str) -> Path:
+    """Create a skill directory whose frontmatter fails validation.
+
+    The declared name is neither kebab-case nor equal to the directory name, so
+    it fails regardless of what the directory is called — letting callers pick a
+    directory name purely to control discovery order.
+    """
+    skill_dir = tmp_path / dirname
+    skill_dir.mkdir(parents=True, exist_ok=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: NotKebabCase\ndescription: Bad\n---\nBody",
         encoding="utf-8",
     )
     return skill_dir
@@ -257,6 +278,81 @@ class TestSkillModel:
         content = skill.read_reference("data.txt")
         assert content == "Some data"
 
+    def test_read_reference_symlink_escape_blocked(self, tmp_path: Path) -> None:
+        """A symlink planted in references/ cannot serve a file from outside it.
+
+        The name alone is clean — no "..", no separator — so only resolving the
+        link and re-checking containment catches this.
+        """
+        secret = tmp_path / "secret.txt"
+        secret.write_text("classified", encoding="utf-8")
+        skill_dir = _make_skill_dir_full(
+            tmp_path,
+            "symlinked",
+            references=[("safe.txt", "OK")],
+        )
+        (skill_dir / "references" / "notes.md").symlink_to(secret)
+
+        skill = parse_skill(skill_dir)
+        with pytest.raises(SkillPathError, match="escapes"):
+            skill.read_reference("notes.md")
+
+    def test_read_reference_rejects_fullwidth_traversal(self, tmp_path: Path) -> None:
+        """Full-width look-alikes are normalised before the separator check."""
+        skill_dir = _make_skill_dir_full(
+            tmp_path,
+            "fullwidth",
+            references=[("safe.txt", "OK")],
+        )
+        skill = parse_skill(skill_dir)
+        with pytest.raises(SkillPathError):
+            skill.read_reference("．．／secret.txt")
+
+    def test_read_reference_rejects_absolute(self, tmp_path: Path) -> None:
+        skill_dir = _make_skill_dir_full(
+            tmp_path,
+            "absolute",
+            references=[("safe.txt", "OK")],
+        )
+        skill = parse_skill(skill_dir)
+        with pytest.raises(SkillPathError, match="relative"):
+            skill.read_reference("/etc/passwd")
+
+    def test_read_reference_path_error_is_value_error(self, tmp_path: Path) -> None:
+        """Integrators catching ValueError keep working."""
+        skill_dir = _make_skill_dir_full(tmp_path, "compat", references=[("safe.txt", "OK")])
+        skill = parse_skill(skill_dir)
+        with pytest.raises(ValueError):
+            skill.read_reference("../etc/passwd")
+
+    def test_resolve_script_returns_path(self, tmp_path: Path) -> None:
+        skill_dir = _make_skill_dir_full(tmp_path, "runner", scripts=["run.sh"])
+        skill = parse_skill(skill_dir)
+        assert skill.resolve_script("run.sh") == (skill_dir / "scripts" / "run.sh").resolve()
+
+    def test_resolve_script_symlink_escape_blocked(self, tmp_path: Path) -> None:
+        """The same containment applies to what an executor is asked to run."""
+        outside = tmp_path / "payload.sh"
+        outside.write_text("#!/bin/sh\necho pwned", encoding="utf-8")
+        skill_dir = _make_skill_dir_full(tmp_path, "sneaky", scripts=["ok.sh"])
+        (skill_dir / "scripts" / "innocent.sh").symlink_to(outside)
+
+        skill = parse_skill(skill_dir)
+        with pytest.raises(SkillPathError, match="escapes"):
+            skill.resolve_script("innocent.sh")
+
+    def test_resolve_script_traversal_blocked(self, tmp_path: Path) -> None:
+        skill_dir = _make_skill_dir_full(tmp_path, "guarded", scripts=["ok.sh"])
+        skill = parse_skill(skill_dir)
+        with pytest.raises(SkillPathError):
+            skill.resolve_script("../../bin/sh")
+
+    def test_resolve_script_missing(self, tmp_path: Path) -> None:
+        skill_dir = _make_skill_dir_full(tmp_path, "empty-scripts", scripts=["ok.sh"])
+        skill = parse_skill(skill_dir)
+        with pytest.raises(FileNotFoundError):
+            skill.resolve_script("nope.sh")
+
     def test_read_reference_traversal_blocked(self, tmp_path: Path) -> None:
         skill_dir = _make_skill_dir_full(
             tmp_path,
@@ -440,27 +536,65 @@ class TestSkillRegistry:
         assert "<unavailable_skills>" in xml
         assert 'name="gated"' in xml
 
-    def test_discover_skips_invalid(self, tmp_path: Path) -> None:
-        """Invalid skills are warned and skipped."""
-        # Valid skill
+    def test_discover_raises_on_invalid(self, tmp_path: Path) -> None:
+        """An invalid skill stops discovery instead of vanishing from the catalogue."""
         _make_skill_dir(tmp_path, "valid-one")
-        # Invalid skill (bad name)
-        bad_dir = tmp_path / "BadName"
-        bad_dir.mkdir()
-        (bad_dir / "SKILL.md").write_text(
-            "---\nname: BadName\ndescription: Bad\n---\nBody",
-            encoding="utf-8",
-        )
+        _make_invalid_skill_dir(tmp_path, "BadName")
         registry = SkillRegistry()
-        count = registry.discover(tmp_path)
+        with pytest.raises(SkillValidationError):
+            registry.discover(tmp_path)
+
+    def test_discover_strict_leaves_registry_untouched(self, tmp_path: Path) -> None:
+        """A strict failure commits nothing — not even the skills that parsed."""
+        _make_skill_dir(tmp_path, "valid-one")
+        _make_invalid_skill_dir(tmp_path, "zz-bad")
+        registry = SkillRegistry()
+        with pytest.raises(SkillValidationError):
+            registry.discover(tmp_path)
+        assert registry.skill_count == 0
+        assert registry.skill_names == []
+
+    def test_discover_strict_preserves_prior_skills(self, tmp_path: Path) -> None:
+        """A failed discovery does not disturb skills registered earlier."""
+        first = tmp_path / "first"
+        first.mkdir()
+        registry = SkillRegistry()
+        registry.register(_make_skill_dir(first, "already-here"))
+
+        broken = tmp_path / "second"
+        broken.mkdir()
+        _make_invalid_skill_dir(broken, "BadName")
+        with pytest.raises(SkillValidationError):
+            registry.discover(broken)
+        assert registry.skill_names == ["already-here"]
+
+    def test_discover_lenient_skips_invalid(self, tmp_path: Path) -> None:
+        """strict=False keeps the old warn-and-continue behaviour."""
+        _make_skill_dir(tmp_path, "valid-one")
+        _make_invalid_skill_dir(tmp_path, "BadName")
+        registry = SkillRegistry()
+        count = registry.discover(tmp_path, strict=False)
         assert count == 1
         assert registry.skill_count == 1
 
-    def test_discover_nonexistent_dir(self) -> None:
-        """Non-existent directories are warned and skipped."""
+    def test_discover_raises_on_nonexistent_dir(self) -> None:
+        """A missing skills directory is a deployment error, not an empty result."""
         registry = SkillRegistry()
-        count = registry.discover("/nonexistent/path")
-        assert count == 0
+        with pytest.raises(SkillDiscoveryError, match="not found"):
+            registry.discover("/nonexistent/path")
+
+    def test_discover_lenient_skips_nonexistent_dir(self) -> None:
+        registry = SkillRegistry()
+        assert registry.discover("/nonexistent/path", strict=False) == 0
+
+    def test_discover_errors_share_a_base(self, tmp_path: Path) -> None:
+        """SkillError covers every discovery failure a caller wants to catch."""
+        _make_invalid_skill_dir(tmp_path, "BadName")
+        registry = SkillRegistry()
+        with pytest.raises(SkillError):
+            registry.discover(tmp_path)
+        with pytest.raises(SkillError):
+            registry.discover("/nonexistent/path")
 
     def test_re_register_invalidates_cache(self, tmp_path: Path) -> None:
         skill_dir = _make_skill_dir(tmp_path, "cached", body="v1")
