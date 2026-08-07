@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`GeminiSTTProvider` — batch transcription that returns speaker turns and
+  timestamps in the same pass as the words.** Gemini has no speech-to-text
+  endpoint; transcription is an instruction to a multimodal model that accepts
+  audio. That makes the provider batch by construction — it takes a complete
+  recording and answers in seconds — and it is deliberately not a competitor to
+  the streaming recognisers already here. `supports_streaming` is `False`, so a
+  voice channel transcribes on `SPEECH_END` rather than opening a stream.
+
+  What the batch shape buys is what a streaming recogniser structurally cannot
+  give: the model sees the whole recording before it answers, so one call
+  returns the transcript, the speaker turns and the timestamps together, with no
+  diarization stage and no merge. Until now roomkit had local batch STT
+  (sherpa-onnx, Qwen3) and cloud streaming STT (Deepgram, Gradium), and nothing
+  for the case the recorders already produce: a finished meeting, a voicemail,
+  an imported file.
+
+  `transcribe()` keeps the `STTProvider` contract and returns flat text.
+  `transcribe_recording()` returns the `Transcript` — detected language plus one
+  `TranscriptSegment` per turn — and accepts a file path, inlining recordings
+  under `max_inline_bytes` and uploading larger ones through the Files API
+  (deleted after use rather than left to expire). Arbitrary `http(s)` URLs are
+  refused rather than fetched, so the provider is not an SSRF vector; pass a
+  path, raw audio, or a Files API URI.
+
+  Speaker labels are the model's judgement, not an acoustic decision, and a
+  conference records one track per participant — so where the speakers are
+  already separated, transcribe each track with `diarize=False` and merge on the
+  timestamps. `examples/meeting_transcription.py` runs the whole path: a
+  recording becomes speaker turns, enters a room, and an AI channel writes the
+  minutes.
+
 ## [0.43.0] — 2026-08-07
 
 ### Added

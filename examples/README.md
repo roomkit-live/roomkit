@@ -37,6 +37,7 @@ CONSOLE=1 uv run python examples/<example>.py
 | `grok_tts.py` | TTS | xAI Grok text-to-speech provider demo |
 | `gemini_tts.py` | TTS | Gemini TTS provider API: one-shot, streaming deltas, `style_prompt` — writes WAV files |
 | `gemini_tts_room.py` | TTS + room | A room that speaks what you type: CLI channel → Gemini TTS → speakers, with expression tags |
+| `meeting_transcription.py` | STT (batch) | A meeting recording → Gemini STT speaker turns → room → AI channel writes the minutes |
 
 ## Voice -- SIP / RTP / Transport
 
