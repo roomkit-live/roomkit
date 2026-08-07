@@ -152,6 +152,24 @@ class TestOpenAIRealtimeProvider:
         result = mod.OpenAIRealtimeProvider._build_turn_detection(None, {})
         assert result is None
 
+    def test_session_config_explicitly_disables_default_vad(self):
+        """Omitting turn_detection leaves OpenAI's default server_vad active."""
+        mod = _load_provider()
+        provider = mod.OpenAIRealtimeProvider(api_key="sk-test")
+
+        config = provider._build_session_config(
+            system_prompt=None,
+            voice=None,
+            tools=None,
+            temperature=None,
+            input_sample_rate=24000,
+            output_sample_rate=24000,
+            server_vad=False,
+            pc={},
+        )
+
+        assert config["audio"]["input"]["turn_detection"] is None
+
     def test_build_turn_detection_semantic_vad_with_all_options(self):
         mod = _load_provider()
         result = mod.OpenAIRealtimeProvider._build_turn_detection(
@@ -331,6 +349,7 @@ class TestOpenAIRealtimeProvider:
             "type": "audio/pcm",
             "rate": 24000,
         }
+        assert provider._output_bytes_per_ms[session.id] == 48.0
 
         # Clean up
         provider._receive_tasks[session.id].cancel()
@@ -380,6 +399,7 @@ class TestOpenAIRealtimeProvider:
         sent = json.loads(mock_ws.send.call_args_list[0][0][0])
         assert sent["session"]["audio"]["input"]["format"] == {"type": "audio/pcmu"}
         assert sent["session"]["audio"]["output"]["format"] == {"type": "audio/pcmu"}
+        assert provider._output_bytes_per_ms[session.id] == 8.0
 
         provider._receive_tasks[session.id].cancel()
         with contextlib.suppress(asyncio.CancelledError, Exception):
@@ -634,6 +654,40 @@ class TestOpenAIRealtimeProvider:
         provider = mod.OpenAIRealtimeProvider(api_key="sk-test")
         session = _make_session()
         await provider.interrupt(session)
+
+    async def test_truncate_audio_uses_latest_item_and_caps_played_duration(self):
+        mod = _load_provider()
+        provider, ws, session = _make_connected_provider(mod)
+        provider._output_bytes_per_ms[session.id] = 48.0  # 24 kHz PCM16 mono
+        raw_audio = b"\x01\x00" * 24_000  # 1 second
+
+        await provider._handle_server_event(
+            session,
+            {
+                "type": "response.output_audio.delta",
+                "item_id": "item-audio-1",
+                "content_index": 2,
+                "delta": base64.b64encode(raw_audio).decode("ascii"),
+            },
+        )
+        await provider.truncate_audio(session, 1_250)
+
+        sent = json.loads(ws.send.call_args[0][0])
+        assert sent == {
+            "type": "conversation.item.truncate",
+            "item_id": "item-audio-1",
+            "content_index": 2,
+            "audio_end_ms": 1_000,
+        }
+
+    async def test_truncate_audio_without_output_item_is_noop(self):
+        mod = _load_provider()
+        provider, ws, session = _make_connected_provider(mod)
+        provider._output_bytes_per_ms[session.id] = 48.0
+
+        await provider.truncate_audio(session, 500)
+
+        ws.send.assert_not_awaited()
 
     # ── send_event() ────────────────────────────────────────────
 

@@ -151,14 +151,16 @@ class OpenAIRealtimeProvider(OpenAIRealtimeBase):
             audio_output["speed"] = float(pc["speed"])
 
         # --- Turn detection / VAD (nested under audio.input in GA) ---
-        # Default to semantic_vad — it uses a turn detection model that
-        # distinguishes real speech from echo/noise residuals, which is
-        # critical for laptop mic+speaker setups where AEC can't suppress
-        # 100% of the echo.  server_vad (energy-based) is too sensitive.
+        # Default to semantic_vad for more natural end-of-turn timing. It
+        # does not replace acoustic echo cancellation: speech-start can still
+        # fire for speaker leakage, so local speaker+mic clients must remove
+        # or gate playback echo before audio reaches this provider.
         td_type = pc.get("turn_detection_type", "semantic_vad" if server_vad else None)
         turn_detection = self._build_turn_detection(td_type, pc)
-        if turn_detection is not None:
-            audio_input["turn_detection"] = turn_detection
+        # Explicit null is required to disable the server's default VAD.
+        # Omitting the field leaves server_vad enabled after session.created,
+        # which races a RoomKit local VAD and can auto-create duplicate turns.
+        audio_input["turn_detection"] = turn_detection
 
         session_config: dict[str, Any] = {
             "type": "realtime",

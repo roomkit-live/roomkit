@@ -274,6 +274,22 @@ class RealtimeVoiceProvider(ABC):
         """
         ...
 
+    async def truncate_audio(self, session: VoiceSession, audio_end_ms: int) -> None:  # noqa: B027
+        """Synchronize provider context with the audio the user actually heard.
+
+        Realtime providers that keep conversation state may generate audio
+        faster than a transport can play it. When playback is interrupted,
+        implementations can override this hook to remove the unheard tail
+        from their server-side context. Providers that manage playback
+        themselves, or whose protocol has no equivalent operation, keep the
+        default no-op.
+
+        Args:
+            session: The active session.
+            audio_end_ms: Played duration of the interrupted response in
+                milliseconds, measured from physical playback onset.
+        """
+
     @abstractmethod
     async def disconnect(self, session: VoiceSession) -> None:
         """Disconnect a session from the provider.

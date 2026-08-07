@@ -20,8 +20,9 @@ Environment variables:
     AEC_DELAY_MS        Optional measured speaker-to-mic delay (default: auto)
     BARGE_IN_GUARD_MS   Hide capture from server VAD while AEC converges
                         after playback starts (default: 600; 0 disables)
-    MUTE_MIC            Mute mic during playback: 1 | 0 (default: auto,
-                        off with AEC)
+    MUTE_MIC            Mute mic during playback: 1 | 0 (default: 1).
+                        Set 0 for full-duplex/barge-in; a calibrated AEC delay
+                        and headphones or a well-controlled room are advised.
     DEBUG_AUDIO         Save pipeline stage WAVs to ./debug_audio/: 1 | 0
                         (default: 0)
 
@@ -106,11 +107,20 @@ async def main() -> None:
             barge_in_guard_ms,
         )
 
-    # When AEC is active it removes speaker echo from the mic signal, so we
-    # can keep the mic open during playback.  Without AEC the mic is muted
-    # during playback to prevent feedback loops.
+    # OpenAI's WebSocket VAD creates a turn from any detected speech even after
+    # response.done, while generated audio may still be draining from the local
+    # speaker buffer. Default to half-duplex so speaker leakage cannot create
+    # recursive turns. Full-duplex remains an explicit opt-in for calibrated
+    # AEC setups (or headphones).
     mute_env = os.environ.get("MUTE_MIC")
-    mute_mic = mute_env != "0" if mute_env is not None else aec is None
+    mute_mic = mute_env != "0" if mute_env is not None else True
+    if mute_mic:
+        logger.info("OpenAI local playback guard: microphone muted while assistant speaks")
+    else:
+        logger.warning(
+            "OpenAI full-duplex enabled: server VAD may react to residual speaker echo; "
+            "calibrate AEC_DELAY_MS if false interruptions occur"
+        )
 
     transport = LocalAudioBackend(
         input_sample_rate=sample_rate,

@@ -103,11 +103,13 @@ class TestSessionLifecycle:
     ) -> None:
         session = await channel.start_session(room_id, "user-1", "fake-ws")
         channel._playback_started_at[session.id] = 1.0
+        channel._playback_position_ms[session.id] = 250.0
 
         await channel.end_session(session)
 
         assert session.state == VoiceSessionState.ENDED
         assert session.id not in channel._playback_started_at
+        assert session.id not in channel._playback_position_ms
 
         # Verify provider and transport were disconnected
         disconnect_provider = [c for c in provider.calls if c.method == "disconnect"]
@@ -229,6 +231,7 @@ class TestRealtimeBargeInGuard:
             AudioFrame(data=b"\x01\x00" * 240, sample_rate=24000),
         )
         assert session.id in channel._playback_started_at
+        assert channel._playback_position_ms[session.id] == 10.0
 
         channel._on_transport_audio_played(
             session,
@@ -239,6 +242,7 @@ class TestRealtimeBargeInGuard:
             ),
         )
         assert session.id not in channel._playback_started_at
+        assert session.id not in channel._playback_position_ms
 
     async def test_zero_guard_never_replaces_input(self) -> None:
         provider = MockRealtimeProvider()
@@ -1042,6 +1046,53 @@ class TestResamplingEnabled:
 
 class TestInterruptionFlush:
     """Speech start (interrupt) discards stale audio and resets resampler."""
+
+    async def test_physical_playback_barge_in_truncates_after_response_done(
+        self,
+        kit: RoomKit,
+        channel: RealtimeVoiceChannel,
+        provider: MockRealtimeProvider,
+        room_id: str,
+        advance,
+    ) -> None:
+        """Generation may be done while buffered assistant audio is still audible."""
+        session = await channel.start_session(room_id, "user-1", "fake-ws")
+        channel._on_transport_audio_played(
+            session,
+            AudioFrame(data=b"\x01\x00" * 240, sample_rate=24000),
+        )
+        channel._playback_started_at[session.id] -= 0.75
+        channel._playback_position_ms[session.id] = 750.0
+        # response.done bookkeeping removes this count before physical drain.
+        channel._audio_forward_count.pop(session.id, None)
+
+        await provider.simulate_speech_start(session)
+        await advance()
+
+        truncates = [call for call in provider.calls if call.method == "truncate_audio"]
+        assert len(truncates) == 1
+        assert 700 <= truncates[0].args["audio_end_ms"] <= 850
+
+    async def test_local_vad_barge_in_cancels_active_provider_and_truncates(
+        self,
+        kit: RoomKit,
+        channel: RealtimeVoiceChannel,
+        provider: MockRealtimeProvider,
+        room_id: str,
+        advance,
+    ) -> None:
+        """Local VAD must replace both parts of provider-managed interruption."""
+        session = await channel.start_session(room_id, "user-1", "fake-ws")
+        channel._provider_idle[session.id] = False
+        channel._playback_started_at[session.id] = 1.0
+        channel._playback_position_ms[session.id] = 320.0
+
+        channel._on_pipeline_speech_start(session)
+        await advance()
+
+        calls = [call for call in provider.calls if call.method in {"interrupt", "truncate_audio"}]
+        assert [call.method for call in calls] == ["interrupt", "truncate_audio"]
+        assert calls[1].args["audio_end_ms"] == 320
 
     async def test_interrupt_discards_pending_audio(
         self,

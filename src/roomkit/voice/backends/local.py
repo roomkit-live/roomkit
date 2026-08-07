@@ -979,7 +979,10 @@ class LocalAudioBackend(VoiceBackend):
                 sample_rate=self._output_sample_rate,
                 channels=self._channels,
                 sample_width=2,
-                metadata={"playback_ended": response_drained},
+                metadata={
+                    "playback_ended": response_drained,
+                    "played_bytes": written,
+                },
             )
             for cb in self._audio_played_callbacks:
                 with contextlib.suppress(Exception):

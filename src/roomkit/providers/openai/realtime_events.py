@@ -39,6 +39,18 @@ _EVT_ERROR = "error"
 _NOISY_EVENTS = frozenset({_EVT_AUDIO_DELTA, _EVT_TRANSCRIPT_DELTA})
 
 
+class _OutputAudioState:
+    """Wire identity and generated duration of the latest audio item."""
+
+    __slots__ = ("content_index", "item_id", "received_bytes", "truncated_at_ms")
+
+    def __init__(self, item_id: str, content_index: int) -> None:
+        self.item_id = item_id
+        self.content_index = content_index
+        self.received_bytes = 0
+        self.truncated_at_ms: int | None = None
+
+
 class OpenAIRealtimeEventHandlersMixin(RealtimeVoiceProvider):
     """Receive loop + server-event → callback dispatch for the OpenAI wire.
 
@@ -50,6 +62,7 @@ class OpenAIRealtimeEventHandlersMixin(RealtimeVoiceProvider):
     # Connection state owned by OpenAIRealtimeBase.__init__; declared for typing.
     _connections: dict[str, Any]
     _responding: set[str]
+    _output_audio: dict[str, _OutputAudioState]
 
     @property
     @abstractmethod
@@ -140,6 +153,16 @@ class OpenAIRealtimeEventHandlersMixin(RealtimeVoiceProvider):
         audio_b64 = event.get("delta", "")
         if audio_b64:
             audio_bytes = base64.b64decode(audio_b64)
+            item_id = event.get("item_id", "")
+            if item_id:
+                state = self._output_audio.get(session.id)
+                if state is None or state.item_id != item_id:
+                    state = _OutputAudioState(
+                        item_id=item_id,
+                        content_index=int(event.get("content_index", 0)),
+                    )
+                    self._output_audio[session.id] = state
+                state.received_bytes += len(audio_bytes)
             await self._fire(self._audio_callbacks, session, audio_bytes, label="audio")
 
     async def _on_transcript_delta(self, session: VoiceSession, event: dict[str, Any]) -> None:

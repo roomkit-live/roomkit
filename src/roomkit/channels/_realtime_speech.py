@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from roomkit.core.framework import RoomKit
     from roomkit.voice.backends.base import VoiceBackend
     from roomkit.voice.base import VoiceSession
+    from roomkit.voice.realtime.provider import RealtimeVoiceProvider
 
 logger = logging.getLogger("roomkit.channels.realtime_voice")
 
@@ -30,6 +31,7 @@ class RealtimeSpeechHost(Protocol):
         _audio_forward_count: Count of audio chunks forwarded per session.
         _barge_in_active: Session IDs with an active barge-in.
         _playback_started_at: Physical playback start time per session.
+        _playback_position_ms: Actual assistant audio played per session.
         _last_assistant_text: Last assistant utterance per session.
         _session_resamplers: Per-session (inbound, outbound) resampler pairs.
         _has_pipeline_vad: Per-session flag — whether local pipeline VAD is active.
@@ -37,6 +39,7 @@ class RealtimeSpeechHost(Protocol):
         _last_output_level_at: Timestamp of last output audio level hook.
         _event_loop: Cached event loop for cross-thread scheduling.
         _framework: The RoomKit framework instance (or None).
+        _provider: The realtime AI provider.
         _transport: The voice backend transport.
 
     Cross-mixin methods (implemented elsewhere in the MRO):
@@ -54,6 +57,7 @@ class RealtimeSpeechHost(Protocol):
     _audio_forward_count: dict[str, int]
     _barge_in_active: set[str]
     _playback_started_at: dict[str, float]
+    _playback_position_ms: dict[str, float]
     _last_assistant_text: dict[str, str]
     _session_resamplers: dict[str, Any]
     _has_pipeline_vad: dict[str, bool]
@@ -61,6 +65,7 @@ class RealtimeSpeechHost(Protocol):
     _last_output_level_at: float
     _event_loop: asyncio.AbstractEventLoop | None
     _framework: RoomKit | None
+    _provider: RealtimeVoiceProvider
     _transport: VoiceBackend
 
     def _track_task(self, loop: Any, coro: Any, *, name: str) -> Any: ...
@@ -91,6 +96,7 @@ class RealtimeSpeechMixin:
     _audio_forward_count: dict[str, int]
     _barge_in_active: set[str]
     _playback_started_at: dict[str, float]
+    _playback_position_ms: dict[str, float]
     _last_assistant_text: dict[str, str]
     _session_resamplers: dict[str, Any]
     _has_pipeline_vad: dict[str, bool]
@@ -98,6 +104,7 @@ class RealtimeSpeechMixin:
     _last_output_level_at: float
     _event_loop: asyncio.AbstractEventLoop | None
     _framework: RoomKit | None
+    _provider: RealtimeVoiceProvider
     _transport: VoiceBackend
 
     _track_task: Any  # see RealtimeSpeechHost — cross-mixin
@@ -123,11 +130,20 @@ class RealtimeSpeechMixin:
         if self._has_pipeline_vad.get(session.id, False):
             return
         with self._state_lock:
+            playback_started_at = self._playback_started_at.get(session.id)
+            playback_position_ms = self._playback_position_ms.pop(session.id, 0.0)
             self._user_speaking[session.id] = True
             self._playback_started_at.pop(session.id, None)
             self._audio_generation[session.id] = self._audio_generation.get(session.id, 0) + 1
             resamplers = self._session_resamplers.get(session.id)
-            is_barge_in = self._audio_forward_count.get(session.id, 0) > 0
+            # response.done means generation ended, not that buffered audio
+            # reached the speaker. A physical playback timestamp is therefore
+            # authoritative; the forward count remains the fallback for
+            # transports without playback callbacks.
+            is_barge_in = playback_started_at is not None or (
+                not self._transport.supports_playback_callback
+                and self._audio_forward_count.get(session.id, 0) > 0
+            )
             if is_barge_in:
                 self._barge_in_active.add(session.id)
             self._reset_outbound_resampler(resamplers)
@@ -147,6 +163,22 @@ class RealtimeSpeechMixin:
             loop = asyncio.get_running_loop()
         except RuntimeError:
             return
+
+        if is_barge_in:
+            played_ms = (
+                round(playback_position_ms)
+                if playback_position_ms > 0
+                else (
+                    max(0, round((time.monotonic() - playback_started_at) * 1000))
+                    if playback_started_at is not None
+                    else 0
+                )
+            )
+            self._track_task(
+                loop,
+                self._provider.truncate_audio(session, played_ms),
+                name=f"rt_truncate_audio:{session.id}",
+            )
 
         # Send clear_audio IMMEDIATELY — before hooks or context building.
         # This is the primary barge-in UX signal: tells the client to flush

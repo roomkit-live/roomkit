@@ -139,6 +139,14 @@ class MockRealtimeProvider(RealtimeVoiceProvider):
     async def interrupt(self, session: VoiceSession) -> None:
         self.calls.append(MockCall(method="interrupt", args={"session_id": session.id}))
 
+    async def truncate_audio(self, session: VoiceSession, audio_end_ms: int) -> None:
+        self.calls.append(
+            MockCall(
+                method="truncate_audio",
+                args={"session_id": session.id, "audio_end_ms": audio_end_ms},
+            )
+        )
+
     async def send_activity_start(self, session: VoiceSession) -> None:
         self.calls.append(MockCall(method="send_activity_start", args={"session_id": session.id}))
 

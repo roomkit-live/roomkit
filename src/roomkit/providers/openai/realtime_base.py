@@ -18,7 +18,10 @@ import logging
 from abc import abstractmethod
 from typing import Any
 
-from roomkit.providers.openai.realtime_events import OpenAIRealtimeEventHandlersMixin
+from roomkit.providers.openai.realtime_events import (
+    OpenAIRealtimeEventHandlersMixin,
+    _OutputAudioState,
+)
 from roomkit.voice.base import VoiceSession, VoiceSessionState
 
 logger = logging.getLogger("roomkit.providers.openai.realtime_base")
@@ -46,6 +49,11 @@ class OpenAIRealtimeBase(OpenAIRealtimeEventHandlersMixin):
         # provider_config as passed to connect, kept so mid-session calls
         # (image injection, for one) can read settings fixed at connect time
         self._provider_configs: dict[str, dict[str, Any]] = {}
+        # WebSocket clients own playback. Keep the current assistant audio
+        # item and its generated duration so a physical barge-in can truncate
+        # the unheard tail in provider context.
+        self._output_audio: dict[str, _OutputAudioState] = {}
+        self._output_bytes_per_ms: dict[str, float] = {}
 
     def is_responding(self, session_id: str) -> bool:
         return session_id in self._responding
@@ -167,6 +175,19 @@ class OpenAIRealtimeBase(OpenAIRealtimeEventHandlersMixin):
         self._connections[session.id] = ws
         self._sessions[session.id] = session
         self._provider_configs[session.id] = pc
+        # PCM is signed 16-bit mono; G.711 carries one byte per sample.
+        # Read the format from the provider-built payload so the shared base
+        # stays correct for OpenAI's 8 kHz G.711 and xAI's 8 kHz PCM.
+        output_format = session_config.get("audio", {}).get("output", {}).get("format", {})
+        audio_type = output_format.get("type", "audio/pcm")
+        negotiated_rate = int(
+            output_format.get(
+                "rate",
+                8000 if audio_type in {"audio/pcmu", "audio/pcma"} else output_sample_rate,
+            )
+        )
+        bytes_per_sample = 1 if audio_type in {"audio/pcmu", "audio/pcma"} else 2
+        self._output_bytes_per_ms[session.id] = negotiated_rate * bytes_per_sample / 1000
 
         await ws.send(json.dumps({"type": "session.update", "session": session_config}))
 
@@ -278,6 +299,46 @@ class OpenAIRealtimeBase(OpenAIRealtimeEventHandlersMixin):
         logger.debug("[%s →] response.cancel", self._log_tag)
         await ws.send(json.dumps({"type": "response.cancel"}))
 
+    async def truncate_audio(self, session: VoiceSession, audio_end_ms: int) -> None:
+        """Remove the unheard tail of the latest assistant audio item.
+
+        The Realtime WebSocket server cannot observe client-side playback.
+        ``RealtimeVoiceChannel`` therefore reports the physical duration it
+        played when speech interrupts output. Cap that duration at the audio
+        received so callback jitter or an underrun can never produce an API
+        error for truncating beyond the generated item.
+        """
+        ws = self._connections.get(session.id)
+        state = self._output_audio.get(session.id)
+        bytes_per_ms = self._output_bytes_per_ms.get(session.id, 0.0)
+        if ws is None or state is None or bytes_per_ms <= 0:
+            return
+
+        generated_ms = int(state.received_bytes / bytes_per_ms)
+        played_ms = min(max(0, int(audio_end_ms)), generated_ms)
+        if state.truncated_at_ms is not None:
+            return
+
+        logger.info(
+            "[%s →] conversation.item.truncate item=%s played=%dms generated=%dms (session %s)",
+            self._log_tag,
+            state.item_id,
+            played_ms,
+            generated_ms,
+            session.id,
+        )
+        await ws.send(
+            json.dumps(
+                {
+                    "type": "conversation.item.truncate",
+                    "item_id": state.item_id,
+                    "content_index": state.content_index,
+                    "audio_end_ms": played_ms,
+                }
+            )
+        )
+        state.truncated_at_ms = played_ms
+
     async def send_event(self, session: VoiceSession, event: dict[str, Any]) -> None:
         ws = self._connections.get(session.id)
         if ws is None:
@@ -317,6 +378,8 @@ class OpenAIRealtimeBase(OpenAIRealtimeEventHandlersMixin):
         self._sessions.pop(session.id, None)
         self._provider_configs.pop(session.id, None)
         self._responding.discard(session.id)
+        self._output_audio.pop(session.id, None)
+        self._output_bytes_per_ms.pop(session.id, None)
         if ws is not None:
             with contextlib.suppress(Exception):
                 await asyncio.wait_for(ws.close(), timeout=_CLOSE_TIMEOUT)

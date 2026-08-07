@@ -57,10 +57,12 @@ class RealtimeAudioHost(Protocol):
         _framework: The RoomKit framework instance (or None).
         _recording: Recording configuration.
         _user_speaking: Whether the user is currently speaking per session.
+        _provider_idle: Whether provider generation is idle per session.
         _user_turn_start_at: Wall-clock of the last user-turn start, per session.
         _barge_in_active: Session IDs with an active barge-in.
         _barge_in_guard_ms: Initial playback interval hidden from provider VAD.
         _playback_started_at: Physical playback start time per session.
+        _playback_position_ms: Actual assistant audio played per session.
 
     Cross-mixin methods (implemented elsewhere in the MRO):
         _track_task: Schedule an async task with exception handling.
@@ -91,10 +93,12 @@ class RealtimeAudioHost(Protocol):
     _framework: RoomKit | None
     _recording: Any
     _user_speaking: dict[str, bool]
+    _provider_idle: dict[str, bool]
     _user_turn_start_at: dict[str, Any]
     _barge_in_active: set[str]
     _barge_in_guard_ms: int
     _playback_started_at: dict[str, float]
+    _playback_position_ms: dict[str, float]
 
     def _track_task(self, loop: Any, coro: Any, *, name: str) -> Any: ...
 
@@ -138,10 +142,12 @@ class RealtimeAudioMixin:
     _framework: RoomKit | None
     _recording: Any
     _user_speaking: dict[str, bool]
+    _provider_idle: dict[str, bool]
     _user_turn_start_at: dict[str, Any]
     _barge_in_active: set[str]
     _barge_in_guard_ms: int
     _playback_started_at: dict[str, float]
+    _playback_position_ms: dict[str, float]
 
     _track_task: Any  # see RealtimeAudioHost — cross-mixin
     _pipeline_submit_inbound: Any  # see VoicePipelineMixin — cross-mixin
@@ -413,6 +419,9 @@ class RealtimeAudioMixin:
         from datetime import UTC, datetime
 
         with self._state_lock:
+            playback_started_at = self._playback_started_at.get(session.id)
+            playback_position_ms = self._playback_position_ms.pop(session.id, 0.0)
+            provider_was_responding = not self._provider_idle.get(session.id, True)
             self._user_speaking[session.id] = True
             self._playback_started_at.pop(session.id, None)
             # Stamp the start-of-turn so transcription emission can use it
@@ -422,7 +431,9 @@ class RealtimeAudioMixin:
             self._audio_generation[session.id] = self._audio_generation.get(session.id, 0) + 1
             resamplers = self._session_resamplers.get(session.id)
             fwd_count = self._audio_forward_count.get(session.id, 0)
-            is_barge_in = fwd_count > 0
+            is_barge_in = playback_started_at is not None or (
+                not self._transport.supports_playback_callback and fwd_count > 0
+            )
             if is_barge_in:
                 self._barge_in_active.add(session.id)
             self._reset_outbound_resampler(resamplers)
@@ -455,6 +466,26 @@ class RealtimeAudioMixin:
         except RuntimeError:
             return
 
+        if is_barge_in:
+            played_ms = (
+                round(playback_position_ms)
+                if playback_position_ms > 0
+                else (
+                    max(0, round((time.monotonic() - playback_started_at) * 1000))
+                    if playback_started_at is not None
+                    else 0
+                )
+            )
+            self._track_task(
+                loop,
+                self._interrupt_and_truncate_provider(
+                    session,
+                    played_ms,
+                    cancel_response=provider_was_responding,
+                ),
+                name=f"rt_provider_barge_in:{session.id}",
+            )
+
         # Send clear_audio IMMEDIATELY — before hooks or context building.
         self._track_task(
             loop,
@@ -480,6 +511,18 @@ class RealtimeAudioMixin:
             self._provider.send_activity_start(session),
             name=f"rt_activity_start:{session.id}",
         )
+
+    async def _interrupt_and_truncate_provider(
+        self,
+        session: VoiceSession,
+        played_ms: int,
+        *,
+        cancel_response: bool,
+    ) -> None:
+        """Keep provider cancellation and context truncation wire-ordered."""
+        if cancel_response:
+            await self._provider.interrupt(session)
+        await self._provider.truncate_audio(session, played_ms)
 
     def _on_pipeline_speech_end(self, session: VoiceSession) -> None:
         """Handle speech end from local pipeline VAD."""
@@ -782,7 +825,28 @@ class RealtimeAudioMixin:
         with self._state_lock:
             if playback_ended:
                 self._playback_started_at.pop(session.id, None)
-            elif any(raw):
-                self._playback_started_at.setdefault(session.id, time.monotonic())
+                self._playback_position_ms.pop(session.id, None)
+            else:
+                played_bytes = (
+                    int(
+                        audio.metadata.get(
+                            "played_bytes",
+                            len(raw) if any(raw) else 0,
+                        )
+                    )
+                    if not isinstance(audio, bytes)
+                    else (len(raw) if any(raw) else 0)
+                )
+                if played_bytes > 0:
+                    self._playback_started_at.setdefault(session.id, time.monotonic())
+                    if not isinstance(audio, bytes):
+                        bytes_per_ms = (
+                            audio.sample_rate * audio.channels * audio.sample_width / 1000
+                        )
+                        if bytes_per_ms > 0:
+                            self._playback_position_ms[session.id] = (
+                                self._playback_position_ms.get(session.id, 0.0)
+                                + played_bytes / bytes_per_ms
+                            )
 
         self._fire_audio_level_task(session, rms_db(raw), HookTrigger.ON_OUTPUT_AUDIO_LEVEL)

@@ -367,6 +367,10 @@ class RealtimeVoiceChannel(
         # provider-side VAD while the local AEC converges. Populated only by
         # transports that report actually-played audio.
         self._playback_started_at: dict[str, float] = {}
+        # Actual assistant audio duration delivered by playback callbacks.
+        # Unlike wall time, this excludes underrun/re-priming silence and is
+        # safe to use as OpenAI conversation.item.truncate.audio_end_ms.
+        self._playback_position_ms: dict[str, float] = {}
         # Throttle audio level hooks to ~10/sec per direction
         self._last_input_level_at: float = 0.0
         self._last_output_level_at: float = 0.0
@@ -1001,6 +1005,7 @@ class RealtimeVoiceChannel(
             self._recording_tracks.pop(session.id, None)
             self._barge_in_active.discard(session.id)
             self._playback_started_at.pop(session.id, None)
+            self._playback_position_ms.pop(session.id, None)
             self._has_pipeline_vad.pop(session.id, None)
             idle = self._idle_events.pop(session.id, None)
             if idle is not None:

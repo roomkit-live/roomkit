@@ -601,6 +601,17 @@ class TestContinuousPlayedCallbacks:
         assert _drain_block(backend) == b"\x00" * _BLOCK  # idle, nothing queued
         assert played == [b"\x00" * _BLOCK]
 
+    async def test_played_callback_reports_provider_bytes_not_filler_silence(self) -> None:
+        backend, session = await _rt_backend(rt_prebuffer_ms=0)
+        frames: list[AudioFrame] = []
+        backend.on_audio_played(lambda _session, frame: frames.append(frame))
+        await backend.send_audio(session, _PCM * 100)  # 200 provider bytes
+
+        _drain_block(backend)
+
+        assert frames[0].metadata["played_bytes"] == 200
+        assert frames[0].data[200:] == b"\x00" * (_BLOCK - 200)
+
     async def test_played_callbacks_fire_during_priming_and_interrupt(self) -> None:
         backend, session = await _rt_backend()
         played: list[bytes] = []
