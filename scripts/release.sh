@@ -28,10 +28,21 @@ fi
 # to this file (sed runs before the commit). That is the ONLY permitted
 # dirt — it lets the script resume; anything else must be committed or stashed.
 UNEXPECTED="$(git status --porcelain \
-    | grep -vE 'src/roomkit/_version\.py$' || true)"
+    | grep -vE '^.. src/roomkit/_version\.py$' || true)"
 if [[ -n "$UNEXPECTED" ]]; then
     echo "Error: working tree has changes beyond the version bump. Commit or stash first:"
     echo "$UNEXPECTED"
+    exit 1
+fi
+
+# The resumable dirty file must contain *only* the version assignment. Merely
+# checking its path would allow unrelated code or data added to _version.py to
+# be swept into the release commit under the guise of a version bump.
+if [[ ! -f src/roomkit/_version.py ]] \
+    || [[ "$(grep -c '^' src/roomkit/_version.py)" != "1" ]] \
+    || ! grep -qEx '__version__ = "[0-9]+\.[0-9]+\.[0-9]+((a|b|rc)[0-9]+|\.dev[0-9]+)?"' \
+        src/roomkit/_version.py; then
+    echo "Error: src/roomkit/_version.py must contain only one valid __version__ assignment."
     exit 1
 fi
 

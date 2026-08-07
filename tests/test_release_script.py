@@ -224,6 +224,30 @@ def test_rejects_hyphenated_semver_prerelease_before_mutation(tmp_path: Path) ->
     assert _git(repo, "status", "--porcelain").stdout == ""
 
 
+def test_rejects_dirty_path_that_only_ends_with_version_path(tmp_path: Path) -> None:
+    repo = _repository(tmp_path)
+    _write(repo, Path("shadow/src/roomkit/_version.py"), "unrelated = True\n")
+
+    result = _run(repo)
+
+    assert result.returncode != 0
+    assert "working tree has changes beyond the version bump" in result.stdout
+
+
+def test_rejects_non_version_content_in_dirty_version_file(tmp_path: Path) -> None:
+    repo = _repository(tmp_path)
+    _write(
+        repo,
+        VERSION_FILE,
+        '__version__ = "1.2.0.dev0"\nSIDE_EFFECT = "must not be released"\n',
+    )
+
+    result = _run(repo)
+
+    assert result.returncode != 0
+    assert "must contain only one valid __version__ assignment" in result.stdout
+
+
 def test_rejects_entries_left_under_unreleased(tmp_path: Path) -> None:
     repo = _repository(tmp_path)
     _write(
