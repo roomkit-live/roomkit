@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import time
 from collections.abc import AsyncIterator
 from typing import Any, cast
@@ -29,6 +30,8 @@ from roomkit.providers.ai.base import (
 )
 from roomkit.providers.anthropic.config import AnthropicConfig
 from roomkit.providers.anthropic.models import MODELS
+
+logger = logging.getLogger("roomkit.providers.anthropic.ai")
 
 # Claude models that support vision (Claude 3 and later)
 # Fallback only, for ids the catalog does not carry — a snapshot newer than
@@ -65,6 +68,10 @@ class AnthropicAIProvider(AIProvider):
         # one evicted; never holds the configured key, which ``self._client``
         # already owns.
         self._per_request_clients: dict[str, Any] = {}
+        # A cached client may serve several concurrent turns. Eviction can only
+        # close clients whose last turn has released its lease; otherwise a
+        # ninth credential could tear down an older stream mid-response.
+        self._per_request_client_users: dict[str, int] = {}
 
     def _build_client(self, api_key: str) -> Any:
         """Build an Anthropic client for ``api_key`` with this provider's config."""
@@ -78,30 +85,74 @@ class AnthropicAIProvider(AIProvider):
             client_kwargs["default_headers"] = self._config.extra_headers
         return self._anthropic.AsyncAnthropic(**client_kwargs)
 
-    async def _client_for(self, context: AIContext) -> Any:
-        """The client this turn must use: the caller's credential, or the configured one.
+    async def _client_for(self, context: AIContext) -> tuple[Any, str | None]:
+        """Lease the client this turn must use and return its cache key.
 
         The provider object is shared by every conversation it serves, so a turn
         carrying its own credential cannot be served by the shared client. Clients
         are cached per credential because building one per turn would throw away
-        the connection pool on every message; the oldest is evicted and closed
-        past ``_MAX_PER_REQUEST_CLIENTS`` so the cache cannot grow with the tenant.
+        the connection pool on every message. The oldest idle entry is evicted
+        past ``_MAX_PER_REQUEST_CLIENTS``; the cache may exceed that soft bound
+        while every entry is serving an active turn.
         """
         api_key = request_api_key(context)
-        if api_key is None:
-            return self._client
+        if api_key is None or api_key == self._config.api_key.get_secret_value():
+            return self._client, None
 
         cached = self._per_request_clients.get(api_key)
-        if cached is not None:
-            return cached
+        if cached is None:
+            cached = self._build_client(api_key)
+            self._per_request_clients[api_key] = cached
+        self._per_request_client_users[api_key] = (
+            self._per_request_client_users.get(api_key, 0) + 1
+        )
 
-        client = self._build_client(api_key)
-        self._per_request_clients[api_key] = client
+        await self._close_evicted(self._take_idle_evictions())
+        return cached, api_key
+
+    def _take_idle_evictions(self) -> list[Any]:
+        """Remove oldest idle clients until the cache reaches its soft bound."""
+        evicted: list[Any] = []
         while len(self._per_request_clients) > _MAX_PER_REQUEST_CLIENTS:
-            # dicts preserve insertion order, so the first key is the oldest.
-            evicted = self._per_request_clients.pop(next(iter(self._per_request_clients)))
-            await evicted.close()
-        return client
+            idle_key = next(
+                (
+                    key
+                    for key in self._per_request_clients
+                    if self._per_request_client_users.get(key, 0) == 0
+                ),
+                None,
+            )
+            if idle_key is None:
+                # Every client is in use. Temporarily exceeding the bound is
+                # safer than terminating a live HTTP stream; release trims it.
+                break
+            evicted.append(self._per_request_clients.pop(idle_key))
+            self._per_request_client_users.pop(idle_key, None)
+        return evicted
+
+    async def _release_client(self, api_key: str | None) -> None:
+        """Release one per-request client lease and trim any temporary overflow."""
+        if api_key is None or api_key not in self._per_request_client_users:
+            # ``close()`` may have cleared the cache while a turn was winding
+            # down. Do not recreate a dangling lease-counter entry afterwards.
+            return
+        users = self._per_request_client_users.get(api_key, 0)
+        if users <= 1:
+            self._per_request_client_users[api_key] = 0
+        else:
+            self._per_request_client_users[api_key] = users - 1
+        await self._close_evicted(self._take_idle_evictions())
+
+    @staticmethod
+    async def _close_evicted(clients: list[Any]) -> None:
+        """Close idle cache entries without breaking an unrelated live turn."""
+        for client in clients:
+            try:
+                await client.close()
+            except Exception:
+                # The entry is already out of the cache; a stale pool failing
+                # to close must not mask the response using another credential.
+                logger.exception("Failed to close an evicted Anthropic client")
 
     @property
     def model_name(self) -> str:
@@ -331,7 +382,7 @@ class AnthropicAIProvider(AIProvider):
         kwargs = self._build_kwargs(context)
         # The one place the turn's credential is chosen. ``generate`` and
         # ``generate_stream`` both consume this stream, so they inherit it.
-        client = await self._client_for(context)
+        client, leased_api_key = await self._client_for(context)
         t0 = time.monotonic()
         first_token = True
 
@@ -437,6 +488,8 @@ class AnthropicAIProvider(AIProvider):
                 provider="anthropic",
                 status_code=None,
             ) from exc
+        finally:
+            await self._release_client(leased_api_key)
 
     async def generate(self, context: AIContext) -> AIResponse:
         """Generate by consuming the structured stream."""
@@ -478,7 +531,17 @@ class AnthropicAIProvider(AIProvider):
 
     async def close(self) -> None:
         """Close the configured client and every per-request one still cached."""
-        await self._client.close()
-        for client in self._per_request_clients.values():
-            await client.close()
+        clients = [self._client, *self._per_request_clients.values()]
         self._per_request_clients.clear()
+        self._per_request_client_users.clear()
+        failures: list[Exception] = []
+        for client in clients:
+            try:
+                await client.close()
+            except Exception as exc:
+                failures.append(exc)
+                logger.exception("Failed to close an Anthropic client")
+        if failures:
+            raise ExceptionGroup(
+                f"closing Anthropic clients failed for {len(failures)} client(s)", failures
+            )

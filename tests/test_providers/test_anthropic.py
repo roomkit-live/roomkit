@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -905,6 +905,55 @@ class TestPerRequestCredential:
             assert built == ["sk-ant-personal"]
 
     @pytest.mark.asyncio
+    async def test_configured_key_in_metadata_reuses_shared_client(self) -> None:
+        """Repeating the configured credential must not build a duplicate pool."""
+        with patch.dict("sys.modules", {"anthropic": _mock_anthropic_module()}):
+            from roomkit.providers.ai.base import API_KEY_METADATA_KEY
+            from roomkit.providers.anthropic.ai import AnthropicAIProvider
+
+            provider = AnthropicAIProvider(_config())
+            configured = MagicMock()
+            configured.messages.stream = MagicMock(return_value=_mock_stream(text="shared"))
+            provider._client = configured
+            provider._build_client = MagicMock()  # type: ignore[method-assign]
+
+            result = await provider.generate(
+                _context(metadata={API_KEY_METADATA_KEY: "sk-test-key"})
+            )
+
+            assert result.content == "shared"
+            provider._build_client.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_eviction_close_failure_does_not_mask_live_result(self) -> None:
+        with patch.dict("sys.modules", {"anthropic": _mock_anthropic_module()}):
+            from roomkit.providers.ai.base import API_KEY_METADATA_KEY
+            from roomkit.providers.anthropic.ai import (
+                _MAX_PER_REQUEST_CLIENTS,
+                AnthropicAIProvider,
+            )
+
+            provider = AnthropicAIProvider(_config())
+            provider._client = MagicMock()
+
+            def _build(key: str) -> MagicMock:
+                client = MagicMock()
+                client.messages.stream = MagicMock(return_value=_mock_stream(text=key))
+                client.close = AsyncMock()
+                if key == "sk-0":
+                    client.close.side_effect = OSError("close failed")
+                return client
+
+            provider._build_client = MagicMock(side_effect=_build)  # type: ignore[method-assign]
+            for i in range(_MAX_PER_REQUEST_CLIENTS + 1):
+                result = await provider.generate(
+                    _context(metadata={API_KEY_METADATA_KEY: f"sk-{i}"})
+                )
+
+            assert result.content == f"sk-{_MAX_PER_REQUEST_CLIENTS}"
+            assert "sk-0" not in provider._per_request_clients
+
+    @pytest.mark.asyncio
     async def test_the_cache_is_bounded_and_closes_what_it_evicts(self) -> None:
         """Otherwise a busy tenant pins one connection pool per member."""
         with patch.dict("sys.modules", {"anthropic": _mock_anthropic_module()}):
@@ -936,6 +985,50 @@ class TestPerRequestCredential:
             assert len(provider._per_request_clients) == _MAX_PER_REQUEST_CLIENTS
             # The two oldest were evicted, oldest first, and actually closed.
             assert closed == ["sk-0", "sk-1"]
+
+    @pytest.mark.asyncio
+    async def test_an_active_client_is_never_evicted(self) -> None:
+        """The cache may exceed its soft bound until an in-flight turn releases it."""
+        with patch.dict("sys.modules", {"anthropic": _mock_anthropic_module()}):
+            from roomkit.providers.ai.base import API_KEY_METADATA_KEY
+            from roomkit.providers.anthropic.ai import (
+                _MAX_PER_REQUEST_CLIENTS,
+                AnthropicAIProvider,
+            )
+
+            provider = AnthropicAIProvider(_config())
+            provider._client = MagicMock()
+            closed: list[str] = []
+
+            def _build(key: str) -> MagicMock:
+                client = MagicMock()
+
+                async def _close() -> None:
+                    closed.append(key)
+
+                client.close = _close
+                return client
+
+            provider._build_client = MagicMock(side_effect=_build)  # type: ignore[method-assign]
+            leased_keys: list[str | None] = []
+
+            for i in range(_MAX_PER_REQUEST_CLIENTS + 1):
+                _, leased_key = await provider._client_for(
+                    _context(metadata={API_KEY_METADATA_KEY: f"sk-{i}"})
+                )
+                leased_keys.append(leased_key)
+
+            assert len(provider._per_request_clients) == _MAX_PER_REQUEST_CLIENTS + 1
+            assert closed == []
+
+            # Once the oldest request finishes, that now-idle client is the one
+            # eligible for eviction; none of the other active clients is closed.
+            await provider._release_client(leased_keys[0])
+            assert len(provider._per_request_clients) == _MAX_PER_REQUEST_CLIENTS
+            assert closed == ["sk-0"]
+
+            for leased_key in leased_keys[1:]:
+                await provider._release_client(leased_key)
 
     @pytest.mark.asyncio
     async def test_an_unusable_metadata_value_falls_back_rather_than_failing(self) -> None:
