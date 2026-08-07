@@ -791,6 +791,39 @@ class TestHookContextSkip:
 
         assert seen == ["Hel"]
 
+    async def test_partials_never_land_after_their_final(
+        self,
+        kit: RoomKit,
+        channel: RealtimeVoiceChannel,
+        provider: MockRealtimeProvider,
+        room_id: str,
+    ) -> None:
+        """A final must not overtake the partial that preceded it on the wire.
+
+        Gemini delivers a short utterance as one transcript chunk plus its
+        final in the same server message.  Each event runs in its own task
+        and the partial path awaits one hop more than the final path, so
+        unserialised processing let the final's hook fire first — the late
+        partial then resurrected the utterance downstream (duplicate chat
+        bubbles carrying identical text).
+        """
+        order: list[tuple[str, bool]] = []
+
+        @kit.hook(HookTrigger.ON_PARTIAL_TRANSCRIPTION, HookExecution.ASYNC)
+        async def on_partial(event: object, ctx: RoomContext) -> None:
+            order.append((event.text, False))  # type: ignore[attr-defined]
+
+        @kit.hook(HookTrigger.ON_TRANSCRIPTION, HookExecution.SYNC)
+        async def on_final(event: object, ctx: RoomContext) -> None:
+            order.append((event.text, True))  # type: ignore[attr-defined]
+
+        session = await channel.start_session(room_id, "user-1", "fake-ws")
+        await provider.simulate_transcription(session, "Salut !", "user", False)
+        await provider.simulate_transcription(session, "Salut !", "user", True)
+        await asyncio.sleep(0.2)
+
+        assert order == [("Salut !", False), ("Salut !", True)]
+
     async def test_speech_events_skip_context_without_hooks(
         self,
         kit: RoomKit,

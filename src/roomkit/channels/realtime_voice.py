@@ -393,6 +393,10 @@ class RealtimeVoiceChannel(
         self._last_assistant_text: dict[str, str] = {}
         # Barge-in state: set when user interrupts AI, cleared on next final transcription
         self._barge_in_active: set[str] = set()
+        # FIFO lock per session keeping transcription processing in arrival
+        # order — each event runs in its own task and the partial/final code
+        # paths await a different number of hops (see _process_transcription).
+        self._transcription_order_locks: dict[str, asyncio.Lock] = {}
         # Physical playback start used to keep residual onset echo away from
         # provider-side VAD while the local AEC converges. Populated only by
         # transports that report actually-played audio.
@@ -1112,6 +1116,7 @@ class RealtimeVoiceChannel(
             self._last_assistant_text.pop(session.id, None)
             self._recording_tracks.pop(session.id, None)
             self._barge_in_active.discard(session.id)
+            self._transcription_order_locks.pop(session.id, None)
             self._playback_started_at.pop(session.id, None)
             self._playback_position_ms.pop(session.id, None)
             self._has_pipeline_vad.pop(session.id, None)

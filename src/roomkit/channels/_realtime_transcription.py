@@ -45,6 +45,7 @@ class RealtimeTranscriptionHost(Protocol):
     _user_turn_start_at: dict[str, Any]
     _emit_transcription_events: bool
     _framework: RoomKit | None
+    _transcription_order_locks: dict[str, asyncio.Lock]
     channel_id: str
     provider_name: str | None
 
@@ -68,6 +69,7 @@ class RealtimeTranscriptionMixin:
     _user_turn_start_at: dict[str, Any]
     _emit_transcription_events: bool
     _framework: RoomKit | None
+    _transcription_order_locks: dict[str, asyncio.Lock]
     channel_id: str
     provider_name: str | None
 
@@ -97,7 +99,24 @@ class RealtimeTranscriptionMixin:
         Partial transcriptions skip hooks and telemetry spans — they are
         forwarded to the client UI only.  Final transcriptions go through
         the full pipeline: hooks, client UI, and RoomEvent emission.
+
+        Each event arrives in its own task, and the partial path awaits one
+        hop more than the final path — unserialised, a final overtakes the
+        partial that preceded it on the wire and the late partial resurrects
+        an already-finalised utterance downstream (duplicate chat bubbles).
+        The per-session lock is FIFO, so processing keeps arrival order.
         """
+        if not self._framework:
+            return
+
+        with self._state_lock:
+            lock = self._transcription_order_locks.setdefault(session.id, asyncio.Lock())
+        async with lock:
+            await self._process_transcription_locked(session, text, role, is_final)
+
+    async def _process_transcription_locked(
+        self, session: VoiceSession, text: str, role: str, is_final: bool
+    ) -> None:
         if not self._framework:
             return
 
