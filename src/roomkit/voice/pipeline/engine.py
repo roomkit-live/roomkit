@@ -724,6 +724,7 @@ class AudioPipeline:
         with self._aec_active_sources_lock:
             was_globally_active = any(self._aec_active_sources.values())
             sources = self._aec_active_sources.setdefault(stream, set())
+            previous_sources = set(sources)
             was_active = bool(sources)
             if active:
                 sources.add(source)
@@ -753,6 +754,13 @@ class AudioPipeline:
                 else:
                     aec.set_active(is_globally_active)
             except Exception:
+                # Roll the logical edge back so a repeated lifecycle signal
+                # retries a transient provider failure instead of looking like
+                # a no-op while provider and engine disagree.
+                if previous_sources:
+                    self._aec_active_sources[stream] = previous_sources
+                else:
+                    self._aec_active_sources.pop(stream, None)
                 logger.exception("AEC activation error for stream %s", stream)
 
     # -----------------------------------------------------------------
@@ -779,7 +787,10 @@ class AudioPipeline:
                 logger.exception("Failed to stop stale recording for %s", session_id)
         dt = self._debug_tap_sessions.pop(session_id, None)
         if dt is not None:
-            dt.close()
+            try:
+                dt.close()
+            except Exception:
+                logger.exception("Failed to close stale debug taps for %s", session_id)
 
     def on_session_active(self, session: VoiceSession) -> None:
         """Called when a voice session becomes active.
@@ -824,6 +835,8 @@ class AudioPipeline:
         leaks and — if the stream key is ever reused, as a track id can be —
         opens the next stream with the previous one's samples.
         """
+        self._release_aec_activity(session_id)
+
         stages = (
             self._resampler,
             self._aec_resampler,
@@ -847,9 +860,34 @@ class AudioPipeline:
                 logger.exception("Stage '%s' reset error for session %s", stage.name, session_id)
         with self._aec_capture_formats_lock:
             self._aec_capture_formats.pop(session_id, None)
-        with self._aec_active_sources_lock:
-            self._aec_active_sources.pop(session_id, None)
         self._stage_streams.discard(session_id)
+
+    def _release_aec_activity(self, session_id: str) -> None:
+        """Deactivate AEC when a stream disappears without an explicit stop.
+
+        A transport can end while TTS or a bridge is still marked active.  In
+        that path no matching ``set_aec_active(..., False)`` arrives, so the
+        lifecycle cleanup must update the provider before dropping bookkeeping.
+        This is especially important for legacy providers whose bypass state is
+        global: the final departing stream must turn that provider off.
+        """
+        aec = self._config.aec
+        with self._aec_active_sources_lock:
+            was_globally_active = any(self._aec_active_sources.values())
+            sources = self._aec_active_sources.pop(session_id, None)
+            is_globally_active = any(self._aec_active_sources.values())
+
+        if not sources or aec is None or VoiceCapability.NATIVE_AEC in self._backend_capabilities:
+            return
+
+        supports_stream_activity = type(aec).set_stream_active is not AECProvider.set_stream_active
+        try:
+            if supports_stream_activity:
+                aec.set_stream_active(session_id, False)
+            elif was_globally_active != is_globally_active:
+                aec.set_active(is_globally_active)
+        except Exception:
+            logger.exception("AEC deactivation error for stream %s", session_id)
 
     def on_session_ended(self, session: VoiceSession) -> None:
         """Called when a voice session ends.
@@ -867,7 +905,10 @@ class AudioPipeline:
         # Close debug taps
         dt = self._debug_tap_sessions.pop(session.id, None)
         if dt is not None:
-            dt.close()
+            try:
+                dt.close()
+            except Exception:
+                logger.exception("Failed to close debug taps for %s", session.id)
 
         handle = self._recording_handles.pop(session.id, None)
         if handle is not None and self._config.recorder is not None:
@@ -893,8 +934,6 @@ class AudioPipeline:
         self._outbound_locks.clear()
         with self._aec_capture_formats_lock:
             self._aec_capture_formats.clear()
-        with self._aec_active_sources_lock:
-            self._aec_active_sources.clear()
         if self._aec_resampler is not None:
             self._aec_resampler.reset()
         if self._playback_aec_resampler is not None:
@@ -903,7 +942,9 @@ class AudioPipeline:
             self._resampler.reset()
         # Stage state is keyed by stream, so a blanket reset releases every
         # stream the stages were given rather than one anonymous slot.
-        for stream in list(self._stage_streams):
+        with self._aec_active_sources_lock:
+            active_streams = set(self._aec_active_sources)
+        for stream in sorted(self._stage_streams | active_streams):
             self._release_stage_streams(stream)
         self._last_speaker_id.clear()
         # Stop active recordings before clearing handles
@@ -915,8 +956,11 @@ class AudioPipeline:
                     logger.exception("Failed to stop recording during reset")
         self._recording_handles.clear()
         # Close debug taps from any previous session
-        for dt in self._debug_tap_sessions.values():
-            dt.close()
+        for session_id, dt in self._debug_tap_sessions.items():
+            try:
+                dt.close()
+            except Exception:
+                logger.exception("Failed to close debug taps during reset for %s", session_id)
         self._debug_tap_sessions.clear()
 
     def close(self) -> None:

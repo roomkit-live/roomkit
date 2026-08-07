@@ -65,6 +65,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("roomkit.voice.local")
 
+_MAX_REALTIME_BUFFER_SECONDS = 30
+
 
 def _import_sounddevice() -> Any:
     """Import sounddevice, raising a clear error if missing."""
@@ -130,6 +132,16 @@ class LocalAudioBackend(VoiceBackend):
         mute_mic_during_playback: bool = True,
         rt_prebuffer_ms: int = 120,
     ) -> None:
+        if input_sample_rate <= 0:
+            raise ValueError("input_sample_rate must be positive")
+        if output_sample_rate <= 0:
+            raise ValueError("output_sample_rate must be positive")
+        if channels <= 0:
+            raise ValueError("channels must be positive")
+        if block_duration_ms <= 0:
+            raise ValueError("block_duration_ms must be positive")
+        if rt_prebuffer_ms < 0:
+            raise ValueError("rt_prebuffer_ms must be non-negative")
         self._sd = _import_sounddevice()
 
         self._input_sample_rate = input_sample_rate
@@ -195,6 +207,10 @@ class LocalAudioBackend(VoiceBackend):
         # Running total of queued-unplayed bytes — O(1) check in the
         # callback instead of summing the deque under the lock every block.
         self._rt_buffered_bytes = 0
+        self._rt_max_buffer_bytes = (
+            output_sample_rate * channels * 2 * _MAX_REALTIME_BUFFER_SECONDS
+        )
+        self._rt_dropped_bytes = 0
         # Mid-response starvation counter (see rt_underruns property).
         self._rt_underruns = 0
         # Missing end_of_response safety valve: after ~100ms of priming with
@@ -305,8 +321,8 @@ class LocalAudioBackend(VoiceBackend):
         self._playing_sessions.discard(session.id)
         self._gated_sessions.discard(session.id)
         self._muted_sessions.discard(session.id)
+        self._aec_end_playback(session.id)
         self._ref_buffers.pop(session.id, None)
-        self._aec_active_sessions.discard(session.id)
         if self._aec is not None:
             self._aec.reset(session.id)
         logger.info("Local audio session ended: session=%s", session.id)
@@ -453,16 +469,33 @@ class LocalAudioBackend(VoiceBackend):
         if self._realtime_mode:
             # Realtime path: queue bytes into persistent output buffer
             if isinstance(audio, bytes) and audio and not self._rt_closing.is_set():
-                self._playing_sessions.add(session.id)
                 with self._rt_buf_lock:
                     was_interrupted = self._rt_interrupted
                     self._rt_interrupted = False
-                    self._rt_output_buffer.append(audio)
-                    self._rt_buffered_bytes += len(audio)
+                    available = max(0, self._rt_max_buffer_bytes - self._rt_buffered_bytes)
+                    frame_width = self._channels * 2
+                    available -= available % frame_width
+                    accepted = audio[:available]
+                    dropped = len(audio) - len(accepted)
+                    if accepted:
+                        self._rt_output_buffer.append(accepted)
+                        self._rt_buffered_bytes += len(accepted)
+                    self._rt_dropped_bytes += dropped
                     # New audio means a response is in flight: a stale
                     # end-of-response must not release the priming gate early.
                     self._rt_response_complete = False
                     self._rt_prime_idle_blocks = 0
+                # Add after releasing the buffer lock. If the callback just
+                # observed an empty buffer and clears playing state, this final
+                # write wins; adding before the append had a race that could
+                # unmute capture while newly queued audio was about to play.
+                if accepted:
+                    self._playing_sessions.add(session.id)
+                if dropped and self._rt_dropped_bytes == dropped:
+                    logger.warning(
+                        "Realtime speaker buffer reached its %ds bound; dropping excess audio",
+                        _MAX_REALTIME_BUFFER_SECONDS,
+                    )
                 if was_interrupted:
                     logger.info("[INTERRUPT] cleared — buffering for resume")
             return
@@ -736,6 +769,7 @@ class LocalAudioBackend(VoiceBackend):
                 self._rt_output_buffer.clear()
                 self._rt_buf_offset = 0
                 self._rt_buffered_bytes = 0
+                self._rt_dropped_bytes = 0
                 self._rt_priming = True
                 self._rt_response_complete = False
                 self._rt_prime_idle_blocks = 0
@@ -755,6 +789,7 @@ class LocalAudioBackend(VoiceBackend):
             self._rt_output_buffer.clear()
             self._rt_buf_offset = 0
             self._rt_buffered_bytes = 0
+            self._rt_dropped_bytes = 0
             self._rt_priming = True
             self._rt_response_complete = False
             self._rt_prime_idle_blocks = 0
@@ -1003,6 +1038,7 @@ class LocalAudioBackend(VoiceBackend):
             self._rt_output_buffer.clear()
             self._rt_buf_offset = 0
             self._rt_buffered_bytes = 0
+            self._rt_dropped_bytes = 0
             self._rt_priming = True
             self._rt_response_complete = False
             self._rt_prime_idle_blocks = 0
@@ -1068,16 +1104,24 @@ class LocalAudioBackend(VoiceBackend):
         """Activate transport AEC once, when physical playback starts."""
         if self._aec is None or stream in self._aec_active_sessions:
             return
+        try:
+            self._aec.set_stream_active(stream, True)
+        except Exception:
+            logger.exception("Failed to activate transport AEC for stream %s", stream)
+            return
         self._aec_active_sessions.add(stream)
-        self._aec.set_stream_active(stream, True)
 
     def _aec_end_playback(self, stream: str) -> None:
         """Pause transport AEC without destroying its learned echo path."""
         if self._aec is None or stream not in self._aec_active_sessions:
             return
+        try:
+            self._aec.set_stream_active(stream, False)
+        except Exception:
+            logger.exception("Failed to deactivate transport AEC for stream %s", stream)
+            return
         self._aec_active_sessions.discard(stream)
         self._ref_buffers.pop(stream, None)
-        self._aec.set_stream_active(stream, False)
 
     def _aec_feed_played(self, played: bytearray, stream: str) -> None:
         """Feed actually-played speaker bytes to the AEC as reference.

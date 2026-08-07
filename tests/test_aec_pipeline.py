@@ -277,6 +277,61 @@ class TestAECActivityLifecycle:
         assert aec.active_changes == [(None, True), (None, False)]
         assert aec.reset_streams == []
 
+    def test_session_teardown_deactivates_legacy_global_provider(self):
+        """An ended final stream cannot leave a global provider enabled."""
+
+        class GlobalAEC(MockAECProvider):
+            set_stream_active = AECProvider.set_stream_active
+
+        aec = GlobalAEC()
+        pipeline = AudioPipeline(AudioPipelineConfig(aec=aec))
+
+        pipeline.set_aec_active("alice", True)
+        pipeline.on_session_ended(_session("alice"))
+
+        assert aec.active_changes == [(None, True), (None, False)]
+        assert aec.reset_streams == ["alice"]
+
+    def test_reset_deactivates_each_stream_local_provider(self):
+        """Blanket reset releases activity even before capture audio arrives."""
+        aec = MockAECProvider()
+        pipeline = AudioPipeline(AudioPipelineConfig(aec=aec))
+
+        pipeline.set_aec_active("alice", True)
+        pipeline.set_aec_active("bob", True)
+        pipeline.reset()
+
+        assert aec.active_changes == [
+            ("alice", True),
+            ("bob", True),
+            ("alice", False),
+            ("bob", False),
+        ]
+        assert set(aec.reset_streams) == {"alice", "bob"}
+
+    def test_failed_stream_activation_can_be_retried(self):
+        """Provider/bookkeeping state stays aligned after a transient failure."""
+
+        class FlakyAEC(MockAECProvider):
+            def __init__(self) -> None:
+                super().__init__()
+                self.attempts = 0
+
+            def set_stream_active(self, stream: str, active: bool) -> None:
+                self.attempts += 1
+                if self.attempts == 1:
+                    raise RuntimeError("transient")
+                super().set_stream_active(stream, active)
+
+        aec = FlakyAEC()
+        pipeline = AudioPipeline(AudioPipelineConfig(aec=aec))
+
+        pipeline.set_aec_active("alice", True)
+        pipeline.set_aec_active("alice", True)
+
+        assert aec.attempts == 2
+        assert aec.active_changes == [("alice", True)]
+
 
 class TestBackendFeedsFlag:
     """Tests for backend_feeds_aec_reference flag storage."""

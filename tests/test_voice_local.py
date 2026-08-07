@@ -61,6 +61,20 @@ class TestLocalAudioBackendProperties:
         assert backend._input_device == 1
         assert backend._output_device == "speakers"
 
+    @pytest.mark.parametrize(
+        ("name", "value"),
+        [
+            ("input_sample_rate", 0),
+            ("output_sample_rate", 0),
+            ("channels", 0),
+            ("block_duration_ms", 0),
+            ("rt_prebuffer_ms", -1),
+        ],
+    )
+    def test_invalid_audio_geometry_fails_fast(self, name: str, value: int) -> None:
+        with pytest.raises(ValueError):
+            _make_backend(**{name: value})
+
 
 # ---------------------------------------------------------------------------
 # Session management
@@ -584,6 +598,35 @@ class TestRealtimePrebuffer:
         await backend.send_audio(session, _PCM * 100)  # 200B, tiny
         out = _drain_block(backend)
         assert out[:200] == _PCM * 100  # no priming: plays from the first byte
+
+    async def test_realtime_speaker_buffer_is_bounded(self) -> None:
+        backend, session = await _rt_backend()
+        backend._rt_max_buffer_bytes = 4
+
+        await backend.send_audio(session, b"123456")
+
+        assert backend._rt_buffered_bytes == 4
+        assert list(backend._rt_output_buffer) == [b"1234"]
+        assert backend._rt_dropped_bytes == 2
+
+    async def test_failed_aec_activation_is_retried(self) -> None:
+        aec = MagicMock()
+        aec.set_stream_active.side_effect = [RuntimeError("transient"), None]
+        backend, session = await _rt_backend(
+            input_sample_rate=24000,
+            rt_prebuffer_ms=0,
+            aec=aec,
+            mute_mic_during_playback=False,
+        )
+        await backend.send_audio(session, _PCM * (_BLOCK // 2))
+
+        _drain_block(backend)
+        assert session.id not in backend._aec_active_sessions
+        await backend.send_audio(session, _PCM * (_BLOCK // 2))
+        _drain_block(backend)
+
+        assert session.id in backend._aec_active_sessions
+        assert aec.set_stream_active.call_count >= 2
 
 
 class TestContinuousPlayedCallbacks:
