@@ -32,6 +32,11 @@ class DeepgramAgentConfig(BaseModel):
         greeting: Optional line the agent speaks as soon as the session opens.
         keepalive_interval: Seconds between ``KeepAlive`` messages. Deepgram closes
             connections that go silent; its docs prescribe one every 8 seconds.
+        max_prompt_chars: Warn when the system prompt exceeds this many characters.
+            Defaults to Deepgram's documented 25,000-character cap for managed
+            LLMs, past which Deepgram truncates the prompt (``PROMPT_TOO_LONG``).
+            ``None`` disables the warning. Sessions pointing at a bring-your-own
+            ``think_endpoint`` are never warned — Deepgram applies no cap there.
     """
 
     api_key: SecretStr = Field(min_length=1)
@@ -45,6 +50,7 @@ class DeepgramAgentConfig(BaseModel):
     speak_language: str | None = None
     greeting: str | None = None
     keepalive_interval: float = Field(default=8.0, ge=0)
+    max_prompt_chars: int | None = Field(default=25_000, ge=1)
 
     @field_validator("base_url")
     @classmethod

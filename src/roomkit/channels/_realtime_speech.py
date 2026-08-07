@@ -360,9 +360,15 @@ class RealtimeSpeechMixin:
         """Fire an ON_INPUT_AUDIO_LEVEL or ON_OUTPUT_AUDIO_LEVEL hook."""
         if not self._framework:
             return
+        # Levels stream off the audio thread until the very last frame, so
+        # a few are always in flight when close() seals the store.  A level
+        # during teardown carries nothing — skip without the alarm bell.
+        if getattr(self._framework, "_resource_leases_sealed", False):
+            return
         # Skip expensive _build_context (4 DB queries) when no hooks are registered
         if not self._framework.hook_engine.has_hooks(trigger):
             return
+        from roomkit.core.exceptions import RoomKitError
         from roomkit.telemetry.context import reset_span
 
         _, _tok = self._rt_span_ctx(session.id)
@@ -378,6 +384,10 @@ class RealtimeSpeechMixin:
                 context,
                 skip_event_filter=True,
             )
+        except RoomKitError:
+            # The seal check above races close(): an event past the check
+            # can still find the store sealed inside _build_context.
+            logger.debug("%s hook skipped: framework closing", trigger)
         except Exception:
             logger.exception("Error firing %s hook", trigger)
         finally:

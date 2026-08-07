@@ -158,6 +158,8 @@ class TestConfig:
         assert cfg.think_model == "gpt-4o-mini"
         assert cfg.speak_model == "aura-2-thalia-en"
         assert cfg.keepalive_interval == 8.0
+        # Deepgram's documented cap for managed-LLM prompts.
+        assert cfg.max_prompt_chars == 25_000
 
     @pytest.mark.parametrize(
         "kwargs",
@@ -698,6 +700,81 @@ class TestOutbound:
             )
 
         assert provider._states[session.id].think["prompt"] == ("Original\n\nFirst\n\nSecond")
+        await provider.disconnect(session)
+
+    async def test_prompt_over_cap_warns_and_still_sends(
+        self, session: VoiceSession, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        cfg = DeepgramAgentConfig(api_key=SecretStr("dg-key"), max_prompt_chars=40)
+        provider = DeepgramAgentProvider(cfg)
+        ws = await _connect(provider, session, system_prompt="Tu es concis.")
+        with caplog.at_level(logging.WARNING, logger="roomkit.providers.deepgram.realtime"):
+            await provider.inject_text(session, "x" * 60, silent=True)
+
+        assert "Deepgram will truncate" in caplog.text
+        # The full prompt still goes out — Deepgram, not RoomKit, does the cutting.
+        assert ws.last_of_type("UpdatePrompt")["prompt"].endswith("x" * 60)
+        await provider.disconnect(session)
+
+    async def test_prompt_warning_disabled_with_none(
+        self, session: VoiceSession, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        cfg = DeepgramAgentConfig(api_key=SecretStr("dg-key"), max_prompt_chars=None)
+        provider = DeepgramAgentProvider(cfg)
+        await _connect(provider, session, system_prompt="Tu es concis.")
+        with caplog.at_level(logging.WARNING, logger="roomkit.providers.deepgram.realtime"):
+            await provider.inject_text(session, "x" * 100_000, silent=True)
+
+        assert "managed-LLM cap" not in caplog.text
+        await provider.disconnect(session)
+
+    async def test_prompt_warning_skipped_for_byo_endpoint(
+        self, session: VoiceSession, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        cfg = DeepgramAgentConfig(api_key=SecretStr("dg-key"), max_prompt_chars=40)
+        provider = DeepgramAgentProvider(cfg)
+        await _connect(
+            provider,
+            session,
+            system_prompt="Tu es concis.",
+            provider_config={"think_endpoint": {"url": "http://llm.internal/v1/chat"}},
+        )
+        with caplog.at_level(logging.WARNING, logger="roomkit.providers.deepgram.realtime"):
+            await provider.inject_text(session, "x" * 60, silent=True)
+
+        # Deepgram documents no cap for bring-your-own endpoints.
+        assert "managed-LLM cap" not in caplog.text
+        await provider.disconnect(session)
+
+    async def test_initial_prompt_over_cap_warns_at_connect(
+        self,
+        provider: DeepgramAgentProvider,
+        session: VoiceSession,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        with caplog.at_level(logging.WARNING, logger="roomkit.providers.deepgram.realtime"):
+            await _connect(
+                provider,
+                session,
+                system_prompt="y" * 30,
+                provider_config={"max_prompt_chars": 10},
+            )
+
+        # The per-session override beats the config default (25,000).
+        assert "over the 10-char managed-LLM cap" in caplog.text
+        await provider.disconnect(session)
+
+    async def test_reconfigured_prompt_over_cap_warns(
+        self, session: VoiceSession, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        cfg = DeepgramAgentConfig(api_key=SecretStr("dg-key"), max_prompt_chars=40)
+        provider = DeepgramAgentProvider(cfg)
+        ws = await _connect(provider, session, system_prompt="Tu es concis.")
+        with caplog.at_level(logging.WARNING, logger="roomkit.providers.deepgram.realtime"):
+            await provider.reconfigure(session, system_prompt="z" * 60)
+
+        assert "Deepgram will truncate" in caplog.text
+        assert ws.last_of_type("UpdateThink")["think"]["prompt"] == "z" * 60
         await provider.disconnect(session)
 
     async def test_submit_tool_result_recovers_the_name(

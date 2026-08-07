@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Deepgram managed-LLM prompt cap — configurable, and honest about what
+  happens past it.** `DeepgramAgentConfig.max_prompt_chars` (default 25,000 —
+  Deepgram's documented cap; `None` disables) replaces a hardcoded module
+  constant, with a per-session `provider_config["max_prompt_chars"]` override.
+  The old warning fired only when silent injections grew the prompt, claimed
+  the update would "likely be refused", and fired even for bring-your-own
+  `think_endpoint` sessions. What Deepgram actually does past the cap is
+  *truncate* the prompt and keep the session (`PROMPT_TOO_LONG`, a non-fatal
+  warning) — and it documents no cap at all for BYO endpoints. The check now
+  says so, also covers the initial prompt at connect and full replacements
+  through `reconfigure()`, and stays silent when a `think_endpoint` is in
+  force.
+
 - **Realtime model catalogs — `RealtimeVoiceProvider.available_models()`.**
   The speech-to-speech model ids were the one lineup RoomKit knew only as
   constructor defaults: the chat catalogs exclude them on purpose (the xAI

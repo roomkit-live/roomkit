@@ -1,5 +1,6 @@
 """Tests for voice support (STT/TTS/VoiceBackend/AudioFrame/Pipeline)."""
 
+import logging
 import pytest
 
 from roomkit import (
@@ -769,3 +770,58 @@ class TestVoiceEvents:
         )
         assert event.level_db == -25.5
         assert event.is_speech is True
+
+
+class TestAudioLevelHookDuringShutdown:
+    """A level event in flight when close() seals the store dies quietly.
+
+    Levels stream off the audio thread until the very last frame, so a few
+    always race the teardown — each one used to log a full RoomKitError
+    traceback at ERROR ("Error firing on_output_audio_level hook").
+    """
+
+    @staticmethod
+    def _mixin_host(framework):
+        from roomkit.channels.realtime_voice import RealtimeVoiceChannel
+
+        host = RealtimeVoiceChannel.__new__(RealtimeVoiceChannel)
+        host._framework = framework
+        host._rt_span_ctx = lambda _sid: (None, None)
+        return host
+
+    async def test_sealed_framework_short_circuits(self, caplog):
+        from unittest.mock import MagicMock
+
+        from roomkit.models.enums import HookTrigger
+        from roomkit.voice.base import VoiceSession
+
+        framework = MagicMock()
+        framework._resource_leases_sealed = True
+        host = self._mixin_host(framework)
+        session = VoiceSession(id="s1", room_id="r1", participant_id="p1", channel_id="c1")
+
+        with caplog.at_level(logging.DEBUG):
+            await host._fire_audio_level(session, -20.0, "r1", HookTrigger.ON_OUTPUT_AUDIO_LEVEL)
+
+        framework.hook_engine.has_hooks.assert_not_called()
+        assert not any(r.levelno >= logging.ERROR for r in caplog.records)
+
+    async def test_seal_race_inside_build_context_logs_debug_not_error(self, caplog):
+        from unittest.mock import AsyncMock, MagicMock
+
+        from roomkit.core.exceptions import RoomKitError
+        from roomkit.models.enums import HookTrigger
+        from roomkit.voice.base import VoiceSession
+
+        framework = MagicMock()
+        framework._resource_leases_sealed = False
+        framework.hook_engine.has_hooks.return_value = True
+        framework._build_context = AsyncMock(side_effect=RoomKitError("sealed"))
+        host = self._mixin_host(framework)
+        session = VoiceSession(id="s1", room_id="r1", participant_id="p1", channel_id="c1")
+
+        with caplog.at_level(logging.DEBUG):
+            await host._fire_audio_level(session, -20.0, "r1", HookTrigger.ON_OUTPUT_AUDIO_LEVEL)
+
+        assert not any(r.levelno >= logging.ERROR for r in caplog.records)
+        assert any("skipped: framework closing" in r.message for r in caplog.records)

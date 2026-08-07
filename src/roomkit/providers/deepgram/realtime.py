@@ -41,9 +41,6 @@ _HANDSHAKE_BUFFER_LIMIT = 4 * 1024 * 1024
 
 _KEEPALIVE = json.dumps({"type": "KeepAlive"})
 
-# Deepgram rejects managed-LLM prompts longer than this.
-_MAX_PROMPT_CHARS = 25_000
-
 _THINK_RECONFIGURE_KEYS = frozenset(
     {"think_provider", "think_model", "think_endpoint", "context_length"}
 )
@@ -66,6 +63,8 @@ class _SessionState:
     ws: Any
     think: dict[str, Any]
     speak: dict[str, Any]
+    # Managed-LLM prompt-size warning threshold; None disables the check.
+    max_prompt_chars: int | None
     receive_task: asyncio.Task[None] | None = None
     keepalive_task: asyncio.Task[None] | None = None
     responding: bool = False
@@ -109,6 +108,8 @@ class DeepgramAgentProvider(RealtimeVoiceProvider):
             override the LLM stage — ``think_endpoint`` points at a self-hosted,
             OpenAI-compatible server.
         speak_model, speak_language (str): override the TTS stage.
+        max_prompt_chars (int | None): per-session override of the managed-LLM
+            prompt-size warning threshold; ``None`` disables the warning.
         greeting (str): line the agent speaks when the session opens.
         input_encoding, output_encoding (str): ``linear16`` (default), ``mulaw``,
             ``alaw``, ``opus``… Use ``mulaw`` at 8000 Hz for a telephony transport
@@ -242,6 +243,9 @@ class DeepgramAgentProvider(RealtimeVoiceProvider):
         if not all(isinstance(value, dict) for value in required_objects):
             raise ValueError("Deepgram agent stages and providers must be objects")
 
+        max_prompt_chars = pc.get("max_prompt_chars", self._config.max_prompt_chars)
+        self._warn_prompt_over_limit(session.id, think, max_prompt_chars)
+
         ws = await asyncio.wait_for(
             websockets.connect(self._config.base_url, additional_headers=self._auth_headers()),
             timeout=_CONNECT_TIMEOUT,
@@ -254,6 +258,7 @@ class DeepgramAgentProvider(RealtimeVoiceProvider):
             ws=ws,
             think=think,
             speak=speak,
+            max_prompt_chars=max_prompt_chars,
         )
         self._states[session.id] = state
 
@@ -612,19 +617,36 @@ class DeepgramAgentProvider(RealtimeVoiceProvider):
         logger.debug("[Deepgram →] %s (session %s)", mtype, session.id)
         await state.ws.send(json.dumps({"type": mtype, content_key: text}))
 
+    def _warn_prompt_over_limit(
+        self, session_id: str, think: dict[str, Any], limit: int | None
+    ) -> None:
+        """Early client-side signal for Deepgram's managed-LLM prompt cap.
+
+        Deepgram truncates an over-limit prompt and keeps the session alive
+        (a non-fatal ``PROMPT_TOO_LONG`` warning); it does not refuse the
+        update. A bring-your-own ``endpoint`` has no documented cap, so no
+        warning applies there.
+        """
+        if limit is None or think.get("endpoint"):
+            return
+        prompt = str(think.get("prompt") or "")
+        if len(prompt) > limit:
+            logger.warning(
+                "Deepgram prompt for session %s is %d chars, over the %d-char "
+                "managed-LLM cap — Deepgram will truncate it (PROMPT_TOO_LONG)",
+                session_id,
+                len(prompt),
+                limit,
+            )
+
     async def _append_to_prompt(self, state: _SessionState, text: str) -> None:
         """Append to the live system prompt without dropping what was there."""
         async with state.update_lock:
             current = str(state.think.get("prompt") or "")
             prompt = f"{current}\n\n{text}".strip() if current else text
-            if len(prompt) > _MAX_PROMPT_CHARS:
-                logger.warning(
-                    "Deepgram prompt for session %s is %d chars, over the %d-char limit "
-                    "for managed LLMs — the update will likely be refused",
-                    state.session.id,
-                    len(prompt),
-                    _MAX_PROMPT_CHARS,
-                )
+            self._warn_prompt_over_limit(
+                state.session.id, {**state.think, "prompt": prompt}, state.max_prompt_chars
+            )
             logger.debug("[Deepgram →] UpdatePrompt (session %s)", state.session.id)
             await state.ws.send(json.dumps({"type": "UpdatePrompt", "prompt": prompt}))
             state.think["prompt"] = prompt
@@ -703,6 +725,8 @@ class DeepgramAgentProvider(RealtimeVoiceProvider):
         pc = provider_config or {}
 
         async with state.update_lock:
+            if "max_prompt_chars" in pc:
+                state.max_prompt_chars = pc["max_prompt_chars"]
             think_changed = (
                 system_prompt is not None
                 or tools is not None
@@ -717,6 +741,7 @@ class DeepgramAgentProvider(RealtimeVoiceProvider):
                     temperature=temperature,
                     pc=pc,
                 )
+                self._warn_prompt_over_limit(session.id, think, state.max_prompt_chars)
                 logger.debug("[Deepgram →] UpdateThink (session %s)", session.id)
                 await state.ws.send(json.dumps({"type": "UpdateThink", "think": think}))
                 state.think = think
