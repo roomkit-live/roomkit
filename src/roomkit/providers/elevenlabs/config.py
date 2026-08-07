@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, SecretStr
+from pydantic import BaseModel, Field, SecretStr, field_validator
 
 
 class ElevenLabsRealtimeConfig(BaseModel):
@@ -27,9 +27,16 @@ class ElevenLabsRealtimeConfig(BaseModel):
             the turn open — the agent keeps speaking once the result lands.
     """
 
-    api_key: SecretStr
-    agent_id: str
+    api_key: SecretStr = Field(min_length=1)
+    agent_id: str = Field(min_length=1)
     requires_auth: bool = False
-    base_url: str = "wss://api.elevenlabs.io"
-    tool_timeout_s: float = 30.0
-    response_idle_ms: int = 800
+    base_url: str = Field(default="wss://api.elevenlabs.io", min_length=1)
+    tool_timeout_s: float = Field(default=30.0, gt=0)
+    response_idle_ms: int = Field(default=800, gt=0)
+
+    @field_validator("base_url")
+    @classmethod
+    def _validate_websocket_url(cls, value: str) -> str:
+        if not value.startswith(("ws://", "wss://")):
+            raise ValueError("base_url must use ws:// or wss://")
+        return value

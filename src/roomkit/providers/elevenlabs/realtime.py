@@ -35,6 +35,11 @@ from roomkit.voice.realtime.provider import RealtimeVoiceProvider, VoiceInfo
 
 logger = logging.getLogger("roomkit.providers.elevenlabs.realtime")
 
+_CONNECT_TIMEOUT = 30.0
+# The SDK consumes 16 kHz, mono, 16-bit PCM. This covers the entire connection
+# timeout at realtime pace while keeping a stalled/malicious transport bounded.
+_PENDING_AUDIO_LIMIT = int(16_000 * 2 * _CONNECT_TIMEOUT)
+
 
 class ElevenLabsRealtimeProvider(RealtimeVoiceProvider):
     """Realtime voice provider using the ElevenLabs Conversational AI SDK.
@@ -66,6 +71,9 @@ class ElevenLabsRealtimeProvider(RealtimeVoiceProvider):
         self._client_tools: dict[str, Any] = {}  # ClientTools objects
         self._pending_tools: dict[str, dict[str, asyncio.Future[str]]] = {}
         self._supervisors: dict[str, asyncio.Task[None]] = {}
+        self._readiness: dict[str, asyncio.Future[None]] = {}
+        self._pending_audio: dict[str, bytearray] = {}
+        self._audio_locks: dict[str, asyncio.Lock] = {}
         self._closing: set[str] = set()
 
         # Track active responses
@@ -134,6 +142,12 @@ class ElevenLabsRealtimeProvider(RealtimeVoiceProvider):
         server_vad: bool = True,
         provider_config: dict[str, Any] | None = None,
     ) -> None:
+        if input_sample_rate != 16_000 or output_sample_rate != 16_000:
+            raise ValueError(
+                "ElevenLabs Conversational AI requires 16000 Hz input and output; "
+                "configure RealtimeVoiceChannel with input_sample_rate=16000 and "
+                "output_sample_rate=16000"
+            )
         try:
             from elevenlabs import ElevenLabs
             from elevenlabs.conversational_ai.conversation import (
@@ -220,6 +234,10 @@ class ElevenLabsRealtimeProvider(RealtimeVoiceProvider):
         self._sessions[session.id] = session
         self._conversations[session.id] = conversation
         self._client_tools[session.id] = client_tools
+        ready: asyncio.Future[None] = asyncio.get_running_loop().create_future()
+        self._readiness[session.id] = ready
+        self._pending_audio[session.id] = bytearray()
+        self._audio_locks[session.id] = asyncio.Lock()
         self._closing.discard(session.id)
 
         # Start the SDK session (creates async task internally)
@@ -233,10 +251,38 @@ class ElevenLabsRealtimeProvider(RealtimeVoiceProvider):
         # a rejected key, an unknown agent id or a dead network surfaces
         # inside that task rather than here. Without a supervisor the session
         # would sit in ACTIVE forever, silent, with nothing raised anywhere.
-        self._supervisors[session.id] = asyncio.create_task(
-            self._supervise_session(session, conversation),
-            name=f"elevenlabs_session:{session.id}",
-        )
+        # An unusually fast SDK failure can run callback_end_session while
+        # start_session() is yielding.  In that case _fail_session() has
+        # already removed this session and completed ``ready`` with the real
+        # error; installing a supervisor now would resurrect orphan state.
+        if self._sessions.get(session.id) is session:
+            self._supervisors[session.id] = asyncio.create_task(
+                self._supervise_session(session, conversation),
+                name=f"elevenlabs_session:{session.id}",
+            )
+
+        # The SDK task calls ``audio_interface.start`` only after its WebSocket
+        # is open and the initiation message has been sent.  Until then there is
+        # no input callback and accepting audio would silently discard it.
+        try:
+            await asyncio.wait_for(asyncio.shield(ready), timeout=_CONNECT_TIMEOUT)
+            if self._sessions.get(session.id) is not session:
+                raise RuntimeError(f"ElevenLabs session {session.id} ended while connecting")
+        except TimeoutError as exc:
+            if session.id in self._sessions:
+                with contextlib.suppress(Exception):
+                    await self.disconnect(session)
+            raise TimeoutError(
+                f"ElevenLabs session {session.id} was not ready within {_CONNECT_TIMEOUT:g}s"
+            ) from exc
+        except BaseException:
+            if session.id in self._sessions:
+                with contextlib.suppress(Exception):
+                    await self.disconnect(session)
+            raise
+        finally:
+            if self._readiness.get(session.id) is ready:
+                self._readiness.pop(session.id, None)
 
         session.state = VoiceSessionState.ACTIVE
         session.provider_session_id = session.id
@@ -244,10 +290,31 @@ class ElevenLabsRealtimeProvider(RealtimeVoiceProvider):
         logger.info("ElevenLabs Realtime session connected: %s", session.id)
 
     async def send_audio(self, session: VoiceSession, audio: bytes) -> None:
-        cb = self._input_callbacks.get(session.id)
-        if cb is None:
+        lock = self._audio_locks.get(session.id)
+        if lock is None:
+            # Backwards-compatible path for an integrator that installed the
+            # callback directly rather than through connect()/the SDK bridge.
+            cb = self._input_callbacks.get(session.id)
+            if cb is not None:
+                await cb(audio)
             return
-        await cb(audio)
+        async with lock:
+            cb = self._input_callbacks.get(session.id)
+            if cb is not None:
+                await cb(audio)
+                return
+
+            ready = self._readiness.get(session.id)
+            if ready is None or ready.done():
+                return
+            pending = self._pending_audio.setdefault(session.id, bytearray())
+            if len(pending) + len(audio) > _PENDING_AUDIO_LIMIT:
+                error = RuntimeError(
+                    f"ElevenLabs pre-connect audio exceeded {_PENDING_AUDIO_LIMIT} bytes"
+                )
+                ready.set_exception(error)
+                raise error
+            pending.extend(audio)
 
     async def inject_text(
         self,
@@ -310,21 +377,27 @@ class ElevenLabsRealtimeProvider(RealtimeVoiceProvider):
         self._reject_pending_tools(session.id, "the voice session ended")
 
         conversation = self._conversations.pop(session.id, None)
-        if conversation is not None:
-            await conversation.end_session()
-            with contextlib.suppress(asyncio.TimeoutError, Exception):
-                await asyncio.wait_for(conversation.wait_for_session_end(), timeout=5.0)
-
-        self._forget_session(session.id)
-
-        session.state = VoiceSessionState.ENDED
+        try:
+            if conversation is not None:
+                await conversation.end_session()
+                with contextlib.suppress(asyncio.TimeoutError, Exception):
+                    await asyncio.wait_for(conversation.wait_for_session_end(), timeout=5.0)
+        finally:
+            self._forget_session(session.id)
+            session.state = VoiceSessionState.ENDED
         logger.info("ElevenLabs session disconnected: %s", session.id)
 
     async def close(self) -> None:
+        errors: list[BaseException] = []
         for session_id in list(self._sessions):
             session = self._sessions.get(session_id)
             if session:
-                await self.disconnect(session)
+                try:
+                    await self.disconnect(session)
+                except BaseException as exc:
+                    errors.append(exc)
+        if errors:
+            raise BaseExceptionGroup("Failed to close ElevenLabs sessions", errors)
 
     # -- Async callback factories for SDK --
 
@@ -448,8 +521,11 @@ class ElevenLabsRealtimeProvider(RealtimeVoiceProvider):
             # never declared it, so it must not travel to the handler.
             call_id = str(arguments.pop("tool_call_id", "") or f"el-{uuid.uuid4().hex}")
 
+            pending_calls = self._pending_tools.setdefault(session.id, {})
+            if call_id in pending_calls:
+                raise RuntimeError(f"Duplicate ElevenLabs tool call id: {call_id}")
             future: asyncio.Future[str] = asyncio.get_running_loop().create_future()
-            self._pending_tools.setdefault(session.id, {})[call_id] = future
+            pending_calls[call_id] = future
 
             await self._fire(
                 self._tool_call_callbacks,
@@ -537,6 +613,13 @@ class ElevenLabsRealtimeProvider(RealtimeVoiceProvider):
             if session.id in self._closing:
                 return
             await self._fail_session(session, "connection_failed", str(exc))
+        else:
+            if session.id not in self._closing and session.id in self._sessions:
+                await self._fail_session(
+                    session,
+                    "session_ended",
+                    "The ElevenLabs conversation ended before RoomKit disconnected it",
+                )
 
     async def _fail_session(self, session: VoiceSession, code: str, message: str) -> None:
         """Report a session lost from under us, exactly once."""
@@ -544,6 +627,9 @@ class ElevenLabsRealtimeProvider(RealtimeVoiceProvider):
             return
 
         logger.error("ElevenLabs session %s failed (%s): %s", session.id, code, message)
+        ready = self._readiness.get(session.id)
+        if ready is not None and not ready.done():
+            ready.set_exception(RuntimeError(message))
         await self._end_response(session)
         self._reject_pending_tools(session.id, message)
         self._forget_session(session.id)
@@ -565,6 +651,11 @@ class ElevenLabsRealtimeProvider(RealtimeVoiceProvider):
         self._conversations.pop(session_id, None)
         self._input_callbacks.pop(session_id, None)
         self._client_tools.pop(session_id, None)
+        ready = self._readiness.pop(session_id, None)
+        if ready is not None and not ready.done():
+            ready.cancel()
+        self._pending_audio.pop(session_id, None)
+        self._audio_locks.pop(session_id, None)
         self._pending_tools.pop(session_id, None)
         self._last_audio_at.pop(session_id, None)
         self._responding.discard(session_id)
@@ -590,8 +681,20 @@ class _AsyncBridgeAudioInterface:
         self._session = session
 
     async def start(self, input_callback: Any) -> None:
-        """Store the SDK's async audio input callback for send_audio()."""
-        self._provider._input_callbacks[self._session.id] = input_callback
+        """Install the SDK callback and flush audio captured during its handshake."""
+        session_id = self._session.id
+        lock = self._provider._audio_locks.get(session_id)
+        if lock is None:
+            return
+        async with lock:
+            ready = self._provider._readiness.get(session_id)
+            if ready is None or ready.done():
+                return
+            self._provider._input_callbacks[session_id] = input_callback
+            pending = self._provider._pending_audio.pop(session_id, None)
+            if pending:
+                await input_callback(bytes(pending))
+            ready.set_result(None)
         logger.debug("ElevenLabs audio bridge started (session %s)", self._session.id)
 
     async def stop(self) -> None:
@@ -603,6 +706,12 @@ class _AsyncBridgeAudioInterface:
         """Called by SDK with agent audio — forward to RoomKit callbacks."""
         session = self._session
         provider = self._provider
+
+        # The SDK can have an already-queued output callback when a remote
+        # close or RoomKit disconnect tears the session down.  Do not reopen
+        # response state or emit audio for an ended session.
+        if provider._sessions.get(session.id) is not session or session.id in provider._closing:
+            return
 
         provider._last_audio_at[session.id] = time.monotonic()
         await provider._start_response(session)
