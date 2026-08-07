@@ -27,7 +27,7 @@ from typing import Any
 from pydantic import SecretStr
 
 from roomkit.providers.deepgram.config import DeepgramAgentConfig
-from roomkit.providers.deepgram.settings import build_settings, build_speak, build_think
+from roomkit.providers.deepgram.settings import build_settings, patch_speak, patch_think
 from roomkit.providers.deepgram.voices import VOICES as _VOICES
 from roomkit.voice.base import VoiceSession, VoiceSessionState
 from roomkit.voice.realtime.provider import RealtimeVoiceProvider, VoiceInfo
@@ -37,11 +37,17 @@ logger = logging.getLogger("roomkit.providers.deepgram.realtime")
 _CONNECT_TIMEOUT = 30.0
 _SETTINGS_TIMEOUT = 15.0
 _CLOSE_TIMEOUT = 2.0
+_HANDSHAKE_BUFFER_LIMIT = 4 * 1024 * 1024
 
 _KEEPALIVE = json.dumps({"type": "KeepAlive"})
 
 # Deepgram rejects managed-LLM prompts longer than this.
 _MAX_PROMPT_CHARS = 25_000
+
+_THINK_RECONFIGURE_KEYS = frozenset(
+    {"think_provider", "think_model", "think_endpoint", "context_length"}
+)
+_SPEAK_RECONFIGURE_KEYS = frozenset({"speak_model", "speak_language"})
 
 
 @dataclass
@@ -69,6 +75,15 @@ class _SessionState:
     # FunctionCallResponse requires fields that the RealtimeVoiceProvider contract
     # does not hand back to submit_tool_result(), so preserve them by call id.
     pending_calls: dict[str, _PendingCall] = field(default_factory=dict)
+    # Prompt/model/voice updates are read-modify-write operations. Serialise them
+    # so concurrent handoffs and supervisor injections cannot lose each other.
+    update_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    # A configured greeting can arrive before SettingsApplied. The channel does
+    # not publish the session until connect() returns, so defer callbacks until
+    # that boundary or the first greeting frames would be silently discarded.
+    callbacks_ready: bool = False
+    deferred_messages: list[Any] = field(default_factory=list)
+    deferred_bytes: int = 0
 
 
 class DeepgramAgentProvider(RealtimeVoiceProvider):
@@ -254,6 +269,7 @@ class DeepgramAgentProvider(RealtimeVoiceProvider):
 
         session.state = VoiceSessionState.ACTIVE
         session.provider_session_id = session.id
+        state.callbacks_ready = True
 
         state.receive_task = asyncio.create_task(
             self._receive_loop(session.id), name=f"deepgram_agent_recv:{session.id}"
@@ -309,17 +325,39 @@ class DeepgramAgentProvider(RealtimeVoiceProvider):
         if state is None:
             return
         try:
+            # Let RealtimeVoiceChannel publish its session maps after connect()
+            # returns before callbacks for handshake-time greeting audio fire.
+            await asyncio.sleep(0)
+            deferred = state.deferred_messages
+            state.deferred_messages = []
+            state.deferred_bytes = 0
+            for message in deferred:
+                await self._handle_message(state, message)
+                if self._states.get(session_id) is not state:
+                    return
             async for message in state.ws:
                 await self._handle_message(state, message)
+                if self._states.get(session_id) is not state:
+                    break
         except asyncio.CancelledError:
             raise
         except Exception as exc:
             logger.warning("Deepgram receive loop failed (session %s): %s", session_id, exc)
+            state.session.state = VoiceSessionState.ENDED
             await self._fire(
                 self._error_callbacks, state.session, "connection_error", str(exc), label="error"
             )
         else:
             logger.info("Deepgram closed the connection (session %s)", session_id)
+            if self._states.get(session_id) is state:
+                state.session.state = VoiceSessionState.ENDED
+                await self._fire(
+                    self._error_callbacks,
+                    state.session,
+                    "connection_closed",
+                    "Deepgram closed the connection unexpectedly",
+                    label="error",
+                )
         finally:
             await self._finalize_session(session_id, state)
 
@@ -337,6 +375,7 @@ class DeepgramAgentProvider(RealtimeVoiceProvider):
             raise
         except Exception as exc:
             logger.warning("Deepgram keepalive failed (session %s): %s", session_id, exc)
+            state.session.state = VoiceSessionState.ENDED
             await self._fire(
                 self._error_callbacks, state.session, "connection_error", str(exc), label="error"
             )
@@ -347,6 +386,9 @@ class DeepgramAgentProvider(RealtimeVoiceProvider):
     async def _handle_message(self, state: _SessionState, message: Any) -> dict[str, Any] | None:
         """Dispatch one frame; returns the decoded event, or None for audio."""
         if isinstance(message, bytes | bytearray):
+            if not state.callbacks_ready:
+                self._defer_handshake_message(state, bytes(message))
+                return None
             await self._begin_response(state)
             await self._fire(self._audio_callbacks, state.session, bytes(message), label="audio")
             return None
@@ -359,8 +401,27 @@ class DeepgramAgentProvider(RealtimeVoiceProvider):
             return None
         if not isinstance(event, dict):
             return None
+        if not state.callbacks_ready and event.get("type") not in {
+            "Welcome",
+            "SettingsApplied",
+            "Error",
+            "Warning",
+        }:
+            self._defer_handshake_message(state, message)
+            return event
         await self._dispatch(state, event)
         return event
+
+    @staticmethod
+    def _defer_handshake_message(state: _SessionState, message: Any) -> None:
+        """Bound greeting data retained until the public session is visible."""
+        size = len(message) if isinstance(message, bytes | bytearray | str) else 0
+        if state.deferred_bytes + size > _HANDSHAKE_BUFFER_LIMIT:
+            raise ConnectionError(
+                f"Deepgram sent more than {_HANDSHAKE_BUFFER_LIMIT} bytes before SettingsApplied"
+            )
+        state.deferred_messages.append(message)
+        state.deferred_bytes += size
 
     # Maps each server event type to the handler method that processes it.
     # Acknowledgements (Welcome, SettingsApplied, *Updated) and telemetry
@@ -423,13 +484,20 @@ class DeepgramAgentProvider(RealtimeVoiceProvider):
         logger.warning("Deepgram refused a text injection (session %s)", state.session.id)
 
     async def _on_diagnostic(self, state: _SessionState, event: dict[str, Any]) -> None:
-        """Surface an Error or a Warning — both share one payload shape."""
+        """Surface diagnostics and retire sessions after fatal errors."""
         etype = str(event.get("type") or "Error")
         code = str(event.get("code") or etype.lower())
         description = str(event.get("description") or "")
         log = logger.error if etype == "Error" else logger.warning
         log("Deepgram %s [%s] (session %s): %s", etype, code, state.session.id, description)
+        if etype == "Error":
+            state.session.state = VoiceSessionState.ENDED
         await self._fire(self._error_callbacks, state.session, code, description, label="error")
+        # Deepgram defines Error as fatal and Warning as non-fatal. Handshake
+        # errors are finalized by connect(); live errors must stop both worker
+        # tasks here instead of leaving an apparently active dead session.
+        if etype == "Error" and state.receive_task is not None:
+            await self._finalize_session(state.session.id, state)
 
     async def _on_conversation_text(self, state: _SessionState, event: dict[str, Any]) -> None:
         """Emit a final transcript, and close the user's turn when it is theirs.
@@ -461,6 +529,19 @@ class DeepgramAgentProvider(RealtimeVoiceProvider):
                 continue
             call_id = str(function.get("id") or "")
             fname = str(function.get("name") or "")
+            if not call_id or not fname:
+                logger.warning(
+                    "Deepgram sent a function call without a non-empty id and name (session %s)",
+                    state.session.id,
+                )
+                continue
+            if call_id in state.pending_calls:
+                logger.warning(
+                    "Deepgram reused pending function call id %s (session %s); ignoring duplicate",
+                    call_id,
+                    state.session.id,
+                )
+                continue
             raw_args = function.get("arguments")
             try:
                 # Deepgram sends arguments as a JSON *string*.
@@ -525,31 +606,34 @@ class DeepgramAgentProvider(RealtimeVoiceProvider):
             await self._append_to_prompt(state, text)
             return
 
-        mtype = "InjectAgentMessage" if role == "assistant" else "InjectUserMessage"
+        is_agent_message = role == "assistant"
+        mtype = "InjectAgentMessage" if is_agent_message else "InjectUserMessage"
+        content_key = "message" if is_agent_message else "content"
         logger.debug("[Deepgram →] %s (session %s)", mtype, session.id)
-        await state.ws.send(json.dumps({"type": mtype, "content": text}))
+        await state.ws.send(json.dumps({"type": mtype, content_key: text}))
 
     async def _append_to_prompt(self, state: _SessionState, text: str) -> None:
         """Append to the live system prompt without dropping what was there."""
-        current = str(state.think.get("prompt") or "")
-        prompt = f"{current}\n\n{text}".strip() if current else text
-        if len(prompt) > _MAX_PROMPT_CHARS:
-            logger.warning(
-                "Deepgram prompt for session %s is %d chars, over the %d-char limit "
-                "for managed LLMs — the update will likely be refused",
-                state.session.id,
-                len(prompt),
-                _MAX_PROMPT_CHARS,
-            )
-        state.think["prompt"] = prompt
-        logger.debug("[Deepgram →] UpdatePrompt (session %s)", state.session.id)
-        await state.ws.send(json.dumps({"type": "UpdatePrompt", "prompt": prompt}))
+        async with state.update_lock:
+            current = str(state.think.get("prompt") or "")
+            prompt = f"{current}\n\n{text}".strip() if current else text
+            if len(prompt) > _MAX_PROMPT_CHARS:
+                logger.warning(
+                    "Deepgram prompt for session %s is %d chars, over the %d-char limit "
+                    "for managed LLMs — the update will likely be refused",
+                    state.session.id,
+                    len(prompt),
+                    _MAX_PROMPT_CHARS,
+                )
+            logger.debug("[Deepgram →] UpdatePrompt (session %s)", state.session.id)
+            await state.ws.send(json.dumps({"type": "UpdatePrompt", "prompt": prompt}))
+            state.think["prompt"] = prompt
 
     async def submit_tool_result(self, session: VoiceSession, call_id: str, result: str) -> None:
         state = self._states.get(session.id)
         if state is None:
             return
-        pending = state.pending_calls.pop(call_id, None)
+        pending = state.pending_calls.get(call_id)
         fname = pending.name if pending is not None else ""
         if pending is None:
             logger.warning(
@@ -567,6 +651,10 @@ class DeepgramAgentProvider(RealtimeVoiceProvider):
         if pending is not None and pending.thought_signature is not None:
             response["thought_signature"] = pending.thought_signature
         await state.ws.send(json.dumps(response))
+        # Do not lose the call metadata when the send fails. Also avoid removing
+        # a newer call if Deepgram reused the id while this send was in flight.
+        if pending is not None and state.pending_calls.get(call_id) is pending:
+            state.pending_calls.pop(call_id, None)
 
     async def interrupt(self, session: VoiceSession) -> None:
         """Mark the agent's turn as over locally.
@@ -614,29 +702,31 @@ class DeepgramAgentProvider(RealtimeVoiceProvider):
 
         pc = provider_config or {}
 
-        if system_prompt is not None or tools is not None or temperature is not None:
-            prompt: str | None = (
-                system_prompt if system_prompt is not None else state.think.get("prompt")
+        async with state.update_lock:
+            think_changed = (
+                system_prompt is not None
+                or tools is not None
+                or temperature is not None
+                or any(key in pc for key in _THINK_RECONFIGURE_KEYS)
             )
-            think = build_think(
-                self._config,
-                system_prompt=prompt,
-                tools=tools,
-                temperature=temperature,
-                pc=pc,
-            )
-            # Keep the previous functions when the caller did not restate them.
-            if tools is None and state.think.get("functions"):
-                think["functions"] = state.think["functions"]
-            state.think = think
-            logger.debug("[Deepgram →] UpdateThink (session %s)", session.id)
-            await state.ws.send(json.dumps({"type": "UpdateThink", "think": think}))
+            if think_changed:
+                think = patch_think(
+                    state.think,
+                    system_prompt=system_prompt,
+                    tools=tools,
+                    temperature=temperature,
+                    pc=pc,
+                )
+                logger.debug("[Deepgram →] UpdateThink (session %s)", session.id)
+                await state.ws.send(json.dumps({"type": "UpdateThink", "think": think}))
+                state.think = think
 
-        if voice is not None:
-            speak = build_speak(self._config, voice=voice, pc=pc)
-            state.speak = speak
-            logger.debug("[Deepgram →] UpdateSpeak (session %s)", session.id)
-            await state.ws.send(json.dumps({"type": "UpdateSpeak", "speak": speak}))
+            speak_changed = voice is not None or any(key in pc for key in _SPEAK_RECONFIGURE_KEYS)
+            if speak_changed:
+                speak = patch_speak(state.speak, voice=voice, pc=pc)
+                logger.debug("[Deepgram →] UpdateSpeak (session %s)", session.id)
+                await state.ws.send(json.dumps({"type": "UpdateSpeak", "speak": speak}))
+                state.speak = speak
 
     async def send_event(self, session: VoiceSession, event: dict[str, Any]) -> None:
         state = self._states.get(session.id)
@@ -652,6 +742,8 @@ class DeepgramAgentProvider(RealtimeVoiceProvider):
         state.responding = False
         state.audio_started = False
         state.pending_calls.clear()
+        state.deferred_messages.clear()
+        state.deferred_bytes = 0
         state.session.state = VoiceSessionState.ENDED
 
         current = asyncio.current_task()

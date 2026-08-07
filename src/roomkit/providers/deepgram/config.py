@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, SecretStr
+from pydantic import BaseModel, Field, SecretStr, field_validator
 
 
 class DeepgramAgentConfig(BaseModel):
@@ -34,14 +34,21 @@ class DeepgramAgentConfig(BaseModel):
             connections that go silent; its docs prescribe one every 8 seconds.
     """
 
-    api_key: SecretStr
-    base_url: str = "wss://agent.deepgram.com/v1/agent/converse"
-    listen_model: str = "nova-3"
+    api_key: SecretStr = Field(min_length=1)
+    base_url: str = Field(default="wss://agent.deepgram.com/v1/agent/converse", min_length=1)
+    listen_model: str = Field(default="nova-3", min_length=1)
     listen_version: str | None = None
     listen_language: str | None = None
-    think_provider: str = "open_ai"
-    think_model: str = "gpt-4o-mini"
-    speak_model: str = "aura-2-thalia-en"
+    think_provider: str = Field(default="open_ai", min_length=1)
+    think_model: str = Field(default="gpt-4o-mini", min_length=1)
+    speak_model: str = Field(default="aura-2-thalia-en", min_length=1)
     speak_language: str | None = None
     greeting: str | None = None
-    keepalive_interval: float = 8.0
+    keepalive_interval: float = Field(default=8.0, ge=0)
+
+    @field_validator("base_url")
+    @classmethod
+    def _validate_websocket_url(cls, value: str) -> str:
+        if not value.startswith(("ws://", "wss://")):
+            raise ValueError("base_url must use ws:// or wss://")
+        return value

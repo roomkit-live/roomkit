@@ -2,12 +2,13 @@
 
 Pure functions over a :class:`DeepgramAgentConfig` and the per-session
 ``provider_config`` dict: no sockets, no session state. The provider calls
-:func:`build_settings` once at connect time, and :func:`build_think` /
-:func:`build_speak` again when a live session is reconfigured.
+:func:`build_settings` once at connect time, then :func:`patch_think` and
+:func:`patch_speak` when a live session is reconfigured.
 """
 
 from __future__ import annotations
 
+from copy import deepcopy
 from typing import Any
 
 from roomkit.providers.deepgram.config import DeepgramAgentConfig
@@ -89,6 +90,79 @@ def build_speak(
     if language:
         provider["language"] = language
     return {"provider": provider}
+
+
+def patch_think(
+    current: dict[str, Any],
+    *,
+    system_prompt: str | None,
+    tools: list[dict[str, Any]] | None,
+    temperature: float | None,
+    pc: dict[str, Any],
+) -> dict[str, Any]:
+    """Patch a live Think block while preserving every omitted field.
+
+    Deepgram's ``UpdateThink`` replaces the whole block.  Starting from the
+    session's current value is therefore required: rebuilding from provider
+    defaults would silently discard per-session models, endpoints and context
+    settings whenever a skill only changes the prompt or tools.
+    """
+    think = deepcopy(current)
+    provider = dict(think.get("provider") or {})
+
+    if "think_provider" in pc:
+        provider["type"] = pc["think_provider"]
+    if "think_model" in pc:
+        provider["model"] = pc["think_model"]
+    if temperature is not None:
+        provider["temperature"] = temperature
+    think["provider"] = provider
+
+    if "think_endpoint" in pc:
+        if pc["think_endpoint"]:
+            think["endpoint"] = pc["think_endpoint"]
+        else:
+            think.pop("endpoint", None)
+    if "context_length" in pc:
+        if pc["context_length"] is not None:
+            think["context_length"] = pc["context_length"]
+        else:
+            think.pop("context_length", None)
+
+    if system_prompt is not None:
+        if system_prompt:
+            think["prompt"] = system_prompt
+        else:
+            think.pop("prompt", None)
+    if tools is not None:
+        functions = format_functions(tools)
+        if functions:
+            think["functions"] = functions
+        else:
+            think.pop("functions", None)
+    return think
+
+
+def patch_speak(
+    current: dict[str, Any],
+    *,
+    voice: str | None,
+    pc: dict[str, Any],
+) -> dict[str, Any]:
+    """Patch a live Speak block while preserving omitted provider settings."""
+    speak = deepcopy(current)
+    provider = dict(speak.get("provider") or {})
+    if voice is not None:
+        provider["model"] = voice
+    elif "speak_model" in pc:
+        provider["model"] = pc["speak_model"]
+    if "speak_language" in pc:
+        if pc["speak_language"]:
+            provider["language"] = pc["speak_language"]
+        else:
+            provider.pop("language", None)
+    speak["provider"] = provider
+    return speak
 
 
 def build_listen(cfg: DeepgramAgentConfig, *, pc: dict[str, Any]) -> dict[str, Any]:

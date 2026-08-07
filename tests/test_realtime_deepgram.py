@@ -159,6 +159,23 @@ class TestConfig:
         assert cfg.speak_model == "aura-2-thalia-en"
         assert cfg.keepalive_interval == 8.0
 
+    @pytest.mark.parametrize(
+        "kwargs",
+        [
+            {"api_key": ""},
+            {"base_url": "https://agent.deepgram.com/v1/agent/converse"},
+            {"listen_model": ""},
+            {"think_provider": ""},
+            {"think_model": ""},
+            {"speak_model": ""},
+            {"keepalive_interval": -1},
+        ],
+    )
+    def test_invalid_config_is_rejected(self, kwargs: dict[str, Any]) -> None:
+        values: dict[str, Any] = {"api_key": "dg-key", **kwargs}
+        with pytest.raises(ValueError):
+            DeepgramAgentConfig(**values)
+
 
 class TestProviderBasics:
     def test_name(self, provider: DeepgramAgentProvider) -> None:
@@ -360,7 +377,7 @@ class TestConnect:
         with patch("websockets.connect", AsyncMock(return_value=ws)):
             await provider.connect(session)
 
-        assert audio.calls == [(session, b"\x01\x02")]
+        assert await audio.wait() == (session, b"\x01\x02")
         await provider.disconnect(session)
 
 
@@ -540,6 +557,32 @@ class TestInboundDispatch:
         assert await tool_call.wait() == (session, "fc_2", "boom", {})
         await provider.disconnect(session)
 
+    async def test_malformed_and_duplicate_function_ids_are_ignored(
+        self, provider: DeepgramAgentProvider, session: VoiceSession
+    ) -> None:
+        tool_call = _Recorder()
+        provider.on_tool_call(tool_call)
+        ws = await _connect(provider, session)
+
+        ws.push(
+            json.dumps(
+                {
+                    "type": "FunctionCallRequest",
+                    "functions": [
+                        {"id": "", "name": "missing_id", "arguments": "{}"},
+                        {"id": "fc-dup", "name": "first", "arguments": "{}"},
+                        {"id": "fc-dup", "name": "second", "arguments": "{}"},
+                    ],
+                }
+            )
+        )
+
+        assert await tool_call.wait() == (session, "fc-dup", "first", {})
+        await asyncio.sleep(0.05)
+        assert tool_call.calls == [(session, "fc-dup", "first", {})]
+        assert provider._states[session.id].pending_calls["fc-dup"].name == "first"
+        await provider.disconnect(session)
+
     @pytest.mark.parametrize("etype", ["Error", "Warning"])
     async def test_diagnostics_fire_on_error(
         self, provider: DeepgramAgentProvider, session: VoiceSession, etype: str
@@ -547,9 +590,19 @@ class TestInboundDispatch:
         error = _Recorder()
         provider.on_error(error)
         ws = await _connect(provider, session)
+        state = provider._states[session.id]
 
         ws.push(json.dumps({"type": etype, "code": "SOME_CODE", "description": "details"}))
         assert await error.wait() == (session, "SOME_CODE", "details")
+
+        if etype == "Error":
+            assert state.receive_task is not None
+            await state.receive_task
+            assert session.state == VoiceSessionState.ENDED
+            assert session.id not in provider._states
+        else:
+            assert session.state == VoiceSessionState.ACTIVE
+            assert session.id in provider._states
 
         await provider.disconnect(session)
 
@@ -597,7 +650,9 @@ class TestOutbound:
     ) -> None:
         ws = await _connect(provider, session)
         await provider.inject_text(session, "Bonjour !", role="assistant")
-        assert ws.last_of_type("InjectAgentMessage")["content"] == "Bonjour !"
+        message = ws.last_of_type("InjectAgentMessage")
+        assert message["message"] == "Bonjour !"
+        assert "content" not in message
         await provider.disconnect(session)
 
     async def test_silent_injection_appends_to_prompt(
@@ -611,6 +666,38 @@ class TestOutbound:
         assert prompt == "Tu es concis.\n\nL'appelant est un client VIP."
         assert provider._states[session.id].think["prompt"] == prompt
 
+        await provider.disconnect(session)
+
+    async def test_failed_prompt_update_does_not_corrupt_live_state(
+        self, provider: DeepgramAgentProvider, session: VoiceSession
+    ) -> None:
+        ws = await _connect(provider, session, system_prompt="Original")
+        with (
+            patch.object(ws, "send", AsyncMock(side_effect=OSError("socket died"))),
+            pytest.raises(OSError, match="socket died"),
+        ):
+            await provider.inject_text(session, "New", silent=True)
+
+        assert provider._states[session.id].think["prompt"] == "Original"
+        await provider.disconnect(session)
+
+    async def test_concurrent_prompt_updates_do_not_lose_content(
+        self, provider: DeepgramAgentProvider, session: VoiceSession
+    ) -> None:
+        ws = await _connect(provider, session, system_prompt="Original")
+        original_send = ws.send
+
+        async def yielding_send(message: Any) -> None:
+            await asyncio.sleep(0)
+            await original_send(message)
+
+        with patch.object(ws, "send", side_effect=yielding_send):
+            await asyncio.gather(
+                provider.inject_text(session, "First", silent=True),
+                provider.inject_text(session, "Second", silent=True),
+            )
+
+        assert provider._states[session.id].think["prompt"] == ("Original\n\nFirst\n\nSecond")
         await provider.disconnect(session)
 
     async def test_submit_tool_result_recovers_the_name(
@@ -672,6 +759,31 @@ class TestOutbound:
         assert ws.last_of_type("FunctionCallResponse")["thought_signature"] == "opaque-signature"
         await provider.disconnect(session)
 
+    async def test_failed_tool_result_send_keeps_pending_call(
+        self, provider: DeepgramAgentProvider, session: VoiceSession
+    ) -> None:
+        tool_call = _Recorder()
+        provider.on_tool_call(tool_call)
+        ws = await _connect(provider, session)
+        ws.push(
+            json.dumps(
+                {
+                    "type": "FunctionCallRequest",
+                    "functions": [{"id": "fc_retry", "name": "lookup", "arguments": "{}"}],
+                }
+            )
+        )
+        await tool_call.wait()
+
+        with (
+            patch.object(ws, "send", AsyncMock(side_effect=OSError("socket died"))),
+            pytest.raises(OSError, match="socket died"),
+        ):
+            await provider.submit_tool_result(session, "fc_retry", "done")
+
+        assert provider._states[session.id].pending_calls["fc_retry"].name == "lookup"
+        await provider.disconnect(session)
+
     async def test_interrupt_sends_nothing(
         self, provider: DeepgramAgentProvider, session: VoiceSession
     ) -> None:
@@ -728,6 +840,59 @@ class TestOutbound:
         think = ws.last_of_type("UpdateThink")["think"]
         assert think["prompt"] == "B"
         assert [f["name"] for f in think["functions"]] == ["keep_me"]
+
+        await provider.disconnect(session)
+
+    async def test_reconfigure_preserves_session_specific_think_settings(
+        self, provider: DeepgramAgentProvider, session: VoiceSession
+    ) -> None:
+        """A prompt-only update must not reset the live model or endpoint."""
+        ws = await _connect(
+            provider,
+            session,
+            system_prompt="A",
+            temperature=0.25,
+            provider_config={
+                "think_model": "gpt-custom",
+                "think_endpoint": {"url": "https://llm.example/v1/chat"},
+                "context_length": 32000,
+            },
+        )
+
+        await provider.reconfigure(session, system_prompt="B")
+
+        think = ws.last_of_type("UpdateThink")["think"]
+        assert think["prompt"] == "B"
+        assert think["provider"]["model"] == "gpt-custom"
+        assert think["provider"]["temperature"] == 0.25
+        assert think["endpoint"] == {"url": "https://llm.example/v1/chat"}
+        assert think["context_length"] == 32000
+
+        await provider.disconnect(session)
+
+    async def test_reconfigure_accepts_provider_config_only(
+        self, provider: DeepgramAgentProvider, session: VoiceSession
+    ) -> None:
+        ws = await _connect(
+            provider,
+            session,
+            provider_config={"speak_language": "en"},
+        )
+
+        await provider.reconfigure(
+            session,
+            provider_config={
+                "think_model": "gpt-new",
+                "speak_model": "aura-2-zeus-en",
+                "speak_language": "fr",
+            },
+        )
+
+        think = ws.last_of_type("UpdateThink")["think"]
+        speak = ws.last_of_type("UpdateSpeak")["speak"]
+        assert think["provider"]["model"] == "gpt-new"
+        assert speak["provider"]["model"] == "aura-2-zeus-en"
+        assert speak["provider"]["language"] == "fr"
 
         await provider.disconnect(session)
 
@@ -812,10 +977,17 @@ class TestLifecycle:
     async def test_clean_peer_close_retires_the_session(
         self, provider: DeepgramAgentProvider, session: VoiceSession
     ) -> None:
+        error = _Recorder()
+        provider.on_error(error)
         ws = await _connect(provider, session)
         state = provider._states[session.id]
 
         ws.finish()
+        assert await error.wait() == (
+            session,
+            "connection_closed",
+            "Deepgram closed the connection unexpectedly",
+        )
         assert state.receive_task is not None
         await state.receive_task
 
@@ -899,4 +1071,38 @@ class TestChannelIntegration:
         assert response["name"] == "get_weather"
         assert json.loads(response["content"]) == {"temperature_c": 21}
 
+        await channel.end_session(session)
+
+    async def test_greeting_audio_during_handshake_reaches_transport(self) -> None:
+        """Early greeting callbacks wait until the channel publishes the session."""
+        provider = DeepgramAgentProvider(DeepgramAgentConfig(api_key=SecretStr("dg")))
+        transport = MockRealtimeTransport()
+        channel = RealtimeVoiceChannel(
+            "rt-dg",
+            provider=provider,
+            transport=transport,
+        )
+        kit = RoomKit()
+        kit.register_channel(channel)
+        room = await kit.create_room()
+        await kit.attach_channel(room.id, "rt-dg")
+
+        ws = _FakeWS(
+            handshake=[
+                _WELCOME,
+                json.dumps({"type": "AgentStartedSpeaking"}),
+                b"greeting-audio",
+                json.dumps({"type": "AgentAudioDone"}),
+                _SETTINGS_APPLIED,
+            ]
+        )
+        with patch("websockets.connect", AsyncMock(return_value=ws)):
+            session = await channel.start_session(room.id, "user-1", "fake-ws")
+
+        for _ in range(100):
+            if transport.sent_audio:
+                break
+            await asyncio.sleep(0.01)
+
+        assert transport.sent_audio == [(session.id, b"greeting-audio")]
         await channel.end_session(session)
