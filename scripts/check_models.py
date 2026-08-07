@@ -1,20 +1,28 @@
 #!/usr/bin/env python3
 """Check the offline model catalogs against a live upstream source.
 
-The catalogs in ``providers/*/models.py`` exist so ``AIProvider.context_window``
-can answer without a network call. That makes them useful and stale-able at the
-same time: nothing in a test suite notices when a vendor ships a new flagship or
-changes a window, because the catalog is self-consistent either way. This script
-is what notices, so a release does not quietly ship last quarter's lineup.
+The catalogs in ``providers/*/models.py`` and ``providers/*/image_models.py``
+exist so a provider can answer offline — a context window, an image model's
+rates. That makes them useful and stale-able at the same time: nothing in a
+test suite notices when a vendor ships a new flagship or changes a window,
+because the catalog is self-consistent either way. This script is what notices,
+so a release does not quietly ship last quarter's lineup.
 
 The reference is OpenRouter's ``/api/v1/models``, which is public, needs no key,
-and republishes ids, context windows, and modalities for every major vendor —
-one request covers Anthropic, OpenAI, Google, Mistral, and xAI. It is a mirror,
-not the vendor, so treat a finding as "go read the vendor's docs", never as a
-value to paste in blind.
+and republishes ids, context windows, modalities, and rates for every major
+vendor — one request covers Anthropic, OpenAI, Google, Mistral, and xAI. It is a
+mirror, not the vendor, so treat a finding as "go read the vendor's docs", never
+as a value to paste in blind.
 
-Ollama (a local pull registry) and PolarGrid (private edges) are not mirrored
-there and are not checked; they carry their own verification dates.
+A catalog is compared against the upstream slice matching its output modality
+(:func:`belongs_to`), so the chat and image lineups a vendor publishes under one
+namespace never contaminate each other.
+
+What has no mirror is named rather than skipped: Ollama (a local pull registry)
+and PolarGrid (private edges) carry their own verification dates, and
+``UNMIRRORED_CATALOGS`` lists the rest with the reason each was not found. A
+catalog nobody checks is the one that goes stale, so silence about it would read
+as coverage.
 
 Reported:
 
@@ -57,20 +65,57 @@ from roomkit.providers.ai.base import ModelInfo
 
 UPSTREAM_URL = "https://openrouter.ai/api/v1/models"
 
-# Catalogs mirrored upstream. `prefixed` marks a catalog whose own ids already
-# carry the vendor namespace (OpenRouter's own), so nothing is stripped.
-# `track_new` is off for that one: its catalog is an intentionally partial slice
-# of 300+ aggregated models, so "something newer exists" is always true and
-# would be noise rather than signal.
-CATALOGS: list[tuple[str, str, str, bool, bool]] = [
-    # (label, module, upstream vendor prefix, prefixed, track_new)
-    ("anthropic", "roomkit.providers.anthropic.models", "anthropic/", False, True),
-    ("openai", "roomkit.providers.openai.models", "openai/", False, True),
-    ("gemini", "roomkit.providers.gemini.models", "google/", False, True),
-    ("mistral", "roomkit.providers.mistral.models", "mistralai/", False, True),
-    ("xai", "roomkit.providers.xai.models", "x-ai/", False, True),
-    ("openrouter", "roomkit.providers.openrouter.models", "", True, False),
+
+@dataclass(frozen=True)
+class Catalog:
+    """One curated catalog and the upstream slice it is compared against.
+
+    Attributes:
+        label: Name used in findings.
+        module: Import path exposing a ``MODELS`` list.
+        prefix: Upstream vendor namespace this catalog's ids live under.
+        prefixed: Whether the catalog's own ids already carry that namespace
+            (OpenRouter's do), so nothing is stripped.
+        track_new: Whether to report upstream models newer than everything the
+            catalog knows in the same family.
+        modality: Upstream output modality this catalog covers. Keeps the
+            text and image slices from contaminating each other — a vendor
+            publishes both under one namespace, and comparing a catalog
+            against the wrong half reports every id as retired.
+    """
+
+    label: str
+    module: str
+    prefix: str
+    prefixed: bool = False
+    track_new: bool = True
+    modality: str = "text"
+
+
+CATALOGS: list[Catalog] = [
+    Catalog("anthropic", "roomkit.providers.anthropic.models", "anthropic/"),
+    Catalog("openai", "roomkit.providers.openai.models", "openai/"),
+    Catalog("gemini", "roomkit.providers.gemini.models", "google/"),
+    Catalog("mistral", "roomkit.providers.mistral.models", "mistralai/"),
+    Catalog("xai", "roomkit.providers.xai.models", "x-ai/"),
+    # An intentionally partial slice of 300+ aggregated models, so "something
+    # newer exists" is always true and would be noise rather than signal.
+    Catalog(
+        "openrouter", "roomkit.providers.openrouter.models", "", prefixed=True, track_new=False
+    ),
+    Catalog("gemini-image", "roomkit.providers.gemini.image_models", "google/", modality="image"),
 ]
+
+# Catalogs with no upstream to compare against, and why. Printed on every run:
+# a catalog nobody checks is the one that goes stale, and silence about it
+# reads as coverage. Each entry is a claim that someone looked for a mirror.
+UNMIRRORED_CATALOGS: dict[str, str] = {
+    "openai-image": (
+        "the mirror republishes chat models; OpenAI's gpt-image-* live on the images "
+        "endpoint and are absent from it (checked 2026-08-07). Rates come from OpenAI's "
+        "own pricing page and are only as fresh as the `verified` date they carry."
+    ),
+}
 
 # Upstream slugs that are routing lanes rather than distinct vendor models.
 # Flagging them as "missing from the catalog" would ask for ids the vendor's
@@ -141,16 +186,36 @@ PRICE_FIELD_DELIBERATE: dict[tuple[str, str, str], str] = {
 # a dimensionally wrong cost. Keep exceptions narrow: provider + exact field.
 UNCOMPARABLE_PRICE_FIELDS: dict[tuple[str, str], str] = {
     ("gemini", "input_cache_write"): "Google bills cache storage by token-hour, not per write",
+    # Same Google billing fact, and the exception is keyed per catalog so the
+    # image lineup needs its own entry rather than inheriting the chat one.
+    ("gemini-image", "input_cache_write"): (
+        "Google bills cache storage by token-hour, not per write"
+    ),
 }
 
 # (ModelPricing attribute, upstream pricing key, label) — upstream quotes USD
 # per token, the catalog quotes USD per million.
-_PRICE_FIELDS = (
+_TEXT_PRICE_FIELDS = (
     ("input_per_million", "prompt", "input"),
     ("output_per_million", "completion", "output"),
     ("cache_read_per_million", "input_cache_read", "cache read"),
     ("cache_write_per_million", "input_cache_write", "cache write"),
 )
+
+# An image catalog carries the text rates too — an image model charges for the
+# prompt that describes the picture. `image` is the vendor's image-input rate;
+# for every model mirrored here it is quoted per token and equals `prompt`
+# exactly, so it compares on the same scale as the rest.
+_IMAGE_PRICE_FIELDS = (
+    *_TEXT_PRICE_FIELDS,
+    ("image_input_per_million", "image", "image input"),
+    ("image_output_per_million", "image_output", "image output"),
+)
+
+_PRICE_FIELDS_BY_MODALITY = {
+    "text": _TEXT_PRICE_FIELDS,
+    "image": _IMAGE_PRICE_FIELDS,
+}
 
 # A dateless alias (`mistral-large-latest`) or a dated snapshot
 # (`claude-haiku-4-5-20251001`) is a form the vendor accepts but a mirror does
@@ -200,7 +265,9 @@ def family(model_id: str) -> str:
     return re.split(r"[-.]", model_id, maxsplit=1)[0]
 
 
-def price_findings(label: str, model: ModelInfo, upstream: dict[str, Any]) -> list[str]:
+def price_findings(
+    label: str, model: ModelInfo, upstream: dict[str, Any], modality: str = "text"
+) -> list[str]:
     """Compare the rates a catalog entry states against upstream's quote.
 
     A positive upstream quote that the catalog leaves unset is a finding. The
@@ -211,7 +278,7 @@ def price_findings(label: str, model: ModelInfo, upstream: dict[str, Any]) -> li
         return []
     quoted = upstream.get("pricing") or {}
     findings: list[str] = []
-    for attribute, key, name in _PRICE_FIELDS:
+    for attribute, key, name in _PRICE_FIELDS_BY_MODALITY[modality]:
         if (label, model.id, key) in PRICE_FIELD_DELIBERATE:
             continue
         ours = getattr(model.pricing, attribute)
@@ -233,13 +300,15 @@ def price_findings(label: str, model: ModelInfo, upstream: dict[str, Any]) -> li
     return findings
 
 
-def expected_price_divergences(label: str, model: ModelInfo, upstream: dict[str, Any]) -> int:
+def expected_price_divergences(
+    label: str, model: ModelInfo, upstream: dict[str, Any], modality: str = "text"
+) -> int:
     """Count explicit field-level suppressions that apply to this quote."""
     if model.pricing is None:
         return 0
     quoted = upstream.get("pricing") or {}
     expected = 0
-    for attribute, key, _name in _PRICE_FIELDS:
+    for attribute, key, _name in _PRICE_FIELDS_BY_MODALITY[modality]:
         theirs = quoted.get(key)
         if theirs in (None, ""):
             continue
@@ -252,8 +321,27 @@ def expected_price_divergences(label: str, model: ModelInfo, upstream: dict[str,
     return expected
 
 
+def belongs_to(item: dict[str, Any], modality: str) -> bool:
+    """Whether an upstream model belongs to the slice a catalog compares against.
+
+    The two slices are not symmetric, because roomkit's catalogs are not. An
+    image model advertises ``["image", "text"]`` — it narrates what it drew —
+    so the image slice is "can output an image", while the text slice is "text
+    is *all* it outputs". Reading both as "contains the modality" would file
+    every image model in the chat catalog too, and report it missing there.
+    """
+    modalities = (item.get("architecture") or {}).get("output_modalities") or []
+    if modality == "text":
+        return modalities == ["text"]
+    return modality in modalities
+
+
 def fetch_upstream(url: str = UPSTREAM_URL, timeout: float = 30.0) -> list[dict[str, Any]]:
-    """Return upstream's text-output chat models. Raises on any fetch failure."""
+    """Return every upstream model that declares an output modality.
+
+    Both slices this script compares against — text and image — come from the
+    one request; :func:`belongs_to` splits them. Raises on any fetch failure.
+    """
     request = urllib.request.Request(  # noqa: S310 - constant https URL
         url, headers={"User-Agent": "roomkit-check-models"}
     )
@@ -262,32 +350,25 @@ def fetch_upstream(url: str = UPSTREAM_URL, timeout: float = 30.0) -> list[dict[
     data = payload.get("data")
     if not isinstance(data, list) or not data:
         raise ValueError(f"{url} returned no model data")
-    return [
-        item
-        for item in data
-        if (item.get("architecture") or {}).get("output_modalities") == ["text"]
-    ]
+    return [item for item in data if (item.get("architecture") or {}).get("output_modalities")]
 
 
-def check_catalog(
-    label: str,
-    module: str,
-    prefix: str,
-    prefixed: bool,
-    track_new: bool,
-    upstream: list[dict[str, Any]],
-) -> Findings:
+def check_catalog(catalog: Catalog, upstream: list[dict[str, Any]]) -> Findings:
     """Compare one curated catalog against the upstream slice for its vendor."""
-    curated = list(import_module(module).MODELS)
+    label, prefix = catalog.label, catalog.prefix
+    curated = list(import_module(catalog.module).MODELS)
     found = Findings()
 
-    # Upstream models for this vendor, keyed by the normalized bare id.
+    # Upstream models for this vendor and modality, keyed by the normalized
+    # bare id.
     scope = {}
     for item in upstream:
         raw = str(item.get("id", ""))
         if ":" in raw or not raw.startswith(prefix):
             continue
-        bare = raw if prefixed else raw[len(prefix) :]
+        if not belongs_to(item, catalog.modality):
+            continue
+        bare = raw if catalog.prefixed else raw[len(prefix) :]
         scope[normalize(bare)] = item
 
     newest_known_by_family: dict[str, int] = {}
@@ -319,10 +400,10 @@ def check_catalog(
         if model.id in PRICE_DELIBERATE:
             found.expected += 1
         else:
-            found.expected += expected_price_divergences(label, model, match)
-            found.price.extend(price_findings(label, model, match))
+            found.expected += expected_price_divergences(label, model, match, catalog.modality)
+            found.price.extend(price_findings(label, model, match, catalog.modality))
 
-    if not (track_new and newest_known_by_family):
+    if not (catalog.track_new and newest_known_by_family):
         return found
 
     curated_ids = {normalize(m.id) for m in curated}
@@ -359,12 +440,14 @@ def main() -> int:
     errors: list[str] = []
     warnings: list[str] = []
     expected = 0
-    for label, module, prefix, prefixed, track_new in CATALOGS:
-        found = check_catalog(label, module, prefix, prefixed, track_new, upstream)
+    for catalog in CATALOGS:
+        found = check_catalog(catalog, upstream)
         errors.extend(found.errors)
         warnings.extend(found.gone)
         expected += found.expected
 
+    for label, reason in UNMIRRORED_CATALOGS.items():
+        print(f"unmirrored  {label}: {reason}")
     for warning in warnings:
         print(f"warning  {warning}")
     for error in errors:
@@ -380,8 +463,12 @@ def main() -> int:
         )
         return 1
 
+    unmirrored = (
+        f", {len(UNMIRRORED_CATALOGS)} catalog(s) with no mirror" if UNMIRRORED_CATALOGS else ""
+    )
     print(
-        f"{len(CATALOGS)} model catalogs match upstream ({len(upstream)} models compared{noted})."
+        f"{len(CATALOGS)} model catalogs match upstream "
+        f"({len(upstream)} models fetched{noted}{unmirrored})."
     )
     return 0
 

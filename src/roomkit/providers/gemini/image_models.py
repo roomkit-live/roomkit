@@ -20,7 +20,10 @@ unit.
 
 Context windows are omitted deliberately: an image model's published limit
 describes a prompt these providers never trim against, and an unknown window
-is safer than one nobody reconciles.
+is safer than one nobody reconciles. Cache writes are omitted for the reason
+the chat catalog gives: Google bills cache storage by token-hour, and
+restating an hourly rate as a per-token one would be a wrong number rather
+than a missing one.
 """
 
 from __future__ import annotations

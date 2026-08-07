@@ -45,6 +45,7 @@ def _upstream(
     context: int = 200_000,
     created: int = 1_000,
     pricing: dict[str, str] | None = None,
+    output_modalities: list[str] | None = None,
 ) -> dict[str, Any]:
     """One upstream record, shaped like OpenRouter's ``/api/v1/models`` items."""
     record: dict[str, Any] = {
@@ -52,7 +53,10 @@ def _upstream(
         "name": model_id,
         "created": created,
         "context_length": context,
-        "architecture": {"input_modalities": ["text"], "output_modalities": ["text"]},
+        "architecture": {
+            "input_modalities": ["text"],
+            "output_modalities": output_modalities or ["text"],
+        },
     }
     if pricing is not None:
         record["pricing"] = pricing
@@ -74,8 +78,22 @@ def _catalog(monkeypatch: pytest.MonkeyPatch, *models: ModelInfo) -> str:
     return name
 
 
-def _check(module_name: str, upstream: list[dict[str, Any]], *, track_new: bool = True) -> Any:
-    return check_models.check_catalog("fake", module_name, "vendor/", False, track_new, upstream)
+def _check(
+    module_name: str,
+    upstream: list[dict[str, Any]],
+    *,
+    track_new: bool = True,
+    modality: str = "text",
+    label: str = "fake",
+) -> Any:
+    catalog = check_models.Catalog(
+        label=label,
+        module=module_name,
+        prefix="vendor/",
+        track_new=track_new,
+        modality=modality,
+    )
+    return check_models.check_catalog(catalog, upstream)
 
 
 # --- id normalization ----------------------------------------------------------
@@ -430,23 +448,138 @@ def test_every_recorded_divergence_carries_a_reason() -> None:
         assert reason.strip()
 
 
+# --- modality slicing ----------------------------------------------------------
+
+
+def test_an_image_model_belongs_to_the_image_slice_only() -> None:
+    """An image model narrates what it drew, so it advertises text output too."""
+    record = _upstream("vendor/draw", output_modalities=["image", "text"])
+    assert check_models.belongs_to(record, "image")
+    # ...and must not be filed in the chat catalog, which would then report it
+    # as an id it is missing.
+    assert not check_models.belongs_to(record, "text")
+
+
+def test_a_chat_model_belongs_to_the_text_slice_only() -> None:
+    record = _upstream("vendor/chat")
+    assert check_models.belongs_to(record, "text")
+    assert not check_models.belongs_to(record, "image")
+
+
+def test_an_image_catalog_ignores_the_vendors_chat_models(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Without the split, every chat model reads as missing from the image catalog."""
+    name = _catalog(monkeypatch, ModelInfo(id="draw-1", pricing=_priced(input=1.0, output=2.0)))
+    upstream = [
+        _upstream("vendor/draw-1", created=10, output_modalities=["image", "text"]),
+        _upstream("vendor/chat-9", created=99),
+    ]
+    found = _check(name, upstream, modality="image")
+    assert found.errors == []
+    assert found.gone == []
+
+
+def test_a_text_catalog_ignores_the_vendors_image_models(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    name = _catalog(monkeypatch, ModelInfo(id="chat-1", pricing=_priced(input=1.0, output=2.0)))
+    upstream = [
+        _upstream("vendor/chat-1", created=10),
+        _upstream("vendor/draw-9", created=99, output_modalities=["image", "text"]),
+    ]
+    found = _check(name, upstream)
+    assert found.errors == []
+
+
+def test_an_image_catalog_compares_the_image_rates(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The rate that prices the pixels is the one a text-only field set misses."""
+    name = _catalog(
+        monkeypatch,
+        ModelInfo(
+            id="draw-1",
+            pricing=ModelPricing(
+                input_per_million=2.0,
+                output_per_million=12.0,
+                image_output_per_million=120.0,
+                verified=date(2026, 8, 7),
+            ),
+        ),
+    )
+    upstream = [
+        _upstream(
+            "vendor/draw-1",
+            output_modalities=["image", "text"],
+            pricing={
+                "prompt": "0.000002",
+                "completion": "0.000012",
+                "image_output": "0.00009",  # upstream disagrees: $90/M, not $120/M
+            },
+        )
+    ]
+    found = _check(name, upstream, modality="image")
+    assert any("image output" in finding for finding in found.price)
+
+
+def test_an_unset_image_output_rate_is_reported(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A catalog silent on the pixels bills a generation as free."""
+    name = _catalog(monkeypatch, ModelInfo(id="draw-1", pricing=_priced(input=2.0, output=12.0)))
+    upstream = [
+        _upstream(
+            "vendor/draw-1",
+            output_modalities=["image", "text"],
+            pricing={"prompt": "0.000002", "completion": "0.000012", "image_output": "0.00012"},
+        )
+    ]
+    found = _check(name, upstream, modality="image")
+    assert any("no image output rate" in finding for finding in found.price)
+
+
+def test_the_image_output_rate_is_not_checked_on_a_text_catalog(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A chat model's own price list has no pixels to quote."""
+    name = _catalog(monkeypatch, ModelInfo(id="chat-1", pricing=_priced(input=2.0, output=12.0)))
+    upstream = [
+        _upstream(
+            "vendor/chat-1",
+            pricing={"prompt": "0.000002", "completion": "0.000012", "image_output": "0.00012"},
+        )
+    ]
+    assert _check(name, upstream).price == []
+
+
+def test_every_registered_catalog_names_a_known_modality() -> None:
+    """A typo'd modality would silently compare a catalog against nothing."""
+    assert {c.modality for c in check_models.CATALOGS} <= set(
+        check_models._PRICE_FIELDS_BY_MODALITY
+    )
+
+
+def test_unmirrored_catalogs_carry_a_reason() -> None:
+    """An entry here is a claim someone looked for a mirror, so it must say so."""
+    assert check_models.UNMIRRORED_CATALOGS
+    for label, reason in check_models.UNMIRRORED_CATALOGS.items():
+        assert label not in {c.label for c in check_models.CATALOGS}
+        assert len(reason) > 40
+
+
 # --- upstream fetch ------------------------------------------------------------
 
 
-def test_fetch_keeps_only_text_output_models(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_fetch_keeps_every_model_that_declares_an_output(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Both slices come from one request; ``belongs_to`` splits them afterwards."""
     payload = {
         "data": [
             _upstream("vendor/chat"),
-            {
-                "id": "vendor/image",
-                "created": 1,
-                "context_length": 32_000,
-                "architecture": {"input_modalities": ["text"], "output_modalities": ["image"]},
-            },
+            _upstream("vendor/draw", output_modalities=["image", "text"]),
+            {"id": "vendor/mystery", "created": 1, "architecture": {}},
         ]
     }
     _stub_urlopen(monkeypatch, payload)
-    assert [m["id"] for m in check_models.fetch_upstream()] == ["vendor/chat"]
+    assert [m["id"] for m in check_models.fetch_upstream()] == ["vendor/chat", "vendor/draw"]
 
 
 def test_fetch_rejects_an_empty_payload(monkeypatch: pytest.MonkeyPatch) -> None:
