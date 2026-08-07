@@ -158,6 +158,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   check — sealing races it by construction — is recognised as the framework
   closing and logged at `DEBUG`.
 
+- **Deepgram's agent transcript no longer lands as one entry per
+  sentence.** The Voice Agent wire delivers `ConversationText` sentence
+  by sentence, final-only, and the provider fired each one as a final
+  transcription — every sentence became its own timeline entry (RoomKit
+  UI rendered a paragraph gap per sentence: four entries for one
+  greeting).  Sentences now accumulate as delta partials and the turn
+  closes with one full final — at `AgentAudioDone`, on a barge-in
+  (`UserStartedSpeaking` finalizes the truncated transcript before the
+  user's turn opens), when a user transcript proves the turn ended even
+  if `AgentAudioDone` was lost, or at session teardown.  The user-side
+  transcript is untouched: one per utterance, and it still closes the
+  user's turn.
+
 - **xAI's streaming input transcription no longer arrives as a pile of
   "finals".** Grok's realtime server re-emits
   `conversation.item.input_audio_transcription.completed` with the
