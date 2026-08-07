@@ -45,6 +45,14 @@ _MAX_PROMPT_CHARS = 25_000
 
 
 @dataclass
+class _PendingCall:
+    """Wire fields that must survive until FunctionCallResponse."""
+
+    name: str
+    thought_signature: str | None = None
+
+
+@dataclass
 class _SessionState:
     """Per-session connection state."""
 
@@ -58,9 +66,9 @@ class _SessionState:
     # Whether response_start has already fired for the turn being spoken.
     # Reset by AgentAudioDone, which closes the turn.
     audio_started: bool = False
-    # FunctionCallResponse requires the function name, but the RealtimeVoiceProvider
-    # contract only hands submit_tool_result() the call id — so remember the pairing.
-    pending_calls: dict[str, str] = field(default_factory=dict)
+    # FunctionCallResponse requires fields that the RealtimeVoiceProvider contract
+    # does not hand back to submit_tool_result(), so preserve them by call id.
+    pending_calls: dict[str, _PendingCall] = field(default_factory=dict)
 
 
 class DeepgramAgentProvider(RealtimeVoiceProvider):
@@ -192,6 +200,33 @@ class DeepgramAgentProvider(RealtimeVoiceProvider):
             pc=pc,
         )
 
+        # The raw settings escape hatch may replace nested objects completely.
+        # Resolve the pieces used by live state before opening a socket so a bad
+        # override cannot leak a connected WebSocket.
+        try:
+            agent = settings["agent"]
+            listen = agent["listen"]
+            think = agent["think"]
+            speak = agent["speak"]
+            listen_provider = listen["provider"]
+            think_provider = think["provider"]
+            speak_provider = speak["provider"]
+        except (KeyError, TypeError) as exc:
+            raise ValueError(
+                "Deepgram settings must contain agent listen, think, and speak providers"
+            ) from exc
+        required_objects = (
+            agent,
+            listen,
+            think,
+            speak,
+            listen_provider,
+            think_provider,
+            speak_provider,
+        )
+        if not all(isinstance(value, dict) for value in required_objects):
+            raise ValueError("Deepgram agent stages and providers must be objects")
+
         ws = await asyncio.wait_for(
             websockets.connect(self._config.base_url, additional_headers=self._auth_headers()),
             timeout=_CONNECT_TIMEOUT,
@@ -202,18 +237,19 @@ class DeepgramAgentProvider(RealtimeVoiceProvider):
         state = _SessionState(
             session=session,
             ws=ws,
-            think=settings["agent"]["think"],
-            speak=settings["agent"]["speak"],
+            think=think,
+            speak=speak,
         )
         self._states[session.id] = state
 
         try:
+            # Deepgram's opening handshake is server-first. Sending Settings
+            # before Welcome is a protocol violation and can race with auth.
+            await asyncio.wait_for(self._await_welcome(state), timeout=_SETTINGS_TIMEOUT)
             await ws.send(json.dumps(settings))
             await asyncio.wait_for(self._await_settings_applied(state), timeout=_SETTINGS_TIMEOUT)
         except BaseException:
-            self._states.pop(session.id, None)
-            with contextlib.suppress(Exception):
-                await asyncio.wait_for(ws.close(), timeout=_CLOSE_TIMEOUT)
+            await self._finalize_session(session.id, state)
             raise
 
         session.state = VoiceSessionState.ACTIVE
@@ -229,10 +265,25 @@ class DeepgramAgentProvider(RealtimeVoiceProvider):
         logger.info(
             "Deepgram Agent session connected: %s (listen=%s, think=%s, speak=%s)",
             session.id,
-            settings["agent"]["listen"]["provider"].get("model"),
-            state.think["provider"].get("model"),
-            state.speak["provider"].get("model"),
+            listen_provider.get("model"),
+            think_provider.get("model"),
+            speak_provider.get("model"),
         )
+
+    async def _await_welcome(self, state: _SessionState) -> None:
+        """Wait for the server-first Welcome before sending client messages."""
+        while True:
+            event = await self._handle_message(state, await state.ws.recv())
+            if event is None:
+                continue
+            etype = event.get("type")
+            if etype == "Welcome":
+                return
+            if etype == "Error":
+                raise ConnectionError(
+                    f"Deepgram rejected connection [{event.get('code')}]: "
+                    f"{event.get('description')}"
+                )
 
     async def _await_settings_applied(self, state: _SessionState) -> None:
         """Consume frames until Deepgram acknowledges the Settings message.
@@ -269,6 +320,8 @@ class DeepgramAgentProvider(RealtimeVoiceProvider):
             )
         else:
             logger.info("Deepgram closed the connection (session %s)", session_id)
+        finally:
+            await self._finalize_session(session_id, state)
 
     async def _keepalive_loop(self, session_id: str) -> None:
         """Hold the socket open through silences — Deepgram closes quiet ones."""
@@ -283,7 +336,11 @@ class DeepgramAgentProvider(RealtimeVoiceProvider):
         except asyncio.CancelledError:
             raise
         except Exception as exc:
-            logger.debug("Deepgram keepalive stopped (session %s): %s", session_id, exc)
+            logger.warning("Deepgram keepalive failed (session %s): %s", session_id, exc)
+            await self._fire(
+                self._error_callbacks, state.session, "connection_error", str(exc), label="error"
+            )
+            await self._finalize_session(session_id, state)
 
     # -- Inbound dispatch ----------------------------------------------------
 
@@ -418,7 +475,12 @@ class DeepgramAgentProvider(RealtimeVoiceProvider):
                 arguments = {}
             if not isinstance(arguments, dict):
                 arguments = {}
-            state.pending_calls[call_id] = fname
+            raw_signature = function.get("thought_signature")
+            signature = raw_signature if isinstance(raw_signature, str) and raw_signature else None
+            state.pending_calls[call_id] = _PendingCall(
+                name=fname,
+                thought_signature=signature,
+            )
             await self._fire(
                 self._tool_call_callbacks,
                 state.session,
@@ -487,24 +549,24 @@ class DeepgramAgentProvider(RealtimeVoiceProvider):
         state = self._states.get(session.id)
         if state is None:
             return
-        fname = state.pending_calls.pop(call_id, "")
-        if not fname:
+        pending = state.pending_calls.pop(call_id, None)
+        fname = pending.name if pending is not None else ""
+        if pending is None:
             logger.warning(
                 "No pending Deepgram function call for id %s (session %s) — "
                 "responding without a name",
                 call_id,
                 session.id,
             )
-        await state.ws.send(
-            json.dumps(
-                {
-                    "type": "FunctionCallResponse",
-                    "id": call_id,
-                    "name": fname,
-                    "content": result,
-                }
-            )
-        )
+        response = {
+            "type": "FunctionCallResponse",
+            "id": call_id,
+            "name": fname,
+            "content": result,
+        }
+        if pending is not None and pending.thought_signature is not None:
+            response["thought_signature"] = pending.thought_signature
+        await state.ws.send(json.dumps(response))
 
     async def interrupt(self, session: VoiceSession) -> None:
         """Mark the agent's turn as over locally.
@@ -582,19 +644,32 @@ class DeepgramAgentProvider(RealtimeVoiceProvider):
             return
         await state.ws.send(json.dumps(event))
 
-    async def disconnect(self, session: VoiceSession) -> None:
-        state = self._states.pop(session.id, None)
-        if state is not None:
-            for task in (state.receive_task, state.keepalive_task):
-                if task is None:
-                    continue
-                task.cancel()
-                with contextlib.suppress(asyncio.CancelledError, Exception):
-                    await task
-            with contextlib.suppress(Exception):
-                await asyncio.wait_for(state.ws.close(), timeout=_CLOSE_TIMEOUT)
+    async def _finalize_session(self, session_id: str, state: _SessionState) -> None:
+        """Atomically retire one live state and all resources it owns."""
+        if self._states.get(session_id) is not state:
+            return
+        self._states.pop(session_id, None)
+        state.responding = False
+        state.audio_started = False
+        state.pending_calls.clear()
+        state.session.state = VoiceSessionState.ENDED
 
-        session.state = VoiceSessionState.ENDED
+        current = asyncio.current_task()
+        for task in (state.receive_task, state.keepalive_task):
+            if task is None or task is current:
+                continue
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await task
+        with contextlib.suppress(Exception):
+            await asyncio.wait_for(state.ws.close(), timeout=_CLOSE_TIMEOUT)
+
+    async def disconnect(self, session: VoiceSession) -> None:
+        state = self._states.get(session.id)
+        if state is not None:
+            await self._finalize_session(session.id, state)
+        else:
+            session.state = VoiceSessionState.ENDED
 
     async def close(self) -> None:
         for session_id in list(self._states.keys()):

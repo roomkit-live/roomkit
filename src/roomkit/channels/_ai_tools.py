@@ -268,6 +268,28 @@ class AIToolsMixin:
                     )
                 if decision.arguments is not None:
                     arguments = decision.arguments
+                    # The hook is allowed to replace the payload completely.
+                    # Validate what will actually execute as well as what the
+                    # model originally proposed; otherwise a rewrite silently
+                    # bypasses this fail-closed boundary.
+                    if params is not None:
+                        arg_error = validate_tool_arguments(params, arguments)
+                        if arg_error is not None:
+                            logger.warning(
+                                "Tool %s rewritten arguments rejected: %s", tc.name, arg_error
+                            )
+                            return AIToolResultPart(
+                                tool_call_id=tc.id,
+                                name=tc.name,
+                                result=json.dumps(
+                                    {
+                                        "error": (
+                                            f"Invalid rewritten arguments for "
+                                            f"'{tc.name}': {arg_error}"
+                                        )
+                                    }
+                                ),
+                            )
 
             tool_span_id = telemetry.start_span(
                 SpanKind.LLM_TOOL_CALL,

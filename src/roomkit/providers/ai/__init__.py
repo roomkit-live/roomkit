@@ -1,6 +1,7 @@
 """AI provider abstractions and mock implementation."""
 
 from roomkit.providers.ai.base import (
+    API_KEY_METADATA_KEY,
     AIContext,
     AIImagePart,
     AIMessage,
@@ -24,6 +25,7 @@ from roomkit.providers.ai.base import (
 from roomkit.providers.ai.mock import MockAIProvider
 
 __all__ = [
+    "API_KEY_METADATA_KEY",
     "AIContext",
     "AIImagePart",
     "AIMessage",

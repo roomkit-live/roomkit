@@ -6,9 +6,9 @@ import time as _time
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator, Mapping
 from datetime import date
-from typing import Any, Literal
+from typing import Any, Literal, Self
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, SecretStr, field_validator
 
 from roomkit.models.channel import ChannelCapabilities
 from roomkit.models.context import RoomContext
@@ -172,10 +172,76 @@ class AIMessage(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+API_KEY_METADATA_KEY = "api_key"
+"""``AIContext.metadata`` key holding the credential to use for *this* request.
+
+A provider is built once, and in a multi-tenant host the object it becomes is
+shared by every conversation it serves — so a key fixed at construction is
+necessarily everyone's key. When the credential belongs to the individual making
+the request (their own subscription or account, which sharing would violate),
+the host resolves it per turn and leaves it here instead, typically from a
+``BEFORE_AI_GENERATION`` hook: the same way it already attaches turn-level
+attribution through :attr:`AIContext.response_metadata`.
+
+Providers that honour it fall back to their configured key when the entry is
+absent, so a host that never sets it sees no change at all.
+"""
+
+
+class _AIContextMetadata(dict[str, Any]):
+    """Metadata mapping that never renders a per-request credential in clear text.
+
+    Hooks intentionally mutate ``AIContext.metadata`` in place, so protecting
+    only model construction would leave the common assignment path exposed.
+    This small dict subtype wraps that one reserved value on every mutation;
+    ordinary metadata retains normal ``dict`` behaviour and equality.
+    """
+
+    def __init__(self, values: Mapping[str, Any] | None = None, **kwargs: Any) -> None:
+        super().__init__()
+        if values is not None:
+            self.update(values)
+        if kwargs:
+            self.update(kwargs)
+
+    @staticmethod
+    def _protected(key: str, value: Any) -> Any:
+        if key == API_KEY_METADATA_KEY and isinstance(value, str) and value:
+            return SecretStr(value)
+        return value
+
+    def __setitem__(self, key: str, value: Any) -> None:
+        super().__setitem__(key, self._protected(key, value))
+
+    def update(self, *args: Any, **kwargs: Any) -> None:
+        if len(args) > 1:
+            raise TypeError(f"update expected at most 1 argument, got {len(args)}")
+        if args:
+            values = args[0]
+            items = (
+                ((key, values[key]) for key in values.keys())  # noqa: SIM118
+                if hasattr(values, "keys")
+                else values
+            )
+            for key, value in items:
+                self[key] = value
+        for key, value in kwargs.items():
+            self[key] = value
+
+    def setdefault(self, key: str, default: Any = None) -> Any:
+        if key not in self:
+            self[key] = default
+        return self[key]
+
+    def __ior__(self, values: Any) -> Self:
+        self.update(values)
+        return self
+
+
 class AIContext(BaseModel):
     """Context passed to AI provider for generation."""
 
-    model_config = {"arbitrary_types_allowed": True}
+    model_config = {"arbitrary_types_allowed": True, "validate_assignment": True}
 
     messages: list[AIMessage] = Field(default_factory=list)
     system_prompt: str | None = None
@@ -197,21 +263,28 @@ class AIContext(BaseModel):
         ),
     )
 
+    @field_validator("metadata", mode="after")
+    @classmethod
+    def _protect_metadata(cls, value: dict[str, Any]) -> dict[str, Any]:
+        return _AIContextMetadata(value)
 
-API_KEY_METADATA_KEY = "api_key"
-"""``AIContext.metadata`` key holding the credential to use for *this* request.
+    def model_post_init(self, __context: Any) -> None:
+        """Protect metadata even when Pydantic's validation was bypassed."""
+        if not isinstance(self.metadata, _AIContextMetadata):
+            self.metadata = _AIContextMetadata(self.metadata)
 
-A provider is built once, and in a multi-tenant host the object it becomes is
-shared by every conversation it serves — so a key fixed at construction is
-necessarily everyone's key. When the credential belongs to the individual making
-the request (their own subscription or account, which sharing would violate),
-the host resolves it per turn and leaves it here instead, typically from a
-``BEFORE_AI_GENERATION`` hook: the same way it already attaches turn-level
-attribution through :attr:`AIContext.response_metadata`.
-
-Providers that honour it fall back to their configured key when the entry is
-absent, so a host that never sets it sees no change at all.
-"""
+    def model_copy(self, *, update: Mapping[str, Any] | None = None, deep: bool = False) -> Self:
+        """Preserve secret wrapping when ``model_copy(update=...)`` bypasses validation."""
+        protected_update = dict(update) if update is not None else None
+        if protected_update is not None and "metadata" in protected_update:
+            metadata = protected_update["metadata"]
+            if not isinstance(metadata, Mapping):
+                raise TypeError("AIContext metadata must be a mapping")
+            protected_update["metadata"] = _AIContextMetadata(metadata)
+        copied = super().model_copy(update=protected_update, deep=deep)
+        if not isinstance(copied.metadata, _AIContextMetadata):
+            copied.metadata = _AIContextMetadata(copied.metadata)
+        return copied
 
 
 def request_api_key(context: AIContext) -> str | None:
@@ -224,6 +297,8 @@ def request_api_key(context: AIContext) -> str | None:
     constructor.
     """
     value = context.metadata.get(API_KEY_METADATA_KEY)
+    if isinstance(value, SecretStr):
+        value = value.get_secret_value()
     if isinstance(value, str) and value:
         return value
     return None

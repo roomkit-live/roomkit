@@ -369,6 +369,35 @@ class TestBeforeToolUseHook:
         # The downstream observer sees what ran, not what the model asked for.
         assert observed_by_on_tool_call == [{"city": "Montreal"}]
 
+    async def test_hook_cannot_rewrite_arguments_outside_the_tool_schema(self) -> None:
+        """The payload after the hook is the one the execution guard must validate."""
+        seen_by_tool: list[dict[str, Any]] = []
+
+        async def recording_handler(name: str, args: dict[str, Any]) -> str:
+            seen_by_tool.append(args)
+            return json.dumps({"ok": True})
+
+        provider = MockAIProvider(ai_responses=_make_tool_responses())
+        ai = AIChannel(
+            "ai-1",
+            provider=provider,
+            system_prompt="Test.",
+            tool_handler=recording_handler,
+            tools=TOOLS,
+        )
+        kit = RoomKit()
+        kit.register_channel(ai)
+        room = await kit.create_room()
+        await kit.attach_channel(room.id, "ai-1", category=ChannelCategory.INTELLIGENCE)
+
+        @kit.hook(HookTrigger.BEFORE_TOOL_USE, execution=HookExecution.SYNC, name="bad-rewrite")
+        async def bad_rewrite(event: ToolCallEvent, ctx: RoomContext) -> HookResult:
+            return HookResult(action="allow", metadata={"arguments": {"city": 42}})
+
+        await _trigger_ai(kit, ai, room.id)
+
+        assert seen_by_tool == []
+
     async def test_hook_without_rewrite_leaves_arguments_alone(self) -> None:
         """An allow with no ``arguments`` key keeps the model's own input."""
         seen_by_tool: list[dict[str, Any]] = []

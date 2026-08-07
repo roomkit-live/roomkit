@@ -38,7 +38,7 @@ def _repository(tmp_path: Path) -> Path:
     _git(repo, "config", "user.email", "release-test@example.test")
     _git(repo, "config", "user.name", "Release Test")
     _write(repo, VERSION_FILE, '__version__ = "1.2.0.dev0"\n')
-    _write(repo, Path("CHANGELOG.md"), "## [1.2.3]\n")
+    _write(repo, Path("CHANGELOG.md"), "## [Unreleased]\n\n## [1.2.3]\n")
     _commit(repo, "Initial development state")
     return repo
 
@@ -222,3 +222,18 @@ def test_rejects_hyphenated_semver_prerelease_before_mutation(tmp_path: Path) ->
     assert result.returncode != 0
     assert "PEP 440 release" in result.stdout
     assert _git(repo, "status", "--porcelain").stdout == ""
+
+
+def test_rejects_entries_left_under_unreleased(tmp_path: Path) -> None:
+    repo = _repository(tmp_path)
+    _write(
+        repo,
+        Path("CHANGELOG.md"),
+        "## [Unreleased]\n\n### Added\n\n- Missing from release notes.\n\n## [1.2.3]\n",
+    )
+    _commit(repo, "Leave release notes under Unreleased")
+
+    result = _run(repo, extra_env=_stub_release_tools(repo))
+
+    assert result.returncode != 0
+    assert "[Unreleased] still contains entries" in result.stdout

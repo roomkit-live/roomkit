@@ -18,7 +18,9 @@ from roomkit.providers.deepgram.realtime import DeepgramAgentProvider
 from roomkit.voice.base import VoiceSession, VoiceSessionState
 from roomkit.voice.realtime.mock import MockRealtimeTransport
 
+_WELCOME = json.dumps({"type": "Welcome", "request_id": "dg-request"})
 _SETTINGS_APPLIED = json.dumps({"type": "SettingsApplied"})
+_CLEAN_CLOSE = object()
 
 
 class _FakeWS:
@@ -28,18 +30,25 @@ class _FakeWS:
         self, handshake: list[Any] | None = None, *, fail_with: Exception | None = None
     ) -> None:
         self.sent: list[Any] = []
+        self.timeline: list[tuple[str, str]] = []
         self.closed = False
-        self._handshake = list(handshake if handshake is not None else [_SETTINGS_APPLIED])
+        self._handshake = list(
+            handshake if handshake is not None else [_WELCOME, _SETTINGS_APPLIED]
+        )
         self._queue: asyncio.Queue[Any] = asyncio.Queue()
         self._fail_with = fail_with
 
     async def send(self, message: Any) -> None:
         self.sent.append(message)
+        self.timeline.append(("send", self._message_type(message)))
 
     async def recv(self) -> Any:
         if self._handshake:
-            return self._handshake.pop(0)
-        return await self._queue.get()
+            message = self._handshake.pop(0)
+        else:
+            message = await self._queue.get()
+        self.timeline.append(("recv", self._message_type(message)))
+        return message
 
     async def close(self) -> None:
         self.closed = True
@@ -48,13 +57,33 @@ class _FakeWS:
         """Queue a frame for the provider's receive loop."""
         self._queue.put_nowait(message)
 
+    def finish(self) -> None:
+        """End async iteration as a clean peer-initiated close."""
+        self._queue.put_nowait(_CLEAN_CLOSE)
+
     def __aiter__(self) -> _FakeWS:
         return self
 
     async def __anext__(self) -> Any:
         if self._fail_with is not None:
             raise self._fail_with
-        return await self._queue.get()
+        message = await self._queue.get()
+        if message is _CLEAN_CLOSE:
+            raise StopAsyncIteration
+        return message
+
+    @staticmethod
+    def _message_type(message: Any) -> str:
+        if isinstance(message, str):
+            try:
+                decoded = json.loads(message)
+            except ValueError:
+                return "text"
+            if isinstance(decoded, dict):
+                return str(decoded.get("type") or "text")
+        if isinstance(message, bytes):
+            return "audio"
+        return type(message).__name__
 
     # -- assertions helpers --
 
@@ -187,6 +216,11 @@ class TestConnect:
 
         assert session.state == VoiceSessionState.ACTIVE
         assert session.provider_session_id == session.id
+        assert ws.timeline[:3] == [
+            ("recv", "Welcome"),
+            ("send", "Settings"),
+            ("recv", "SettingsApplied"),
+        ]
 
         await provider.disconnect(session)
 
@@ -291,12 +325,37 @@ class TestConnect:
         assert provider._states == {}
         assert session.state != VoiceSessionState.ACTIVE
 
+    @pytest.mark.parametrize(
+        "settings_override",
+        [
+            {"agent": None},
+            {"agent": {"think": {"provider": None}}},
+        ],
+    )
+    async def test_invalid_settings_fail_before_a_socket_is_opened(
+        self,
+        provider: DeepgramAgentProvider,
+        session: VoiceSession,
+        settings_override: dict[str, Any],
+    ) -> None:
+        connect_mock = AsyncMock()
+        with (
+            patch("websockets.connect", connect_mock),
+            pytest.raises(ValueError, match="Deepgram"),
+        ):
+            await provider.connect(
+                session,
+                provider_config={"settings": settings_override},
+            )
+
+        connect_mock.assert_not_awaited()
+
     async def test_greeting_audio_before_ack_is_forwarded(
         self, provider: DeepgramAgentProvider, session: VoiceSession
     ) -> None:
         audio = _Recorder()
         provider.on_audio(audio)
-        ws = _FakeWS(handshake=[b"\x01\x02", _SETTINGS_APPLIED])
+        ws = _FakeWS(handshake=[_WELCOME, b"\x01\x02", _SETTINGS_APPLIED])
 
         with patch("websockets.connect", AsyncMock(return_value=ws)):
             await provider.connect(session)
@@ -456,7 +515,9 @@ class TestInboundDispatch:
         # Server-side calls are Deepgram's to run — only the client-side one surfaces.
         assert tool_call.calls == [call]
         assert call == (session, "fc_1", "get_weather", {"location": "Montréal"})
-        assert provider._states[session.id].pending_calls["fc_1"] == "get_weather"
+        pending = provider._states[session.id].pending_calls["fc_1"]
+        assert pending.name == "get_weather"
+        assert pending.thought_signature is None
 
         await provider.disconnect(session)
 
@@ -555,8 +616,20 @@ class TestOutbound:
     async def test_submit_tool_result_recovers_the_name(
         self, provider: DeepgramAgentProvider, session: VoiceSession
     ) -> None:
+        tool_call = _Recorder()
+        provider.on_tool_call(tool_call)
         ws = await _connect(provider, session)
-        provider._states[session.id].pending_calls["fc_9"] = "get_weather"
+        ws.push(
+            json.dumps(
+                {
+                    "type": "FunctionCallRequest",
+                    "functions": [
+                        {"id": "fc_9", "name": "get_weather", "arguments": "{}"},
+                    ],
+                }
+            )
+        )
+        await tool_call.wait()
 
         await provider.submit_tool_result(session, "fc_9", '{"temp": 21}')
 
@@ -569,6 +642,34 @@ class TestOutbound:
         }
         assert "fc_9" not in provider._states[session.id].pending_calls
 
+        await provider.disconnect(session)
+
+    async def test_submit_tool_result_preserves_gemini_thought_signature(
+        self, provider: DeepgramAgentProvider, session: VoiceSession
+    ) -> None:
+        tool_call = _Recorder()
+        provider.on_tool_call(tool_call)
+        ws = await _connect(provider, session)
+        ws.push(
+            json.dumps(
+                {
+                    "type": "FunctionCallRequest",
+                    "functions": [
+                        {
+                            "id": "fc_gemini",
+                            "name": "lookup",
+                            "arguments": "{}",
+                            "thought_signature": "opaque-signature",
+                        }
+                    ],
+                }
+            )
+        )
+        await tool_call.wait()
+
+        await provider.submit_tool_result(session, "fc_gemini", "done")
+
+        assert ws.last_of_type("FunctionCallResponse")["thought_signature"] == "opaque-signature"
         await provider.disconnect(session)
 
     async def test_interrupt_sends_nothing(
@@ -699,8 +800,29 @@ class TestLifecycle:
         with patch("websockets.connect", AsyncMock(return_value=ws)):
             await provider.connect(session)
 
+        state = provider._states[session.id]
         assert await error.wait() == (session, "connection_error", "socket died")
-        await provider.disconnect(session)
+        assert state.receive_task is not None
+        await state.receive_task
+        assert session.state == VoiceSessionState.ENDED
+        assert provider._states == {}
+        assert state.keepalive_task is not None and state.keepalive_task.done()
+        assert ws.closed is True
+
+    async def test_clean_peer_close_retires_the_session(
+        self, provider: DeepgramAgentProvider, session: VoiceSession
+    ) -> None:
+        ws = await _connect(provider, session)
+        state = provider._states[session.id]
+
+        ws.finish()
+        assert state.receive_task is not None
+        await state.receive_task
+
+        assert session.state == VoiceSessionState.ENDED
+        assert provider._states == {}
+        assert state.keepalive_task is not None and state.keepalive_task.done()
+        assert ws.closed is True
 
 
 class TestChannelIntegration:

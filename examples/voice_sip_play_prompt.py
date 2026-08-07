@@ -35,6 +35,7 @@ Environment variables (all optional):
 from __future__ import annotations
 
 import asyncio
+import atexit
 import contextlib
 import math
 import os
@@ -109,8 +110,10 @@ def prompt_wav_path() -> Path:
     if configured:
         return Path(configured)
 
-    path = Path(tempfile.gettempdir()) / f"roomkit_prompt_{PROMPT_RATE}.wav"
-    if not path.exists():
+    fd, filename = tempfile.mkstemp(prefix="roomkit_prompt_", suffix=".wav")
+    os.close(fd)
+    path = Path(filename)
+    try:
         frames = bytearray()
         for i in range(PROMPT_RATE):  # 1 second
             value = int(12000 * math.sin(2 * math.pi * 440 * i / PROMPT_RATE))
@@ -121,6 +124,10 @@ def prompt_wav_path() -> Path:
             wf.setframerate(PROMPT_RATE)
             wf.writeframes(bytes(frames))
         logger.info("Generated prompt: %s (%d Hz tone)", path, PROMPT_RATE)
+    except BaseException:
+        path.unlink(missing_ok=True)
+        raise
+    atexit.register(path.unlink, missing_ok=True)
     return path
 
 

@@ -854,6 +854,31 @@ class TestPerRequestCredential:
             # The shared credential must not have served this turn.
             configured.messages.stream.assert_not_called()
 
+    def test_a_per_request_key_is_redacted_everywhere_contexts_are_rendered(self) -> None:
+        """Debugging or serializing a turn must never publish its credential."""
+        from roomkit.providers.ai.base import API_KEY_METADATA_KEY
+
+        canary = "sk-ant-per-request-canary"
+        context = _context(metadata={API_KEY_METADATA_KEY: canary})
+
+        assert canary not in repr(context)
+        assert canary not in str(context.model_dump())
+        assert canary not in context.model_dump_json()
+
+        # Hooks normally attach the key after construction; that mutation path
+        # must receive exactly the same protection.
+        context.metadata[API_KEY_METADATA_KEY] = canary
+        assert canary not in repr(context.metadata)
+        assert canary not in context.model_dump_json()
+
+        context.metadata = {API_KEY_METADATA_KEY: canary}
+        assert canary not in repr(context)
+        assert canary not in context.model_dump_json()
+
+        copied = context.model_copy(update={"metadata": {API_KEY_METADATA_KEY: canary}})
+        assert canary not in repr(copied)
+        assert canary not in copied.model_dump_json()
+
     @pytest.mark.asyncio
     async def test_the_same_key_reuses_its_client(self) -> None:
         """Rebuilding per turn would discard the connection pool on every message."""

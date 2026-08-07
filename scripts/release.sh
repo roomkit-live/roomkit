@@ -154,6 +154,29 @@ if ! grep -qE "^## \[${VERSION}\]" CHANGELOG.md; then
     echo "Error: CHANGELOG.md has no '## [${VERSION}]' entry — write it before releasing."
     exit 1
 fi
+# A version heading alone is not enough: leaving real entries under Unreleased
+# publishes code with incomplete notes. When the conventional heading exists,
+# require the target version to be the next release section and the gap between
+# them to contain only whitespace.
+if grep -qE '^## \[Unreleased\]' CHANGELOG.md; then
+    NEXT_CHANGELOG_VERSION=$(awk '
+        /^## \[Unreleased\]/ { seen = 1; next }
+        seen && /^## \[/ { print; exit }
+    ' CHANGELOG.md | sed -E 's/^## \[([^]]+)\].*/\1/')
+    if [[ "$NEXT_CHANGELOG_VERSION" != "$VERSION" ]]; then
+        echo "Error: CHANGELOG.md must place '${VERSION}' immediately after [Unreleased]."
+        exit 1
+    fi
+    UNRELEASED_CONTENT=$(awk '
+        /^## \[Unreleased\]/ { inside = 1; next }
+        inside && /^## \[/ { exit }
+        inside && NF { print }
+    ' CHANGELOG.md)
+    if [[ -n "$UNRELEASED_CONTENT" ]]; then
+        echo "Error: CHANGELOG.md [Unreleased] still contains entries. Move them into [${VERSION}]."
+        exit 1
+    fi
+fi
 echo "    CHANGELOG.md documents ${VERSION}."
 
 # --- Ensure GitHub Actions CI is green ---

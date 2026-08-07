@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.43.0] — 2026-08-06
+
 ### Fixed
 
 - **An ElevenLabs agent can finally call a tool.** `ElevenLabsRealtimeProvider`
@@ -57,6 +59,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `session_ended` through `on_error`, with the session marked `ENDED`.
 
 ### Added
+
+- **A `BEFORE_TOOL_USE` hook may rewrite the arguments of the call it is
+  gating.** `ON_TOOL_CALL` could already replace a tool's *result* on the way
+  out, through `metadata["result"]`. Nothing could touch a call's *arguments*
+  on the way in: the hook's callback answered with a bare `bool`, so the only
+  thing a host could say about a tool call was yes or no.
+
+  That asymmetry breaks any host that shows the model something other than the
+  literal data — redaction being the case that surfaced it. Such a host hands
+  the model placeholder text and swaps the real values back into the reply the
+  user reads. But when the model passes that text to a tool, the tool is about
+  to act on it in the real world, and no seam existed to restore it first. The
+  placeholder travels into whatever the tool writes to, and the mechanism meant
+  to protect the data quietly corrupts every outbound write instead.
+
+  The callback now answers with a `BeforeToolDecision` carrying the verdict
+  and, optionally, the arguments a hook returned under
+  `metadata["arguments"]`. Downstream of the gate the AI channel works from
+  those arguments, so the tool handler, the `ON_TOOL_CALL` event and the usage
+  record all report what actually ran rather than what the model asked for. An
+  `ExternalToolHandler` receives the same rewrite as
+  `ToolDecision.modified_input`, the field that already existed on that type.
+  Rewritten arguments are validated against the tool schema before execution,
+  just like the model's original payload.
+
+  The decision is truthy when the call is allowed, so a handler that gates on
+  it (`if not decision:`) reads unchanged. A hook that returns a plain `allow`
+  leaves the arguments exactly as the model wrote them.
+
+- **An Anthropic turn may carry its caller's own API key.** A shared provider
+  still uses its configured credential by default; a host serving users with
+  their own Anthropic subscriptions can set `AIContext.metadata["api_key"]`
+  in `BEFORE_AI_GENERATION` for that turn alone. Per-key clients are cached in
+  a bounded pool, and the credential is represented as a secret so context
+  logging and serialization cannot disclose it.
 
 - **`AIChannel`, `VoiceChannel`, `RealtimeVoiceChannel` and `WebSocketChannel`
   now import from `roomkit.channels`** — where the eleven transport-channel
@@ -205,36 +242,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   `SkillPathError` subclasses `ValueError`, so integrators already catching the
   `ValueError` this used to raise keep working.
-
-## [0.43.0] — 2026-08-06
-
-### Added
-
-- **A `BEFORE_TOOL_USE` hook may rewrite the arguments of the call it is
-  gating.** `ON_TOOL_CALL` could already replace a tool's *result* on the way
-  out, through `metadata["result"]`. Nothing could touch a call's *arguments*
-  on the way in: the hook's callback answered with a bare `bool`, so the only
-  thing a host could say about a tool call was yes or no.
-
-  That asymmetry breaks any host that shows the model something other than the
-  literal data — redaction being the case that surfaced it. Such a host hands
-  the model placeholder text and swaps the real values back into the reply the
-  user reads. But when the model passes that text to a tool, the tool is about
-  to act on it in the real world, and no seam existed to restore it first. The
-  placeholder travels into whatever the tool writes to, and the mechanism meant
-  to protect the data quietly corrupts every outbound write instead.
-
-  The callback now answers with a `BeforeToolDecision` carrying the verdict
-  and, optionally, the arguments a hook returned under
-  `metadata["arguments"]`. Downstream of the gate the AI channel works from
-  those arguments, so the tool handler, the `ON_TOOL_CALL` event and the usage
-  record all report what actually ran rather than what the model asked for. An
-  `ExternalToolHandler` receives the same rewrite as
-  `ToolDecision.modified_input`, the field that already existed on that type.
-
-  The decision is truthy when the call is allowed, so a handler that gates on
-  it (`if not decision:`) reads unchanged. A hook that returns a plain `allow`
-  leaves the arguments exactly as the model wrote them.
 
 ## [0.42.1] — 2026-08-06
 
