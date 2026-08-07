@@ -25,6 +25,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Gemini Live re-emitted final transcriptions as duplicates.** Gemini
+  re-sends a finished utterance after the provider's buffer already flushed it
+  at a lifecycle boundary (speech end, model turn); each re-emission reached
+  the channel as a second identical final — chat UIs rendered duplicate user
+  bubbles and the phantom "user speech" falsely interrupted the assistant's
+  streaming reply. The provider now drops consecutive identical finals per
+  role, lifting the guard when new speech (`ACTIVITY_START`) or a new model
+  turn genuinely begins, so repeating the same words in a later turn still
+  comes through.
+
 - **Realtime transcriptions could render out of wire order.** Each
   transcription event runs in its own task and the partial path awaits one hop
   more than the final path, so a final could overtake the partial that

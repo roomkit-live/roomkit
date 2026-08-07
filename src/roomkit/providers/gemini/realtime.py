@@ -94,6 +94,8 @@ class _GeminiSessionState:
     queued_injections: list[tuple[bytes, str, str, bool]] = field(default_factory=list)
     realtime_input_sent: bool = False
     queued_text_injections: list[tuple[str, str, bool]] = field(default_factory=list)
+    # Last final transcription emitted per role — see _is_duplicate_final.
+    last_final_text: dict[str, str] = field(default_factory=dict)
     # Effective config values, kept in sync across connect + reconfigure
     # so partial reconfigures (e.g. system_prompt-only) preserve the
     # other fields. Without these, ``_build_config`` (which treats
@@ -1342,6 +1344,8 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
         if vtype == "ACTIVITY_START":
             logger.info("[VAD] speech_start (session %s)", session.id)
             state.user_speech_active = True
+            # New utterance: a repeat of the previous words is now legitimate.
+            state.last_final_text.pop("user", None)
             await self._fire(self._speech_start_callbacks, session, label="speech_start")
         elif vtype == "ACTIVITY_END":
             logger.info("[VAD] speech_end (session %s)", session.id)
@@ -1368,6 +1372,9 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
         if getattr(content, "model_turn", None) and not state.response_started:
             await self._flush_transcription_buffer(session, "user")
             state.response_started = True
+            # New response: an assistant reply identical to the previous one
+            # is now legitimate.
+            state.last_final_text.pop("assistant", None)
             state.audio_chunk_count = 0
             logger.info("[Gemini] response_start (session %s)", session.id)
             self._log_event(session.id, "response_start", turn=state.turn_count)
@@ -1382,6 +1389,7 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
             # interrupted, so this may be the only trigger.
             if not state.user_speech_active:
                 state.user_speech_active = True
+                state.last_final_text.pop("user", None)
                 await self._fire(self._speech_start_callbacks, session, label="speech_start")
             if state.response_started:
                 state.response_started = False
@@ -1482,12 +1490,38 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
         )
         raise _GoAwayError()
 
+    def _is_duplicate_final(self, session: VoiceSession, role: str, text: str) -> bool:
+        """Whether this final re-emits what was already flushed for this turn.
+
+        Gemini re-sends a finished utterance after the buffer already flushed
+        it at a lifecycle boundary (speech end, model turn) — unfiltered,
+        every re-emission renders as a duplicate final downstream. The guard
+        drops consecutive identical finals per role; it is cleared when new
+        speech or a new response genuinely begins, so a user repeating the
+        same words in a later turn still comes through.
+        """
+        state = self._sessions.get(session.id)
+        if state is None:
+            return False
+        if state.last_final_text.get(role) == text:
+            logger.info(
+                "[Gemini] dropping re-emitted %s final (%d chars, session %s)",
+                role,
+                len(text),
+                session.id,
+            )
+            return True
+        state.last_final_text[role] = text
+        return False
+
     async def _handle_transcription_chunk(
         self, session: VoiceSession, text: str, role: str, finished: bool
     ) -> None:
         """Accumulate transcription chunks and fire callback when complete."""
         full_text = self._transcription_buffer.append(session.id, role, text, finished)
         if full_text:
+            if self._is_duplicate_final(session, role, full_text):
+                return
             # Log the FINAL transcription so we can see what each side
             # actually said in the same stream as tool_call events.
             # Truncate to keep log lines readable; full text still goes
@@ -1522,6 +1556,8 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
         """Flush buffered transcription at lifecycle boundaries."""
         full_text = self._transcription_buffer.flush(session.id, role)
         if full_text:
+            if self._is_duplicate_final(session, role, full_text):
+                return
             logger.debug(
                 "Flushing %s transcription buffer (%d chars) for session %s",
                 role,
