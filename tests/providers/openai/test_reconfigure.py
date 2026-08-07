@@ -141,6 +141,34 @@ async def test_reconfigure_voice_uses_ga_nesting(
     assert evt["session"]["audio"]["output"]["voice"] == "marin"
 
 
+async def test_reconfigure_updates_reasoning_and_local_image_detail(
+    provider: OpenAIRealtimeProvider, session: VoiceSession
+) -> None:
+    ws = _mock_ws()
+    _inject_ws(provider, session, ws)
+
+    await provider.reconfigure(
+        session,
+        provider_config={"reasoning_effort": "high", "image_detail": "low"},
+    )
+
+    evt = _sent_events(ws)[0]
+    assert evt["session"]["reasoning"] == {"effort": "high"}
+    assert provider._provider_configs[session.id]["image_detail"] == "low"
+
+
+async def test_reconfigure_image_detail_only_stays_off_wire(
+    provider: OpenAIRealtimeProvider, session: VoiceSession
+) -> None:
+    ws = _mock_ws()
+    _inject_ws(provider, session, ws)
+
+    await provider.reconfigure(session, provider_config={"image_detail": "auto"})
+
+    ws.send.assert_not_awaited()
+    assert provider._provider_configs[session.id]["image_detail"] == "auto"
+
+
 async def test_reconfigure_without_connection_is_safe(
     provider: OpenAIRealtimeProvider, session: VoiceSession
 ) -> None:

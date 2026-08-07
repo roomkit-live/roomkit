@@ -15,7 +15,7 @@ import logging
 from abc import abstractmethod
 from typing import Any
 
-from roomkit.voice.base import VoiceSession, VoiceSessionState
+from roomkit.voice.base import VoiceSession
 from roomkit.voice.realtime.provider import RealtimeVoiceProvider
 
 logger = logging.getLogger("roomkit.providers.openai.realtime_events")
@@ -70,6 +70,11 @@ class OpenAIRealtimeEventHandlersMixin(RealtimeVoiceProvider):
         """Short provider tag used in log lines (e.g. ``"OpenAI"``)."""
         ...
 
+    @abstractmethod
+    async def _retire_lost_connection(self, session: VoiceSession, ws: Any, message: str) -> None:
+        """Release a socket whose receive loop stopped unexpectedly."""
+        ...
+
     async def _receive_loop(self, session: VoiceSession) -> None:
         """Process server events from the realtime API."""
         ws = self._connections.get(session.id)
@@ -91,21 +96,18 @@ class OpenAIRealtimeEventHandlersMixin(RealtimeVoiceProvider):
                     )
         except asyncio.CancelledError:
             raise
-        except Exception:
-            if session.state == VoiceSessionState.ACTIVE:
-                logger.warning(
-                    "%s WebSocket closed unexpectedly for session %s", self._log_tag, session.id
-                )
-                session.state = VoiceSessionState.ENDED
-                await self._fire(
-                    self._error_callbacks,
-                    session,
-                    "connection_closed",
-                    f"WebSocket closed unexpectedly for session {session.id}",
-                    label="error",
-                )
-            else:
-                logger.debug("%s WebSocket closed for session %s", self._log_tag, session.id)
+        except Exception as exc:
+            await self._retire_lost_connection(
+                session,
+                ws,
+                f"WebSocket closed unexpectedly for session {session.id}: {exc}",
+            )
+        else:
+            await self._retire_lost_connection(
+                session,
+                ws,
+                f"WebSocket closed unexpectedly for session {session.id}",
+            )
 
     # Maps each server event type to the handler method that processes it.
     _EVENT_HANDLERS: dict[str, str] = {
@@ -231,6 +233,10 @@ class OpenAIRealtimeEventHandlersMixin(RealtimeVoiceProvider):
         )
 
     async def _on_response_created(self, session: VoiceSession, event: dict[str, Any]) -> None:
+        # A new response supersedes the last item's truncation target. Keep the
+        # completed item after response.done while its buffered audio is still
+        # playing, but never carry it into a subsequent response.
+        self._output_audio.pop(session.id, None)
         self._responding.add(session.id)
         logger.info("[%s] response_start (session %s)", self._log_tag, session.id)
         await self._fire(self._response_start_callbacks, session, label="response_start")

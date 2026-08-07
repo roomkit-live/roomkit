@@ -189,7 +189,11 @@ class OpenAIRealtimeBase(OpenAIRealtimeEventHandlersMixin):
         bytes_per_sample = 1 if audio_type in {"audio/pcmu", "audio/pcma"} else 2
         self._output_bytes_per_ms[session.id] = negotiated_rate * bytes_per_sample / 1000
 
-        await ws.send(json.dumps({"type": "session.update", "session": session_config}))
+        try:
+            await ws.send(json.dumps({"type": "session.update", "session": session_config}))
+        except BaseException:
+            await self._discard_connection(session, ws)
+            raise
 
         session.state = VoiceSessionState.ACTIVE
         session.provider_session_id = session.id
@@ -327,17 +331,25 @@ class OpenAIRealtimeBase(OpenAIRealtimeEventHandlersMixin):
             generated_ms,
             session.id,
         )
-        await ws.send(
-            json.dumps(
-                {
-                    "type": "conversation.item.truncate",
-                    "item_id": state.item_id,
-                    "content_index": state.content_index,
-                    "audio_end_ms": played_ms,
-                }
-            )
-        )
+        # Reserve before awaiting the socket write so two simultaneous speech
+        # callbacks cannot emit duplicate truncations. A failed write releases
+        # the reservation so a reconnecting caller can retry.
         state.truncated_at_ms = played_ms
+        try:
+            await ws.send(
+                json.dumps(
+                    {
+                        "type": "conversation.item.truncate",
+                        "item_id": state.item_id,
+                        "content_index": state.content_index,
+                        "audio_end_ms": played_ms,
+                    }
+                )
+            )
+        except BaseException:
+            if state.truncated_at_ms == played_ms:
+                state.truncated_at_ms = None
+            raise
 
     async def send_event(self, session: VoiceSession, event: dict[str, Any]) -> None:
         ws = self._connections.get(session.id)
@@ -364,6 +376,42 @@ class OpenAIRealtimeBase(OpenAIRealtimeEventHandlersMixin):
             return
         logger.debug("[%s →] response.create (session %s)", self._log_tag, session.id)
         await ws.send(json.dumps({"type": "response.create"}))
+
+    async def _discard_connection(
+        self,
+        session: VoiceSession,
+        ws: Any,
+        *,
+        error_message: str | None = None,
+    ) -> None:
+        """Remove one exact socket from every ownership map and close it."""
+        if self._connections.get(session.id) is not ws:
+            return
+        self._connections.pop(session.id, None)
+        self._sessions.pop(session.id, None)
+        self._receive_tasks.pop(session.id, None)
+        self._provider_configs.pop(session.id, None)
+        self._responding.discard(session.id)
+        self._output_audio.pop(session.id, None)
+        self._output_bytes_per_ms.pop(session.id, None)
+        was_active = session.state == VoiceSessionState.ACTIVE
+        session.state = VoiceSessionState.ENDED
+
+        if error_message is not None and was_active:
+            logger.warning("%s %s", self._log_tag, error_message)
+            await self._fire(
+                self._error_callbacks,
+                session,
+                "connection_closed",
+                error_message,
+                label="error",
+            )
+        with contextlib.suppress(Exception):
+            await asyncio.wait_for(ws.close(), timeout=_CLOSE_TIMEOUT)
+
+    async def _retire_lost_connection(self, session: VoiceSession, ws: Any, message: str) -> None:
+        """Handle exceptional and clean peer closes with identical teardown."""
+        await self._discard_connection(session, ws, error_message=message)
 
     async def disconnect(self, session: VoiceSession) -> None:
         # Cancel receive task

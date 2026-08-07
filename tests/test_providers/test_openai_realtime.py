@@ -270,6 +270,22 @@ class TestOpenAIRealtimeProvider:
         )
         assert "reasoning" not in config
 
+    @pytest.mark.parametrize("effort", ["", "extreme", 3])
+    def test_session_config_rejects_invalid_reasoning_effort(self, effort):
+        mod = _load_provider()
+        provider = mod.OpenAIRealtimeProvider(api_key="sk-test")
+        with pytest.raises(ValueError, match="reasoning_effort"):
+            provider._build_session_config(
+                system_prompt=None,
+                voice=None,
+                tools=None,
+                temperature=None,
+                input_sample_rate=24000,
+                output_sample_rate=24000,
+                server_vad=True,
+                pc={"reasoning_effort": effort},
+            )
+
     def test_format_session_tools_defaults_type_and_passes_native(self):
         """Function tools default to ``type: function``; non-function native
         tools (xAI ``web_search``) pass through unchanged."""
@@ -451,6 +467,31 @@ class TestOpenAIRealtimeProvider:
                 output_sample_rate=24000,
             )
 
+    async def test_connect_send_failure_releases_open_socket(self):
+        mod = _load_provider()
+        provider = mod.OpenAIRealtimeProvider(api_key="sk-test")
+        session = _make_session()
+        ws = _make_mock_ws()
+        ws.send.side_effect = OSError("socket died")
+
+        async def fake_connect(*args, **kwargs):
+            return ws
+
+        with (
+            patch.dict(sys.modules, {"websockets": MagicMock(connect=fake_connect)}),
+            pytest.raises(OSError, match="socket died"),
+        ):
+            await provider.connect(
+                session,
+                input_sample_rate=24000,
+                output_sample_rate=24000,
+            )
+
+        assert provider._connections == {}
+        assert provider._sessions == {}
+        assert session.state == VoiceSessionState.ENDED
+        ws.close.assert_awaited_once()
+
     # ── send_audio() ────────────────────────────────────────────
 
     async def test_send_audio(self):
@@ -606,6 +647,19 @@ class TestOpenAIRealtimeProvider:
 
         ws.send.assert_not_awaited()
 
+    async def test_inject_image_rejects_empty_data_and_invalid_detail(self):
+        mod = _load_provider()
+        provider, ws, session = _make_connected_provider(mod)
+
+        with pytest.raises(ValueError, match="must not be empty"):
+            await provider.inject_image(session, b"", "image/png")
+
+        provider._provider_configs[session.id] = {"image_detail": "ultra"}
+        with pytest.raises(ValueError, match="image_detail"):
+            await provider.inject_image(session, b"png", "image/png")
+
+        ws.send.assert_not_awaited()
+
     async def test_inject_image_no_connection(self):
         mod = _load_provider()
         provider = mod.OpenAIRealtimeProvider(api_key="sk-test")
@@ -688,6 +742,26 @@ class TestOpenAIRealtimeProvider:
         await provider.truncate_audio(session, 500)
 
         ws.send.assert_not_awaited()
+
+    async def test_failed_truncation_can_be_retried(self):
+        mod = _load_provider()
+        provider, ws, session = _make_connected_provider(mod)
+        provider._output_bytes_per_ms[session.id] = 48.0
+        await provider._handle_server_event(
+            session,
+            {
+                "type": "response.output_audio.delta",
+                "item_id": "item-audio-1",
+                "content_index": 0,
+                "delta": base64.b64encode(b"\x00" * 4_800).decode("ascii"),
+            },
+        )
+        ws.send.side_effect = OSError("socket died")
+
+        with pytest.raises(OSError, match="socket died"):
+            await provider.truncate_audio(session, 50)
+
+        assert provider._output_audio[session.id].truncated_at_ms is None
 
     # ── send_event() ────────────────────────────────────────────
 
@@ -1061,6 +1135,30 @@ class TestOpenAIRealtimeProvider:
         await provider._receive_loop(session)
         assert session.state == VoiceSessionState.ENDED
         assert len(errors) == 1
+        assert session.id not in provider._connections
+        assert session.id not in provider._sessions
+        ws.close.assert_awaited_once()
+
+    async def test_receive_loop_clean_peer_close_is_also_an_error(self):
+        mod = _load_provider()
+        provider, ws, session = _make_connected_provider(mod)
+        errors = []
+        provider.on_error(lambda s, code, msg: errors.append((code, msg)))
+
+        async def fake_iter():
+            if False:
+                yield "unreachable"
+
+        ws.__aiter__ = lambda self: fake_iter()
+
+        await provider._receive_loop(session)
+
+        assert session.state == VoiceSessionState.ENDED
+        assert errors == [
+            ("connection_closed", f"WebSocket closed unexpectedly for session {session.id}")
+        ]
+        assert session.id not in provider._connections
+        ws.close.assert_awaited_once()
 
     async def test_receive_loop_no_ws(self):
         mod = _load_provider()

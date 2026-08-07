@@ -21,6 +21,8 @@ _DEFAULT_BASE_URL = "wss://api.openai.com/v1/realtime"
 
 # The Realtime API reads an image from a data URI, and only these two formats.
 _IMAGE_MIME_TYPES = frozenset({"image/png", "image/jpeg"})
+_IMAGE_DETAIL_VALUES = frozenset({"auto", "low", "high"})
+_REASONING_EFFORT_VALUES = frozenset({"minimal", "low", "medium", "high", "xhigh"})
 
 
 class OpenAIRealtimeProvider(OpenAIRealtimeBase):
@@ -174,8 +176,10 @@ class OpenAIRealtimeProvider(OpenAIRealtimeBase):
         # Sibling of instructions/audio/tools, not nested under audio.input.
         # Only reasoning-capable models (gpt-realtime-2+) honour it, so the
         # field stays out of the payload unless the caller asks for it.
-        if pc.get("reasoning_effort"):
-            session_config["reasoning"] = {"effort": str(pc["reasoning_effort"])}
+        reasoning_effort = self._validate_reasoning_effort(pc.get("reasoning_effort"))
+        self._validate_image_detail(pc.get("image_detail"))
+        if reasoning_effort is not None:
+            session_config["reasoning"] = {"effort": reasoning_effort}
 
         logger.info("Sending session.update: turn_detection=%s, voice=%s", turn_detection, voice)
         return session_config
@@ -226,19 +230,33 @@ class OpenAIRealtimeProvider(OpenAIRealtimeBase):
                 "OpenAI Realtime GA API does not support temperature; ignoring on reconfigure"
             )
 
-        # Only the "type" anchor present → nothing actually changed.
-        if len(session_patch) == 1:
+        pc = provider_config or {}
+        reasoning_effort = self._validate_reasoning_effort(pc.get("reasoning_effort"))
+        image_detail = self._validate_image_detail(pc.get("image_detail"))
+        if reasoning_effort is not None:
+            session_patch["reasoning"] = {"effort": reasoning_effort}
+
+        # ``image_detail`` is local input policy, not a session.update field.
+        # Keep it even when there is no wire-level patch to send.
+        if len(session_patch) == 1 and "image_detail" not in pc:
             return
 
-        logger.info(
-            "[OpenAI →] session.update (reconfigure): instructions=%s tools=%s voice=%s "
-            "(session %s)",
-            system_prompt is not None,
-            len(session_patch["tools"]) if "tools" in session_patch else "unchanged",
-            voice,
-            session.id,
-        )
-        await ws.send(json.dumps({"type": "session.update", "session": session_patch}))
+        if len(session_patch) > 1:
+            logger.info(
+                "[OpenAI →] session.update (reconfigure): instructions=%s tools=%s "
+                "voice=%s (session %s)",
+                system_prompt is not None,
+                len(session_patch["tools"]) if "tools" in session_patch else "unchanged",
+                voice,
+                session.id,
+            )
+            await ws.send(json.dumps({"type": "session.update", "session": session_patch}))
+        if pc:
+            merged_config = dict(self._provider_configs.get(session.id, {}))
+            merged_config.update(pc)
+            if "image_detail" in pc and image_detail is None:
+                merged_config.pop("image_detail", None)
+            self._provider_configs[session.id] = merged_config
 
     # -- Image injection -----------------------------------------------------
 
@@ -253,8 +271,8 @@ class OpenAIRealtimeProvider(OpenAIRealtimeBase):
     ) -> None:
         """Put an image in front of the model, inside the live conversation.
 
-        Image input arrived with the reasoning-era models (``gpt-realtime-2.1``
-        and later); older snapshots reject it. The image travels as a data URI
+        Image-capable Realtime models (including ``gpt-realtime-2.1``) accept
+        this input; older snapshots may reject it. The image travels as a data URI
         inside a user message — the wire has no other slot for one, which is
         why ``role`` is always ``user`` here even though ``inject_text``
         accepts ``system`` — and PNG and JPEG are the only formats the API
@@ -274,10 +292,12 @@ class OpenAIRealtimeProvider(OpenAIRealtimeBase):
             silent: Add to context without asking for a response.
 
         Raises:
-            ValueError: The MIME type is not one the API reads.
+            ValueError: The image is empty, or its MIME/detail setting is invalid.
         """
         if mime_type not in _IMAGE_MIME_TYPES:
             raise ValueError(f"OpenAI Realtime reads PNG and JPEG images only, got {mime_type!r}")
+        if not image_data:
+            raise ValueError("OpenAI Realtime image data must not be empty")
 
         ws = self._connections.get(session.id)
         if ws is None:
@@ -292,8 +312,11 @@ class OpenAIRealtimeProvider(OpenAIRealtimeBase):
             "type": "input_image",
             "image_url": f"data:{mime_type};base64,{encoded}",
         }
-        if detail := self._provider_configs.get(session.id, {}).get("image_detail"):
-            image_part["detail"] = str(detail)
+        detail = self._validate_image_detail(
+            self._provider_configs.get(session.id, {}).get("image_detail")
+        )
+        if detail is not None:
+            image_part["detail"] = detail
         content.append(image_part)
 
         logger.debug(
@@ -317,6 +340,24 @@ class OpenAIRealtimeProvider(OpenAIRealtimeBase):
         await self._maybe_request_response(session, ws, silent=silent)
 
     # -- Builders ------------------------------------------------------------
+
+    @staticmethod
+    def _validate_reasoning_effort(value: Any) -> str | None:
+        if value is None:
+            return None
+        if not isinstance(value, str) or value not in _REASONING_EFFORT_VALUES:
+            choices = ", ".join(sorted(_REASONING_EFFORT_VALUES))
+            raise ValueError(f"reasoning_effort must be one of: {choices}")
+        return value
+
+    @staticmethod
+    def _validate_image_detail(value: Any) -> str | None:
+        if value is None:
+            return None
+        if not isinstance(value, str) or value not in _IMAGE_DETAIL_VALUES:
+            choices = ", ".join(sorted(_IMAGE_DETAIL_VALUES))
+            raise ValueError(f"image_detail must be one of: {choices}")
+        return value
 
     @staticmethod
     def _build_turn_detection(td_type: str | None, pc: dict[str, Any]) -> dict[str, Any] | None:
