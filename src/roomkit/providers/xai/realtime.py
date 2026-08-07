@@ -14,6 +14,7 @@ Requires the ``websockets`` package::
 
 from __future__ import annotations
 
+import contextlib
 import logging
 from typing import Any
 
@@ -79,6 +80,9 @@ class XAIRealtimeProvider(OpenAIRealtimeBase):
             )
 
         self._model = self._config.model
+        # Streaming input-transcription state: session id → (item_id, text
+        # so far).  See _on_input_transcript_done.
+        self._input_transcripts: dict[str, tuple[str, str]] = {}
 
     @property
     def name(self) -> str:
@@ -118,6 +122,73 @@ class XAIRealtimeProvider(OpenAIRealtimeBase):
 
     def _auth_headers(self) -> dict[str, str]:
         return {"Authorization": f"Bearer {self._config.api_key.get_secret_value()}"}
+
+    # -- Input transcription consolidation -----------------------------------
+    #
+    # xAI streams the user transcription by re-emitting
+    # ``conversation.item.input_audio_transcription.completed`` with the
+    # cumulative text-so-far while the utterance is still in progress; the
+    # OpenAI protocol this wire mirrors sends exactly one, final,
+    # ``completed`` per item.  The base's contract-faithful reading turned
+    # every re-emission into a *final* transcription, handing consumers a
+    # pile of growing "finals" for one utterance — RoomKit UI rendered a
+    # chat bubble per snapshot.  These overrides restore the RoomKit
+    # contract (delta partials, then one full-text final): snapshots become
+    # deltas keyed by item id, and the final fires when the turn provably
+    # ended — the model starts responding, a new item begins, or the
+    # session disconnects.
+
+    async def _on_input_transcript_done(
+        self, session: VoiceSession, event: dict[str, Any]
+    ) -> None:
+        item_id = str(event.get("item_id") or "")
+        text = str(event.get("transcript") or "")
+        if not text:
+            return
+        prev_item, prev_text = self._input_transcripts.get(session.id, ("", ""))
+        if prev_text and item_id != prev_item:
+            # A new utterance began before the previous one was finalized.
+            await self._finalize_input_transcript(session)
+            prev_text = ""
+        if text == prev_text:
+            return  # verbatim re-emission
+        # A snapshot that does not extend the previous one is a server-side
+        # rewrite (STT correction).  Partials cannot be retracted, so the
+        # full rewrite goes out as one more delta — the final below carries
+        # the corrected full text and replaces whatever accumulated.
+        delta = text[len(prev_text) :] if text.startswith(prev_text) else text
+        self._input_transcripts[session.id] = (item_id, text)
+        await self._fire(
+            self._transcription_callbacks,
+            session,
+            delta,
+            "user",
+            False,
+            label="transcription",
+        )
+
+    async def _finalize_input_transcript(self, session: VoiceSession) -> None:
+        pending = self._input_transcripts.pop(session.id, None)
+        if pending is None or not pending[1]:
+            return
+        await self._fire(
+            self._transcription_callbacks,
+            session,
+            pending[1],
+            "user",
+            True,
+            label="transcription",
+        )
+
+    async def _on_response_created(self, session: VoiceSession, event: dict[str, Any]) -> None:
+        # The model answering the utterance is proof the user turn ended.
+        await self._finalize_input_transcript(session)
+        await super()._on_response_created(session, event)
+
+    async def disconnect(self, session: VoiceSession) -> None:
+        with contextlib.suppress(Exception):
+            await self._finalize_input_transcript(session)
+        await super().disconnect(session)
 
     def _build_session_config(
         self,

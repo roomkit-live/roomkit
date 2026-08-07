@@ -395,14 +395,20 @@ class TestServerEvents:
         cb = AsyncMock()
         provider.on_transcription(cb)
 
+        # A completed snapshot streams as a partial (xAI re-emits the event
+        # with cumulative text mid-utterance); the final fires at turn end.
         await provider._handle_server_event(
             session,
             {
                 "type": "conversation.item.input_audio_transcription.completed",
+                "item_id": "item-1",
                 "transcript": "Hi there",
             },
         )
-        cb.assert_awaited_once_with(session, "Hi there", "user", True)
+        cb.assert_awaited_once_with(session, "Hi there", "user", False)
+
+        await provider._handle_server_event(session, {"type": "response.created"})
+        assert cb.await_args_list[-1].args == (session, "Hi there", "user", True)
 
     async def test_tool_call(
         self,
@@ -534,3 +540,92 @@ class TestLazyLoaders:
 
         cls = get_xai_realtime_config()
         assert cls is XAIRealtimeConfig
+
+
+class TestInputTranscriptStreaming:
+    """xAI re-emits input_audio_transcription.completed with cumulative text.
+
+    The override restores the RoomKit contract: snapshots become delta
+    partials keyed by item id, and one full-text final fires when the turn
+    provably ended (response created, item change, disconnect).
+    """
+
+    @staticmethod
+    def _completed(item: str, transcript: str) -> dict:
+        return {
+            "type": "conversation.item.input_audio_transcription.completed",
+            "item_id": item,
+            "transcript": transcript,
+        }
+
+    async def test_growing_snapshots_become_deltas_then_one_final(
+        self, provider: XAIRealtimeProvider, session: VoiceSession
+    ) -> None:
+        cb = AsyncMock()
+        provider.on_transcription(cb)
+
+        await provider._handle_server_event(session, self._completed("i1", "Quelle aventure ?"))
+        await provider._handle_server_event(
+            session, self._completed("i1", "Quelle aventure ? De quelle aventure ?")
+        )
+        await provider._handle_server_event(session, {"type": "response.created"})
+
+        calls = [c.args for c in cb.await_args_list]
+        assert calls == [
+            (session, "Quelle aventure ?", "user", False),
+            (session, " De quelle aventure ?", "user", False),
+            (session, "Quelle aventure ? De quelle aventure ?", "user", True),
+        ]
+
+    async def test_verbatim_reemission_is_silent(
+        self, provider: XAIRealtimeProvider, session: VoiceSession
+    ) -> None:
+        cb = AsyncMock()
+        provider.on_transcription(cb)
+
+        await provider._handle_server_event(session, self._completed("i1", "Salut."))
+        await provider._handle_server_event(session, self._completed("i1", "Salut."))
+
+        assert cb.await_count == 1  # one partial, no duplicate
+
+    async def test_new_item_finalizes_the_previous_utterance(
+        self, provider: XAIRealtimeProvider, session: VoiceSession
+    ) -> None:
+        cb = AsyncMock()
+        provider.on_transcription(cb)
+
+        await provider._handle_server_event(session, self._completed("i1", "Première."))
+        await provider._handle_server_event(session, self._completed("i2", "Deuxième."))
+
+        calls = [c.args for c in cb.await_args_list]
+        assert calls == [
+            (session, "Première.", "user", False),
+            (session, "Première.", "user", True),
+            (session, "Deuxième.", "user", False),
+        ]
+
+    async def test_rewrite_snapshot_final_carries_corrected_text(
+        self, provider: XAIRealtimeProvider, session: VoiceSession
+    ) -> None:
+        cb = AsyncMock()
+        provider.on_transcription(cb)
+
+        await provider._handle_server_event(session, self._completed("i1", "quelle avanture"))
+        await provider._handle_server_event(session, self._completed("i1", "Quelle aventure ?"))
+        await provider._handle_server_event(session, {"type": "response.created"})
+
+        final = cb.await_args_list[-1].args
+        assert final == (session, "Quelle aventure ?", "user", True)
+
+    async def test_disconnect_flushes_the_pending_final(
+        self, provider: XAIRealtimeProvider, session: VoiceSession
+    ) -> None:
+        cb = AsyncMock()
+        provider.on_transcription(cb)
+        _inject_ws(provider, session, _mock_ws())
+
+        await provider._handle_server_event(session, self._completed("i1", "En attente."))
+        await provider.disconnect(session)
+
+        calls = [c.args for c in cb.await_args_list]
+        assert (session, "En attente.", "user", True) in calls

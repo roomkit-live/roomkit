@@ -134,6 +134,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **xAI's streaming input transcription no longer arrives as a pile of
+  "finals".** Grok's realtime server re-emits
+  `conversation.item.input_audio_transcription.completed` with the
+  cumulative text-so-far while the utterance is still in progress — the
+  OpenAI protocol this wire mirrors sends exactly one, final, `completed`
+  per item, and the shared base read each re-emission accordingly.  Every
+  consumer of `on_transcription` therefore got a growing sequence of
+  final user transcripts for one sentence (RoomKit UI rendered a chat
+  bubble per snapshot: "Quelle aventure ?" / "Quelle aventure ? De quelle
+  aventure ?" / the full sentence).  The xAI provider now restores the
+  contract itself: snapshots become delta *partials* keyed by item id — a
+  non-extending snapshot (server-side STT correction) goes out as one
+  more delta, since partials cannot be retracted — and the one true
+  final, carrying the full corrected text, fires when the turn provably
+  ended: the model starts responding, a new item begins, or the session
+  disconnects.  Hosts need no provider-specific handling; the ordinary
+  partial/final flow just works.
+
 - **A muted mic desynchronized the pipeline AEC by the mute's full
   duration.** Pausing capture pauses the AEC's world, and the transport-AEC
   feed honoured that — but the pipeline-AEC reference rides
