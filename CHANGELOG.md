@@ -114,6 +114,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   recording becomes speaker turns, enters a room, and an AI channel writes the
   minutes.
 
+### Fixed
+
+- **`inbound_dsp_threads` silently unplugged every async pipeline callback —
+  in a realtime session, that is the microphone.** The pool's workers run
+  the stage chain with no event loop, and `_maybe_schedule` answered a
+  coroutine created there by logging one line and dropping it. The failure
+  wore camouflage: every *sync* callback kept working, so audio flowed
+  through the stages, recordings rolled, and what died was precisely what
+  rode coroutines — the realtime provider's audio feed and the audio-level
+  hooks. A host that enabled the pool got a session that looked alive and
+  heard nothing (found by RoomKit UI: mic and VU meter dead with
+  `inbound_dsp_threads=2`, fine inline).
+
+  `AudioPipeline` now captures the loop it was built on — the channel
+  builds its pipeline inside async context — and `_maybe_schedule` sends an
+  off-loop coroutine home with `run_coroutine_threadsafe` instead of
+  dropping it, with failures logged through a done-callback exactly like
+  the on-loop task path. A pipeline genuinely built outside async context
+  still gets the old warn-and-close, there being nowhere to send the work.
+  `_pipeline_submit_inbound`'s claim that the callbacks "were already
+  thread-tolerant" is corrected to say what is true now, and of what.
+
 ## [0.43.0] — 2026-08-07
 
 ### Added

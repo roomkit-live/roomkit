@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import logging
 import threading
 import time
@@ -32,17 +33,43 @@ if TYPE_CHECKING:
 logger = logging.getLogger("roomkit.voice.pipeline")
 
 
-def _maybe_schedule(result: object) -> None:
-    """Schedule a coroutine if the callback returned one."""
-    if asyncio.coroutines.iscoroutine(result):
-        try:
-            loop = asyncio.get_running_loop()
-            task = loop.create_task(result)
-            task.add_done_callback(log_task_exception)
-        except RuntimeError:
-            # No running event loop — log and close the coroutine to avoid warning
-            logger.warning("Async callback returned outside event loop; dropping")
-            result.close()
+def _maybe_schedule(result: object, home_loop: asyncio.AbstractEventLoop | None = None) -> None:
+    """Schedule a coroutine if the callback returned one.
+
+    The frame chain runs wherever its caller runs — the event loop when
+    inline, a DSP-pool worker (``inbound_dsp_threads``) or a backend's
+    capture thread otherwise. A coroutine created on such a thread has no
+    running loop to land on, so it is sent to *home_loop*: dropping it
+    would silently unplug whoever registered the callback — the realtime
+    provider's audio feed, the audio-level hooks — while every sync
+    callback kept working, which is exactly the failure that makes a
+    threaded pipeline look "mostly fine".
+    """
+    if not asyncio.coroutines.iscoroutine(result):
+        return
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        if home_loop is not None and not home_loop.is_closed():
+            future = asyncio.run_coroutine_threadsafe(result, home_loop)
+            future.add_done_callback(_log_future_exception)
+            return
+        # No loop to send it to — log and close to avoid a "never awaited"
+        # warning. Only reachable for a pipeline built outside async context.
+        logger.warning("Async callback returned outside event loop; dropping")
+        result.close()
+        return
+    task = loop.create_task(result)
+    task.add_done_callback(log_task_exception)
+
+
+def _log_future_exception(future: concurrent.futures.Future[Any]) -> None:
+    """`log_task_exception`'s twin for ``run_coroutine_threadsafe`` futures."""
+    if future.cancelled():
+        return
+    exc = future.exception()
+    if exc is not None:
+        logger.error("Unhandled exception in pipeline callback", exc_info=exc)
 
 
 # Callback type aliases
@@ -138,6 +165,14 @@ class AudioPipeline:
         backend_feeds_aec_reference: bool = False,
     ) -> None:
         self._config = config
+        # The loop this pipeline calls home, captured at construction (the
+        # channel builds its pipeline inside async context). Callbacks run
+        # wherever the frame chain runs; a coroutine created off-loop is
+        # sent here by _maybe_schedule instead of being dropped.
+        try:
+            self._home_loop: asyncio.AbstractEventLoop | None = asyncio.get_running_loop()
+        except RuntimeError:
+            self._home_loop = None
         self._agc = config.agc
         if self._agc is None and config.agc_config is not None:
             from roomkit.voice.pipeline.agc.simple import SimpleAGCProvider
@@ -291,7 +326,7 @@ class AudioPipeline:
             return
         for callback in callbacks:
             try:
-                _maybe_schedule(callback(subject, payload))
+                _maybe_schedule(callback(subject, payload), self._home_loop)
             except Exception:
                 logger.exception("%s callback error", label)
 
@@ -816,7 +851,7 @@ class AudioPipeline:
                 for cb in self._recording_started_callbacks:
                     try:
                         result = cb(session, handle)
-                        _maybe_schedule(result)
+                        _maybe_schedule(result, self._home_loop)
                     except Exception:
                         logger.exception("Recording started callback error")
             except Exception:
@@ -917,7 +952,7 @@ class AudioPipeline:
                 for cb in self._recording_stopped_callbacks:
                     try:
                         result = cb(session, recording_result)
-                        _maybe_schedule(result)
+                        _maybe_schedule(result, self._home_loop)
                     except Exception:
                         logger.exception("Recording stopped callback error")
             except Exception:

@@ -139,9 +139,12 @@ class VoicePipelineMixin:
         chain runs on the caller's thread exactly as before. With a pool,
         the frame is queued FIFO under the session's stream and processed
         by one worker at a time — the RFC §12 stage order is untouched,
-        only *where* the chain executes moves. The pipeline callbacks
-        (VAD, speech end, audio level) were already thread-tolerant:
-        every production backend may deliver audio from its own thread.
+        only *where* the chain executes moves. Sync pipeline callbacks
+        run wherever the chain runs. An *async* callback's coroutine is
+        sent to the pipeline's home loop by ``_maybe_schedule`` — a pool
+        worker has no running loop, and before that fallback existed the
+        coroutines (the realtime provider's audio feed, the audio-level
+        hooks) were silently dropped while every sync path kept working.
         """
         pipeline = self._pipeline
         if pipeline is None:
