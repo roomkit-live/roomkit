@@ -114,6 +114,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   recording becomes speaker turns, enters a room, and an AI channel writes the
   minutes.
 
+### Added
+
+- **Offline AEC bench — `scripts/aec_bench.py`.** The upcoming echo-path
+  work needs a judge that is not an ear: the bench consumes an
+  `aec-dump/1` capture (a JSONL event stream preserving, in arrival
+  order, every reference frame the canceller was fed, every capture
+  frame with its processed output, and the per-stream activation
+  toggles), scores it in 100 ms windows — per-window attenuation over
+  echo-active windows, with quiet, too-faint and probable-doubletalk
+  windows classified out rather than mis-scored — and replays the same
+  events through a fresh `WebRTCAECProvider` under different settings
+  (`--delay-ms`, `--ns`) for a side-by-side comparison on the exact audio
+  that exposed a problem.  Doubletalk is judged against the dump's own
+  echo median: the reference RMS is a digital level and the capture RMS
+  an acoustic one, so no fixed ratio between the two scales means
+  anything.  The recorder half lives in the host application (RoomKit
+  UI's `AECDumpRecorder`) — the format header is the contract.
+
 ### Fixed
 
 - **`inbound_dsp_threads` silently unplugged every async pipeline callback —
