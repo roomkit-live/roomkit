@@ -1442,6 +1442,12 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
     async def _on_tool_call(
         self, session: VoiceSession, state: _GeminiSessionState, tool_call: Any
     ) -> None:
+        # A tool call is the model acting on the user's utterance — the
+        # utterance is over. Flush its final before emitting the call, for the
+        # same reason as the output-transcription flush: consumers must see
+        # the user final ahead of everything the model does in answer to it
+        # (a late final reads as new user speech downstream).
+        await self._flush_transcription_buffer(session, "user")
         for fc in tool_call.function_calls:
             state.pending_tool_calls += 1
             args_dict = dict(fc.args) if fc.args else {}

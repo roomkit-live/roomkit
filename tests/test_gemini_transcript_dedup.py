@@ -133,6 +133,31 @@ async def test_user_final_is_emitted_before_the_replys_first_chunk(provider, ses
     assert state.response_started is True
 
 
+async def test_tool_call_flushes_the_user_final_first(provider, session):
+    """A tool round has no model_turn yet — the function_call itself is the
+    model acting on the utterance, so the user final must precede it (the
+    field capture: partials → tool line → late final → duplicated entry)."""
+    state = provider._sessions[session.id]
+    timeline: list[tuple[str, ...]] = []
+    provider.on_transcription(
+        lambda sess, text, role, is_final: timeline.append(("tx", text, role, str(is_final)))
+    )
+    provider.on_tool_call(lambda sess, call_id, name, args: timeline.append(("tool", name)))
+
+    await provider._handle_transcription_chunk(session, "Cherche dans Luge", "user", False)
+    await provider._on_tool_call(
+        session,
+        state,
+        SimpleNamespace(function_calls=[SimpleNamespace(name="luge_cli", id="fc_1", args=None)]),
+    )
+
+    assert timeline == [
+        ("tx", "Cherche dans Luge", "user", "False"),
+        ("tx", "Cherche dans Luge", "user", "True"),
+        ("tool", "luge_cli"),
+    ]
+
+
 async def test_reply_chunk_ahead_of_model_turn_still_flushes_the_user_first(
     provider, session, calls
 ):

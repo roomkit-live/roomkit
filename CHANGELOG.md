@@ -25,6 +25,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Gemini Live emitted tool calls ahead of the user's final.** Same
+  inversion as below through the tool path: a function_call arrives before any
+  `model_turn`, so the user transcript stayed buffered across the whole tool
+  round and its late final read as new user speech. A tool call is the model
+  acting on the utterance — the user buffer now flushes before the call is
+  emitted.
 - **Gemini Live emitted the reply's transcript ahead of the user's final.**
   Without VAD events, Gemini only finalises the user transcript when the model
   starts replying — and one server message can carry both the reply's first
