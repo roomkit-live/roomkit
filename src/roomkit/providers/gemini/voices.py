@@ -1,10 +1,12 @@
-"""Curated catalog of Google Gemini Live (native-audio) voices.
+"""Curated catalog of Google Gemini prebuilt voices.
 
-Hand-maintained, offline list returned by ``GeminiLiveProvider.available_voices``.
-Sourced from the Gemini API speech-generation docs — native-audio output draws
-from the same 30 prebuilt TTS voices. The set is fixed (no live list endpoint);
-refresh against the docs when it changes. Gender is not documented by Google, so
-only the single-word characterization is captured.
+Hand-maintained, offline list returned by both
+``GeminiLiveProvider.available_voices`` and
+``GeminiTTSProvider.available_voices`` — one table, because Live native-audio
+output and the standalone TTS models draw from the same 30 prebuilt voices.
+Sourced from the Gemini API speech-generation docs. The set is fixed (no live
+list endpoint); refresh against the docs when it changes. Gender is not
+documented by Google, so only the single-word characterization is captured.
 """
 
 from __future__ import annotations

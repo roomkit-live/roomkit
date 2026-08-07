@@ -380,6 +380,7 @@ from roomkit.providers.sms.mock import MockSMSProvider
 from roomkit.voice import (
     get_deepgram_provider, get_deepgram_config,
     get_elevenlabs_provider, get_elevenlabs_config,
+    get_gemini_tts_provider, get_gemini_tts_config,
     get_sherpa_onnx_stt_provider, get_sherpa_onnx_tts_provider,
     get_local_audio_backend,
     get_fastrtc_backend,

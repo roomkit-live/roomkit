@@ -87,6 +87,7 @@ stt = DeepgramSTTProvider(DeepgramConfig(
 | Qwen3 | `Qwen3TTSProvider` | `Qwen3TTSConfig` | `roomkit[qwen-tts]` |
 | NeuTTS | `NeuTTSProvider` | `NeuTTSConfig` | `roomkit[neutts]` |
 | Grok TTS | `GrokTTSProvider` | `GrokTTSConfig` | xAI |
+| Gemini TTS | `GeminiTTSProvider` | `GeminiTTSConfig` | `roomkit[gemini]` |
 | Mock | `MockTTSProvider` | — | built-in |
 
 ```python

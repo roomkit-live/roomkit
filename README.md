@@ -110,7 +110,7 @@ RoomKit's core has a single dependency (`pydantic`). Everything else is optional
 pip install roomkit                    # core only
 pip install roomkit[anthropic]         # + Anthropic Claude
 pip install roomkit[openai]            # + OpenAI GPT
-pip install roomkit[gemini]            # + Google Gemini
+pip install roomkit[gemini]            # + Google Gemini AI and TTS
 
 # Voice & video
 pip install roomkit[fastrtc]           # WebRTC audio
@@ -261,7 +261,7 @@ All stages are optional. AEC and AGC are automatically skipped when the backend 
 | Denoiser | Noise reduction | RNNoise, SherpaOnnx |
 | AEC | Acoustic echo cancellation | Speex |
 | STT | Speech-to-text | Deepgram, SherpaOnnx, Qwen, Gradium |
-| TTS | Text-to-speech | ElevenLabs, SherpaOnnx, Qwen, Gradium, Grok |
+| TTS | Text-to-speech | ElevenLabs, Gemini, SherpaOnnx, Qwen, Gradium, Grok |
 | Diarization | Speaker identification | Pluggable |
 | DTMF | Tone detection (parallel) | Pluggable |
 

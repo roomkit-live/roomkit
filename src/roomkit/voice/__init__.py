@@ -416,6 +416,20 @@ def get_grok_tts_config() -> type:
     return GrokTTSConfig
 
 
+def get_gemini_tts_provider() -> type:
+    """Get GeminiTTSProvider class (requires google-genai)."""
+    from roomkit.voice.tts.gemini import GeminiTTSProvider
+
+    return GeminiTTSProvider
+
+
+def get_gemini_tts_config() -> type:
+    """Get GeminiTTSConfig class."""
+    from roomkit.voice.tts.gemini import GeminiTTSConfig
+
+    return GeminiTTSConfig
+
+
 def get_openai_realtime_provider() -> type:
     """Get OpenAIRealtimeProvider class (requires openai, websockets)."""
     from roomkit.providers.openai.realtime import OpenAIRealtimeProvider
