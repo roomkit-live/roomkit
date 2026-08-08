@@ -824,6 +824,49 @@ class TestHookContextSkip:
 
         assert order == [("Salut !", False), ("Salut !", True)]
 
+    async def test_tool_calls_never_overtake_earlier_transcriptions(
+        self,
+        kit: RoomKit,
+        room_id: str,
+    ) -> None:
+        """The user final that closes an utterance is emitted just before the
+        tool call acting on it. Transcriptions travel the serialised queue
+        while tool calls run in their own task — unbarriered, the tool
+        reached the application first and the late final read as new user
+        speech (field capture: tool row at .801, user final at .836).
+        """
+        from roomkit.voice.realtime.mock import MockRealtimeProvider
+
+        timeline: list[str] = []
+
+        async def tool_handler(name: str, arguments: dict) -> str:
+            timeline.append(f"tool:{name}")
+            return "{}"
+
+        provider = MockRealtimeProvider()
+        channel = RealtimeVoiceChannel(
+            "voice",
+            provider=provider,
+            transport=MockRealtimeTransport(),
+            tool_handler=tool_handler,
+        )
+        kit.register_channel(channel)
+        await kit.attach_channel(room_id, "voice")
+
+        @kit.hook(HookTrigger.ON_TRANSCRIPTION, HookExecution.SYNC)
+        async def on_final(event: object, ctx: RoomContext) -> None:
+            # Model the real transcription-path latency (persistent-store
+            # write, RoomEvent emission) that let the tool task overtake.
+            await asyncio.sleep(0.05)
+            timeline.append(f"tx:{event.text}")  # type: ignore[attr-defined]
+
+        session = await channel.start_session(room_id, "user-1", "fake-ws")
+        await provider.simulate_transcription(session, "Quelle heure ?", "user", True)
+        await provider.simulate_tool_call(session, "call-1", "get_current_time", {})
+        await asyncio.sleep(0.3)
+
+        assert timeline == ["tx:Quelle heure ?", "tool:get_current_time"]
+
     async def test_speech_events_skip_context_without_hooks(
         self,
         kit: RoomKit,

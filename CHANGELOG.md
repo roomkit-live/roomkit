@@ -25,6 +25,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Realtime tool calls could overtake the transcription that triggered
+  them.** Transcriptions travel a per-session serialised queue; tool calls run
+  in their own task. Even with providers emitting the user final before the
+  call, the tool could reach the application first — the tool row closed the
+  user's chat entry and the late final re-rendered it (captured in the field:
+  tool execution at .801, user final at .836). Tool handling now passes
+  through the same per-session FIFO lock as a barrier before executing, and
+  releases it during execution so tools never hold transcriptions back.
 - **Gemini Live emitted tool calls ahead of the user's final.** Same
   inversion as below through the tool path: a function_call arrives before any
   `model_turn`, so the user transcript stayed buffered across the whole tool

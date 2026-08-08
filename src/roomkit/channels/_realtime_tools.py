@@ -71,6 +71,7 @@ class RealtimeToolsHost(Protocol):
     _provider: RealtimeVoiceProvider
     _transport: VoiceBackend
     _framework: RoomKit | None
+    _transcription_order_locks: dict[str, asyncio.Lock]
     channel_id: str
     _telemetry_provider: Any
 
@@ -98,6 +99,7 @@ class RealtimeToolsMixin:
     _provider: RealtimeVoiceProvider
     _transport: VoiceBackend
     _framework: RoomKit | None
+    _transcription_order_locks: dict[str, asyncio.Lock]
     channel_id: str
     _telemetry_provider: Any
 
@@ -134,6 +136,18 @@ class RealtimeToolsMixin:
         The ``ON_TOOL_CALL`` hook is then fired (handler result, if any,
         is passed as ``event.result`` so the hook can observe or override).
         """
+        # Order barrier: a tool call must not overtake the transcriptions the
+        # provider emitted before it. The user final that closes the current
+        # utterance travels the serialised transcription queue, while tool
+        # calls run in their own task — unbarriered, the tool reaches the
+        # application first and the late final reads as new user speech.
+        # Pass through the same FIFO lock, then release: tool execution
+        # itself must not hold transcriptions back.
+        with self._state_lock:
+            order_lock = self._transcription_order_locks.setdefault(session.id, asyncio.Lock())
+        async with order_lock:
+            pass
+
         with self._state_lock:
             room_id = self._session_rooms.get(session.id)
             _rt_parent = self._session_spans.get(session.id)
