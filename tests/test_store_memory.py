@@ -143,14 +143,14 @@ class TestEventOperations:
     async def test_list_events(self, store: InMemoryStore) -> None:
         await store.create_room(Room(id="r1"))
         for i in range(5):
-            await store.add_event(make_event(room_id="r1", body=f"msg{i}"))
+            await store.add_event(make_event(room_id="r1", body=f"msg{i}", index=i))
         events = await store.list_events("r1")
         assert len(events) == 5
 
     async def test_list_events_pagination(self, store: InMemoryStore) -> None:
         await store.create_room(Room(id="r1"))
         for i in range(10):
-            await store.add_event(make_event(room_id="r1", body=f"msg{i}"))
+            await store.add_event(make_event(room_id="r1", body=f"msg{i}", index=i))
         page = await store.list_events("r1", offset=2, limit=3)
         assert len(page) == 3
 
@@ -158,7 +158,7 @@ class TestEventOperations:
         """The offset default is the *head* of the room — oldest events first."""
         await store.create_room(Room(id="r1"))
         for i in range(10):
-            await store.add_event(make_event(room_id="r1", body=f"msg{i}"))
+            await store.add_event(make_event(room_id="r1", body=f"msg{i}", index=i))
         page = await store.list_events("r1", limit=3)
         assert [e.content.body for e in page] == ["msg0", "msg1", "msg2"]
 
@@ -170,7 +170,7 @@ class TestEventOperations:
         it shows recent history instead of the room's opening events."""
         await store.create_room(Room(id="r1"))
         for i in range(10):
-            await store.add_event(make_event(room_id="r1", body=f"msg{i}"))
+            await store.add_event(make_event(room_id="r1", body=f"msg{i}", index=i))
         page = await store.list_events("r1", limit=3, newest_first=True)
         assert [e.content.body for e in page] == ["msg7", "msg8", "msg9"]
 
@@ -178,7 +178,7 @@ class TestEventOperations:
         """Offset counts back from the newest end when ``newest_first`` is set."""
         await store.create_room(Room(id="r1"))
         for i in range(10):
-            await store.add_event(make_event(room_id="r1", body=f"msg{i}"))
+            await store.add_event(make_event(room_id="r1", body=f"msg{i}", index=i))
         page = await store.list_events("r1", limit=3, offset=3, newest_first=True)
         assert [e.content.body for e in page] == ["msg4", "msg5", "msg6"]
 
@@ -186,7 +186,7 @@ class TestEventOperations:
         """Fewer events than ``limit``: return them all, ascending, no crash."""
         await store.create_room(Room(id="r1"))
         for i in range(2):
-            await store.add_event(make_event(room_id="r1", body=f"msg{i}"))
+            await store.add_event(make_event(room_id="r1", body=f"msg{i}", index=i))
         page = await store.list_events("r1", limit=100, newest_first=True)
         assert [e.content.body for e in page] == ["msg0", "msg1"]
 
@@ -207,9 +207,9 @@ class TestEventOperations:
 class TestDeleteEvent:
     async def test_delete_cascades_to_replies(self, store: InMemoryStore) -> None:
         await store.create_room(Room(id="r1"))
-        root = make_event(room_id="r1", body="root")
-        reply = make_event(room_id="r1", body="reply", parent_event_id=root.id)
-        other = make_event(room_id="r1", body="unrelated")
+        root = make_event(room_id="r1", body="root", index=0)
+        reply = make_event(room_id="r1", body="reply", parent_event_id=root.id, index=1)
+        other = make_event(room_id="r1", body="unrelated", index=2)
         for event in (root, reply, other):
             await store.add_event(event)
 
@@ -223,8 +223,8 @@ class TestDeleteEvent:
 
     async def test_delete_without_cascade(self, store: InMemoryStore) -> None:
         await store.create_room(Room(id="r1"))
-        root = make_event(room_id="r1", body="root")
-        reply = make_event(room_id="r1", body="reply", parent_event_id=root.id)
+        root = make_event(room_id="r1", body="root", index=0)
+        reply = make_event(room_id="r1", body="reply", parent_event_id=root.id, index=1)
         for event in (root, reply):
             await store.add_event(event)
 
@@ -247,6 +247,20 @@ class TestDeleteEvent:
         await store.add_event(event)
         await store.delete_event("r1", event.id)
         assert await store.check_idempotency("r1", "key1") is False
+
+    async def test_commit_after_deleting_latest_keeps_index_monotonic(
+        self, store: InMemoryStore
+    ) -> None:
+        """Deleting history must never make a later commit reuse an index."""
+        await store.create_room(Room(id="r1"))
+        first = await store.commit_event("r1", make_event(room_id="r1", body="first"))
+        second = await store.commit_event("r1", make_event(room_id="r1", body="second"))
+
+        await store.delete_event("r1", second.id)
+        third = await store.commit_event("r1", make_event(room_id="r1", body="third"))
+
+        assert [first.index, second.index, third.index] == [0, 1, 2]
+        assert [event.index for event in await store.list_events("r1")] == [0, 2]
 
 
 class TestBindingOperations:
@@ -321,16 +335,16 @@ class TestParticipantOperations:
 class TestReadTracking:
     async def test_unread_count_initial(self, store: InMemoryStore) -> None:
         await store.create_room(Room(id="r1"))
-        for _ in range(3):
-            await store.add_event(make_event(room_id="r1"))
+        for index in range(3):
+            await store.add_event(make_event(room_id="r1", index=index))
         count = await store.get_unread_count("r1", "ch1")
         assert count == 3
 
     async def test_mark_read(self, store: InMemoryStore) -> None:
         await store.create_room(Room(id="r1"))
         events = []
-        for _ in range(3):
-            e = make_event(room_id="r1")
+        for index in range(3):
+            e = make_event(room_id="r1", index=index)
             await store.add_event(e)
             events.append(e)
         await store.mark_read("r1", "ch1", events[1].id)
@@ -339,8 +353,8 @@ class TestReadTracking:
 
     async def test_mark_all_read(self, store: InMemoryStore) -> None:
         await store.create_room(Room(id="r1"))
-        for _ in range(3):
-            await store.add_event(make_event(room_id="r1"))
+        for index in range(3):
+            await store.add_event(make_event(room_id="r1", index=index))
         await store.mark_all_read("r1", "ch1")
         count = await store.get_unread_count("r1", "ch1")
         assert count == 0
@@ -348,8 +362,8 @@ class TestReadTracking:
     async def test_list_read_markers(self, store: InMemoryStore) -> None:
         await store.create_room(Room(id="r1"))
         events = []
-        for _ in range(3):
-            e = make_event(room_id="r1")
+        for index in range(3):
+            e = make_event(room_id="r1", index=index)
             await store.add_event(e)
             events.append(e)
         await store.mark_read("r1", "ch1", events[2].id)
@@ -536,9 +550,9 @@ class TestFindRooms:
 class TestListEventsVisibilityFilter:
     async def test_visibility_filter(self, store: InMemoryStore) -> None:
         await store.create_room(Room(id="r1"))
-        e1 = make_event(room_id="r1", body="public", visibility="all")
-        e2 = make_event(room_id="r1", body="internal", visibility="internal")
-        e3 = make_event(room_id="r1", body="public2", visibility="all")
+        e1 = make_event(room_id="r1", body="public", visibility="all", index=0)
+        e2 = make_event(room_id="r1", body="internal", visibility="internal", index=1)
+        e3 = make_event(room_id="r1", body="public2", visibility="all", index=2)
         await store.add_event(e1)
         await store.add_event(e2)
         await store.add_event(e3)
@@ -622,6 +636,19 @@ class TestCursorPagination:
             await store.add_event_auto_index("r1", make_event(room_id="r1", body=f"msg{i}"))
         events = await store.list_events("r1", after_index=10)
         assert events == []
+
+    async def test_auto_index_does_not_reuse_deleted_latest_index(
+        self, store: InMemoryStore
+    ) -> None:
+        """The lower-level auto-index path owns a monotonic sequence too."""
+        await store.create_room(Room(id="r1"))
+        first = await store.add_event_auto_index("r1", make_event(room_id="r1", body="first"))
+        second = await store.add_event_auto_index("r1", make_event(room_id="r1", body="second"))
+
+        await store.delete_event("r1", second.id)
+        third = await store.add_event_auto_index("r1", make_event(room_id="r1", body="third"))
+
+        assert [first.index, second.index, third.index] == [0, 1, 2]
 
 
 class TestDeleteRoomCleanup:

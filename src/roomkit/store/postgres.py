@@ -110,6 +110,31 @@ async def _insert_event(conn: Any, event: RoomEvent) -> None:
     )
 
 
+async def _reserve_event_index(conn: Any, room_id: str) -> int:
+    """Atomically reserve and return a room's next monotonic event index."""
+    row = await conn.fetchrow(
+        "INSERT INTO event_sequences(room_id, next_index) VALUES($1, 1)"
+        " ON CONFLICT(room_id) DO UPDATE"
+        " SET next_index = event_sequences.next_index + 1"
+        " RETURNING next_index - 1 AS event_index",
+        room_id,
+    )
+    if row is None:  # pragma: no cover - INSERT .. RETURNING always returns
+        raise RuntimeError(f"Could not reserve an event index for room {room_id!r}")
+    return int(row["event_index"])
+
+
+async def _observe_event_index(conn: Any, room_id: str, event_index: int) -> None:
+    """Keep automatic assignment ahead of caller-supplied event indexes."""
+    await conn.execute(
+        "INSERT INTO event_sequences(room_id, next_index) VALUES($1, $2)"
+        " ON CONFLICT(room_id) DO UPDATE"
+        " SET next_index = GREATEST(event_sequences.next_index, EXCLUDED.next_index)",
+        room_id,
+        event_index + 1,
+    )
+
+
 class PostgresSchemaError(RuntimeError):
     """Raised when the database schema needs an explicit, opt-in migration.
 
@@ -725,7 +750,8 @@ class PostgresStore(ConversationStore):
 
     async def add_event(self, event: RoomEvent) -> RoomEvent:
         with self._query_span("add_event", "events"):
-            async with self._acquire() as conn:
+            async with self._acquire() as conn, conn.transaction():
+                await _observe_event_index(conn, event.room_id, event.index)
                 await _insert_event(conn, event)
         return event
 
@@ -963,21 +989,12 @@ class PostgresStore(ConversationStore):
     async def add_event_auto_index(self, room_id: str, event: RoomEvent) -> RoomEvent:
         """Atomically assign the next index and store the event in one transaction.
 
-        Uses ``SELECT ... FOR UPDATE`` on the rooms table to serialise
-        concurrent index assignments for the same room.
+        A per-room high-water mark serialises concurrent assignments and is
+        never decremented when events are deleted.
         """
         with self._query_span("add_event_auto_index", "events"):
             async with self._acquire() as conn, conn.transaction():
-                await conn.fetchrow(
-                    "SELECT id FROM rooms WHERE id = $1 FOR UPDATE",
-                    room_id,
-                )
-                row = await conn.fetchrow(
-                    "SELECT COALESCE(MAX(index), -1) + 1 AS next_idx"
-                    " FROM events WHERE room_id = $1",
-                    room_id,
-                )
-                next_idx = row["next_idx"]
+                next_idx = await _reserve_event_index(conn, room_id)
                 indexed = event.model_copy(update={"index": next_idx})
                 await _insert_event(conn, indexed)
         return indexed
@@ -985,9 +1002,9 @@ class PostgresStore(ConversationStore):
     async def commit_event(self, room_id: str, event: RoomEvent) -> RoomEvent:
         """Atomic commit (RFC §10.1 step 12 / §8.1 / §14.3) in ONE transaction.
 
-        ``SELECT ... FOR UPDATE`` on the room row serializes concurrent commits
-        for the same room across connections (i.e. across processes); the index
-        is computed, the event inserted, and the room counters
+        ``SELECT ... FOR UPDATE`` on the room row serializes counter updates
+        for the same room across connections (i.e. across processes); a
+        per-room high-water mark reserves the index, then the event and counters
         (``event_count`` / ``latest_index`` / ``timers.last_activity_at``)
         updated together, so the timeline and the counters can never diverge —
         even under a crash or without a cross-process room lock.
@@ -998,12 +1015,7 @@ class PostgresStore(ConversationStore):
                     "SELECT * FROM rooms WHERE id = $1 FOR UPDATE",
                     room_id,
                 )
-                row = await conn.fetchrow(
-                    "SELECT COALESCE(MAX(index), -1) + 1 AS next_idx"
-                    " FROM events WHERE room_id = $1",
-                    room_id,
-                )
-                next_idx = row["next_idx"]
+                next_idx = await _reserve_event_index(conn, room_id)
                 indexed = event.model_copy(update={"index": next_idx})
                 await _insert_event(conn, indexed)
                 if room_row is not None:

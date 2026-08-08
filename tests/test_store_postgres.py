@@ -273,6 +273,27 @@ class TestEventOperations:
         assert await store.delete_event("r2", event.id) == []
         assert await store.get_event(event.id) is not None
 
+    async def test_commit_after_deleting_latest_keeps_index_monotonic(self, store) -> None:
+        await store.create_room(Room(id="r1"))
+        first = await store.commit_event("r1", _make_event(room_id="r1", body="first"))
+        second = await store.commit_event("r1", _make_event(room_id="r1", body="second"))
+
+        await store.delete_event("r1", second.id)
+        third = await store.commit_event("r1", _make_event(room_id="r1", body="third"))
+
+        assert [first.index, second.index, third.index] == [0, 1, 2]
+        assert [event.index for event in await store.list_events("r1")] == [0, 2]
+
+    async def test_auto_index_after_deleting_latest_keeps_index_monotonic(self, store) -> None:
+        await store.create_room(Room(id="r1"))
+        first = await store.add_event_auto_index("r1", _make_event(room_id="r1"))
+        second = await store.add_event_auto_index("r1", _make_event(room_id="r1"))
+
+        await store.delete_event("r1", second.id)
+        third = await store.add_event_auto_index("r1", _make_event(room_id="r1"))
+
+        assert [first.index, second.index, third.index] == [0, 1, 2]
+
 
 class TestBindingOperations:
     async def test_add_and_get(self, store) -> None:

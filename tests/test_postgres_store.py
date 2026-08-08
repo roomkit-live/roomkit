@@ -400,6 +400,12 @@ class TestPostgresStore:
         assert "SET connected_via = ARRAY[channel_id]" in postgres_schema.SCHEMA
         assert "connected_via[1] IS DISTINCT FROM channel_id" in postgres_schema.SCHEMA
 
+    def test_schema_tracks_monotonic_event_high_water_marks(self) -> None:
+        from roomkit.store import postgres_schema
+
+        assert "CREATE TABLE IF NOT EXISTS event_sequences" in postgres_schema.SCHEMA
+        assert "GREATEST(event_sequences.next_index" in postgres_schema.SCHEMA
+
     def test_thread_index_is_composite_under_a_new_name(self) -> None:
         """The thread-reply index carries (parent_event_id, index) under a name
         distinct from the legacy single-column idx_events_parent — so init()'s
@@ -692,6 +698,7 @@ class TestPostgresStore:
         event = _make_event()
         result = await store.add_event(event)
         assert result.id == event.id
+        assert "event_sequences" in mock_conn.execute.await_args_list[0].args[0]
         call_args = mock_conn.execute.call_args
         assert "INSERT INTO events" in call_args[0][0]
 
@@ -913,14 +920,10 @@ class TestPostgresStore:
     async def test_add_event_auto_index(self) -> None:
         store, mock_conn = _make_store_with_pool()
         event = _make_event()
-        # First fetchrow: lock row (FOR UPDATE)
-        # Second fetchrow: get next index
-        mock_conn.fetchrow.side_effect = [
-            {"id": "room-1"},  # SELECT FOR UPDATE
-            {"next_idx": 3},  # COALESCE(MAX(...))
-        ]
+        mock_conn.fetchrow.return_value = {"event_index": 3}
         result = await store.add_event_auto_index("room-1", event)
         assert result.index == 3
+        assert "event_sequences" in mock_conn.fetchrow.call_args.args[0]
         # execute should have been called for the INSERT
         mock_conn.execute.assert_awaited_once()
         call_args = mock_conn.execute.call_args

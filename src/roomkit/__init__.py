@@ -159,7 +159,7 @@ from roomkit.providers.ai import ModelPricing
 from roomkit.providers.image import ImageProvider, ImageResult, MockImageProvider
 from roomkit.sandbox import SandboxExecutor, SandboxResult
 from roomkit.skills import ScriptExecutor, Skill, SkillMetadata, SkillRegistry
-from roomkit.store import ConversationStore, InMemoryStore
+from roomkit.store import ConversationStore, InMemoryStore, SQLiteSchemaError, SQLiteStore
 from roomkit.telemetry.redaction import content_logging_enabled, set_content_logging
 from roomkit.tools.base import Tool
 from roomkit.tools.human_input import HumanInputHandler, HumanInputToolHandler
@@ -341,6 +341,8 @@ __all__ = [
     "ConversationStore",
     "EventFilter",
     "InMemoryStore",
+    "SQLiteSchemaError",
+    "SQLiteStore",
     "PersistencePolicy",
     # Locking (extension point — RFC §13.5)
     "InMemoryLockManager",

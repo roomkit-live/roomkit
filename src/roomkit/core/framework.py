@@ -252,21 +252,16 @@ class RoomKit(
         self._hook_engine = HookEngine()
         self._lock_manager = lock_manager or InMemoryLockManager()
         # A persistent store paired with an in-process lock is unsafe if the
-        # store is shared across processes: per-process locks do not coordinate,
-        # so concurrent workers can assign duplicate event indices (RFC §13.5).
-        # SQLite is exempt: its commit path assigns the index inside a BEGIN
-        # IMMEDIATE transaction, so the database file itself serialises
-        # writers — other processes included.
-        from roomkit.store.sqlite import SQLiteStore
-
-        if not isinstance(self._store, InMemoryStore | SQLiteStore) and isinstance(
+        # store is shared across processes: per-process locks do not coordinate
+        # the full inbound pipeline or its idempotency decisions (RFC §13.5).
+        if not self._store.is_process_local and isinstance(
             self._lock_manager, InMemoryLockManager
         ):
             logger.warning(
                 "%s is paired with InMemoryLockManager. This is safe only in a "
                 "single process; if the store is shared across processes (e.g. a "
                 "load-balanced deployment), use a distributed lock manager such "
-                "as PostgresAdvisoryLockManager to avoid duplicate event indices.",
+                "as PostgresAdvisoryLockManager with PostgresStore.",
                 type(self._store).__name__,
             )
         # Delivery lanes (RFC §10.2): broadcast planned under the room lock,

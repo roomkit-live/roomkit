@@ -25,7 +25,9 @@ from __future__ import annotations
 import asyncio
 import re
 import sqlite3
+from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from functools import partial
 from pathlib import Path
@@ -39,6 +41,8 @@ from roomkit.models.room import Room
 from roomkit.models.store_filter import EventFilter
 from roomkit.models.task import Observation, Task
 from roomkit.store.base import ConversationStore
+
+_SCHEMA_VERSION = 2
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS rooms(
@@ -65,8 +69,14 @@ CREATE TABLE IF NOT EXISTS events(
     data TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_events_room ON events(room_id);
-CREATE INDEX IF NOT EXISTS idx_events_room_idx ON events(room_id, idx);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_events_room_idx ON events(room_id, idx);
 CREATE INDEX IF NOT EXISTS idx_events_room_parent ON events(room_id, parent_event_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_events_idempotency
+    ON events(room_id, idempotency_key) WHERE idempotency_key IS NOT NULL;
+CREATE TABLE IF NOT EXISTS event_sequences(
+    room_id TEXT PRIMARY KEY,
+    next_index INTEGER NOT NULL DEFAULT 0 CHECK(next_index >= 0)
+);
 CREATE TABLE IF NOT EXISTS bindings(
     room_id TEXT NOT NULL,
     channel_id TEXT NOT NULL,
@@ -143,6 +153,111 @@ def _load_event(data: str) -> RoomEvent:
     return RoomEvent.model_validate_json(data)
 
 
+@contextmanager
+def _write_transaction(conn: sqlite3.Connection) -> Iterator[None]:
+    """Run one immediate SQLite transaction with reliable rollback."""
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        yield
+        conn.execute("COMMIT")
+    except BaseException:
+        if conn.in_transaction:
+            conn.execute("ROLLBACK")
+        raise
+
+
+class SQLiteSchemaError(RuntimeError):
+    """Raised when a SQLite file cannot be migrated or is from a newer schema."""
+
+
+def _populate_event_sequences(conn: sqlite3.Connection) -> None:
+    """Advance sequence rows from both live events and historical room tallies."""
+    conn.execute(
+        """INSERT INTO event_sequences(room_id, next_index)
+           SELECT room_id, MAX(idx) + 1 FROM events GROUP BY room_id
+           ON CONFLICT(room_id) DO UPDATE SET
+               next_index = MAX(event_sequences.next_index, excluded.next_index)"""
+    )
+    for room_id, data in conn.execute("SELECT id, data FROM rooms"):
+        room = Room.model_validate_json(data)
+        # event_count is a never-decremented tally, so it distinguishes an
+        # untouched room (latest_index's model default is 0) from one whose
+        # highest event was deleted.
+        historical_next = room.latest_index + 1 if room.event_count > 0 else 0
+        conn.execute(
+            """INSERT INTO event_sequences(room_id, next_index) VALUES(?, ?)
+               ON CONFLICT(room_id) DO UPDATE SET
+                   next_index = MAX(event_sequences.next_index, excluded.next_index)""",
+            (room_id, historical_next),
+        )
+
+
+def _create_schema(conn: sqlite3.Connection) -> None:
+    try:
+        conn.executescript(f"BEGIN IMMEDIATE;\n{_SCHEMA}")
+        _populate_event_sequences(conn)
+        conn.execute(f"PRAGMA user_version={_SCHEMA_VERSION}")
+        conn.execute("COMMIT")
+    except BaseException:
+        if conn.in_transaction:
+            conn.execute("ROLLBACK")
+        raise
+
+
+def _migrate_v1_to_v2(conn: sqlite3.Connection) -> None:
+    duplicate_index = conn.execute(
+        """SELECT room_id, idx FROM events GROUP BY room_id, idx
+           HAVING COUNT(*) > 1 LIMIT 1"""
+    ).fetchone()
+    if duplicate_index is not None:
+        raise SQLiteSchemaError(
+            "SQLite schema v1 contains duplicate (room_id, index) rows; "
+            "deduplicate them before upgrading to v2"
+        )
+    duplicate_key = conn.execute(
+        """SELECT room_id, idempotency_key FROM events
+           WHERE idempotency_key IS NOT NULL
+           GROUP BY room_id, idempotency_key HAVING COUNT(*) > 1 LIMIT 1"""
+    ).fetchone()
+    if duplicate_key is not None:
+        raise SQLiteSchemaError(
+            "SQLite schema v1 contains duplicate idempotency keys; "
+            "deduplicate them before upgrading to v2"
+        )
+    try:
+        # v1 used this same name for a non-unique index. It must be removed so
+        # the v2 CREATE UNIQUE INDEX is not skipped by IF NOT EXISTS.
+        migration = "BEGIN IMMEDIATE;\nDROP INDEX IF EXISTS idx_events_room_idx;\n" + _SCHEMA
+        conn.executescript(migration)
+        _populate_event_sequences(conn)
+        conn.execute(f"PRAGMA user_version={_SCHEMA_VERSION}")
+        conn.execute("COMMIT")
+    except BaseException:
+        if conn.in_transaction:
+            conn.execute("ROLLBACK")
+        raise
+
+
+def _ensure_schema(conn: sqlite3.Connection) -> None:
+    version = int(conn.execute("PRAGMA user_version").fetchone()[0])
+    if version > _SCHEMA_VERSION:
+        raise SQLiteSchemaError(
+            f"SQLite schema version {version} is newer than supported version "
+            f"{_SCHEMA_VERSION}; upgrade RoomKit before opening this file"
+        )
+    if version == 0:
+        _create_schema(conn)
+    elif version == 1:
+        _migrate_v1_to_v2(conn)
+    elif version == _SCHEMA_VERSION:
+        # Additive repair for a partially initialized v2 file. The version is
+        # never rewritten, and all statements are idempotent.
+        conn.executescript(_SCHEMA)
+        _populate_event_sequences(conn)
+    else:
+        raise SQLiteSchemaError(f"Unsupported SQLite schema version {version}")
+
+
 class SQLiteStore(ConversationStore):
     """Single-file persistent store backed by stdlib ``sqlite3`` + FTS5."""
 
@@ -165,11 +280,14 @@ class SQLiteStore(ConversationStore):
         if self._conn is None:
             Path(self._path).expanduser().parent.mkdir(parents=True, exist_ok=True)
             conn = sqlite3.connect(str(Path(self._path).expanduser()), isolation_level=None)
-            conn.row_factory = sqlite3.Row
-            conn.execute("PRAGMA journal_mode=WAL")
-            conn.execute("PRAGMA synchronous=NORMAL")
-            conn.executescript(_SCHEMA)
-            conn.execute("PRAGMA user_version=1")
+            try:
+                conn.row_factory = sqlite3.Row
+                _ensure_schema(conn)
+                conn.execute("PRAGMA journal_mode=WAL")
+                conn.execute("PRAGMA synchronous=NORMAL")
+            except BaseException:
+                conn.close()
+                raise
             self._conn = conn
         return self._conn
 
@@ -252,6 +370,36 @@ class SQLiteStore(ConversationStore):
                 "INSERT INTO events_fts(text, event_id, room_id) VALUES(?, ?, ?)",
                 (text, event.id, event.room_id),
             )
+        self._observe_event_index(conn, event.room_id, event.index)
+
+    @staticmethod
+    def _reserve_event_index(conn: sqlite3.Connection, room_id: str) -> int:
+        """Reserve the next room index inside the caller's write transaction."""
+        conn.execute(
+            "INSERT OR IGNORE INTO event_sequences(room_id, next_index) VALUES(?, 0)",
+            (room_id,),
+        )
+        row = conn.execute(
+            "SELECT next_index FROM event_sequences WHERE room_id = ?", (room_id,)
+        ).fetchone()
+        if row is None:  # pragma: no cover - guarded by the INSERT above
+            raise RuntimeError(f"Could not reserve an event index for room {room_id!r}")
+        index = int(row[0])
+        conn.execute(
+            "UPDATE event_sequences SET next_index = ? WHERE room_id = ?",
+            (index + 1, room_id),
+        )
+        return index
+
+    @staticmethod
+    def _observe_event_index(conn: sqlite3.Connection, room_id: str, event_index: int) -> None:
+        """Keep auto-indexing ahead of indexes supplied by store callers."""
+        conn.execute(
+            """INSERT INTO event_sequences(room_id, next_index) VALUES(?, ?)
+               ON CONFLICT(room_id) DO UPDATE SET
+                   next_index = MAX(event_sequences.next_index, excluded.next_index)""",
+            (room_id, event_index + 1),
+        )
 
     # -- Room operations ---------------------------------------------------
 
@@ -259,7 +407,8 @@ class SQLiteStore(ConversationStore):
         return await self._run(self._x_create_room, room)
 
     def _x_create_room(self, room: Room) -> Room:
-        self._db().execute(
+        conn = self._db()
+        conn.execute(
             "INSERT OR REPLACE INTO rooms(id, created_ts, organization_id, status,"
             " delivered_index, data) VALUES(?, ?, ?, ?, ?, ?)",
             (
@@ -270,6 +419,10 @@ class SQLiteStore(ConversationStore):
                 room.delivered_index,
                 room.model_dump_json(),
             ),
+        )
+        conn.execute(
+            "INSERT OR IGNORE INTO event_sequences(room_id, next_index) VALUES(?, 0)",
+            (room.id,),
         )
         return room
 
@@ -360,21 +513,15 @@ class SQLiteStore(ConversationStore):
         self, room_id: str, patch: dict[str, Any], unset: tuple[str, ...]
     ) -> Room | None:
         conn = self._db()
-        conn.execute("BEGIN IMMEDIATE")
-        try:
+        with _write_transaction(conn):
             row = conn.execute("SELECT * FROM rooms WHERE id = ?", (room_id,)).fetchone()
             if row is None:
-                conn.execute("ROLLBACK")
                 return None
             room = self._row_to_room(row)
             metadata = {k: v for k, v in room.metadata.items() if k not in set(unset)}
             metadata.update(patch)
             room = room.model_copy(update={"metadata": metadata, "updated_at": datetime.now(UTC)})
             conn.execute("UPDATE rooms SET data=? WHERE id=?", (room.model_dump_json(), room_id))
-            conn.execute("COMMIT")
-        except BaseException:
-            conn.execute("ROLLBACK")
-            raise
         return room
 
     async def delete_room(self, room_id: str) -> bool:
@@ -382,8 +529,7 @@ class SQLiteStore(ConversationStore):
 
     def _x_delete_room(self, room_id: str) -> bool:
         conn = self._db()
-        conn.execute("BEGIN IMMEDIATE")
-        try:
+        with _write_transaction(conn):
             cur = conn.execute("DELETE FROM rooms WHERE id = ?", (room_id,))
             existed = cur.rowcount > 0
             for table in (
@@ -394,13 +540,10 @@ class SQLiteStore(ConversationStore):
                 "observations",
                 "read_markers",
                 "idempotency",
+                "event_sequences",
                 "events_fts",
             ):
                 conn.execute(f"DELETE FROM {table} WHERE room_id = ?", (room_id,))  # nosec B608 — fragments are internal, values parameterised
-            conn.execute("COMMIT")
-        except BaseException:
-            conn.execute("ROLLBACK")
-            raise
         return existed
 
     async def list_rooms(self, offset: int = 0, limit: int = 50) -> list[Room]:
@@ -525,13 +668,8 @@ class SQLiteStore(ConversationStore):
 
     def _x_add_event(self, event: RoomEvent) -> RoomEvent:
         conn = self._db()
-        conn.execute("BEGIN IMMEDIATE")
-        try:
+        with _write_transaction(conn):
             self._write_event_row(conn, event)
-            conn.execute("COMMIT")
-        except BaseException:
-            conn.execute("ROLLBACK")
-            raise
         return event
 
     async def get_event(self, event_id: str) -> RoomEvent | None:
@@ -546,13 +684,8 @@ class SQLiteStore(ConversationStore):
 
     def _x_update_event(self, event: RoomEvent) -> RoomEvent:
         conn = self._db()
-        conn.execute("BEGIN IMMEDIATE")
-        try:
+        with _write_transaction(conn):
             self._write_event_row(conn, event, replace=True)
-            conn.execute("COMMIT")
-        except BaseException:
-            conn.execute("ROLLBACK")
-            raise
         return event
 
     async def delete_event(
@@ -562,13 +695,11 @@ class SQLiteStore(ConversationStore):
 
     def _x_delete_event(self, room_id: str, event_id: str, cascade_replies: bool) -> list[str]:
         conn = self._db()
-        conn.execute("BEGIN IMMEDIATE")
-        try:
+        with _write_transaction(conn):
             root = conn.execute(
                 "SELECT 1 FROM events WHERE id = ? AND room_id = ?", (event_id, room_id)
             ).fetchone()
             if root is None:
-                conn.execute("ROLLBACK")
                 return []
             deleted = [event_id]
             if cascade_replies:
@@ -590,10 +721,6 @@ class SQLiteStore(ConversationStore):
                 )
             conn.execute(f"DELETE FROM events WHERE id IN ({marks})", deleted)  # nosec B608 — fragments are internal, values parameterised
             conn.execute(f"DELETE FROM events_fts WHERE event_id IN ({marks})", deleted)  # nosec B608 — fragments are internal, values parameterised
-            conn.execute("COMMIT")
-        except BaseException:
-            conn.execute("ROLLBACK")
-            raise
         return deleted
 
     async def list_events(
@@ -749,17 +876,10 @@ class SQLiteStore(ConversationStore):
 
     def _x_add_event_auto_index(self, room_id: str, event: RoomEvent) -> RoomEvent:
         conn = self._db()
-        conn.execute("BEGIN IMMEDIATE")
-        try:
-            count = conn.execute(
-                "SELECT COUNT(*) FROM events WHERE room_id = ?", (room_id,)
-            ).fetchone()[0]
-            indexed = event.model_copy(update={"index": count})
+        with _write_transaction(conn):
+            index = self._reserve_event_index(conn, room_id)
+            indexed = event.model_copy(update={"index": index})
             self._write_event_row(conn, indexed)
-            conn.execute("COMMIT")
-        except BaseException:
-            conn.execute("ROLLBACK")
-            raise
         return indexed
 
     async def commit_event(self, room_id: str, event: RoomEvent) -> RoomEvent:
@@ -770,12 +890,9 @@ class SQLiteStore(ConversationStore):
         in one SQLite transaction, so the timeline and the room counters can
         never be observed diverged."""
         conn = self._db()
-        conn.execute("BEGIN IMMEDIATE")
-        try:
-            count = conn.execute(
-                "SELECT COUNT(*) FROM events WHERE room_id = ?", (room_id,)
-            ).fetchone()[0]
-            indexed = event.model_copy(update={"index": count})
+        with _write_transaction(conn):
+            index = self._reserve_event_index(conn, room_id)
+            indexed = event.model_copy(update={"index": index})
             self._write_event_row(conn, indexed)
             row = conn.execute("SELECT * FROM rooms WHERE id = ?", (room_id,)).fetchone()
             if row is not None:
@@ -792,10 +909,6 @@ class SQLiteStore(ConversationStore):
                 conn.execute(
                     "UPDATE rooms SET data=? WHERE id=?", (room.model_dump_json(), room_id)
                 )
-            conn.execute("COMMIT")
-        except BaseException:
-            conn.execute("ROLLBACK")
-            raise
         return indexed
 
     # -- Full-text search --------------------------------------------------
@@ -1014,8 +1127,7 @@ class SQLiteStore(ConversationStore):
 
     def _x_create_identity(self, identity: Identity) -> Identity:
         conn = self._db()
-        conn.execute("BEGIN IMMEDIATE")
-        try:
+        with _write_transaction(conn):
             conn.execute(
                 "INSERT OR REPLACE INTO identities(id, data) VALUES(?, ?)",
                 (identity.id, identity.model_dump_json()),
@@ -1027,10 +1139,6 @@ class SQLiteStore(ConversationStore):
                         " identity_id) VALUES(?, ?, ?)",
                         (channel_type, address, identity.id),
                     )
-            conn.execute("COMMIT")
-        except BaseException:
-            conn.execute("ROLLBACK")
-            raise
         return identity
 
     async def get_identity(self, identity_id: str) -> Identity | None:

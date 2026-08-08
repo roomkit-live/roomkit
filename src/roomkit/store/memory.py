@@ -19,10 +19,15 @@ from roomkit.store.base import ConversationStore
 class InMemoryStore(ConversationStore):
     """Dict-based in-memory store for development and testing."""
 
+    is_process_local = True
+
     def __init__(self) -> None:
         self._rooms: dict[str, Room] = {}
         self._events: dict[str, RoomEvent] = {}
         self._room_events: dict[str, list[str]] = {}
+        # Next authoritative event index per room. This is a sequence, not the
+        # current event count: hard deletion never makes an old index reusable.
+        self._next_event_index: dict[str, int] = {}
         self._bindings: dict[str, dict[str, ChannelBinding]] = {}
         self._participants: dict[str, dict[str, Participant]] = {}
         self._idempotency: dict[str, set[str]] = {}
@@ -82,11 +87,18 @@ class InMemoryStore(ConversationStore):
             self._room_locks[room_id] = asyncio.Lock()
         return self._room_locks[room_id]
 
+    def _reserve_event_index(self, room_id: str) -> int:
+        """Return and advance the room sequence while its lock is held."""
+        index = self._next_event_index.get(room_id, 0)
+        self._next_event_index[room_id] = index + 1
+        return index
+
     # Room operations
 
     async def create_room(self, room: Room) -> Room:
         self._rooms[room.id] = room
         self._room_events.setdefault(room.id, [])
+        self._next_event_index.setdefault(room.id, 0)
         self._bindings.setdefault(room.id, {})
         self._participants.setdefault(room.id, {})
         self._idempotency.setdefault(room.id, set())
@@ -151,6 +163,7 @@ class InMemoryStore(ConversationStore):
         self._participants.pop(room_id, None)
         self._idempotency.pop(room_id, None)
         self._read_markers.pop(room_id, None)
+        self._next_event_index.pop(room_id, None)
         self._room_locks.pop(room_id, None)
         return True
 
@@ -249,6 +262,9 @@ class InMemoryStore(ConversationStore):
         event = event.model_copy(deep=True)
         self._events[event.id] = event
         self._room_events.setdefault(event.room_id, []).append(event.id)
+        self._next_event_index[event.room_id] = max(
+            self._next_event_index.get(event.room_id, 0), event.index + 1
+        )
         if event.idempotency_key:
             self._idempotency.setdefault(event.room_id, set()).add(event.idempotency_key)
         return event
@@ -391,10 +407,12 @@ class InMemoryStore(ConversationStore):
         return len(self._room_events.get(room_id, []))
 
     async def add_event_auto_index(self, room_id: str, event: RoomEvent) -> RoomEvent:
-        """Atomically assign index = len(room_events) and append."""
+        """Atomically reserve the room's next monotonic index and append."""
         async with self._lock_for(room_id):
             events = self._room_events.setdefault(room_id, [])
-            indexed = event.model_copy(update={"index": len(events)}, deep=True)
+            indexed = event.model_copy(
+                update={"index": self._reserve_event_index(room_id)}, deep=True
+            )
             self._events[indexed.id] = indexed
             events.append(indexed.id)
             if indexed.idempotency_key:
@@ -407,7 +425,7 @@ class InMemoryStore(ConversationStore):
         timeline and the counters can never diverge."""
         async with self._lock_for(room_id):
             events = self._room_events.setdefault(room_id, [])
-            index = len(events)
+            index = self._reserve_event_index(room_id)
             indexed = event.model_copy(update={"index": index}, deep=True)
             self._events[indexed.id] = indexed
             events.append(indexed.id)

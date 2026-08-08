@@ -25,6 +25,13 @@ class ConversationStore(ABC):
     The library ships with `InMemoryStore` for development and testing.
     """
 
+    # Capability used by RoomKit's lock-manager pairing guard. Persistent
+    # backends are conservatively assumed shareable across processes; a truly
+    # process-local implementation can opt out explicitly. This keeps the core
+    # dependent on the store contract rather than a growing list of concrete
+    # backend types.
+    is_process_local: bool = False
+
     # Connection tenure
 
     @asynccontextmanager

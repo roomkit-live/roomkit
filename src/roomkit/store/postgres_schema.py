@@ -31,6 +31,7 @@ V1_TABLES = [
     "identities",
     "participants",
     "bindings",
+    "event_sequences",
     "events",
     "rooms",
     "schema_version",
@@ -199,6 +200,26 @@ CREATE INDEX IF NOT EXISTS idx_events_parent_index
 CREATE INDEX IF NOT EXISTS idx_events_source ON events(source_channel_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_events_idempotency
     ON events(room_id, idempotency_key) WHERE idempotency_key IS NOT NULL;
+
+-- Per-room high-water marks make indexes monotonic even when the latest
+-- event is deleted. The UPSERT is an additive backfill for deployments that
+-- predate this table; room counters preserve commit_event history while the
+-- live MAX covers events inserted directly through add_event().
+CREATE TABLE IF NOT EXISTS event_sequences (
+    room_id    TEXT PRIMARY KEY REFERENCES rooms(id) ON DELETE CASCADE,
+    next_index INTEGER NOT NULL DEFAULT 0 CHECK (next_index >= 0)
+);
+INSERT INTO event_sequences(room_id, next_index)
+SELECT r.id,
+       GREATEST(
+           CASE WHEN r.event_count > 0 THEN r.latest_index + 1 ELSE 0 END,
+           COALESCE(MAX(e.index) + 1, 0)
+       )
+FROM rooms r
+LEFT JOIN events e ON e.room_id = r.id
+GROUP BY r.id, r.event_count, r.latest_index
+ON CONFLICT(room_id) DO UPDATE SET
+    next_index = GREATEST(event_sequences.next_index, EXCLUDED.next_index);
 
 -- bindings
 CREATE TABLE IF NOT EXISTS bindings (
