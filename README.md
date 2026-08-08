@@ -410,6 +410,7 @@ video = VideoChannel(
 
 ```python
 kit = RoomKit()                          # InMemoryStore (development)
+kit = RoomKit(store=SQLiteStore("roomkit.db"))  # Embedded, single process
 kit = RoomKit(store=PostgresStore(...))   # PostgreSQL (production)
 ```
 
@@ -509,7 +510,7 @@ src/roomkit/
   models/          Pydantic data models and enums
   memory/          AI context construction (SlidingWindow, Handoff-aware)
   orchestration/   Pipeline, Loop, Supervisor, Swarm
-  store/           Conversation persistence (Memory, Postgres)
+  store/           Conversation persistence (Memory, SQLite, Postgres)
   identity/        User identification resolution
   telemetry/       Tracing (Console, OpenTelemetry)
 ```

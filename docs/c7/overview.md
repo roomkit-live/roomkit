@@ -46,5 +46,5 @@ Inbound Message
 - **Async-first** — All I/O is async. No synchronous blocking.
 - **Pluggable everything** — Storage, identity, routing, AI providers, voice backends — all swappable via ABCs with in-memory defaults.
 - **Zero required deps** — Only `pydantic>=2.9`. Everything else is optional extras.
-- **Type-safe** — Strict mypy, full type hints, Pydantic models throughout.
+- **Type-safe** — CI-enforced `ty` checks, full type hints, Pydantic models throughout.
 - **Python 3.12+** — Uses modern syntax (`X | None`, not `Optional[X]`).

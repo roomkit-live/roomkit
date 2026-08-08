@@ -168,6 +168,8 @@ RoomKit exports **170 symbols** from `roomkit`. Providers and voice types import
 |--------|-------------|
 | `ConversationStore` | ABC for persistent room/event/binding/participant storage |
 | `InMemoryStore` | Dict-based in-memory store for development and testing |
+| `SQLiteStore` | Embedded stdlib SQLite store for single-process persistence |
+| `SQLiteSchemaError` | Unsupported or unsafe SQLite schema migration error |
 | `RoomLockManager` | ABC for per-room locking |
 | `InMemoryLockManager` | In-process per-room asyncio locks with LRU eviction |
 | `EventFilter` | Filter criteria for querying room events |

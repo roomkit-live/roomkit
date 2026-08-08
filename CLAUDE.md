@@ -127,7 +127,7 @@ src/roomkit/
 │   ├── tts/        # Text-to-speech (ElevenLabs, SherpaOnnx, Qwen, Gradium, Mock)
 │   ├── pipeline/   # 10 audio processing stages (VAD, AEC, AGC, Denoiser, etc.)
 │   └── realtime/   # Speech-to-speech (OpenAI Realtime, Gemini Live)
-├── store/          # Conversation persistence (Memory, Postgres)
+├── store/          # Conversation persistence (Memory, SQLite, Postgres)
 ├── realtime/       # Ephemeral events (typing, presence, reactions)
 ├── sources/        # Event-driven providers (WebSocket, SSE, Neonize)
 └── identity/       # User identification resolution

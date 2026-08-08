@@ -47,7 +47,7 @@ make all
 uv run ruff check src/roomkit/         # Lint check
 uv run ruff check src/roomkit/ --fix   # Lint fix
 uv run ruff format src/ tests/         # Format code
-uv run mypy src/roomkit/               # Type check (enforced in CI)
+uv run ty check src/roomkit/            # Type check (enforced in CI)
 uv run bandit -r src/ -c pyproject.toml # Security scan (enforced in CI)
 
 # Run tests
@@ -129,7 +129,8 @@ src/roomkit/
 ├── store/
 │   ├── base.py              # ConversationStore ABC
 │   ├── memory.py            # InMemoryStore (default)
-│   └── postgres.py          # PostgresStore (asyncpg, production)
+│   ├── sqlite.py            # SQLiteStore (embedded, single-process)
+│   └── postgres.py          # PostgresStore (asyncpg, multi-process)
 ├── realtime/
 │   ├── base.py              # RealtimeBackend ABC, EphemeralEvent, EphemeralEventType
 │   └── memory.py            # InMemoryRealtime (default)

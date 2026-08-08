@@ -128,9 +128,10 @@ Every core component follows the ABC + default pattern:
 Replace any component at construction:
 
 ```python
-from roomkit import RoomKit
+from roomkit import RoomKit, SQLiteStore
 from roomkit.store.postgres import PostgresStore
 
+embedded = RoomKit(store=SQLiteStore("roomkit.db"))
 kit = RoomKit(store=PostgresStore("postgresql://..."))
 ```
 

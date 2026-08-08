@@ -1,6 +1,9 @@
 # Storage
 
-RoomKit uses the `ConversationStore` ABC for persistence. The default `InMemoryStore` works out of the box. For production, use `PostgresStore`.
+RoomKit uses the `ConversationStore` ABC for persistence. Choose
+`InMemoryStore` for ephemeral development state, `SQLiteStore` for an embedded
+single-process deployment, or `PostgresStore` when several processes share the
+same conversations.
 
 ## InMemoryStore (Default)
 
@@ -11,6 +14,27 @@ kit = RoomKit()  # Uses InMemoryStore automatically
 ```
 
 Data lives in Python dicts — fast for development, lost on restart.
+
+## SQLiteStore
+
+`SQLiteStore` is included in the core package and uses only Python's stdlib
+`sqlite3`. It is suited to desktop applications, edge deployments, and small
+bots running in one process.
+
+```python
+from roomkit import RoomKit, SQLiteStore
+
+kit = RoomKit(store=SQLiteStore("roomkit.db"))
+```
+
+RoomKit closes the database when `await kit.close()` runs. SQLite history is
+stored as Pydantic JSON plus indexed query columns, and message text can be
+searched with `await kit.store.search_events("invoice", room_id="support")`.
+
+Do not share one SQLite file between RoomKit worker processes: SQLite
+serializes database writes, but it cannot serialize the complete inbound
+pipeline and its idempotency decisions. Use PostgreSQL with a distributed lock
+manager for horizontal scaling.
 
 ## PostgresStore
 
@@ -35,20 +59,21 @@ await store.init(min_size=5, max_size=20)  # Pool sizing via init()
 
 ### Schema
 
-PostgresStore creates 10 tables:
+PostgresStore creates 11 tables:
 
 | Table | Purpose |
 |-------|---------|
 | `rooms` | Room records with status, metadata, timers |
 | `events` | Event timeline with sequential indexing |
+| `event_sequences` | Per-room monotonic event-index high-water marks |
 | `participants` | Room participants with roles and status |
 | `bindings` | Channel-to-room bindings with config |
 | `identities` | Known identity records |
 | `tasks` | AI-extracted tasks |
 | `observations` | AI-extracted observations |
-| `delivery_status` | Message delivery tracking |
-| `read_tracking` | Per-channel read positions |
-| `telemetry_spans` | Telemetry span records |
+| `identity_addresses` | Multi-channel identity address lookup |
+| `read_markers` | Per-channel read positions |
+| `schema_version` | Schema migration tracking |
 
 ### Operations
 
@@ -83,7 +108,7 @@ from roomkit.store.postgres import PostgresStore
 
 async def main() -> None:
     store = PostgresStore(os.environ["DATABASE_URL"])
-    await store.initialize()
+    await store.init()
 
     kit = RoomKit(store=store)
 

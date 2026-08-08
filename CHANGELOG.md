@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.46.0] — 2026-08-08
+
 ### Added
 
 - **`SQLiteStore` — the embedded persistent conversation store.** One `.db`
@@ -19,11 +21,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   material for "what did we talk about last week?" recall. Every call runs on
   one dedicated worker thread (the event loop never blocks on disk I/O) and
   multi-statement operations commit as one `BEGIN IMMEDIATE` transaction, so
-  the index-assignment path is serialised by the database file itself — which
-  is why the framework's InMemoryLockManager pairing warning exempts it. The
-  whole `InMemoryStore` behavioural suite runs against it unchanged.
+  the index-assignment path is serialised by the database file itself. The
+  backend is intentionally single-process at the framework level: pairing it
+  with `InMemoryLockManager` emits the same warning as any shareable store,
+  because SQLite transactions cannot make the full inbound pipeline atomic
+  across workers. The whole `InMemoryStore` behavioural suite runs against it.
+
+- **`ConversationStore.is_process_local` — stores declare their own process
+  scope.** RoomKit warns when a shareable store is paired with
+  `InMemoryLockManager`, because per-process locks cannot serialise the inbound
+  pipeline across workers. That check used to test the store against a
+  hardcoded list of built-in classes, so a third-party backend could never be
+  recognised as process-local and every custom store drew the warning. The
+  capability now lives on the contract: the ABC defaults to `False` (persistent
+  backends are conservatively assumed shareable) and an implementation that is
+  genuinely confined to one process sets `is_process_local = True`, as
+  `InMemoryStore` does. Existing stores inherit the safe default and keep their
+  current behaviour.
 
 ### Fixed
+
+- **Event indexes remain monotonic after deletion in every shipped store.**
+  `InMemoryStore` and `SQLiteStore` derived the next index from the current
+  event count, while `PostgresStore` used `MAX(index) + 1`; deleting the latest
+  event therefore reused its index, violating the RFC timeline invariant.
+  All three backends now keep a per-room high-water mark. SQLite migrates v1
+  files to schema v2 on open, and enforces unique room indexes and idempotency
+  keys at the database boundary; a file written by a newer RoomKit, or a v1 file
+  already holding duplicates the v2 constraints would reject, raises the new
+  `SQLiteSchemaError` rather than opening in an inconsistent state. Postgres
+  gains an `event_sequences` table, created and backfilled from the existing
+  room counters by the additive schema batch `init()` already runs on connect —
+  no opt-in migration and no data loss for deployments upgrading in place.
+
+- **Gemini Live no longer drops legitimate repeated utterances without VAD.**
+  `turn_complete` now acts as the user-utterance boundary when Gemini omits
+  `ACTIVITY_START`, and a new assistant response resets final-transcript
+  deduplication before its first chunk — including messages that coalesce
+  `output_transcription` and `model_turn`.
 
 - **Realtime tool calls could overtake the transcription that triggered
   them.** Transcriptions travel a per-session serialised queue; tool calls run
@@ -33,12 +68,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   tool execution at .801, user final at .836). Tool handling now passes
   through the same per-session FIFO lock as a barrier before executing, and
   releases it during execution so tools never hold transcriptions back.
+
 - **Gemini Live emitted tool calls ahead of the user's final.** Same
   inversion as below through the tool path: a function_call arrives before any
   `model_turn`, so the user transcript stayed buffered across the whole tool
   round and its late final read as new user speech. A tool call is the model
   acting on the utterance — the user buffer now flushes before the call is
   emitted.
+
 - **Gemini Live emitted the reply's transcript ahead of the user's final.**
   Without VAD events, Gemini only finalises the user transcript when the model
   starts replying — and one server message can carry both the reply's first
@@ -47,6 +84,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   late user final read downstream as *new* user speech, producing a phantom
   barge-in and a duplicated user entry. The user buffer now flushes before any
   assistant transcription goes out.
+
 - **Gemini Live re-emitted final transcriptions as duplicates.** Gemini
   re-sends a finished utterance after the provider's buffer already flushed it
   at a lifecycle boundary (speech end, model turn); each re-emission reached
@@ -5127,7 +5165,8 @@ See entries `0.7.0a1` through `0.7.0a18` below.
 - `STTProvider.transcribe()` returns `TranscriptionResult` (Phase 3.1)
 - Framework event names enriched with payloads (Phase 4)
 
-[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.45.0...HEAD
+[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.46.0...HEAD
+[0.46.0]: https://github.com/roomkit-live/roomkit/compare/v0.45.0...v0.46.0
 [0.45.0]: https://github.com/roomkit-live/roomkit/compare/v0.44.0...v0.45.0
 [0.44.0]: https://github.com/roomkit-live/roomkit/compare/v0.43.0...v0.44.0
 [0.43.0]: https://github.com/roomkit-live/roomkit/compare/v0.42.1...v0.43.0
