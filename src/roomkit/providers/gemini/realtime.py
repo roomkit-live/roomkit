@@ -96,6 +96,13 @@ class _GeminiSessionState:
     queued_text_injections: list[tuple[str, str, bool]] = field(default_factory=list)
     # Last final transcription emitted per role — see _is_duplicate_final.
     last_final_text: dict[str, str] = field(default_factory=dict)
+    # Gemini does not always emit VAD boundaries. turn_complete then marks
+    # that the next input transcription belongs to a new user utterance.
+    awaiting_new_user_utterance: bool = False
+    # output_transcription can precede model_turn or share its server message.
+    # Track that boundary independently from response_started so the duplicate
+    # guard is reset exactly once, before the first assistant chunk is handled.
+    assistant_response_observed: bool = False
     # Effective config values, kept in sync across connect + reconfigure
     # so partial reconfigures (e.g. system_prompt-only) preserve the
     # other fields. Without these, ``_build_config`` (which treats
@@ -1346,6 +1353,7 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
             state.user_speech_active = True
             # New utterance: a repeat of the previous words is now legitimate.
             state.last_final_text.pop("user", None)
+            state.awaiting_new_user_utterance = False
             await self._fire(self._speech_start_callbacks, session, label="speech_start")
         elif vtype == "ACTIVITY_END":
             logger.info("[VAD] speech_end (session %s)", session.id)
@@ -1373,6 +1381,19 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
         if not state.response_started and ((out_tr and out_tr.text) or model_turn):
             await self._flush_transcription_buffer(session, "user")
 
+        # A response may first appear as output_transcription, as model_turn,
+        # or as both in one message. Lift the assistant duplicate guard before
+        # consuming that first chunk; doing it in the model_turn block below is
+        # too late for the coalesced form and would discard a valid repeated
+        # reply.
+        if (
+            not state.response_started
+            and not state.assistant_response_observed
+            and ((out_tr and out_tr.text) or model_turn)
+        ):
+            state.last_final_text.pop("assistant", None)
+            state.assistant_response_observed = True
+
         # Output transcription (model speech-to-text)
         if out_tr and out_tr.text:
             await self._handle_transcription_chunk(
@@ -1382,9 +1403,6 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
         # Model started generating
         if model_turn and not state.response_started:
             state.response_started = True
-            # New response: an assistant reply identical to the previous one
-            # is now legitimate.
-            state.last_final_text.pop("assistant", None)
             state.audio_chunk_count = 0
             logger.info("[Gemini] response_start (session %s)", session.id)
             self._log_event(session.id, "response_start", turn=state.turn_count)
@@ -1400,10 +1418,12 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
             if not state.user_speech_active:
                 state.user_speech_active = True
                 state.last_final_text.pop("user", None)
+                state.awaiting_new_user_utterance = False
                 await self._fire(self._speech_start_callbacks, session, label="speech_start")
             if state.response_started:
                 state.response_started = False
                 await self._fire(self._response_end_callbacks, session, label="response_end")
+            state.assistant_response_observed = False
 
         # Turn complete
         if getattr(content, "turn_complete", None):
@@ -1424,6 +1444,8 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
             await self._flush_transcription_buffer(session, "assistant")
             state.response_started = False
             state.user_speech_active = False
+            state.awaiting_new_user_utterance = True
+            state.assistant_response_observed = False
             await self._fire(self._response_end_callbacks, session, label="response_end")
 
     async def _on_audio_data(
@@ -1534,6 +1556,10 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
         self, session: VoiceSession, text: str, role: str, finished: bool
     ) -> None:
         """Accumulate transcription chunks and fire callback when complete."""
+        state = self._sessions.get(session.id)
+        if role == "user" and state is not None and state.awaiting_new_user_utterance:
+            state.last_final_text.pop("user", None)
+            state.awaiting_new_user_utterance = False
         full_text = self._transcription_buffer.append(session.id, role, text, finished)
         if full_text:
             if self._is_duplicate_final(session, role, full_text):

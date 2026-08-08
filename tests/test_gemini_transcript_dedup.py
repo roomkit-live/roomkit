@@ -97,6 +97,73 @@ async def test_identical_assistant_reply_next_turn_still_emits(provider, session
     assert _finals(calls) == [("Bonjour !", "assistant"), ("Bonjour !", "assistant")]
 
 
+async def test_identical_user_text_next_turn_without_vad_still_emits(provider, session, calls):
+    """Turn completion is the utterance boundary when ACTIVITY_START is absent."""
+    state = provider._sessions[session.id]
+    for reply in ("Première réponse", "Deuxième réponse"):
+        await provider._handle_transcription_chunk(session, "Oui", "user", False)
+        await provider._on_server_content(
+            session,
+            state,
+            SimpleNamespace(
+                input_transcription=None,
+                output_transcription=SimpleNamespace(text=reply, finished=False),
+                model_turn=object(),
+                interrupted=None,
+                turn_complete=None,
+            ),
+        )
+        await provider._on_server_content(
+            session,
+            state,
+            SimpleNamespace(
+                input_transcription=None,
+                output_transcription=None,
+                model_turn=None,
+                interrupted=None,
+                turn_complete=True,
+            ),
+        )
+
+    assert [item for item in _finals(calls) if item[1] == "user"] == [
+        ("Oui", "user"),
+        ("Oui", "user"),
+    ]
+
+
+async def test_identical_assistant_final_sharing_model_turn_still_emits(provider, session, calls):
+    """The new-response guard resets before a coalesced first transcript."""
+    state = provider._sessions[session.id]
+    await provider._handle_transcription_chunk(session, "Bonjour !", "assistant", True)
+    await provider._on_server_content(
+        session,
+        state,
+        SimpleNamespace(
+            input_transcription=None,
+            output_transcription=None,
+            model_turn=None,
+            interrupted=None,
+            turn_complete=True,
+        ),
+    )
+    await provider._on_server_content(
+        session,
+        state,
+        SimpleNamespace(
+            input_transcription=None,
+            output_transcription=SimpleNamespace(text="Bonjour !", finished=True),
+            model_turn=object(),
+            interrupted=None,
+            turn_complete=None,
+        ),
+    )
+
+    assert [item for item in _finals(calls) if item[1] == "assistant"] == [
+        ("Bonjour !", "assistant"),
+        ("Bonjour !", "assistant"),
+    ]
+
+
 async def test_partials_are_untouched_by_the_guard(provider, session, calls):
     await provider._handle_transcription_chunk(session, "Sal", "user", False)
     await provider._handle_transcription_chunk(session, "Sal", "user", False)
