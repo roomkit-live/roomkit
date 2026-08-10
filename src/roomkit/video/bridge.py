@@ -37,12 +37,23 @@ class VideoBridgeConfig:
         keyframe_interval_s: Send PLI to each source every N seconds.
             Ensures decoder recovery after packet loss on the outbound
             bridge-to-receiver path. Set to ``0`` to disable.
+        keyframe_wait_s: How long a target holds delta frames from a source
+            that has not delivered a keyframe yet (RFC §12.8).  A decoder fed
+            deltas from a mid-stream point renders garbage until the next
+            keyframe, so the bridge waits for one — but only this long: a
+            source that never answers PLI (a B2BUA that does not relay RTCP
+            feedback) would otherwise leave the target black forever, which is
+            worse than a briefly corrupt picture.  ``add_session`` already
+            requests a keyframe from every peer on join, so a cooperating
+            source answers well inside the default.  Set to ``0`` to forward
+            unconditionally.
     """
 
     enabled: bool = True
     max_participants: int = 10
     forwarding_strategy: Literal["forward"] = "forward"
     keyframe_interval_s: float = 5.0
+    keyframe_wait_s: float = 1.0
 
 
 @dataclass
@@ -82,6 +93,9 @@ class VideoBridge:
         # Per-target: set of source IDs that have delivered a keyframe.
         # Delta frames are gated until a keyframe initializes the decoder.
         self._keyframe_delivered: dict[str, set[str]] = {}
+        # (target_id, source_id) -> when that pair started holding deltas.
+        # Bounds the gate: see VideoBridgeConfig.keyframe_wait_s.
+        self._delta_hold_since: dict[tuple[str, str], float] = {}
 
     @property
     def config(self) -> VideoBridgeConfig:
@@ -184,6 +198,9 @@ class VideoBridge:
                 # Remove this session from other targets' delivered sets
                 for delivered in self._keyframe_delivered.values():
                     delivered.discard(session_id)
+                # Drop the hold timers this session appears in, either side
+                for pair in [p for p in self._delta_hold_since if session_id in p]:
+                    del self._delta_hold_since[pair]
                 logger.info(
                     "VideoBridge: removed session %s from room %s "
                     "(forwarded %d frames, %d keyframes)",
@@ -266,6 +283,7 @@ class VideoBridge:
             self._keyframe_counts.clear()
             self._last_keyframes.clear()
             self._keyframe_delivered.clear()
+            self._delta_hold_since.clear()
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -322,12 +340,51 @@ class VideoBridge:
                 return [bs for sid, bs in room.items() if sid != source_id]
         return []
 
+    def _may_forward(self, source_id: str, target_id: str, frame: VideoFrame) -> bool:
+        """Whether *target* may receive this frame from *source* yet (RFC §12.8).
+
+        A target's decoder needs a keyframe before deltas mean anything, so the
+        first deltas of a pair are held until one arrives — but for at most
+        ``keyframe_wait_s``.  Past that the source is presumed unable to answer
+        PLI, and forwarding a corrupt picture beats forwarding nothing.
+        """
+        if self._config.keyframe_wait_s <= 0:
+            return True
+
+        pair = (target_id, source_id)
+        now = time.monotonic()
+        with self._lock:
+            delivered = self._keyframe_delivered.setdefault(target_id, set())
+            if frame.keyframe:
+                delivered.add(source_id)
+                self._delta_hold_since.pop(pair, None)
+                return True
+            if source_id in delivered:
+                return True
+            waited = now - self._delta_hold_since.setdefault(pair, now)
+            if waited < self._config.keyframe_wait_s:
+                return False
+            # Give up on the gate for this pair, and warn exactly once —
+            # marking it delivered is what keeps the next delta from re-timing.
+            delivered.add(source_id)
+
+        logger.warning(
+            "VideoBridge: no keyframe from %s for %s after %.1fs — forwarding "
+            "delta frames anyway (source may not answer PLI)",
+            source_id[:8],
+            target_id[:8],
+            self._config.keyframe_wait_s,
+        )
+        return True
+
     def _send_to_target(
         self,
         source: VideoSession,
         target: _BridgedVideoSession,
         frame: VideoFrame,
     ) -> None:
+        if not self._may_forward(source.id, target.session.id, frame):
+            return
         try:
             if self._frame_processor is not None:
                 frame = self._frame_processor(target.session, frame)

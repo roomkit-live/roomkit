@@ -7,6 +7,7 @@ import asyncio
 import pytest
 
 from roomkit.video.backends.mock import MockVideoBackend
+from roomkit.video.base import VideoSession
 from roomkit.video.bridge import VideoBridge, VideoBridgeConfig
 from roomkit.video.video_frame import VideoFrame
 
@@ -301,26 +302,88 @@ class TestVideoBridge:
         # backend_a should NOT have received it back
         assert len(backend_a.sent_video) == 0
 
-    async def test_delta_frames_forwarded_without_keyframe(self) -> None:
-        """Delta frames are forwarded even without a preceding keyframe.
-
-        In bridge topologies the remote decoder handles recovery;
-        blocking delta frames would prevent video when the source
-        endpoint does not respond to PLI (e.g. B2BUA that doesn't
-        relay RTCP feedback).
-        """
-        backend = MockVideoBackend()
-        bridge = VideoBridge()
-
+    async def _pair(
+        self, bridge: VideoBridge, backend: MockVideoBackend
+    ) -> tuple[VideoSession, VideoSession]:
         s1 = await backend.connect("room-1", "user-1", "video")
         s2 = await backend.connect("room-1", "user-2", "video")
         bridge.add_session(s1, "room-1", backend)
         bridge.add_session(s2, "room-1", backend)
+        return s1, s2
 
-        # Delta frame passes through immediately
+    async def test_delta_frames_are_held_until_a_keyframe(self) -> None:
+        """A decoder fed deltas from mid-stream renders garbage (RFC §12.8)."""
+        backend = MockVideoBackend()
+        bridge = VideoBridge()
+        s1, _ = await self._pair(bridge, backend)
+
         bridge.forward(s1, _frame(b"\x01" * 50, keyframe=False))
         await asyncio.sleep(0)
+
+        assert backend.sent_video == []
+
+    async def test_a_keyframe_opens_the_gate_for_the_deltas_behind_it(self) -> None:
+        backend = MockVideoBackend()
+        bridge = VideoBridge()
+        s1, _ = await self._pair(bridge, backend)
+
+        bridge.forward(s1, _frame(keyframe=True))
+        bridge.forward(s1, _frame(b"\x01" * 50, keyframe=False))
+        await asyncio.sleep(0)
+
+        assert len(backend.sent_video) == 2
+
+    async def test_a_source_that_never_answers_pli_still_gets_through(self) -> None:
+        """The gate is bounded, and this is why.
+
+        A source endpoint that does not relay RTCP feedback (a B2BUA, say)
+        never sends the keyframe the gate waits for.  Holding deltas forever
+        would leave the target black permanently — worse than the briefly
+        corrupt picture forwarding them produces.
+        """
+        backend = MockVideoBackend()
+        bridge = VideoBridge(VideoBridgeConfig(keyframe_wait_s=0.01))
+        s1, _ = await self._pair(bridge, backend)
+
+        bridge.forward(s1, _frame(b"\x01" * 50, keyframe=False))
+        assert backend.sent_video == []  # held, at first
+
+        await asyncio.sleep(0.02)
+        bridge.forward(s1, _frame(b"\x02" * 50, keyframe=False))
+        bridge.forward(s1, _frame(b"\x03" * 50, keyframe=False))
+        await asyncio.sleep(0)
+
+        # Past the deadline the pair stops being gated at all.
+        assert len(backend.sent_video) == 2
+
+    async def test_the_gate_can_be_turned_off(self) -> None:
+        backend = MockVideoBackend()
+        bridge = VideoBridge(VideoBridgeConfig(keyframe_wait_s=0))
+        s1, _ = await self._pair(bridge, backend)
+
+        bridge.forward(s1, _frame(b"\x01" * 50, keyframe=False))
+        await asyncio.sleep(0)
+
         assert len(backend.sent_video) == 1
+
+    async def test_each_target_waits_for_its_own_keyframe(self) -> None:
+        """A late joiner is gated even though the stream is already flowing."""
+        backend = MockVideoBackend()
+        bridge = VideoBridge()
+        s1, _ = await self._pair(bridge, backend)
+        bridge.forward(s1, _frame(keyframe=True))
+        await asyncio.sleep(0)
+        assert len(backend.sent_video) == 1
+
+        s3 = await backend.connect("room-1", "user-3", "video")
+        bridge.add_session(s3, "room-1", backend)
+
+        bridge.forward(s1, _frame(b"\x01" * 50, keyframe=False))
+        await asyncio.sleep(0)
+
+        # s2 has its keyframe and receives the delta; s3 does not and waits.
+        assert len(backend.sent_video) == 2
+        assert s3.id not in [target for target, _ in backend.sent_video]
 
     async def test_readd_session_after_remove(self) -> None:
         """A session can be removed and re-added."""

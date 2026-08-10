@@ -102,6 +102,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The video bridge started every receiver mid-stream.** RFC Section 12.8 has
+  the bridge wait for a keyframe before forwarding delta frames to a session,
+  and the bridge tracked what it had delivered — but never consulted it, so a
+  joining participant was fed deltas from whatever point the stream had reached
+  and decoded a smear until the next keyframe happened along.
+
+  The wait is now real, and bounded by `VideoBridgeConfig.keyframe_wait_s`
+  (default 1s). The bound is the point: a sender that never answers PLI — a
+  B2BUA that does not relay RTCP feedback — would leave the receiver black
+  permanently, which is worse than the corrupt picture. Past the deadline the
+  bridge warns once per sender/receiver pair and forwards anyway. Set it to `0`
+  to keep the previous unconditional forwarding.
+
 - **Delivery retried errors that could never succeed.** RFC Section 13.2 says
   only errors marked retryable should trigger retries; the loop caught bare
   `Exception`, so a permanent failure — a rejected recipient, a revoked
