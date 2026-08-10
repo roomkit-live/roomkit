@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from fnmatch import fnmatch
 from pathlib import Path
 from typing import Any
 
@@ -25,19 +26,37 @@ class SkillMetadata:
     description: str
     license: str | None = None
     compatibility: str | None = None
-    allowed_tools: str | None = None
+    allowed_tools: str | list[str] | None = None
+    """Tool access patterns this skill gates (RFC §24.2).
+
+    Both frontmatter forms are accepted: a YAML list, which is what the RFC's
+    own example uses, and a comma-separated scalar. Entries are ``ToolPolicy``
+    globs, so ``search_*`` covers every tool whose name starts with ``search_``.
+    """
+
     extra_metadata: dict[str, str] = field(default_factory=dict)
 
     @property
     def gated_tool_names(self) -> list[str]:
-        """Parse ``allowed_tools`` into a list of tool names.
+        """The patterns this skill gates, one per entry.
 
-        The ``allowed_tools`` field is a comma-separated string.  Returns an
-        empty list when the field is ``None`` or blank.
+        Accepts either frontmatter form. Returns an empty list when the field
+        is ``None`` or blank. The entries are patterns, not names — match them
+        with :meth:`gates`, never with ``in``.
         """
         if not self.allowed_tools:
             return []
+        if isinstance(self.allowed_tools, list):
+            return [str(t).strip() for t in self.allowed_tools if str(t).strip()]
         return [t.strip() for t in self.allowed_tools.split(",") if t.strip()]
+
+    def gates(self, tool_name: str) -> bool:
+        """Whether this skill gates *tool_name* (RFC §24.2 glob semantics).
+
+        Uses the same ``fnmatch`` matching as :class:`~roomkit.tools.policy.ToolPolicy`,
+        so a skill and a policy agree on what a pattern covers.
+        """
+        return any(fnmatch(tool_name, pattern) for pattern in self.gated_tool_names)
 
 
 @dataclass

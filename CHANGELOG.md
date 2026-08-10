@@ -102,6 +102,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A skill's `allowed_tools` gated nothing.** RFC Section 24.2 makes those
+  entries ToolPolicy globs, and two things broke it. The frontmatter parser
+  stringified a YAML list into its own repr, so the list form — the one the
+  RFC's own example uses — became `"['search_*', 'fetch_*']"` and then split on
+  commas into fragments matching no tool. And both gating sites tested exact
+  membership, so even the scalar form gated only literal names: `search_*`
+  covered nothing.
+
+  Lists keep their items now, `SkillMetadata.allowed_tools` accepts either
+  form, and both sites match with `fnmatch` — the same matcher `ToolPolicy`
+  uses, so a skill and a policy agree on what a pattern covers. A skill
+  declaring `search_*` restricts every `search_` tool, which is what it always
+  claimed to do. Failures here were silent: nothing raised, nothing logged, and
+  the tools stayed visible to the model.
+
 - **A voice session could come back from ENDED.** RFC Section 12.1 makes ENDED
   terminal, and `VoiceSession.state` was a plain mutable field assigned in some
   forty places — the rule was unenforceable rather than enforced. Leaving ENDED

@@ -21,6 +21,10 @@ __all__ = [
 
 logger = logging.getLogger("roomkit.skills")
 
+FrontmatterValue = str | list[str]
+"""A SKILL.md frontmatter value: a scalar, or the YAML list form ``allowed_tools``
+uses in the RFC's own example."""
+
 _NAME_PATTERN = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 _NAME_MAX_LEN = 64
 _DESC_MAX_LEN = 1024
@@ -60,7 +64,7 @@ def find_skill_md(skill_dir: Path) -> Path | None:
     return None
 
 
-def parse_frontmatter(content: str) -> tuple[dict[str, str], str]:
+def parse_frontmatter(content: str) -> tuple[dict[str, FrontmatterValue], str]:
     """Split SKILL.md into frontmatter dict and body string.
 
     Tries yaml.safe_load first, falls back to simple key: value parsing.
@@ -84,19 +88,27 @@ def parse_frontmatter(content: str) -> tuple[dict[str, str], str]:
     return data, body
 
 
-def _parse_yaml_or_fallback(fm_text: str) -> dict[str, str]:
+def _parse_yaml_or_fallback(fm_text: str) -> dict[str, FrontmatterValue]:
     """Try yaml.safe_load, fall back to regex key-value parsing."""
     try:
         import yaml
 
         result = yaml.safe_load(fm_text)
         if isinstance(result, dict):
-            return {str(k): str(v) for k, v in result.items() if v is not None}
+            # A list value keeps its items. Stringifying it produced
+            # "['search_*', 'fetch_*']" — the literal repr — which then split
+            # on commas into "['search_*'" and "'fetch_*']", gating nothing.
+            # The RFC's own SKILL.md example uses the list form.
+            return {
+                str(k): [str(item) for item in v] if isinstance(v, list) else str(v)
+                for k, v in result.items()
+                if v is not None
+            }
     except Exception:
         logger.debug("YAML parse failed, falling back to regex parser")
 
     # Simple key: value parser
-    data: dict[str, str] = {}
+    data: dict[str, FrontmatterValue] = {}
     for line in fm_text.splitlines():
         match = re.match(r"^(\w[\w_-]*)\s*:\s*(.+)$", line.strip())
         if match:
@@ -106,11 +118,25 @@ def _parse_yaml_or_fallback(fm_text: str) -> dict[str, str]:
     return data
 
 
-def validate_metadata(data: dict[str, str], skill_dir: Path) -> list[str]:
+def _scalar(value: FrontmatterValue | None) -> str:
+    """Read a frontmatter value that is meant to be a scalar.
+
+    ``allowed_tools`` is the one field whose list form carries meaning. A list
+    written where a scalar belongs is joined rather than refused — a skill with
+    an odd ``license:`` line should still load.
+    """
+    if value is None:
+        return ""
+    if isinstance(value, list):
+        return ", ".join(str(item) for item in value)
+    return value
+
+
+def validate_metadata(data: dict[str, FrontmatterValue], skill_dir: Path) -> list[str]:
     """Validate parsed frontmatter data. Returns list of error strings."""
     errors: list[str] = []
 
-    name = data.get("name", "")
+    name = _scalar(data.get("name"))
     if not name:
         errors.append("Missing required field: name")
     elif not _NAME_PATTERN.match(name):
@@ -124,7 +150,7 @@ def validate_metadata(data: dict[str, str], skill_dir: Path) -> list[str]:
     if name and name != skill_dir.name:
         errors.append(f"Name {name!r} does not match directory name {skill_dir.name!r}")
 
-    description = data.get("description", "")
+    description = _scalar(data.get("description"))
     if not description:
         errors.append("Missing required field: description")
     elif len(description) > _DESC_MAX_LEN:
@@ -147,12 +173,12 @@ def parse_skill_metadata(skill_dir: Path) -> SkillMetadata:
     if errors:
         raise SkillValidationError(f"Validation failed for {skill_dir.name}: {'; '.join(errors)}")
 
-    extra = {k: v for k, v in data.items() if k not in _KNOWN_KEYS}
+    extra = {k: _scalar(v) for k, v in data.items() if k not in _KNOWN_KEYS}
     return SkillMetadata(
-        name=data["name"],
-        description=data["description"],
-        license=data.get("license"),
-        compatibility=data.get("compatibility"),
+        name=_scalar(data["name"]),
+        description=_scalar(data["description"]),
+        license=_scalar(data.get("license")) or None,
+        compatibility=_scalar(data.get("compatibility")) or None,
         allowed_tools=data.get("allowed_tools"),
         extra_metadata=extra,
     )
@@ -172,12 +198,12 @@ def parse_skill(skill_dir: Path) -> Skill:
     if errors:
         raise SkillValidationError(f"Validation failed for {skill_dir.name}: {'; '.join(errors)}")
 
-    extra = {k: v for k, v in data.items() if k not in _KNOWN_KEYS}
+    extra = {k: _scalar(v) for k, v in data.items() if k not in _KNOWN_KEYS}
     metadata = SkillMetadata(
-        name=data["name"],
-        description=data["description"],
-        license=data.get("license"),
-        compatibility=data.get("compatibility"),
+        name=_scalar(data["name"]),
+        description=_scalar(data["description"]),
+        license=_scalar(data.get("license")) or None,
+        compatibility=_scalar(data.get("compatibility")) or None,
         allowed_tools=data.get("allowed_tools"),
         extra_metadata=extra,
     )
