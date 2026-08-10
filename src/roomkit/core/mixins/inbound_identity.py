@@ -220,11 +220,19 @@ class InboundIdentityMixin(HelpersMixin):
                 id_result, event, room_id, context
             )
 
+        elif id_result.status == IdentificationStatus.CHALLENGE_SENT:
+            # The resolver has already put a challenge to the sender — the
+            # status is past tense — so the framework's part is to stop the
+            # message rather than send anything (RFC §10.1 step 5). Processing
+            # it anyway would answer a sender the resolver has just told us it
+            # cannot yet name.
+            raise _IdentityBlockedError(id_result.message or "identity_challenge_sent")
+
         elif id_result.status in (
             IdentificationStatus.UNKNOWN,
             IdentificationStatus.REJECTED,
         ):
-            event, resolved_identity = await self._handle_unknown_identity(
+            event, resolved_identity, pending_id_result = await self._handle_unknown_identity(
                 id_result, event, room_id, context
             )
 
@@ -288,8 +296,16 @@ class InboundIdentityMixin(HelpersMixin):
         event: Any,
         room_id: str,
         context: RoomContext,
-    ) -> tuple[Any, Identity | None]:
-        """Handle unknown/rejected identity — run hooks, return resolved identity or None."""
+    ) -> tuple[Any, Identity | None, IdentityResult | None]:
+        """Handle unknown/rejected identity — run hooks, return the outcome.
+
+        Every outcome ``IdentityHookResult`` can express is honoured here, the
+        same four the AMBIGUOUS path honours (RFC §11.3). A hook that answers
+        ``challenge()`` or ``pending()`` about an unknown sender means it about
+        an unknown sender in particular — that is the case those answers exist
+        for — so dropping them here left the sender's message processed as if
+        no hook had spoken.
+        """
         hook_result = await self._run_identity_hooks(
             room_id, HookTrigger.ON_IDENTITY_UNKNOWN, event, context, id_result
         )
@@ -311,8 +327,26 @@ class InboundIdentityMixin(HelpersMixin):
                     )
                 }
             )
-            return event, hook_result.identity
-        return event, None
+            return event, hook_result.identity, None
+        if hook_result and hook_result.status == IdentificationStatus.CHALLENGE_SENT:
+            if hook_result.inject:
+                await self._deliver_injected_events([hook_result.inject], room_id, context)
+            raise _IdentityBlockedError("identity_challenge_sent")
+        if hook_result and hook_result.status == IdentificationStatus.PENDING:
+            # The hook asked for a pending participant, so the resolver's
+            # UNKNOWN verdict is superseded by what the hook knows — carry the
+            # hook's own display name and candidates into the pending record.
+            return (
+                event,
+                None,
+                id_result.model_copy(
+                    update={
+                        "status": IdentificationStatus.PENDING,
+                        "candidates": hook_result.candidates or id_result.candidates,
+                    }
+                ),
+            )
+        return event, None, None
 
 
 def _sender_already_identified(event: Any, context: RoomContext) -> bool:

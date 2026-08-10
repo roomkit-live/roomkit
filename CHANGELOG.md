@@ -102,6 +102,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **An identity challenge let the sender straight in.** RFC Section 11.3 lists
+  four outcomes an `ON_IDENTITY_UNKNOWN` hook can return. The handler acted on
+  two. A hook answering `challenge()` — hold the message, make this sender
+  prove who they are — was discarded, and the message processed as though no
+  hook had spoken; `pending()` was discarded the same way. The
+  `ON_IDENTITY_AMBIGUOUS` handler beside it had always honoured all four, so
+  this was an asymmetry rather than a design decision, and the documented
+  challenge-an-unknown-sender pattern was the one that did not work.
+
+  A resolver returning `CHALLENGE_SENT` was dropped for the same reason one
+  level up: the dispatch had branches for the other five statuses and none for
+  that one, so a resolver reporting "I have sent this sender a verification
+  code" saw the message processed anyway. The status is past tense — the
+  challenge is already out — so the framework's part is to stop the message,
+  and the resolver's `message` becomes the block reason.
+
+  Both behaviours were already what the identity guide's status table
+  described. No API changed.
+
 - **A redelivered message was reported as refused.** RFC Section 13.4 has a
   repeated `idempotency_key` return the result of the first delivery without
   reprocessing. The second half held; the first came back as
