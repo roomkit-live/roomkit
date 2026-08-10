@@ -35,6 +35,7 @@ CONSOLE=1 uv run python examples/<example>.py
 | `voice_console_demo.py` | Console | RoomKitConsole dashboard demo with audio meters and colored logs |
 | `audio_level_vu_meter.py` | Audio levels | VU meter / audio level monitoring with LocalAudioBackend |
 | `wav_recorder.py` | Recording | Debug audio recording with WavFileRecorder pipeline stage |
+| `voice_sensitive_data.py` | Security | DTMF redaction and recording encryption at rest (RFC 17.6) |
 | `grok_tts.py` | TTS | xAI Grok text-to-speech provider demo |
 | `gemini_tts.py` | TTS | Gemini TTS provider API: one-shot, streaming deltas, `style_prompt` — writes WAV files |
 | `gemini_tts_room.py` | TTS + room | A room that speaks what you type: CLI channel → Gemini TTS → speakers, with expression tags |
