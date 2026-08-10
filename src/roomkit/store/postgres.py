@@ -1345,14 +1345,18 @@ class PostgresStore(ConversationStore):
             metadata=meta,
         )
 
-    async def resolve_identity(self, channel_type: str, address: str) -> Identity | None:
+    async def resolve_identity(
+        self, channel_type: str, address: str, organization_id: str | None = None
+    ) -> Identity | None:
         async with self._acquire() as conn:
             row = await conn.fetchrow(
                 "SELECT i.* FROM identity_addresses ia"
                 " JOIN identities i ON i.id = ia.identity_id"
-                " WHERE ia.channel_type = $1 AND ia.address = $2",
+                " WHERE ia.channel_type = $1 AND ia.address = $2"
+                " AND ia.organization_id = $3",
                 channel_type,
                 address,
+                organization_id or "",
             )
         if row is None:
             return None
@@ -1371,7 +1375,13 @@ class PostgresStore(ConversationStore):
             metadata=meta,
         )
 
-    async def link_address(self, identity_id: str, channel_type: str, address: str) -> None:
+    async def link_address(
+        self,
+        identity_id: str,
+        channel_type: str,
+        address: str,
+        organization_id: str | None = None,
+    ) -> None:
         async with self._acquire() as conn, conn.transaction():
             row = await conn.fetchrow(
                 "SELECT * FROM identities WHERE id = $1 FOR UPDATE",
@@ -1391,12 +1401,15 @@ class PostgresStore(ConversationStore):
                     ch_addr,
                 )
             await conn.execute(
-                "INSERT INTO identity_addresses (channel_type, address, identity_id)"
-                " VALUES ($1, $2, $3)"
-                " ON CONFLICT (channel_type, address) DO UPDATE SET identity_id = $3",
+                "INSERT INTO identity_addresses"
+                " (channel_type, address, identity_id, organization_id)"
+                " VALUES ($1, $2, $3, $4)"
+                " ON CONFLICT (channel_type, address, organization_id)"
+                " DO UPDATE SET identity_id = $3",
                 channel_type,
                 address,
                 identity_id,
+                organization_id or "",
             )
 
     # ── Task operations ──────────────────────────────────────────

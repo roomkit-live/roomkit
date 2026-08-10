@@ -33,7 +33,9 @@ class InMemoryStore(ConversationStore):
         self._idempotency: dict[str, set[str]] = {}
         self._read_markers: dict[str, dict[str, str]] = {}
         self._identities: dict[str, Identity] = {}
-        self._address_index: dict[tuple[str, str], str] = {}
+        # (channel_type, address, organization_id) — the empty string is
+        # the unscoped tenant, so every key has the same shape (RFC §17.2).
+        self._address_index: dict[tuple[str, str, str], str] = {}
         self._tasks: dict[str, Task] = {}
         self._room_tasks: dict[str, list[str]] = {}
         self._observations: dict[str, Observation] = {}
@@ -531,21 +533,29 @@ class InMemoryStore(ConversationStore):
         self._identities[identity.id] = identity
         for ch_type, addresses in identity.channel_addresses.items():
             for addr in addresses:
-                self._address_index[(ch_type, addr)] = identity.id
+                self._address_index[(ch_type, addr, identity.organization_id or "")] = identity.id
         return identity
 
     async def get_identity(self, identity_id: str) -> Identity | None:
         identity = self._identities.get(identity_id)
         return identity.model_copy(deep=True) if identity is not None else None
 
-    async def resolve_identity(self, channel_type: str, address: str) -> Identity | None:
-        identity_id = self._address_index.get((channel_type, address))
+    async def resolve_identity(
+        self, channel_type: str, address: str, organization_id: str | None = None
+    ) -> Identity | None:
+        identity_id = self._address_index.get((channel_type, address, organization_id or ""))
         if identity_id is None:
             return None
         identity = self._identities.get(identity_id)
         return identity.model_copy(deep=True) if identity is not None else None
 
-    async def link_address(self, identity_id: str, channel_type: str, address: str) -> None:
+    async def link_address(
+        self,
+        identity_id: str,
+        channel_type: str,
+        address: str,
+        organization_id: str | None = None,
+    ) -> None:
         identity = self._identities.get(identity_id)
         if identity is None:
             return
@@ -555,7 +565,10 @@ class InMemoryStore(ConversationStore):
             self._identities[identity_id] = identity.model_copy(
                 update={"channel_addresses": new_addresses}
             )
-        self._address_index[(channel_type, address)] = identity_id
+        # The empty string stands for "no organization" so the key shape is the
+        # same either way — and so an unscoped registration cannot be found by
+        # a scoped lookup, which is the isolation this key exists for.
+        self._address_index[(channel_type, address, organization_id or "")] = identity_id
 
     # Task operations
 

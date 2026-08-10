@@ -102,6 +102,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **An address resolved to one identity across every tenant.**
+  `identity_addresses` was keyed on `(channel_type, address)`, so a phone
+  number registered by one organization resolved to *that* organization's
+  identity for every other one — and a second tenant could not register the
+  same number at all, the insert collided. RFC Section 17.2 requires isolation
+  per organization. The key is now
+  `(channel_type, address, organization_id)`, and `resolve_identity()` /
+  `link_address()` take an optional `organization_id`.
+
+  A SQL primary key cannot hold NULL, so "no organization" is stored as the
+  empty string — a tenant like any other. The consequence is deliberate: an
+  unscoped lookup does **not** find a scoped registration. Were it otherwise,
+  omitting the organization would leak exactly as before.
+
+  **Migration.** SQLite moves to schema v3: the primary key cannot be altered
+  in place, so the table is rebuilt on first open, with existing rows carrying
+  the empty string — they resolve exactly as they did. A v1 file now travels
+  v1 → v2 → v3. Postgres adds the column and rebuilds the key with idempotent
+  DDL applied at `init()`.
+
+  **For custom stores:** `ConversationStore.resolve_identity` and
+  `link_address` gained an optional parameter. An implementation written
+  against the previous signature keeps working for its own callers — the
+  framework never calls these itself, an integrator's `IdentityResolver` does
+  — but it must add the parameter to participate in scoping.
+
 - **A store commit slower than `process_timeout` could be reported blocked.**
   RFC Section 13.6 forbids wrapping the commit in a cancellable unit whose
   expiry leaves a committed event reported as blocked, which is exactly what

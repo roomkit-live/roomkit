@@ -280,11 +280,36 @@ CREATE TABLE IF NOT EXISTS identities (
 );
 
 CREATE TABLE IF NOT EXISTS identity_addresses (
-    channel_type TEXT NOT NULL,
-    address      TEXT NOT NULL,
-    identity_id  TEXT NOT NULL REFERENCES identities(id) ON DELETE CASCADE,
-    PRIMARY KEY (channel_type, address)
+    channel_type    TEXT NOT NULL,
+    address         TEXT NOT NULL,
+    identity_id     TEXT NOT NULL REFERENCES identities(id) ON DELETE CASCADE,
+    organization_id TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (channel_type, address, organization_id)
 );
+
+-- An address is unique WITHIN an organization, not globally (RFC §17.2): the
+-- same number belongs to one person at one tenant and someone else at another.
+-- Existing rows carry the empty string, the unscoped tenant, which preserves
+-- what they resolved to before. The key is rebuilt only when it is still the
+-- two-column one, so init() stays idempotent.
+ALTER TABLE identity_addresses
+    ADD COLUMN IF NOT EXISTS organization_id TEXT NOT NULL DEFAULT '';
+
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM pg_index i
+        JOIN pg_class c ON c.oid = i.indrelid
+        WHERE c.relname = 'identity_addresses'
+          AND i.indisprimary
+          AND array_length(i.indkey::int[], 1) = 2
+    ) THEN
+        ALTER TABLE identity_addresses DROP CONSTRAINT identity_addresses_pkey;
+        ALTER TABLE identity_addresses
+            ADD PRIMARY KEY (channel_type, address, organization_id);
+    END IF;
+END $$;
 
 -- tasks
 CREATE TABLE IF NOT EXISTS tasks (

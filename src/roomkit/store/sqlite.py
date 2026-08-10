@@ -42,7 +42,7 @@ from roomkit.models.store_filter import EventFilter
 from roomkit.models.task import Observation, Task
 from roomkit.store.base import ConversationStore
 
-_SCHEMA_VERSION = 2
+_SCHEMA_VERSION = 3
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS rooms(
@@ -100,7 +100,8 @@ CREATE TABLE IF NOT EXISTS identity_addresses(
     channel_type TEXT NOT NULL,
     address TEXT NOT NULL,
     identity_id TEXT NOT NULL,
-    PRIMARY KEY(channel_type, address)
+    organization_id TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY(channel_type, address, organization_id)
 );
 CREATE TABLE IF NOT EXISTS tasks(
     id TEXT PRIMARY KEY,
@@ -238,6 +239,41 @@ def _migrate_v1_to_v2(conn: sqlite3.Connection) -> None:
         raise
 
 
+def _migrate_v2_to_v3(conn: sqlite3.Connection) -> None:
+    """Scope identity addresses by organization (RFC §17.2).
+
+    v2 keyed ``identity_addresses`` on ``(channel_type, address)``, so an
+    address belonged to one identity across every tenant. The key gains
+    ``organization_id``; SQLite cannot alter a primary key in place, so the
+    table is rebuilt. Existing rows carry the empty string — the unscoped
+    tenant — which preserves exactly what they resolved to before.
+    """
+    # One script: ``executescript`` commits any open transaction before it
+    # runs, so a second call would close the one opened here and leave the
+    # COMMIT below with nothing to commit.
+    rebuild = """BEGIN IMMEDIATE;
+CREATE TABLE identity_addresses_v3(
+    channel_type TEXT NOT NULL,
+    address TEXT NOT NULL,
+    identity_id TEXT NOT NULL,
+    organization_id TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY(channel_type, address, organization_id)
+);
+INSERT INTO identity_addresses_v3(channel_type, address, identity_id, organization_id)
+    SELECT channel_type, address, identity_id, '' FROM identity_addresses;
+DROP TABLE identity_addresses;
+ALTER TABLE identity_addresses_v3 RENAME TO identity_addresses;
+"""
+    try:
+        conn.executescript(rebuild + _SCHEMA)
+        conn.execute(f"PRAGMA user_version={_SCHEMA_VERSION}")
+        conn.execute("COMMIT")
+    except BaseException:
+        if conn.in_transaction:
+            conn.execute("ROLLBACK")
+        raise
+
+
 def _ensure_schema(conn: sqlite3.Connection) -> None:
     version = int(conn.execute("PRAGMA user_version").fetchone()[0])
     if version > _SCHEMA_VERSION:
@@ -249,6 +285,9 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
         _create_schema(conn)
     elif version == 1:
         _migrate_v1_to_v2(conn)
+        _migrate_v2_to_v3(conn)
+    elif version == 2:
+        _migrate_v2_to_v3(conn)
     elif version == _SCHEMA_VERSION:
         # Additive repair for a partially initialized v2 file. The version is
         # never rewritten, and all statements are idempotent.
@@ -1152,25 +1191,41 @@ class SQLiteStore(ConversationStore):
         )
         return Identity.model_validate_json(row[0]) if row is not None else None
 
-    async def resolve_identity(self, channel_type: str, address: str) -> Identity | None:
-        return await self._run(self._x_resolve_identity, channel_type, address)
+    async def resolve_identity(
+        self, channel_type: str, address: str, organization_id: str | None = None
+    ) -> Identity | None:
+        return await self._run(
+            self._x_resolve_identity, channel_type, address, organization_id or ""
+        )
 
-    def _x_resolve_identity(self, channel_type: str, address: str) -> Identity | None:
+    def _x_resolve_identity(
+        self, channel_type: str, address: str, organization_id: str
+    ) -> Identity | None:
         row = (
             self._db()
             .execute(
                 "SELECT identity_id FROM identity_addresses WHERE channel_type = ?"
-                " AND address = ?",
-                (channel_type, address),
+                " AND address = ? AND organization_id = ?",
+                (channel_type, address, organization_id),
             )
             .fetchone()
         )
         return self._x_get_identity(row[0]) if row is not None else None
 
-    async def link_address(self, identity_id: str, channel_type: str, address: str) -> None:
-        await self._run(self._x_link_address, identity_id, channel_type, address)
+    async def link_address(
+        self,
+        identity_id: str,
+        channel_type: str,
+        address: str,
+        organization_id: str | None = None,
+    ) -> None:
+        await self._run(
+            self._x_link_address, identity_id, channel_type, address, organization_id or ""
+        )
 
-    def _x_link_address(self, identity_id: str, channel_type: str, address: str) -> None:
+    def _x_link_address(
+        self, identity_id: str, channel_type: str, address: str, organization_id: str
+    ) -> None:
         conn = self._db()
         conn.execute("BEGIN IMMEDIATE")
         try:
@@ -1187,9 +1242,9 @@ class SQLiteStore(ConversationStore):
                     (identity.model_dump_json(), identity_id),
                 )
             conn.execute(
-                "INSERT OR REPLACE INTO identity_addresses(channel_type, address, identity_id)"
-                " VALUES(?, ?, ?)",
-                (channel_type, address, identity_id),
+                "INSERT OR REPLACE INTO identity_addresses(channel_type, address,"
+                " identity_id, organization_id) VALUES(?, ?, ?, ?)",
+                (channel_type, address, identity_id, organization_id),
             )
             conn.execute("COMMIT")
         except BaseException:

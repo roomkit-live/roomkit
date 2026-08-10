@@ -586,13 +586,33 @@ class ConversationStore(ABC):
         ...
 
     @abstractmethod
-    async def resolve_identity(self, channel_type: str, address: str) -> Identity | None:
-        """Look up an identity by channel type and address."""
+    async def resolve_identity(
+        self, channel_type: str, address: str, organization_id: str | None = None
+    ) -> Identity | None:
+        """Look up an identity by channel type and address (RFC §14.1).
+
+        *organization_id* scopes the lookup. An address is unique **within** an
+        organization, not globally: without scoping, a phone number registered
+        by one tenant would resolve to that tenant's identity for every other
+        tenant too (RFC §17.2). Leave it unset in a single-tenant deployment —
+        those registrations live in their own unscoped space.
+        """
         ...
 
     @abstractmethod
-    async def link_address(self, identity_id: str, channel_type: str, address: str) -> None:
-        """Link a channel address to an identity."""
+    async def link_address(
+        self,
+        identity_id: str,
+        channel_type: str,
+        address: str,
+        organization_id: str | None = None,
+    ) -> None:
+        """Link a channel address to an identity, within an organization.
+
+        The same address may be linked to a different identity in each
+        organization: a number belongs to one person at one tenant and to
+        someone else at another.
+        """
         ...
 
     # Task operations

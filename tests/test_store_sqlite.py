@@ -16,7 +16,7 @@ import pytest
 
 from roomkit import RoomKit
 from roomkit.models.room import Room
-from roomkit.store.sqlite import SQLiteSchemaError, SQLiteStore
+from roomkit.store.sqlite import _SCHEMA_VERSION, SQLiteSchemaError, SQLiteStore
 from tests.conftest import make_event
 from tests.test_store_memory import (
     TestBindingOperations,
@@ -140,7 +140,9 @@ class TestPersistence:
 
         conn = sqlite3.connect(path)
         try:
-            assert conn.execute("PRAGMA user_version").fetchone()[0] == 2
+            # A v1 file is brought all the way to the current schema, not
+            # to the version that happened to follow it.
+            assert conn.execute("PRAGMA user_version").fetchone()[0] == _SCHEMA_VERSION
             indexes = conn.execute("PRAGMA index_list(events)").fetchall()
             room_index = next(row for row in indexes if row[1] == "idx_events_room_idx")
             assert room_index[2] == 1  # unique
