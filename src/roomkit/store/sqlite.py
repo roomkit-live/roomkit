@@ -1189,8 +1189,13 @@ class SQLiteStore(ConversationStore):
                 for address in addresses:
                     conn.execute(
                         "INSERT OR REPLACE INTO identity_addresses(channel_type, address,"
-                        " identity_id) VALUES(?, ?, ?)",
-                        (channel_type, address, identity.id),
+                        " identity_id, organization_id) VALUES(?, ?, ?, ?)",
+                        # The identity's own organization: an address declared
+                        # on the identity belongs to the tenant that owns it.
+                        # Omitting it files the address under the empty
+                        # organization, where the owning tenant cannot resolve
+                        # it and an unscoped caller can.
+                        (channel_type, address, identity.id, identity.organization_id or ""),
                     )
         return identity
 

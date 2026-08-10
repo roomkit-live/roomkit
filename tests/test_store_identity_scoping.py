@@ -87,6 +87,65 @@ class TestSQLite:
             await store.close()
 
 
+class TestAddressesDeclaredOnTheIdentity:
+    """``create_identity`` carries its own addresses, and they are the tenant's.
+
+    Every other test here reaches the address table through ``link_address``,
+    which takes an ``organization_id`` and cannot forget it. An identity
+    created with ``channel_addresses`` already populated writes that table too,
+    from a field rather than an argument — the one path where the organization
+    can be dropped silently.
+    """
+
+    @staticmethod
+    def _acme() -> Identity:
+        return Identity(
+            id="acme-carol",
+            organization_id="acme",
+            display_name="Carol",
+            channel_addresses={"sms": ["+15550001111"]},
+        )
+
+    async def test_memory_files_them_under_the_owning_tenant(self) -> None:
+        store = InMemoryStore()
+        await store.create_identity(self._acme())
+
+        own = await store.resolve_identity("sms", "+15550001111", organization_id="acme")
+        unscoped = await store.resolve_identity("sms", "+15550001111", organization_id="")
+
+        assert own is not None and own.id == "acme-carol"
+        assert unscoped is None
+
+    async def test_sqlite_files_them_under_the_owning_tenant(self, tmp_path) -> None:  # noqa: ANN001
+        store = SQLiteStore(tmp_path / "declared.db")
+        try:
+            await store.create_identity(self._acme())
+
+            own = await store.resolve_identity("sms", "+15550001111", organization_id="acme")
+            unscoped = await store.resolve_identity("sms", "+15550001111", organization_id="")
+
+            # Dropping the organization here filed the address under the empty
+            # one: the owning tenant missed its own identity, and an unscoped
+            # caller reached it.
+            assert own is not None and own.id == "acme-carol"
+            assert unscoped is None
+        finally:
+            await store.close()
+
+    async def test_sqlite_keeps_an_unscoped_identity_unscoped(self, tmp_path) -> None:  # noqa: ANN001
+        """No organization on the identity is a value, not a missing one."""
+        store = SQLiteStore(tmp_path / "unscoped.db")
+        try:
+            await store.create_identity(
+                Identity(id="nobody", channel_addresses={"sms": ["+15559998888"]})
+            )
+
+            assert await store.resolve_identity("sms", "+15559998888") is not None
+            assert await store.resolve_identity("sms", "+15559998888", "acme") is None
+        finally:
+            await store.close()
+
+
 class TestMigration:
     async def test_v2_file_migrates_and_keeps_its_addresses(self, tmp_path) -> None:
         """A v2 file's rows carry the unscoped tenant, which preserves exactly
