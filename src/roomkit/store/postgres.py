@@ -1313,12 +1313,17 @@ class PostgresStore(ConversationStore):
             for ch_type, addresses in identity.channel_addresses.items():
                 for addr in addresses:
                     await conn.execute(
-                        "INSERT INTO identity_addresses (channel_type, address, identity_id)"
-                        " VALUES ($1, $2, $3)"
-                        " ON CONFLICT (channel_type, address) DO UPDATE SET identity_id = $3",
+                        "INSERT INTO identity_addresses"
+                        " (channel_type, address, identity_id, organization_id)"
+                        " VALUES ($1, $2, $3, $4)"
+                        " ON CONFLICT (channel_type, address, organization_id)"
+                        " DO UPDATE SET identity_id = $3",
                         ch_type,
                         addr,
                         identity.id,
+                        # The identity's own organization: an address declared
+                        # on the identity belongs to the tenant that owns it.
+                        identity.organization_id or "",
                     )
         return identity
 

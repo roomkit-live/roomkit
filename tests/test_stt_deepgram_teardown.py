@@ -14,8 +14,12 @@ from typing import Any
 
 import pytest
 
-from roomkit.voice.base import AudioChunk
-from roomkit.voice.stt.deepgram import DeepgramConfig, DeepgramSTTProvider
+# `transcribe_stream` imports the SDK's event types inside the function, so the
+# teardown path cannot be exercised without the optional extra installed.
+pytest.importorskip("deepgram")
+
+from roomkit.voice.base import AudioChunk  # noqa: E402
+from roomkit.voice.stt.deepgram import DeepgramConfig, DeepgramSTTProvider  # noqa: E402
 
 
 class _DeadConnection:
