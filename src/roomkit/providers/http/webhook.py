@@ -28,6 +28,10 @@ def parse_http_webhook(
         sender_id=payload["sender_id"],
         content=TextContent(body=payload.get("body", "")),
         external_id=payload.get("external_id"),
+        provider_message_id=payload.get("external_id"),
         idempotency_key=payload.get("external_id"),
         metadata=payload.get("metadata", {}),
+        # RFC §5.2 — the caller's body verbatim, including any field this
+        # generic parser does not model.
+        raw_payload=dict(payload),
     )

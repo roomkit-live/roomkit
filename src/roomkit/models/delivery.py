@@ -43,6 +43,17 @@ class InboundMessage(BaseModel):
     # so the response lands in the same thread. See ``RoomEvent.parent_event_id``.
     parent_event_id: str | None = None
     idempotency_key: str | None = None
+    # The provider's payload exactly as it arrived, before any parsing (RFC
+    # §5.2). It is the audit trail and the source of truth for provider-specific
+    # data: a parser reads the handful of fields RoomKit models, and everything
+    # else — delivery receipts, carrier annotations, fields a provider added
+    # last week — survives only here. Carried onto ``EventSource.raw_payload``
+    # unmodified.
+    raw_payload: dict[str, Any] = Field(default_factory=dict)
+    # The provider's own id for this message, distinct from ``external_id``
+    # (which parsers have historically used for the same value on some
+    # providers and for the conversation id on others).
+    provider_message_id: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
     session: Any | None = None
     # Event visibility scope. The default ``"all"`` reaches every channel

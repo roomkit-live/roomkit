@@ -347,6 +347,7 @@ def parse_telnyx_rcs_webhook(
         sender_id=sender,
         content=build_inbound_content(body, media),
         external_id=data.get("id"),
+        provider_message_id=data.get("id"),
         idempotency_key=data.get("id"),
         metadata={
             "agent_id": agent_id,
@@ -358,4 +359,7 @@ def parse_telnyx_rcs_webhook(
             # RCS-specific: location sharing
             "location": data.get("location"),
         },
+        # RFC §5.2 — the provider's payload verbatim. The parser lifts the
+        # fields RoomKit models; everything else survives only here.
+        raw_payload=dict(payload),
     )

@@ -198,6 +198,9 @@ class CLIChannel(Channel):
                 channel_type=self.channel_type,
                 participant_id=message.sender_id,
                 provider=self.provider_name,
+                # RFC §5.2 — carried whenever the caller supplied one.
+                raw_payload=message.raw_payload,
+                provider_message_id=message.provider_message_id,
             ),
             content=message.content,
             idempotency_key=message.idempotency_key,

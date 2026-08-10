@@ -231,9 +231,13 @@ def parse_telnyx_webhook(
         sender_id=data["from"]["phone_number"],
         content=build_inbound_content(body, media),
         external_id=data["id"],
+        provider_message_id=data["id"],
         idempotency_key=data["id"],
         metadata={
             "destination_number": data["to"][0]["phone_number"],
             "received_at": data.get("received_at"),
         },
+        # RFC §5.2 — the provider's payload verbatim. The parser lifts the
+        # fields RoomKit models; everything else survives only here.
+        raw_payload=dict(payload),
     )

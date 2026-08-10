@@ -81,6 +81,7 @@ def _build_inbound_message(payload: dict[str, Any], channel_id: str) -> InboundM
         sender_id=payload.get("source_number", ""),
         content=build_inbound_content(body, media),
         external_id=payload.get("sms_hash"),
+        provider_message_id=payload.get("sms_hash"),
         idempotency_key=payload.get("sms_hash"),
         metadata={
             "destination_number": payload.get("destination_number", ""),
@@ -88,6 +89,9 @@ def _build_inbound_message(payload: dict[str, Any], channel_id: str) -> InboundM
             "datetime_transmission": payload.get("datetime_transmission", ""),
             "has_attachment": bool(media),
         },
+        # RFC §5.2 — the provider's payload verbatim. The parser lifts the
+        # fields RoomKit models; everything else survives only here.
+        raw_payload=dict(payload),
     )
 
 

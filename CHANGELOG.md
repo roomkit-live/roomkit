@@ -102,6 +102,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The provider's payload was discarded at the door.** RFC Section 5.2 makes
+  `raw_payload` a MUST — "the audit trail and the source of truth for
+  provider-specific data" — and nothing in the framework ever wrote it. Every
+  parser lifted the handful of fields RoomKit models and dropped the rest, so
+  delivery annotations, carrier fields and anything a provider added later
+  existed nowhere. `InboundMessage` gains `raw_payload` and
+  `provider_message_id`; the nine shipped webhook parsers populate them; and
+  `TransportChannel`, `WebSocketChannel` and `CLIChannel` carry them onto
+  `EventSource`. Both stores already round-tripped the fields — they were
+  simply never filled.
+
+  Telegram keeps the whole Update rather than the message object, so
+  `update_id` survives; Messenger keeps each messaging entry rather than the
+  batch envelope, so a batched webhook leaves every message its own payload.
+  The dict is copied, not aliased: "unmodified" has to hold after the caller
+  moves on.
+
 - **Room operations could not be scoped to a tenant.** RFC Section 17.2
   requires room operations to be isolated per organization; any caller holding
   a room id operated on it regardless of which organization owned it.

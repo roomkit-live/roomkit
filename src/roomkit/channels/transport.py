@@ -112,6 +112,10 @@ class TransportChannel(Channel):
                     participant_id=message.sender_id or None,
                     external_id=message.external_id,
                     provider=self.provider_name,
+                    # RFC §5.2 MUST — preserved unmodified. This is the one
+                    # place the provider's own payload survives parsing.
+                    raw_payload=message.raw_payload,
+                    provider_message_id=message.provider_message_id,
                 ),
                 content=message.content,
                 channel_data=ChannelData(

@@ -35,11 +35,16 @@ def parse_messenger_webhook(
                     sender_id=sender_id,
                     content=TextContent(body=msg["text"]),
                     external_id=msg.get("mid"),
+                    provider_message_id=msg.get("mid"),
                     idempotency_key=msg.get("mid"),
                     metadata={
                         "recipient_id": event.get("recipient", {}).get("id", ""),
                         "timestamp": event.get("timestamp", 0),
                     },
+                    # RFC §5.2 — the messaging entry as Meta sent it, one per
+                    # message, so a batched webhook keeps each event's own
+                    # payload rather than the envelope they shared.
+                    raw_payload=dict(event),
                 )
             )
     return messages

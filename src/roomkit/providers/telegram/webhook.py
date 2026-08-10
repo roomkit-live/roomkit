@@ -227,7 +227,13 @@ def parse_telegram_webhook(
             sender_id=parts.sender_id,
             content=parts.content,
             external_id=external_id,
+            provider_message_id=str(parts.message_id),
             idempotency_key=external_id,
             metadata=parts.metadata,
+            # RFC §5.2 — the Update as Telegram sent it. The message object
+            # alone would drop the update envelope, which carries the
+            # ``update_id`` a reader needs to place this in Telegram's own
+            # sequence.
+            raw_payload=dict(payload),
         )
     ]

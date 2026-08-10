@@ -189,6 +189,7 @@ def parse_sinch_webhook(
         sender_id=payload.get("from", ""),
         content=build_inbound_content(body, media),
         external_id=payload.get("id"),
+        provider_message_id=payload.get("id"),
         idempotency_key=payload.get("id"),
         metadata={
             "to": payload.get("to", ""),
@@ -196,4 +197,7 @@ def parse_sinch_webhook(
             "operator_id": payload.get("operator_id"),
             "client_reference": payload.get("client_reference"),
         },
+        # RFC §5.2 — the provider's payload verbatim. The parser lifts the
+        # fields RoomKit models; everything else survives only here.
+        raw_payload=dict(payload),
     )

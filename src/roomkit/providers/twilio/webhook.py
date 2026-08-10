@@ -50,6 +50,11 @@ def parse_twilio_payload(
         sender_id=payload.get("From", ""),
         content=build_inbound_content(body, media),
         external_id=payload.get("MessageSid"),
+        provider_message_id=payload.get("MessageSid"),
         idempotency_key=payload.get("MessageSid"),
         metadata=metadata,
+        # RFC §5.2 — the form fields as Twilio posted them. The parser reads a
+        # handful; delivery annotations, carrier fields and anything Twilio
+        # adds later survive only here.
+        raw_payload=dict(payload),
     )

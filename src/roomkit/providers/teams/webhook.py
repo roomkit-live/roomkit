@@ -124,6 +124,7 @@ def parse_teams_webhook(
             sender_id=sender_id,
             content=TextContent(body=text),
             external_id=payload.get("id"),
+            provider_message_id=payload.get("id"),
             thread_id=reply_to_id,
             idempotency_key=payload.get("id"),
             metadata={
@@ -136,6 +137,10 @@ def parse_teams_webhook(
                 "tenant_id": payload.get("channelData", {}).get("tenant", {}).get("id", ""),
                 "reply_to_id": reply_to_id or "",
             },
+            # RFC §5.2 — the Bot Framework Activity verbatim. The parser lifts
+            # a dozen fields out of it; attachments, entities and channelData
+            # survive only here.
+            raw_payload=dict(payload),
         )
     ]
 
