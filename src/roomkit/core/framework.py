@@ -705,12 +705,24 @@ class RoomKit(
             newest_first=newest_first,
         )
 
-    async def list_tasks(self, room_id: str, status: str | None = None) -> list[Task]:
+    async def list_tasks(
+        self,
+        room_id: str,
+        status: str | None = None,
+        *,
+        organization_id: str | None = None,
+    ) -> list[Task]:
         """List tasks for a room, optionally filtered by status."""
+        if organization_id is not None:
+            await self.get_room(room_id, organization_id=organization_id)
         return await self._store.list_tasks(room_id, status=status)
 
-    async def list_observations(self, room_id: str) -> list[Observation]:
+    async def list_observations(
+        self, room_id: str, *, organization_id: str | None = None
+    ) -> list[Observation]:
         """List observations for a room."""
+        if organization_id is not None:
+            await self.get_room(room_id, organization_id=organization_id)
         return await self._store.list_observations(room_id)
 
     # -- Direct send --
@@ -920,15 +932,30 @@ class RoomKit(
 
     # -- Read tracking --
 
-    async def mark_read(self, room_id: str, channel_id: str, event_id: str) -> None:
+    async def mark_read(
+        self,
+        room_id: str,
+        channel_id: str,
+        event_id: str,
+        *,
+        organization_id: str | None = None,
+    ) -> None:
         """Mark an event as read for a channel."""
+        if organization_id is not None:
+            await self.get_room(room_id, organization_id=organization_id)
         await self._store.mark_read(room_id, channel_id, event_id)
 
-    async def mark_all_read(self, room_id: str, channel_id: str) -> None:
+    async def mark_all_read(
+        self, room_id: str, channel_id: str, *, organization_id: str | None = None
+    ) -> None:
         """Mark all events as read for a channel."""
+        if organization_id is not None:
+            await self.get_room(room_id, organization_id=organization_id)
         await self._store.mark_all_read(room_id, channel_id)
 
-    async def list_read_markers(self, room_id: str) -> dict[str, int]:
+    async def list_read_markers(
+        self, room_id: str, *, organization_id: str | None = None
+    ) -> dict[str, int]:
         """Return every channel's read high-water-mark (event index) in a room.
 
         Maps ``channel_id`` -> the highest read event ``index``. With one
@@ -936,4 +963,6 @@ class RoomKit(
         aggregate "seen by" receipts; resolve channels to members via the
         bindings/participants (see :meth:`list_members`).
         """
+        if organization_id is not None:
+            await self.get_room(room_id, organization_id=organization_id)
         return await self._store.list_read_markers(room_id)

@@ -7,9 +7,11 @@ when given one, refuse a room belonging to anyone else.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
+
 import pytest
 
-from roomkit import RoomKit
+from roomkit import Access, AgentResponsePolicy, RoomKit, RoomTimers
 from roomkit.core.exceptions import RoomNotFoundError
 from roomkit.models.event import TextContent
 from tests.test_framework import SimpleChannel
@@ -97,6 +99,87 @@ class TestScopedMutations:
             organization_id="globex",
         )
         assert event.id
+
+    async def test_binding_operations_share_the_room_scope(self) -> None:
+        kit = await _two_tenants()
+        await kit.attach_channel("globex-room", "sms1")
+
+        operations = [
+            kit.mute("globex-room", "sms1", organization_id="acme"),
+            kit.unmute("globex-room", "sms1", organization_id="acme"),
+            kit.mute_output("globex-room", "sms1", organization_id="acme"),
+            kit.unmute_output("globex-room", "sms1", organization_id="acme"),
+            kit.set_visibility("globex-room", "sms1", "none", organization_id="acme"),
+            kit.set_access("globex-room", "sms1", Access.NONE, organization_id="acme"),
+            kit.update_binding_metadata(
+                "globex-room", "sms1", {"leaked": True}, organization_id="acme"
+            ),
+            kit.get_binding("globex-room", "sms1", organization_id="acme"),
+            kit.list_bindings("globex-room", organization_id="acme"),
+        ]
+        for operation in operations:
+            with pytest.raises(RoomNotFoundError):
+                await operation
+
+        binding = await kit.get_binding("globex-room", "sms1")
+        assert binding.access is Access.READ_WRITE
+        assert binding.muted is False
+        assert binding.output_muted is False
+        assert "leaked" not in binding.metadata
+
+    async def test_lifecycle_and_participant_operations_share_the_room_scope(self) -> None:
+        kit = await _two_tenants()
+
+        operations = [
+            kit.set_room_timers(
+                "globex-room", RoomTimers(closed_after_seconds=10), organization_id="acme"
+            ),
+            kit.set_agent_response_policy(
+                "globex-room",
+                AgentResponsePolicy.ADDRESSED_ONLY,
+                organization_id="acme",
+            ),
+            kit.check_room_timers("globex-room", organization_id="acme"),
+            kit.update_room_metadata("globex-room", {"leaked": True}, organization_id="acme"),
+            kit.ensure_participant("globex-room", "sms1", "p1", organization_id="acme"),
+            kit.resolve_participant("globex-room", "p1", "identity-1", organization_id="acme"),
+        ]
+        for operation in operations:
+            with pytest.raises(RoomNotFoundError):
+                await operation
+
+        room = await kit.get_room("globex-room")
+        assert "leaked" not in room.metadata
+        assert await kit.store.get_participant("globex-room", "p1") is None
+
+    async def test_query_and_read_tracking_operations_share_the_room_scope(self) -> None:
+        kit = await _two_tenants()
+
+        operations = [
+            kit.list_tasks("globex-room", organization_id="acme"),
+            kit.list_observations("globex-room", organization_id="acme"),
+            kit.mark_read("globex-room", "sms1", "event-1", organization_id="acme"),
+            kit.mark_all_read("globex-room", "sms1", organization_id="acme"),
+            kit.list_read_markers("globex-room", organization_id="acme"),
+        ]
+        for operation in operations:
+            with pytest.raises(RoomNotFoundError):
+                await operation
+
+        assert await kit.list_read_markers("globex-room") == {}
+
+    async def test_check_all_timers_can_be_limited_to_one_tenant(self) -> None:
+        kit = await _two_tenants()
+        expired = RoomTimers(
+            inactive_after_seconds=1,
+            last_activity_at=datetime.now(UTC) - timedelta(seconds=10),
+        )
+        await kit.set_room_timers("globex-room", expired)
+
+        transitioned = await kit.check_all_timers(organization_id="acme")
+
+        assert transitioned == []
+        assert (await kit.get_room("globex-room")).status.value == "active"
 
 
 class TestUnscopedRooms:

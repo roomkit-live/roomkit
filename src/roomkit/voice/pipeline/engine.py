@@ -851,6 +851,16 @@ class AudioPipeline:
 
         Cleans up stale state for this session and starts recording if configured.
         """
+        # A pipeline is commonly assembled during synchronous application
+        # startup and only enters asyncio when its first session becomes
+        # active. Bind at that lifecycle boundary too, so async callbacks from
+        # later DSP threads have a real loop to return to.
+        if self._home_loop is None or self._home_loop.is_closed():
+            try:
+                self._home_loop = asyncio.get_running_loop()
+            except RuntimeError:
+                self._home_loop = None
+
         self._cleanup_session_state(session.id)
         self._outbound_locks[session.id] = threading.Lock()
 
@@ -902,16 +912,20 @@ class AudioPipeline:
             self._recording_handles[session.id] = handle
             return
         if self._home_loop is None or self._home_loop.is_closed():
-            # Nothing can wait for them; capture rather than record nothing,
-            # and say so. _maybe_schedule reports the dropped coroutines.
+            # Consent cannot be obtained without somewhere to execute an async
+            # subscriber. Fail closed: discard the unopened recording instead
+            # of capturing before the announcement has been heard.
             logger.warning(
-                "Recording for %s starts before its announcement could be heard: "
-                "no event loop to wait on",
+                "Recording for %s disabled: no event loop can run its consent callback",
                 session.id,
             )
-            self._recording_handles[session.id] = handle
             for coro in pending:
-                _maybe_schedule(coro, self._home_loop)
+                coro.close()
+            if self._config.recorder is not None:
+                try:
+                    self._config.recorder.stop(handle)
+                except Exception:
+                    logger.exception("Failed to discard unannounced recording for %s", session.id)
             return
 
         self._pending_recording_handles[session.id] = handle

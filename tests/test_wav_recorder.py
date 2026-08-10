@@ -5,6 +5,7 @@ from __future__ import annotations
 import struct
 import wave
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -27,6 +28,11 @@ def _session(sid: str = "s1") -> VoiceSession:
     return VoiceSession(id=sid, room_id="r1", participant_id="p1", channel_id="c1")
 
 
+def _recording_config(**kwargs: Any) -> RecordingConfig:
+    """Test storage is declared encrypted; security refusal is tested separately."""
+    return RecordingConfig(storage_encrypted_at_rest=True, **kwargs)
+
+
 def _pcm_silence(num_samples: int, sample_width: int = 2) -> bytes:
     """Generate silence PCM bytes."""
     return b"\x00" * (num_samples * sample_width)
@@ -45,7 +51,7 @@ class TestWavFileRecorderBasic:
 
     def test_start_returns_handle(self, tmp_path: Path) -> None:
         recorder = WavFileRecorder()
-        config = RecordingConfig(storage=str(tmp_path))
+        config = _recording_config(storage=str(tmp_path))
         handle = recorder.start(_session(), config)
 
         assert handle.id
@@ -56,7 +62,7 @@ class TestWavFileRecorderBasic:
 
     def test_stop_without_data_returns_empty_result(self, tmp_path: Path) -> None:
         recorder = WavFileRecorder()
-        config = RecordingConfig(storage=str(tmp_path))
+        config = _recording_config(storage=str(tmp_path))
         handle = recorder.start(_session(), config)
         result = recorder.stop(handle)
 
@@ -75,20 +81,20 @@ class TestWavFileRecorderBasic:
 
     def test_file_naming_contains_session_id(self, tmp_path: Path) -> None:
         recorder = WavFileRecorder()
-        config = RecordingConfig(storage=str(tmp_path))
+        config = _recording_config(storage=str(tmp_path))
         handle = recorder.start(_session("my-session"), config)
         assert "my-session" in handle.path
 
     def test_creates_output_directory(self, tmp_path: Path) -> None:
         out_dir = tmp_path / "sub" / "dir"
         recorder = WavFileRecorder()
-        config = RecordingConfig(storage=str(out_dir))
+        config = _recording_config(storage=str(out_dir))
         recorder.start(_session(), config)
         assert out_dir.exists()
 
     def test_default_storage_uses_tempdir(self) -> None:
         recorder = WavFileRecorder()
-        config = RecordingConfig()
+        config = _recording_config()
         handle = recorder.start(_session(), config)
         # Should not raise, path should be set
         assert handle.path
@@ -98,7 +104,7 @@ class TestWavFileRecorderBasic:
 class TestMixedMode:
     def test_inbound_only(self, tmp_path: Path) -> None:
         recorder = WavFileRecorder()
-        config = RecordingConfig(
+        config = _recording_config(
             storage=str(tmp_path),
             channels=RecordingChannelMode.MIXED,
         )
@@ -122,7 +128,7 @@ class TestMixedMode:
 
     def test_mixed_sums_both_directions(self, tmp_path: Path) -> None:
         recorder = WavFileRecorder()
-        config = RecordingConfig(
+        config = _recording_config(
             storage=str(tmp_path),
             channels=RecordingChannelMode.MIXED,
         )
@@ -144,7 +150,7 @@ class TestMixedMode:
 
     def test_mixed_pads_shorter_buffer(self, tmp_path: Path) -> None:
         recorder = WavFileRecorder()
-        config = RecordingConfig(
+        config = _recording_config(
             storage=str(tmp_path),
             channels=RecordingChannelMode.MIXED,
         )
@@ -172,7 +178,7 @@ class TestMixedMode:
 
     def test_mixed_clamps_on_overflow(self, tmp_path: Path) -> None:
         recorder = WavFileRecorder()
-        config = RecordingConfig(
+        config = _recording_config(
             storage=str(tmp_path),
             channels=RecordingChannelMode.MIXED,
         )
@@ -196,7 +202,7 @@ class TestMixedMode:
 class TestSeparateMode:
     def test_creates_two_files(self, tmp_path: Path) -> None:
         recorder = WavFileRecorder()
-        config = RecordingConfig(
+        config = _recording_config(
             storage=str(tmp_path),
             channels=RecordingChannelMode.SEPARATE,
         )
@@ -219,7 +225,7 @@ class TestSeparateMode:
 
     def test_inbound_only_creates_one_file(self, tmp_path: Path) -> None:
         recorder = WavFileRecorder()
-        config = RecordingConfig(
+        config = _recording_config(
             storage=str(tmp_path),
             channels=RecordingChannelMode.SEPARATE,
             mode=RecordingMode.INBOUND_ONLY,
@@ -237,7 +243,7 @@ class TestSeparateMode:
 class TestStereoMode:
     def test_stereo_wav_has_two_channels(self, tmp_path: Path) -> None:
         recorder = WavFileRecorder()
-        config = RecordingConfig(
+        config = _recording_config(
             storage=str(tmp_path),
             channels=RecordingChannelMode.STEREO,
         )
@@ -266,7 +272,7 @@ class TestStereoMode:
 
     def test_stereo_pads_shorter_buffer(self, tmp_path: Path) -> None:
         recorder = WavFileRecorder()
-        config = RecordingConfig(
+        config = _recording_config(
             storage=str(tmp_path),
             channels=RecordingChannelMode.STEREO,
         )
@@ -289,7 +295,7 @@ class TestStereoMode:
 class TestRecordingMode:
     def test_inbound_only_ignores_outbound(self, tmp_path: Path) -> None:
         recorder = WavFileRecorder()
-        config = RecordingConfig(
+        config = _recording_config(
             storage=str(tmp_path),
             mode=RecordingMode.INBOUND_ONLY,
             channels=RecordingChannelMode.MIXED,
@@ -311,7 +317,7 @@ class TestRecordingMode:
 
     def test_outbound_only_ignores_inbound(self, tmp_path: Path) -> None:
         recorder = WavFileRecorder()
-        config = RecordingConfig(
+        config = _recording_config(
             storage=str(tmp_path),
             mode=RecordingMode.OUTBOUND_ONLY,
             channels=RecordingChannelMode.MIXED,
@@ -336,7 +342,7 @@ class TestSpeechOnlyWarning:
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:
         recorder = WavFileRecorder()
-        config = RecordingConfig(
+        config = _recording_config(
             storage=str(tmp_path),
             trigger=RecordingTrigger.SPEECH_ONLY,
         )
@@ -349,7 +355,7 @@ class TestSpeechOnlyWarning:
 class TestDuration:
     def test_duration_calculation(self, tmp_path: Path) -> None:
         recorder = WavFileRecorder()
-        config = RecordingConfig(
+        config = _recording_config(
             storage=str(tmp_path),
             channels=RecordingChannelMode.MIXED,
         )
@@ -364,7 +370,7 @@ class TestDuration:
 
     def test_duration_separate_mode(self, tmp_path: Path) -> None:
         recorder = WavFileRecorder()
-        config = RecordingConfig(
+        config = _recording_config(
             storage=str(tmp_path),
             channels=RecordingChannelMode.SEPARATE,
         )
@@ -382,7 +388,7 @@ class TestDuration:
 class TestResetAndClose:
     def test_reset_stops_active_sessions(self, tmp_path: Path) -> None:
         recorder = WavFileRecorder()
-        config = RecordingConfig(
+        config = _recording_config(
             storage=str(tmp_path),
             channels=RecordingChannelMode.SEPARATE,
         )
@@ -395,7 +401,7 @@ class TestResetAndClose:
 
     def test_close_stops_all(self, tmp_path: Path) -> None:
         recorder = WavFileRecorder()
-        config = RecordingConfig(storage=str(tmp_path))
+        config = _recording_config(storage=str(tmp_path))
         recorder.start(_session("s1"), config)
         recorder.start(_session("s2"), config)
         recorder.close()
@@ -405,7 +411,7 @@ class TestResetAndClose:
 class TestAllMode:
     def test_creates_three_files(self, tmp_path: Path) -> None:
         recorder = WavFileRecorder()
-        config = RecordingConfig(
+        config = _recording_config(
             storage=str(tmp_path),
             channels=RecordingChannelMode.ALL,
         )
@@ -425,7 +431,7 @@ class TestAllMode:
 
     def test_all_files_are_valid_wav(self, tmp_path: Path) -> None:
         recorder = WavFileRecorder()
-        config = RecordingConfig(
+        config = _recording_config(
             storage=str(tmp_path),
             channels=RecordingChannelMode.ALL,
         )
@@ -443,7 +449,7 @@ class TestAllMode:
 
     def test_mixed_file_contains_both_tracks(self, tmp_path: Path) -> None:
         recorder = WavFileRecorder()
-        config = RecordingConfig(
+        config = _recording_config(
             storage=str(tmp_path),
             channels=RecordingChannelMode.ALL,
         )
@@ -466,7 +472,7 @@ class TestAllMode:
 
     def test_duration_uses_longer_stream(self, tmp_path: Path) -> None:
         recorder = WavFileRecorder()
-        config = RecordingConfig(
+        config = _recording_config(
             storage=str(tmp_path),
             channels=RecordingChannelMode.ALL,
         )
@@ -485,7 +491,7 @@ class TestSilenceInsertion:
         import time
 
         recorder = WavFileRecorder()
-        config = RecordingConfig(
+        config = _recording_config(
             storage=str(tmp_path),
             channels=RecordingChannelMode.MIXED,
         )
@@ -523,7 +529,7 @@ class TestSilenceInsertion:
     def test_small_gap_no_silence(self, tmp_path: Path) -> None:
         """Gaps below the threshold (30ms) should NOT insert silence — they're jitter."""
         recorder = WavFileRecorder()
-        config = RecordingConfig(
+        config = _recording_config(
             storage=str(tmp_path),
             channels=RecordingChannelMode.MIXED,
         )
@@ -544,7 +550,7 @@ class TestSilenceInsertion:
     def test_no_gap_no_extra_silence(self, tmp_path: Path) -> None:
         """Back-to-back taps should not insert silence."""
         recorder = WavFileRecorder()
-        config = RecordingConfig(
+        config = _recording_config(
             storage=str(tmp_path),
             channels=RecordingChannelMode.MIXED,
         )
@@ -566,7 +572,7 @@ class TestSilenceInsertion:
         import time
 
         recorder = WavFileRecorder()
-        config = RecordingConfig(
+        config = _recording_config(
             storage=str(tmp_path),
             channels=RecordingChannelMode.SEPARATE,
         )
@@ -592,7 +598,7 @@ class TestSilenceGapEdgeCases:
         import time
 
         recorder = WavFileRecorder()
-        config = RecordingConfig(
+        config = _recording_config(
             storage=str(tmp_path),
             channels=RecordingChannelMode.SEPARATE,
         )
@@ -616,7 +622,7 @@ class TestSilenceGapEdgeCases:
         import time
 
         recorder = WavFileRecorder()
-        config = RecordingConfig(
+        config = _recording_config(
             storage=str(tmp_path),
             channels=RecordingChannelMode.MIXED,
         )
@@ -637,7 +643,7 @@ class TestSilenceGapEdgeCases:
     def test_path_traversal_falls_back_to_temp(self) -> None:
         """Storage paths with '..' should fall back to temp directory."""
         recorder = WavFileRecorder()
-        config = RecordingConfig(
+        config = _recording_config(
             storage="/tmp/foo/../../../etc",
             channels=RecordingChannelMode.MIXED,
         )
@@ -664,7 +670,7 @@ class TestWriterThread:
     def test_stop_drains_every_pending_frame(self, tmp_path: Path) -> None:
         """stop() queues behind the frames, so the file it reports is complete."""
         recorder = WavFileRecorder()
-        config = RecordingConfig(storage=str(tmp_path), channels=RecordingChannelMode.SEPARATE)
+        config = _recording_config(storage=str(tmp_path), channels=RecordingChannelMode.SEPARATE)
         handle = recorder.start(_session(), config)
         n_frames, samples_per_frame = 200, 320
         for _ in range(n_frames):
@@ -680,7 +686,7 @@ class TestWriterThread:
         """MIXED memory stays flat: directions spool to .raw files that the
         finalisation consumes and deletes."""
         recorder = WavFileRecorder()
-        config = RecordingConfig(storage=str(tmp_path), channels=RecordingChannelMode.MIXED)
+        config = _recording_config(storage=str(tmp_path), channels=RecordingChannelMode.MIXED)
         handle = recorder.start(_session(), config)
         for _ in range(50):
             recorder.tap_inbound(handle, _frame(_pcm_tone(320)))

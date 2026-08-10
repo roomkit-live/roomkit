@@ -210,7 +210,11 @@ async def main() -> None:
     rec_mode_name = os.environ.get("RECORDING_MODE", "stereo").lower()
     rec_channel_mode = CHANNEL_MODES.get(rec_mode_name, RecordingChannelMode.STEREO)
     recorder = WavFileRecorder()
-    recording_config = RecordingConfig(storage=recording_dir, channels=rec_channel_mode)
+    recording_config = RecordingConfig(
+        storage=recording_dir,
+        storage_encrypted_at_rest=True,  # recording_dir must be on encrypted storage
+        channels=rec_channel_mode,
+    )
     logger.info("Recording to %s (mode=%s)", recording_dir, rec_mode_name)
 
     # --- Pipeline contract -----------------------------------------------

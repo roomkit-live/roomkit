@@ -118,6 +118,7 @@ async def main() -> None:
             mode=RecordingMode.INBOUND_ONLY,
             channels=RecordingChannelMode.SEPARATE,
             storage=record_dir,
+            storage_encrypted_at_rest=True,  # RECORD_DIR must be on encrypted storage
         )
         logger.info("Recording inbound audio to %s", record_dir)
 

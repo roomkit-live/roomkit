@@ -7,6 +7,7 @@ import time as _time
 from typing import Any
 
 from roomkit.channels.base import Channel
+from roomkit.core.exceptions import ProviderDeliveryError
 from roomkit.models.channel import ChannelBinding, ChannelCapabilities, ChannelOutput
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundMessage
@@ -205,4 +206,6 @@ class TransportChannel(Channel):
         except Exception as exc:
             telemetry.end_span(span_id, status="error", error_message=str(exc))
             raise
-        return ChannelOutput.empty()
+        if not result.success:
+            raise ProviderDeliveryError(result)
+        return ChannelOutput(provider_result=result)

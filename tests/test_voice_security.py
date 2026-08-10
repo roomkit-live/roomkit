@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from roomkit.voice.audio_frame import AudioFrame
 from roomkit.voice.base import VoiceSession
 from roomkit.voice.pipeline import (
@@ -156,12 +158,20 @@ class TestRecordingEncryptionAtRest:
         assert result.urls == []
         assert list(tmp_path.glob("*.wav")) == []
 
-    def test_without_encryption_nothing_changes(self, tmp_path: Path) -> None:
+    def test_without_encryption_or_encrypted_storage_is_refused(self, tmp_path: Path) -> None:
         config = RecordingConfig(storage=str(tmp_path))
+
+        with pytest.raises(ValueError, match="requires RecordingConfig.encryption"):
+            _record_briefly(config)
+
+        assert list(tmp_path.iterdir()) == []
+
+    def test_encrypted_storage_can_be_declared_explicitly(self, tmp_path: Path) -> None:
+        config = RecordingConfig(storage=str(tmp_path), storage_encrypted_at_rest=True)
         recorder, handle = _record_briefly(config)
 
         result = recorder.stop(handle)
         recorder.close()
 
         assert result.urls and all(url.endswith(".wav") for url in result.urls)
-        assert "encryption" not in result.metadata
+        assert result.metadata["encryption"] == "storage"

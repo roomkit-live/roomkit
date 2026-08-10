@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.47.0] — 2026-08-10
+
 ### Added
 
 - **`AudioCaptureSource` — capture that outlives a session.** A `VoiceBackend`
@@ -98,9 +100,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   finalisation: the file is encrypted and the plaintext removed. A file the
   cipher cannot encrypt is discarded rather than handed back in the clear. No
   default cipher ships — a default key is not encryption — so the integrator
-  supplies the how, the framework owns the when.
+  supplies the how, the framework owns the when. `WavFileRecorder` now refuses
+  to start unless a cipher is configured or
+  `storage_encrypted_at_rest=True` explicitly declares a filesystem/object-store
+  guarantee; omitting the decision can no longer create plaintext recordings.
 
 ### Fixed
+
+- **A provider refusal was reported as `sent`.** `TransportChannel` observed
+  `ProviderResult(success=False)` in telemetry and then returned an empty
+  successful output, so the delivery report lost the provider message id and
+  error, retry never ran, and the circuit breaker recorded a success. Negative
+  provider results now enter the same retry/breaker path as transport
+  exceptions while remaining available on `DeliveryResult.provider_result`.
+
+- **Async recording consent could race audio when the pipeline was constructed
+  before asyncio started.** The pipeline now binds its home loop when a session
+  becomes active. If an async consent callback genuinely has no loop on which
+  to run, recording fails closed and the handle is discarded; no pre-consent
+  frame is captured.
 
 - **`process_timeout` bounded a third of what it named.** RFC Section 13.6
   requires it to bound the pre-commit phase; it wrapped only the gates inside
@@ -350,8 +368,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   requires room operations to be isolated per organization; any caller holding
   a room id operated on it regardless of which organization owned it.
   `get_room()`, `get_timeline()`, `send_event()`, `attach_channel()`,
-  `detach_channel()`, `close_room()` and `archive_room()` now take an optional
+  `detach_channel()`, `close_room()`, `archive_room()`, binding access/mute/
+  visibility/metadata operations, timers, room metadata, participant
+  resolution, tasks/observations, and read markers now take an optional
   `organization_id` and refuse a room belonging to anyone else.
+  `check_all_timers()` can likewise be restricted to one organization.
 
   A room owned by another organization is reported as **not found**, not as a
   distinct "wrong organization" error: a separate error would let a caller
@@ -5612,7 +5633,8 @@ See entries `0.7.0a1` through `0.7.0a18` below.
 - `STTProvider.transcribe()` returns `TranscriptionResult` (Phase 3.1)
 - Framework event names enriched with payloads (Phase 4)
 
-[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.46.0...HEAD
+[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.47.0...HEAD
+[0.47.0]: https://github.com/roomkit-live/roomkit/compare/v0.46.0...v0.47.0
 [0.46.0]: https://github.com/roomkit-live/roomkit/compare/v0.45.0...v0.46.0
 [0.45.0]: https://github.com/roomkit-live/roomkit/compare/v0.44.0...v0.45.0
 [0.44.0]: https://github.com/roomkit-live/roomkit/compare/v0.43.0...v0.44.0

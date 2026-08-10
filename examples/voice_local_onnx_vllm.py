@@ -282,6 +282,7 @@ async def main() -> None:
     recorder = WavFileRecorder()
     recording_config = RecordingConfig(
         storage=recording_dir,
+        storage_encrypted_at_rest=True,  # recording_dir must be on encrypted storage
         channels=rec_channel_mode,
     )
     logger.info("Recording to %s (mode=%s)", recording_dir, rec_mode_name)

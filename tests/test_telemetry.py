@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 
 from roomkit.channels.base import Channel
+from roomkit.core.exceptions import ProviderDeliveryError
 from roomkit.core.framework import RoomKit
 from roomkit.models.channel import ChannelBinding, ChannelOutput
 from roomkit.models.context import RoomContext
@@ -1054,7 +1055,10 @@ class TestDeliveryTelemetryPhase3:
         )
         binding = ChannelBinding(channel_id="sms1", room_id="room1", channel_type=ChannelType.SMS)
         context = RoomContext(room=Room(id="room1"), bindings=[], recent_events=[])
-        await ch.deliver(event, binding, context)
+        with pytest.raises(ProviderDeliveryError) as raised:
+            await ch.deliver(event, binding, context)
+
+        assert raised.value.provider_result.error == "rate_limit"
 
         spans = mock.get_spans(SpanKind.DELIVERY)
         assert len(spans) == 1

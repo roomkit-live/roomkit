@@ -7,6 +7,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from roomkit.models.delivery import ProviderResult
 from roomkit.models.enums import (
     Access,
     ChannelCategory,
@@ -126,6 +127,12 @@ class ChannelOutput(BaseModel):
             "non-streaming path bakes it into response_events directly."
         ),
     )
+    provider_result: ProviderResult | None = None
+    """Native result of a transport delivery attempt.
+
+    Transport channels preserve it here so the framework can report provider
+    message ids and metadata without overloading AI response metadata.
+    """
     tasks: list[Task] = Field(default_factory=list)
     observations: list[Observation] = Field(default_factory=list)
     metadata_updates: dict[str, Any] = Field(default_factory=dict)

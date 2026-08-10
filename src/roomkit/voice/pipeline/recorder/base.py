@@ -123,10 +123,19 @@ class RecordingConfig:
     """Optional retention period in days (None = indefinite)."""
 
     encryption: RecordingEncryption | None = None
-    """Optional encryption applied to finished recordings (RFC §17.6).
+    """Encryption applied to finished recordings (RFC §17.6).
 
-    ``None`` stores recordings in the clear — legal in some deployments, not
-    in most. Set it to satisfy the encryption-at-rest requirement."""
+    File recorders require this unless ``storage_encrypted_at_rest`` declares
+    that the target filesystem or object store already provides encryption."""
+
+    storage_encrypted_at_rest: bool = False
+    """Whether the configured storage encrypts every byte at rest.
+
+    This is an explicit deployment assertion, not encryption performed by
+    RoomKit. File recorders fail closed when both this and ``encryption`` are
+    absent, so an omitted security decision cannot silently create plaintext
+    recordings.
+    """
 
     metadata: dict[str, object] = field(default_factory=dict)
     """Provider-specific configuration."""

@@ -32,6 +32,58 @@ def _frame() -> AudioFrame:
 
 
 class TestVoicePipelineWaitsForItsAnnouncement:
+    async def test_pipeline_built_before_async_binds_when_the_session_starts(self) -> None:
+        recorder = MockAudioRecorder()
+        released = asyncio.Event()
+
+        async def slow_announcement(session: VoiceSession, handle: object) -> None:
+            await released.wait()
+
+        pipeline = await asyncio.to_thread(
+            AudioPipeline,
+            AudioPipelineConfig(
+                vad=MockVADProvider(),
+                recorder=recorder,
+                recording_config=RecordingConfig(),
+            ),
+        )
+        assert pipeline._home_loop is None
+        pipeline.on_recording_started(slow_announcement)
+
+        session = _session()
+        pipeline.on_session_active(session)
+        assert pipeline._home_loop is asyncio.get_running_loop()
+        pipeline.process_inbound(session, _frame())
+        assert recorder.inbound_frames == []
+
+        released.set()
+        await asyncio.sleep(0.01)
+        pipeline.process_inbound(session, _frame())
+        assert len(recorder.inbound_frames) == 1
+
+    async def test_offloop_async_consent_fails_closed(self) -> None:
+        recorder = MockAudioRecorder()
+
+        async def announcement(session: VoiceSession, handle: object) -> None:
+            raise AssertionError("no loop exists on which to hear this announcement")
+
+        pipeline = await asyncio.to_thread(
+            AudioPipeline,
+            AudioPipelineConfig(
+                vad=MockVADProvider(),
+                recorder=recorder,
+                recording_config=RecordingConfig(),
+            ),
+        )
+        pipeline.on_recording_started(announcement)
+        session = _session()
+
+        await asyncio.to_thread(pipeline.on_session_active, session)
+        await asyncio.to_thread(pipeline.process_inbound, session, _frame())
+
+        assert recorder.inbound_frames == []
+        assert len(recorder.stopped) == 1
+
     async def test_no_frame_is_tapped_before_the_announcement_returns(self) -> None:
         recorder = MockAudioRecorder()
         released = asyncio.Event()

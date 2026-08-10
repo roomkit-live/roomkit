@@ -73,6 +73,12 @@ class WavFileRecorder(AudioRecorder):
         return "WavFileRecorder"
 
     def start(self, session: VoiceSession, config: RecordingConfig) -> RecordingHandle:
+        if config.encryption is None and not config.storage_encrypted_at_rest:
+            raise ValueError(
+                "WavFileRecorder requires RecordingConfig.encryption or "
+                "storage_encrypted_at_rest=True"
+            )
+
         if config.trigger == RecordingTrigger.SPEECH_ONLY:
             logger.warning(
                 "WavFileRecorder does not support SPEECH_ONLY trigger "
@@ -140,7 +146,10 @@ class WavFileRecorder(AudioRecorder):
         clear: a caller that asked for encryption at rest must not be handed a
         plaintext recording because the cipher failed.
         """
-        if config.encryption is None or not result.urls:
+        if not result.urls:
+            return result
+        if config.encryption is None:
+            result.metadata = {**result.metadata, "encryption": "storage"}
             return result
         encrypted: list[str] = []
         for url in result.urls:

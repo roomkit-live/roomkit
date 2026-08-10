@@ -259,7 +259,13 @@ class RoomLifecycleMixin(HelpersMixin):
             )
             return result
 
-    async def set_room_timers(self, room_id: str, timers: RoomTimers) -> Room:
+    async def set_room_timers(
+        self,
+        room_id: str,
+        timers: RoomTimers,
+        *,
+        organization_id: str | None = None,
+    ) -> Room:
         """Set or replace the lifecycle timers for an existing room.
 
         When ``timers.last_activity_at`` is unset, the room's existing activity
@@ -269,7 +275,7 @@ class RoomLifecycleMixin(HelpersMixin):
         the thresholds.
         """
         async with self._lock_manager.locked(room_id):
-            room = await self.get_room(room_id)
+            room = await self.get_room(room_id, organization_id=organization_id)
             last_activity = (
                 timers.last_activity_at or room.timers.last_activity_at or datetime.now(UTC)
             )
@@ -277,7 +283,13 @@ class RoomLifecycleMixin(HelpersMixin):
             room = room.model_copy(update={"timers": timers, "updated_at": datetime.now(UTC)})
             return await self._store.update_room(room)
 
-    async def set_agent_response_policy(self, room_id: str, policy: AgentResponsePolicy) -> Room:
+    async def set_agent_response_policy(
+        self,
+        room_id: str,
+        policy: AgentResponsePolicy,
+        *,
+        organization_id: str | None = None,
+    ) -> Room:
         """Set what an agent's own output solicits in this room (RFC §19.3.1).
 
         The policy is chosen at creation, but a room rarely knows then how many
@@ -291,7 +303,7 @@ class RoomLifecycleMixin(HelpersMixin):
         not reconsidered. No-op when the room already holds *policy*.
         """
         async with self._lock_manager.locked(room_id):
-            room = await self.get_room(room_id)
+            room = await self.get_room(room_id, organization_id=organization_id)
             if room.agent_response_policy is policy:
                 return room
             room = room.model_copy(
@@ -305,13 +317,13 @@ class RoomLifecycleMixin(HelpersMixin):
             )
             return await self._store.update_room(room)
 
-    async def check_room_timers(self, room_id: str) -> Room:
+    async def check_room_timers(self, room_id: str, *, organization_id: str | None = None) -> Room:
         """Check and apply timer-based transitions for a single room.
 
         Returns the room (possibly transitioned to PAUSED or CLOSED).
         """
         async with self._lock_manager.locked(room_id):
-            room = await self.get_room(room_id)
+            room = await self.get_room(room_id, organization_id=organization_id)
 
             if room.status in (RoomStatus.CLOSED, RoomStatus.ARCHIVED):
                 return room
@@ -387,22 +399,34 @@ class RoomLifecycleMixin(HelpersMixin):
 
             return room
 
-    async def check_all_timers(self) -> list[Room]:
-        """Check timers on all active/paused rooms. Returns rooms that transitioned."""
+    async def check_all_timers(self, *, organization_id: str | None = None) -> list[Room]:
+        """Check one tenant's active/paused room timers.
+
+        With no organization scope, preserves the single-tenant/all-rooms
+        behaviour.
+        """
         transitioned: list[Room] = []
         for status in (RoomStatus.ACTIVE, RoomStatus.PAUSED):
-            rooms = await self._store.find_rooms(status=status.value)
+            rooms = await self._store.find_rooms(
+                organization_id=organization_id, status=status.value
+            )
             for room in rooms:
                 old_status = room.status
-                updated = await self.check_room_timers(room.id)
+                updated = await self.check_room_timers(room.id, organization_id=organization_id)
                 if updated.status != old_status:
                     transitioned.append(updated)
         return transitioned
 
-    async def update_room_metadata(self, room_id: str, metadata: dict[str, Any]) -> Room:
+    async def update_room_metadata(
+        self,
+        room_id: str,
+        metadata: dict[str, Any],
+        *,
+        organization_id: str | None = None,
+    ) -> Room:
         """Update room metadata."""
         async with self._lock_manager.locked(room_id):
-            room = await self.get_room(room_id)
+            room = await self.get_room(room_id, organization_id=organization_id)
             room = room.model_copy(
                 update={"metadata": {**room.metadata, **metadata}, "updated_at": datetime.now(UTC)}
             )
@@ -414,6 +438,8 @@ class RoomLifecycleMixin(HelpersMixin):
         channel_id: str,
         participant_id: str,
         display_name: str | None = None,
+        *,
+        organization_id: str | None = None,
     ) -> Participant:
         """Get an existing participant or create one.
 
@@ -434,6 +460,8 @@ class RoomLifecycleMixin(HelpersMixin):
         hold that lock while they write the same record.
         """
         async with self._lock_manager.locked(room_id):
+            if organization_id is not None:
+                await self.get_room(room_id, organization_id=organization_id)
             existing = await self._store.get_participant(room_id, participant_id)
             if existing:
                 warn_cross_channel(existing, channel_id, rehomed=False)
@@ -458,6 +486,8 @@ class RoomLifecycleMixin(HelpersMixin):
         participant_id: str,
         identity_id: str,
         resolved_by: str = "manual",
+        *,
+        organization_id: str | None = None,
     ) -> Participant:
         """Resolve a pending participant to a known identity (RFC 7.4).
 
@@ -465,6 +495,8 @@ class RoomLifecycleMixin(HelpersMixin):
         participant has been identified.
         """
         async with self._lock_manager.locked(room_id):
+            if organization_id is not None:
+                await self.get_room(room_id, organization_id=organization_id)
             participant = await self._store.get_participant(room_id, participant_id)
             if participant is None:
                 raise ParticipantNotFoundError(
@@ -472,7 +504,9 @@ class RoomLifecycleMixin(HelpersMixin):
                 )
 
             identity = await self._store.get_identity(identity_id)
-            if identity is None:
+            if identity is None or (
+                organization_id is not None and identity.organization_id != organization_id
+            ):
                 raise IdentityNotFoundError(f"Identity {identity_id} not found")
 
             # Update participant fields

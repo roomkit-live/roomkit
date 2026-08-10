@@ -72,6 +72,7 @@ async def demo_mixed(kit: RoomKit, output_dir: Path) -> None:
         recorder=WavFileRecorder(),
         recording_config=RecordingConfig(
             storage=str(output_dir / "mixed"),
+            storage_encrypted_at_rest=True,  # output_dir must be on encrypted storage
             channels=RecordingChannelMode.MIXED,
         ),
     )
@@ -124,6 +125,7 @@ async def demo_separate(kit: RoomKit, output_dir: Path) -> None:
         recorder=WavFileRecorder(),
         recording_config=RecordingConfig(
             storage=str(output_dir / "separate"),
+            storage_encrypted_at_rest=True,  # output_dir must be on encrypted storage
             channels=RecordingChannelMode.SEPARATE,
         ),
     )
@@ -174,6 +176,7 @@ async def demo_stereo(kit: RoomKit, output_dir: Path) -> None:
         recorder=WavFileRecorder(),
         recording_config=RecordingConfig(
             storage=str(output_dir / "stereo"),
+            storage_encrypted_at_rest=True,  # output_dir must be on encrypted storage
             channels=RecordingChannelMode.STEREO,
         ),
     )

@@ -4,9 +4,30 @@ from __future__ import annotations
 
 from typing import Any
 
+from roomkit.models.delivery import ProviderResult
+
 
 class RoomKitError(Exception):
     """Base exception for all RoomKit errors."""
+
+
+class ProviderDeliveryError(RoomKitError):
+    """Raised when a provider returns an explicit unsuccessful result.
+
+    Providers use :class:`~roomkit.models.delivery.ProviderResult` for both
+    accepted and rejected sends. Turning a negative result into an exception
+    at the channel boundary lets the existing retry and circuit-breaker path
+    treat it exactly like a transport exception while retaining the structured
+    provider response for the caller.
+    """
+
+    def __init__(self, result: ProviderResult) -> None:
+        message = result.error or "provider_send_failed"
+        super().__init__(message)
+        self.provider_result = result
+        self.code = str(result.metadata.get("code") or result.error or "ProviderDeliveryFailed")
+        declared_retryable = result.metadata.get("retryable")
+        self.retryable = declared_retryable if isinstance(declared_retryable, bool) else True
 
 
 class RoomNotFoundError(RoomKitError):

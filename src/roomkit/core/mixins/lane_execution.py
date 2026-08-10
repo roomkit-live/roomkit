@@ -43,16 +43,24 @@ def _delivery_results(result: BroadcastResult) -> dict[str, DeliveryResult]:
     """
     results: dict[str, DeliveryResult] = {}
     for channel_id, output in result.delivery_outputs.items():
+        provider_result = output.provider_result
         results[channel_id] = DeliveryResult(
             channel_id=channel_id,
             status="sent",
-            provider_message_id=output.response_metadata.get("provider_message_id"),
+            provider_message_id=(
+                provider_result.provider_message_id if provider_result is not None else None
+            ),
+            provider_result=provider_result,
         )
     for channel_id, message in result.errors.items():
         exc = result.errors_exc.get(channel_id)
+        provider_result = getattr(exc, "provider_result", None)
         results[channel_id] = DeliveryResult(
             channel_id=channel_id,
             status="failed",
+            provider_message_id=(
+                provider_result.provider_message_id if provider_result is not None else None
+            ),
             error=DeliveryError(
                 code=str(getattr(exc, "code", None) or type(exc).__name__)
                 if exc is not None
@@ -60,6 +68,7 @@ def _delivery_results(result: BroadcastResult) -> dict[str, DeliveryResult]:
                 message=message,
                 retryable=bool(getattr(exc, "retryable", True)),
             ),
+            provider_result=provider_result,
         )
     return results
 
