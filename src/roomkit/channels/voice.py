@@ -1172,7 +1172,14 @@ class VoiceChannel(
         if session is None:
             return
         room_id, _ = binding_info
-        logger.debug("Flushing %d queued speech segment(s) for %s", len(queued), session_id)
+        # Logged at info like the barge-in confirmation: this is the observable
+        # proof that speech held during playback was replayed rather than
+        # dropped (RFC §12.6), and it fires once per playback at most.
+        logger.info(
+            "Flushing %d queued speech segment(s) for %s (playback finished)",
+            len(queued),
+            session_id,
+        )
         for audio in queued:
             await self._process_speech_end(session, audio, room_id, None)
 
