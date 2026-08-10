@@ -126,9 +126,11 @@ from roomkit.models.framework_event import FrameworkEvent
 from roomkit.models.hook import HookResult, InjectedEvent
 from roomkit.models.participant import Participant
 from roomkit.models.pending_input import PendingInput, PendingInputEvent, PendingInputStatus
+from roomkit.models.plan_event import PlanUpdatedEvent
 from roomkit.models.room import Room, RoomTimers
 from roomkit.models.session_event import SessionStartedEvent
 from roomkit.models.store_filter import EventFilter, PersistencePolicy
+from roomkit.models.thinking_event import ThinkingEvent
 from roomkit.models.tool_call import (
     AfterResponseCallback,
     AIGenerationEvent,
@@ -393,6 +395,7 @@ __all__ = [
     "MockImageProvider",
     "ModelPricing",
     "Participant",
+    "PlanUpdatedEvent",
     "ProviderResult",
     "Room",
     "RoomContext",
@@ -400,6 +403,7 @@ __all__ = [
     "RoomTimers",
     "SessionStartedEvent",
     "TextContent",
+    "ThinkingEvent",
     "Tool",
     "ToolCallCallback",
     "ToolCallContent",

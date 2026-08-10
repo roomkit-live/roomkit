@@ -44,7 +44,9 @@ from roomkit.models.event import EventSource, RoomEvent, SystemContent, TextCont
 from roomkit.models.framework_event import FrameworkEvent
 from roomkit.models.identity import Identity, IdentityHookResult, IdentityResult
 from roomkit.models.participant import Participant
+from roomkit.models.plan_event import PlanUpdatedEvent
 from roomkit.models.task import Observation, Task
+from roomkit.models.thinking_event import ThinkingEvent
 
 _RECENT_EVENTS_LIMIT = 2_000
 """Hard ceiling on events kept in ``RoomContext.recent_events`` in memory."""
@@ -774,8 +776,6 @@ class HelpersMixin:
         live UIs; the hook is what makes it observable to a host that runs no
         realtime backend.
         """
-        from roomkit.models.enums import HookTrigger
-
         kit_ref = self
 
         async def _callback(room_id: str, thinking: str, round_idx: int) -> None:
@@ -790,7 +790,6 @@ class HelpersMixin:
                     exc_info=True,
                 )
                 return
-            from roomkit.models.thinking_event import ThinkingEvent
 
             await kit_ref._hook_engine.run_async_hooks(
                 room_id,
@@ -809,8 +808,6 @@ class HelpersMixin:
 
     def _build_plan_updated_hook(self, channel_id: str) -> Any:
         """Build an ON_PLAN_UPDATED callback closure for an AIChannel."""
-        from roomkit.models.enums import HookTrigger
-
         kit_ref = self
 
         async def _callback(room_id: str, tasks: list[dict[str, Any]]) -> None:
@@ -825,7 +822,6 @@ class HelpersMixin:
                     exc_info=True,
                 )
                 return
-            from roomkit.models.plan_event import PlanUpdatedEvent
 
             await kit_ref._hook_engine.run_async_hooks(
                 room_id,

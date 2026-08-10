@@ -1,6 +1,6 @@
 # RoomKit
 
-> Minimum version: 0.38.0 | Python 3.12+
+> Minimum version: 0.47.0 | Python 3.12+
 
 > Full documentation: [llms-full.txt](llms-full.txt)
 
@@ -31,6 +31,7 @@ with distributed implementations (Redis, PostgreSQL, etc.) for production deploy
 - [Channel ABC](docs/api/channel.md): Base class for all channels - handle_inbound, deliver, on_event, capabilities
 - [Built-in Channels](docs/api/channels.md): SMSChannel, RCSChannel, EmailChannel, WhatsAppChannel, WhatsAppPersonalChannel, MessengerChannel, TelegramChannel, TeamsChannel, DiscordChannel, BuzzChannel, HTTPChannel, WebSocketChannel, AIChannel, VoiceChannel, RealtimeVoiceChannel, VideoChannel, AudioVideoChannel, RealtimeAudioVideoChannel, ConferenceChannel, ACPChannel, CLIChannel
 - [Voice Channel](docs/api/providers-voice.md): VoiceBackend ABC, STTProvider, TTSProvider, DeepgramSTTProvider, ElevenLabsTTSProvider, FastRTCVoiceBackend - real-time voice with barge-in support
+- [Shared Microphone Capture](docs/guides/shared-mic-capture.md): AudioCaptureSource ABC, LocalMicSource, MockCaptureSource - device capture that outlives a session, with a bounded backlog ring so a wake word can replay the utterance that triggered it
 - [Realtime Voice](docs/api/providers-realtime-voice.md): RealtimeVoiceChannel, RealtimeVoiceProvider ABC, GeminiLiveProvider, OpenAIRealtimeProvider, WebSocketRealtimeTransport, FastRTCRealtimeTransport (WebRTC passthrough) - speech-to-speech AI with tool calling, text injection, auto-reconnect
 - [Conference](docs/api/conference.md): ConferenceChannel + ConferenceBackend ABC (LiveKit SFU, Mock) - multi-party audio/video conferences with an AI bot participant (STT/TTS)
 - [Event Sources](docs/api/sources.md): source-driven ingestion powering Discord, Buzz (Nostr), WhatsApp Personal and custom WebSocket/SSE integrations

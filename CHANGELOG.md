@@ -84,7 +84,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   All three were declared Implemented, and a hook registered on any of them
   could never run — reasoning and plans surfaced only as ephemeral events, so a
   host with no realtime backend saw nothing at all. New `ThinkingEvent` and
-  `PlanUpdatedEvent` payloads.
+  `PlanUpdatedEvent` payloads, exported from `roomkit`.
 
 - **`DTMFRedaction` — configurable masking of DTMF digits (RFC Section 17.6
   MUST).** Set `AudioPipelineConfig.dtmf_redaction` and the digits the framework
@@ -112,7 +112,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   successful output, so the delivery report lost the provider message id and
   error, retry never ran, and the circuit breaker recorded a success. Negative
   provider results now enter the same retry/breaker path as transport
-  exceptions while remaining available on `DeliveryResult.provider_result`.
+  exceptions — as a new `ProviderDeliveryError`, exported from `roomkit`, which
+  carries the refusing `ProviderResult` — while it remains available on
+  `DeliveryResult.provider_result`.
 
 - **Async recording consent could race audio when the pipeline was constructed
   before asyncio started.** The pipeline now binds its home loop when a session
@@ -166,7 +168,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   included — a list of casualties with no denominator answers half the
   question.
 
-  **Breaking:** `DeliveryResult` moves to the shape Section 5.13 specifies —
+  **BREAKING:** `DeliveryResult` moves to the shape Section 5.13 specifies —
   `status: "sent" | "queued" | "failed"` and a structured
   `error: DeliveryError` (`code`, `message`, `retryable`) replace
   `success: bool` and `error: str`. Nothing in the framework constructed this

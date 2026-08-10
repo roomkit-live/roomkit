@@ -123,6 +123,50 @@ LocalAudioBackend = get_local_audio_backend()
 backend = LocalAudioBackend(sample_rate=16000, channels=1)
 ```
 
+## Shared Capture Sources
+
+A backend takes the microphone when a session starts and releases it when the
+session ends. An `AudioCaptureSource` owns the device instead, so anything that
+must listen *before* a session exists — a wake word, a level meter — keeps
+running, and the session becomes one subscriber among several.
+
+| Source | Class | Extra | Use Case |
+|--------|-------|-------|----------|
+| Local microphone | `LocalMicSource` | `roomkit[local-audio]` | Wake word, always-on capture |
+| Mock | `MockCaptureSource` | built-in | Testing |
+
+```python
+from roomkit.voice.capture import LocalMicSource
+from roomkit.voice.backends.local import LocalAudioBackend
+
+mic = LocalMicSource(sample_rate=24000, backlog_seconds=10)
+mic.start()                                        # the device opens once
+detector = mic.subscribe(enqueue, name="wakeword") # no session in sight
+
+transport = LocalAudioBackend(source=mic)          # a subscriber, not the owner
+
+mark = mic.mark()                                  # at SPEECH_START
+await channel.start_session(                       # once the trigger matched
+    room_id, participant_id, connection=None,
+    metadata={"capture_since": mark},
+)
+```
+
+The source retains recent audio in a bounded ring. `mark()` names a position in
+it and `subscribe(since=mark)` replays from there before going live; a mark that
+has aged out replays what remains and reports `truncated`. Replayed frames take
+the ordinary inbound path — no new control point.
+
+Fan-out is synchronous on the capture thread, which keeps AEC's capture and
+reference timing in step, so a subscriber must enqueue the frame and return.
+`start()` / `stop()` alone acquire and release the device: dropping to zero
+subscribers never stops capture, and a detector can safely detach for the
+duration of a call — which it should, since source frames are pre-AEC.
+
+`LocalAudioBackend(source=...)` derives its input format from the source and
+rejects a contradicting explicit argument; with no source its behaviour is
+unchanged.
+
 ## Interruption Handling
 
 Four strategies for handling user speech during TTS playback:

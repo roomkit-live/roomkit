@@ -57,10 +57,12 @@ from roomkit.models.framework_event import FrameworkEvent
 from roomkit.models.hook import HookResult, InjectedEvent
 from roomkit.models.identity import Identity, IdentityHookResult, IdentityResult
 from roomkit.models.participant import Participant
+from roomkit.models.plan_event import PlanUpdatedEvent
 from roomkit.models.room import Room, RoomTimers
 from roomkit.models.session_event import SessionStartedEvent
 from roomkit.models.store_filter import EventFilter, PersistencePolicy
 from roomkit.models.task import Observation, Task
+from roomkit.models.thinking_event import ThinkingEvent
 from roomkit.models.tool_call import ToolCallCallback, ToolCallEvent
 from roomkit.models.trace import ProtocolTrace
 
@@ -106,6 +108,7 @@ __all__ = [
     "ParticipantRole",
     "ParticipantStatus",
     "PersistencePolicy",
+    "PlanUpdatedEvent",
     "ProtocolTrace",
     "ProviderResult",
     "RateLimit",
@@ -121,6 +124,7 @@ __all__ = [
     "Task",
     "TaskStatus",
     "TemplateContent",
+    "ThinkingEvent",
     "Visibility",
     "TextContent",
     "ToolCallCallback",
