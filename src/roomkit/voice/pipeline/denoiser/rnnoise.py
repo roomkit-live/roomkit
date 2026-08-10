@@ -44,35 +44,58 @@ _lib: ctypes.CDLL | None = None
 _RNNOISE_FRAME_SIZE = 480
 
 
+def _rnnoise_search_dirs() -> list[str]:
+    """Directories probed for ``librnnoise`` when the linker cannot find it.
+
+    ``find_library`` only searches the system linker paths, which covers a
+    package-manager install and nothing else. A source build commonly lands in
+    ``~/.local/lib`` (no root) or ``/usr/local/lib``, and Homebrew's lib
+    directory is on neither path — its prefix also moves with the architecture,
+    so ``HOMEBREW_PREFIX`` is honoured when the shell exports it.
+    """
+    dirs = [os.path.expanduser("~/.local/lib"), "/usr/local/lib"]
+    brew_prefix = os.environ.get("HOMEBREW_PREFIX")
+    if brew_prefix:
+        dirs.append(os.path.join(brew_prefix, "lib"))
+    dirs.append("/opt/homebrew/lib")
+    # An exported HOMEBREW_PREFIX usually IS the default prefix; probing the
+    # same directory twice would also print it twice in the error.
+    return list(dict.fromkeys(dirs))
+
+
+def _find_rnnoise() -> str | None:
+    """Resolve a loadable ``librnnoise``, or ``None`` if there is none."""
+    path: str | None = ctypes.util.find_library("rnnoise")
+    if path is not None:
+        return path
+    soname = "librnnoise.dylib" if sys.platform == "darwin" else "librnnoise.so"
+    for directory in _rnnoise_search_dirs():
+        candidate = os.path.join(directory, soname)
+        if os.path.isfile(candidate):
+            return candidate
+    return None
+
+
 def _load_rnnoise() -> ctypes.CDLL:
     """Load ``librnnoise`` or raise :class:`ImportError`."""
     global _lib  # noqa: PLW0603
     if _lib is not None:
         return _lib
 
-    path = ctypes.util.find_library("rnnoise")
-
-    # find_library only searches the system linker paths.  If the user
-    # installed to ~/.local/lib (common when building from source without
-    # root), probe well-known prefixes as a fallback.
+    path = _find_rnnoise()
     if path is None:
-        _candidates = [
-            os.path.expanduser("~/.local/lib"),
-            "/usr/local/lib",
-        ]
-        _soname = "librnnoise.dylib" if sys.platform == "darwin" else "librnnoise.so"
-        for _dir in _candidates:
-            _candidate = os.path.join(_dir, _soname)
-            if os.path.isfile(_candidate):
-                path = _candidate
-                break
-
-    if path is None:
+        # The Homebrew package called "rnnoise" is a cask of DAW plugins
+        # (VST/LV2/LADSPA) built from a different project. It ships no
+        # loadable copy of this C ABI, so recommending it sends macOS users
+        # to install 40 MB that can never satisfy this import.
         raise ImportError(
-            "librnnoise is required for RNNoiseDenoiserProvider. "
-            "Install it with your package manager, e.g.: "
-            "apt install librnnoise0 (Debian/Ubuntu) or "
-            "brew install rnnoise (macOS)."
+            "librnnoise is required for RNNoiseDenoiserProvider and was not "
+            "found on the library search path. Debian/Ubuntu: "
+            "apt install librnnoise0. macOS: build xiph/rnnoise from source "
+            "(the Homebrew cask named 'rnnoise' is a set of DAW plugins and "
+            "does not provide this library). For a denoiser that needs no "
+            "system library at all, use SherpaOnnxDenoiserProvider. "
+            f"Searched: {', '.join(_rnnoise_search_dirs())}."
         )
 
     _lib = ctypes.CDLL(path)

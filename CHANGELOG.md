@@ -104,6 +104,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   shutdown. Closing an already-closed stream is now logged at debug and not
   propagated.
 
+- **`RNNoiseDenoiserProvider` could not find a Homebrew-installed library, and
+  its error message sent macOS users to the wrong package.** The loader probed
+  `~/.local/lib` and `/usr/local/lib` only, so an Apple Silicon install under
+  `/opt/homebrew/lib` was invisible; `HOMEBREW_PREFIX` is now honoured too. The
+  ImportError no longer recommends `brew install rnnoise` — that package is a
+  cask of DAW plugins built from a different project and cannot provide this C
+  ABI — and instead names a source build, the pip-installable
+  `SherpaOnnxDenoiserProvider` alternative, and the directories it searched.
+
 ## [0.46.0] — 2026-08-08
 
 ### Added
