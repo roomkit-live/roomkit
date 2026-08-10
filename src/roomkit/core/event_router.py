@@ -102,7 +102,11 @@ def _solicits(
         return channel_id in addressed or channel_id in always_process
 
     if source_is_agent and policy is AgentResponsePolicy.ADDRESSED_ONLY:
-        return False
+        # ADDRESSED_ONLY governs who is solicited to *act*; a supervisor is not
+        # being asked to act, it is watching (RFC §19.4 step 4). Excluding it
+        # here left it blind to exactly the turns it exists to oversee — every
+        # unaddressed agent-to-agent exchange.
+        return channel_id in always_process
 
     routed_to = metadata.get("_routed_to")
     if routed_to is None:

@@ -102,6 +102,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A voice session could come back from ENDED.** RFC Section 12.1 makes ENDED
+  terminal, and `VoiceSession.state` was a plain mutable field assigned in some
+  forty places — the rule was unenforceable rather than enforced. Leaving ENDED
+  now raises `VoiceSessionEndedError`; any other move outside the documented
+  table is logged and allowed, because the table does not model every provider's
+  reality and turning an unmodelled transition into a crash would trade a
+  documentation gap for an outage.
+
+  The guard immediately found one: the default realtime `reconfigure()` — agent
+  handoff — tore the connection down and rebuilt it on the same session, leaving
+  it briefly declared ENDED while nobody had hung up. It now calls
+  `session.renegotiate()`, the one sanctioned way back, which says exactly that.
+
+- **A supervisor saw nothing under `ADDRESSED_ONLY`.** RFC Section 19.4 step 4
+  says the supervisor always receives an agent's event; the router returned
+  early for agent-sourced events under that policy and dropped it. The two rules
+  answer different questions — a policy decides who is solicited to *act*, and a
+  supervisor is watching, not acting. Reading it the other way blinded the
+  supervisor to precisely the unaddressed agent-to-agent traffic it exists to
+  oversee.
+
 - **The provider's payload was discarded at the door.** RFC Section 5.2 makes
   `raw_payload` a MUST — "the audit trail and the source of truth for
   provider-specific data" — and nothing in the framework ever wrote it. Every

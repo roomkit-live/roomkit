@@ -347,6 +347,10 @@ class RealtimeVoiceProvider(ABC):
             provider_config: Provider-specific configuration overrides.
         """
         await self.disconnect(session)
+        # The participant's session did not end — only the upstream connection
+        # did. Without this the reconnect below would be a transition out of
+        # ENDED, which RFC §12.1 forbids.
+        session.renegotiate()
         await self.connect(
             session,
             system_prompt=system_prompt,

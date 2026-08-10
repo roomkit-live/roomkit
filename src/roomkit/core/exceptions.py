@@ -65,6 +65,14 @@ class VoiceBackendNotConfiguredError(RoomKitError):
     """Raised when voice backend operation attempted without configured backend."""
 
 
+class VoiceSessionEndedError(RoomKitError):
+    """Raised when a voice session is moved out of ENDED (RFC §12.1).
+
+    ENDED is terminal. A participant who reconnects gets a new session — the
+    old one's audio paths, recorders and lanes have already been released.
+    """
+
+
 class RoomNotAttachedError(RoomKitError):
     """Raised when a channel acts on a room it is no longer attached to.
 
