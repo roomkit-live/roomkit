@@ -1307,6 +1307,49 @@ class VoiceChannel(
         except Exception:
             logger.exception("Error handling barge-in for session %s", session.id)
 
+    async def _store_interrupted_utterance(
+        self, session: VoiceSession, playback: TTSPlaybackState, room_id: str
+    ) -> None:
+        """Record that the bot was cut off mid-utterance (RFC §12.3.13 step 2).
+
+        The timeline otherwise says the bot said the whole thing, because the
+        AI's response event is written when the text is produced, not when it
+        is heard. What the room actually heard is a prefix of it, and nothing
+        recorded that.
+
+        The full text is stored, not a truncated guess: ``played_ms`` is the
+        honest measure of how far playback got, and cutting the string at the
+        same proportion would invent a word boundary that TTS timing does not
+        guarantee. ``played_percentage`` follows only where the utterance's
+        total duration is known.
+        """
+        if self._framework is None or not playback.text:
+            return
+        from roomkit.models.event import TextContent
+
+        metadata: dict[str, Any] = {
+            "interrupted": True,
+            "played_ms": playback.position_ms,
+            "voice_session_id": session.id,
+        }
+        if playback.total_duration_ms:
+            metadata["played_percentage"] = round(
+                min(100.0, 100.0 * playback.position_ms / playback.total_duration_ms), 1
+            )
+        try:
+            await self._framework.send_event(
+                room_id,
+                self.channel_id,
+                TextContent(body=playback.text),
+                participant_id=session.participant_id,
+                metadata=metadata,
+                visibility=Visibility.INTERNAL,
+            )
+        except Exception:
+            logger.exception(
+                "Could not record the interrupted utterance for session %s", session.id
+            )
+
     async def interrupt(self, session: VoiceSession, *, reason: str = "explicit") -> bool:
         """Interrupt ongoing TTS playback for a session."""
         import time as _time
@@ -1318,7 +1361,16 @@ class VoiceChannel(
 
         self._last_tts_ended_at[session.id] = _time.monotonic()
 
-        if self._backend and VoiceCapability.INTERRUPTION in self._backend.capabilities:
+        config = self._interruption_handler.config
+        # ``flush_partial_tts`` decides what happens to audio already handed to
+        # the backend (RFC §12.3.13 step 1). Left true, the buffer is dropped
+        # and the bot stops mid-word; set false, the current utterance is
+        # allowed to finish while the user's speech is processed alongside it.
+        if (
+            config.flush_partial_tts
+            and self._backend
+            and VoiceCapability.INTERRUPTION in self._backend.capabilities
+        ):
             await self._backend.cancel_audio(session)
 
         # Bypass AEC after TTS stops so user audio passes unchanged.  Keep the
@@ -1330,6 +1382,8 @@ class VoiceChannel(
             binding_info = self._session_bindings.get(session.id)
             if binding_info:
                 room_id, _ = binding_info
+                if config.keep_partial_transcript:
+                    await self._store_interrupted_utterance(session, playback, room_id)
                 try:
                     from roomkit.voice.events import TTSCancelledEvent
 

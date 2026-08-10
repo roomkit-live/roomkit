@@ -102,6 +102,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`flush_partial_tts` and `keep_partial_transcript` decided nothing.** Both
+  are documented `InterruptionConfig` fields and neither was read anywhere in
+  the source (RFC Section 12.3.13). Turning the flush off still cut the bot's
+  audio dead; turning the transcript on still recorded nothing.
+
+  `flush_partial_tts=False` now lets the current utterance finish while the
+  user's speech is processed alongside it. `keep_partial_transcript=True`
+  records what the room actually heard as an `internal`-visibility event
+  carrying `interrupted`, `played_ms`, and `played_percentage` where the
+  utterance's duration is known — the AI's response event is written when the
+  text is produced, not when it is heard, so without this the timeline claims
+  a bot cut off after two words delivered its whole line.
+
+  The full text is stored rather than a truncated guess: cutting the string at
+  the played proportion would invent a word boundary TTS timing does not
+  guarantee.
+
 - **A realtime provider error reached a log line and stopped there.** RFC
   Section 12.5 maps the provider's `on_error` callback onto the global
   `ON_ERROR` hook. Nothing fired it, and the errors that matter most here are
