@@ -158,7 +158,14 @@ class TestRoomArchival:
         assert len(seen) == 1
 
 
-class TestPreviouslyDeadTriggers:
+class TestTriggersThatReachHooks:
+    """RFC §9.2 — a trigger the enum declares must reach the room's hooks.
+
+    Publishing only an ephemeral or framework event satisfies an observer
+    watching the stream and nobody who registered a hook, which is the surface
+    the enum advertises.
+    """
+
     async def test_on_ai_thinking_fires(self) -> None:
         """RFC §9.2 — reasoning reaches hooks, not only ephemeral events."""
         kit = RoomKit()

@@ -1040,9 +1040,10 @@ class TestBargeInIntegration:
         async def on_barge_in(event, context):
             barge_in_events.append(event)
 
-        # Past ``allow_during_first_ms`` (200ms with the legacy defaults) —
-        # the backend path answers to the interruption policy like the VAD
-        # path does (RFC §12.6).
+        # Playback started a second ago, clear of any ``allow_during_first_ms``
+        # grace window, so nothing but the interruption policy decides here —
+        # the backend path answers to it exactly as the VAD path does
+        # (RFC §12.6).
         channel._playing_sessions[session.id] = TTSPlaybackState(
             session_id=session.id,
             text="Long response text",
