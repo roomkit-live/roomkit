@@ -102,6 +102,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Room operations could not be scoped to a tenant.** RFC Section 17.2
+  requires room operations to be isolated per organization; any caller holding
+  a room id operated on it regardless of which organization owned it.
+  `get_room()`, `get_timeline()`, `send_event()`, `attach_channel()`,
+  `detach_channel()`, `close_room()` and `archive_room()` now take an optional
+  `organization_id` and refuse a room belonging to anyone else.
+
+  A room owned by another organization is reported as **not found**, not as a
+  distinct "wrong organization" error: a separate error would let a caller
+  probe which room ids exist outside its own tenant, which is the thing
+  scoping exists to prevent. A room created without an organization belongs to
+  no tenant, so a scoped caller does not reach it either.
+
+  The parameter is optional because a library has no caller or auth context of
+  its own — the scope has to come from the caller. Left unset, every operation
+  behaves exactly as before.
+
 - **An address resolved to one identity across every tenant.**
   `identity_addresses` was keyed on `(channel_type, address)`, so a phone
   number registered by one organization resolved to *that* organization's

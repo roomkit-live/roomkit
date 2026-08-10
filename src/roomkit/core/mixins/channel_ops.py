@@ -266,11 +266,16 @@ class ChannelOpsMixin(HelpersMixin):
         category: ChannelCategory = ChannelCategory.TRANSPORT,
         access: Access = Access.READ_WRITE,
         visibility: str = Visibility.ALL,
+        organization_id: str | None = None,
         **kwargs: Any,
     ) -> ChannelBinding:
-        """Attach a registered channel to a room."""
+        """Attach a registered channel to a room.
+
+        *organization_id* scopes the operation to one tenant (RFC §17.2); a
+        room belonging to another organization is reported as not found.
+        """
         async with self._lock_manager.locked(room_id):
-            room = await self.get_room(room_id)
+            room = await self.get_room(room_id, organization_id=organization_id)
             channel = self._channels.get(channel_id)
             if channel is None:
                 raise ChannelNotRegisteredError(f"Channel {channel_id} not registered")
@@ -444,9 +449,17 @@ class ChannelOpsMixin(HelpersMixin):
 
         await self.join(room_id, channel_id)
 
-    async def detach_channel(self, room_id: str, channel_id: str) -> bool:
-        """Detach a channel from a room."""
+    async def detach_channel(
+        self, room_id: str, channel_id: str, *, organization_id: str | None = None
+    ) -> bool:
+        """Detach a channel from a room.
+
+        *organization_id* scopes the operation to one tenant (RFC §17.2); a
+        room belonging to another organization is reported as not found.
+        """
         async with self._lock_manager.locked(room_id):
+            if organization_id is not None:
+                await self.get_room(room_id, organization_id=organization_id)
             if await self._store.get_binding(room_id, channel_id) is None:
                 return False
             # Record the revocation before the binding goes: the tombstone in

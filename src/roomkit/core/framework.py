@@ -670,6 +670,7 @@ class RoomKit(
         after_index: int | None = None,
         before_index: int | None = None,
         newest_first: bool = False,
+        organization_id: str | None = None,
     ) -> list[RoomEvent]:
         """Query the event timeline for a room.
 
@@ -693,7 +694,7 @@ class RoomKit(
                 ``limit`` events instead of the oldest. Ignored when a cursor
                 is supplied.
         """
-        await self.get_room(room_id)
+        await self.get_room(room_id, organization_id=organization_id)
         return await self._store.list_events(
             room_id,
             offset=offset,
@@ -730,6 +731,7 @@ class RoomKit(
         parent_event_id: str | None = None,
         idempotency_key: str | None = None,
         addressed_to: list[str] | None = None,
+        organization_id: str | None = None,
     ) -> RoomEvent:
         """Send an event directly into a room from a channel.
 
@@ -768,7 +770,7 @@ class RoomKit(
         from roomkit.telemetry.context import get_current_span, reset_span, set_current_span
 
         await self._ensure_status_bus_subscribed()
-        await self.get_room(room_id)
+        await self.get_room(room_id, organization_id=organization_id)
         binding = await self._get_binding(room_id, channel_id)
 
         event_kwargs: dict[str, Any] = dict(

@@ -155,19 +155,36 @@ class RoomLifecycleMixin(HelpersMixin):
         )
         return result
 
-    async def get_room(self, room_id: str) -> Room:
-        """Get a room by ID. Raises RoomNotFoundError if missing."""
+    async def get_room(self, room_id: str, *, organization_id: str | None = None) -> Room:
+        """Get a room by ID. Raises RoomNotFoundError if missing.
+
+        Pass *organization_id* to scope the read to one tenant (RFC §17.2). A
+        room belonging to another organization is reported as **not found**
+        rather than refused: a distinct "wrong organization" error would let a
+        caller probe which room ids exist outside its own tenant, which is the
+        thing scoping is meant to prevent.
+
+        A library has no caller or auth context of its own, so the scope has to
+        come from the caller. Left unset, the read is unscoped and behaves as it
+        always has.
+        """
         room = await self._store.get_room(room_id)
-        if room is None:
+        if room is None or (
+            organization_id is not None and room.organization_id != organization_id
+        ):
             raise RoomNotFoundError(f"Room {room_id} not found")
         return room
 
-    async def close_room(self, room_id: str) -> Room:
-        """Close a room."""
+    async def close_room(self, room_id: str, *, organization_id: str | None = None) -> Room:
+        """Close a room.
+
+        *organization_id* scopes the operation to one tenant (RFC §17.2); a
+        room belonging to another organization is reported as not found.
+        """
         async with self._lock_manager.locked(room_id):
             # Stop room-level media recorders before closing
             self._room_recorder_mgr.stop_room(room_id)
-            room = await self.get_room(room_id)
+            room = await self.get_room(room_id, organization_id=organization_id)
             room = room.model_copy(
                 update={"status": RoomStatus.CLOSED, "closed_at": datetime.now(UTC)}
             )
@@ -185,7 +202,7 @@ class RoomLifecycleMixin(HelpersMixin):
             )
             return result
 
-    async def archive_room(self, room_id: str) -> Room:
+    async def archive_room(self, room_id: str, *, organization_id: str | None = None) -> Room:
         """Archive a room — the terminal storage state (RFC §5.1).
 
         ARCHIVED refuses new events exactly as CLOSED does; the difference is
@@ -198,7 +215,7 @@ class RoomLifecycleMixin(HelpersMixin):
         """
         async with self._lock_manager.locked(room_id):
             self._room_recorder_mgr.stop_room(room_id)
-            room = await self.get_room(room_id)
+            room = await self.get_room(room_id, organization_id=organization_id)
             if room.status == RoomStatus.ARCHIVED:
                 return room
             room = room.model_copy(
