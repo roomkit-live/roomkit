@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from fnmatch import fnmatch
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from roomkit.channels._skill_constants import SKILL_INFRA_TOOL_NAMES
 from roomkit.channels._tool_search_constants import TOOL_SEARCH_INFRA_TOOL_NAMES
 from roomkit.providers.ai.base import AITool
 from roomkit.sandbox.tools import SANDBOX_TOOL_PREFIX
-from roomkit.tools.policy import ToolPolicy
+from roomkit.tools.policy import ToolPolicy, matches_any_pattern
 
 if TYPE_CHECKING:
     from roomkit.channels._skill_activation import SkillActivationMemory
@@ -18,16 +17,6 @@ if TYPE_CHECKING:
     from roomkit.models.context import RoomContext
     from roomkit.models.event import RoomEvent
     from roomkit.skills.registry import SkillRegistry
-
-
-def _matches_any(tool_name: str, patterns: set[str]) -> bool:
-    """Whether *tool_name* matches any skill gating pattern (RFC §24.2).
-
-    The patterns are ``ToolPolicy`` globs, so this uses the same ``fnmatch``
-    matching the policy does — a skill and a policy agree on what a pattern
-    covers.
-    """
-    return any(fnmatch(tool_name, pattern) for pattern in patterns)
 
 
 @runtime_checkable
@@ -164,7 +153,7 @@ class AIToolPolicyMixin:
                 # Skill gating filter. ``gated`` holds ToolPolicy globs, not
                 # names (RFC §24.2) — an exact-membership test would let
                 # ``search_*`` gate nothing at all.
-                if _matches_any(name, gated):
+                if matches_any_pattern(name, gated):
                     continue
             # Tool Search: hide the discretionary catalogue (sandbox included)
             # behind find_tools, exposing only pinned + already-revealed tools.

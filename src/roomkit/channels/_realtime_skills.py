@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import json
 import logging
-from fnmatch import fnmatch
 from typing import TYPE_CHECKING, Any
 
 from roomkit.channels._skill_constants import (
@@ -30,6 +29,7 @@ from roomkit.channels._skill_handlers import (
     missing_skill_error,
 )
 from roomkit.skills.registry import SkillRegistry
+from roomkit.tools.policy import matches_any_pattern
 
 if TYPE_CHECKING:
     from roomkit.skills.executor import ScriptExecutor
@@ -52,16 +52,6 @@ SkillDeliveryMode = str
   ``activate_skill`` becomes a declarative ACK — the body is already in
   the model's context, no reconfigure is needed.
 """
-
-
-def _matches_any(tool_name: str, patterns: set[str]) -> bool:
-    """Whether *tool_name* matches any skill gating pattern (RFC §24.2).
-
-    The patterns are ``ToolPolicy`` globs, so this uses the same ``fnmatch``
-    matching the policy does — a skill and a policy agree on what a pattern
-    covers.
-    """
-    return any(fnmatch(tool_name, pattern) for pattern in patterns)
 
 
 class RealtimeSkillSupport:
@@ -240,7 +230,7 @@ class RealtimeSkillSupport:
             t
             for t in all_tools
             if t.get("name") in SKILL_INFRA_TOOL_NAMES
-            or not _matches_any(str(t.get("name", "")), gated)
+            or not matches_any_pattern(str(t.get("name", "")), gated)
         ]
 
     def newly_visible_after_activation(

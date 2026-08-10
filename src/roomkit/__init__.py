@@ -73,6 +73,7 @@ from roomkit.core.exceptions import (
     ConferenceCloseError,
     ParticipantNotAdmittedError,
     RoomNotAttachedError,
+    VoiceSessionEndedError,
 )
 from roomkit.core.framework import (
     ChannelAlreadyRegisteredError,
@@ -228,6 +229,7 @@ __all__ = [
     "SourceNotFoundError",
     "VoiceBackendNotConfiguredError",
     "VoiceNotConfiguredError",
+    "VoiceSessionEndedError",
     "ConferenceAlreadyAttachedError",
     "ConferenceCapabilityError",
     "ConferenceCloseError",

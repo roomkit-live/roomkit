@@ -164,13 +164,14 @@ class TestMigration:
             PRAGMA user_version=2;
             """
         )
-        legacy = Identity(id="legacy", display_name="Legacy")
+        v2_identity = Identity(id="pre-scoping", display_name="Registered before scoping")
         conn.execute(
-            "INSERT INTO identities(id, data) VALUES(?, ?)", (legacy.id, legacy.model_dump_json())
+            "INSERT INTO identities(id, data) VALUES(?, ?)",
+            (v2_identity.id, v2_identity.model_dump_json()),
         )
         conn.execute(
             "INSERT INTO identity_addresses(channel_type, address, identity_id) VALUES(?, ?, ?)",
-            ("sms", "+15550000000", legacy.id),
+            ("sms", "+15550000000", v2_identity.id),
         )
         conn.commit()
         conn.close()
@@ -178,7 +179,7 @@ class TestMigration:
         store = SQLiteStore(path)
         try:
             resolved = await store.resolve_identity("sms", "+15550000000")
-            assert resolved is not None and resolved.id == "legacy"
+            assert resolved is not None and resolved.id == "pre-scoping"
         finally:
             await store.close()
 
@@ -191,7 +192,7 @@ class TestMigration:
             conn.execute(
                 "INSERT INTO identity_addresses(channel_type, address, identity_id,"
                 " organization_id) VALUES(?, ?, ?, ?)",
-                ("sms", "+15550000000", "legacy", "acme"),
+                ("sms", "+15550000000", "pre-scoping", "acme"),
             )
             conn.commit()
         finally:

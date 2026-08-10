@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from fnmatch import fnmatch
 from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, Field
 
 from roomkit.skills.paths import _resolve_contained_directory, safe_join_filename
+from roomkit.tools.policy import matches_any_pattern
 
 logger = logging.getLogger("roomkit.skills")
 
@@ -56,7 +56,7 @@ class SkillMetadata:
         Uses the same ``fnmatch`` matching as :class:`~roomkit.tools.policy.ToolPolicy`,
         so a skill and a policy agree on what a pattern covers.
         """
-        return any(fnmatch(tool_name, pattern) for pattern in self.gated_tool_names)
+        return matches_any_pattern(tool_name, self.gated_tool_names)
 
 
 @dataclass

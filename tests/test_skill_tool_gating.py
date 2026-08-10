@@ -12,6 +12,7 @@ import pytest
 
 from roomkit.skills.models import SkillMetadata
 from roomkit.skills.parser import parse_frontmatter
+from roomkit.tools.policy import ToolPolicy, matches_any_pattern
 
 # The shape §24.1 uses.
 RFC_EXAMPLE = """---
@@ -81,14 +82,26 @@ class TestGlobsGate:
 
 
 class TestGatingSitesUseTheSameMatcher:
-    def test_ai_policy_matcher_is_glob_aware(self) -> None:
-        from roomkit.channels._ai_policy import _matches_any
+    """Skill gating, ``allowed_tools`` and ToolPolicy decide the same question.
 
-        assert _matches_any("search_web", {"search_*"}) is True
-        assert _matches_any("send_email", {"search_*"}) is False
+    They must therefore answer it identically: a pattern that covers a tool for
+    one has to cover it for the others, or a skill's declaration and a policy's
+    disagree about which tools exist.
+    """
 
-    def test_realtime_matcher_is_glob_aware(self) -> None:
-        from roomkit.channels._realtime_skills import _matches_any
+    def test_the_shared_matcher_is_glob_aware(self) -> None:
+        assert matches_any_pattern("search_web", {"search_*"}) is True
+        assert matches_any_pattern("send_email", {"search_*"}) is False
 
-        assert _matches_any("search_web", {"search_*"}) is True
-        assert _matches_any("send_email", {"search_*"}) is False
+    @pytest.mark.parametrize(
+        ("tool", "expected"),
+        [("search_web", True), ("search_", True), ("websearch", False), ("send_email", False)],
+    )
+    def test_a_skill_and_a_policy_agree_on_a_pattern(self, tool: str, expected: bool) -> None:
+        pattern = "search_*"
+        skill = SkillMetadata(name="s", description="d", allowed_tools=[pattern])
+        policy = ToolPolicy(allow=[pattern])
+
+        assert skill.gates(tool) is expected
+        assert policy.is_allowed(tool) is expected
+        assert matches_any_pattern(tool, {pattern}) is expected

@@ -2,11 +2,22 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from fnmatch import fnmatch
 from typing import Literal
 
 from pydantic import BaseModel, Field, PrivateAttr
+
+
+def matches_any_pattern(tool_name: str, patterns: Iterable[str]) -> bool:
+    """Whether *tool_name* matches any of *patterns* (RFC §24.2 glob semantics).
+
+    The single definition of what a tool pattern covers. Skill gating, skill
+    ``allowed_tools`` and :class:`ToolPolicy` all decide which tools a caller
+    may reach, so they have to agree on what ``search_*`` means — three
+    independent copies of one ``fnmatch`` loop is three chances to drift.
+    """
+    return any(fnmatch(tool_name, pattern) for pattern in patterns)
 
 
 class RoleOverride(BaseModel):
@@ -87,18 +98,17 @@ class ToolPolicy(BaseModel):
             return True
 
         # Deny always wins
-        for pattern in self.deny:
-            if fnmatch(tool_name, pattern):
-                return False
+        if matches_any_pattern(tool_name, self.deny):
+            return False
 
         # Non-empty allow list acts as whitelist
-        if self.allow and not any(fnmatch(tool_name, pattern) for pattern in self.allow):
+        if self.allow and not matches_any_pattern(tool_name, self.allow):
             return False
 
         # Restrict-mode secondary allow constraint
         if not self._restrict_allow:
             return True
-        return any(fnmatch(tool_name, pattern) for pattern in self._restrict_allow)
+        return matches_any_pattern(tool_name, self._restrict_allow)
 
     def as_filter(self) -> Callable[[str], bool]:
         """Return a callable ``(tool_name) -> bool`` suitable for :func:`filter`."""
