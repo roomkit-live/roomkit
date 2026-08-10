@@ -52,7 +52,7 @@ from roomkit import RealtimeVoiceChannel, RoomKit
 from roomkit.providers.gemini.realtime import GeminiLiveProvider
 from roomkit.voice.audio_frame import AudioFrame
 from roomkit.voice.backends.local import LocalAudioBackend
-from roomkit.voice.capture import CaptureMark, LocalMicSource
+from roomkit.voice.capture import CaptureMark, CaptureSubscription, LocalMicSource
 from roomkit.voice.pipeline.vad.base import VADEventType
 from roomkit.voice.pipeline.vad.energy import EnergyVADProvider
 
@@ -80,8 +80,22 @@ class SpeechTrigger:
         self._frames: asyncio.Queue[AudioFrame] = asyncio.Queue()
         self._loop = asyncio.get_running_loop()
         self._mark: CaptureMark | None = None
+        self._subscription: CaptureSubscription | None = None
         self._session = None
         self._armed = True
+
+    # -- attachment ---------------------------------------------------------
+
+    def attach(self) -> CaptureSubscription:
+        """Start listening to the shared source."""
+        self._subscription = self._mic.subscribe(self.enqueue, name="speech-trigger")
+        return self._subscription
+
+    def detach(self) -> None:
+        """Stop listening.  Idempotent, and never stops the source itself."""
+        if self._subscription is not None:
+            self._subscription.unsubscribe()
+            self._subscription = None
 
     # -- capture thread -----------------------------------------------------
 
@@ -113,8 +127,10 @@ class SpeechTrigger:
         self._armed = False  # one shot: this example opens a single session
         logger.info("Speech ended after %.0fms — opening the session", duration_ms)
 
-        # A real detector detaches here: source frames are pre-AEC, so a
-        # subscriber left attached would hear the assistant's own voice.
+        # Detach before the call. Source frames are pre-AEC, so a detector left
+        # attached hears the assistant through the speakers and triggers on it.
+        self.detach()
+
         self._session = await self._channel.start_session(
             "capture-demo",
             "local-user",
@@ -122,12 +138,12 @@ class SpeechTrigger:
             metadata={"capture_since": self._mark},
         )
 
-        expected = int(duration_ms / 1000 * SAMPLE_RATE) * 2
+        # How much was actually replayed is the session's subscription to
+        # report, not ours — the backend owns it, and logs the exact byte count
+        # on the line above ("Mic capture subscribed: ... replayed=...B").
         logger.info(
-            "Session live. Backlog replayed into it covers roughly %d bytes of the "
-            "%.0fms you just spoke — that is the part a per-session device would "
-            "have lost.",
-            expected,
+            "Session live. The %.0fms you spoke before it existed was replayed "
+            "into it — that is what a per-session device would have lost.",
             duration_ms,
         )
 
@@ -183,14 +199,14 @@ async def main() -> None:
     await kit.attach_channel("capture-demo", "voice")
 
     trigger = SpeechTrigger(mic, channel)
-    detector = mic.subscribe(trigger.enqueue, name="speech-trigger")
+    detector = trigger.attach()
     logger.info("Listening (subscriber %s). Press Ctrl+C to stop.\n", detector.name)
 
     task = asyncio.create_task(trigger.run())
 
     async def cleanup() -> None:
         task.cancel()
-        detector.unsubscribe()
+        trigger.detach()  # already detached if a session opened
         await trigger.close()
         mic.stop()  # the source's lifecycle is ours, not the backend's
 
