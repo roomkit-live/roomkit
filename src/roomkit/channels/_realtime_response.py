@@ -277,6 +277,7 @@ class RealtimeResponseMixin:
             code,
             message,
         )
+        self._announce_provider_error(session, code, message)
         # Providers also surface recoverable protocol errors and warnings via
         # this callback.  A fatal transport loss is distinguished without a
         # public callback-signature change: providers mark the shared session
@@ -294,6 +295,54 @@ class RealtimeResponseMixin:
             name=f"rt_provider_failed:{session.id}",
         )
         return None
+
+    def _announce_provider_error(self, session: VoiceSession, code: str, message: str) -> None:
+        """Map the provider's ``on_error`` onto ON_ERROR (RFC §12.5).
+
+        Every provider failure, not only the fatal ones: a rate limit or a
+        rejected turn leaves the session alive and is precisely what a host
+        wants to surface, while a log line reaches nobody watching the room.
+        Scheduled rather than awaited — this runs inside a provider receive
+        loop, which must not wait on hooks.
+        """
+        if self._framework is None or not session.room_id:
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        self._track_task(
+            loop,
+            self._fire_provider_error_hook(session, code, message),
+            name=f"rt_provider_error:{session.id}",
+        )
+
+    async def _fire_provider_error_hook(
+        self, session: VoiceSession, code: str, message: str
+    ) -> None:
+        from roomkit.models.enums import ChannelType
+        from roomkit.models.event import EventSource
+
+        framework = self._framework
+        if framework is None:
+            return
+        try:
+            context = await framework._build_context(session.room_id)  # noqa: SLF001
+            await framework._fire_error_hook(  # noqa: SLF001
+                session.room_id,
+                context,
+                EventSource(
+                    channel_id=self.channel_id,
+                    channel_type=ChannelType.REALTIME_VOICE,
+                    participant_id=session.participant_id,
+                    provider=self._provider.name,
+                ),
+                error=message,
+                error_type=code,
+                error_category="realtime_provider",
+            )
+        except Exception:
+            logger.warning("ON_ERROR could not be fired for session %s", session.id, exc_info=True)
 
     async def _end_failed_provider_session(self, session: VoiceSession) -> None:
         """Release channel and transport state after a fatal provider loss."""

@@ -102,6 +102,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A realtime provider error reached a log line and stopped there.** RFC
+  Section 12.5 maps the provider's `on_error` callback onto the global
+  `ON_ERROR` hook. Nothing fired it, and the errors that matter most here are
+  the recoverable ones — a rate limit, a rejected turn — because the session
+  survives them and the host had no way to learn they happened. Every provider
+  error now reaches `ON_ERROR` with `error_category="realtime_provider"`.
+
+- **`inject_text()` injected text without saying so.**
+  `ON_REALTIME_TEXT_INJECTED` fired only where an inbound event drove the
+  injection, never for a caller reaching the public `inject_text()` directly —
+  the case the hook exists for, since the broadcast path is already on the
+  timeline. Both paths now announce.
+
 - **A bridge hook could refuse a frame but not reshape one.**
   `BEFORE_BRIDGE_AUDIO` and `BEFORE_BRIDGE_VIDEO` are both declared "can
   block/modify" (RFC Section 9.2). Only the block half was read: a hook

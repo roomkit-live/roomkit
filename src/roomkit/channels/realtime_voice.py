@@ -639,6 +639,7 @@ class RealtimeVoiceChannel(
         if start_audio_stream:
             await self._provider.start_audio_stream(session)
         await self._provider.inject_text(session, text, role=role, silent=silent)
+        await self._fire_text_injected(session, text, role=role)
         logger.info(
             "Injected text into session %s (role=%s, silent=%s, len=%d)",
             session.id,
@@ -646,6 +647,50 @@ class RealtimeVoiceChannel(
             silent,
             len(text),
         )
+
+    async def _fire_text_injected(self, session: VoiceSession, text: str, *, role: str) -> None:
+        """Announce a text injection to ON_REALTIME_TEXT_INJECTED (RFC §12.5).
+
+        Fired wherever text enters the provider's conversation context, not
+        only where an inbound event drove it. The hook is how an integrator
+        audits what reached the model, and a caller reaching for
+        ``inject_text`` directly is exactly the case that audit exists for —
+        the broadcast path it already covered is the one the timeline records
+        anyway.
+        """
+        if self._framework is None or not session.room_id:
+            return
+        from roomkit.models.event import TextContent
+        from roomkit.telemetry.context import reset_span
+
+        event = RoomEvent(
+            room_id=session.room_id,
+            source=EventSource(
+                channel_id=self.channel_id,
+                channel_type=self.channel_type,
+                participant_id=session.participant_id,
+                provider=self.provider_name,
+            ),
+            content=TextContent(body=text),
+            metadata={"injected_role": role, "session_id": session.id},
+        )
+        _, _tok = self._rt_span_ctx(session.id)
+        try:
+            context = await self._framework._build_context(session.room_id)  # noqa: SLF001
+            await self._framework.hook_engine.run_async_hooks(
+                session.room_id,
+                HookTrigger.ON_REALTIME_TEXT_INJECTED,
+                event,
+                context,
+                skip_event_filter=True,
+            )
+        except Exception:
+            logger.warning(
+                "ON_REALTIME_TEXT_INJECTED failed for session %s", session.id, exc_info=True
+            )
+        finally:
+            if _tok is not None:
+                reset_span(_tok)
 
     async def inject_image(
         self,
