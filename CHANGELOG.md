@@ -102,6 +102,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Delivery retried errors that could never succeed.** RFC Section 13.2 says
+  only errors marked retryable should trigger retries; the loop caught bare
+  `Exception`, so a permanent failure — a rejected recipient, a revoked
+  credential, a malformed request — was replayed through the full exponential
+  backoff to reach the same refusal, with the caller waiting for it.
+
+  An exception carrying `retryable = False` is now believed and fails on its
+  first attempt. `RetryPolicy.retryable_errors` narrows it further by exception
+  type name (base classes included, so naming `OSError` covers
+  `ConnectionError`). The error's own answer outranks the policy: a provider
+  saying "do not retry me" is right about its own failure, whatever the policy
+  lists. Unchanged by default — an error that says nothing about itself, under
+  a policy that names nothing, is still retried.
+
 - **Recording consent existed on one path of three.** RFC Section 17.6 requires
   a consent mechanism and says `ON_RECORDING_STARTED` should fire before any
   audio is captured. The conference path did exactly that. The voice pipeline

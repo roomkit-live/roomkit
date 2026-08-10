@@ -36,6 +36,16 @@ class RetryPolicy(BaseModel):
     max_delay_seconds: float = Field(default=60.0, gt=0.0)
     exponential_base: float = Field(default=2.0, gt=0.0)
 
+    retryable_errors: list[str] | None = None
+    """Exception type names that may be retried (RFC §13.2).
+
+    ``None`` retries anything the error itself does not refuse — a provider
+    that marks its exception ``retryable=False`` is believed either way, which
+    is how a permanent 4xx stops being replayed with full backoff. Naming types
+    here narrows it further: only those are retried, everything else fails on
+    its first attempt.
+    """
+
 
 class ChannelCapabilities(BaseModel):
     """What a channel can do."""
