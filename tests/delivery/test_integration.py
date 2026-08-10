@@ -5,6 +5,7 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from roomkit.core.delivery import Immediate, WaitForIdle
+from roomkit.core.hooks import SyncPipelineResult
 from roomkit.delivery.base import DeliveryItem
 from roomkit.delivery.memory import InMemoryDeliveryBackend
 from roomkit.delivery.serialization import serialize_strategy
@@ -120,6 +121,9 @@ class TestEndToEnd:
         kit._build_context = AsyncMock(return_value=MagicMock())
         kit.hook_engine = MagicMock()
         kit.hook_engine.run_async_hooks = AsyncMock()
+        # BEFORE_DELIVER is SYNC (RFC §9.2) and its result decides whether the
+        # item goes out at all.
+        kit.hook_engine.run_sync_hooks = AsyncMock(return_value=SyncPipelineResult(allowed=True))
 
         items = await backend.dequeue("w1", timeout=1.0)
         assert len(items) == 1

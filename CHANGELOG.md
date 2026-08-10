@@ -102,6 +102,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`BEFORE_DELIVER` could not block or modify anything.** RFC Section 9.2 types
+  the trigger SYNC and Section 22.3 documents it as "can block/modify content".
+  Both firing sites — the in-process `kit.deliver()` path and the delivery
+  worker — ran it through `run_async_hooks`, so a moderation hook returned
+  `block()` into the void, its rewrite was discarded, and its exceptions were
+  swallowed at debug. The delivery went out either way and nothing said so.
+
+  It runs synchronously now: a hook can refuse a delivery, or rewrite the text
+  before it goes. A refused item is dropped rather than retried — the same
+  content on the next attempt would get the same answer. Failing to *run* the
+  gate is not a refusal: `BEFORE_DELIVER` is not a fail-closed trigger
+  (Section 9.3), so a store hiccup while building the context lets the delivery
+  through unfiltered rather than silently swallowing the caller's message.
+
 - **A skill's `allowed_tools` gated nothing.** RFC Section 24.2 makes those
   entries ToolPolicy globs, and two things broke it. The frontmatter parser
   stringified a YAML list into its own repr, so the list form — the one the

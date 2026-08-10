@@ -11,6 +11,7 @@ from roomkit.delivery.base import DeliveryItem
 from roomkit.delivery.serialization import serialize_strategy
 from roomkit.delivery.worker import build_delivery_hook_event
 from roomkit.models.enums import EventStatus, HookTrigger
+from roomkit.models.event import RoomEvent, TextContent
 
 if TYPE_CHECKING:
     from roomkit.core.hooks import HookEngine
@@ -119,13 +120,45 @@ class DeliverMixin(HelpersMixin):
                 strategy_name=strategy_name,
                 extra_meta=extra_meta,
             )
+            # SYNC (RFC §9.2, §22.3): a hook here can refuse the delivery or
+            # rewrite what goes out. Fired async, a moderation hook returned
+            # block() into the void and its exceptions were swallowed at debug
+            # — the delivery went out either way.
+            #
+            # Failing to *run* the gate is not a refusal: BEFORE_DELIVER is not
+            # a fail-closed trigger (RFC §9.3), so a store hiccup while building
+            # the context lets the delivery through rather than dropping the
+            # caller's message. Only an explicit block() stops it.
+            result = None
             try:
                 room_context = await self._build_context(room_id)
-                await self._hook_engine.run_async_hooks(
+                result = await self._hook_engine.run_sync_hooks(
                     room_id, HookTrigger.BEFORE_DELIVER, hook_event, room_context
                 )
             except Exception:
-                logger.debug("BEFORE_DELIVER hook failed", exc_info=True)
+                logger.warning(
+                    "BEFORE_DELIVER could not run for room %s; delivering unfiltered",
+                    room_id,
+                    exc_info=True,
+                )
+            if result is not None and not result.allowed:
+                logger.info(
+                    "Delivery to room %s blocked by hook: %s",
+                    room_id,
+                    result.reason or result.blocked_by or "no reason given",
+                    extra={"room_id": room_id, "channel_id": channel_id},
+                )
+                return
+            # A hook that rewrote the content delivers the rewrite. Only a
+            # RoomEvent carrying text can replace it — the trigger's payload is
+            # what the hook was handed.
+            if (
+                result is not None
+                and isinstance(result.event, RoomEvent)
+                and isinstance(result.event.content, TextContent)
+            ):
+                content = result.event.content.body
+                ctx.content = content
 
         # Execute delivery strategy
         error: str | None = None

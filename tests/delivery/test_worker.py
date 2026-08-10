@@ -6,6 +6,7 @@ import asyncio
 import contextlib
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from roomkit.core.hooks import SyncPipelineResult
 from roomkit.delivery.base import DeliveryItem, DeliveryItemStatus
 from roomkit.delivery.memory import InMemoryDeliveryBackend
 from roomkit.delivery.worker import execute_delivery, fire_delivery_hooks, run_worker_loop
@@ -20,6 +21,9 @@ def _mock_kit() -> MagicMock:
     kit._build_context = AsyncMock(return_value=MagicMock())
     kit.hook_engine = MagicMock()
     kit.hook_engine.run_async_hooks = AsyncMock()
+    # BEFORE_DELIVER is SYNC (RFC §9.2): it returns a pipeline result the
+    # worker reads to decide whether the item goes out at all.
+    kit.hook_engine.run_sync_hooks = AsyncMock(return_value=SyncPipelineResult(allowed=True))
     return kit
 
 
@@ -67,6 +71,12 @@ class TestDeliveryHooks:
         item = DeliveryItem(room_id="r1", content="hello")
 
         call_order: list[str] = []
+
+        async def _sync_hook(*_a: object, **_kw: object) -> SyncPipelineResult:
+            call_order.append("hook")
+            return SyncPipelineResult(allowed=True)
+
+        kit.hook_engine.run_sync_hooks = AsyncMock(side_effect=_sync_hook)
         kit.hook_engine.run_async_hooks = AsyncMock(
             side_effect=lambda *a, **kw: call_order.append("hook")
         )
@@ -96,10 +106,10 @@ class TestDeliveryHooks:
             with contextlib.suppress(RuntimeError):
                 await execute_delivery(kit, item)
 
-        # Both hooks should have been called
-        assert kit.hook_engine.run_async_hooks.call_count == 2
-        # Second call (AFTER_DELIVER) should have error in metadata
-        after_call = kit.hook_engine.run_async_hooks.call_args_list[1]
+        # One of each: BEFORE_DELIVER decides (sync), AFTER_DELIVER reports.
+        assert kit.hook_engine.run_sync_hooks.call_count == 1
+        assert kit.hook_engine.run_async_hooks.call_count == 1
+        after_call = kit.hook_engine.run_async_hooks.call_args_list[0]
         trigger = after_call[0][1]
         assert trigger == HookTrigger.AFTER_DELIVER
 
@@ -115,7 +125,7 @@ class TestDeliveryHooks:
             with contextlib.suppress(ValueError):
                 await execute_delivery(kit, item)
 
-        after_event = kit.hook_engine.run_async_hooks.call_args_list[1][0][2]
+        after_event = kit.hook_engine.run_async_hooks.call_args_list[0][0][2]
         assert after_event.metadata.get("error") == "bad"
 
     async def test_hook_failure_does_not_abort_delivery(self) -> None:
@@ -137,8 +147,8 @@ class TestDeliveryHooks:
         await fire_delivery_hooks(kit, item, HookTrigger.BEFORE_DELIVER)
 
         kit._build_context.assert_called_once_with("r1")
-        kit.hook_engine.run_async_hooks.assert_called_once()
-        call_args = kit.hook_engine.run_async_hooks.call_args[0]
+        kit.hook_engine.run_sync_hooks.assert_called_once()
+        call_args = kit.hook_engine.run_sync_hooks.call_args[0]
         assert call_args[0] == "r1"
         assert call_args[1] == HookTrigger.BEFORE_DELIVER
         event = call_args[2]

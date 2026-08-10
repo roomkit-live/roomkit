@@ -59,8 +59,14 @@ async def fire_delivery_hooks(
     trigger: HookTrigger,
     *,
     error: str | None = None,
-) -> None:
-    """Fire BEFORE_DELIVER or AFTER_DELIVER hooks for a delivery item."""
+) -> str | None:
+    """Fire BEFORE_DELIVER or AFTER_DELIVER hooks for a delivery item.
+
+    Returns the content to deliver — the hook's rewrite when it made one, the
+    item's own otherwise — or ``None`` when a BEFORE_DELIVER hook refused the
+    delivery. AFTER_DELIVER always returns the content: it reports, it does not
+    decide.
+    """
     extra: dict[str, object] = {"delivery_item_id": item.id, **item.metadata}
     if error is not None:
         extra["error"] = error
@@ -78,11 +84,44 @@ async def fire_delivery_hooks(
         extra_meta=extra,
     )
 
+    if trigger == HookTrigger.AFTER_DELIVER:
+        try:
+            room_context = await kit._build_context(item.room_id)  # noqa: SLF001
+            await kit.hook_engine.run_async_hooks(item.room_id, trigger, hook_event, room_context)
+        except Exception:
+            logger.warning("%s hook failed for item %s", trigger.value, item.id, exc_info=True)
+        return item.content
+
+    # BEFORE_DELIVER is SYNC (RFC §9.2, §22.3): it can refuse the item or
+    # rewrite what goes out. Run async, a hook's block() was discarded and the
+    # item went out anyway.
+    #
+    # Failing to *run* the gate is not a refusal: BEFORE_DELIVER is not a
+    # fail-closed trigger (RFC §9.3), so an item goes out unfiltered rather
+    # than being dropped because the context could not be built.
     try:
         room_context = await kit._build_context(item.room_id)  # noqa: SLF001
-        await kit.hook_engine.run_async_hooks(item.room_id, trigger, hook_event, room_context)
+        result = await kit.hook_engine.run_sync_hooks(
+            item.room_id, trigger, hook_event, room_context
+        )
     except Exception:
-        logger.warning("%s hook failed for item %s", trigger.value, item.id, exc_info=True)
+        logger.warning(
+            "BEFORE_DELIVER could not run for item %s; delivering unfiltered",
+            item.id,
+            exc_info=True,
+        )
+        return item.content
+    if not result.allowed:
+        logger.info(
+            "Delivery item %s blocked by hook: %s",
+            item.id,
+            result.reason or result.blocked_by or "no reason given",
+            extra={"room_id": item.room_id, "channel_id": item.channel_id},
+        )
+        return None
+    if isinstance(result.event, RoomEvent) and isinstance(result.event.content, TextContent):
+        return result.event.content.body
+    return item.content
 
 
 async def execute_delivery(kit: RoomKit, item: DeliveryItem) -> None:
@@ -100,7 +139,13 @@ async def execute_delivery(kit: RoomKit, item: DeliveryItem) -> None:
         metadata=item.metadata,
     )
 
-    await fire_delivery_hooks(kit, item, HookTrigger.BEFORE_DELIVER)
+    content = await fire_delivery_hooks(kit, item, HookTrigger.BEFORE_DELIVER)
+    if content is None:
+        # Refused. A blocked item is dropped, not retried: the hook said no to
+        # this content, and the same content on the next attempt would get the
+        # same answer.
+        return
+    ctx.content = content
 
     error: str | None = None
     try:
