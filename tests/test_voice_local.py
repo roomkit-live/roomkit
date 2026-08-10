@@ -9,6 +9,7 @@ import pytest
 
 from roomkit.voice.audio_frame import AudioFrame
 from roomkit.voice.base import AudioChunk, VoiceCapability, VoiceSessionState
+from roomkit.voice.capture import MockCaptureSource
 
 
 def _mock_sounddevice() -> MagicMock:
@@ -707,3 +708,206 @@ class TestContinuousPlayedCallbacks:
 
         aec.reset.assert_not_called()
         assert aec.set_stream_active.call_args_list[-1].args == (session.id, False)
+
+
+# ---------------------------------------------------------------------------
+# Shared capture source (RFC 12.12)
+# ---------------------------------------------------------------------------
+
+
+def _make_backend_with_source(source, **kwargs):
+    """Create a LocalAudioBackend bound to a shared capture source."""
+    sd = _mock_sounddevice()
+    with patch.dict("sys.modules", {"sounddevice": sd}):
+        from roomkit.voice.backends.local import LocalAudioBackend
+
+        backend = LocalAudioBackend(source=source, **kwargs)
+        backend._sd = sd
+        return backend, sd
+
+
+class TestSharedCaptureSource:
+    async def test_no_device_stream_is_opened(self) -> None:
+        """The source owns the device; the backend only subscribes to it."""
+        source = MockCaptureSource()
+        source.start()
+        backend, sd = _make_backend_with_source(source)
+        opened = []
+        sd.RawInputStream = lambda **kw: opened.append(kw) or MagicMock()
+
+        session = await backend.connect("room-1", "user-1", "voice-1")
+        await backend.start_listening(session)
+
+        assert opened == []
+        assert backend._input_streams == {}
+        assert session.id in backend._subscriptions
+
+    async def test_frames_reach_on_audio_received(self) -> None:
+        source = MockCaptureSource()
+        source.start()
+        backend, _ = _make_backend_with_source(source)
+
+        received: list[AudioFrame] = []
+        backend.on_audio_received(lambda s, f: received.append(f))
+
+        session = await backend.connect("room-1", "user-1", "voice-1")
+        await backend.start_listening(session)
+        sent = source.feed_blocks(2)
+        await asyncio.sleep(0.01)
+
+        assert [f.data for f in received] == sent
+
+    async def test_the_backlog_mark_is_read_from_session_metadata(self) -> None:
+        source = MockCaptureSource()
+        source.start()
+        backend, _ = _make_backend_with_source(source)
+
+        received: list[AudioFrame] = []
+        backend.on_audio_received(lambda s, f: received.append(f))
+
+        mark = source.mark()
+        phrase = source.feed_blocks(3, fill=10)
+
+        session = await backend.connect(
+            "room-1", "user-1", "voice-1", metadata={"capture_since": mark}
+        )
+        await backend.start_listening(session)
+        await asyncio.sleep(0.01)
+
+        assert [f.data for f in received] == phrase
+
+    async def test_mute_still_applies_per_session(self) -> None:
+        source = MockCaptureSource()
+        source.start()
+        backend, _ = _make_backend_with_source(source)
+
+        received: list[AudioFrame] = []
+        backend.on_audio_received(lambda s, f: received.append(f))
+
+        session = await backend.connect("room-1", "user-1", "voice-1")
+        await backend.start_listening(session)
+        backend.set_input_muted(session, True)
+        source.feed_blocks(2)
+        await asyncio.sleep(0.01)
+
+        assert received == []
+
+        backend.set_input_muted(session, False)
+        sent = source.feed_blocks(1, fill=5)
+        await asyncio.sleep(0.01)
+        assert [f.data for f in received] == sent
+
+    async def test_gating_still_applies_per_session(self) -> None:
+        source = MockCaptureSource()
+        source.start()
+        backend, _ = _make_backend_with_source(source)
+
+        received: list[AudioFrame] = []
+        backend.on_audio_received(lambda s, f: received.append(f))
+
+        session = await backend.connect("room-1", "user-1", "voice-1")
+        await backend.start_listening(session)
+        backend.set_input_gated(session, True)
+        source.feed_blocks(2)
+        await asyncio.sleep(0.01)
+
+        assert received == []
+
+    async def test_aec_still_processes_each_frame(self) -> None:
+        source = MockCaptureSource()
+        source.start()
+        aec = MagicMock()
+        aec.process.side_effect = lambda frame, sid: frame
+        backend, _ = _make_backend_with_source(source, aec=aec)
+
+        backend.on_audio_received(lambda s, f: None)
+        session = await backend.connect("room-1", "user-1", "voice-1")
+        await backend.start_listening(session)
+        source.feed_blocks(2)
+        await asyncio.sleep(0.01)
+
+        assert aec.process.call_count == 2
+        assert aec.process.call_args.args[1] == session.id
+
+    async def test_stop_listening_unsubscribes_without_stopping_the_source(self) -> None:
+        source = MockCaptureSource()
+        source.start()
+        backend, _ = _make_backend_with_source(source)
+
+        received: list[AudioFrame] = []
+        backend.on_audio_received(lambda s, f: received.append(f))
+
+        session = await backend.connect("room-1", "user-1", "voice-1")
+        await backend.start_listening(session)
+        await backend.stop_listening(session)
+        source.feed_blocks(2)
+        await asyncio.sleep(0.01)
+
+        assert received == []
+        assert backend._subscriptions == {}
+        assert source.started is True
+
+    async def test_closing_the_backend_leaves_the_source_running(self) -> None:
+        """The source's lifecycle belongs to whoever created it."""
+        source = MockCaptureSource()
+        source.start()
+        backend, _ = _make_backend_with_source(source)
+
+        session = await backend.connect("room-1", "user-1", "voice-1")
+        await backend.start_listening(session)
+        await backend.close()
+
+        assert source.started is True
+
+    async def test_starting_twice_is_refused(self) -> None:
+        source = MockCaptureSource()
+        source.start()
+        backend, _ = _make_backend_with_source(source)
+
+        session = await backend.connect("room-1", "user-1", "voice-1")
+        await backend.start_listening(session)
+        await backend.start_listening(session)
+
+        assert len(backend._subscriptions) == 1
+
+    async def test_two_sessions_share_one_source(self) -> None:
+        source = MockCaptureSource()
+        source.start()
+        backend, _ = _make_backend_with_source(source)
+
+        received: list[str] = []
+        backend.on_audio_received(lambda s, f: received.append(s.id))
+
+        first = await backend.connect("room-1", "user-1", "voice-1")
+        second = await backend.connect("room-2", "user-2", "voice-1")
+        await backend.start_listening(first)
+        await backend.start_listening(second)
+        source.feed_blocks(1)
+        await asyncio.sleep(0.01)
+
+        assert sorted(received) == sorted([first.id, second.id])
+
+    def test_the_source_owns_the_input_format(self) -> None:
+        source = MockCaptureSource(sample_rate=48000, channels=2, block_duration_ms=10)
+        backend, _ = _make_backend_with_source(source)
+
+        assert backend._input_sample_rate == 48000
+        assert backend._channels == 2
+        assert backend._block_duration_ms == 10
+
+    def test_a_contradicting_format_argument_is_rejected(self) -> None:
+        source = MockCaptureSource(sample_rate=48000)
+        with pytest.raises(ValueError, match="conflicts with the capture source"):
+            _make_backend_with_source(source, input_sample_rate=16000)
+
+    def test_a_matching_format_argument_is_accepted(self) -> None:
+        source = MockCaptureSource(sample_rate=48000)
+        backend, _ = _make_backend_with_source(source, input_sample_rate=48000)
+        assert backend._input_sample_rate == 48000
+
+    def test_without_a_source_the_defaults_are_unchanged(self) -> None:
+        backend, _ = _make_backend()
+        assert backend._input_sample_rate == 16000
+        assert backend._channels == 1
+        assert backend._block_duration_ms == 20
+        assert backend._source is None

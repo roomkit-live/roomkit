@@ -7,6 +7,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`AudioCaptureSource` — capture that outlives a session.** A `VoiceBackend`
+  takes the microphone when a session starts and gives it back when the session
+  ends. Anything that must listen *before* a session exists — a wake word, a
+  level meter — therefore had to hand the device over at the worst possible
+  moment, while the person was still talking, and no application buffer repairs
+  a closed device. A capture source owns the device instead, and a session
+  becomes one subscriber among several.
+
+  ```python
+  from roomkit.voice.capture import LocalMicSource
+  from roomkit.voice.backends.local import LocalAudioBackend
+
+  mic = LocalMicSource(sample_rate=24000, backlog_seconds=10)
+  mic.start()                                        # the device opens once
+  detector = mic.subscribe(enqueue, name="wakeword") # no session in sight
+
+  transport = LocalAudioBackend(source=mic)          # a subscriber, not the owner
+
+  mark = mic.mark()                                  # at SPEECH_START
+  await channel.start_session(                       # once the trigger matched
+      room_id, participant_id, connection=None,
+      metadata={"capture_since": mark},
+  )
+  ```
+
+  The source retains recent audio in a bounded ring; `mark()` names a position
+  in it and `subscribe(since=mark)` replays from there before going live.
+  Replayed frames travel the ordinary inbound path, so they land in the realtime
+  channel's existing pre-connect buffer and flush in order once the provider
+  handshake completes — **no new control point on the inbound path**, and the
+  discard-on-failed-handshake behaviour already in place applies unchanged.
+
+  Addressing is by mark rather than by duration on purpose: "replay the last N
+  seconds" forces the caller to guess, and guessing long replays the tail of the
+  previous conversation into the model. A mark that has aged out of the ring
+  replays what remains and reports `truncated` — raising at the moment a session
+  opens would discard the very utterance the backlog exists to preserve.
+
+  Fan-out is synchronous on the capture thread, which is what keeps AEC's
+  capture/reference timing in step. The contract that follows is that a
+  subscriber must enqueue the frame and return; the source times each callback
+  and warns, naming the subscriber, when one runs long. Lifetime is explicit:
+  `start()`/`stop()` alone acquire and release the device, so dropping to zero
+  subscribers never stops capture and a detector can safely detach for the
+  duration of a call — which it should, since source frames are pre-AEC.
+
+  `LocalMicSource` (sounddevice) and `MockCaptureSource` ship with the ABC.
+  `LocalAudioBackend(source=...)` derives its input format from the source and
+  rejects a contradicting explicit argument; with no source its behaviour is
+  unchanged. RFC Section 12.12, guide `shared-mic-capture.md`, and
+  `examples/shared_mic_capture.py`.
+
 - **`archive_room()` — the terminal room status is reachable.** `ARCHIVED` was
   enforced at every write gate but nothing could ever set it, so a status the
   RFC requires (Section 5.1) and a framework event it mandates (`room_archived`,

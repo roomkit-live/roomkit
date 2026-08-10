@@ -38,6 +38,7 @@ import uuid
 from collections import deque
 from typing import TYPE_CHECKING, Any
 
+from roomkit.voice._sounddevice import import_sounddevice
 from roomkit.voice.audio_frame import AudioFrame
 from roomkit.voice.backends.base import (
     AudioPlayedCallback,
@@ -54,12 +55,14 @@ from roomkit.voice.base import (
     VoiceSession,
     VoiceSessionState,
 )
+from roomkit.voice.capture.base import CaptureMark
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator
+    from collections.abc import AsyncIterator, Callable
 
     import sounddevice as sd
 
+    from roomkit.voice.capture.base import AudioCaptureSource, CaptureSubscription
     from roomkit.voice.pipeline.aec.base import AECProvider
     from roomkit.voice.pipeline.resampler.linear import LinearResamplerProvider
 
@@ -67,18 +70,42 @@ logger = logging.getLogger("roomkit.voice.local")
 
 _MAX_REALTIME_BUFFER_SECONDS = 30
 
+_DEFAULT_INPUT_SAMPLE_RATE = 16000
+_DEFAULT_CHANNELS = 1
+_DEFAULT_BLOCK_DURATION_MS = 20
 
-def _import_sounddevice() -> Any:
-    """Import sounddevice, raising a clear error if missing."""
-    try:
-        import sounddevice as _sd
 
-        return _sd
-    except ImportError as exc:
-        raise ImportError(
-            "sounddevice is required for LocalAudioBackend. "
-            "Install it with: pip install roomkit[local-audio]"
-        ) from exc
+def _resolve_input_format(
+    source: AudioCaptureSource | None,
+    input_sample_rate: int | None,
+    channels: int | None,
+    block_duration_ms: int | None,
+) -> tuple[int, int, int]:
+    """Settle the input format between explicit arguments and a shared source.
+
+    A shared source owns the device, so it owns the format too.  An explicit
+    argument that contradicts it is a configuration error, not something to
+    silently resample around.
+    """
+    if source is None:
+        return (
+            input_sample_rate if input_sample_rate is not None else _DEFAULT_INPUT_SAMPLE_RATE,
+            channels if channels is not None else _DEFAULT_CHANNELS,
+            (block_duration_ms if block_duration_ms is not None else _DEFAULT_BLOCK_DURATION_MS),
+        )
+
+    for name, requested, provided in (
+        ("input_sample_rate", input_sample_rate, source.sample_rate),
+        ("channels", channels, source.channels),
+        ("block_duration_ms", block_duration_ms, source.block_duration_ms),
+    ):
+        if requested is not None and requested != provided:
+            raise ValueError(
+                f"{name}={requested} conflicts with the capture source "
+                f"({name}={provided}). The source owns the input format; omit "
+                f"the argument or configure the source instead."
+            )
+    return source.sample_rate, source.channels, source.block_duration_ms
 
 
 class LocalAudioBackend(VoiceBackend):
@@ -122,16 +149,20 @@ class LocalAudioBackend(VoiceBackend):
     def __init__(
         self,
         *,
-        input_sample_rate: int = 16000,
+        input_sample_rate: int | None = None,
         output_sample_rate: int = 24000,
-        channels: int = 1,
-        block_duration_ms: int = 20,
+        channels: int | None = None,
+        block_duration_ms: int | None = None,
         input_device: int | str | None = None,
         output_device: int | str | None = None,
         aec: AECProvider | None = None,
         mute_mic_during_playback: bool = True,
         rt_prebuffer_ms: int = 120,
+        source: AudioCaptureSource | None = None,
     ) -> None:
+        input_sample_rate, channels, block_duration_ms = _resolve_input_format(
+            source, input_sample_rate, channels, block_duration_ms
+        )
         if input_sample_rate <= 0:
             raise ValueError("input_sample_rate must be positive")
         if output_sample_rate <= 0:
@@ -142,7 +173,12 @@ class LocalAudioBackend(VoiceBackend):
             raise ValueError("block_duration_ms must be positive")
         if rt_prebuffer_ms < 0:
             raise ValueError("rt_prebuffer_ms must be non-negative")
-        self._sd = _import_sounddevice()
+        self._sd = import_sounddevice("LocalAudioBackend")
+
+        # A shared source owns the input device; this backend only subscribes.
+        # Its lifecycle stays the caller's — close() here never stops it.
+        self._source = source
+        self._subscriptions: dict[str, CaptureSubscription] = {}
 
         self._input_sample_rate = input_sample_rate
         self._output_sample_rate = output_sample_rate
@@ -345,34 +381,21 @@ class LocalAudioBackend(VoiceBackend):
     # Microphone capture
     # -------------------------------------------------------------------------
 
-    async def start_listening(self, session: VoiceSession) -> None:
-        """Start capturing audio from the microphone for a session.
+    def _make_frame_handler(self, session: VoiceSession) -> Callable[[AudioFrame], None]:
+        """Build the per-session delivery path for captured frames.
 
-        Audio frames are delivered via the ``on_audio_received`` callback.
+        Mute, gating, half-duplex suppression and AEC are session state, so
+        they stay here whether the frame came from this backend's own device
+        stream or from a shared capture source.
 
-        Args:
-            session: The voice session to capture audio for.
+        References are captured as locals so the capture thread reads stable
+        snapshots instead of mutable instance attributes.
         """
-        if session.id in self._input_streams:
-            logger.warning("Already listening for session %s", session.id)
-            return
-
-        try:
-            self._loop = asyncio.get_running_loop()
-        except RuntimeError:
-            self._loop = None
-
-        blocksize = int(self._input_sample_rate * self._block_duration_ms / 1000)
-
-        # Capture references as locals so the PortAudio callback thread
-        # reads stable snapshots instead of mutable instance attributes.
         callback_ref = self._audio_received_callback
         loop_ref = self._loop
         aec_ref = self._aec  # Transport-level AEC (timing-critical)
 
-        def _audio_callback(indata: bytes, frames: int, time_info: Any, status: Any) -> None:
-            if status:
-                logger.warning("Mic status: %s", status)
+        def _handle(frame: AudioFrame) -> None:
             if not callback_ref:
                 return
 
@@ -390,23 +413,112 @@ class LocalAudioBackend(VoiceBackend):
             if session.id in self._gated_sessions:
                 return
 
-            frame = AudioFrame(
-                data=bytes(indata),
-                sample_rate=self._input_sample_rate,
-                channels=self._channels,
-                sample_width=2,
-            )
-
-            # Transport-level AEC: run capture inline on the PortAudio
-            # thread so reference and capture timing stay synchronous.
+            # Transport-level AEC: run capture inline on the capture thread
+            # so reference and capture timing stay synchronous.
             # The channel's pipeline skips AEC (NATIVE_AEC capability).
-            if aec_ref is not None:
-                frame = aec_ref.process(frame, session.id)
+            processed = aec_ref.process(frame, session.id) if aec_ref is not None else frame
 
             if loop_ref is not None and loop_ref.is_running():
-                loop_ref.call_soon_threadsafe(callback_ref, session, frame)
+                loop_ref.call_soon_threadsafe(callback_ref, session, processed)
             else:
-                callback_ref(session, frame)
+                callback_ref(session, processed)
+
+        return _handle
+
+    async def start_listening(self, session: VoiceSession) -> None:
+        """Start capturing audio from the microphone for a session.
+
+        Audio frames are delivered via the ``on_audio_received`` callback.
+        With a shared capture source this subscribes to it rather than opening
+        a device, replaying from ``session.metadata["capture_since"]`` when a
+        mark is present — so speech that preceded the session is not lost.
+
+        Args:
+            session: The voice session to capture audio for.
+        """
+        if session.id in self._input_streams or session.id in self._subscriptions:
+            logger.warning("Already listening for session %s", session.id)
+            return
+
+        try:
+            self._loop = asyncio.get_running_loop()
+        except RuntimeError:
+            self._loop = None
+
+        handler = self._make_frame_handler(session)
+
+        source = self._source
+        if source is not None:
+            self._subscribe_to_source(source, session, handler)
+        else:
+            self._open_input_stream(session, handler)
+
+        # Capture is live — fire session ready callbacks
+        for cb in self._session_ready_callbacks:
+            cb(session)
+
+    def _subscribe_to_source(
+        self,
+        source: AudioCaptureSource,
+        session: VoiceSession,
+        handler: Callable[[AudioFrame], None],
+    ) -> None:
+        """Attach this session to the shared capture source."""
+        latency_ms = source.input_latency_ms
+        if latency_ms is not None:
+            self._configure_aec_delay(latency_ms)
+
+        subscription = source.subscribe(
+            handler,
+            since=self._session_capture_mark(session),
+            name=f"session:{session.id}",
+        )
+        self._subscriptions[session.id] = subscription
+        logger.info(
+            "Mic capture subscribed: session=%s, rate=%d, block=%dms, replayed=%dB%s",
+            session.id,
+            self._input_sample_rate,
+            self._block_duration_ms,
+            subscription.replayed_bytes,
+            " (truncated)" if subscription.truncated else "",
+        )
+
+    def _session_capture_mark(self, session: VoiceSession) -> CaptureMark | None:
+        """Read the replay mark a caller passed through session metadata."""
+        mark = session.metadata.get("capture_since")
+        if mark is None or isinstance(mark, CaptureMark):
+            return mark
+        # Starting the call matters more than the backlog: warn and go live.
+        logger.warning(
+            "Ignoring capture_since for session %s: expected CaptureMark, got %s",
+            session.id,
+            type(mark).__name__,
+        )
+        return None
+
+    def _open_input_stream(
+        self, session: VoiceSession, handler: Callable[[AudioFrame], None]
+    ) -> None:
+        """Open a device stream owned by this session (no shared source)."""
+        blocksize = int(self._input_sample_rate * self._block_duration_ms / 1000)
+        input_sample_rate = self._input_sample_rate
+        channels = self._channels
+        deliver = handler
+        has_callback = self._audio_received_callback is not None
+
+        def _audio_callback(indata: bytes, frames: int, time_info: Any, status: Any) -> None:
+            if status:
+                logger.warning("Mic status: %s", status)
+            if not has_callback:
+                return
+            deliver(
+                AudioFrame(
+                    data=bytes(indata),
+                    sample_rate=input_sample_rate,
+                    channels=channels,
+                    sample_width=2,
+                )
+            )
 
         stream = self._sd.RawInputStream(
             samplerate=self._input_sample_rate,
@@ -425,16 +537,21 @@ class LocalAudioBackend(VoiceBackend):
             self._input_sample_rate,
             self._block_duration_ms,
         )
-        # Mic stream is active — fire session ready callbacks
-        for cb in self._session_ready_callbacks:
-            cb(session)
 
     async def stop_listening(self, session: VoiceSession) -> None:
         """Stop capturing audio from the microphone for a session.
 
+        With a shared capture source this only detaches this session — the
+        source keeps running for whoever else is listening.
+
         Args:
             session: The voice session to stop capturing for.
         """
+        subscription = self._subscriptions.pop(session.id, None)
+        if subscription is not None:
+            subscription.unsubscribe()
+            logger.info("Mic capture unsubscribed: session=%s", session.id)
+
         stream = self._input_streams.pop(session.id, None)
         if stream is not None:
             try:
@@ -1066,6 +1183,21 @@ class LocalAudioBackend(VoiceBackend):
         """Seed an unset WebRTC delay from PortAudio's actual stream latencies."""
         if self._aec is None or self._rt_output_stream is None:
             return
+        try:
+            input_latency_ms = float(input_stream.latency) * 1000
+        except Exception:
+            logger.debug("AEC delay auto-configuration unavailable", exc_info=True)
+            return
+        self._configure_aec_delay(input_latency_ms)
+
+    def _configure_aec_delay(self, input_latency_ms: float) -> None:
+        """Seed an unset WebRTC delay from a known input latency.
+
+        Split from the stream variant so a shared capture source, which owns
+        the input stream this backend never sees, can report its own latency.
+        """
+        if self._aec is None or self._rt_output_stream is None:
+            return
 
         setter = getattr(self._aec, "set_stream_delay_ms", None)
         configured_delay = getattr(self._aec, "stream_delay_ms", None)
@@ -1073,7 +1205,6 @@ class LocalAudioBackend(VoiceBackend):
             return
 
         try:
-            input_latency_ms = float(input_stream.latency) * 1000
             output_latency_ms = float(self._rt_output_stream.latency) * 1000
         except Exception:
             logger.debug("AEC delay auto-configuration unavailable", exc_info=True)

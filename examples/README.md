@@ -16,6 +16,7 @@ CONSOLE=1 uv run python examples/<example>.py
 | Example | Feature | Description |
 |---------|---------|-------------|
 | `voice_local_audio.py` | Local audio | Mock STT/TTS with local mic and speakers — no external deps |
+| `shared_mic_capture.py` | Shared capture | Mic owned outside the session, so speech before it opens is replayed in |
 | `voice_cloud.py` | Cloud pipeline | Deepgram STT + Claude + ElevenLabs TTS with full audio pipeline |
 | `voice_gradium.py` | Cloud pipeline | Gradium STT/TTS + Claude with local mic |
 | `voice_deepgram_grok.py` | Cloud pipeline | Deepgram STT + Claude Haiku + Grok TTS |

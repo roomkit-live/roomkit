@@ -20,6 +20,14 @@ from roomkit.voice.bridge import (
     BridgeFrameFilter,
     BridgeFrameProcessor,
 )
+from roomkit.voice.capture import (
+    AudioCaptureSource,
+    CaptureFrameCallback,
+    CaptureMark,
+    CaptureSubscription,
+    LocalMicSource,
+    MockCaptureSource,
+)
 from roomkit.voice.events import (
     BackchannelEvent,
     BargeInEvent,
@@ -110,6 +118,13 @@ __all__ = [
     "AudioBridgeConfig",
     "BridgeFrameFilter",
     "BridgeFrameProcessor",
+    # Capture sources
+    "AudioCaptureSource",
+    "CaptureFrameCallback",
+    "CaptureMark",
+    "CaptureSubscription",
+    "LocalMicSource",
+    "MockCaptureSource",
     # Base types
     "AudioChunk",
     "AudioFrame",
