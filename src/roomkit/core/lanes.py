@@ -132,6 +132,7 @@ class DeliveryCascade:
         "_pending",
         "_reentry_budget",
         "cancelled",
+        "delivery_results",
         "error",
         "room_id",
         "streams",
@@ -151,6 +152,11 @@ class DeliveryCascade:
         self.error: Exception | None = None
         # Reason the cascade was cancelled (close/seal), or None.
         self.cancelled: str | None = None
+        # Per-channel outcome of the ROOT pass's delivery set, keyed by channel
+        # id (RFC §10.1 step 18). Only the root: a reentry is a separate event
+        # whose deliveries belong to its own result, and merging them here
+        # would collide on any channel both passes reached.
+        self.delivery_results: dict[str, Any] = {}
 
     def retain(self) -> None:
         """Account one pending unit. Call before any await can fail."""

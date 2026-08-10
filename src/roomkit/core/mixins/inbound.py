@@ -241,6 +241,8 @@ class InboundMixin(HelpersMixin):
         completed = await cascade.wait()
         if cascade.error is not None and result.error is None:
             result.error = cascade.error
+        # Step 18 reports the delivery set the caller waited for.
+        result.delivery_results = cascade.delivery_results
 
         # Handle streaming responses outside the lane (TTS delivery can take
         # seconds; the lane must not stall behind it). A failure while

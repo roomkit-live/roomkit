@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -91,15 +91,39 @@ class InboundResult(BaseModel):
     blocked: bool = False
     reason: str | None = None
     error: Exception | None = None
+    delivery_results: dict[str, DeliveryResult] = Field(default_factory=dict)
+    """Per-channel outcome of this event's delivery set, keyed by channel id
+    (RFC §10.1 step 18). ``process_inbound`` waits for that set to complete, so
+    this is populated by the time it returns — for the caller's own event only,
+    never for a reentry's, which is a separate event with its own result."""
+
+
+class DeliveryError(BaseModel):
+    """Why a delivery failed, in terms a caller can act on (RFC §5.13)."""
+
+    code: str
+    """Machine-readable code. The exception's own ``code`` when it carries one,
+    otherwise its type name — enough to branch on without parsing prose."""
+
+    message: str
+    """Human-readable description."""
+
+    retryable: bool = True
+    """Whether a retry may succeed. Read from the exception's own ``retryable``
+    when it declares one, matching what the delivery retry loop decides
+    (§13.2); an error that says nothing about itself is reported as retryable,
+    which is also how the loop treats it."""
 
 
 class DeliveryResult(BaseModel):
-    """Result of delivering an event to a channel."""
+    """The outcome of delivering one event to one channel (RFC §5.13)."""
 
     channel_id: str
-    success: bool
+    status: Literal["sent", "queued", "failed"]
+    provider_message_id: str | None = None
+    error: DeliveryError | None = None
+    retry_after: datetime | None = None
     provider_result: ProviderResult | None = None
-    error: str | None = None
 
 
 class DeliveryStatus(BaseModel):

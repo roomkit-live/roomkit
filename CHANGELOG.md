@@ -102,6 +102,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Nothing recorded whether a message was delivered.**
+  `RoomEvent.delivery_results` was a declared field written nowhere;
+  `DeliveryResult` was a declared model constructed nowhere; `InboundResult`
+  had no such field at all (RFC Sections 5.13 and 10.1 step 18). Per-channel
+  outcomes existed only as live `delivery_succeeded` / `delivery_failed`
+  framework events, so an integrator not subscribed at that instant could never
+  answer, afterwards, whether a message reached its channels.
+
+  `InboundResult.delivery_results` now reports the delivery set the caller
+  already waited for — its own event's, never a reentry's. On the event itself,
+  outcomes are persisted **only when at least one channel failed**: a set that
+  all succeeded is its own record, and paying a write per event to say
+  "everything worked" spends the whole message volume on a question nobody
+  asks. When a failure is written, the whole map goes with it, successes
+  included — a list of casualties with no denominator answers half the
+  question.
+
+  **Breaking:** `DeliveryResult` moves to the shape Section 5.13 specifies —
+  `status: "sent" | "queued" | "failed"` and a structured
+  `error: DeliveryError` (`code`, `message`, `retryable`) replace
+  `success: bool` and `error: str`. Nothing in the framework constructed this
+  model, so nothing produced the old shape; only code building it by hand is
+  affected. `DeliveryError` is exported from `roomkit`.
+
 - **`flush_partial_tts` and `keep_partial_transcript` decided nothing.** Both
   are documented `InterruptionConfig` fields and neither was read anywhere in
   the source (RFC Section 12.3.13). Turning the flush off still cut the bot's

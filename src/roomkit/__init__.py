@@ -101,6 +101,7 @@ from roomkit.memory import MemoryProvider
 from roomkit.models.channel import ChannelBinding, ChannelCapabilities, ChannelOutput
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import (
+    DeliveryError,
     DeliveryResult,
     DeliveryStatus,
     InboundMessage,
@@ -376,6 +377,7 @@ __all__ = [
     "ChannelBinding",
     "ChannelCapabilities",
     "ChannelOutput",
+    "DeliveryError",
     "DeliveryResult",
     "DeliveryStatus",
     "EventSource",

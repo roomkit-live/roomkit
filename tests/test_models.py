@@ -16,6 +16,7 @@ from roomkit.models import (
     ChannelOutput,
     ChannelType,
     CompositeContent,
+    DeliveryError,
     DeliveryResult,
     EventSource,
     EventStatus,
@@ -396,9 +397,24 @@ class TestInboundResult:
 
 
 class TestDeliveryResult:
-    def test_create(self) -> None:
-        r = DeliveryResult(channel_id="ch1", success=True)
-        assert r.provider_result is None
+    def test_a_sent_delivery_carries_no_error(self) -> None:
+        r = DeliveryResult(channel_id="ch1", status="sent")
+        assert r.error is None
+        assert r.retry_after is None
+
+    def test_a_failed_delivery_says_why(self) -> None:
+        r = DeliveryResult(
+            channel_id="ch1",
+            status="failed",
+            error=DeliveryError(code="550", message="mailbox unavailable", retryable=False),
+        )
+        assert r.error is not None
+        assert r.error.code == "550"
+        assert r.error.retryable is False
+
+    def test_an_unmarked_error_reports_as_retryable(self) -> None:
+        """Matching what the retry loop does with an error that says nothing."""
+        assert DeliveryError(code="Boom", message="boom").retryable is True
 
 
 # -- Context --

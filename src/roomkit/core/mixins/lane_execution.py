@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from roomkit.core.mixins.helpers import _RECENT_EVENTS_LIMIT, HelpersMixin
+from roomkit.models.delivery import DeliveryError, DeliveryResult
 from roomkit.models.enums import ChannelCategory, EventStatus, HookTrigger
 from roomkit.models.event import EventSource, RoomEvent
 
@@ -32,6 +33,35 @@ if TYPE_CHECKING:
     from roomkit.store.base import ConversationStore
 
 logger = logging.getLogger("roomkit.framework")
+
+
+def _delivery_results(result: BroadcastResult) -> dict[str, DeliveryResult]:
+    """Per-channel outcomes of one delivery set (RFC §5.13, §10.1 step 18).
+
+    ``errors_exc`` carries the live exception, so the report says what the
+    retry loop would decide rather than re-deriving it from a message string.
+    """
+    results: dict[str, DeliveryResult] = {}
+    for channel_id, output in result.delivery_outputs.items():
+        results[channel_id] = DeliveryResult(
+            channel_id=channel_id,
+            status="sent",
+            provider_message_id=output.response_metadata.get("provider_message_id"),
+        )
+    for channel_id, message in result.errors.items():
+        exc = result.errors_exc.get(channel_id)
+        results[channel_id] = DeliveryResult(
+            channel_id=channel_id,
+            status="failed",
+            error=DeliveryError(
+                code=str(getattr(exc, "code", None) or type(exc).__name__)
+                if exc is not None
+                else "DeliveryFailed",
+                message=message,
+                retryable=bool(getattr(exc, "retryable", True)),
+            ),
+        )
+    return results
 
 
 @dataclass(slots=True, frozen=True)
@@ -377,6 +407,42 @@ class LaneExecutionMixin(HelpersMixin):
                 )
         return BroadcastResult()
 
+    async def _record_failed_deliveries(
+        self, event: RoomEvent, results: dict[str, DeliveryResult]
+    ) -> None:
+        """Persist the outcomes onto the event, but only when one of them failed.
+
+        A delivery set that all succeeded needs no record: its absence *is* the
+        record, and paying an UPDATE per event to write "everything worked"
+        costs the whole message volume to answer a question nobody asks. A set
+        with a failure in it is the one an operator comes back to hours later —
+        "which channels did this never reach?" — and the live
+        ``delivery_failed`` framework event has long since gone.
+
+        The whole map is written, successes included, so the answer is complete
+        rather than a list of casualties with no denominator.
+        """
+        if not any(r.status == "failed" for r in results.values()):
+            return
+        try:
+            await self._store.update_event(
+                event.model_copy(
+                    update={
+                        "delivery_results": {
+                            channel_id: r.model_dump(mode="json")
+                            for channel_id, r in results.items()
+                        }
+                    }
+                )
+            )
+        except Exception:
+            logger.warning(
+                "Could not record delivery results for event %s",
+                event.id,
+                exc_info=True,
+                extra={"room_id": event.room_id, "event_id": event.id},
+            )
+
     async def _post_plan_effects(
         self, plan: DeliveryPlan, result: BroadcastResult, cascade: DeliveryCascade
     ) -> None:
@@ -437,6 +503,8 @@ class LaneExecutionMixin(HelpersMixin):
                     channel_id=ch_id,
                     data={"error": error_msg},
                 )
+            cascade.delivery_results = _delivery_results(result)
+            await self._record_failed_deliveries(event, cascade.delivery_results)
             # Surface intelligence-channel failures to ON_ERROR so hosts can
             # render an error card (transport delivery failures above are not
             # turn-level agent errors). Fired here, off the room lock.
