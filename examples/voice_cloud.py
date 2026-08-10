@@ -44,9 +44,28 @@ Environment variables:
                         Without denoiser you can raise to 0.5 for fewer false
                         positives.
 
+    --- Interruption / barge-in (optional) ---
+    INTERRUPTION        Strategy: immediate | confirmed | semantic | disabled
+                        (unset = the channel's own default, IMMEDIATE)
+                          immediate — cut the assistant as soon as speech starts
+                          confirmed — cut it only after MIN_SPEECH_MS of
+                                      sustained speech; shorter bursts are
+                                      treated as echo and dropped
+                          disabled  — never cut; speech is queued and handled
+                                      once the assistant has finished
+    MIN_SPEECH_MS       Sustained speech required by confirmed (default: 300)
+    ALLOW_DURING_FIRST_MS
+                        Ignore barge-in during the first N ms of playback
+                        (default: 0)
+
     --- Pipeline (optional) ---
     AEC                 Echo cancellation: webrtc | speex | 1 (=webrtc) | 0
                         (default: webrtc)
+    AEC_NS              WebRTC AEC3 noise suppression: 1 | 0 (default: 0).
+                        Attenuates what the echo canceller leaves behind —
+                        worth enabling on open speakers, where the residual
+                        can otherwise clear the VAD's speech threshold.
+    AEC_AGC             WebRTC AEC3 gain control: 1 | 0 (default: 0)
     DENOISE             Enable RNNoise noise suppression: 1 | 0 (default: 1)
     DENOISE_MODEL       Path to GTCRN .onnx model (sherpa-onnx denoiser,
                         overrides DENOISE)
@@ -74,6 +93,7 @@ from roomkit import ChannelCategory, HookExecution, HookResult, HookTrigger, Roo
 from roomkit.channels.ai import AIChannel
 from roomkit.providers.anthropic import AnthropicAIProvider, AnthropicConfig
 from roomkit.voice.backends.local import LocalAudioBackend
+from roomkit.voice.interruption import InterruptionConfig, InterruptionStrategy
 from roomkit.voice.pipeline import (
     AudioPipelineConfig,
     PipelineDebugTaps,
@@ -115,8 +135,15 @@ async def main() -> None:
     if aec_mode in ("1", "webrtc"):
         from roomkit.voice.pipeline.aec.webrtc import WebRTCAECProvider
 
-        aec = WebRTCAECProvider(sample_rate=sample_rate)
-        logger.info("AEC enabled (WebRTC AEC3)")
+        # AEC3 carries its own noise suppressor and gain control, both off by
+        # default. On open speakers the echo AEC3 leaves behind can clear the
+        # VAD's speech threshold, and with no denoiser in the pipeline nothing
+        # else attenuates it — so this is the knob that keeps the assistant
+        # from hearing itself.
+        aec_ns = os.environ.get("AEC_NS", "0") == "1"
+        aec_agc = os.environ.get("AEC_AGC", "0") == "1"
+        aec = WebRTCAECProvider(sample_rate=sample_rate, enable_ns=aec_ns, enable_agc=aec_agc)
+        logger.info("AEC enabled (WebRTC AEC3, ns=%s, agc=%s)", aec_ns, aec_agc)
     elif aec_mode == "speex":
         from roomkit.voice.pipeline.aec.speex import SpeexAECProvider
 
@@ -284,6 +311,19 @@ async def main() -> None:
         "short and conversational — one or two sentences at most.",
     )
 
+    # --- Interruption strategy ------------------------------------------------
+    # Unset leaves the channel's own default (IMMEDIATE: cut the bot the moment
+    # speech is detected). Set it to compare how the strategies behave when you
+    # talk over the assistant.
+    strategy_name = os.environ.get("INTERRUPTION", "").strip().lower()
+    interruption: InterruptionConfig | None = None
+    if strategy_name:
+        interruption = InterruptionConfig(
+            strategy=InterruptionStrategy(strategy_name),
+            min_speech_ms=int(os.environ.get("MIN_SPEECH_MS", "300")),
+            allow_during_first_ms=int(os.environ.get("ALLOW_DURING_FIRST_MS", "0")),
+        )
+
     # --- Voice channel --------------------------------------------------------
     voice = VoiceChannel(
         "voice",
@@ -291,11 +331,14 @@ async def main() -> None:
         tts=tts,
         backend=backend,
         pipeline=pipeline_config,
+        interruption=interruption,
     )
+    active_interruption = voice._interruption_handler.config
     logger.info(
-        "Interruption: strategy=%s, barge_in=%s",
-        voice._interruption_handler._config.strategy.value,
-        voice._enable_barge_in,
+        "Interruption: strategy=%s, min_speech_ms=%d, allow_during_first_ms=%d",
+        active_interruption.strategy.value,
+        active_interruption.min_speech_ms,
+        active_interruption.allow_during_first_ms,
     )
     kit.register_channel(voice)
 
@@ -319,6 +362,13 @@ async def main() -> None:
     @kit.hook(HookTrigger.ON_SPEECH_END, execution=HookExecution.ASYNC)
     async def on_speech_end(session, ctx):
         logger.info("Speech ended")
+
+    @kit.hook(HookTrigger.ON_BARGE_IN, execution=HookExecution.ASYNC)
+    async def on_barge_in(event, ctx):
+        # How far into its answer the assistant was when you cut it. With a
+        # duration-based strategy this fires only once the speech has lasted
+        # min_speech_ms, so the position is that much later than speech onset.
+        logger.info(">>> BARGE-IN: cut the assistant at %dms of playback", event.audio_position_ms)
 
     @kit.hook(HookTrigger.ON_TRANSCRIPTION)
     async def on_transcription(event, ctx):
