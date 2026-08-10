@@ -372,13 +372,16 @@ class TestObservability:
 
 
 class TestIdempotency:
-    async def test_duplicate_idempotency_key_blocked(self) -> None:
-        """§25.1 / §10.1 — a repeated idempotency_key is treated as a duplicate."""
+    async def test_duplicate_idempotency_key_replays_the_first_result(self) -> None:
+        """§25.1 / §10.1 step 7 / §13.4 — a repeated idempotency_key is not
+        reprocessed, and answers with the event the first delivery committed."""
         kit, _, _ = await _room()
         first = await _send(kit, idempotency_key="k1")
         second = await _send(kit, idempotency_key="k1")
         assert not first.blocked
-        assert second.blocked and second.reason == "duplicate"
+        assert not second.blocked
+        assert second.event is not None
+        assert second.event.id == first.event.id
 
     async def test_send_event_idempotency_key_dedupes_a_resend(self) -> None:
         """§10.1 — a direct ``send_event`` carrying a repeated idempotency_key is

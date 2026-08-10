@@ -352,6 +352,19 @@ class ConversationStore(ABC):
         """Check if an idempotency key has been seen. Returns ``True`` if duplicate."""
         ...
 
+    async def get_event_by_idempotency_key(self, room_id: str, key: str) -> RoomEvent | None:
+        """The event a previously-seen idempotency key committed (RFC §13.4).
+
+        A redelivered message must observe what its first delivery did, not a
+        refusal — a webhook that retries because it never saw the first
+        response is asking what happened, and "duplicate" does not answer it.
+
+        Not abstract, and ``None`` is a legitimate answer: a store that cannot
+        resolve the key falls back to reporting the duplicate as blocked, which
+        is what every store did before this existed.
+        """
+        return None
+
     @abstractmethod
     async def get_event_count(self, room_id: str) -> int:
         """Count the events a room currently holds, exactly, on demand.

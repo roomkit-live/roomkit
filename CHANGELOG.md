@@ -102,6 +102,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A redelivered message was reported as refused.** RFC Section 13.4 has a
+  repeated `idempotency_key` return the result of the first delivery without
+  reprocessing. The second half held; the first came back as
+  `blocked=True, reason="duplicate"` with no event — so a provider retrying
+  because it never saw the first response was told its message had been
+  rejected, which is precisely what had not happened, and it had no way to
+  learn the event it had in fact committed.
+
+  A duplicate now answers with that event. `ConversationStore` gains
+  `get_event_by_idempotency_key`; it is not abstract and returns `None` by
+  default, so a store that cannot resolve a key back to its event keeps the
+  previous blocked answer and needs no change. Nothing is reprocessed in either
+  case.
+
+  Callers that branch on `result.blocked` to detect a duplicate should read
+  `result.event.id` instead — a duplicate is no longer a blocked result.
+
 - **The video bridge started every receiver mid-stream.** RFC Section 12.8 has
   the bridge wait for a keyframe before forwarding delta frames to a session,
   and the bridge tracked what it had delivered — but never consulted it, so a

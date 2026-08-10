@@ -291,8 +291,11 @@ class TestInboundPipeline:
         r1 = await kit.process_inbound(msg)
         assert not r1.blocked
         r2 = await kit.process_inbound(msg)
-        assert r2.blocked
-        assert r2.reason == "duplicate"
+        # Not reprocessed, and not refused either: the resend is answered with
+        # the event the first call committed (RFC §13.4).
+        assert not r2.blocked
+        assert r2.event is not None
+        assert r2.event.id == r1.event.id
 
 
 class TestHookIntegration:
@@ -522,10 +525,15 @@ class TestIdempotencyRace:
             kit.process_inbound(msg),
         )
 
-        allowed = [r for r in results if not r.blocked]
-        blocked = [r for r in results if r.blocked and r.reason == "duplicate"]
-        assert len(allowed) == 1
-        assert len(blocked) == 1
+        # Neither call is refused: the loser of the race replays the winner's
+        # answer rather than reprocessing (RFC §13.4).
+        assert all(not r.blocked for r in results)
+        assert all(r.event is not None for r in results)
+        assert results[0].event.id == results[1].event.id
+
+        # And the timeline holds that event exactly once.
+        timeline = await kit.get_timeline("r1")
+        assert sum(1 for e in timeline if e.id == results[0].event.id) == 1
 
 
 # -- Changeset 3: Concurrent locking tests --

@@ -978,6 +978,16 @@ class PostgresStore(ConversationStore):
             )
         return row is not None
 
+    async def get_event_by_idempotency_key(self, room_id: str, key: str) -> RoomEvent | None:
+        with self._query_span("get_event_by_idempotency_key", "events"):
+            async with self._acquire() as conn:
+                row = await conn.fetchrow(
+                    "SELECT * FROM events WHERE room_id = $1 AND idempotency_key = $2",
+                    room_id,
+                    key,
+                )
+        return _row_to_event(row) if row is not None else None
+
     async def get_event_count(self, room_id: str) -> int:
         async with self._acquire() as conn:
             row = await conn.fetchrow(

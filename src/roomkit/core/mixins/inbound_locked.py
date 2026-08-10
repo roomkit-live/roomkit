@@ -433,15 +433,28 @@ class InboundLockedMixin(HelpersMixin):
         elif pending_id_result is not None:
             await self._create_pending_participant(room_id, event, pending_id_result)
 
-        # Idempotency check (inside lock to prevent TOCTOU race)
+        # Idempotency check (inside lock to prevent TOCTOU race). A duplicate
+        # replays the first delivery's answer rather than reprocessing (RFC
+        # §13.4) — the caller retried because it never saw that answer, and a
+        # refusal does not tell it the message was in fact accepted. A store
+        # that cannot resolve the key still reports the duplicate as blocked.
         if event.idempotency_key and await self._store.check_idempotency(
             room_id, event.idempotency_key
         ):
+            original = await self._store.get_event_by_idempotency_key(
+                room_id, event.idempotency_key
+            )
             logger.info(
                 "Duplicate event %s",
                 event.idempotency_key,
-                extra={"room_id": room_id, "idempotency_key": event.idempotency_key},
+                extra={
+                    "room_id": room_id,
+                    "idempotency_key": event.idempotency_key,
+                    "original_event_id": original.id if original is not None else None,
+                },
             )
+            if original is not None:
+                return InboundResult(event=original)
             return InboundResult(blocked=True, reason="duplicate")
 
         # Provisional index for the hooks. The authoritative one is (re)assigned

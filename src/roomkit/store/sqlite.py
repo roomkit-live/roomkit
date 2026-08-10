@@ -900,6 +900,20 @@ class SQLiteStore(ConversationStore):
         )
         return row is not None
 
+    async def get_event_by_idempotency_key(self, room_id: str, key: str) -> RoomEvent | None:
+        return await self._run(self._x_get_event_by_idempotency_key, room_id, key)
+
+    def _x_get_event_by_idempotency_key(self, room_id: str, key: str) -> RoomEvent | None:
+        row = (
+            self._db()
+            .execute(
+                "SELECT data FROM events WHERE room_id = ? AND idempotency_key = ?",
+                (room_id, key),
+            )
+            .fetchone()
+        )
+        return _load_event(row[0]) if row is not None else None
+
     async def get_event_count(self, room_id: str) -> int:
         return await self._run(self._x_get_event_count, room_id)
 
