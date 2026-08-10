@@ -300,6 +300,7 @@ class InboundLockedMixin(HelpersMixin):
         *,
         resolved_identity: Identity | None = None,
         pending_id_result: IdentityResult | None = None,
+        deadline: float | None = None,
     ) -> InboundResult:
         """Process an event under the room lock (RFC §10.1).
 
@@ -320,6 +321,18 @@ class InboundLockedMixin(HelpersMixin):
         (:meth:`_build_context`). A caller that already holds the lock has no
         such context and passes ``None``.
         """
+        # What is left of the caller's single pre-commit budget (RFC §13.6).
+        # A deadline rather than the raw setting: the phase starts before this
+        # method — context build, ``handle_inbound``, identity, the wait for
+        # the room lock — and re-reading ``process_timeout`` here would let a
+        # caller configured for 30s wait 60. ``None`` means the caller did not
+        # open a window (a reentry pass, a direct commit), so this region is
+        # the whole of it.
+        remaining = (
+            self._process_timeout
+            if deadline is None
+            else max(0.0, deadline - asyncio.get_running_loop().time())
+        )
         try:
             decision = await asyncio.wait_for(
                 self._run_precommit(
@@ -330,7 +343,7 @@ class InboundLockedMixin(HelpersMixin):
                     resolved_identity=resolved_identity,
                     pending_id_result=pending_id_result,
                 ),
-                timeout=self._process_timeout,
+                timeout=remaining,
             )
         except TimeoutError:
             logger.error(

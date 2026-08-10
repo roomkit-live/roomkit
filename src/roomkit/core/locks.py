@@ -36,7 +36,14 @@ class RoomLockManager(ABC):
     @abstractmethod
     @asynccontextmanager
     async def locked(self, room_id: str) -> AsyncIterator[None]:
-        """Acquire an exclusive lock for *room_id*."""
+        """Acquire an exclusive lock for *room_id*.
+
+        Acquisition MUST be cancellation-safe: the inbound pipeline bounds the
+        wait with ``process_timeout`` (RFC §13.6), so a caller that gives up
+        queueing is cancelled here. An implementation that leaves the lock
+        taken, or a reference held, on cancellation strands the room — every
+        later event for it queues behind a lock nobody owns.
+        """
         yield  # pragma: no cover
 
     async def close(self) -> None:

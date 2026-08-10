@@ -102,6 +102,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`process_timeout` bounded a third of what it named.** RFC Section 13.6
+  requires it to bound the pre-commit phase; it wrapped only the gates inside
+  the room lock. The context build ran unbounded, and so did the channel's own
+  `handle_inbound` — integrator code, which can reach a provider with no
+  timeout of its own. So could the wait for the room lock, which is the
+  pile-up the setting exists to stop: one stuck event holds a room's lock and
+  every later message queues behind it.
+
+  A store read that never returns is not exotic — an exhausted connection pool
+  and a network swallowing packets without a reset both look like it. An
+  operator who set `process_timeout=5` was covered for one region of three and
+  had no way to tell.
+
+  It is now a single deadline shared across the phase, so the configured value
+  is what the caller waits: 30s means 30s, not 30 before the lock and 30 after.
+  Routing stays outside it (Section 10.1 steps 1-2, and the only part that
+  creates a room — a timeout there would orphan one), and so does the commit,
+  because a timeout landing mid-commit would report a committed event as
+  blocked.
+
+  **Behaviour change:** bounding the lock wait turns a silent pile-up into
+  visible refusals. A deployment whose rooms legitimately queue longer than
+  `process_timeout` will now see `process_timeout` results where it previously
+  saw stalled callers.
+
+  **For custom lock managers:** `RoomLockManager.locked` must release cleanly
+  when acquisition is cancelled — now stated in the ABC. `InMemoryLockManager`
+  already did.
+
 - **Nothing recorded whether a message was delivered.**
   `RoomEvent.delivery_results` was a declared field written nowhere;
   `DeliveryResult` was a declared model constructed nowhere; `InboundResult`

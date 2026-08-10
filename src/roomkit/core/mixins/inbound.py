@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from contextlib import AsyncExitStack
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from roomkit.core.exceptions import ChannelNotRegisteredError
@@ -22,6 +23,8 @@ if TYPE_CHECKING:
     from roomkit.core.inbound_router import InboundRoomRouter
     from roomkit.core.locks import RoomLockManager
     from roomkit.identity.base import IdentityResolver
+    from roomkit.models.context import RoomContext
+    from roomkit.models.identity import Identity, IdentityResult
     from roomkit.store.base import ConversationStore
     from roomkit.telemetry.base import TelemetryProvider
 
@@ -162,11 +165,91 @@ class InboundMixin(HelpersMixin):
     ) -> InboundResult:
         """Inner inbound processing (extracted for telemetry wrapping)."""
 
-        # Route to room (or auto-create)
+        # Route to room (or auto-create). Deliberately outside the pre-commit
+        # window below: routing is RFC §10.1 steps 1-2, the phase
+        # ``process_timeout`` bounds is steps 3-11 — and this is the one part
+        # that can create a room, so a timeout here would leave an orphan
+        # behind for a message that was refused.
         room_id, room_just_created = await self._route_to_room(
             message, channel, room_id, telemetry, inbound_span_id
         )
 
+        # One budget for the whole pre-commit phase (RFC §13.6), as an absolute
+        # deadline so it can be shared with the locked region rather than
+        # re-applied there. It covers the wait for the room lock on purpose:
+        # the pile-up this setting exists to stop is one stuck event holding a
+        # room's lock while every later message queues behind it, and a window
+        # that stopped at the lock would leave exactly that unbounded.
+        deadline = asyncio.get_running_loop().time() + self._process_timeout
+        try:
+            prepared = await self._prepare_event(
+                message, channel, room_id, room_just_created, deadline, telemetry
+            )
+        except TimeoutError:
+            return await self._refuse_on_timeout(room_id, message.channel_id)
+        if isinstance(prepared, InboundResult):
+            return prepared
+        event, context, resolved_identity, pending_id_result = prepared
+        return await self._commit_and_await_delivery(
+            event,
+            context,
+            resolved_identity,
+            pending_id_result,
+            message,
+            channel,
+            room_id,
+            deadline,
+        )
+
+    async def _refuse_on_timeout(self, room_id: str, channel_id: str) -> InboundResult:
+        logger.error(
+            "Inbound pre-commit timed out after %.1fs",
+            self._process_timeout,
+            extra={"room_id": room_id, "channel_id": channel_id},
+        )
+        await self._emit_framework_event(
+            "process_timeout",
+            room_id=room_id,
+            channel_id=channel_id,
+            data={"timeout": self._process_timeout},
+        )
+        return InboundResult(blocked=True, reason="process_timeout")
+
+    async def _prepare_event(
+        self,
+        message: InboundMessage,
+        channel: Channel,
+        room_id: str,
+        room_just_created: bool,
+        deadline: float,
+        telemetry: Any,
+    ) -> tuple[Any, RoomContext, Identity | None, IdentityResult | None] | InboundResult:
+        """RFC §10.1 steps 3-5, under the caller's pre-commit budget.
+
+        Everything here was previously unbounded: a store read that never
+        returns during the context build, or a channel's own
+        ``handle_inbound`` reaching a provider without a timeout of its own,
+        held the caller forever while ``process_timeout`` sat configured and
+        inert.
+
+        Raises:
+            TimeoutError: The budget ran out. Nothing durable has been written
+                at this point — the room may have been created by the routing
+                step above, which is deliberately outside the window.
+        """
+        async with asyncio.timeout_at(deadline):
+            return await self._prepare_event_inner(
+                message, channel, room_id, room_just_created, telemetry
+            )
+
+    async def _prepare_event_inner(
+        self,
+        message: InboundMessage,
+        channel: Channel,
+        room_id: str,
+        room_just_created: bool,
+        telemetry: Any,
+    ) -> tuple[Any, RoomContext, Identity | None, IdentityResult | None] | InboundResult:
         context = await self._build_context(room_id)
 
         # Fire ON_SESSION_STARTED for text channels when a new room is created
@@ -215,15 +298,38 @@ class InboundMixin(HelpersMixin):
         except _IdentityBlockedError as exc:
             return InboundResult(blocked=True, reason=exc.reason)
 
-        # Process under room lock. The lock covers the pre-commit gates, the
-        # commit and the broadcast PLANNING (RFC §10.1 steps 6-12); execution
-        # runs in the room's delivery lane after release, tracked by the
-        # cascade. ``process_timeout`` is applied inside _process_locked,
-        # scoped to the pre-commit phase only (RFC §13.6).
+        return event, context, resolved_identity, pending_id_result
+
+    async def _commit_and_await_delivery(
+        self,
+        event: Any,
+        context: RoomContext,
+        resolved_identity: Identity | None,
+        pending_id_result: IdentityResult | None,
+        message: InboundMessage,
+        channel: Channel,
+        room_id: str,
+        deadline: float,
+    ) -> InboundResult:
+        """RFC §10.1 steps 6-18: the locked region, then the delivery set.
+
+        The room lock is acquired under the same budget as the phase before it
+        (§13.6): a room whose lock is held by a stuck event would otherwise
+        queue every later message with nothing to stop it, which is the pile-up
+        the setting exists for. Past the lock, ``_process_locked`` spends what
+        remains on the pre-commit gates and stops there — the commit and the
+        delivery set it hands to the lane are not cancellable, or a committed
+        event would come back reported as blocked.
+        """
         from roomkit.core.lanes import DeliveryCascade
 
         cascade = DeliveryCascade(room_id, reentry_budget=self._max_chain_depth * 10)
-        async with self._lock_manager.locked(room_id):
+        async with AsyncExitStack() as stack:
+            try:
+                async with asyncio.timeout_at(deadline):
+                    await stack.enter_async_context(self._lock_manager.locked(room_id))
+            except TimeoutError:
+                return await self._refuse_on_timeout(room_id, message.channel_id)
             result: InboundResult = await self._process_locked(
                 event,
                 room_id,
@@ -231,6 +337,7 @@ class InboundMixin(HelpersMixin):
                 cascade,
                 resolved_identity=resolved_identity,
                 pending_id_result=pending_id_result,
+                deadline=deadline,
             )
 
         # The caller observes its event's delivery-set completion (RFC §10.1
