@@ -23,6 +23,7 @@ class AIEventsMixin:
     """Publishes tool-call and thinking ephemeral events over the realtime backend."""
 
     _realtime: RealtimeBackend | None
+    _thinking_hook: Any  # ON_AI_THINKING callback — injected by register_channel
     channel_id: str
 
     async def _publish_tool_event(
@@ -84,8 +85,20 @@ class AIEventsMixin:
         thinking: str,
         round_idx: int,
     ) -> None:
-        """Publish a thinking ephemeral event. Best-effort, never breaks the loop."""
-        if self._realtime is None or not room_id:
+        """Publish a thinking ephemeral event and fire ON_AI_THINKING.
+
+        Best-effort, never breaks the loop. The hook fires whether or not a
+        realtime backend is configured (RFC §9.2) — reasoning is observable
+        without a live UI attached.
+        """
+        if not room_id:
+            return
+        if event_type == EphemeralEventType.THINKING_START and self._thinking_hook is not None:
+            try:
+                await self._thinking_hook(room_id, thinking, round_idx)
+            except Exception:
+                logger.debug("ON_AI_THINKING hook failed", exc_info=True)
+        if self._realtime is None:
             return
         preview_limit = THINKING_PREVIEW_LIMIT
         data: dict[str, Any] = {

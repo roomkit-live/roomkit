@@ -1,6 +1,7 @@
 """Integration tests for voice pipeline (audio -> STT -> AI -> TTS -> audio)."""
 
 import asyncio
+from datetime import UTC, datetime, timedelta
 
 from roomkit import (
     HookExecution,
@@ -1039,9 +1040,13 @@ class TestBargeInIntegration:
         async def on_barge_in(event, context):
             barge_in_events.append(event)
 
+        # Past ``allow_during_first_ms`` (200ms with the legacy defaults) —
+        # the backend path answers to the interruption policy like the VAD
+        # path does (RFC §12.6).
         channel._playing_sessions[session.id] = TTSPlaybackState(
             session_id=session.id,
             text="Long response text",
+            started_at=datetime.now(UTC) - timedelta(seconds=1),
         )
 
         await backend.simulate_barge_in(session)
@@ -1049,6 +1054,56 @@ class TestBargeInIntegration:
 
         assert len(barge_in_events) == 1
         assert isinstance(barge_in_events[0], BargeInEvent)
+
+        await kit.close()
+
+    async def test_backend_barge_in_respects_disabled_strategy(self) -> None:
+        """RFC §12.6 — a transport that detects speech itself does not get to
+        override the configured strategy: DISABLED means DISABLED."""
+        from roomkit.channels.voice import TTSPlaybackState
+        from roomkit.models.channel import ChannelBinding
+        from roomkit.models.enums import ChannelType
+        from roomkit.voice.base import VoiceCapability
+        from roomkit.voice.interruption import InterruptionConfig, InterruptionStrategy
+
+        caps = VoiceCapability.INTERRUPTION | VoiceCapability.BARGE_IN
+        backend = MockVoiceBackend(capabilities=caps)
+        channel = VoiceChannel(
+            "voice-1",
+            backend=backend,
+            interruption=InterruptionConfig(strategy=InterruptionStrategy.DISABLED),
+        )
+
+        kit = RoomKit(voice=backend)
+        kit.register_channel(channel)
+
+        room = await kit.create_room()
+        await kit.attach_channel(room.id, "voice-1")
+
+        session = await kit.connect_voice(room.id, "user-1", "voice-1")
+        binding = ChannelBinding(
+            room_id=room.id, channel_id="voice-1", channel_type=ChannelType.VOICE
+        )
+        channel.bind_session(session, room.id, binding)
+
+        barge_in_events: list[object] = []
+
+        @kit.hook(HookTrigger.ON_BARGE_IN, HookExecution.ASYNC)
+        async def on_barge_in(event, context):
+            barge_in_events.append(event)
+
+        channel._playing_sessions[session.id] = TTSPlaybackState(
+            session_id=session.id,
+            text="Long response text",
+            started_at=datetime.now(UTC) - timedelta(seconds=1),
+        )
+
+        await backend.simulate_barge_in(session)
+        await asyncio.sleep(0.1)
+
+        assert barge_in_events == []
+        # Playback was left alone.
+        assert session.id in channel._playing_sessions
 
         await kit.close()
 

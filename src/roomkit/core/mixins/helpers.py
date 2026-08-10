@@ -37,6 +37,7 @@ from roomkit.models.enums import (
     EventType,
     HookTrigger,
     IdentificationStatus,
+    RoomStatus,
     Visibility,
 )
 from roomkit.models.event import EventSource, RoomEvent, SystemContent, TextContent
@@ -52,6 +53,12 @@ _RECENT_EVENTS_FLOOR = 50
 """Events loaded for a room whose channels declare no recent-history need
 (transport-only rooms, e.g. realtime voice). Enough for hooks that glance at
 recent context without paying the full-ceiling deserialisation cost per turn."""
+
+# RFC §5.1 — statuses that refuse new events. CLOSED and ARCHIVED refuse
+# identically; they differ in intent, not in what they accept. Lives here
+# because every path that can grow a timeline must consult it (§5.1: "at
+# EVERY point where the timeline can grow"), and those paths span mixins.
+_REFUSING_STATUSES = frozenset({RoomStatus.CLOSED, RoomStatus.ARCHIVED})
 
 if TYPE_CHECKING:
     from roomkit.channels.base import Channel
@@ -130,6 +137,18 @@ class HelpersMixin:
     # because accounting it here publishes its index on the cursor at commit
     # time — which is precisely what releases the lane to execute the *next*
     # index while this one is still undelivered.
+
+    async def _room_refuses_writes(self, room_id: str) -> bool:
+        """Whether the room's status refuses new timeline events (RFC §5.1).
+
+        The status gate applies at *every* point where the timeline can grow —
+        an inbound message, a hook's injected event, the framework's own
+        re-injection and its lifecycle system events alike. Callers outside
+        the locked pipeline (which reads the status off the context it already
+        holds) ask here; a missing room refuses too.
+        """
+        room = await self._store.get_room(room_id)
+        return room is None or room.status in _REFUSING_STATUSES
 
     async def _persist_committed(self, room_id: str, event: RoomEvent) -> RoomEvent | None:
         """Atomically commit an event (index + insert + room counters, RFC
@@ -449,8 +468,27 @@ class HelpersMixin:
         code: str,
         message: str,
         data: dict[str, Any] | None = None,
+        *,
+        records_transition: bool = False,
     ) -> None:
-        """Emit a system event to the room timeline (internal/audit)."""
+        """Emit a system event to the room timeline (internal/audit).
+
+        Passes the RFC §5.1 status gate like any other write: a CLOSED or
+        ARCHIVED room refuses lifecycle records too — the timeline of a closed
+        room does not keep growing because a member was renamed.
+
+        ``records_transition`` exempts the one legitimate exception: the event
+        that *records* the closing transition itself, written after the status
+        has already flipped. Nothing else may claim it.
+        """
+        if not records_transition and await self._room_refuses_writes(room_id):
+            logger.debug(
+                "System event %s refused: room %s no longer accepts writes",
+                code,
+                room_id,
+                extra={"room_id": room_id},
+            )
+            return
         event = RoomEvent(
             room_id=room_id,
             type=event_type,
@@ -729,6 +767,76 @@ class HelpersMixin:
 
         return _callback
 
+    def _build_thinking_hook(self, channel_id: str) -> Any:
+        """Build an ON_AI_THINKING callback closure for an AIChannel.
+
+        RFC §9.2. The same reasoning also goes out as an ephemeral event for
+        live UIs; the hook is what makes it observable to a host that runs no
+        realtime backend.
+        """
+        from roomkit.models.enums import HookTrigger
+
+        kit_ref = self
+
+        async def _callback(room_id: str, thinking: str, round_idx: int) -> None:
+            if not room_id:
+                return
+            try:
+                context = await kit_ref._build_context(room_id)
+            except Exception:
+                logger.warning(
+                    "Failed to build context for ON_AI_THINKING hook in room %s",
+                    room_id,
+                    exc_info=True,
+                )
+                return
+            from roomkit.models.thinking_event import ThinkingEvent
+
+            await kit_ref._hook_engine.run_async_hooks(
+                room_id,
+                HookTrigger.ON_AI_THINKING,
+                ThinkingEvent(
+                    room_id=room_id,
+                    channel_id=channel_id,
+                    thinking=thinking,
+                    round_index=round_idx,
+                ),
+                context,
+                skip_event_filter=True,
+            )
+
+        return _callback
+
+    def _build_plan_updated_hook(self, channel_id: str) -> Any:
+        """Build an ON_PLAN_UPDATED callback closure for an AIChannel."""
+        from roomkit.models.enums import HookTrigger
+
+        kit_ref = self
+
+        async def _callback(room_id: str, tasks: list[dict[str, Any]]) -> None:
+            if not room_id:
+                return
+            try:
+                context = await kit_ref._build_context(room_id)
+            except Exception:
+                logger.warning(
+                    "Failed to build context for ON_PLAN_UPDATED hook in room %s",
+                    room_id,
+                    exc_info=True,
+                )
+                return
+            from roomkit.models.plan_event import PlanUpdatedEvent
+
+            await kit_ref._hook_engine.run_async_hooks(
+                room_id,
+                HookTrigger.ON_PLAN_UPDATED,
+                PlanUpdatedEvent(room_id=room_id, channel_id=channel_id, tasks=list(tasks)),
+                context,
+                skip_event_filter=True,
+            )
+
+        return _callback
+
     def _build_before_tool_call_hook(self, channel_id: str) -> Any:
         """Build a BEFORE_TOOL_USE callback closure for an AIChannel.
 
@@ -945,6 +1053,38 @@ class HelpersMixin:
             return sync_result
 
         return _callback
+
+    def _emit_framework_event_soon(
+        self,
+        event_type: str,
+        room_id: str | None = None,
+        channel_id: str | None = None,
+        event_id: str | None = None,
+        data: dict[str, Any] | None = None,
+    ) -> None:
+        """Emit a framework event from synchronous code, best effort.
+
+        Some mandated §8.2 events are raised by synchronous API
+        (``register_channel``, ``unregister_channel``). Emission is scheduled
+        on the running loop; called with no loop running — before the
+        application starts, where no handler can have observed anything yet —
+        it is a no-op rather than an error.
+        """
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        task = loop.create_task(
+            self._emit_framework_event(
+                event_type,
+                room_id=room_id,
+                channel_id=channel_id,
+                event_id=event_id,
+                data=data,
+            )
+        )
+        task.add_done_callback(self._pending_hook_tasks.discard)
+        self._pending_hook_tasks.add(task)
 
     async def _emit_framework_event(
         self,

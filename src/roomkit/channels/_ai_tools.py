@@ -103,6 +103,7 @@ class AIToolsHost(Protocol):
     _skill_activation: SkillActivationMemory
     _planner: TaskPlanner | None
     _realtime: RealtimeBackend | None
+    _plan_updated_hook: Any  # ON_PLAN_UPDATED callback — injected by register_channel
     _tool_call_hook: ToolCallCallback | None
     _before_tool_call_hook: Any
     _tool_search: bool | None
@@ -142,6 +143,7 @@ class AIToolsMixin:
     _skill_activation: SkillActivationMemory
     _planner: TaskPlanner | None
     _realtime: RealtimeBackend | None
+    _plan_updated_hook: Any  # ON_PLAN_UPDATED callback — injected by register_channel
     _tool_call_hook: ToolCallCallback | None
     _before_tool_call_hook: Any
     _tool_search: bool | None
@@ -618,4 +620,7 @@ class AIToolsMixin:
             realtime=self._realtime,
             room_id=room_id,
             channel_id=self.channel_id,
+            # RFC §9.2 ON_PLAN_UPDATED — the hook surface for the plan the
+            # ephemeral event carries to live UIs.
+            on_plan_updated=self._plan_updated_hook,
         )

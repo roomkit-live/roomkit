@@ -29,7 +29,12 @@ from roomkit.voice.pipeline.diarization import (
     DiarizationResult,
     MockDiarizationProvider,
 )
-from roomkit.voice.pipeline.dtmf import DTMFDetector, DTMFEvent, MockDTMFDetector
+from roomkit.voice.pipeline.dtmf import (
+    DTMFDetector,
+    DTMFEvent,
+    DTMFRedaction,
+    MockDTMFDetector,
+)
 from roomkit.voice.pipeline.engine import AudioPipeline
 from roomkit.voice.pipeline.mixer import MixerProvider, PythonMixerProvider
 from roomkit.voice.pipeline.postprocessor import AudioPostProcessor
@@ -38,6 +43,7 @@ from roomkit.voice.pipeline.recorder import (
     MockAudioRecorder,
     RecordingChannelMode,
     RecordingConfig,
+    RecordingEncryption,
     RecordingHandle,
     RecordingMode,
     RecordingResult,
@@ -101,6 +107,7 @@ __all__ = [
     "WebRTCNoiseSuppressorProvider",
     "DiarizationProvider",
     "DTMFDetector",
+    "DTMFRedaction",
     "TurnDetector",
     "VADProvider",
     # Data types
@@ -111,6 +118,7 @@ __all__ = [
     "DTMFEvent",
     "RecordingChannelMode",
     "RecordingConfig",
+    "RecordingEncryption",
     "RecordingHandle",
     "RecordingMode",
     "RecordingResult",

@@ -846,6 +846,49 @@ class TestTimeouts:
         assert room_after.event_count == len(timeline)
         assert room_after.latest_index == result.event.index
 
+    async def test_slow_store_commit_is_not_reported_blocked(self) -> None:
+        """A store commit slower than process_timeout MUST NOT be cancelled or
+        reported blocked: the commit is not part of the cancellable pre-commit
+        unit (RFC §13.6 MUST NOT)."""
+        from roomkit.store.memory import InMemoryStore
+
+        class SlowCommitStore(InMemoryStore):
+            async def commit_event(self, room_id: str, event: RoomEvent) -> RoomEvent:
+                await asyncio.sleep(0.1)
+                return await super().commit_event(room_id, event)
+
+        kit = RoomKit(process_timeout=0.01, store=SlowCommitStore())
+        ch = SimpleChannel("sms1")
+        kit.register_channel(ch)
+        await kit.create_room(room_id="r1")
+        await kit.attach_channel("r1", "sms1")
+
+        timeouts: list[FrameworkEvent] = []
+
+        @kit.on("process_timeout")
+        async def capture(fe: FrameworkEvent) -> None:
+            timeouts.append(fe)
+
+        base_timeline = len(await kit.get_timeline("r1"))
+
+        msg = InboundMessage(
+            channel_id="sms1",
+            sender_id="user1",
+            content=TextContent(body="hello"),
+        )
+        result = await kit.process_inbound(msg)
+
+        assert timeouts == []
+        assert not result.blocked
+        assert result.event is not None
+        assert result.event.status == EventStatus.DELIVERED
+        timeline = await kit.get_timeline("r1")
+        assert len(timeline) == base_timeline + 1
+        assert timeline[-1].id == result.event.id
+        room_after = await kit.get_room("r1")
+        assert room_after is not None
+        assert room_after.event_count == len(timeline)
+
 
 # -- Changeset 6: Broadcast & side-effect error handling --
 

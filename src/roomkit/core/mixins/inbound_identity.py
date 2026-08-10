@@ -228,6 +228,21 @@ class InboundIdentityMixin(HelpersMixin):
                 id_result, event, room_id, context
             )
 
+        # RFC §8.2 ``identity_resolved`` — emitted wherever the pipeline ends
+        # up with an identity, whether the resolver found it or a hook did.
+        if resolved_identity is not None:
+            await self._emit_framework_event(
+                "identity_resolved",
+                room_id=room_id,
+                channel_id=event.source.channel_id,
+                event_id=event.id,
+                data={
+                    "identity_id": resolved_identity.id,
+                    "display_name": resolved_identity.display_name,
+                    "status": str(id_result.status),
+                },
+            )
+
         return event, resolved_identity, pending_id_result
 
     async def _handle_ambiguous_identity(

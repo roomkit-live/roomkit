@@ -175,12 +175,42 @@ class EventRouter:
         self._circuit_breakers: dict[str, CircuitBreaker] = {}
         self._telemetry = telemetry
         self._greeting_gate_fn = greeting_gate_fn
+        # Set by RoomKit after construction — the router owns the breakers,
+        # the framework owns the event surface (RFC §13.1 / §8.2).
+        self._framework_emitter: Any = None
+        self._breaker_tasks: set[asyncio.Task[Any]] = set()
 
     def _get_breaker(self, channel_id: str) -> CircuitBreaker:
         """Get or create a circuit breaker for a channel."""
         if channel_id not in self._circuit_breakers:
-            self._circuit_breakers[channel_id] = CircuitBreaker()
+            self._circuit_breakers[channel_id] = CircuitBreaker(
+                on_state_change=lambda state, cid=channel_id: self._on_breaker_state(cid, state)
+            )
         return self._circuit_breakers[channel_id]
+
+    def _on_breaker_state(self, channel_id: str, state: str) -> None:
+        """Publish a breaker transition as a framework event (RFC §13.1 MUST).
+
+        The breaker trips inside a delivery attempt, which is already running
+        on the loop; the emission is scheduled rather than awaited so a slow
+        framework-event handler cannot stall the delivery that tripped it.
+        """
+        if self._framework_emitter is None:
+            return
+        event_type = "circuit_breaker_opened" if state == "open" else "circuit_breaker_closed"
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        task = loop.create_task(
+            self._framework_emitter(
+                event_type,
+                channel_id=channel_id,
+                data={"channel_id": channel_id, "state": state},
+            )
+        )
+        task.add_done_callback(self._breaker_tasks.discard)
+        self._breaker_tasks.add(task)
 
     def get_channel(self, channel_id: str) -> Channel | None:
         """Look up a channel by ID."""
@@ -452,7 +482,11 @@ class EventRouter:
                 # not the brain"
                 tr.observations.extend(output.observations)
 
-                # Muted channels: suppress response_events (the "voice")
+                # Muted channels: suppress response_events (the "voice").
+                # RFC §7.5 rule 2 — suppressed is not the same as forgotten:
+                # the response is stored BLOCKED with ``source_muted`` so the
+                # timeline records what the muted brain wanted to say, and is
+                # never broadcast.
                 if binding.muted:
                     if output.responded:
                         logger.debug(
@@ -462,6 +496,15 @@ class EventRouter:
                             len(output.response_events),
                             len(output.tasks),
                             len(output.observations),
+                        )
+                        tr.blocked_events.extend(
+                            resp.model_copy(
+                                update={
+                                    "status": EventStatus.BLOCKED,
+                                    "blocked_by": "source_muted",
+                                }
+                            )
+                            for resp in output.response_events
                         )
                     target_results.append(tr)
                     return

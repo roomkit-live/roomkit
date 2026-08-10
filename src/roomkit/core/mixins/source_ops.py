@@ -130,8 +130,16 @@ class SourceOpsMixin(HelpersMixin):
             name=f"source:{channel_id}",
         )
 
+        # Two names for one fact: ``source_attached`` is the framework's own,
+        # ``source_connected`` is the one RFC §8.2 mandates. Both are emitted,
+        # so a handler registered on either sees every attachment.
         await self._emit_framework_event(
             "source_attached",
+            channel_id=channel_id,
+            data={"source_name": source.name},
+        )
+        await self._emit_framework_event(
+            "source_connected",
             channel_id=channel_id,
             data={"source_name": source.name},
         )
@@ -159,8 +167,14 @@ class SourceOpsMixin(HelpersMixin):
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await task
 
+        # Both names, as in ``attach_source``.
         await self._emit_framework_event(
             "source_detached",
+            channel_id=channel_id,
+            data={"source_name": source.name},
+        )
+        await self._emit_framework_event(
+            "source_disconnected",
             channel_id=channel_id,
             data={"source_name": source.name},
         )

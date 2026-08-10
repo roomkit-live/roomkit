@@ -346,6 +346,10 @@ class AIChannel(
         self._after_response_hook: Any = None
         # BEFORE_AI_GENERATION hook callback (injected by framework on register_channel)
         self._before_generation_hook: Any = None
+        # ON_AI_THINKING hook callback (injected by framework on register_channel)
+        self._thinking_hook: Any = None
+        # ON_PLAN_UPDATED hook callback (injected by framework on register_channel)
+        self._plan_updated_hook: Any = None
         # Tool-usage hydration loader (injected by framework on register_channel):
         # fetches a room's persisted TOOL_CALL_END history so ToolUsageMemory
         # survives channel-object lifetimes (restarts, cache expiry) — the

@@ -121,6 +121,7 @@ class VoiceTTSMixin:
     _schedule: Any  # see TTSHost — VoiceChannel._schedule
     _fire_audio_level_hook: Any  # see TTSHost — VoiceHooksMixin._fire_audio_level_hook
     interrupt: Any  # see TTSHost — VoiceChannel.interrupt
+    _flush_queued_speech: Any  # see TTSHost — VoiceChannel._flush_queued_speech
 
     def _fire_output_level(self, session: VoiceSession, data: bytes) -> None:
         """Fire ON_OUTPUT_AUDIO_LEVEL hook from the outbound pipeline, throttled."""
@@ -252,6 +253,9 @@ class VoiceTTSMixin:
                 session_id,
                 _PLAYBACK_DRAIN_S,
             )
+        # The bot has finished — anything the DISABLED strategy queued while it
+        # spoke gets its turn now (RFC §12.6).
+        await self._flush_queued_speech(session_id)
 
     def _find_sessions(self, room_id: str, binding: ChannelBinding) -> list[VoiceSession]:
         """Find voice sessions for a room/binding pair."""

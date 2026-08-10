@@ -450,9 +450,19 @@ class AudioPipeline:
             with self._timed_stage(stream, "dtmf"):
                 dtmf_event = self._config.dtmf.process(current_frame, stream)
                 if dtmf_event is not None:
+                    # RFC §17.6 — frame metadata travels to recorders, debug
+                    # taps and logs, so the digit it carries is the redacted
+                    # one whenever redaction is configured. The event handed to
+                    # ON_DTMF keeps the raw digit (that hook IS the IVR) and
+                    # carries the masked form alongside for anything that
+                    # stores or logs it.
+                    redaction = self._config.dtmf_redaction
+                    digit = dtmf_event.digit
+                    redacted = redaction.mask(digit) if redaction is not None else digit
                     current_frame.metadata["dtmf"] = {
-                        "digit": dtmf_event.digit,
+                        "digit": redacted,
                         "duration_ms": dtmf_event.duration_ms,
+                        "redacted": redacted != digit,
                     }
                     self._fanout(self._dtmf_callbacks, subject, dtmf_event, "DTMF")
 

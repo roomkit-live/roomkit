@@ -212,7 +212,10 @@ class DTMFDetectedEvent:
     """The voice session where the DTMF was detected."""
 
     digit: str
-    """The DTMF digit ('0'-'9', '*', '#', 'A'-'D')."""
+    """The DTMF digit ('0'-'9', '*', '#', 'A'-'D').
+
+    Raw: this hook is how an IVR reads the digits it exists to collect. Use
+    :attr:`redacted_digit` for anything that logs, stores or transcribes."""
 
     duration_ms: float
     """Duration of the tone in milliseconds."""
@@ -220,8 +223,18 @@ class DTMFDetectedEvent:
     confidence: float = 1.0
     """Detection confidence (0.0 to 1.0)."""
 
+    redacted_digit: str = ""
+    """The digit as masked by the configured ``DTMFRedaction`` (RFC §17.6).
+
+    Equals :attr:`digit` when no redaction is configured, so a handler can
+    log this field unconditionally."""
+
     timestamp: datetime = field(default_factory=_utcnow)
     """When the DTMF was detected."""
+
+    def __post_init__(self) -> None:
+        if not self.redacted_digit:
+            object.__setattr__(self, "redacted_digit", self.digit)
 
 
 @dataclass(frozen=True)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import re
 import tempfile
@@ -129,6 +130,30 @@ class WavFileRecorder(AudioRecorder):
             # The writer could not finalise (wedged disk); report what is
             # known rather than pretending the files exist.
             return RecordingResult(id=handle.id, format="wav", mode=entry[1].channels)
+        return self._encrypt_result(result, entry[1])
+
+    @staticmethod
+    def _encrypt_result(result: RecordingResult, config: RecordingConfig) -> RecordingResult:
+        """Encrypt the finished files at rest (RFC §17.6), if configured.
+
+        A file that cannot be encrypted is deleted rather than left in the
+        clear: a caller that asked for encryption at rest must not be handed a
+        plaintext recording because the cipher failed.
+        """
+        if config.encryption is None or not result.urls:
+            return result
+        encrypted: list[str] = []
+        for url in result.urls:
+            try:
+                encrypted.append(config.encryption.encrypt_file(url))
+            except Exception:
+                logger.exception(
+                    "Recording encryption failed for %s — discarding the plaintext file", url
+                )
+                with contextlib.suppress(OSError):
+                    Path(url).unlink()
+        result.urls = encrypted
+        result.metadata = {**result.metadata, "encryption": config.encryption.name}
         return result
 
     def tap_inbound(self, handle: RecordingHandle, frame: AudioFrame) -> None:

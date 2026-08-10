@@ -14,7 +14,11 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
-from roomkit.core.mixins.helpers import _RECENT_EVENTS_LIMIT, HelpersMixin
+from roomkit.core.mixins.helpers import (
+    _RECENT_EVENTS_LIMIT,
+    _REFUSING_STATUSES,
+    HelpersMixin,
+)
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundResult
 from roomkit.models.enums import (
@@ -25,7 +29,6 @@ from roomkit.models.enums import (
     EventType,
     HookTrigger,
     ParticipantRole,
-    RoomStatus,
 )
 from roomkit.models.event import DeleteContent, EditContent, RoomEvent
 from roomkit.models.hook import InjectedEvent
@@ -46,13 +49,75 @@ logger = logging.getLogger("roomkit.framework")
 # vocabulary is treated as unprivileged rather than trusted.
 _EDIT_SOURCE_SYSTEM = "system"
 
-# RFC §5.1 — statuses that refuse new events. CLOSED and ARCHIVED refuse
-# identically; they differ in intent, not in what they accept.
-_REFUSING_STATUSES = frozenset({RoomStatus.CLOSED, RoomStatus.ARCHIVED})
+
+class _Blocked:
+    """Decision returned by ``_run_precommit``: the event is blocked and must
+    be persisted BLOCKED (RFC §9.5 / §7.5 rule 2) once the pre-commit timeout
+    no longer covers the caller.
+
+    Carries everything ``_blocked_result`` needs; the write itself happens in
+    :meth:`_process_locked`, outside the cancellable unit (§13.6).
+    """
+
+    __slots__ = (
+        "blocked_by",
+        "context",
+        "event",
+        "injected_events",
+        "observations",
+        "reason",
+        "tasks",
+    )
+
+    def __init__(
+        self,
+        event: RoomEvent,
+        context: RoomContext,
+        *,
+        reason: str | None,
+        blocked_by: str | None,
+        injected_events: list[InjectedEvent],
+        tasks: list[Task],
+        observations: list[Observation],
+    ) -> None:
+        self.event = event
+        self.context = context
+        self.reason = reason
+        self.blocked_by = blocked_by
+        self.injected_events = injected_events
+        self.tasks = tasks
+        self.observations = observations
+
+
+class _Ready:
+    """Decision returned by ``_run_precommit``: every gate passed and the
+    event is ready to commit (RFC §10.1 step 12).
+
+    The commit is deliberately NOT performed by ``_run_precommit`` — it runs
+    in :meth:`_run_commit`, outside the ``process_timeout`` window, because a
+    timeout that expires mid-commit would leave a committed event reported as
+    blocked (§13.6 MUST NOT).
+    """
+
+    __slots__ = ("context", "edit_delete_target", "event", "source_binding", "sync_result")
+
+    def __init__(
+        self,
+        event: RoomEvent,
+        source_binding: Any,
+        sync_result: Any,
+        context: RoomContext,
+        edit_delete_target: RoomEvent | None,
+    ) -> None:
+        self.event = event
+        self.source_binding = source_binding
+        self.sync_result = sync_result
+        self.context = context
+        self.edit_delete_target = edit_delete_target
 
 
 class _Proceed:
-    """Marker returned by ``_run_precommit`` once the event has committed,
+    """Marker returned by ``_run_commit`` once the event has committed,
     with its broadcast planned and enqueued on the room's delivery lane
     (RFC §10.1 step 12).
 
@@ -240,11 +305,14 @@ class InboundLockedMixin(HelpersMixin):
 
         Split at the commit point (RFC §10.1): the pre-commit critical
         section (:meth:`_run_precommit`) is bounded by ``process_timeout``
-        (§13.6) and aborts before any durable write. The commit itself plans
-        the broadcast and enqueues it on the room's delivery lane (§10.2) —
-        execution, the RFC §10.3 mutation trigger, AFTER_BROADCAST and
-        ON_ERROR hooks all run off the lock, tracked by *cascade*; the
-        caller awaits the cascade once the lock is released.
+        (§13.6) and decides — it writes nothing to the timeline. Every durable
+        write happens below, after the cancellable unit has been left: a
+        timeout MUST NOT be able to leave a committed event reported as
+        blocked (§13.6). The commit plans the broadcast and enqueues it on the
+        room's delivery lane (§10.2) — execution, the RFC §10.3 mutation
+        trigger, AFTER_BROADCAST and ON_ERROR hooks all run off the lock,
+        tracked by *cascade*; the caller awaits the cascade once the lock is
+        released.
 
         *context* is the context the caller built BEFORE taking the lock — the
         inbound pipeline builds one for the channel and the identity resolver
@@ -253,7 +321,7 @@ class InboundLockedMixin(HelpersMixin):
         such context and passes ``None``.
         """
         try:
-            outcome = await asyncio.wait_for(
+            decision = await asyncio.wait_for(
                 self._run_precommit(
                     event,
                     room_id,
@@ -277,11 +345,26 @@ class InboundLockedMixin(HelpersMixin):
                 data={"timeout": self._process_timeout},
             )
             return InboundResult(blocked=True, reason="process_timeout")
-        if isinstance(outcome, InboundResult):
-            return outcome
+
+        # --- past this line nothing is cancellable by ``process_timeout`` ---
+        if isinstance(decision, InboundResult):
+            return decision
+        if isinstance(decision, _Blocked):
+            return await self._blocked_result(
+                room_id,
+                decision.event,
+                decision.context,
+                cascade,
+                reason=decision.reason,
+                blocked_by=decision.blocked_by,
+                injected_events=decision.injected_events,
+                tasks=decision.tasks,
+                observations=decision.observations,
+            )
+        outcome = await self._run_commit(decision, room_id, cascade)
         # Injected events from allow/modify hooks: committed and laned after
-        # the trigger (outside the pre-commit timeout — the trigger is
-        # committed and must never be contradicted by a late cancellation).
+        # the trigger (the trigger is committed and must never be contradicted
+        # by a late cancellation).
         if outcome.sync_result.injected_events:
             await self._lane_injected_events(
                 outcome.sync_result.injected_events, room_id, outcome.context, cascade
@@ -297,15 +380,21 @@ class InboundLockedMixin(HelpersMixin):
         *,
         resolved_identity: Identity | None = None,
         pending_id_result: IdentityResult | None = None,
-    ) -> InboundResult | _Proceed:
-        """Pre-commit critical section (RFC §10.1).
+    ) -> InboundResult | _Blocked | _Ready:
+        """Pre-commit critical section (RFC §10.1 steps 6-11) — decides only.
 
-        Returns an :class:`InboundResult` for any block/duplicate case, or a
-        :class:`_Proceed` once the event has been committed — with its
-        broadcast planned and enqueued on the room's delivery lane (§10.2).
-        Performs no durable write of the inbound event before the commit
-        point, so a ``process_timeout`` here aborts cleanly with nothing
-        persisted (§13.6).
+        Returns an :class:`InboundResult` for a refusal that leaves no trace
+        (closed room, duplicate, invalid edit/delete), a :class:`_Blocked` for
+        one that owes the timeline a BLOCKED record, or a :class:`_Ready` for
+        an event that passed every gate.
+
+        Writes nothing to the timeline: the caller performs every durable
+        write once this coroutine has returned, so a ``process_timeout``
+        expiring here aborts cleanly with nothing persisted and can never
+        report a committed event as blocked (§13.6). The one write that stays
+        inside the window is the deferred participant row (identity
+        resolution, §11): it is idempotent and carries no index, so a timeout
+        leaves no inconsistency behind.
         """
         # Re-read under the lock: the status gate must not act on an answer
         # taken before it (§10.1 step 6), and planning reads bindings under the
@@ -421,11 +510,9 @@ class InboundLockedMixin(HelpersMixin):
             )
 
         if not sync_result.allowed:
-            return await self._blocked_result(
-                room_id,
+            return _Blocked(
                 event,
                 context,
-                cascade,
                 reason=sync_result.reason,
                 blocked_by=sync_result.blocked_by,
                 injected_events=sync_result.injected_events,
@@ -446,11 +533,9 @@ class InboundLockedMixin(HelpersMixin):
         source_binding = await self._store.get_binding(room_id, event.source.channel_id)
         if source_binding is not None and not source_binding.can_write:
             reason = "source_muted" if source_binding.muted else "source_read_only"
-            return await self._blocked_result(
-                room_id,
+            return _Blocked(
                 event,
                 context,
-                cascade,
                 reason=reason,
                 blocked_by=reason,
                 injected_events=sync_result.injected_events,
@@ -458,11 +543,26 @@ class InboundLockedMixin(HelpersMixin):
                 observations=sync_result.observations,
             )
 
+        return _Ready(event, source_binding, sync_result, context, edit_delete_target)
+
+    async def _run_commit(self, ready: _Ready, room_id: str, cascade: DeliveryCascade) -> _Proceed:
+        """Commit phase (RFC §10.1 step 12) — every durable timeline write.
+
+        Runs under the room lock but OUTSIDE the ``process_timeout`` window:
+        an expiry must never leave a committed event reported as blocked
+        (§13.6 MUST NOT), and the edit/delete target mutation must not be
+        separable from the commit that records it (§10.3).
+        """
+        event = ready.event
+        context = ready.context
+        source_binding = ready.source_binding
+        sync_result = ready.sync_result
+
         # Apply edit/delete target mutation now that the event is authorized and
         # hook-allowed (RFC §10.3 — mutation must not precede the block decision).
         mutation_hook: tuple[HookTrigger, RoomEvent] | None = None
-        if edit_delete_target is not None:
-            mutation_hook = await self._apply_edit_delete_state(event, edit_delete_target)
+        if ready.edit_delete_target is not None:
+            mutation_hook = await self._apply_edit_delete_state(event, ready.edit_delete_target)
 
         # Commit point (RFC §10.1 step 12): persist DELIVERED and bump the
         # room counters atomically, PLAN the broadcast against binding state
@@ -641,7 +741,18 @@ class InboundLockedMixin(HelpersMixin):
         lock and has no cascade); the locked pipeline lanes its injected
         events via ``_lane_injected_events``. Inline execution trivially
         satisfies per-room order (RFC §10.2).
+
+        Runs before the locked pipeline, so it owes the RFC §5.1 status gate
+        itself: an identity challenge injected into a CLOSED room would grow
+        a timeline that refuses growth.
         """
+        if injected_events and await self._room_refuses_writes(room_id):
+            logger.info(
+                "Injected events refused: room %s no longer accepts writes",
+                room_id,
+                extra={"room_id": room_id},
+            )
+            return
         for injected in injected_events:
             # Commit the injected event atomically as DELIVERED (index + room
             # counters, RFC §8.1 / §14.3) — it is a real, delivered timeline

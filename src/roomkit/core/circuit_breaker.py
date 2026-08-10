@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 
 
 class CircuitBreaker:
@@ -23,12 +24,23 @@ class CircuitBreaker:
         self,
         failure_threshold: int = 5,
         recovery_timeout: float = 60.0,
+        *,
+        on_state_change: Callable[[str], None] | None = None,
     ) -> None:
         self._failure_threshold = failure_threshold
         self._recovery_timeout = recovery_timeout
         self._failure_count: int = 0
         self._opened_at: float | None = None
         self._half_open_probe_sent: bool = False
+        # RFC §13.1 MUST: opening (and closing again) is an observable
+        # transition, not a private detail. The breaker reports the edge; the
+        # owner decides how to publish it.
+        self._on_state_change = on_state_change
+
+    def _notify(self, state: str) -> None:
+        if self._on_state_change is None:
+            return
+        self._on_state_change(state)
 
     # -- State queries --
 
@@ -64,16 +76,22 @@ class CircuitBreaker:
 
     def record_success(self) -> None:
         """Record a successful call — resets the breaker to closed."""
+        was_tripped = self._opened_at is not None
         self._failure_count = 0
         self._opened_at = None
         self._half_open_probe_sent = False
+        if was_tripped:
+            self._notify("closed")
 
     def record_failure(self) -> None:
         """Record a failed call — may trip the breaker open."""
         self._failure_count += 1
         if self._failure_count >= self._failure_threshold:
+            was_tripped = self._opened_at is not None
             self._opened_at = time.monotonic()
             self._half_open_probe_sent = False
+            if not was_tripped:
+                self._notify("open")
 
     # -- Reset --
 

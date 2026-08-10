@@ -309,6 +309,24 @@ class RoomKit(
 
         async def _on_status_posted(entry: StatusEntry) -> None:
             await self._emit_framework_event("status_posted", data=entry.model_dump())
+            # RFC §9.2 ON_STATUS_POSTED. The bus is global, so a status
+            # carrying no room reaches no room's hooks — the same scoping the
+            # framework event above has.
+            room_id = (entry.metadata or {}).get("room_id")
+            if not isinstance(room_id, str) or not room_id:
+                return
+            try:
+                context = await self._build_context(room_id)
+            except RoomNotFoundError:
+                logger.debug("No such room %s for ON_STATUS_POSTED", room_id)
+                return
+            await self._hook_engine.run_async_hooks(
+                room_id,
+                HookTrigger.ON_STATUS_POSTED,
+                entry,
+                context,
+                skip_event_filter=True,
+            )
 
         self._status_bus_callback = _on_status_posted
         # Subscribe lazily — requires a running event loop (deferred to first use)
@@ -331,6 +349,8 @@ class RoomKit(
         else:
             self._telemetry = NoopTelemetryProvider()
         self._hook_engine._telemetry = self._telemetry
+        # RFC §8.2 ``hook_timeout`` — only the engine sees a hook time out.
+        self._hook_engine._framework_emitter = self._emit_framework_event
         if isinstance(telemetry, _TelemetryConfigCls):
             self._hook_engine._suppressed_triggers = telemetry.suppressed_hook_triggers
             # Propagate global metadata to the provider for searchable tags
@@ -444,6 +464,7 @@ class RoomKit(
                 telemetry=self._telemetry,
                 greeting_gate_fn=self._wait_greeting_gate,
             )
+            self._event_router._framework_emitter = self._emit_framework_event
         return self._event_router
 
     async def close(self) -> None:

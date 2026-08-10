@@ -185,6 +185,35 @@ class RoomLifecycleMixin(HelpersMixin):
             )
             return result
 
+    async def archive_room(self, room_id: str) -> Room:
+        """Archive a room — the terminal storage state (RFC §5.1).
+
+        ARCHIVED refuses new events exactly as CLOSED does; the difference is
+        intent. A closed room MAY be reopened by returning it to ACTIVE; an
+        archived one is done. History, participants and bindings stay readable
+        at every status, archived included.
+
+        This is the only path to the status, and therefore the only source of
+        the ``room_archived`` framework event (§8.2).
+        """
+        async with self._lock_manager.locked(room_id):
+            self._room_recorder_mgr.stop_room(room_id)
+            room = await self.get_room(room_id)
+            if room.status == RoomStatus.ARCHIVED:
+                return room
+            room = room.model_copy(
+                update={
+                    "status": RoomStatus.ARCHIVED,
+                    "closed_at": room.closed_at or datetime.now(UTC),
+                    "updated_at": datetime.now(UTC),
+                }
+            )
+            result = await self._store.update_room(room)
+            await self._emit_framework_event(
+                "room_archived", room_id=room_id, data={"room_id": room_id}
+            )
+            return result
+
     async def set_room_timers(self, room_id: str, timers: RoomTimers) -> Room:
         """Set or replace the lifecycle timers for an existing room.
 
@@ -264,6 +293,10 @@ class RoomLifecycleMixin(HelpersMixin):
                             "elapsed_seconds": elapsed,
                             "threshold": timers.closed_after_seconds,
                         },
+                        # The record OF the closing, written once the status has
+                        # flipped — the one write a CLOSED room still owes its
+                        # timeline (RFC §5.1).
+                        records_transition=True,
                     )
                     await self._fire_lifecycle_hook(
                         room_id,

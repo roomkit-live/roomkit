@@ -64,6 +64,42 @@ class RecordingChannelMode(StrEnum):
     """Output all three: ``*_inbound.wav``, ``*_outbound.wav``, and ``*_mixed.wav``."""
 
 
+class RecordingEncryption(ABC):
+    """Encrypts finished recordings at rest (RFC §17.6).
+
+    RFC §17.6 makes encryption at rest a MUST and requires implementations to
+    support configuring it. The framework owns the *when* — a recorder calls
+    :meth:`encrypt_file` once a file is complete and removes the plaintext —
+    and the integrator owns the *how*: which cipher, where the key lives, how
+    it is rotated. No default is shipped, because a default key is not
+    encryption.
+
+    Note the window this shape leaves: a recording is written in the clear and
+    encrypted at finalisation, so it exists as plaintext on the recorder's
+    storage for the duration of the call. An implementation that cannot accept
+    that window should record to an encrypted volume, or implement
+    :class:`AudioRecorder` directly with a streaming cipher.
+    """
+
+    @property
+    @abstractmethod
+    def name(self) -> str:
+        """Provider name (e.g. ``"aes-gcm"``)."""
+        ...
+
+    @abstractmethod
+    def encrypt_file(self, path: str) -> str:
+        """Encrypt the finished recording at *path*.
+
+        Implementations MUST leave no plaintext behind: either write the
+        ciphertext over *path* or write a new file and delete the original.
+
+        Returns:
+            The path of the encrypted artifact (may differ from *path*).
+        """
+        ...
+
+
 @dataclass
 class RecordingConfig:
     """Configuration for audio recording."""
@@ -85,6 +121,12 @@ class RecordingConfig:
 
     retention_days: int | None = None
     """Optional retention period in days (None = indefinite)."""
+
+    encryption: RecordingEncryption | None = None
+    """Optional encryption applied to finished recordings (RFC §17.6).
+
+    ``None`` stores recordings in the clear — legal in some deployments, not
+    in most. Set it to satisfy the encryption-at-rest requirement."""
 
     metadata: dict[str, object] = field(default_factory=dict)
     """Provider-specific configuration."""

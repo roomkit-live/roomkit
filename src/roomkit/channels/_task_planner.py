@@ -5,12 +5,16 @@ from __future__ import annotations
 import json
 import logging
 from collections import OrderedDict
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from roomkit.providers.ai.base import AITool
 from roomkit.realtime.base import EphemeralEvent, EphemeralEventType, RealtimeBackend
 
 logger = logging.getLogger("roomkit.channels.ai")
+
+PlanUpdatedCallback = Callable[[str, list[dict[str, Any]]], Awaitable[None]]
+"""Framework-injected ON_PLAN_UPDATED callback: ``(room_id, tasks)``."""
 
 _STATUS_ICONS = {
     "completed": "[x]",
@@ -54,8 +58,13 @@ class TaskPlanner:
         realtime: RealtimeBackend | None = None,
         room_id: str | None = None,
         channel_id: str | None = None,
+        on_plan_updated: PlanUpdatedCallback | None = None,
     ) -> str:
-        """Store a task plan and publish an ephemeral update event."""
+        """Store a task plan, publish an ephemeral update and fire the hook.
+
+        ``on_plan_updated`` is the framework-injected ON_PLAN_UPDATED callback
+        (RFC §9.2); it runs whether or not a realtime backend is configured.
+        """
         tasks, error = self._validated_tasks(arguments.get("tasks", []))
         if error is not None:
             return json.dumps({"error": error})
@@ -80,6 +89,12 @@ class TaskPlanner:
                 )
             except Exception:
                 logger.debug("Failed to publish plan ephemeral event", exc_info=True)
+
+        if on_plan_updated is not None and room_id:
+            try:
+                await on_plan_updated(room_id, tasks)
+            except Exception:
+                logger.debug("ON_PLAN_UPDATED hook failed", exc_info=True)
 
         counts = {
             s: sum(1 for t in tasks if t.get("status") == s)

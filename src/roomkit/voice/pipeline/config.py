@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from roomkit.voice.pipeline.debug_taps import PipelineDebugTaps
     from roomkit.voice.pipeline.denoiser.base import DenoiserProvider
     from roomkit.voice.pipeline.diarization.base import DiarizationProvider
-    from roomkit.voice.pipeline.dtmf.base import DTMFDetector
+    from roomkit.voice.pipeline.dtmf.base import DTMFDetector, DTMFRedaction
     from roomkit.voice.pipeline.postprocessor.base import AudioPostProcessor
     from roomkit.voice.pipeline.recorder.base import AudioRecorder, RecordingConfig
     from roomkit.voice.pipeline.resampler.base import ResamplerProvider
@@ -112,6 +112,11 @@ class AudioPipelineConfig:
 
     dtmf: DTMFDetector | None = None
     """Optional DTMF tone detector (runs in parallel with main chain)."""
+
+    dtmf_redaction: DTMFRedaction | None = None
+    """Optional DTMF masking (RFC §17.6). When set, the digits the framework
+    itself exposes — frame metadata, and the ``redacted_digit`` carried to
+    ON_DTMF hooks — are masked. ``None`` leaves digits in the clear."""
 
     turn_detector: TurnDetector | None = None
     """Optional post-STT turn completion detector."""

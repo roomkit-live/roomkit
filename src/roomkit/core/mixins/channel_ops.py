@@ -157,6 +157,8 @@ class ChannelOpsMixin(HelpersMixin):
             channel._before_generation_hook = self._build_before_generation_hook(
                 channel.channel_id
             )
+            channel._thinking_hook = self._build_thinking_hook(channel.channel_id)
+            channel._plan_updated_hook = self._build_plan_updated_hook(channel.channel_id)
 
             # Inject hook callbacks into external tool handler if present
             if channel._external_tool_handler is not None:
@@ -206,6 +208,16 @@ class ChannelOpsMixin(HelpersMixin):
         if isinstance(channel, AgentChannel) and channel.auto_greet and channel.greeting:
             self._register_auto_greet_hook(channel)
 
+        # RFC §8.2 — the registry changing is an observable framework event.
+        self._emit_framework_event_soon(
+            "channel_registered",
+            channel_id=channel.channel_id,
+            data={
+                "channel_id": channel.channel_id,
+                "channel_type": str(channel.channel_type),
+            },
+        )
+
     def _wire_external_tool_handler(self, channel_id: str, handler: ExternalToolHandler) -> None:
         """Inject hook callbacks so external tool calls fire RoomKit tool hooks."""
         if handler._channel_id and handler._channel_id != channel_id:
@@ -237,6 +249,14 @@ class ChannelOpsMixin(HelpersMixin):
         if channel is None:
             return None
         self._event_router = None  # Reset router cache
+        self._emit_framework_event_soon(
+            "channel_unregistered",
+            channel_id=channel_id,
+            data={
+                "channel_id": channel_id,
+                "channel_type": str(channel.channel_type),
+            },
+        )
         return channel
 
     async def attach_channel(

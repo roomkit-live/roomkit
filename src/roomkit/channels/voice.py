@@ -72,6 +72,12 @@ _STT_STREAM_BUFFER_BYTES = 3200  # 100ms at 16kHz mono 16-bit
 # normal intra-utterance pause (~600ms) but short enough to feel responsive.
 _STT_INACTIVITY_TIMEOUT_S = 1.0
 
+# How many speech segments the DISABLED strategy holds while the bot is
+# speaking (RFC §12.6 — speech is queued, not discarded). A bounded backlog:
+# a caller who talks through a long answer gets their turn, a stuck playback
+# cannot grow the queue without limit.
+_QUEUED_SPEECH_MAX_SEGMENTS = 8
+
 
 @dataclass
 class _STTStreamState:
@@ -185,6 +191,16 @@ class VoiceChannel(
         self._playback_done_events: dict[str, asyncio.Event] = {}
         # Sessions where speech was suppressed (echo during TTS playback)
         self._suppressed_sessions: set[str] = set()
+        # Sessions whose speech is queued until playback ends (RFC §12.6
+        # DISABLED) — the speech is not echo, it is simply not allowed to cut in
+        self._queueing_sessions: set[str] = set()
+        # Speech segments captured while queueing, replayed once TTS finishes
+        self._queued_speech: dict[str, list[bytes]] = {}
+        # Monotonic timestamp of the current speech onset per session, used to
+        # measure sustained speech for the CONFIRMED strategy (RFC §12.6)
+        self._speech_started_at: dict[str, float] = {}
+        # Armed re-evaluations for CONFIRMED (session_id -> task)
+        self._confirm_tasks: dict[str, asyncio.Task[Any]] = {}
         # Track delivered event IDs to prevent duplicate TTS delivery
         self._delivered_tts_events: OrderedDict[str, None] = OrderedDict()
         # The instantiated pipeline engine (if config provided)
@@ -409,10 +425,27 @@ class VoiceChannel(
 
     def _on_pipeline_speech_end(self, session: VoiceSession, audio: bytes) -> None:
         """Handle speech end from pipeline — fire hooks and transcribe."""
-        # If this speech segment was suppressed (echo during TTS), discard it.
+        # If this speech segment was suppressed (echo during TTS), discard it —
+        # unless the strategy is DISABLED, which queues it for after playback
+        # (RFC §12.6) rather than throwing it away.
         with self._state_lock:
+            self._speech_started_at.pop(session.id, None)
             was_suppressed = session.id in self._suppressed_sessions
             self._suppressed_sessions.discard(session.id)
+            was_queueing = session.id in self._queueing_sessions
+            self._queueing_sessions.discard(session.id)
+            if was_queueing and audio:
+                queue = self._queued_speech.setdefault(session.id, [])
+                if len(queue) < _QUEUED_SPEECH_MAX_SEGMENTS:
+                    queue.append(audio)
+                else:
+                    logger.warning(
+                        "Queued speech backlog full for %s — dropping segment",
+                        session.id,
+                    )
+        if was_queueing:
+            logger.debug("Queued speech during playback for %s", session.id)
+            return
         if was_suppressed:
             logger.debug("Suppressed echo speech end for %s", session.id)
             return
@@ -458,6 +491,9 @@ class VoiceChannel(
             suppress_speech = False
             with self._state_lock:
                 playback = self._playing_sessions.get(session.id)
+                # Speech onset: the clock the CONFIRMED strategy measures
+                # sustained speech against (RFC §12.6).
+                self._speech_started_at[session.id] = time.monotonic()
             if playback:
                 # During drain period (send_audio returned, waiting for echo
                 # decay), skip barge-in — nothing is actually playing.
@@ -484,11 +520,24 @@ class VoiceChannel(
                             name=f"backchannel:{session.id}",
                         )
                     else:
-                        # No interruption and no backchannel — suppress STT
-                        # to prevent echo loops (TTS audio picked up by mic).
+                        # No interruption (yet) — suppress STT so TTS echo
+                        # picked up by the mic cannot loop back.
                         suppress_speech = True
                         with self._state_lock:
                             self._suppressed_sessions.add(session.id)
+                        if decision.queue_speech:
+                            # DISABLED: the speech is not echo to throw away,
+                            # it waits its turn (RFC §12.6).
+                            with self._state_lock:
+                                self._queueing_sessions.add(session.id)
+                        elif decision.pending_confirmation:
+                            # CONFIRMED: this first look happens at speech
+                            # onset, where no strategy with a minimum duration
+                            # can ever fire. Take a second look once the speech
+                            # has had time to sustain (RFC §12.6).
+                            self._arm_barge_in_confirmation(
+                                session, room_id, decision.confirm_after_ms
+                            )
 
             if not suppress_speech:
                 # Start streaming STT if provider supports it
@@ -1107,6 +1156,113 @@ class VoiceChannel(
     # Barge-in handling
     # -------------------------------------------------------------------------
 
+    async def _flush_queued_speech(self, session_id: str) -> None:
+        """Process speech the DISABLED strategy held during playback (RFC §12.6).
+
+        Called once the bot's audio has drained. Segments are replayed in the
+        order they were spoken, through the ordinary speech-end path, so the
+        caller's turn arrives late rather than not at all.
+        """
+        with self._state_lock:
+            queued = self._queued_speech.pop(session_id, [])
+            binding_info = self._session_bindings.get(session_id)
+        if not queued or binding_info is None or not self._framework:
+            return
+        session = self._backend.get_session(session_id) if self._backend else None
+        if session is None:
+            return
+        room_id, _ = binding_info
+        logger.debug("Flushing %d queued speech segment(s) for %s", len(queued), session_id)
+        for audio in queued:
+            await self._process_speech_end(session, audio, room_id, None)
+
+    def _arm_barge_in_confirmation(
+        self, session: VoiceSession, room_id: str, delay_ms: int, *, from_vad: bool = True
+    ) -> None:
+        """Schedule the second look a duration-based strategy needs (RFC §12.6).
+
+        ``InterruptionHandler.evaluate`` is first called at speech onset, where
+        the sustained duration is 0 by construction — CONFIRMED (and SEMANTIC
+        falling back to it) can never fire from that call alone. One task per
+        session re-evaluates once the speech has had ``delay_ms`` to sustain.
+
+        ``from_vad`` marks the pipeline-VAD path, which suppressed the segment
+        while waiting and therefore owns un-suppressing it on confirmation. A
+        transport that detected the speech itself keeps its own capture.
+        """
+        with self._state_lock:
+            existing = self._confirm_tasks.pop(session.id, None)
+        if existing is not None:
+            existing.cancel()
+        self._schedule(
+            self._confirm_barge_in(
+                session, room_id, delay_ms, onset=time.monotonic(), from_vad=from_vad
+            ),
+            name=f"barge_in_confirm:{session.id}",
+        )
+
+    async def _confirm_barge_in(
+        self,
+        session: VoiceSession,
+        room_id: str,
+        delay_ms: int,
+        *,
+        onset: float,
+        from_vad: bool,
+    ) -> None:
+        """Re-evaluate a pending interruption once the speech has sustained."""
+        task = asyncio.current_task()
+        if task is not None:
+            with self._state_lock:
+                self._confirm_tasks[session.id] = task
+        try:
+            await asyncio.sleep(max(delay_ms, 0) / 1000.0)
+
+            with self._state_lock:
+                playback = self._playing_sessions.get(session.id)
+                still_speaking = session.id in self._speech_started_at
+                still_suppressed = session.id in self._suppressed_sessions
+            # The bot finished on its own, or something else already resolved
+            # the turn — there is nothing left to interrupt.
+            if playback is None:
+                return
+            done_ev = self._playback_done_events.get(session.id)
+            if done_ev is not None and done_ev.is_set():
+                return
+            # The speech stopped before it could confirm: a blip, or echo the
+            # suppression correctly swallowed.
+            if from_vad and not (still_speaking and still_suppressed):
+                return
+
+            speech_duration_ms = int((time.monotonic() - onset) * 1000)
+            decision = self._interruption_handler.evaluate(
+                playback_position_ms=playback.position_ms,
+                speech_duration_ms=speech_duration_ms,
+            )
+            if not decision.should_interrupt:
+                return
+
+            logger.info(
+                "Barge-in confirmed after %dms of sustained speech (session %s)",
+                speech_duration_ms,
+                session.id,
+            )
+            if from_vad:
+                # Confirmed: the segment is the user talking, not echo. Let it
+                # through and start capturing it.
+                with self._state_lock:
+                    self._suppressed_sessions.discard(session.id)
+                if self._stt is not None and self._stt.supports_streaming:
+                    self._start_stt_stream(session, room_id)
+                await self._fire_speech_start_hooks(session, room_id)
+            await self._handle_barge_in(session, playback, room_id)
+        except asyncio.CancelledError:
+            raise
+        finally:
+            with self._state_lock:
+                if self._confirm_tasks.get(session.id) is task:
+                    self._confirm_tasks.pop(session.id, None)
+
     async def _handle_barge_in(
         self, session: VoiceSession, playback: TTSPlaybackState, room_id: str
     ) -> None:
@@ -1237,7 +1393,13 @@ class VoiceChannel(
             )
 
     def _on_backend_barge_in(self, session: VoiceSession) -> None:
-        """Handle barge-in detected by backend."""
+        """Handle barge-in detected by the transport.
+
+        A backend that detects speech itself still answers to the configured
+        interruption policy (RFC §12.6): the strategy decides, whichever layer
+        noticed the speech. ``DISABLED`` therefore holds against a backend with
+        native detection, as it does against the pipeline's own VAD.
+        """
         with self._state_lock:
             binding_info = self._session_bindings.get(session.id)
             playback = self._playing_sessions.get(session.id)
@@ -1252,6 +1414,22 @@ class VoiceChannel(
         # decay), skip barge-in — nothing is actually playing.
         done_ev = self._playback_done_events.get(session.id)
         if done_ev is not None and done_ev.is_set():
+            return
+
+        # The transport reports detected speech, not a decision. It carries no
+        # duration, so a duration-based strategy gets its second look the same
+        # way the VAD path does.
+        decision = self._interruption_handler.evaluate(
+            playback_position_ms=playback.position_ms,
+            speech_duration_ms=0,
+        )
+        if not decision.should_interrupt:
+            if decision.pending_confirmation:
+                self._arm_barge_in_confirmation(
+                    session, room_id, decision.confirm_after_ms, from_vad=False
+                )
+            else:
+                logger.debug("Backend barge-in ignored for %s: %s", session.id, decision.reason)
             return
 
         self._schedule(

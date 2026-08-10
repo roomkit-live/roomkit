@@ -90,11 +90,35 @@ class HookEngine:
         self._room_hooks: dict[str, list[HookRegistration]] = {}
         self._trigger_index: set[HookTrigger] = set()
         self._telemetry: Any = None  # Set by RoomKit after init
+        # Set by RoomKit after init — RFC §8.2 mandates a ``hook_timeout``
+        # framework event, which the engine alone knows how to raise.
+        self._framework_emitter: Any = None
         self._suppressed_triggers: set[str] = {
             "on_input_audio_level",
             "on_output_audio_level",
             "on_vad_audio_level",
         }
+
+    async def _emit_hook_timeout(
+        self, room_id: str, hook: HookRegistration, trigger: HookTrigger
+    ) -> None:
+        """Raise the RFC §8.2 ``hook_timeout`` framework event.
+
+        A timeout is its own observable condition, distinct from
+        ``hook_error``: an operator reading the event stream can tell a hook
+        that raised from one that never came back.
+        """
+        if self._framework_emitter is None:
+            return
+        await self._framework_emitter(
+            "hook_timeout",
+            room_id=room_id,
+            data={
+                "hook_name": hook.name,
+                "trigger": str(trigger),
+                "timeout": hook.timeout,
+            },
+        )
 
     def register(self, hook: HookRegistration) -> None:
         """Register a global hook."""
@@ -250,6 +274,7 @@ class HookEngine:
                     hook.timeout,
                     extra={"room_id": room_id},
                 )
+                await self._emit_hook_timeout(room_id, hook, trigger)
                 result.hook_errors.append(
                     {"hook": hook.name, "error": f"timeout ({hook.timeout}s)"}
                 )
@@ -452,6 +477,7 @@ class HookEngine:
                     hook.timeout,
                     extra={"room_id": room_id},
                 )
+                await self._emit_hook_timeout(room_id, hook, trigger)
                 if span_id is not None:
                     self._telemetry.end_span(span_id, status="error", error_message="timeout")
             except Exception:

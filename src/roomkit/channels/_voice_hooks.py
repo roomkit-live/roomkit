@@ -47,6 +47,7 @@ class VoiceHooksMixin:
 
     channel_id: str
     _framework: RoomKit | None
+    _pipeline_config: Any  # AudioPipelineConfig | None — see VoiceHookHost
 
     @contextmanager
     def _voice_span_ctx(self, session: VoiceSession) -> Generator[None, None, None]:
@@ -163,6 +164,18 @@ class VoiceHooksMixin:
                     data={
                         "session_id": session.id,
                         "channel_id": self.channel_id,
+                    },
+                )
+                # RFC §8.2 ``voice_session_ready`` — the audio path is live.
+                # Distinct from ``session_started``, which the RFC does not
+                # define and which text channels raise too.
+                await self._framework._emit_framework_event(
+                    "voice_session_ready",
+                    room_id=room_id,
+                    channel_id=self.channel_id,
+                    data={
+                        "session_id": session.id,
+                        "participant_id": session.participant_id,
                     },
                 )
         except Exception:
@@ -360,11 +373,21 @@ class VoiceHooksMixin:
 
             with self._voice_span_ctx(session):
                 context = await self._framework._build_context(room_id)
+                redaction = (
+                    self._pipeline_config.dtmf_redaction
+                    if self._pipeline_config is not None
+                    else None
+                )
                 event = DTMFDetectedEvent(
                     session=session,
                     digit=dtmf_event.digit,
                     duration_ms=dtmf_event.duration_ms,
                     confidence=dtmf_event.confidence,
+                    redacted_digit=(
+                        redaction.mask(dtmf_event.digit)
+                        if redaction is not None
+                        else dtmf_event.digit
+                    ),
                 )
                 await self._framework.hook_engine.run_async_hooks(
                     room_id,

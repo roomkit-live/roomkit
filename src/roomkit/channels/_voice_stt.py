@@ -99,6 +99,7 @@ class STTHost(Protocol):
     _pending_audio: dict[str, bytearray]
     _debug_frame_count: int
     _barge_in_energy_count: dict[str, int]
+    _speech_started_at: dict[str, float]
     _scheduled_tasks: set[asyncio.Task[Any]]
     _state_lock: threading.Lock
     _interruption_handler: Any  # InterruptionHandler
@@ -130,6 +131,7 @@ class VoiceSTTMixin:
     _pending_audio: dict[str, bytearray]
     _debug_frame_count: int
     _barge_in_energy_count: dict[str, int]
+    _speech_started_at: dict[str, float]
     _scheduled_tasks: set[asyncio.Task[Any]]
     _state_lock: Any  # threading.Lock — see STTHost
     _interruption_handler: Any  # InterruptionHandler — see STTHost
@@ -320,14 +322,17 @@ class VoiceSTTMixin:
                 self._barge_in_energy_count[session.id] = (
                     self._barge_in_energy_count.get(session.id, 0) + 1
                 )
+                # Onset of this run of above-threshold frames: what a
+                # duration-based strategy measures against (RFC §12.6).
+                self._speech_started_at.setdefault(session.id, time.monotonic())
             else:
                 self._barge_in_energy_count[session.id] = 0
+                self._speech_started_at.pop(session.id, None)
 
             triggered = (
                 self._barge_in_energy_count.get(session.id, 0) >= self._BARGE_IN_FRAMES_REQUIRED
             )
-            if triggered:
-                self._barge_in_energy_count[session.id] = 0
+            started_at = self._speech_started_at.get(session.id)
             binding_info = self._session_bindings.get(session.id)
 
         if not triggered:
@@ -336,13 +341,22 @@ class VoiceSTTMixin:
             room_id, _ = binding_info
             # Consult the interruption handler before firing barge-in
             # (respects InterruptionStrategy.DISABLED and other policies).
+            # The energy run is itself the sustained-speech measurement, so
+            # CONFIRMED gets a real duration here instead of a constant 0 —
+            # and the counter is NOT reset while a strategy is still waiting
+            # for the speech to sustain, or it could never reach its minimum.
             handler: InterruptionHandler = self._interruption_handler
+            speech_duration_ms = (
+                int((time.monotonic() - started_at) * 1000) if started_at is not None else 0
+            )
             decision = handler.evaluate(
                 playback_position_ms=playback.position_ms,
-                speech_duration_ms=0,
+                speech_duration_ms=speech_duration_ms,
             )
             if not decision.should_interrupt:
                 return
+            with self._state_lock:
+                self._barge_in_energy_count[session.id] = 0
             logger.info(
                 "Energy barge-in (post-denoiser): rms=%.0f, threshold=%.0f, pos=%dms",
                 rms,

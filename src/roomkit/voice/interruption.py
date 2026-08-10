@@ -67,6 +67,21 @@ class InterruptionDecision:
     reason: str = ""
     """Human-readable reason for the decision."""
 
+    pending_confirmation: bool = False
+    """True when the speech is not yet long enough to interrupt, but would be
+    if it sustains (RFC §12.6 CONFIRMED). The caller must re-evaluate after
+    ``confirm_after_ms``; without that second look CONFIRMED can never fire,
+    because the first evaluation happens at speech onset with no duration."""
+
+    confirm_after_ms: int = 0
+    """How much longer the speech must sustain before re-evaluating. Only
+    meaningful when ``pending_confirmation`` is True."""
+
+    queue_speech: bool = False
+    """True when the speech must be queued and delivered once playback ends
+    rather than discarded (RFC §12.6 DISABLED: "user speech is queued until
+    the bot finishes")."""
+
 
 class InterruptionHandler:
     """Evaluates whether a user's speech during TTS should trigger an interruption.
@@ -123,6 +138,7 @@ class InterruptionHandler:
         if strategy == InterruptionStrategy.DISABLED:
             return InterruptionDecision(
                 should_interrupt=False,
+                queue_speech=True,
                 reason="interruptions disabled",
             )
 
@@ -140,6 +156,8 @@ class InterruptionHandler:
                 )
             return InterruptionDecision(
                 should_interrupt=False,
+                pending_confirmation=True,
+                confirm_after_ms=self._config.min_speech_ms - speech_duration_ms,
                 reason="speech too short",
             )
 
@@ -156,6 +174,8 @@ class InterruptionHandler:
                     )
                 return InterruptionDecision(
                     should_interrupt=False,
+                    pending_confirmation=True,
+                    confirm_after_ms=self._config.min_speech_ms - speech_duration_ms,
                     reason="speech too short (semantic fallback)",
                 )
 

@@ -465,20 +465,32 @@ class LaneExecutionMixin(HelpersMixin):
                 cascade.record_error(first_error)
             cascade.add_streams(result.streaming_responses)
 
-        # Commit blocked events from chain depth enforcement atomically (RFC
-        # §8.1 / §8.3 / §14.3 — blocked events are still indexed).
-        for blocked in result.blocked_events:
-            await self._commit_indexed(room_id, blocked)
-            await self._emit_framework_event(
-                "chain_depth_exceeded",
-                room_id=room_id,
-                event_id=blocked.id,
-                channel_id=blocked.source.channel_id,
-                data={
-                    "chain_depth": blocked.chain_depth,
-                    "max_chain_depth": self._max_chain_depth,
-                },
-            )
+        # Commit blocked responses atomically (RFC §8.1 / §8.3 / §14.3 —
+        # blocked events are still indexed): chain-depth enforcement and
+        # muted sources (§7.5 rule 2) both land here. A room that refuses
+        # writes takes neither (§5.1).
+        if result.blocked_events and not await self._room_refuses_writes(room_id):
+            for blocked in result.blocked_events:
+                await self._commit_indexed(room_id, blocked)
+                if blocked.blocked_by == "event_chain_depth_limit":
+                    await self._emit_framework_event(
+                        "chain_depth_exceeded",
+                        room_id=room_id,
+                        event_id=blocked.id,
+                        channel_id=blocked.source.channel_id,
+                        data={
+                            "chain_depth": blocked.chain_depth,
+                            "max_chain_depth": self._max_chain_depth,
+                        },
+                    )
+                else:
+                    await self._emit_framework_event(
+                        "event_blocked",
+                        room_id=room_id,
+                        event_id=blocked.id,
+                        channel_id=blocked.source.channel_id,
+                        data={"reason": blocked.blocked_by, "blocked_by": blocked.blocked_by},
+                    )
 
         if plan.fire_after_broadcast:
             await self._persist_side_effects(
@@ -532,15 +544,18 @@ class LaneExecutionMixin(HelpersMixin):
                     extra={"room_id": room_id},
                 )
                 async with self._lock_manager.locked(room_id):
-                    await self._commit_indexed(
-                        room_id,
-                        reentry.model_copy(
-                            update={
-                                "status": EventStatus.BLOCKED,
-                                "blocked_by": "reentry_loop_cap",
-                            }
-                        ),
-                    )
+                    # Same status gate as every other growth point (RFC §5.1):
+                    # a closed room does not take the audit record either.
+                    if not await self._room_refuses_writes(room_id):
+                        await self._commit_indexed(
+                            room_id,
+                            reentry.model_copy(
+                                update={
+                                    "status": EventStatus.BLOCKED,
+                                    "blocked_by": "reentry_loop_cap",
+                                }
+                            ),
+                        )
                 continue
             await self._run_reentry_pass(room_id, reentry, plan, cascade)
 
@@ -554,7 +569,44 @@ class LaneExecutionMixin(HelpersMixin):
         """One response event's own commit pass, under a fresh room lock."""
         router = self._get_router()
         async with self._lock_manager.locked(room_id):
+            # RFC §10.1 step 6 / §5.1 — a reentry re-enters the locked section,
+            # so it meets the same status gate as any other write. The room may
+            # have been closed while the trigger's delivery set was executing:
+            # an AI answer that lands after close_room() must not grow a closed
+            # room's timeline. Nothing is written, not even a BLOCKED record.
+            if await self._room_refuses_writes(room_id):
+                logger.info(
+                    "Reentry refused: room %s no longer accepts writes",
+                    room_id,
+                    extra={"room_id": room_id, "event_id": reentry.id},
+                )
+                await self._emit_framework_event(
+                    "room_refused_event",
+                    room_id=room_id,
+                    event_id=reentry.id,
+                    data={"event_type": str(reentry.type), "reentry": True},
+                )
+                return
+
             reentry_binding = await self._store.get_binding(room_id, reentry.source.channel_id)
+            if reentry_binding is not None and not reentry_binding.can_write:
+                # RFC §7.5 rule 2 — a source that cannot write MUST NOT inject a
+                # DELIVERED event: a READ_ONLY observer's answer belongs in the
+                # timeline as an audit record, not as a message every channel
+                # reads. Stored BLOCKED, never broadcast.
+                reason = "source_muted" if reentry_binding.muted else "source_read_only"
+                context = await self._build_context(room_id)
+                await self._handle_block(
+                    room_id=room_id,
+                    event=reentry,
+                    reason=reason,
+                    blocked_by=reason,
+                    injected_events=[],
+                    context=context,
+                    cascade=cascade,
+                )
+                return
+
             if reentry_binding is None:
                 # No channel to broadcast to, but the response is still part
                 # of the timeline: commit it DELIVERED so it is indexed and

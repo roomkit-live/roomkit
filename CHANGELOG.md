@@ -7,6 +7,94 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **`archive_room()` — the terminal room status is reachable.** `ARCHIVED` was
+  enforced at every write gate but nothing could ever set it, so a status the
+  RFC requires (Section 5.1) and a framework event it mandates (`room_archived`,
+  Section 8.2) were both unreachable. Archiving refuses new events exactly as
+  closing does, keeps history readable, and is idempotent.
+
+- **Nine mandated framework events now fire.** `channel_registered`,
+  `channel_unregistered`, `source_connected`, `source_disconnected`,
+  `identity_resolved`, `hook_timeout`, `circuit_breaker_opened`,
+  `circuit_breaker_closed`, `voice_session_ready` (RFC Section 8.2; the circuit
+  breaker pair is also a Section 13.1 MUST). `source_connected` /
+  `source_disconnected` are emitted **alongside** the existing
+  `source_attached` / `source_detached`, which keep working — the RFC fixed a
+  different name after the framework had shipped one. `hook_timeout` is now
+  distinct from `hook_error`: a hook that never came back and one that raised
+  were previously indistinguishable.
+
+- **`ON_AI_THINKING`, `ON_STATUS_POSTED` and `ON_PLAN_UPDATED` actually fire.**
+  All three were declared Implemented, and a hook registered on any of them
+  could never run — reasoning and plans surfaced only as ephemeral events, so a
+  host with no realtime backend saw nothing at all. New `ThinkingEvent` and
+  `PlanUpdatedEvent` payloads.
+
+- **`DTMFRedaction` — configurable masking of DTMF digits (RFC Section 17.6
+  MUST).** Set `AudioPipelineConfig.dtmf_redaction` and the digits the framework
+  itself exposes are masked: `frame.metadata["dtmf"]`, which travels to
+  recorders, debug taps and logs, and the new `DTMFDetectedEvent.redacted_digit`.
+  Defaults mask everything — a redaction that leaks the head of a PIN by default
+  would be a worse trap than none — with `keep_first` / `keep_last` for the
+  RFC's `4111********1111` card shape. `ON_DTMF`'s `digit` stays raw on purpose:
+  that hook is how an IVR reads the digits it exists to collect.
+
+- **`RecordingEncryption` — encryption at rest for recordings (RFC Section 17.6
+  MUST).** `RecordingConfig.encryption` is honoured by `WavFileRecorder` at
+  finalisation: the file is encrypted and the plaintext removed. A file the
+  cipher cannot encrypt is discarded rather than handed back in the clear. No
+  default cipher ships — a default key is not encryption — so the integrator
+  supplies the how, the framework owns the when.
+
+### Fixed
+
+- **A store commit slower than `process_timeout` could be reported blocked.**
+  RFC Section 13.6 forbids wrapping the commit in a cancellable unit whose
+  expiry leaves a committed event reported as blocked, which is exactly what
+  happened: the timeout covered the whole pre-commit coroutine, commit included,
+  and with a store that commits on a worker thread the write landed while the
+  caller received `blocked, reason="process_timeout"`. The pre-commit phase now
+  *decides* and writes nothing; every durable write — the BLOCKED record, the
+  edit/delete target mutation, the commit itself — happens after the cancellable
+  region is left.
+
+- **A response landing after `close_room()` grew the closed room's timeline.**
+  Reentry passes never checked the room status, so an AI answer completing after
+  the room closed committed a DELIVERED event into it. The status gate (RFC
+  Section 5.1: "at **every** point where the timeline can grow") now also covers
+  reentries, lifecycle system events, the identity-challenge injection and the
+  post-broadcast blocked-event commits. The one documented exception stays: the
+  record *of* the closing transition.
+
+- **A READ_ONLY channel's answer was stored DELIVERED and visible to everyone.**
+  RFC Section 7.5 rule 2 requires an event whose source cannot write to be
+  stored BLOCKED and never broadcast; the reentry path stored it DELIVERED with
+  visibility `all`, so a read-only observer's reply leaked into every channel's
+  rebuilt history. It is now stored BLOCKED with `source_read_only`. A muted
+  source's suppressed response is likewise recorded BLOCKED with `source_muted`
+  instead of being dropped without trace — muting silences the voice, it does
+  not erase the record.
+
+- **The CONFIRMED interruption strategy could never interrupt.** Every
+  evaluation happened at speech onset, where the sustained duration is 0 by
+  construction, so `0 >= min_speech_ms` was always false — and the speech was
+  then discarded as echo. The default strategy therefore ignored barge-in
+  entirely. A pending evaluation is now re-taken once the speech has had
+  `min_speech_ms` to sustain, and the continuous-STT energy path passes its real
+  run duration instead of a constant 0.
+
+- **A backend's own barge-in detection overrode the interruption policy.**
+  `DISABLED` (and the legacy `enable_barge_in=False`) cancelled TTS anyway on
+  any transport with native detection. The transport now reports detected
+  speech; the configured strategy still decides. Note the consequence:
+  transport barge-in is now subject to `allow_during_first_ms` (200 ms under the
+  legacy defaults) like the VAD path already was.
+
+- **`DISABLED` discarded user speech instead of queueing it.** RFC Section 12.6
+  says the speech "is queued until the bot finishes"; it was dropped. Segments
+  captured during playback are now held (bounded) and replayed once the bot's
+  audio has drained.
+
 ## [0.46.0] — 2026-08-08
 
 ### Added
