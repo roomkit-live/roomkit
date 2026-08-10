@@ -290,13 +290,22 @@ class BackchannelEvent:
 
 @dataclass(frozen=True)
 class RecordingStartedEvent:
-    """Audio recording has started for a session."""
+    """Recording has started (RFC §17.6).
 
-    session: VoiceSession
-    """The voice session being recorded."""
+    Fires before any audio is captured, which is what makes it a consent point
+    rather than a notice that capture is already under way.
+    """
 
-    id: str
+    session: VoiceSession | None = None
+    """The voice session being recorded, or ``None`` for a room-level recorder,
+    which records a room rather than one participant's session."""
+
+    id: str = ""
     """Unique identifier for this recording."""
+
+    room_id: str = ""
+    """The room being recorded. Always set; the session carries it too when
+    there is one."""
 
     timestamp: datetime = field(default_factory=_utcnow)
     """When the recording started."""

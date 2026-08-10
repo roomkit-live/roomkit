@@ -120,9 +120,16 @@ class RoomLifecycleMixin(HelpersMixin):
             ),
         )
         result = await self._store.create_room(room)
-        # Start room-level media recorders
+        # Start room-level media recorders, and announce each one.
+        #
+        # ON_RECORDING_STARTED is the consent point (RFC §17.6), and this path
+        # fired nothing at all — a room could be recorded with no hook ever
+        # telling the integrator to notify anyone. A room recorder captures
+        # nothing until a track is added, so announcing here still precedes any
+        # audio.
         if recorders:
-            self._room_recorder_mgr.register(room.id, recorders)
+            for handle in self._room_recorder_mgr.register(room.id, recorders):
+                await self._fire_recording_started(room.id, handle.id)
 
         # Apply orchestration strategy
         orch = (
@@ -154,6 +161,27 @@ class RoomLifecycleMixin(HelpersMixin):
             "room_created", room_id=room.id, data={"room_id": room.id}
         )
         return result
+
+    async def _fire_recording_started(self, room_id: str, recording_id: str) -> None:
+        """Announce a room-level recording (ON_RECORDING_STARTED, RFC §17.6)."""
+        from roomkit.voice.events import RecordingStartedEvent
+
+        try:
+            context = await self._build_context(room_id)
+            await self._hook_engine.run_async_hooks(
+                room_id,
+                HookTrigger.ON_RECORDING_STARTED,
+                RecordingStartedEvent(id=recording_id, room_id=room_id),
+                context,
+                skip_event_filter=True,
+            )
+            await self._emit_framework_event(
+                "recording_started",
+                room_id=room_id,
+                data={"id": recording_id, "scope": "room"},
+            )
+        except Exception:
+            logger.exception("Error announcing room recording %s", recording_id)
 
     async def get_room(self, room_id: str, *, organization_id: str | None = None) -> Room:
         """Get a room by ID. Raises RoomNotFoundError if missing.

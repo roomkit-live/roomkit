@@ -27,8 +27,15 @@ class RoomRecorderManager:
     def __init__(self) -> None:
         self._registry: dict[str, list[_ActiveBinding]] = {}
 
-    def register(self, room_id: str, bindings: list[RoomRecorderBinding]) -> None:
-        """Start recordings for all bindings in a room."""
+    def register(
+        self, room_id: str, bindings: list[RoomRecorderBinding]
+    ) -> list[MediaRecordingHandle]:
+        """Start recordings for all bindings in a room.
+
+        Returns the handles started, so the caller can announce them
+        (ON_RECORDING_STARTED, RFC §17.6). A room recorder captures nothing
+        until a track is added, so the announcement still precedes any audio.
+        """
         active: list[_ActiveBinding] = []
         for binding in bindings:
             if not binding.enabled:
@@ -44,6 +51,7 @@ class RoomRecorderManager:
             )
         if active:
             self._registry[room_id] = active
+        return [handle for _binding, handle in active]
 
     def on_track_added(self, room_id: str, track: RecordingTrack) -> None:
         """Notify all recorders in a room about a new track."""

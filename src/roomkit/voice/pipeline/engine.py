@@ -208,6 +208,10 @@ class AudioPipeline:
         self._aec_resampler_lock = threading.Lock()
         # Active recording handle (per session, keyed by session_id)
         self._recording_handles: dict[str, RecordingHandle] = {}
+        # Started, announced, not yet writing. A handle sits here until
+        # ON_RECORDING_STARTED has been heard (RFC §17.6); the inbound tap
+        # reads ``_recording_handles``, so nothing is captured meanwhile.
+        self._pending_recording_handles: dict[str, RecordingHandle] = {}
         # Per-session lock for process_outbound — serializes concurrent
         # outbound calls (bridge forwarding + TTS) for the same target
         # session to protect the recorder handle and other per-session state.
@@ -824,7 +828,12 @@ class AudioPipeline:
         self._telemetry.release(session_id)
         self._last_speaker_id.pop(session_id, None)
         self._outbound_locks.pop(session_id, None)
-        handle = self._recording_handles.pop(session_id, None)
+        # A recording still awaiting its announcement is stopped too — that is
+        # how a handler refuses during ON_RECORDING_STARTED, and how a session
+        # that ends mid-announcement does not leave a recorder open.
+        handle = self._recording_handles.pop(session_id, None) or (
+            self._pending_recording_handles.pop(session_id, None)
+        )
         if handle is not None and self._config.recorder is not None:
             try:
                 self._config.recorder.stop(handle)
@@ -853,19 +862,82 @@ class AudioPipeline:
                 self._config.debug_taps, session.id
             )
 
-        # Start recording if configured
+        # Start recording if configured.
+        #
+        # The handle is held back until the start announcement has been heard
+        # (RFC §17.6): the inbound tap looks the handle up in
+        # ``_recording_handles``, so publishing it only afterwards is what
+        # makes ON_RECORDING_STARTED a consent point rather than a
+        # notification that capture is already under way. Audio arriving in
+        # between reaches no recorder and is not written anywhere.
         if self._config.recorder is not None and self._config.recording_config is not None:
             try:
                 handle = self._config.recorder.start(session, self._config.recording_config)
-                self._recording_handles[session.id] = handle
-                for cb in self._recording_started_callbacks:
-                    try:
-                        result = cb(session, handle)
-                        _maybe_schedule(result, self._home_loop)
-                    except Exception:
-                        logger.exception("Recording started callback error")
+                self._announce_recording(session, handle)
             except Exception:
                 logger.exception("Failed to start recording for session %s", session.id)
+
+    def _announce_recording(self, session: VoiceSession, handle: RecordingHandle) -> None:
+        """Fire ON_RECORDING_STARTED, and publish the handle once it is heard.
+
+        The callbacks are invoked here, synchronously, exactly as they always
+        were — a sync subscriber must still be called when the pipeline runs
+        off-loop. Only the asynchronous ones are waited for, and only they
+        delay capture: a handle sits in the pending slot until they return, so
+        no frame reaches the recorder while the announcement is still being
+        heard (RFC §17.6). That wait is what makes the hook a consent point
+        rather than a notification of capture already under way.
+        """
+        pending: list[Any] = []
+        for cb in self._recording_started_callbacks:
+            try:
+                result = cb(session, handle)
+                if asyncio.coroutines.iscoroutine(result):
+                    pending.append(result)
+            except Exception:
+                logger.exception("Recording started callback error")
+
+        if not pending:
+            # Every subscriber has been heard already.
+            self._recording_handles[session.id] = handle
+            return
+        if self._home_loop is None or self._home_loop.is_closed():
+            # Nothing can wait for them; capture rather than record nothing,
+            # and say so. _maybe_schedule reports the dropped coroutines.
+            logger.warning(
+                "Recording for %s starts before its announcement could be heard: "
+                "no event loop to wait on",
+                session.id,
+            )
+            self._recording_handles[session.id] = handle
+            for coro in pending:
+                _maybe_schedule(coro, self._home_loop)
+            return
+
+        self._pending_recording_handles[session.id] = handle
+        _maybe_schedule(
+            self._publish_after_announcement(session, handle, pending), self._home_loop
+        )
+
+    async def _publish_after_announcement(
+        self, session: VoiceSession, handle: RecordingHandle, pending: list[Any]
+    ) -> None:
+        """Let audio reach the recorder once the announcement has been heard.
+
+        A handler that refuses — by stopping the recording from inside the
+        announcement — finds the session already gone from the pending slot,
+        so nothing is published and nothing was ever captured.
+        """
+        for coro in pending:
+            try:
+                await coro
+            except Exception:
+                logger.exception("Recording started callback error")
+
+        if self._pending_recording_handles.pop(session.id, None) is None:
+            # Refused, or the session ended while the announcement was heard.
+            return
+        self._recording_handles[session.id] = handle
 
     def _release_stage_streams(self, session_id: str) -> None:
         """Drop one stream's state in every stage.
@@ -955,7 +1027,9 @@ class AudioPipeline:
             except Exception:
                 logger.exception("Failed to close debug taps for %s", session.id)
 
-        handle = self._recording_handles.pop(session.id, None)
+        handle = self._recording_handles.pop(session.id, None) or (
+            self._pending_recording_handles.pop(session.id, None)
+        )
         if handle is not None and self._config.recorder is not None:
             try:
                 recording_result = self._config.recorder.stop(handle)
@@ -993,13 +1067,17 @@ class AudioPipeline:
             self._release_stage_streams(stream)
         self._last_speaker_id.clear()
         # Stop active recordings before clearing handles
-        for handle in self._recording_handles.values():
+        for handle in (
+            *self._recording_handles.values(),
+            *self._pending_recording_handles.values(),
+        ):
             if self._config.recorder is not None:
                 try:
                     self._config.recorder.stop(handle)
                 except Exception:
                     logger.exception("Failed to stop recording during reset")
         self._recording_handles.clear()
+        self._pending_recording_handles.clear()
         # Close debug taps from any previous session
         for session_id, dt in self._debug_tap_sessions.items():
             try:

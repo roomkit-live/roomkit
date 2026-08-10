@@ -102,6 +102,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Recording consent existed on one path of three.** RFC Section 17.6 requires
+  a consent mechanism and says `ON_RECORDING_STARTED` should fire before any
+  audio is captured. The conference path did exactly that. The voice pipeline
+  announced *after* starting the recorder and never waited, so the first frames
+  were tapped while the announcement was still in flight — pre-consent audio,
+  written. The room-level recorder announced nothing at all: a room could be
+  recorded with no hook ever telling the integrator to notify anyone.
+
+  The voice pipeline now holds the recording handle back until the announcement
+  has been heard; the inbound tap looks that handle up, so audio arriving
+  meanwhile reaches no recorder, and a handler that refuses — by stopping the
+  recording from inside the hook — leaves nothing captured. With no subscriber
+  there is nothing to wait for and capture starts immediately, as before. The
+  room-level path fires the hook and the `recording_started` framework event.
+
+  `RecordingStartedEvent.session` is now optional and the event carries
+  `room_id`: a room-level recording records a room, not one participant's
+  session.
+
 - **`BEFORE_DELIVER` could not block or modify anything.** RFC Section 9.2 types
   the trigger SYNC and Section 22.3 documents it as "can block/modify content".
   Both firing sites — the in-process `kit.deliver()` path and the delivery

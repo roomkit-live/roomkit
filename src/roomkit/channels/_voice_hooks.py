@@ -412,6 +412,7 @@ class VoiceHooksMixin:
                 event = RecordingStartedEvent(
                     session=session,
                     id=handle.id,
+                    room_id=room_id,
                 )
                 await self._framework.hook_engine.run_async_hooks(
                     room_id,
