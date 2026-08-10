@@ -335,13 +335,16 @@ class RecordingStoppedEvent:
 class BridgeAudioEvent:
     """Audio frame about to be forwarded via the bridge.
 
-    Passed to ``BEFORE_BRIDGE_AUDIO`` hooks.  Return
-    ``HookResult.block()`` to drop the frame, or
-    ``HookResult.allow()`` to let it through.
+    Passed to ``BEFORE_BRIDGE_AUDIO`` hooks. Return ``HookResult.block()`` to
+    drop the frame, ``HookResult.allow()`` to let it through, or
+    ``HookResult.modify(event=...)`` with a new ``BridgeAudioEvent`` to forward
+    a different frame.
 
-    For frame *modification*, use
-    :meth:`~roomkit.channels.voice.VoiceChannel.set_bridge_filter`
-    which runs synchronously in the audio thread.
+    Prefer :meth:`~roomkit.channels.voice.VoiceChannel.set_bridge_filter` for
+    per-frame work: it runs in the audio thread and builds no room context,
+    where this hook pays for one on every frame. Modifying here is for the
+    occasional frame a policy has to reshape, not for a transform applied to
+    all of them.
     """
 
     session: VoiceSession

@@ -662,6 +662,14 @@ class VoiceChannel(
                 )
                 if not result.allowed:
                     return
+                # A hook that returned a modified event forwards *its* frame
+                # (RFC §12.7): returning one and having it dropped is worse
+                # than not offering the outcome at all. ``set_bridge_filter``
+                # stays the cheaper path for per-frame work — it runs in the
+                # audio thread and builds no context — but choosing it is the
+                # integrator's call, not something silence should decide.
+                if isinstance(result.event, BridgeAudioEvent):
+                    frame = result.event.frame
         except Exception:
             logger.exception("Error firing BEFORE_BRIDGE_AUDIO hook")
         self._bridge.forward(session, frame)

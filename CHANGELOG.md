@@ -102,6 +102,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A bridge hook could refuse a frame but not reshape one.**
+  `BEFORE_BRIDGE_AUDIO` and `BEFORE_BRIDGE_VIDEO` are both declared "can
+  block/modify" (RFC Section 9.2). Only the block half was read: a hook
+  returning `HookResult.modify(event=...)` with a redacted, muted or
+  watermarked frame had it discarded, and the bridge forwarded the original —
+  silently, which is the worst way for a redaction to fail.
+
+  Returning a new `BridgeAudioEvent` / `BridgeVideoEvent` now forwards its
+  frame. `set_bridge_filter()` remains the right tool for a transform applied
+  to every frame — it runs in the media thread and builds no room context —
+  but which of the two to use is the integrator's choice to make.
+
 - **An identity challenge let the sender straight in.** RFC Section 11.3 lists
   four outcomes an `ON_IDENTITY_UNKNOWN` hook can return. The handler acted on
   two. A hook answering `challenge()` — hold the message, make this sender

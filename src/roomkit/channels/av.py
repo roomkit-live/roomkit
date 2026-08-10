@@ -504,6 +504,12 @@ class AudioVideoChannel(VideoHooksMixin, VoiceChannel):
             )
             if not result.allowed:
                 return
+            # A hook that returned a modified event forwards *its* frame
+            # (RFC §12.8). ``set_bridge_filter`` stays the cheaper path for
+            # per-frame work — audio-thread, no context build — but a hook
+            # that does modify must not be silently ignored.
+            if isinstance(result.event, BridgeVideoEvent):
+                frame = result.event.frame
         except Exception:
             logger.exception("Error firing BEFORE_BRIDGE_VIDEO hook")
         self._video_bridge.forward(session, frame)
