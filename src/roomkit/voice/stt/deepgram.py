@@ -312,7 +312,19 @@ class DeepgramSTTProvider(STTProvider):
                 except Exception as e:
                     logger.error("Error sending audio to Deepgram: %s", e)
                 finally:
-                    await connection.send_close_stream()
+                    # Closing a stream whose socket is already gone is not a
+                    # failure — the cancellation path arrives here with the
+                    # connection torn down. Letting it raise would replace the
+                    # CancelledError the caller awaits, so the cancellation
+                    # surfaces as an unhandled error at interpreter shutdown
+                    # instead of being suppressed.
+                    try:
+                        await connection.send_close_stream()
+                    except Exception:
+                        logger.debug(
+                            "Deepgram stream: close frame not sent (connection already gone)",
+                            exc_info=True,
+                        )
 
             sender_task = asyncio.create_task(send_audio())
 

@@ -95,6 +95,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   captured during playback are now held (bounded) and replayed once the bot's
   audio has drained.
 
+- **Cancelling a Deepgram stream surfaced as an unhandled websocket error.**
+  The sender task closed the stream in a `finally` that ran on the cancellation
+  path, where the socket is already gone — so the close raised, and an
+  exception raised in a `finally` during cancellation replaces the
+  `CancelledError` the caller is suppressing. Stopping a voice session with
+  Ctrl+C therefore printed a `ConnectionClosedError` traceback at interpreter
+  shutdown. Closing an already-closed stream is now logged at debug and not
+  propagated.
+
 ## [0.46.0] — 2026-08-08
 
 ### Added
