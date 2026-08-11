@@ -11,6 +11,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **OpenRouter: DeepSeek V4 Pro pricing matches the vendor again.** All three
+  rates had moved upstream (input $0.435 -> $0.63168, output $0.87 -> $1.26336,
+  cache read $0.003625 -> $0.053298 per million). A stale rate is silent: it
+  costs nothing at runtime and quietly falsifies whatever a consumer computes
+  from it. The other eleven OpenRouter entries were checked against the vendor
+  API in the same pass and were already correct, so the catalogue's verified
+  date moves with them.
+
 - **Tool Search: a query and a tool now meet whichever spelled the plural.**
   Matching is by exact token, and neither side knows how the other wrote it, so
   a tool named `workflows` lost the query "create workflow" to any tool merely

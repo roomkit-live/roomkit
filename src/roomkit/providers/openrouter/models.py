@@ -34,7 +34,7 @@ from datetime import date
 
 from roomkit.providers.ai.base import ModelInfo, ModelPricing
 
-_VERIFIED = date(2026, 8, 5)
+_VERIFIED = date(2026, 8, 11)
 
 MODELS: list[ModelInfo] = [
     ModelInfo(
@@ -168,9 +168,9 @@ MODELS: list[ModelInfo] = [
         display_name="DeepSeek V4 Pro",
         context_window=1_048_576,
         pricing=ModelPricing(
-            input_per_million=0.435,
-            output_per_million=0.87,
-            cache_read_per_million=0.003625,
+            input_per_million=0.63168,
+            output_per_million=1.26336,
+            cache_read_per_million=0.053298,
             verified=_VERIFIED,
         ),
     ),
