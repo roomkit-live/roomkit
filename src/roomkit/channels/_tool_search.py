@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 import math
 import re
+from collections.abc import Iterable
 from typing import Any
 
 from roomkit.channels._tool_search_constants import (
@@ -67,6 +68,37 @@ def tokenize(text: str) -> list[str]:
     return [t.lower() for t in _TOKEN_SPLIT.split(text) if t]
 
 
+def fold(token: str) -> str:
+    """Fold a token's number so a query and a tool meet whatever each spelled.
+
+    Matching is by exact token, and neither side knows how the other wrote it:
+    a tool named ``workflows`` never met the query "create workflow", while any
+    tool carrying the bare singular in its name did — and the relative cutoff
+    then dropped the real one from the results. Same for a French query, where
+    ``rencontres`` and ``rencontre`` are the same ask.
+
+    Deliberately blunt, and safe *because* it is applied to both sides: folding
+    an odd word the same way on the query and in the catalogue still lets them
+    meet. What matters is what it must NOT eat — ``sms`` and ``api`` are not
+    plurals (guarded by length), and ``process`` / ``class`` end in a doubled s
+    that carries no number.
+    """
+    if len(token) < 4 or token.endswith("ss"):
+        return token
+    if token.endswith("ies"):
+        return token[:-3] + "y"
+    if token.endswith(("ches", "shes", "xes", "zes", "ses")):
+        return token[:-2]
+    if token.endswith("s"):
+        return token[:-1]
+    return token
+
+
+def _fold_all(tokens: Iterable[str]) -> set[str]:
+    """The folded form of every token, for one side of a comparison."""
+    return {fold(t) for t in tokens}
+
+
 def normalize_max_results(raw: Any, threshold: int) -> int:
     """Clamp a model-supplied ``max_results`` to ``[1, threshold]``."""
     try:
@@ -101,7 +133,7 @@ def search_catalogue(
     ``_RELATIVE_SCORE_CUTOFF`` of the best are kept, which drops the
     common-word-only hits once a genuinely relevant tool exists.
     """
-    query_tokens = set(tokenize(query))
+    query_tokens = _fold_all(tokenize(query))
     if not query_tokens:
         return []
 
@@ -111,9 +143,9 @@ def search_catalogue(
     for tool in catalogue:
         if tool.get("name", "") in exclude_names:
             continue
-        name_tokens = set(tokenize(tool.get("name", "")))
-        desc_tokens = set(tokenize(tool.get("description", "")))
-        tags_tokens = set(tokenize(" ".join(str(t) for t in (tool.get("tags") or []))))
+        name_tokens = _fold_all(tokenize(tool.get("name", "")))
+        desc_tokens = _fold_all(tokenize(tool.get("description", "")))
+        tags_tokens = _fold_all(tokenize(" ".join(str(t) for t in (tool.get("tags") or []))))
         candidates.append((tool, name_tokens, desc_tokens, tags_tokens))
         for tok in name_tokens | desc_tokens | tags_tokens:
             df[tok] = df.get(tok, 0) + 1
@@ -239,6 +271,19 @@ def render_find_payload(
     return json.dumps(payload)
 
 
+def _spread(items: list[dict[str, str]], limit: int) -> list[dict[str, str]]:
+    """Keep *limit* entries spread over the whole list, in order.
+
+    Taking the first *limit* would be a cap on the caller's ordering rather than
+    on size: catalogues are assembled by concatenation, so whatever family is
+    appended last is the one that never appears, however many entries it holds.
+    Sampling at a regular stride keeps every stretch of the list represented
+    without the renderer having to know what the stretches mean.
+    """
+    step = len(items) / limit
+    return [items[int(i * step)] for i in range(limit)]
+
+
 def render_list_payload(
     catalogue: list[dict[str, Any]],
     category: str,
@@ -264,15 +309,17 @@ def render_list_payload(
             {"name": name, "description": (tool.get("description") or "")[:_LIST_DESC_LIMIT]}
         )
 
-    truncated = len(items) > limit
+    total = len(items)
+    truncated = total > limit
     if truncated:
-        items = items[:limit]
+        items = _spread(items, limit)
     payload: dict[str, Any] = {"tools": items, "count": len(items)}
     if truncated:
         payload["truncated"] = True
+        payload["total"] = total
         payload["_note"] = (
-            f"Result truncated to {limit} entries. Use category= to filter, "
-            "or prefer find_tools(query=...) for action."
+            f"Showing {limit} of {total} tools, sampled across the catalogue. "
+            "Use category= to filter, or prefer find_tools(query=...) for action."
         )
     return json.dumps(payload)
 

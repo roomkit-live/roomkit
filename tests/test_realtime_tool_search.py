@@ -16,7 +16,7 @@ import pytest
 
 from roomkit import RoomKit
 from roomkit.channels._realtime_tool_search import RealtimeToolSearchSupport
-from roomkit.channels._tool_search import search_catalogue
+from roomkit.channels._tool_search import render_list_payload, search_catalogue
 from roomkit.channels._tool_search import tokenize as _tokenize
 from roomkit.channels._tool_search_constants import (
     DEFAULT_TOOL_SEARCH_THRESHOLD,
@@ -115,6 +115,110 @@ class TestSearchCatalogue:
         ]
         ranked = search_catalogue(cat, "play music on spotify", 5, exclude_names=frozenset())
         assert [t["name"] for t in ranked] == ["SpotifySearch"]
+
+
+class TestPluralFolding:
+    """A query word and a tool's word must meet whether either is pluralised.
+
+    Nothing normalises number, so a catalogue tool named ``workflows`` lost the
+    query "create workflow" to any tool carrying the bare singular in its name,
+    and the relative cutoff then dropped it from the results entirely. Whoever
+    asks does not know which side spelled it which way.
+    """
+
+    def test_singular_query_finds_a_plural_name(self) -> None:
+        cat = [
+            _tool("admin_workflows", "Manage workflows: create, update, delete."),
+            _tool("weather", "Get the forecast."),
+        ]
+        ranked = search_catalogue(cat, "create workflow", 5, exclude_names=frozenset())
+        assert ranked[0]["name"] == "admin_workflows"
+
+    def test_plural_query_finds_a_singular_name(self) -> None:
+        cat = [
+            _tool("colleague_directory", "Find a colleague."),
+            _tool("weather", "Get the forecast."),
+        ]
+        ranked = search_catalogue(cat, "list colleagues", 5, exclude_names=frozenset())
+        assert ranked[0]["name"] == "colleague_directory"
+
+    def test_a_bare_name_no_longer_outranks_the_tool_that_does_the_work(self) -> None:
+        """The shape observed in production: an unrelated tool won on spelling."""
+        cat = [
+            _tool(
+                "admin_workflows",
+                "Manage workflows: list, get, create, update, delete, trigger.",
+                tags=["workflows", "automation"],
+            ),
+            _tool("audit_listWorkflowChecks", "Lists the workflow checks for the organization."),
+        ]
+        ranked = search_catalogue(cat, "create workflow", 5, exclude_names=frozenset())
+        assert ranked[0]["name"] == "admin_workflows"
+
+    def test_folding_applies_to_tags_too(self) -> None:
+        cat = [
+            _tool("reunion_planner", "Planifie une rencontre.", tags=["meetings"]),
+            _tool("weather", "Get the forecast."),
+        ]
+        ranked = search_catalogue(cat, "meeting", 5, exclude_names=frozenset())
+        assert ranked[0]["name"] == "reunion_planner"
+
+    def test_short_words_keep_their_s(self) -> None:
+        """``sms`` is not a plural, and amputating it would lose the tool."""
+        cat = [_tool("send_sms", "Send a text message."), _tool("weather", "Forecast.")]
+        ranked = search_catalogue(cat, "sms", 5, exclude_names=frozenset())
+        assert ranked[0]["name"] == "send_sms"
+
+    def test_double_s_endings_are_left_alone(self) -> None:
+        cat = [_tool("process_runner", "Run a process."), _tool("weather", "Forecast.")]
+        ranked = search_catalogue(cat, "process", 5, exclude_names=frozenset())
+        assert ranked[0]["name"] == "process_runner"
+
+
+class TestInventoryTruncation:
+    """A capped inventory must stay representative of the whole catalogue.
+
+    The cap itself is sound: this result re-enters the context on every round of
+    the tool loop, so it cannot carry the catalogue. Cutting the tail is what is
+    not: the caller decides the order, families are appended whole, and the last
+    one appended is erased every time. An agent then reads an inventory that
+    proves it has no such tool, and says so.
+    """
+
+    def test_the_tail_is_not_the_part_that_disappears(self) -> None:
+        catalogue = [_tool(f"integration_{i:03d}") for i in range(80)]
+        catalogue += [_tool(f"platform_{i:02d}") for i in range(20)]
+        payload = json.loads(
+            render_list_payload(catalogue, "", exclude_names=frozenset(), limit=60)
+        )
+        names = [t["name"] for t in payload["tools"]]
+        assert len(names) == 60
+        assert any(n.startswith("platform_") for n in names)
+
+    def test_it_says_how_much_it_did_not_show(self) -> None:
+        catalogue = [_tool(f"t{i:03d}") for i in range(100)]
+        payload = json.loads(
+            render_list_payload(catalogue, "", exclude_names=frozenset(), limit=60)
+        )
+        assert payload["truncated"] is True
+        assert payload["total"] == 100
+        assert "100" in payload["_note"]
+
+    def test_order_is_preserved(self) -> None:
+        catalogue = [_tool(f"t{i:03d}") for i in range(100)]
+        payload = json.loads(
+            render_list_payload(catalogue, "", exclude_names=frozenset(), limit=60)
+        )
+        names = [t["name"] for t in payload["tools"]]
+        assert names == sorted(names)
+
+    def test_a_catalogue_under_the_cap_is_untouched(self) -> None:
+        catalogue = [_tool(f"t{i}") for i in range(10)]
+        payload = json.loads(
+            render_list_payload(catalogue, "", exclude_names=frozenset(), limit=60)
+        )
+        assert [t["name"] for t in payload["tools"]] == [t["name"] for t in catalogue]
+        assert "truncated" not in payload
 
 
 class TestCrossLingualTags:

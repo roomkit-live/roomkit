@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Tool Search: a query and a tool now meet whichever spelled the plural.**
+  Matching is by exact token, and neither side knows how the other wrote it, so
+  a tool named `workflows` lost the query "create workflow" to any tool merely
+  carrying the bare singular in its name — and the relative score cutoff then
+  dropped the real one from the results entirely. Observed in production: an
+  agent holding a workflow tool searched for one, was handed an unrelated
+  compliance reader, and told its user it had no way to build a workflow. Query
+  and catalogue tokens are now folded to the same number before scoring. The
+  fold is deliberately blunt and safe because it applies to both sides; it
+  leaves short words (`sms`, `api`) and doubled-s endings (`process`) alone.
+
+- **Tool Search: a capped inventory no longer erases the same family every
+  time.** `list_tools` kept the first 60 entries, but catalogues are assembled
+  by concatenation, so whichever family a caller appends last was the one that
+  never appeared — however many tools it held. An agent could read an inventory
+  proving it had no platform tools while holding twenty-seven of them. The
+  inventory is now sampled at a regular stride across the whole catalogue,
+  keeping the original order, and reports the real total (`Showing 60 of 87`)
+  so the model knows how much it is not seeing.
+
+
 ## [0.47.0] — 2026-08-10
 
 ### Added
