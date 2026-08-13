@@ -17,7 +17,7 @@ Requires:
 
 Environment:
     XAI_API_KEY  — your xAI API key (https://console.x.ai)
-    XAI_MODEL    — model id (default: grok-4.5)
+    XAI_MODEL    — model id (default: grok-4.6)
 
 Run with:
     XAI_API_KEY=xai-... uv run python examples/xai_ai.py
@@ -86,7 +86,7 @@ def _parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Interactive xAI (Grok) CLI.")
     p.add_argument(
         "--model",
-        default=os.environ.get("XAI_MODEL", "grok-4.5"),
+        default=os.environ.get("XAI_MODEL", "grok-4.6"),
         help="Grok model id (e.g. grok-4.3, grok-build-0.1). Env: XAI_MODEL.",
     )
     p.add_argument(

@@ -179,6 +179,18 @@ PRICE_DELIBERATE: dict[str, str] = {
     # the standard rate from OpenAI's pricing page (2026-08-05).
     "gpt-5.6-terra": "mirror quotes the Batch rate; roomkit bills the standard one",
     "gpt-5.6-luna": "mirror quotes the Batch rate; roomkit bills the standard one",
+    # Same shape, Google's side: the mirror resells 3.7 Flash at exactly the
+    # Batch/Flex column ($0.375/$1.875/$0.0375) while Google's synchronous rate
+    # is double that (pricing page, 2026-08-13). Its own `openrouter` entry
+    # carries the resold rate, because there the mirror is the seller.
+    "gemini-3.7-flash": "mirror resells at the Batch rate; roomkit bills Google's standard one",
+    # No seller to agree with. Eighteen hosts serve this open-weights model
+    # through OpenRouter between $0.42 and $1.74 per million input, and the
+    # top-level quote follows whichever endpoint routing prefers: $0.435 on
+    # 2026-08-05, $0.63168 on the 11th, $1.168 on the 13th. Refreshing the
+    # catalog to match is a treadmill that lands on a different number every
+    # release, so the entry states DeepSeek's own endpoint and stays put.
+    "deepseek/deepseek-v4-pro": "multi-host model; upstream quotes the routed endpoint",
 }
 
 # Per-field normalization where the upstream pricing object quotes only one
@@ -192,6 +204,11 @@ PRICE_FIELD_DELIBERATE: dict[tuple[str, str, str], str] = {
     (
         "openrouter",
         "google/gemini-3.5-flash",
+        "input_cache_write",
+    ): "upstream quotes the 5-minute storage premium; RoomKit adds ordinary input",
+    (
+        "openrouter",
+        "google/gemini-3.7-flash",
         "input_cache_write",
     ): "upstream quotes the 5-minute storage premium; RoomKit adds ordinary input",
 }

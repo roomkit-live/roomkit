@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Grok 4.6 and Gemini 3.7 Flash are in the catalogs.** Both shipped upstream
+  this week and both head their vendor's list, so a picker reading
+  `available_models()` offers them first. Grok 4.6 keeps 4.5's 500k window and
+  $2/$6 per million rates, and charges $0.50 per million on a cache hit where
+  4.5 charges $0.30 — the one line where the two rate cards differ. Gemini 3.7
+  Flash carries the same 1M window and modalities as 3.6 Flash at Google's
+  launch rates of $0.75/$3.75/$0.075, and OpenRouter resells it at half of each.
+
+### Changed
+
+- **`XAIConfig.model` now defaults to `grok-4.6`** (was `grok-4.5`). The xAI
+  default tracks the flagship — a test asserts the default and the head of the
+  catalog are the same id — and the headline rates are identical, so a caller
+  that never set a model gets the newer one at the same input and output price.
+  Only cache reads cost more, $0.20 per million. Pass `model="grok-4.5"` to stay.
+
+### Fixed
+
+- **Gemini 3.6 Flash costs half what the catalog claimed.** Google prices it at
+  $0.75/$3.75/$0.075 per million "through December 31, 2026"; the catalog carried
+  the $1.50/$7.50/$0.15 that take over on January 1, so every cost computed from
+  the entry was double what the call bills. The discount and its expiry are now
+  written beside the rates, because the same two entries go wrong the other way
+  in January.
+
+- **OpenRouter: DeepSeek V4 Pro stops chasing a spot price.** 0.48.0 refreshed
+  its rates to match upstream and eight days later upstream quoted a third set
+  ($0.435 -> $0.63168 -> $1.168 per million input). The reason is structural, not
+  a vendor raising prices: eighteen hosts serve this open-weights model between
+  $0.42 and $1.74, and OpenRouter's top-level quote follows whichever endpoint
+  its routing currently prefers, so there is no figure to converge on. The entry
+  now states the first-party DeepSeek endpoint — the model's floor, and the one
+  rate that stays put — and `check_models` records the divergence with its reason
+  instead of failing a release every time routing moves.
+
 ## [0.48.0] — 2026-08-11
 
 ### Fixed

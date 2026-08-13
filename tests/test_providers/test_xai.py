@@ -66,7 +66,7 @@ class TestXAIConfig:
     def test_defaults(self) -> None:
         cfg = _config()
         assert cfg.base_url == "https://api.x.ai/v1"
-        assert cfg.model == "grok-4.5"
+        assert cfg.model == "grok-4.6"
         # xAI deprecated max_tokens, and supports stream usage — both flipped
         # relative to the OpenAI parent's defaults.
         assert cfg.use_max_completion_tokens is True
@@ -239,11 +239,11 @@ class TestXAICatalog:
             assert model.supports_vision is True, f"{model.id} should be multimodal"
 
     def test_flagship_is_first(self) -> None:
-        # The catalog order drives pickers; grok-4.5 is the current flagship and
+        # The catalog order drives pickers; grok-4.6 is the current flagship and
         # the XAIConfig default.
         from roomkit.providers.xai.ai import XAIAIProvider
 
-        assert XAIAIProvider.available_models()[0].id == "grok-4.5"
+        assert XAIAIProvider.available_models()[0].id == "grok-4.6"
         assert _config().model == XAIAIProvider.available_models()[0].id
 
 

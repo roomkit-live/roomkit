@@ -27,7 +27,7 @@ class XAIConfig(OpenAIConfig):
     base_url: str = "https://api.x.ai/v1"
     """xAI's OpenAI-compatible endpoint. Override only to point at a proxy."""
 
-    model: str = "grok-4.5"
+    model: str = "grok-4.6"
     """Grok model id — see :mod:`roomkit.providers.xai.models` for the curated
     catalog. Aliases the API resolves (``grok-latest``, ``grok-code-fast``, …)
     are accepted too."""

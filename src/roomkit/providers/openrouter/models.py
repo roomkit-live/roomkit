@@ -19,7 +19,16 @@ Prices are OpenRouter's own, from the same endpoint on the same date — here
 the aggregator *is* the seller, so its ``pricing`` object is the rate card,
 not a mirror of someone else's. It can differ from the upstream vendor's own
 list price, and does: ``openai/gpt-5.6-terra`` resells at $1/$6 where OpenAI
-charges $2/$12. Both are right for whoever bills.
+charges $2/$12, and ``google/gemini-3.7-flash`` at $0.375/$1.875 where Google's
+synchronous rate is $0.75/$3.75. Both are right for whoever bills.
+
+That equivalence holds only where one seller stands behind the slug. An
+open-weights model served by many hosts has no single rate: OpenRouter quotes
+the endpoint its routing currently prefers, which moves as hosts come, go and
+undercut each other. ``deepseek/deepseek-v4-pro`` was quoted at three different
+input rates in the eight days to 2026-08-13, so its entry carries the
+first-party DeepSeek endpoint instead of that spot price, and
+``scripts/check_models.py`` records the divergence rather than chasing it.
 
 One field needs normalization. OpenRouter reports only the five-minute storage
 premium in ``input_cache_write`` for explicit Gemini caching, while billing a
@@ -103,15 +112,28 @@ MODELS: list[ModelInfo] = [
         ),
     ),
     ModelInfo(
+        id="google/gemini-3.7-flash",
+        display_name="Gemini 3.7 Flash",
+        context_window=1_048_576,
+        supports_vision=True,
+        pricing=ModelPricing(
+            input_per_million=0.375,
+            output_per_million=1.875,
+            cache_read_per_million=0.0375,
+            cache_write_per_million=0.3958333,
+            verified=_VERIFIED,
+        ),
+    ),
+    ModelInfo(
         id="google/gemini-3.6-flash",
         display_name="Gemini 3.6 Flash",
         context_window=1_048_576,
         supports_vision=True,
         pricing=ModelPricing(
-            input_per_million=1.5,
-            output_per_million=7.5,
-            cache_read_per_million=0.15,
-            cache_write_per_million=1.5833333,
+            input_per_million=0.75,
+            output_per_million=3.75,
+            cache_read_per_million=0.075,
+            cache_write_per_million=0.7916667,
             verified=_VERIFIED,
         ),
     ),
@@ -125,6 +147,18 @@ MODELS: list[ModelInfo] = [
             output_per_million=9.0,
             cache_read_per_million=0.15,
             cache_write_per_million=1.5833333,
+            verified=_VERIFIED,
+        ),
+    ),
+    ModelInfo(
+        id="x-ai/grok-4.6",
+        display_name="Grok 4.6",
+        context_window=500_000,
+        supports_vision=True,
+        pricing=ModelPricing(
+            input_per_million=2.0,
+            output_per_million=6.0,
+            cache_read_per_million=0.5,
             verified=_VERIFIED,
         ),
     ),
@@ -163,14 +197,18 @@ MODELS: list[ModelInfo] = [
             verified=_VERIFIED,
         ),
     ),
+    # The one open-weights entry, and the only one whose rate is not OpenRouter's
+    # to set: eighteen hosts serve it from $0.42 to $1.74 per million input, and
+    # whichever endpoint routing picks sets the bill. These are DeepSeek's own
+    # figures — the model's floor, and the only rate that stays put.
     ModelInfo(
         id="deepseek/deepseek-v4-pro",
         display_name="DeepSeek V4 Pro",
         context_window=1_048_576,
         pricing=ModelPricing(
-            input_per_million=0.63168,
-            output_per_million=1.26336,
-            cache_read_per_million=0.053298,
+            input_per_million=0.435,
+            output_per_million=0.87,
+            cache_read_per_million=0.003625,
             verified=_VERIFIED,
         ),
     ),
