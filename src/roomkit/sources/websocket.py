@@ -7,7 +7,7 @@ import contextlib
 import json
 import logging
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from roomkit.models.channel import RateLimit
 from roomkit.models.delivery import InboundMessage
@@ -15,16 +15,22 @@ from roomkit.models.event import TextContent
 from roomkit.sources.base import BaseSourceProvider, EmitCallback, SourceStatus
 from roomkit.telemetry.redaction import safe_url
 
-# Optional dependency - import for type checking and availability check
-try:
+# Optional dependency. The type checker reads the real names — annotations here
+# are strings under `from __future__ import annotations`, and a `None` fallback
+# would otherwise make `ClientConnection` mean `ClientConnection | None` at every
+# use site. Runtime keeps the fallback, and HAS_WEBSOCKETS reports which branch ran.
+if TYPE_CHECKING:
     import websockets
     from websockets import ClientConnection
+else:
+    try:
+        import websockets
+        from websockets import ClientConnection
+    except ImportError:
+        websockets = None
+        ClientConnection = None
 
-    HAS_WEBSOCKETS = True
-except ImportError:
-    websockets = None  # ty: ignore[invalid-assignment]
-    ClientConnection = None  # ty: ignore[invalid-assignment]
-    HAS_WEBSOCKETS = False
+HAS_WEBSOCKETS = websockets is not None
 
 logger = logging.getLogger("roomkit.sources.websocket")
 

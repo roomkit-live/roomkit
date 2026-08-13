@@ -25,6 +25,14 @@ updates:
       # Version dictated by the TTS extras' exact pins (qwen-tts pins
       # transformers==4.57.3; the lockfile forks via tool.uv.conflicts).
       - dependency-name: "transformers"
+      # mcp 2.x removed the streamable-HTTP client entry point roomkit imports;
+      # lifting the `<2` cap is a port, not a bump. Drop this when that lands.
+      - dependency-name: "mcp"
+        versions: [">=2.0.0"]
+      # openai 3.x switches to HTTPX2 and stops installing httpx, which several
+      # extras rely on transitively. Same story: a port, not a bump.
+      - dependency-name: "openai"
+        versions: [">=3.0.0"]
       # Dependabot's uv updater crashes ("Declaration not found for numpy!")
       # rewriting our multiple numpy declarations (capped <2.5 in fastrtc for
       # numba/librosa, uncapped elsewhere). Bump numpy manually via uv lock.

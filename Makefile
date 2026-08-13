@@ -18,11 +18,17 @@ security:
 
 # Same two passes CI runs, so a new advisory can be seen before pushing:
 # the core gates, the extras only report.
+#
+# --python pins the interpreter pip-audit resolves against: 3.12, this project's
+# floor and what CI installs. Without it uvx may pick an older one, and the pass
+# then dies on "no matching distribution" for any dependency requiring >=3.12 —
+# a resolution failure that reads exactly like a clean run in the extras pass,
+# since that one only reports.
 audit:
 	uv export --frozen --no-dev --no-emit-project --format requirements-txt -o /tmp/rk-core.txt
-	uvx pip-audit --requirement /tmp/rk-core.txt
+	uvx --python 3.12 pip-audit --requirement /tmp/rk-core.txt
 	-uv export --frozen --no-dev --no-emit-project --extra all --no-hashes --format requirements-txt -o /tmp/rk-all.txt
-	-uvx pip-audit --requirement /tmp/rk-all.txt
+	-uvx --python 3.12 pip-audit --requirement /tmp/rk-all.txt
 
 test:
 	uv run pytest

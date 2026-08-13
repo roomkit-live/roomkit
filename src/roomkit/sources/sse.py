@@ -6,7 +6,7 @@ import asyncio
 import json
 import logging
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from roomkit.models.channel import RateLimit
 from roomkit.models.delivery import InboundMessage
@@ -14,16 +14,21 @@ from roomkit.models.event import TextContent
 from roomkit.sources.base import BaseSourceProvider, EmitCallback, SourceStatus
 from roomkit.telemetry.redaction import safe_url
 
-# Optional dependency - import for availability check
-try:
+# Optional dependency. The type checker reads the real names; a `None` fallback
+# visible to it would type `aconnect_sse` as possibly-None at the one place that
+# calls it. Runtime keeps the fallback, and HAS_SSE reports which branch ran.
+if TYPE_CHECKING:
     import httpx
     from httpx_sse import aconnect_sse
+else:
+    try:
+        import httpx
+        from httpx_sse import aconnect_sse
+    except ImportError:
+        httpx = None
+        aconnect_sse = None
 
-    HAS_SSE = True
-except ImportError:
-    httpx = None  # ty: ignore[invalid-assignment]
-    aconnect_sse = None  # ty: ignore[invalid-assignment]
-    HAS_SSE = False
+HAS_SSE = aconnect_sse is not None
 
 logger = logging.getLogger("roomkit.sources.sse")
 

@@ -18,17 +18,23 @@ import asyncio
 import contextlib
 import logging
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.parse import quote, urlencode
 
 from roomkit.providers.personaplex.voices import VOICES as _VOICES
 from roomkit.voice.base import VoiceSession, VoiceSessionState
 from roomkit.voice.realtime.provider import RealtimeVoiceProvider, VoiceInfo
 
-try:
+# Optional dependency, enforced at connect time by _check_dependencies. The type
+# checker reads the real module so the conversion paths below are not typed as
+# possibly-None; runtime keeps the fallback that check tests for.
+if TYPE_CHECKING:
     import numpy as np
-except ImportError:
-    np = None  # ty: ignore[invalid-assignment]
+else:
+    try:
+        import numpy as np
+    except ImportError:
+        np = None
 
 logger = logging.getLogger("roomkit.providers.personaplex.realtime")
 

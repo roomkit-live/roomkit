@@ -66,7 +66,7 @@ jobs:
         run: uv export --frozen --no-dev --no-emit-project --format requirements-txt -o requirements-core.txt
 
       - name: pip-audit (core runtime dependencies)
-        run: uvx pip-audit --requirement requirements-core.txt
+        run: uvx --python 3.12 pip-audit --requirement requirements-core.txt
 
       # The extras, reported but not gating. Their transitive trees are large
       # and move on other people's schedules, so a blocking check here would
@@ -85,7 +85,7 @@ jobs:
 
       - name: pip-audit (optional extras, non-blocking)
         continue-on-error: true
-        run: uvx pip-audit --requirement requirements-all.txt
+        run: uvx --python 3.12 pip-audit --requirement requirements-all.txt
 
   typecheck:
     name: Type check

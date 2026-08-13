@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import socket
 import sys
+from importlib import metadata
 from io import StringIO
 from types import SimpleNamespace
 from typing import Any
@@ -734,7 +735,9 @@ class TestACPChannel:
         )
 
         assert [chunk async for chunk in output.response_stream] == ["wire works"]
-        assert channel.info["sdk_version"].startswith("0.11.")
+        # What matters is that the channel reports the SDK actually in the
+        # environment — pinning a minor here only breaks on the next bump.
+        assert channel.info["sdk_version"] == metadata.version("agent-client-protocol")
         await channel.close()
 
     async def test_official_sdk_round_trip_over_a_custom_transport(self, tmp_path: Any) -> None:

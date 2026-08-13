@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from roomkit.models.delivery import InboundMessage
 from roomkit.models.event import (
@@ -22,13 +22,18 @@ from roomkit.models.event import (
 from roomkit.sources.base import BaseSourceProvider, EmitCallback, SourceStatus
 
 # Optional dependency --------------------------------------------------------
-try:
+# The type checker reads the real name; a `None` fallback visible to it would
+# type `NewAClient` as possibly-None where the client is constructed. Runtime
+# keeps the fallback, and HAS_NEONIZE reports which branch ran.
+if TYPE_CHECKING:
     from neonize.aioze.client import NewAClient
+else:
+    try:
+        from neonize.aioze.client import NewAClient
+    except ImportError:
+        NewAClient = None
 
-    HAS_NEONIZE = True
-except ImportError:
-    NewAClient = None  # ty: ignore[invalid-assignment]
-    HAS_NEONIZE = False
+HAS_NEONIZE = NewAClient is not None
 
 logger = logging.getLogger("roomkit.sources.neonize")
 

@@ -40,7 +40,7 @@ from roomkit.voice.audio_frame import AudioFrame
 try:  # NumPy accelerates the mix; the pure-Python path mixes without it.
     import numpy as _np
 except ImportError:  # pragma: no cover - exercised where numpy is absent
-    _np = None  # ty: ignore[invalid-assignment]
+    _np = None
 
 if TYPE_CHECKING:
     from roomkit.channels._conference_lane import ConferenceLane

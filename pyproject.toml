@@ -28,11 +28,17 @@ dependencies = ["pydantic>=2.9"]
 [project.optional-dependencies]
 httpx = ["httpx>=0.27"]
 anthropic = ["anthropic>=0.30"]
-openai = ["openai>=2.28"]
-azure = ["openai>=2.28"]
-vllm = ["openai>=2.28"]
-openrouter = ["openai>=2.28"]
-xai = ["openai>=2.28"]
+# Capped below 3.0: that major makes HTTPX2 the default client and stops
+# installing `httpx` at all, which five providers here reach through — directly
+# (`openrouter`'s live model list, Grok TTS) or by way of the SDK's own client.
+# Auditing every extra's httpx declaration and testing the HTTPX2 path is its
+# own piece of work, and the cap keeps `pip install roomkit[openai]` resolving
+# to something roomkit is tested against until then.
+openai = ["openai>=2.28,<3"]
+azure = ["openai>=2.28,<3"]
+vllm = ["openai>=2.28,<3"]
+openrouter = ["openai>=2.28,<3"]
+xai = ["openai>=2.28,<3"]
 ollama = ["ollama>=0.4"]
 gemini = ["google-genai>=2.0.0"]
 mistral = ["mistralai>=2.0,<3"]
@@ -98,8 +104,12 @@ livekit = ["livekit>=1.1", "livekit-api>=1.2"]
 whatsapp-personal = ["neonize>=0.3.14"]
 postgres = ["asyncpg>=0.29"]
 redis = ["redis>=5.0.1"]
-mcp = ["mcp>=1.23.0"]
-acp = ["agent-client-protocol>=0.11.0,<0.12"]
+# Capped below 2.0: the v2 SDK dropped `mcp.client.streamable_http`'s
+# `streamablehttp_client`, which `roomkit.tools.mcp` imports lazily — so a 2.x
+# install fails at connect time, not at import. Porting to v2's `Client` is its
+# own piece of work; the SDK's own advice for anyone not ready is this cap.
+mcp = ["mcp>=1.23.0,<2"]
+acp = ["agent-client-protocol>=0.11.0,<0.13"]
 console = ["rich>=13.0", "prompt-toolkit>=3.0.36"]
 sources = [
     "roomkit[websocket]",

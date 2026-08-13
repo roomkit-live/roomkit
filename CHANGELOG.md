@@ -19,6 +19,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Dependencies refreshed across the board.** The lockfile moved ~180 packages:
+  anthropic 0.119 → 0.122, openai 2.48 → 2.54, google-genai 2.14 → 2.18,
+  mistralai 2.7.1 → 2.9.3, elevenlabs 2.59 → 2.63, deepgram-sdk 7.6 → 7.7,
+  twilio 9.10.9 → 9.11, polargrid-sdk 0.9.2 → 0.10.0, agent-client-protocol
+  0.11 → 0.12, av 16.1 → 17.1, mediapipe 0.10.35 → 1.0.0, onnxruntime 1.27 →
+  1.28, redis 8.0.1 → 8.1, plus the dev toolchain (ruff 0.16.3, ty 0.0.71).
+  `pip-audit` reports no known vulnerability against either the core or the full
+  extras set. Every floor in `pyproject.toml` is unchanged except the two below,
+  so what an install resolves to is otherwise untouched. PolarGrid's offline
+  region mirror was re-read against SDK 0.10.0 and matches it exactly — 16 edges,
+  15 aliases, both directions.
+
+- **Two majors are deliberately held back, and now say so in the metadata.**
+  `openai` is capped below 3.0 and `mcp` below 2.0, so `pip install roomkit[openai]`
+  or `roomkit[mcp]` resolves to a version roomkit is tested against; an
+  environment already holding either major will be asked to downgrade it. The
+  reason is the same in both cases — the new major moved something roomkit reaches
+  through, so adopting it is a port rather than a bump. openai 3.0 makes HTTPX2 the
+  default client and stops installing `httpx`, which five providers here rely on
+  transitively; mcp 2.0 removed `mcp.client.streamable_http.streamablehttp_client`,
+  which `roomkit.tools.mcp` imports lazily — a 2.x install would have failed at
+  connect time rather than at import. Dependabot is told to stop proposing both.
+  The `acp` extra moved the other way: 0.12 is additive (schema v1.19, new
+  transports), so its cap opens to `<0.13`.
+
+- **Optional imports are no longer half-typed.** Six modules imported an optional
+  dependency and fell back to `None`, which typed the imported name as
+  possibly-`None` at every use site — so `ty` 0.0.71 reported seven attribute and
+  call errors on code guarded at connect time instead. The fallback now lives in
+  the runtime branch only, with the type checker reading the real names, and the
+  `HAS_WEBSOCKETS`/`HAS_SSE`/`HAS_NEONIZE` flags are derived from the import that
+  actually ran rather than set twice. No runtime behaviour changes.
+
 - **`XAIConfig.model` now defaults to `grok-4.6`** (was `grok-4.5`). The xAI
   default tracks the flagship — a test asserts the default and the head of the
   catalog are the same id — and the headline rates are identical, so a caller

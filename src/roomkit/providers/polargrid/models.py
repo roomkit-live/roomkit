@@ -49,7 +49,8 @@ class PolarGridRegion(BaseModel):
 
 
 # Offline mirror of the SDK's own ``polargrid.client.POLARGRID_REGIONS``
-# (read from polargrid-sdk 0.9.2 on 2026-08-05), which is what actually routes
+# (re-read from polargrid-sdk 0.10.0 on 2026-08-13 — 16 edges and 15 aliases,
+# matching this table exactly both ways), which is what actually routes
 # a request — the regions guide agrees, but the shipped table is the thing that
 # decides. Mirrored rather than imported because this module must load without
 # the optional SDK installed. An edge missing here is refused by

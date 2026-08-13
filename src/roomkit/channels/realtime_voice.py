@@ -45,7 +45,7 @@ from roomkit.voice.base import VoiceSession, VoiceSessionState
 try:
     from websockets.exceptions import ConnectionClosed as _ConnectionClosed
 except ImportError:  # websockets not installed
-    _ConnectionClosed = ConnectionError  # ty: ignore[invalid-assignment]
+    _ConnectionClosed = ConnectionError
 
 if TYPE_CHECKING:
     from roomkit.channels._realtime_skills import RealtimeSkillSupport
