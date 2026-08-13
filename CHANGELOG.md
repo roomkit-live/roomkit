@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.49.0] — 2026-08-13
+
 ### Added
 
 - **Grok 4.6 and Gemini 3.7 Flash are in the catalogs.** Both shipped upstream
@@ -5738,7 +5740,8 @@ See entries `0.7.0a1` through `0.7.0a18` below.
 - `STTProvider.transcribe()` returns `TranscriptionResult` (Phase 3.1)
 - Framework event names enriched with payloads (Phase 4)
 
-[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.48.0...HEAD
+[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.49.0...HEAD
+[0.49.0]: https://github.com/roomkit-live/roomkit/compare/v0.48.0...v0.49.0
 [0.48.0]: https://github.com/roomkit-live/roomkit/compare/v0.47.0...v0.48.0
 [0.47.0]: https://github.com/roomkit-live/roomkit/compare/v0.46.0...v0.47.0
 [0.46.0]: https://github.com/roomkit-live/roomkit/compare/v0.45.0...v0.46.0
