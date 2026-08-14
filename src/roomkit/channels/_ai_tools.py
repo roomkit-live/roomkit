@@ -91,6 +91,8 @@ class AIToolsHost(Protocol):
         _gated_tool_names: ``AIToolPolicyMixin`` property — gated tool names.
         _maybe_truncate_result: ``AIResilienceMixin`` — truncate large results.
         _get_loop_ctx: ``AISteeringMixin`` — returns current tool-loop context.
+        _apply_tool_filters: ``AIToolPolicyMixin`` — policy / skill-gating /
+            Tool Search visibility filter.
     """
 
     _tool_handler: Any
@@ -125,6 +127,7 @@ class AIToolsHost(Protocol):
         tool_call_id: str = ...,
     ) -> str | list[AITextPart | AIImagePart]: ...
     def _get_loop_ctx(self) -> _ToolLoopContext: ...
+    def _apply_tool_filters(self, tools: list[AITool]) -> list[AITool]: ...
 
 
 class AIToolsMixin:
@@ -158,6 +161,7 @@ class AIToolsMixin:
     _gated_tool_names: Any  # see AIToolsHost
     _maybe_truncate_result: Any  # see AIToolsHost
     _get_loop_ctx: Any  # see AIToolsHost
+    _apply_tool_filters: Any  # see AIToolsHost
     extra_tools: Any  # AIChannel property: user + orchestration-injected tools
 
     def _tool_parameters(
@@ -172,6 +176,64 @@ class AIToolsMixin:
             if tool.name == name:
                 return tool.parameters
         return None
+
+    def _recover_deferred_tool(self, name: str) -> AITool | None:
+        """A find_tools reveal applied at call time, for an exact-name call.
+
+        Small models routinely skip the two-step discovery protocol and call a
+        catalogue tool they saw (via list_tools, or a prior turn) without
+        revealing it first. The name being exact, the call is trivially
+        recoverable: reveal the tool as find_tools would have and let the call
+        proceed — provided it survives the same visibility filter a reveal is
+        subject to. That filter is the authority on eligibility (tool policy,
+        glob-aware skill gating); the execution guards re-check policy and
+        exact-name gating, but glob gating is enforced only by the filter, so
+        recovery must not bypass it.
+
+        Returns the catalogue tool (its schema keeps argument validation
+        fail-closed) or ``None`` when the name is not recoverable.
+        """
+        loop_ctx = self._get_loop_ctx()
+        if not loop_ctx.tool_search_active:
+            # Inactive search declares the whole filtered catalogue — an
+            # undeclared name is either filtered out or unknown, never deferred.
+            return None
+        tool = next((t for t in loop_ctx.all_context_tools or () if t.name == name), None)
+        if tool is None:
+            return None
+        # Reveal first: while Tool Search is active the filter keeps only
+        # pinned/revealed/sticky names, so the eligibility probe needs the name
+        # in the reveal set. Rolled back when the probe fails.
+        loop_ctx.revealed_tools.add(name)
+        if not self._apply_tool_filters([tool]):
+            loop_ctx.revealed_tools.discard(name)
+            return None
+        # Parity with _handle_find_tools: the reveal persists across turns.
+        self._tool_usage.record_revealed(loop_ctx.room_id, {name})
+        return tool
+
+    def _undeclared_tool_error(self, name: str) -> dict[str, str]:
+        """Actionable payload for an undeclared call that could not be recovered."""
+        loop_ctx = self._get_loop_ctx()
+        if any(t.name == name for t in loop_ctx.all_context_tools or ()):
+            # In the catalogue but filtered out (tool policy or skill gating):
+            # a find_tools reveal would be dropped by the same filter, so no
+            # retry hint — the refusal is the answer.
+            return {
+                "error": (
+                    f"Tool '{name}' exists but is not available to this agent "
+                    "(blocked by the tool policy or gated behind a skill)."
+                )
+            }
+        if loop_ctx.tool_search_active:
+            return {
+                "error": f"Unknown tool '{name}': no tool by that name exists.",
+                "hint": (
+                    "Check the spelling, or call find_tools(query=<the task>) "
+                    "to discover the right tool."
+                ),
+            }
+        return {"error": f"Unknown tool '{name}': it is not declared"}
 
     async def _execute_tools_parallel(
         self,
@@ -204,12 +266,19 @@ class AIToolsMixin:
                 or tc.name.startswith(SANDBOX_TOOL_PREFIX)
             )
             if declared_names and tc.name not in declared_names and not channel_managed:
-                logger.warning("Provider requested undeclared tool %s", tc.name)
-                return AIToolResultPart(
-                    tool_call_id=tc.id,
-                    name=tc.name,
-                    result=json.dumps({"error": f"Unknown tool '{tc.name}': it is not declared"}),
-                )
+                recovered = self._recover_deferred_tool(tc.name)
+                if recovered is None:
+                    logger.warning("Provider requested undeclared tool %s", tc.name)
+                    return AIToolResultPart(
+                        tool_call_id=tc.id,
+                        name=tc.name,
+                        result=json.dumps(self._undeclared_tool_error(tc.name)),
+                    )
+                # The model skipped find_tools but named a real catalogue tool:
+                # the reveal happened at call time instead of ahead of it, and
+                # every guard below still applies.
+                logger.info("Recovered deferred catalogue tool %s at call time", tc.name)
+                params = recovered.parameters
             if params is not None:
                 arg_error = validate_tool_arguments(params, tc.arguments)
                 if arg_error is not None:

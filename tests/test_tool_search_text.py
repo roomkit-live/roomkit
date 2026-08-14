@@ -10,6 +10,7 @@ its tool list every round). Covers streaming + non-streaming.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -21,6 +22,7 @@ from roomkit.models.room import Room
 from roomkit.providers.ai.base import AIResponse, AIToolCall
 from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.sandbox.executor import SandboxExecutor
+from roomkit.skills.registry import SkillRegistry
 from roomkit.tools.policy import ToolPolicy
 from tests.conftest import make_event
 
@@ -389,3 +391,137 @@ class TestSandboxToolSearch:
         names = _tool_names(provider.calls[0])
         assert {"sandbox_read", "sandbox_grep"} <= names
         assert "find_tools" not in names
+
+
+# ---------------------------------------------------------------------------
+# Deferred-call recovery: an exact-name call to a hidden catalogue tool is a
+# find_tools reveal applied at call time, not an error (small models skip the
+# two-step discovery protocol; the lost round taught them nothing).
+# ---------------------------------------------------------------------------
+
+
+def _recording_handler():
+    calls: list[tuple[str, dict]] = []
+
+    async def handler(name: str, arguments: dict) -> str:
+        calls.append((name, arguments))
+        return json.dumps({"ok": True, "tool": name})
+
+    return handler, calls
+
+
+def _direct_call_provider(name: str, arguments: dict, *, streaming: bool = False):
+    """A provider that calls *name* directly on round 0, then stops."""
+    return MockAIProvider(
+        ai_responses=[
+            AIResponse(
+                content="",
+                finish_reason="tool_calls",
+                tool_calls=[AIToolCall(id="t1", name=name, arguments=arguments)],
+            ),
+            AIResponse(content="done", finish_reason="stop"),
+        ],
+        streaming=streaming,
+    )
+
+
+async def _drain(ch: AIChannel, binding: ChannelBinding):
+    output = await _run(ch, binding)
+    if output.response_stream is not None:
+        async for _ in output.response_stream:
+            pass
+    return output
+
+
+class TestDeferredCallRecovery:
+    @pytest.mark.parametrize("streaming", [False, True])
+    async def test_undeclared_catalogue_call_executes(self, streaming: bool) -> None:
+        """Calling a deferred catalogue tool without find_tools executes it."""
+        provider = _direct_call_provider(
+            "send_sms", {"to": "+15551234567", "body": "hi"}, streaming=streaming
+        )
+        handler, calls = _recording_handler()
+        ch = AIChannel("ai1", provider=provider, tool_search=True, tool_handler=handler)
+        await _drain(ch, _binding([*_catalogue(5), _SMS_TOOL]))
+
+        # Round 0 never declared send_sms — the call recovered anyway.
+        assert "send_sms" not in _tool_names(provider.calls[0])
+        assert calls == [("send_sms", {"to": "+15551234567", "body": "hi"})]
+        result = _tool_result(provider.calls[1])
+        assert result == {"ok": True, "tool": "send_sms"}
+
+        # The recovery IS a reveal: round 1 declares the schema, noise stays hidden.
+        round1 = _tool_names(provider.calls[1])
+        assert "send_sms" in round1
+        assert not any(n.startswith("widget_") for n in round1)
+
+    async def test_recovered_call_still_validates_arguments(self) -> None:
+        """The catalogue schema keeps argument validation fail-closed."""
+        provider = _direct_call_provider("send_sms", {"to": "+15551234567"})  # body missing
+        handler, calls = _recording_handler()
+        ch = AIChannel("ai1", provider=provider, tool_search=True, tool_handler=handler)
+        await _drain(ch, _binding([*_catalogue(5), _SMS_TOOL]))
+
+        assert calls == []
+        result = _tool_result(provider.calls[1])
+        assert "Invalid arguments for 'send_sms'" in result["error"]
+
+    async def test_unknown_name_fails_with_find_tools_hint(self) -> None:
+        """A name absent from the catalogue is not confused with a deferred tool."""
+        provider = _direct_call_provider("does_not_exist", {})
+        handler, calls = _recording_handler()
+        ch = AIChannel("ai1", provider=provider, tool_search=True, tool_handler=handler)
+        await _drain(ch, _binding(_catalogue(5)))
+
+        assert calls == []
+        result = _tool_result(provider.calls[1])
+        assert "no tool by that name exists" in result["error"]
+        assert "find_tools" in result["hint"]
+
+    async def test_policy_denied_catalogue_tool_is_not_recovered(self) -> None:
+        """Recovery must not execute what the visibility filter would drop."""
+        provider = _direct_call_provider("send_sms", {"to": "+15551234567", "body": "hi"})
+        handler, calls = _recording_handler()
+        ch = AIChannel(
+            "ai1",
+            provider=provider,
+            tool_search=True,
+            tool_policy=ToolPolicy(allow=["widget_0"]),
+            tool_handler=handler,
+        )
+        await _drain(ch, _binding([*_catalogue(5), _SMS_TOOL]))
+
+        assert calls == []
+        result = _tool_result(provider.calls[1])
+        assert "not available to this agent" in result["error"]
+        assert "hint" not in result  # a find_tools retry would fail the same way
+        # The failed probe must not leave the name revealed for later rounds.
+        assert "send_sms" not in _tool_names(provider.calls[1])
+
+    async def test_glob_gated_tool_is_not_recovered(self, tmp_path: Path) -> None:
+        """Skill gating is glob-based and only the filter enforces globs —
+        recovery through the filter must not reopen what gating closed."""
+        skill_dir = tmp_path / "sms-sender"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text(
+            "---\nname: sms-sender\ndescription: Sends SMS\n"
+            "allowed_tools:\n  - send_*\n---\nBody.\n",
+            encoding="utf-8",
+        )
+        registry = SkillRegistry()
+        registry.discover(tmp_path)
+
+        provider = _direct_call_provider("send_sms", {"to": "+15551234567", "body": "hi"})
+        handler, calls = _recording_handler()
+        ch = AIChannel(
+            "ai1",
+            provider=provider,
+            tool_search=True,
+            skills=registry,
+            tool_handler=handler,
+        )
+        await _drain(ch, _binding([*_catalogue(5), _SMS_TOOL]))
+
+        assert calls == []
+        result = _tool_result(provider.calls[1])
+        assert "not available to this agent" in result["error"]
