@@ -206,7 +206,7 @@ RoomKit exports **170 symbols** from `roomkit`. Providers and voice types import
 | `MemoryProvider` | ABC for pluggable memory backends feeding AI context construction |
 | `Skill` | Full skill definition including instructions body |
 | `SkillMetadata` | Lightweight metadata parsed from SKILL.md frontmatter |
-| `SkillRegistry` | Discovers, loads, and manages Agent Skills |
+| `SkillRegistry` | Discovers, loads, and manages Agent Skills; tracks three visibility states — available, unlisted (`mark_unlisted`: activatable but out of the prompt manifest), unavailable (`mark_unavailable`: listed with a reason, not activatable) |
 | `ScriptExecutor` | ABC for executing skill scripts with integrator-defined policy |
 | `SandboxExecutor` | ABC for executing commands in a sandboxed environment |
 | `SandboxResult` | Result of executing a sandbox command |
