@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.49.1] — 2026-08-14
+
+### Fixed
+
+- **Calling a deferred catalogue tool without `find_tools` now executes it.**
+  With Tool Search active, a model that named a hidden catalogue tool exactly
+  was refused with `Unknown tool 'X': it is not declared` — a lost round that
+  taught the model nothing, over a call an immediate `find_tools` would have
+  allowed. Small models skip the two-step discovery protocol routinely, so
+  the exact-name call is now treated as a find_tools reveal applied at call
+  time: the tool is revealed for the rest of the session, its catalogue
+  schema keeps argument validation fail-closed, and recovery goes through
+  the same visibility filter as a reveal — tool policy and glob-based skill
+  gating keep their authority. A call that cannot be recovered now says why:
+  a catalogue tool blocked by policy or gating is distinguished from a name
+  that does not exist, and the unknown-name error points at `find_tools`.
+
 ## [0.49.0] — 2026-08-13
 
 ### Added
