@@ -585,6 +585,47 @@ class TestSkillRegistry:
         assert "<unavailable_skills>" in xml
         assert 'name="gated"' in xml
 
+    def test_mark_unlisted_hides_from_manifest_but_keeps_activation(self, tmp_path: Path) -> None:
+        """The third visibility state: quiet, not gone. The manifest and
+        ``listed_names`` skip the skill; activation-facing reads keep it."""
+        for name in ("loud", "quiet"):
+            _make_skill_dir(tmp_path, name)
+        registry = SkillRegistry()
+        registry.discover(tmp_path)
+
+        registry.mark_unlisted("quiet")
+
+        xml = registry.to_prompt_xml()
+        assert 'name="loud"' in xml
+        assert 'name="quiet"' not in xml
+        assert registry.listed_names == ["loud"]
+        # Still registered: any path that names it can activate it.
+        assert "quiet" in registry.skill_names
+        assert registry.get_metadata("quiet") is not None
+        assert registry.get_skill("quiet") is not None
+        assert registry.get_unavailable_reason("quiet") is None
+
+    def test_mark_unlisted_unknown_name_is_ignored(self) -> None:
+        registry = SkillRegistry()
+        registry.mark_unlisted("ghost")
+        assert registry.listed_names == []
+        assert registry.skill_names == []
+
+    def test_all_unlisted_collapses_the_available_block(self, tmp_path: Path) -> None:
+        _make_skill_dir(tmp_path, "quiet")
+        registry = SkillRegistry()
+        registry.discover(tmp_path)
+        registry.mark_unlisted("quiet")
+        assert "<available_skills>" not in registry.to_prompt_xml()
+
+    def test_register_clears_unlisted_mark(self, tmp_path: Path) -> None:
+        skill_dir = _make_skill_dir(tmp_path, "revived")
+        registry = SkillRegistry()
+        registry.register(skill_dir)
+        registry.mark_unlisted("revived")
+        registry.register(skill_dir)
+        assert registry.listed_names == ["revived"]
+
     def test_discover_raises_on_invalid(self, tmp_path: Path) -> None:
         """An invalid skill stops discovery instead of vanishing from the catalogue."""
         _make_skill_dir(tmp_path, "valid-one")

@@ -34,6 +34,7 @@ class SkillRegistry:
         self._skills: dict[str, Skill] = {}
         self._paths: dict[str, Path] = {}
         self._unavailable: dict[str, str] = {}
+        self._unlisted: set[str] = set()
 
     def discover(self, *directories: str | Path, strict: bool = True) -> int:
         """Scan directories for subdirectories containing SKILL.md.
@@ -150,6 +151,7 @@ class SkillRegistry:
         self._skills.pop(metadata.name, None)
         # Registering makes the skill usable again — drop any stale mark
         self._unavailable.pop(metadata.name, None)
+        self._unlisted.discard(metadata.name)
         logger.info("Registered skill: %s", metadata.name)
 
     def get_metadata(self, name: str) -> SkillMetadata | None:
@@ -187,6 +189,28 @@ class SkillRegistry:
         self._paths.pop(name, None)
         self._unavailable[name] = reason
 
+    def mark_unlisted(self, name: str) -> None:
+        """Keep *name* activatable but out of the prompt manifest.
+
+        The third visibility state, between available and unavailable: the
+        skill stays registered — ``activate_skill``, ``get_skill()`` and
+        ``skill_names`` still see it — but ``to_prompt_xml()`` and
+        ``listed_names`` do not. For catalogues where advertising every
+        entry would drown the ones that matter: a host can keep quiet about
+        a skill while any path that names it (a recommender nudge, a user
+        asking for it) still activates it, which is what lets it earn its
+        listing back.
+
+        Unknown names are ignored — there is nothing to hide.
+        """
+        if name in self._metadata:
+            self._unlisted.add(name)
+
+    @property
+    def listed_names(self) -> list[str]:
+        """Names of registered skills that the prompt manifest shows."""
+        return [name for name in self._metadata if name not in self._unlisted]
+
     def get_unavailable_reason(self, name: str) -> str | None:
         """Reason a skill is unavailable in this context, or None."""
         return self._unavailable.get(name)
@@ -216,15 +240,18 @@ class SkillRegistry:
         Skills marked unavailable are listed in a separate
         ``<unavailable_skills>`` block with their reason, so the model
         can explain the gap instead of guessing at a name that will
-        answer "not found". Content is HTML-escaped to prevent injection.
+        answer "not found". Skills marked unlisted are simply absent —
+        activatable, but not advertised. Content is HTML-escaped to
+        prevent injection.
         """
-        if not self._metadata and not self._unavailable:
+        listed = [meta for meta in self._metadata.values() if meta.name not in self._unlisted]
+        if not listed and not self._unavailable:
             return ""
 
         lines: list[str] = []
-        if self._metadata:
+        if listed:
             lines.append("<available_skills>")
-            for meta in self._metadata.values():
+            for meta in listed:
                 lines.append(f'  <skill name="{escape(meta.name)}">')
                 lines.append(f"    <description>{escape(meta.description)}</description>")
                 if meta.license:
