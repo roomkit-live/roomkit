@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.50.0] — 2026-08-14
+
+### Added
+
+- **A registry skill can now be unlisted — activatable, but not advertised.**
+  `SkillRegistry.mark_unlisted(name)` adds a third visibility state between
+  available and unavailable: the skill stays registered — `activate_skill()`,
+  `get_skill()` and `skill_names` still see it — while `to_prompt_xml()` and
+  the new `listed_names` property leave it out of the prompt manifest. Until
+  now a host whose catalogue outgrew its manifest had to choose between
+  advertising every entry, drowning the ones that matter, and unregistering
+  the rest, which made them impossible to activate at all. An unlisted skill
+  can still be reached by any path that names it — a recommender nudge, a user
+  asking for it — which is what lets it earn its listing back. Re-registering
+  a skill clears the mark, mirroring the unavailable state; unlisting an
+  unknown name is ignored.
+
 ## [0.49.1] — 2026-08-14
 
 ### Fixed
@@ -5757,7 +5774,8 @@ See entries `0.7.0a1` through `0.7.0a18` below.
 - `STTProvider.transcribe()` returns `TranscriptionResult` (Phase 3.1)
 - Framework event names enriched with payloads (Phase 4)
 
-[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.49.1...HEAD
+[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.50.0...HEAD
+[0.50.0]: https://github.com/roomkit-live/roomkit/compare/v0.49.1...v0.50.0
 [0.49.1]: https://github.com/roomkit-live/roomkit/compare/v0.49.0...v0.49.1
 [0.49.0]: https://github.com/roomkit-live/roomkit/compare/v0.48.0...v0.49.0
 [0.48.0]: https://github.com/roomkit-live/roomkit/compare/v0.47.0...v0.48.0
