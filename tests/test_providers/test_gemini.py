@@ -351,6 +351,44 @@ class TestGeminiAIProvider:
             assert result.usage == {"input_tokens": 42, "output_tokens": 7}
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "raw_reason",
+        [
+            # The SDK hands back a FinishReason enum; the wire spelling is its
+            # ``.name``. A plain string must pass through untouched.
+            pytest.param(SimpleNamespace(name="MAX_TOKENS"), id="enum"),
+            pytest.param("MAX_TOKENS", id="string"),
+        ],
+    )
+    async def test_generate_reports_truncation(self, raw_reason: Any) -> None:
+        """A truncated round must be distinguishable from a silent one.
+
+        Gemini reports MAX_TOKENS on the candidate of a chunk that carries no
+        parts at all — exactly the round where the model spent its whole budget
+        thinking. Without this the tool loop reads the empty content as a model
+        that failed to verbalize, and re-prompts under the same cap.
+        """
+        mock_genai = _mock_genai_module()
+        with patch.dict("sys.modules", _genai_modules(mock_genai)):
+            from roomkit.providers.gemini.ai import GeminiAIProvider
+
+            provider = GeminiAIProvider(_config())
+            provider._client.aio.models.generate_content_stream.return_value = _FakeStreamIterator(
+                [
+                    SimpleNamespace(
+                        candidates=[SimpleNamespace(content=None, finish_reason=raw_reason)],
+                        usage_metadata=SimpleNamespace(
+                            prompt_token_count=10, candidates_token_count=4096
+                        ),
+                    )
+                ]
+            )
+            result = await provider.generate(_context())
+
+            assert result.content == ""
+            assert result.finish_reason == "MAX_TOKENS"
+
+    @pytest.mark.asyncio
     async def test_generate_with_tools(self) -> None:
         mock_genai = _mock_genai_module()
         with patch.dict("sys.modules", _genai_modules(mock_genai)):

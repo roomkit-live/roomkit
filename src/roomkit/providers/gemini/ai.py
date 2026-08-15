@@ -360,6 +360,7 @@ class GeminiAIProvider(AIProvider):
         fcalls: dict[str, dict[str, Any]] = {}
         fcall_order: list[str] = []
         usage: dict[str, int] = {}
+        finish_reason: str | None = None
 
         try:
             response_stream = await self._client.aio.models.generate_content_stream(  # ty: ignore[unresolved-attribute]
@@ -385,6 +386,17 @@ class GeminiAIProvider(AIProvider):
                     }
                     if cached:
                         usage["cache_read_input_tokens"] = cached
+
+                # Read before the content guards below: the chunk that reports
+                # MAX_TOKENS is often the one whose candidate carries no parts,
+                # so capturing it after them would drop the very case the tool
+                # loop needs — a round truncated with nothing to show for it.
+                # The SDK hands back a FinishReason enum; ``.name`` is its wire
+                # spelling ("MAX_TOKENS"), and a plain string passes through.
+                if chunk.candidates:
+                    raw_reason = getattr(chunk.candidates[0], "finish_reason", None)
+                    if raw_reason is not None:
+                        finish_reason = getattr(raw_reason, "name", None) or str(raw_reason)
 
                 if not chunk.candidates or not chunk.candidates[0].content:
                     continue
@@ -482,7 +494,11 @@ class GeminiAIProvider(AIProvider):
                     metadata=meta,
                 )
 
-            yield StreamDone(usage=usage, metadata={"model": self._config.model})
+            yield StreamDone(
+                usage=usage,
+                finish_reason=finish_reason,
+                metadata={"model": self._config.model},
+            )
 
         except Exception as exc:
             raise self._wrap_error(exc) from exc
@@ -516,6 +532,7 @@ class GeminiAIProvider(AIProvider):
             thinking="".join(thinking_parts) if thinking_parts else None,
             usage=done_event.usage if done_event else {},
             tool_calls=tool_calls,
+            finish_reason=done_event.finish_reason if done_event else None,
             metadata=done_event.metadata if done_event else {},
         )
 

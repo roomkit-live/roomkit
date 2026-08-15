@@ -175,6 +175,44 @@ async def test_length_truncation_reaches_the_rule_on_both_paths(
 
 
 @pytest.mark.parametrize("streaming", [False, True])
+@pytest.mark.parametrize("reason", ["length", "max_tokens", "MAX_TOKENS"])
+async def test_every_provider_spelling_of_truncation_is_understood(
+    streaming: bool, reason: str
+) -> None:
+    """The rule reads truncation, not one provider's word for it.
+
+    RoomKit forwards each provider's raw finish_reason: OpenAI-compatible
+    servers and Ollama say ``length``, Anthropic's stop_reason says
+    ``max_tokens``, Gemini's candidate says ``MAX_TOKENS``. A rule matching a
+    single spelling would burn the retries it exists to save on the two
+    providers whose reasoning budget is a headline feature.
+    """
+    provider = MockAIProvider(
+        ai_responses=[
+            _tool(),
+            AIResponse(content="", finish_reason=reason),
+            AIResponse(content="never"),
+        ],
+        streaming=streaming,
+    )
+    ch = AIChannel(
+        "ai1",
+        provider=provider,
+        tool_handler=AsyncMock(return_value="ok"),
+        max_empty_retries=1,
+    )
+    context = AIContext(messages=[AIMessage(role="user", content="go")])
+    if streaming:
+        async for _ in ch._run_streaming_tool_loop(context):
+            pass
+    else:
+        await ch._run_tool_loop(context)
+
+    assert len(provider.calls) == 2
+    assert sum(1 for m in context.messages if m.content == _EMPTY_RETRY_NUDGE) == 0
+
+
+@pytest.mark.parametrize("streaming", [False, True])
 async def test_empty_without_length_still_retries_on_both_paths(streaming: bool) -> None:
     """A genuinely silent round still gets its bounded nudge on both paths."""
     provider = MockAIProvider(

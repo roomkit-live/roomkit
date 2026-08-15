@@ -60,6 +60,23 @@ _FORCE_STOP_NUDGE = (
     "what you found and what remains, using the results already above."
 )
 
+# Every provider reports "I hit the output cap" in its own vocabulary, and
+# RoomKit forwards the raw value rather than inventing a normalized one:
+# OpenAI-compatible servers and Ollama's ``done_reason`` say ``length``,
+# Anthropic's ``stop_reason`` says ``max_tokens``, Gemini's candidate says
+# ``MAX_TOKENS``. A rule that knew only one spelling would cover only the
+# providers using it, which is the failure mode this module exists to prevent.
+_TRUNCATION_FINISH_REASONS = frozenset({"length", "max_tokens"})
+
+
+def _is_truncation(finish_reason: str | None) -> bool:
+    """Whether a round ended by exhausting its output budget.
+
+    Compared case-insensitively so Gemini's ``MAX_TOKENS`` and Anthropic's
+    ``max_tokens`` are one entry rather than two.
+    """
+    return finish_reason is not None and finish_reason.lower() in _TRUNCATION_FINISH_REASONS
+
 
 @dataclass
 class _ToolLoopState:
@@ -210,19 +227,20 @@ class AIToolLoopRulesMixin:
         been appended and the retry counted. The deadline term is evaluated
         last so no clock read happens when an earlier term already fails.
 
-        ``finish_reason == "length"`` is a different failure and is not
-        retried: the round did not fall silent, it ran out of output budget —
-        typically a reasoning model that spent the whole cap inside its
-        thinking block, so ``content`` arrives empty. Re-prompting under the
-        same cap truncates again, so the nudge is skipped in favour of a log
-        line naming the actual cause.
+        A truncated round (see ``_is_truncation``) is a different failure and
+        is not retried: the round did not fall silent, it ran out of output
+        budget — typically a reasoning model that spent the whole cap inside
+        its thinking block, so ``content`` arrives empty. Re-prompting under
+        the same cap truncates again, so the nudge is skipped in favour of a
+        log line naming the actual cause.
         """
-        if had_tool_round and not final_text.strip() and finish_reason == "length":
+        if had_tool_round and not final_text.strip() and _is_truncation(finish_reason):
             logger.warning(
                 "%s: response truncated at the output cap before any final text "
-                "(finish_reason=length). Raise max_tokens, or disable the model's "
+                "(finish_reason=%s). Raise max_tokens, or disable the model's "
                 "reasoning block if it is consuming the budget.",
                 state.log_label,
+                finish_reason,
             )
             return False
         if not (

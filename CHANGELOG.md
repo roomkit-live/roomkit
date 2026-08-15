@@ -42,19 +42,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `VLLMConfig(max_tokens=4096)`, or the equivalent on any other provider
   config, silently kept sending 1024. `AIContext.max_tokens` and
   `AIChannel(max_tokens=...)` now default to `None`, meaning "not set for this
-  turn", and the provider config is consulted. The effective default is
-  unchanged when nothing is set. The OpenAI-compatible streaming path applied
-  no fallback at all, so it ignored the configured cap even where the
-  non-streaming path honoured it; both paths now agree.
+  turn", and the provider config is consulted. The OpenAI-compatible streaming
+  path applied no fallback at all, so it ignored the configured cap even where
+  the non-streaming path honoured it; both paths now agree.
+
+  **Behaviour change for Ollama and PolarGrid.** Six provider configs default
+  `max_tokens` to `1024`, so for them the effective default is unchanged when
+  nothing is set anywhere. `OllamaConfig` and `PolarGridConfig` default it to
+  `None`, documented as "lets the server pick its default" — a promise the
+  shadowing context value had made unreachable. Now that nothing is set means
+  nothing is sent, those two omit the cap (`options.num_predict`,
+  `max_tokens`) instead of silently capping at 1024, and generation runs to the
+  server's own limit. Pass an explicit `max_tokens` on the channel, the turn
+  config or the provider config to bound it.
 - **A round truncated at the output cap is no longer treated as an empty
   response.** When a generation round after tool calls returned no text, the
   loop assumed the model had failed to verbalize its answer and re-prompted
   it. A reasoning model that spends its whole budget inside the thinking block
-  ends the same way — empty `content` — but with `finish_reason="length"`, and
-  re-prompting under the same cap only truncates again. Both loops now report
-  the round's `finish_reason` to the shared rule, which names the real cause
-  in the log and spends no retry on it. The streaming loop previously dropped
-  `finish_reason` entirely.
+  ends the same way — empty `content` — but truncated, and re-prompting under
+  the same cap only truncates again. Both loops now report the round's
+  `finish_reason` to the shared rule, which names the real cause in the log and
+  spends no retry on it. The streaming loop previously dropped `finish_reason`
+  entirely.
+- **Truncation is recognised whatever the provider calls it.** The rule above
+  matched `"length"`, which is the OpenAI-compatible spelling (and Ollama's
+  `done_reason`). RoomKit forwards each provider's raw value, so Anthropic's
+  `stop_reason="max_tokens"` and Gemini's `MAX_TOKENS` fell through and kept
+  burning their retries — the two providers whose reasoning budget is a
+  headline feature. The comparison now covers every spelling. Gemini also
+  never populated `finish_reason` at all: it is read off the candidate before
+  the content guards, because the chunk that reports `MAX_TOKENS` is often the
+  one carrying no parts, and it now reaches both `StreamDone` and
+  `AIResponse`.
 
 ## [0.51.0] — 2026-08-14
 
