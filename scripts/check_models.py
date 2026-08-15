@@ -98,6 +98,13 @@ CATALOGS: list[Catalog] = [
     Catalog("gemini", "roomkit.providers.gemini.models", "google/"),
     Catalog("mistral", "roomkit.providers.mistral.models", "mistralai/"),
     Catalog("xai", "roomkit.providers.xai.models", "x-ai/"),
+    # Both namespaces upstream are dominated by open-weight checkpoints and
+    # legacy lines the vendors' own hosted APIs no longer answer to — 13
+    # deepseek ids for a two-model lineup, 47 qwen ids for five hosted ones — so
+    # "something newer exists in this family" is always true and would be noise
+    # rather than signal. Retirements and price drift still report.
+    Catalog("deepseek", "roomkit.providers.deepseek.models", "deepseek/", track_new=False),
+    Catalog("qwen", "roomkit.providers.qwen.models", "qwen/", track_new=False),
     # An intentionally partial slice of 300+ aggregated models, so "something
     # newer exists" is always true and would be noise rather than signal.
     Catalog(
@@ -169,6 +176,10 @@ DELIBERATE: dict[str, str] = {
     "grok-4.20-0309-reasoning": "mirror carries the undated grok-4.20 alias instead",
     "grok-4.20-0309-non-reasoning": "mirror carries the undated grok-4.20 alias instead",
     "grok-4.20-multi-agent-0309": "mirror carries the undated alias instead",
+    # Alibaba's hosted VL model. The mirror republishes the open-weight
+    # qwen3-vl-* checkpoints (235b, 30b, 32b, 8b) that anyone can self-host,
+    # not the `-plus` id Model Studio answers to (billing page, 2026-08-14).
+    "qwen3-vl-plus": "hosted-only id; mirror carries the open-weight qwen3-vl checkpoints",
 }
 
 # Catalog ids whose *rates* deliberately differ from the mirror's, same rule as
@@ -191,6 +202,24 @@ PRICE_DELIBERATE: dict[str, str] = {
     # catalog to match is a treadmill that lands on a different number every
     # release, so the entry states DeepSeek's own endpoint and stays put.
     "deepseek/deepseek-v4-pro": "multi-host model; upstream quotes the routed endpoint",
+    # Same fact from the other side. RoomKit's deepseek provider calls
+    # DeepSeek's own endpoint, so its catalog carries DeepSeek's own rates
+    # (api-docs.deepseek.com pricing, 2026-08-14) while the mirror quotes
+    # whichever of its eighteen hosts routing picked — above the vendor for
+    # pro, below it for flash, and a different number every week.
+    "deepseek-v4-pro": "catalog states DeepSeek's own endpoint; upstream quotes a routed host",
+    "deepseek-v4-flash": "catalog states DeepSeek's own endpoint; upstream quotes a routed host",
+    # Alibaba runs near-permanent limited-time promotions and the mirror resells
+    # at a discounted rate (qwen3.7-plus at exactly the 20% off price, the other
+    # two at rates matching no published column). ModelPricing carries one list
+    # rate, so the catalog states Alibaba's international list price
+    # (billing-for-model-studio, 2026-08-14) and the promotion lands as an
+    # under-charge. The same entries also cover cache write, which upstream
+    # quotes at Alibaba's 125% explicit-cache-creation rate: this provider never
+    # creates an explicit cache, so the catalog leaves that rate unset.
+    "qwen3.7-max": "mirror resells at a discounted rate; catalog carries Alibaba's list price",
+    "qwen3.7-plus": "mirror resells at the 20%-off promotion; catalog carries the list price",
+    "qwen3.6-flash": "mirror resells at a discounted rate; catalog carries Alibaba's list price",
 }
 
 # Per-field normalization where the upstream pricing object quotes only one

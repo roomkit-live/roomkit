@@ -39,6 +39,11 @@ azure = ["openai>=2.28,<3"]
 vllm = ["openai>=2.28,<3"]
 openrouter = ["openai>=2.28,<3"]
 xai = ["openai>=2.28,<3"]
+deepseek = ["openai>=2.28,<3"]
+# Named `qwen-ai` rather than `qwen`: the Qwen *voice* extras below install
+# different packages for different subsystems, and an unqualified `qwen` would
+# read like the family's umbrella install rather than the chat provider.
+qwen-ai = ["openai>=2.28,<3"]
 ollama = ["ollama>=0.4"]
 gemini = ["google-genai>=2.0.0"]
 mistral = ["mistralai>=2.0,<3"]
@@ -123,6 +128,8 @@ providers = [
     "roomkit[vllm]",
     "roomkit[openrouter]",
     "roomkit[xai]",
+    "roomkit[deepseek]",
+    "roomkit[qwen-ai]",
     "roomkit[ollama]",
     "roomkit[gemini]",
     "roomkit[mistral]",

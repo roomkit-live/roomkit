@@ -99,6 +99,8 @@ src/roomkit/
 │   ├── vllm/                # VLLMConfig, create_vllm_provider (local AI)
 │   ├── openrouter/          # OpenRouterAIProvider, OpenRouterConfig (300+ models)
 │   ├── xai/                 # XAIAIProvider, XAIConfig (Grok) + XAIRealtimeProvider (voice)
+│   ├── deepseek/            # DeepSeekAIProvider, DeepSeekConfig (nested thinking object)
+│   ├── qwen/                # QwenAIProvider, QwenConfig (Alibaba Model Studio)
 
 │   ├── sms/                 # SMSProvider ABC, MockSMSProvider, phone utils
 │   ├── twilio/              # TwilioSMSProvider, TwilioRCSProvider

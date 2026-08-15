@@ -2442,17 +2442,17 @@ resolution-markers = [
     "python_full_version < '3.13' and sys_platform != 'win32'",
 ]
 dependencies = [
-    { name = "decorator" },
-    { name = "joblib" },
-    { name = "lazy-loader" },
-    { name = "msgpack" },
-    { name = "numba" },
-    { name = "numpy" },
-    { name = "pooch" },
-    { name = "scikit-learn" },
-    { name = "scipy" },
-    { name = "soundfile", version = "0.14.0", source = { registry = "https://pypi.org/simple" } },
-    { name = "soxr" },
+    { name = "decorator", marker = "extra == 'extra-7-roomkit-all' or extra != 'extra-7-roomkit-neutts' or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-asr') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-tts') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-smart-turn')" },
+    { name = "joblib", marker = "extra == 'extra-7-roomkit-all' or extra != 'extra-7-roomkit-neutts' or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-asr') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-tts') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-smart-turn')" },
+    { name = "lazy-loader", marker = "extra == 'extra-7-roomkit-all' or extra != 'extra-7-roomkit-neutts' or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-asr') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-tts') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-smart-turn')" },
+    { name = "msgpack", marker = "extra == 'extra-7-roomkit-all' or extra != 'extra-7-roomkit-neutts' or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-asr') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-tts') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-smart-turn')" },
+    { name = "numba", marker = "extra == 'extra-7-roomkit-all' or extra != 'extra-7-roomkit-neutts' or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-asr') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-tts') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-smart-turn')" },
+    { name = "numpy", marker = "extra == 'extra-7-roomkit-all' or extra != 'extra-7-roomkit-neutts' or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-asr') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-tts') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-smart-turn')" },
+    { name = "pooch", marker = "extra == 'extra-7-roomkit-all' or extra != 'extra-7-roomkit-neutts' or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-asr') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-tts') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-smart-turn')" },
+    { name = "scikit-learn", marker = "extra == 'extra-7-roomkit-all' or extra != 'extra-7-roomkit-neutts' or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-asr') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-tts') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-smart-turn')" },
+    { name = "scipy", marker = "extra == 'extra-7-roomkit-all' or extra != 'extra-7-roomkit-neutts' or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-asr') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-tts') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-smart-turn')" },
+    { name = "soundfile", version = "0.14.0", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-roomkit-all' or extra != 'extra-7-roomkit-neutts' or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-asr') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-tts') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-smart-turn')" },
+    { name = "soxr", marker = "extra == 'extra-7-roomkit-all' or extra != 'extra-7-roomkit-neutts' or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-asr') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-tts') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-smart-turn')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/8e/c1/ce66b20953b7370421dd13d22b4e04e401346c824ceacb9f4e722eec84dc/librosa-1.0.0.tar.gz", hash = "sha256:73ed480d4022e436e85dfa6f6b06ff38a259b9210039ac99939cd64854b61a57", size = 377965, upload-time = "2026-08-11T15:37:37.013Z" }
 wheels = [
@@ -4640,7 +4640,7 @@ name = "pyobjc-framework-cocoa"
 version = "12.2.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "pyobjc-core", marker = "python_full_version < '3.13' or sys_platform != 'win32' or (extra == 'extra-7-roomkit-all' and extra == 'extra-7-roomkit-neutts') or (extra == 'extra-7-roomkit-all' and extra == 'extra-7-roomkit-qwen-asr') or (extra == 'extra-7-roomkit-all' and extra == 'extra-7-roomkit-qwen-tts') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-asr') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-tts') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-smart-turn') or (extra == 'extra-7-roomkit-qwen-asr' and extra == 'extra-7-roomkit-qwen-tts') or (extra == 'extra-7-roomkit-qwen-asr' and extra == 'extra-7-roomkit-smart-turn') or (extra == 'extra-7-roomkit-qwen-tts' and extra == 'extra-7-roomkit-smart-turn')" },
+    { name = "pyobjc-core", marker = "sys_platform != 'win32' or (extra == 'extra-7-roomkit-all' and extra == 'extra-7-roomkit-neutts') or (extra == 'extra-7-roomkit-all' and extra == 'extra-7-roomkit-qwen-asr') or (extra == 'extra-7-roomkit-all' and extra == 'extra-7-roomkit-qwen-tts') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-asr') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-tts') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-smart-turn') or (extra == 'extra-7-roomkit-qwen-asr' and extra == 'extra-7-roomkit-qwen-tts') or (extra == 'extra-7-roomkit-qwen-asr' and extra == 'extra-7-roomkit-smart-turn') or (extra == 'extra-7-roomkit-qwen-tts' and extra == 'extra-7-roomkit-smart-turn')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/75/76/49c6da2c6a831020b4854ba20079d5a1030474bffc776b7b73c2eeff8c15/pyobjc_framework_cocoa-12.2.2.tar.gz", hash = "sha256:c96c0ef69a71afbbb0e6a7d594b455c5fe47d62e0db376ee7a2b4b828c16ace9", size = 3132831, upload-time = "2026-08-11T19:44:02.288Z" }
 wheels = [
@@ -4658,8 +4658,8 @@ name = "pyobjc-framework-quartz"
 version = "12.2.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "pyobjc-core", marker = "python_full_version < '3.13' or sys_platform != 'win32' or (extra == 'extra-7-roomkit-all' and extra == 'extra-7-roomkit-neutts') or (extra == 'extra-7-roomkit-all' and extra == 'extra-7-roomkit-qwen-asr') or (extra == 'extra-7-roomkit-all' and extra == 'extra-7-roomkit-qwen-tts') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-asr') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-tts') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-smart-turn') or (extra == 'extra-7-roomkit-qwen-asr' and extra == 'extra-7-roomkit-qwen-tts') or (extra == 'extra-7-roomkit-qwen-asr' and extra == 'extra-7-roomkit-smart-turn') or (extra == 'extra-7-roomkit-qwen-tts' and extra == 'extra-7-roomkit-smart-turn')" },
-    { name = "pyobjc-framework-cocoa", marker = "python_full_version < '3.13' or sys_platform != 'win32' or (extra == 'extra-7-roomkit-all' and extra == 'extra-7-roomkit-neutts') or (extra == 'extra-7-roomkit-all' and extra == 'extra-7-roomkit-qwen-asr') or (extra == 'extra-7-roomkit-all' and extra == 'extra-7-roomkit-qwen-tts') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-asr') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-tts') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-smart-turn') or (extra == 'extra-7-roomkit-qwen-asr' and extra == 'extra-7-roomkit-qwen-tts') or (extra == 'extra-7-roomkit-qwen-asr' and extra == 'extra-7-roomkit-smart-turn') or (extra == 'extra-7-roomkit-qwen-tts' and extra == 'extra-7-roomkit-smart-turn')" },
+    { name = "pyobjc-core", marker = "sys_platform != 'win32' or (extra == 'extra-7-roomkit-all' and extra == 'extra-7-roomkit-neutts') or (extra == 'extra-7-roomkit-all' and extra == 'extra-7-roomkit-qwen-asr') or (extra == 'extra-7-roomkit-all' and extra == 'extra-7-roomkit-qwen-tts') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-asr') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-tts') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-smart-turn') or (extra == 'extra-7-roomkit-qwen-asr' and extra == 'extra-7-roomkit-qwen-tts') or (extra == 'extra-7-roomkit-qwen-asr' and extra == 'extra-7-roomkit-smart-turn') or (extra == 'extra-7-roomkit-qwen-tts' and extra == 'extra-7-roomkit-smart-turn')" },
+    { name = "pyobjc-framework-cocoa", marker = "sys_platform != 'win32' or (extra == 'extra-7-roomkit-all' and extra == 'extra-7-roomkit-neutts') or (extra == 'extra-7-roomkit-all' and extra == 'extra-7-roomkit-qwen-asr') or (extra == 'extra-7-roomkit-all' and extra == 'extra-7-roomkit-qwen-tts') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-asr') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-tts') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-smart-turn') or (extra == 'extra-7-roomkit-qwen-asr' and extra == 'extra-7-roomkit-qwen-tts') or (extra == 'extra-7-roomkit-qwen-asr' and extra == 'extra-7-roomkit-smart-turn') or (extra == 'extra-7-roomkit-qwen-tts' and extra == 'extra-7-roomkit-smart-turn')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/35/b1/426a37c7ae37280b3ffca2571fb48f211946aee2f4ca31a603ed1943c4a7/pyobjc_framework_quartz-12.2.2.tar.gz", hash = "sha256:810f97b210cfd93704d240860286dfd6df09f9f1c52525fc5c2166723aea3f9e", size = 3218295, upload-time = "2026-08-11T19:45:15.189Z" }
 wheels = [
@@ -5350,6 +5350,9 @@ console = [
 deepgram = [
     { name = "deepgram-sdk" },
 ]
+deepseek = [
+    { name = "openai" },
+]
 dev = [
     { name = "agent-client-protocol" },
     { name = "anthropic" },
@@ -5478,6 +5481,9 @@ pynacl = [
 ]
 pyroscope = [
     { name = "pyroscope-io" },
+]
+qwen-ai = [
+    { name = "openai" },
 ]
 qwen-asr = [
     { name = "qwen-asr" },
@@ -5679,10 +5685,12 @@ requires-dist = [
     { name = "openai", marker = "extra == 'all'", specifier = ">=2.28" },
     { name = "openai", marker = "extra == 'all'", specifier = ">=2.28,<3" },
     { name = "openai", marker = "extra == 'azure'", specifier = ">=2.28,<3" },
+    { name = "openai", marker = "extra == 'deepseek'", specifier = ">=2.28,<3" },
     { name = "openai", marker = "extra == 'dev'", specifier = ">=2.28,<3" },
     { name = "openai", marker = "extra == 'openai'", specifier = ">=2.28,<3" },
     { name = "openai", marker = "extra == 'openrouter'", specifier = ">=2.28,<3" },
     { name = "openai", marker = "extra == 'providers'", specifier = ">=2.28,<3" },
+    { name = "openai", marker = "extra == 'qwen-ai'", specifier = ">=2.28,<3" },
     { name = "openai", marker = "extra == 'realtime-openai'", specifier = ">=2.28" },
     { name = "openai", marker = "extra == 'vllm'", specifier = ">=2.28,<3" },
     { name = "openai", marker = "extra == 'xai'", specifier = ">=2.28,<3" },
@@ -5748,7 +5756,7 @@ requires-dist = [
     { name = "websockets", marker = "extra == 'sources'", specifier = ">=14.0" },
     { name = "websockets", marker = "extra == 'websocket'", specifier = ">=14.0" },
 ]
-provides-extras = ["acp", "aicoustics", "all", "anam", "anthropic", "azure", "buzz", "console", "deepgram", "dev", "discord", "docs", "elevenlabs", "fastrtc", "gemini", "gradium", "httpx", "livekit", "local-audio", "local-video", "mcp", "mediapipe", "mistral", "neutts", "ollama", "openai", "openrouter", "opentelemetry", "phonenumbers", "polargrid", "postgres", "providers", "pynacl", "pyroscope", "qwen-asr", "qwen-tts", "realtime-deepgram", "realtime-elevenlabs", "realtime-gemini", "realtime-openai", "redis", "rtp", "screen-capture", "screen-input", "sherpa-onnx", "sip", "smart-turn", "sources", "sse", "teams", "telegram", "twilio", "video", "video-overlay", "vllm", "webrtc-aec", "websocket", "webtransport", "whatsapp-personal", "xai", "yolo"]
+provides-extras = ["acp", "aicoustics", "all", "anam", "anthropic", "azure", "buzz", "console", "deepgram", "deepseek", "dev", "discord", "docs", "elevenlabs", "fastrtc", "gemini", "gradium", "httpx", "livekit", "local-audio", "local-video", "mcp", "mediapipe", "mistral", "neutts", "ollama", "openai", "openrouter", "opentelemetry", "phonenumbers", "polargrid", "postgres", "providers", "pynacl", "pyroscope", "qwen-ai", "qwen-asr", "qwen-tts", "realtime-deepgram", "realtime-elevenlabs", "realtime-gemini", "realtime-openai", "redis", "rtp", "screen-capture", "screen-input", "sherpa-onnx", "sip", "smart-turn", "sources", "sse", "teams", "telegram", "twilio", "video", "video-overlay", "vllm", "webrtc-aec", "websocket", "webtransport", "whatsapp-personal", "xai", "yolo"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "setuptools", specifier = "<84" }]
@@ -6210,9 +6218,9 @@ resolution-markers = [
     "python_full_version < '3.13' and sys_platform != 'win32'",
 ]
 dependencies = [
-    { name = "cffi" },
-    { name = "numpy" },
-    { name = "typing-extensions" },
+    { name = "cffi", marker = "extra == 'extra-7-roomkit-all' or extra != 'extra-7-roomkit-neutts' or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-asr') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-tts') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-smart-turn')" },
+    { name = "numpy", marker = "extra == 'extra-7-roomkit-all' or extra != 'extra-7-roomkit-neutts' or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-asr') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-tts') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-smart-turn')" },
+    { name = "typing-extensions", marker = "extra == 'extra-7-roomkit-all' or extra != 'extra-7-roomkit-neutts' or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-asr') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-tts') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-smart-turn')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/d2/db/949331952a6fb1c5b12e9de80fd08747966c2039d1a61db4764fbd3981c2/soundfile-0.14.0.tar.gz", hash = "sha256:ba1c1a2d618bca5c406647c83b89f07cc8810fa506a50622a6993ba130c1de11", size = 47842, upload-time = "2026-06-06T08:58:47.869Z" }
 wheels = [

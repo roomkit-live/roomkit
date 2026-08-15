@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **DeepSeek and Qwen are first-class AI providers.**
+  `DeepSeekAIProvider` / `DeepSeekConfig` (`pip install roomkit[deepseek]`)
+  and `QwenAIProvider` / `QwenConfig` (`pip install roomkit[qwen-ai]`) each
+  subclass `OpenAIAIProvider`, so message building, tool calling and streaming
+  are the ones already in production. What the subclasses exist for is the
+  part that is not shared. Both vendors spell thinking their own way — DeepSeek
+  takes a nested `thinking` object where a top-level `reasoning_effort` is
+  silently ignored, Qwen takes `enable_thinking` plus a token cap that
+  `thinking_budget` maps onto exactly, making it the one provider where that
+  budget is the vendor's parameter rather than an approximation of it.
+  DeepSeek reports cache hits under its own counter names, so a cached token is
+  now priced at the cache rate instead of 50x that; Model Studio publishes no
+  models endpoint, so the offline catalog *is* Qwen's discovery surface. Both
+  ship curated catalogs with vendor list prices, gated against the upstream
+  mirror by `make check-models`. Both vendors also front Anthropic-compatible
+  endpoints; the OpenAI-shaped ones are used here because they are the richer
+  of the two — DeepSeek's Anthropic path drops prompt caching, images and the
+  models listing.
+
 ### Fixed
 
 - **A non-streaming response no longer loses its reasoning trace.**
