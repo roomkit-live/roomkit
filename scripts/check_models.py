@@ -206,7 +206,12 @@ PRICE_DELIBERATE: dict[str, str] = {
     # DeepSeek's own endpoint, so its catalog carries DeepSeek's own rates
     # (api-docs.deepseek.com pricing, 2026-08-14) while the mirror quotes
     # whichever of its eighteen hosts routing picked — above the vendor for
-    # pro, below it for flash, and a different number every week.
+    # pro, below it for flash, and a different number every week. Specifically
+    # the catalog carries the peak column of the peak/off-peak schedule
+    # effective 2026-08-16 16:00 UTC, which is the undiscounted rate; an
+    # off-peak call bills half. Note what these two entries cost: a suppressed
+    # model is invisible to the price gate in *both* directions, so a genuine
+    # DeepSeek repricing will not be reported here either.
     "deepseek-v4-pro": "catalog states DeepSeek's own endpoint; upstream quotes a routed host",
     "deepseek-v4-flash": "catalog states DeepSeek's own endpoint; upstream quotes a routed host",
     # Alibaba runs near-permanent limited-time promotions and the mirror resells

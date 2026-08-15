@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, ClassVar
 
 from roomkit.providers.ai.base import AIContext, ModelInfo
 from roomkit.providers.openai.ai import OpenAIAIProvider
@@ -31,6 +31,7 @@ class XAIAIProvider(OpenAIAIProvider):
     """
 
     _config: XAIConfig
+    _install_extra: ClassVar[str] = "xai"
 
     @property
     def _provider_name(self) -> str:

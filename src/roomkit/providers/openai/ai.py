@@ -6,7 +6,7 @@ import json
 import re
 import time
 from collections.abc import AsyncIterator
-from typing import Any, Literal
+from typing import Any, ClassVar, Literal
 
 from roomkit.providers.ai.base import (
     RETRYABLE_STATUS_CODES,
@@ -144,13 +144,21 @@ class _ThinkTagParser:
 class OpenAIAIProvider(AIProvider):
     """AI provider using the OpenAI Chat Completions API."""
 
+    _install_extra: ClassVar[str] = "openai"
+    """RoomKit extra that installs this provider's SDK, named in the import
+    error. Every subclass here runs on the same ``openai`` package but ships
+    its own extra, so the hint has to follow the class rather than the
+    dependency — telling a DeepSeek user to install ``roomkit[openai]`` sends
+    them to an extra they did not choose."""
+
     def __init__(self, config: OpenAIConfig) -> None:
         try:
             import openai as _openai
         except ImportError as exc:
+            cls = type(self)
             raise ImportError(
-                "openai is required for OpenAIAIProvider. "
-                "Install it with: pip install roomkit[openai]"
+                f"openai is required for {cls.__name__}. "
+                f"Install it with: pip install roomkit[{cls._install_extra}]"
             ) from exc
         self._config = config
         self._api_status_error = _openai.APIStatusError

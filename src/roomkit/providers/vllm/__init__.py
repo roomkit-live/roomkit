@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 from roomkit.providers.ai.base import ModelInfo
 from roomkit.providers.openai.ai import OpenAIAIProvider
 from roomkit.providers.openai.config import OpenAIConfig
@@ -21,6 +23,8 @@ class _VLLMProvider(OpenAIAIProvider):
     Private because it adds nothing a caller configures — build it through
     :func:`create_vllm_provider`, which is the documented entry point.
     """
+
+    _install_extra: ClassVar[str] = "vllm"
 
     @property
     def name(self) -> str:

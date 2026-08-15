@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, ClassVar
 
 from roomkit.providers.ai.base import AIContext, ModelInfo
 from roomkit.providers.deepseek.config import DeepSeekConfig
@@ -28,6 +28,7 @@ class DeepSeekAIProvider(OpenAIAIProvider):
     """
 
     _config: DeepSeekConfig
+    _install_extra: ClassVar[str] = "deepseek"
 
     @property
     def _provider_name(self) -> str:

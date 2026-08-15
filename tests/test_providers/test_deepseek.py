@@ -199,7 +199,9 @@ class TestDeepSeekAIProvider:
 
             importlib.reload(mod)
 
-            with pytest.raises(ImportError, match="openai is required"):
+            # The hint names the extra the caller actually chose, not the
+            # inherited `openai` one that installs the same package.
+            with pytest.raises(ImportError, match=r"openai is required.*roomkit\[deepseek\]"):
                 mod.DeepSeekAIProvider(_config())
 
 

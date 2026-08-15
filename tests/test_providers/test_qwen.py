@@ -182,7 +182,8 @@ class TestQwenAIProvider:
 
             importlib.reload(mod)
 
-            with pytest.raises(ImportError, match="openai is required"):
+            # `qwen-ai`, not the inherited `openai` and not the voice extras.
+            with pytest.raises(ImportError, match=r"openai is required.*roomkit\[qwen-ai\]"):
                 mod.QwenAIProvider(_config())
 
 

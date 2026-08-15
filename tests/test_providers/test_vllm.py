@@ -173,5 +173,5 @@ class TestCreateVLLMProvider:
             from roomkit.providers.vllm import create_vllm_provider
 
             cfg = VLLMConfig(model="test")
-            with pytest.raises(ImportError, match="openai is required"):
+            with pytest.raises(ImportError, match=r"openai is required.*roomkit\[vllm\]"):
                 create_vllm_provider(cfg)

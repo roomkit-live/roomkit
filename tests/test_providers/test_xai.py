@@ -193,7 +193,7 @@ class TestXAIAIProvider:
 
             importlib.reload(mod)
 
-            with pytest.raises(ImportError, match="openai is required"):
+            with pytest.raises(ImportError, match=r"openai is required.*roomkit\[xai\]"):
                 mod.XAIAIProvider(_config())
 
 

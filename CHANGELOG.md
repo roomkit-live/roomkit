@@ -30,6 +30,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **An OpenAI-compatible provider's install hint names its own extra.**
+  Every provider subclassing `OpenAIAIProvider` runs on the same `openai`
+  package but ships its own extra, and the inherited import error told all of
+  them to `pip install roomkit[openai]` — an extra the caller never chose, and
+  the wrong place to look when a DeepSeek, Qwen, xAI or vLLM install is what is
+  missing. The hint now follows the class.
+
 - **A non-streaming response no longer loses its reasoning trace.**
   `OpenAIAIProvider.generate()` parsed `<think>` tags and nothing else, so every
   OpenAI-compatible server that returns reasoning in a dedicated field —
