@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A non-streaming response no longer loses its reasoning trace.**
+  `OpenAIAIProvider.generate()` parsed `<think>` tags and nothing else, so every
+  OpenAI-compatible server that returns reasoning in a dedicated field —
+  DeepSeek, Qwen, vLLM with a reasoning parser, OpenRouter — had its trace
+  dropped on the floor, while the same response streamed surfaced it. Both
+  field names are now read on both paths, and a server emitting tags *and* a
+  field keeps both.
+
 ## [0.50.0] — 2026-08-14
 
 ### Added

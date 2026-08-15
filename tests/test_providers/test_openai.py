@@ -57,8 +57,15 @@ def _mock_response(
     tool_calls: list[dict[str, Any]] | None = None,
     cached_tokens: int | None = None,
     cache_write_tokens: int | None = None,
+    reasoning_content: str | None = None,
+    reasoning: str | None = None,
 ) -> SimpleNamespace:
-    """Build a fake OpenAI chat completion response."""
+    """Build a fake OpenAI chat completion response.
+
+    ``reasoning_content`` / ``reasoning`` are the dedicated trace fields
+    OpenAI-compatible servers use instead of inline ``<think>`` tags; they are
+    attached only when set, because OpenAI's own responses carry neither.
+    """
     mock_tool_calls = None
     if tool_calls:
         mock_tool_calls = [
@@ -71,10 +78,15 @@ def _mock_response(
             )
             for tc in tool_calls
         ]
+    message = SimpleNamespace(content=text, tool_calls=mock_tool_calls)
+    if reasoning_content is not None:
+        message.reasoning_content = reasoning_content
+    if reasoning is not None:
+        message.reasoning = reasoning
     return SimpleNamespace(
         choices=[
             SimpleNamespace(
-                message=SimpleNamespace(content=text, tool_calls=mock_tool_calls),
+                message=message,
                 finish_reason=finish_reason,
             ),
         ],
@@ -508,6 +520,66 @@ class TestOpenAIAIProvider:
 
             assert result.thinking is None
             assert result.content == "Just a normal response."
+
+    @pytest.mark.asyncio
+    async def test_generate_reads_reasoning_content_field(self) -> None:
+        """generate() surfaces a trace carried beside the content, not inline.
+
+        Regression: the non-streaming path only ever parsed ``<think>`` tags,
+        so every server using the dedicated field — DeepSeek, Qwen, vLLM with a
+        reasoning parser, OpenRouter — silently dropped its reasoning here
+        while the streaming path surfaced it.
+        """
+        with patch.dict("sys.modules", {"openai": _mock_openai_module()}):
+            from roomkit.providers.openai.ai import OpenAIAIProvider
+
+            provider = OpenAIAIProvider(_config())
+            provider._client = MagicMock()
+            provider._client.chat.completions.create = AsyncMock(
+                return_value=_mock_response(
+                    text="The answer is 42.", reasoning_content="Let me reason."
+                )
+            )
+
+            result = await provider.generate(_context())
+
+            assert result.thinking == "Let me reason."
+            assert result.content == "The answer is 42."
+
+    @pytest.mark.asyncio
+    async def test_generate_reads_openrouter_reasoning_field(self) -> None:
+        """OpenRouter names the same field ``reasoning``."""
+        with patch.dict("sys.modules", {"openai": _mock_openai_module()}):
+            from roomkit.providers.openai.ai import OpenAIAIProvider
+
+            provider = OpenAIAIProvider(_config())
+            provider._client = MagicMock()
+            provider._client.chat.completions.create = AsyncMock(
+                return_value=_mock_response(text="42.", reasoning="Thinking out loud.")
+            )
+
+            result = await provider.generate(_context())
+
+            assert result.thinking == "Thinking out loud."
+
+    @pytest.mark.asyncio
+    async def test_generate_merges_both_reasoning_conventions(self) -> None:
+        """A server emitting tags *and* a field loses neither trace."""
+        with patch.dict("sys.modules", {"openai": _mock_openai_module()}):
+            from roomkit.providers.openai.ai import OpenAIAIProvider
+
+            provider = OpenAIAIProvider(_config())
+            provider._client = MagicMock()
+            provider._client.chat.completions.create = AsyncMock(
+                return_value=_mock_response(
+                    text="<think>inline.</think>42.", reasoning_content="field."
+                )
+            )
+
+            result = await provider.generate(_context())
+
+            assert result.thinking == "inline.field."
+            assert result.content == "42."
 
     @pytest.mark.asyncio
     async def test_structured_stream_with_think_tags(self) -> None:

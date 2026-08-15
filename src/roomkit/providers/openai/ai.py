@@ -48,6 +48,31 @@ _VISION_PREFIXES = (
 _THINK_RE = re.compile(r"<think>(.*?)</think>", re.DOTALL)
 
 
+def _field_reasoning(carrier: Any) -> str | None:
+    """Read a reasoning trace carried in its own field rather than inline.
+
+    ``<think>`` tags are one of two conventions OpenAI-compatible servers use.
+    The other is a dedicated field beside ``content`` — ``reasoning_content``
+    for DeepSeek, Qwen and vLLM's reasoning parsers, ``reasoning`` for
+    OpenRouter. Both a streaming delta and a complete message carry it under
+    the same names, so both paths read it here.
+    """
+    value = getattr(carrier, "reasoning_content", None) or getattr(carrier, "reasoning", None)
+    return value if isinstance(value, str) and value else None
+
+
+def _merge_thinking(inline: str | None, field: str | None) -> str | None:
+    """Combine the two reasoning conventions into one trace.
+
+    A server uses one or the other, so in practice exactly one side is set;
+    concatenating rather than picking a winner means neither is dropped if one
+    ever emits both.
+    """
+    if not field:
+        return inline
+    return f"{inline}{field}" if inline else field
+
+
 class _ThinkTagParser:
     """Stateful parser for ``<think>...</think>`` tags in a text stream.
 
@@ -464,6 +489,7 @@ class OpenAIAIProvider(AIProvider):
         # Extract <think>...</think> tags from response text.
         raw_text = choice.message.content or ""
         thinking, content = _extract_think_tags(raw_text)
+        thinking = _merge_thinking(thinking, _field_reasoning(choice.message))
 
         return AIResponse(
             content=content,
@@ -551,9 +577,7 @@ class OpenAIAIProvider(AIProvider):
                 # OpenAI-compatible reasoning models (DeepSeek-R1, vLLM with a
                 # reasoning parser) stream reasoning in a dedicated field instead
                 # of inline <think> tags. Surface it as thinking when present.
-                reasoning = getattr(delta, "reasoning_content", None) or getattr(
-                    delta, "reasoning", None
-                )
+                reasoning = _field_reasoning(delta)
                 if reasoning:
                     if first_token:
                         self._record_ttfb(t0)
