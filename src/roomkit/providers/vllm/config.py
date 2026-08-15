@@ -30,6 +30,16 @@ class VLLMConfig(BaseModel):
             route for vLLM-specific params (``guided_json``/``guided_choice``
             guided decoding, ``top_k``/``repetition_penalty`` sampling).
             Maps to ``OpenAIConfig.extra_body``.
+        enable_thinking: Turn the model's reasoning block on or off. ``None``
+            leaves the model's own default, which for current Qwen builds is
+            *on* at the most verbose effort — reasoning then competes with the
+            answer for ``max_tokens`` and can consume the whole budget, leaving
+            an empty ``content``. Set ``False`` for tool loops that only need
+            the final answer.
+        reasoning_effort: Reasoning verbosity when thinking is on —
+            ``"low"``, ``"medium"`` or ``"xhigh"``. Accepted values depend on
+            the served model's chat template; vLLM raises a template error on
+            an unknown one.
     """
 
     model: str
@@ -49,3 +59,21 @@ class VLLMConfig(BaseModel):
     extra_body: dict[str, Any] | None = None
     """Extra request-body fields for vLLM-specific params (guided decoding,
     extra sampling). ``None`` sends a vanilla body."""
+    enable_thinking: bool | None = None
+    """Reasoning block on/off. ``None`` leaves the model's own default."""
+    reasoning_effort: str | None = None
+    """Reasoning verbosity when thinking is on (``"low"``/``"medium"``/``"xhigh"``)."""
+
+    def chat_template_kwargs(self) -> dict[str, Any]:
+        """The ``chat_template_kwargs`` implied by the reasoning settings.
+
+        vLLM renders the model's own chat template server-side, so reasoning is
+        steered through template kwargs rather than a sampling parameter. Empty
+        when neither knob is set, so a vanilla body stays vanilla.
+        """
+        kwargs: dict[str, Any] = {}
+        if self.enable_thinking is not None:
+            kwargs["enable_thinking"] = self.enable_thinking
+        if self.reasoning_effort is not None:
+            kwargs["reasoning_effort"] = self.reasoning_effort
+        return kwargs

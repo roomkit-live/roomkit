@@ -476,6 +476,7 @@ class AIGenerationMixin(AIToolLoopRulesMixin):
                         state,
                         had_tool_round=bool(rounds),
                         final_text=response.content or "",
+                        finish_reason=response.finish_reason,
                     ):
                         response = await self._generate_with_retry(context)
                         continue

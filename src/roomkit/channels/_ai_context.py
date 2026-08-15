@@ -55,7 +55,8 @@ class AIContextHost(Protocol):
         _provider: AI provider for generation and capability queries.
         _system_prompt: Default system prompt (overridable per room).
         _temperature: Default temperature (overridable per room).
-        _max_tokens: Default max tokens (overridable per room).
+        _max_tokens: Default max tokens (overridable per room); ``None``
+            defers to the provider's own configured ``max_tokens``.
         _thinking_budget: Optional thinking budget for extended thinking.
         _skills: Skill registry for tool injection.
         _skills_in_prompt: Whether to auto-inject the skills manifest into the prompt.
@@ -79,7 +80,7 @@ class AIContextHost(Protocol):
     _provider: AIProvider
     _system_prompt: str | None
     _temperature: float
-    _max_tokens: int
+    _max_tokens: int | None
     _thinking_budget: int | None
     _skills: SkillRegistry | None
     _skills_in_prompt: bool
@@ -117,7 +118,7 @@ class AIContextMixin:
     _provider: AIProvider
     _system_prompt: str | None
     _temperature: float
-    _max_tokens: int
+    _max_tokens: int | None
     _thinking_budget: int | None
     _skills: SkillRegistry | None
     _skills_in_prompt: bool

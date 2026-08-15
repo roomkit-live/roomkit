@@ -202,13 +202,29 @@ class AIToolLoopRulesMixin:
         *,
         had_tool_round: bool,
         final_text: str,
+        finish_reason: str | None = None,
     ) -> bool:
         """Bounded re-prompt when the final answer is empty after tool rounds.
 
         Returns ``True`` when the caller should re-generate: the nudge has
         been appended and the retry counted. The deadline term is evaluated
         last so no clock read happens when an earlier term already fails.
+
+        ``finish_reason == "length"`` is a different failure and is not
+        retried: the round did not fall silent, it ran out of output budget —
+        typically a reasoning model that spent the whole cap inside its
+        thinking block, so ``content`` arrives empty. Re-prompting under the
+        same cap truncates again, so the nudge is skipped in favour of a log
+        line naming the actual cause.
         """
+        if had_tool_round and not final_text.strip() and finish_reason == "length":
+            logger.warning(
+                "%s: response truncated at the output cap before any final text "
+                "(finish_reason=length). Raise max_tokens, or disable the model's "
+                "reasoning block if it is consuming the budget.",
+                state.log_label,
+            )
+            return False
         if not (
             had_tool_round
             and not final_text.strip()

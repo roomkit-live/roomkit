@@ -528,8 +528,7 @@ class OpenAIAIProvider(AIProvider):
             kwargs["stream_options"] = {"include_usage": True}
         self._apply_sampling_kwargs(kwargs, context)
         self._apply_extra_body(kwargs)
-        if context.max_tokens is not None:
-            kwargs.update(self._token_limit_kwarg(context.max_tokens))
+        kwargs.update(self._token_limit_kwarg(context.max_tokens or self._config.max_tokens))
         if context.tools:
             kwargs["tools"] = [
                 {

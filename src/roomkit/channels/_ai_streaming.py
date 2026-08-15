@@ -399,6 +399,7 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                 text_parts: list[str] = []
                 tool_calls: list[StreamToolCall] = []
                 thinking_started = False
+                round_finish_reason: str | None = None
                 coalescer = self._new_thinking_coalescer(room_id, round_idx=_round_idx)
                 _dedup_active = bool(_dedup_prefix)
                 _dedup_offset = 0
@@ -568,6 +569,7 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                                     duration_ms=ext_duration_ms,
                                 )
                     elif isinstance(event, StreamDone):
+                        round_finish_reason = event.finish_reason
                         if event.usage:
                             _round_usage = event.usage
                             round_in = _round_usage.get("input_tokens", 0)
@@ -612,6 +614,7 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                         state,
                         had_tool_round=_saw_tool_call_any,
                         final_text="".join(text_parts),
+                        finish_reason=round_finish_reason,
                     ):
                         continue
                     return

@@ -125,3 +125,78 @@ async def test_empty_retry_rule_drives_both_paths(monkeypatch, streaming: bool) 
     # call and one nudge message here.
     assert len(provider.calls) == 2
     assert sum(1 for m in context.messages if m.content == _EMPTY_RETRY_NUDGE) == 0
+
+
+@pytest.mark.parametrize("streaming", [False, True])
+async def test_length_truncation_reaches_the_rule_on_both_paths(
+    monkeypatch, streaming: bool
+) -> None:
+    """Both loops report the round's finish_reason to the empty-retry rule.
+
+    A round truncated at the output cap arrives with empty content and
+    ``finish_reason="length"``. A loop that drops finish_reason would hand the
+    rule ``None``, making truncation indistinguishable from a silent model.
+    """
+    seen: list[str | None] = []
+    original = AIChannel._try_empty_retry
+
+    def recording(self, context, loop_ctx, state, **kwargs):
+        seen.append(kwargs.get("finish_reason"))
+        return original(self, context, loop_ctx, state, **kwargs)
+
+    monkeypatch.setattr(AIChannel, "_try_empty_retry", recording)
+
+    provider = MockAIProvider(
+        ai_responses=[
+            _tool(),
+            AIResponse(content="", finish_reason="length"),
+            AIResponse(content="never"),
+        ],
+        streaming=streaming,
+    )
+    ch = AIChannel(
+        "ai1",
+        provider=provider,
+        tool_handler=AsyncMock(return_value="ok"),
+        max_empty_retries=1,
+    )
+    context = AIContext(messages=[AIMessage(role="user", content="go")])
+    if streaming:
+        async for _ in ch._run_streaming_tool_loop(context):
+            pass
+    else:
+        await ch._run_tool_loop(context)
+
+    assert seen == ["length"]
+    # Truncation is not silence: the nudge would be truncated again under the
+    # same cap, so the rule must not spend a retry on it.
+    assert len(provider.calls) == 2
+    assert sum(1 for m in context.messages if m.content == _EMPTY_RETRY_NUDGE) == 0
+
+
+@pytest.mark.parametrize("streaming", [False, True])
+async def test_empty_without_length_still_retries_on_both_paths(streaming: bool) -> None:
+    """A genuinely silent round still gets its bounded nudge on both paths."""
+    provider = MockAIProvider(
+        ai_responses=[
+            _tool(),
+            AIResponse(content="", finish_reason="stop"),
+            AIResponse(content="recovered"),
+        ],
+        streaming=streaming,
+    )
+    ch = AIChannel(
+        "ai1",
+        provider=provider,
+        tool_handler=AsyncMock(return_value="ok"),
+        max_empty_retries=1,
+    )
+    context = AIContext(messages=[AIMessage(role="user", content="go")])
+    if streaming:
+        async for _ in ch._run_streaming_tool_loop(context):
+            pass
+    else:
+        await ch._run_tool_loop(context)
+
+    assert len(provider.calls) == 3
+    assert sum(1 for m in context.messages if m.content == _EMPTY_RETRY_NUDGE) == 1

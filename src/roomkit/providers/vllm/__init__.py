@@ -78,6 +78,17 @@ def create_vllm_provider(config: VLLMConfig) -> OpenAIAIProvider:
     Returns:
         A provider configured for the local vLLM server.
     """
+    template_kwargs = config.chat_template_kwargs()
+    extra_body = dict(config.extra_body) if config.extra_body else None
+    if template_kwargs:
+        extra_body = extra_body or {}
+        # An explicit extra_body entry wins: it is the escape hatch for a
+        # template whose kwargs this config does not model.
+        extra_body["chat_template_kwargs"] = {
+            **template_kwargs,
+            **extra_body.get("chat_template_kwargs", {}),
+        }
+
     openai_config = OpenAIConfig(
         api_key=config.api_key,
         base_url=config.base_url,
@@ -88,6 +99,6 @@ def create_vllm_provider(config: VLLMConfig) -> OpenAIAIProvider:
         max_retries=config.max_retries,
         include_stream_usage=config.include_stream_usage,
         default_headers=config.headers,
-        extra_body=config.extra_body,
+        extra_body=extra_body,
     )
     return _VLLMProvider(openai_config)

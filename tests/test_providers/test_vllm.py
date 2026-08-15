@@ -60,6 +60,25 @@ class TestVLLMConfig:
         assert cfg.headers is None
         assert cfg.extra_body is None
 
+    def test_reasoning_knobs_default_none(self) -> None:
+        cfg = VLLMConfig(model="m")
+        assert cfg.enable_thinking is None
+        assert cfg.reasoning_effort is None
+        # Unset knobs add nothing: a vanilla body stays vanilla.
+        assert cfg.chat_template_kwargs() == {}
+
+    def test_chat_template_kwargs_from_reasoning_knobs(self) -> None:
+        cfg = VLLMConfig(model="m", enable_thinking=False, reasoning_effort="low")
+        assert cfg.chat_template_kwargs() == {
+            "enable_thinking": False,
+            "reasoning_effort": "low",
+        }
+
+    def test_chat_template_kwargs_keeps_thinking_false(self) -> None:
+        # False is a real value, not "unset": it must survive into the kwargs.
+        cfg = VLLMConfig(model="m", enable_thinking=False)
+        assert cfg.chat_template_kwargs() == {"enable_thinking": False}
+
 
 class TestCreateVLLMProvider:
     def test_returns_openai_provider(self) -> None:
@@ -127,6 +146,79 @@ class TestCreateVLLMProvider:
 
             assert provider._config.default_headers == {"X-Proxy": "v1"}
             assert provider._config.extra_body == {"guided_choice": ["yes", "no"]}
+
+    def test_reasoning_knobs_reach_extra_body(self) -> None:
+        # vLLM renders the chat template server-side, so reasoning is steered
+        # through chat_template_kwargs in the request body.
+        with patch.dict("sys.modules", {"openai": _mock_openai_module()}):
+            import roomkit.providers.openai.ai as ai_mod
+
+            importlib.reload(ai_mod)
+
+            from roomkit.providers.vllm import create_vllm_provider
+
+            cfg = VLLMConfig(model="m", enable_thinking=False)
+            provider = create_vllm_provider(cfg)
+
+            assert provider._config.extra_body == {
+                "chat_template_kwargs": {"enable_thinking": False}
+            }
+
+    def test_reasoning_knobs_merge_with_extra_body(self) -> None:
+        with patch.dict("sys.modules", {"openai": _mock_openai_module()}):
+            import roomkit.providers.openai.ai as ai_mod
+
+            importlib.reload(ai_mod)
+
+            from roomkit.providers.vllm import create_vllm_provider
+
+            cfg = VLLMConfig(
+                model="m",
+                reasoning_effort="low",
+                extra_body={"guided_choice": ["yes", "no"]},
+            )
+            provider = create_vllm_provider(cfg)
+
+            assert provider._config.extra_body == {
+                "guided_choice": ["yes", "no"],
+                "chat_template_kwargs": {"reasoning_effort": "low"},
+            }
+
+    def test_explicit_extra_body_template_kwargs_win(self) -> None:
+        # extra_body stays the escape hatch for templates this config does
+        # not model, so an explicit entry overrides the derived one.
+        with patch.dict("sys.modules", {"openai": _mock_openai_module()}):
+            import roomkit.providers.openai.ai as ai_mod
+
+            importlib.reload(ai_mod)
+
+            from roomkit.providers.vllm import create_vllm_provider
+
+            cfg = VLLMConfig(
+                model="m",
+                enable_thinking=False,
+                extra_body={"chat_template_kwargs": {"enable_thinking": True}},
+            )
+            provider = create_vllm_provider(cfg)
+
+            assert provider._config.extra_body == {
+                "chat_template_kwargs": {"enable_thinking": True}
+            }
+
+    def test_config_extra_body_not_mutated(self) -> None:
+        # The caller's dict must not gain the derived key.
+        with patch.dict("sys.modules", {"openai": _mock_openai_module()}):
+            import roomkit.providers.openai.ai as ai_mod
+
+            importlib.reload(ai_mod)
+
+            from roomkit.providers.vllm import create_vllm_provider
+
+            original = {"guided_choice": ["yes", "no"]}
+            cfg = VLLMConfig(model="m", enable_thinking=False, extra_body=original)
+            create_vllm_provider(cfg)
+
+            assert original == {"guided_choice": ["yes", "no"]}
 
     def test_model_metadata_is_the_servers_not_openais(self) -> None:
         # A local server runs whatever weights someone loaded onto it. The

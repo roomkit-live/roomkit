@@ -246,7 +246,10 @@ class AIContext(BaseModel):
     messages: list[AIMessage] = Field(default_factory=list)
     system_prompt: str | None = None
     temperature: float = 0.7
-    max_tokens: int = 1024
+    max_tokens: int | None = None
+    """Output cap for this turn. ``None`` means "not set for this turn", which
+    lets each provider fall back to its own configured ``max_tokens``. A
+    non-``None`` default here would shadow that config and make it dead."""
     thinking_budget: int | None = None
     tools: list[AITool] = Field(default_factory=list)
     room: RoomContext | None = None

@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`VLLMConfig` can steer the model's reasoning block.** `enable_thinking` and
+  `reasoning_effort` map onto the `chat_template_kwargs` that vLLM's
+  server-side chat template reads, so a thinking model can be told to answer
+  directly without hand-writing `extra_body`. Both default to `None`, leaving
+  the model's own default untouched; an explicit `extra_body`
+  `chat_template_kwargs` entry still wins, so the escape hatch keeps working
+  for templates this config does not model. This matters most in tool loops:
+  current Qwen builds think at their most verbose effort by default, and that
+  reasoning competes with the answer for the same output budget.
+
+### Fixed
+
+- **A provider's configured `max_tokens` is no longer dead code.**
+  `AIContext.max_tokens` defaulted to `1024` rather than `None`, and every
+  provider reads `context.max_tokens or self._config.max_tokens` — so the
+  context value always won and the configured cap was unreachable. Setting
+  `VLLMConfig(max_tokens=4096)`, or the equivalent on any other provider
+  config, silently kept sending 1024. `AIContext.max_tokens` and
+  `AIChannel(max_tokens=...)` now default to `None`, meaning "not set for this
+  turn", and the provider config is consulted. The effective default is
+  unchanged when nothing is set. The OpenAI-compatible streaming path applied
+  no fallback at all, so it ignored the configured cap even where the
+  non-streaming path honoured it; both paths now agree.
+- **A round truncated at the output cap is no longer treated as an empty
+  response.** When a generation round after tool calls returned no text, the
+  loop assumed the model had failed to verbalize its answer and re-prompted
+  it. A reasoning model that spends its whole budget inside the thinking block
+  ends the same way — empty `content` — but with `finish_reason="length"`, and
+  re-prompting under the same cap only truncates again. Both loops now report
+  the round's `finish_reason` to the shared rule, which names the real cause
+  in the log and spends no retry on it. The streaming loop previously dropped
+  `finish_reason` entirely.
+
 ## [0.51.0] — 2026-08-14
 
 ### Added

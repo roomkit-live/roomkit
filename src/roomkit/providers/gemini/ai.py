@@ -267,7 +267,7 @@ class GeminiAIProvider(AIProvider):
         """Build Gemini generation config from AIContext."""
         gen_config = self._types.GenerateContentConfig(
             temperature=context.temperature,
-            max_output_tokens=context.max_tokens,
+            max_output_tokens=context.max_tokens or self._config.max_tokens,
         )
 
         # Thinking config. ``include_thoughts=True`` is required for Gemini to

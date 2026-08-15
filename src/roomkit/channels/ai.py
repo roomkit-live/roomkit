@@ -184,7 +184,7 @@ class AIChannel(
         provider: AIProvider,
         system_prompt: str | None = None,
         temperature: float = 0.7,
-        max_tokens: int = 1024,
+        max_tokens: int | None = None,
         max_context_events: int = 50,
         tool_handler: ToolHandler | None = None,
         tools: list[AITool | Tool] | None = None,

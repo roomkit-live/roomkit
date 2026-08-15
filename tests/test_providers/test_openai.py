@@ -169,6 +169,52 @@ class TestOpenAIAIProvider:
                 assert forbidden not in call_kwargs
 
     @pytest.mark.asyncio
+    async def test_config_max_tokens_used_when_turn_sets_none(self) -> None:
+        # A turn that sets no cap falls back to the configured one. A non-None
+        # default on AIContext would shadow the config and make
+        # OpenAIConfig.max_tokens — and every config built from it, such as
+        # vLLM's — unreachable.
+        with patch.dict("sys.modules", {"openai": _mock_openai_module()}):
+            from roomkit.providers.openai.ai import OpenAIAIProvider
+
+            provider = OpenAIAIProvider(_config(max_tokens=4096, use_max_completion_tokens=False))
+            provider._client = MagicMock()
+            provider._client.chat.completions.create = AsyncMock(return_value=_mock_response())
+
+            await provider.generate(_context())
+
+            call_kwargs = provider._client.chat.completions.create.call_args[1]
+            assert call_kwargs["max_tokens"] == 4096
+
+    @pytest.mark.asyncio
+    async def test_streaming_also_falls_back_to_config_max_tokens(self) -> None:
+        # The streaming path must apply the same fallback as generate(): a cap
+        # honoured on only one of the two paths is a cap you cannot rely on.
+        with patch.dict("sys.modules", {"openai": _mock_openai_module()}):
+            from roomkit.providers.openai.ai import OpenAIAIProvider
+
+            async def _chunks() -> Any:
+                yield SimpleNamespace(
+                    choices=[
+                        SimpleNamespace(
+                            delta=SimpleNamespace(content="hi", tool_calls=None),
+                            finish_reason="stop",
+                        )
+                    ],
+                    usage=None,
+                )
+
+            provider = OpenAIAIProvider(_config(max_tokens=4096, use_max_completion_tokens=False))
+            provider._client = MagicMock()
+            provider._client.chat.completions.create = AsyncMock(return_value=_chunks())
+
+            async for _ in provider.generate_structured_stream(_context()):
+                pass
+
+            call_kwargs = provider._client.chat.completions.create.call_args[1]
+            assert call_kwargs["max_tokens"] == 4096
+
+    @pytest.mark.asyncio
     async def test_official_default_model_uses_compatible_request_shape(self) -> None:
         with patch.dict("sys.modules", {"openai": _mock_openai_module()}):
             from roomkit.providers.openai.ai import OpenAIAIProvider
