@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Reasoning is steerable per room and per turn, not only per provider.**
+  `enable_thinking` and `reasoning_effort` now ride the same three-tier chain
+  as sampling — `binding.metadata` override, then `AIChannelTurnConfig` from
+  the channel's `config_provider`, then the `AIChannel` default — and reach the
+  provider on `AIContext`. A thinking model costs two to three times the tokens
+  and latency of a direct answer, and that trade is not the same in an agent's
+  tool loop as in a chat turn; steering it only per provider instance forced a
+  second channel, and a second provider, to say so. The vLLM provider resolves
+  the turn's settings over its configured ones into `chat_template_kwargs`,
+  merging rather than replacing so a per-turn switch cannot silently drop a
+  configured effort it says nothing about, and sends them on tool turns too —
+  nothing on a local server couples reasoning to the absence of tools. The
+  OpenAI-compatible parent now also lets a turn's `reasoning_effort` outrank
+  its configured one, on the same reasoning as `max_tokens` below.
 - **`VLLMConfig` can steer the model's reasoning block.** `enable_thinking` and
   `reasoning_effort` map onto the `chat_template_kwargs` that vLLM's
   server-side chat template reads, so a thinking model can be told to answer

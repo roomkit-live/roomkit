@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from typing import ClassVar
+from typing import Any, ClassVar
 
-from roomkit.providers.ai.base import ModelInfo
+from roomkit.providers.ai.base import AIContext, ModelInfo
 from roomkit.providers.openai.ai import OpenAIAIProvider
 from roomkit.providers.openai.config import OpenAIConfig
 from roomkit.providers.vllm.config import VLLMConfig
@@ -42,6 +42,43 @@ class _VLLMProvider(OpenAIAIProvider):
         server, which does know.
         """
         return []
+
+    def _apply_sampling_kwargs(self, kwargs: dict[str, Any], context: AIContext) -> None:
+        """Add temperature, then this turn's reasoning settings.
+
+        vLLM renders the model's chat template server-side, so reasoning is
+        steered through ``chat_template_kwargs`` rather than the top-level
+        ``reasoning_effort`` the OpenAI parent sends — which a local template
+        does not read. The parent's field is therefore not forwarded.
+
+        Unlike the parent, the settings are sent on tool turns too: nothing on
+        a local server couples reasoning to the absence of tools, and an
+        agentic turn is exactly where its cost is worth steering.
+        """
+        if context.temperature is not None and self._config.supports_custom_temperature:
+            kwargs["temperature"] = context.temperature
+        template_kwargs = self._resolve_template_kwargs(context)
+        if template_kwargs:
+            kwargs.setdefault("extra_body", {})["chat_template_kwargs"] = template_kwargs
+
+    def _resolve_template_kwargs(self, context: AIContext) -> dict[str, Any]:
+        """Merge this turn's reasoning settings over the configured ones.
+
+        The configured baseline lives in ``extra_body`` — put there by
+        :func:`create_vllm_provider` from the config's own knobs, or written by
+        hand for a template whose kwargs :class:`VLLMConfig` does not model.
+        Merging rather than replacing means a per-turn switch cannot silently
+        drop a configured effort it says nothing about. Empty when neither
+        layer sets anything, so the request stays silent and the model's own
+        default applies.
+        """
+        configured = (self._config.extra_body or {}).get("chat_template_kwargs", {})
+        resolved: dict[str, Any] = dict(configured)
+        if context.enable_thinking is not None:
+            resolved["enable_thinking"] = context.enable_thinking
+        if context.reasoning_effort is not None:
+            resolved["reasoning_effort"] = context.reasoning_effort
+        return resolved
 
     @property
     def supports_vision(self) -> bool:

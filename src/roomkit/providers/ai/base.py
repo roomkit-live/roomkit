@@ -251,6 +251,13 @@ class AIContext(BaseModel):
     lets each provider fall back to its own configured ``max_tokens``. A
     non-``None`` default here would shadow that config and make it dead."""
     thinking_budget: int | None = None
+    enable_thinking: bool | None = None
+    """Turn this turn's reasoning block on or off, for providers that expose
+    the switch. ``None`` defers to the provider's own configuration, and then
+    to the model's default."""
+    reasoning_effort: str | None = None
+    """Reasoning verbosity for this turn, for providers that grade it.
+    Accepted values are the provider's own; ``None`` defers to its config."""
     tools: list[AITool] = Field(default_factory=list)
     room: RoomContext | None = None
     target_capabilities: ChannelCapabilities | None = None

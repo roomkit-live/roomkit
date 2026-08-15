@@ -126,3 +126,61 @@ class TestConfigProvider:
         assert "gmail" in names
         assert "activate_skill" in names  # skill infra injected on top
         assert "<available_skills>" in ai_ctx.system_prompt
+
+
+class TestReasoningOverrides:
+    """Reasoning settings ride the same three-tier chain as sampling.
+
+    A thinking model costs 2-3x the tokens and latency of a direct answer, and
+    that trade is not the same in an agent's tool loop as in a chat turn — so
+    the switch has to be steerable per room and per turn, not only per
+    provider instance.
+    """
+
+    async def test_channel_default_reaches_context(self) -> None:
+        ch = _channel(enable_thinking=False, reasoning_effort="low")
+        binding = _binding()
+        ai_ctx = await ch._build_context(make_event(), binding, _ctx(binding))
+
+        assert ai_ctx.enable_thinking is False
+        assert ai_ctx.reasoning_effort == "low"
+
+    async def test_unset_stays_none(self) -> None:
+        # Nothing set anywhere: the provider is left to defer to the model.
+        ch = _channel()
+        binding = _binding()
+        ai_ctx = await ch._build_context(make_event(), binding, _ctx(binding))
+
+        assert ai_ctx.enable_thinking is None
+        assert ai_ctx.reasoning_effort is None
+
+    async def test_turn_config_overrides_channel_default(self) -> None:
+        async def provider(binding, context):
+            return AIChannelTurnConfig(enable_thinking=True, reasoning_effort="xhigh")
+
+        ch = _channel(config_provider=provider, enable_thinking=False, reasoning_effort="low")
+        binding = _binding()
+        ai_ctx = await ch._build_context(make_event(), binding, _ctx(binding))
+
+        assert ai_ctx.enable_thinking is True
+        assert ai_ctx.reasoning_effort == "xhigh"
+
+    async def test_binding_metadata_wins_over_turn_config(self) -> None:
+        async def provider(binding, context):
+            return AIChannelTurnConfig(enable_thinking=True, reasoning_effort="xhigh")
+
+        ch = _channel(config_provider=provider, enable_thinking=True)
+        binding = _binding(metadata={"enable_thinking": False, "reasoning_effort": "low"})
+        ai_ctx = await ch._build_context(make_event(), binding, _ctx(binding))
+
+        assert ai_ctx.enable_thinking is False
+        assert ai_ctx.reasoning_effort == "low"
+
+    async def test_metadata_false_is_a_value_not_an_absence(self) -> None:
+        # False is the whole point of the override — it must not read as unset
+        # and fall through to a channel default that enables thinking.
+        ch = _channel(enable_thinking=True)
+        binding = _binding(metadata={"enable_thinking": False})
+        ai_ctx = await ch._build_context(make_event(), binding, _ctx(binding))
+
+        assert ai_ctx.enable_thinking is False

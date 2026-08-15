@@ -351,7 +351,9 @@ class OpenAIAIProvider(AIProvider):
         official Chat Completions endpoint require effective reasoning ``none``;
         omission is not equivalent because that family defaults to ``medium``.
         Older models keep the existing conservative behavior of omitting an
-        explicitly configured effort on tool turns.
+        explicitly configured effort on tool turns. The turn's own effort
+        outranks the configured one, so a per-room or per-turn override
+        reaches the wire rather than being shadowed by static config.
         """
         if context.temperature is not None and self._config.supports_custom_temperature:
             kwargs["temperature"] = context.temperature
@@ -362,10 +364,11 @@ class OpenAIAIProvider(AIProvider):
             and getattr(self._config, "base_url", None) is None
             and self._config.model.startswith("gpt-5.6")
         )
+        effort = context.reasoning_effort or self._config.reasoning_effort
         if official_gpt_5_6_tool_turn:
             kwargs["reasoning_effort"] = "none"
-        elif self._config.reasoning_effort is not None and not context.tools:
-            kwargs["reasoning_effort"] = self._config.reasoning_effort
+        elif effort is not None and not context.tools:
+            kwargs["reasoning_effort"] = effort
 
     def _apply_extra_body(self, kwargs: dict[str, Any]) -> None:
         """Merge configured ``extra_body`` (server-specific request fields).

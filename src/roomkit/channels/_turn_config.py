@@ -31,6 +31,8 @@ class AIChannelTurnConfig:
     temperature: float | None = None
     max_tokens: int | None = None
     thinking_budget: int | None = None
+    enable_thinking: bool | None = None
+    reasoning_effort: str | None = None
 
 
 ConfigProvider = Callable[["ChannelBinding", "RoomContext"], Awaitable[AIChannelTurnConfig | None]]

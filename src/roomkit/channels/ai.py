@@ -205,6 +205,8 @@ class AIChannel(
         memory: MemoryProvider | None = None,
         tool_policy: ToolPolicy | None = None,
         thinking_budget: int | None = None,
+        enable_thinking: bool | None = None,
+        reasoning_effort: str | None = None,
         evict_threshold_tokens: int = 5000,
         enable_planning: bool = False,
         config_provider: ConfigProvider | None = None,
@@ -225,6 +227,8 @@ class AIChannel(
         self._max_tokens = max_tokens
         self._max_context_events = max_context_events
         self._thinking_budget = thinking_budget
+        self._enable_thinking = enable_thinking
+        self._reasoning_effort = reasoning_effort
         self._max_tool_rounds = max_tool_rounds
         self._tool_loop_timeout_seconds = tool_loop_timeout_seconds
         self._tool_loop_warn_after = tool_loop_warn_after

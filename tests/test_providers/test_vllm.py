@@ -205,6 +205,82 @@ class TestCreateVLLMProvider:
                 "chat_template_kwargs": {"enable_thinking": True}
             }
 
+    def test_turn_reasoning_overrides_config(self) -> None:
+        # The per-turn value is the more specific one and must reach the wire.
+        with patch.dict("sys.modules", {"openai": _mock_openai_module()}):
+            import roomkit.providers.openai.ai as ai_mod
+
+            importlib.reload(ai_mod)
+
+            from roomkit.providers.ai.base import AIContext
+            from roomkit.providers.vllm import create_vllm_provider
+
+            provider = create_vllm_provider(
+                VLLMConfig(model="m", enable_thinking=False, reasoning_effort="low")
+            )
+            kwargs: dict[str, object] = {}
+            provider._apply_sampling_kwargs(kwargs, AIContext(enable_thinking=True))
+
+            assert kwargs["extra_body"] == {
+                # The turn flipped the switch; the configured effort it says
+                # nothing about survives rather than being dropped.
+                "chat_template_kwargs": {"enable_thinking": True, "reasoning_effort": "low"}
+            }
+
+    def test_turn_without_reasoning_keeps_config(self) -> None:
+        with patch.dict("sys.modules", {"openai": _mock_openai_module()}):
+            import roomkit.providers.openai.ai as ai_mod
+
+            importlib.reload(ai_mod)
+
+            from roomkit.providers.ai.base import AIContext
+            from roomkit.providers.vllm import create_vllm_provider
+
+            provider = create_vllm_provider(VLLMConfig(model="m", enable_thinking=False))
+            kwargs: dict[str, object] = {}
+            provider._apply_sampling_kwargs(kwargs, AIContext())
+
+            assert kwargs["extra_body"] == {"chat_template_kwargs": {"enable_thinking": False}}
+
+    def test_no_reasoning_anywhere_sends_nothing(self) -> None:
+        # Neither layer set anything: the body stays vanilla and the model's
+        # own default applies.
+        with patch.dict("sys.modules", {"openai": _mock_openai_module()}):
+            import roomkit.providers.openai.ai as ai_mod
+
+            importlib.reload(ai_mod)
+
+            from roomkit.providers.ai.base import AIContext
+            from roomkit.providers.vllm import create_vllm_provider
+
+            provider = create_vllm_provider(VLLMConfig(model="m"))
+            kwargs: dict[str, object] = {}
+            provider._apply_sampling_kwargs(kwargs, AIContext())
+
+            assert "extra_body" not in kwargs
+
+    def test_reasoning_sent_on_tool_turns(self) -> None:
+        # The OpenAI parent omits a configured effort on tool turns; a local
+        # server couples nothing to tools, and an agentic turn is exactly where
+        # steering the cost matters.
+        with patch.dict("sys.modules", {"openai": _mock_openai_module()}):
+            import roomkit.providers.openai.ai as ai_mod
+
+            importlib.reload(ai_mod)
+
+            from roomkit.providers.ai.base import AIContext, AITool
+            from roomkit.providers.vllm import create_vllm_provider
+
+            provider = create_vllm_provider(VLLMConfig(model="m", enable_thinking=False))
+            tool = AITool(name="t", description="d", parameters={"type": "object"})
+            kwargs: dict[str, object] = {}
+            provider._apply_sampling_kwargs(kwargs, AIContext(tools=[tool]))
+
+            assert kwargs["extra_body"] == {"chat_template_kwargs": {"enable_thinking": False}}
+            # The parent's top-level field would not be read by a local
+            # template, so it must not be sent.
+            assert "reasoning_effort" not in kwargs
+
     def test_config_extra_body_not_mutated(self) -> None:
         # The caller's dict must not gain the derived key.
         with patch.dict("sys.modules", {"openai": _mock_openai_module()}):

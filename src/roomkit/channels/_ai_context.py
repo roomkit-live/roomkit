@@ -58,6 +58,8 @@ class AIContextHost(Protocol):
         _max_tokens: Default max tokens (overridable per room); ``None``
             defers to the provider's own configured ``max_tokens``.
         _thinking_budget: Optional thinking budget for extended thinking.
+        _enable_thinking: Default reasoning switch (overridable per room).
+        _reasoning_effort: Default reasoning verbosity (overridable per room).
         _skills: Skill registry for tool injection.
         _skills_in_prompt: Whether to auto-inject the skills manifest into the prompt.
         _script_executor: Script executor for skill scripts.
@@ -82,6 +84,8 @@ class AIContextHost(Protocol):
     _temperature: float
     _max_tokens: int | None
     _thinking_budget: int | None
+    _enable_thinking: bool | None
+    _reasoning_effort: str | None
     _skills: SkillRegistry | None
     _skills_in_prompt: bool
     _script_executor: ScriptExecutor | None
@@ -120,6 +124,8 @@ class AIContextMixin:
     _temperature: float
     _max_tokens: int | None
     _thinking_budget: int | None
+    _enable_thinking: bool | None
+    _reasoning_effort: str | None
     _skills: SkillRegistry | None
     _skills_in_prompt: bool
     _script_executor: ScriptExecutor | None
@@ -153,8 +159,8 @@ class AIContextMixin:
 
         Config precedence per field:
         1. ``binding.metadata`` explicit overrides (system_prompt,
-           temperature, max_tokens, thinking_budget) — per-room operator
-           intent, always wins.
+           temperature, max_tokens, thinking_budget, enable_thinking,
+           reasoning_effort) — per-room operator intent, always wins.
         2. The channel's ``config_provider`` result, resolved fresh at the
            start of every turn (see channels/_turn_config.py).
         3. The channel's constructor defaults.
@@ -181,6 +187,12 @@ class AIContextMixin:
         max_tokens = _pick("max_tokens", turn.max_tokens if turn else None, self._max_tokens)
         thinking_budget = _pick(
             "thinking_budget", turn.thinking_budget if turn else None, self._thinking_budget
+        )
+        enable_thinking = _pick(
+            "enable_thinking", turn.enable_thinking if turn else None, self._enable_thinking
+        )
+        reasoning_effort = _pick(
+            "reasoning_effort", turn.reasoning_effort if turn else None, self._reasoning_effort
         )
 
         if turn is not None and turn.tools is not None:
@@ -429,6 +441,8 @@ class AIContextMixin:
             temperature=temperature,
             max_tokens=max_tokens,
             thinking_budget=thinking_budget,
+            enable_thinking=enable_thinking,
+            reasoning_effort=reasoning_effort,
             tools=tools,
             room=context,
             target_capabilities=target_caps,
