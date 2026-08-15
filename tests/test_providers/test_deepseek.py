@@ -329,7 +329,7 @@ class TestDeepSeekUsage:
     def test_cache_hits_are_not_billed_as_input(self) -> None:
         # Regression: the inherited implementation reads only OpenAI's
         # prompt_tokens_details.cached_tokens, so all 1000 tokens would land in
-        # input_tokens and be priced at 50x the cache rate.
+        # input_tokens and be priced at some thirty times the cache rate.
         usage = self._usage(
             prompt_tokens=1000,
             completion_tokens=50,

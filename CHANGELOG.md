@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.51.0] — 2026-08-14
+
 ### Added
 
 - **DeepSeek and Qwen are first-class AI providers.**
@@ -20,7 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `thinking_budget` maps onto exactly, making it the one provider where that
   budget is the vendor's parameter rather than an approximation of it.
   DeepSeek reports cache hits under its own counter names, so a cached token is
-  now priced at the cache rate instead of 50x that; Model Studio publishes no
+  now priced at DeepSeek's cache rate rather than at the full input rate some
+  thirty times above it; Model Studio publishes no
   models endpoint, so the offline catalog *is* Qwen's discovery surface. Both
   ship curated catalogs with vendor list prices, gated against the upstream
   mirror by `make check-models`. Both vendors also front Anthropic-compatible
@@ -5812,7 +5815,8 @@ See entries `0.7.0a1` through `0.7.0a18` below.
 - `STTProvider.transcribe()` returns `TranscriptionResult` (Phase 3.1)
 - Framework event names enriched with payloads (Phase 4)
 
-[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.50.0...HEAD
+[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.51.0...HEAD
+[0.51.0]: https://github.com/roomkit-live/roomkit/compare/v0.50.0...v0.51.0
 [0.50.0]: https://github.com/roomkit-live/roomkit/compare/v0.49.1...v0.50.0
 [0.49.1]: https://github.com/roomkit-live/roomkit/compare/v0.49.0...v0.49.1
 [0.49.0]: https://github.com/roomkit-live/roomkit/compare/v0.48.0...v0.49.0

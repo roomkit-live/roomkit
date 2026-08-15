@@ -91,9 +91,9 @@ class DeepSeekAIProvider(OpenAIAIProvider):
         ``prompt_cache_miss_tokens`` rather than OpenAI's
         ``prompt_tokens_details.cached_tokens``. The inherited implementation
         looks only at the OpenAI shape, so every cached token would be counted
-        — and priced — as ordinary input: a 50x overcharge at DeepSeek's cache
-        rate. An endpoint that reports neither shape (a proxy) falls back to the
-        parent.
+        — and priced — as ordinary input: a thirty-fold overcharge at DeepSeek's
+        published rates. An endpoint that reports neither shape (a proxy) falls
+        back to the parent.
         """
         hit = getattr(raw, "prompt_cache_hit_tokens", None)
         if hit is None:
