@@ -46,6 +46,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   arguments the tool actually takes. Open schemas are unaffected: an
   additional property is only a violation where the schema forbade one.
 
+- **A single generation can no longer request an unbounded number of tool
+  calls.** The tool loop bounded rounds, wall clock, identical repeats and
+  result size, but not the width of one round — so a model that degenerates
+  mid-completion spends its whole output budget emitting tool calls and the
+  loop honours every one. Observed on a 27B local model: 164 calls in one
+  completion, 154 byte-identical, stopping only at `max_tokens`. A round is
+  now capped at `_MAX_TOOL_CALLS_PER_ROUND` (32), applied before the assistant
+  message is assembled so a dropped call is absent from the transcript as well
+  as from the results — no provider sees a tool call with no matching result.
+  The cap lives in the shared loop rules, so both the streaming and the
+  non-streaming loop enforce it.
+
 - **A provider's configured `max_tokens` is no longer dead code.**
   `AIContext.max_tokens` defaulted to `1024` rather than `None`, and every
   provider reads `context.max_tokens or self._config.max_tokens` — so the

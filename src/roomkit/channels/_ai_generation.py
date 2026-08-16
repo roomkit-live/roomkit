@@ -496,23 +496,25 @@ class AIGenerationMixin(AIToolLoopRulesMixin):
 
                 state.warn_if_needed(round_idx)
 
+                round_calls = self._cap_round_tool_calls(response.tool_calls, state.log_label)
+
                 logger.info(
                     "Tool round %d: %d call(s)",
                     round_idx + 1,
-                    len(response.tool_calls),
+                    len(round_calls),
                 )
 
                 parts = self._build_assistant_parts(
                     response.thinking or "",
                     response.thinking_signature,
                     response.content or "",
-                    response.tool_calls,
+                    round_calls,
                 )
                 context.messages.append(AIMessage(role="assistant", content=parts))
 
                 result_parts, duration_ms, _executed_arguments = await self._execute_round_tools(
                     context,
-                    response.tool_calls,
+                    round_calls,
                     telemetry,
                     room_id,
                     round_idx,
@@ -532,7 +534,7 @@ class AIGenerationMixin(AIToolLoopRulesMixin):
                 rounds.append(
                     ToolRound(
                         text_before=response.content or "",
-                        tool_calls=response.tool_calls,
+                        tool_calls=round_calls,
                         results=result_parts,
                         duration_ms=duration_ms,
                     )

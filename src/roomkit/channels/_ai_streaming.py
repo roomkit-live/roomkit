@@ -689,6 +689,8 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
 
                 state.warn_if_needed(_round_idx)
 
+                tool_calls = self._cap_round_tool_calls(tool_calls, state.log_label)
+
                 logger.info(
                     "Streaming tool round %d: %d call(s)",
                     _round_idx + 1,

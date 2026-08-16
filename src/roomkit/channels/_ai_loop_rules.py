@@ -155,6 +155,41 @@ class AIToolLoopRulesMixin:
     _publish_tool_event: Any  # see AIToolLoopRulesHost
     _execute_tools_parallel: Any  # see AIToolLoopRulesHost
 
+    # Ceiling on the tool calls honoured from ONE generation. The loop already
+    # bounds rounds, wall clock, identical repeats and result size; a single
+    # round was the one unbounded axis, and a model can saturate its whole
+    # output budget with tool calls. Observed: a 27B local model emitted 164
+    # calls in one completion (154 of them byte-identical) until it hit
+    # max_tokens, which cost 164 executions and 328 room events for one turn.
+    # 32 is far above legitimate parallel fan-out (a strong model issues a
+    # handful) and far below a degenerate run.
+    _MAX_TOOL_CALLS_PER_ROUND = 32
+
+    def _cap_round_tool_calls(self, tool_calls: list[Any], log_label: str) -> list[Any]:
+        """Truncate a round's tool calls to ``_MAX_TOOL_CALLS_PER_ROUND``.
+
+        Applied BEFORE the assistant message is assembled, so the transcript
+        stays internally consistent: a dropped call is absent from the
+        assistant message as well as from the results, and no provider sees a
+        tool call with no matching result. The drop is deliberately invisible
+        to the model — the calls it keeps are its own, in its own order — and
+        loud in the log, which is where an operator diagnoses a looping model.
+        """
+        if len(tool_calls) <= self._MAX_TOOL_CALLS_PER_ROUND:
+            return tool_calls
+        kept = tool_calls[: self._MAX_TOOL_CALLS_PER_ROUND]
+        dropped = tool_calls[self._MAX_TOOL_CALLS_PER_ROUND :]
+        logger.warning(
+            "%s: round requested %d tool calls, capped at %d — dropped %d (%s). "
+            "A model emitting this many calls in one generation is looping.",
+            log_label,
+            len(tool_calls),
+            self._MAX_TOOL_CALLS_PER_ROUND,
+            len(dropped),
+            ", ".join(sorted({tc.name for tc in dropped})),
+        )
+        return kept
+
     def _new_loop_state(self, log_label: str) -> _ToolLoopState:
         """Create the per-run loop state, computing the wall-clock deadline."""
         deadline = (
