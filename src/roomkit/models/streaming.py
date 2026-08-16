@@ -63,12 +63,19 @@ class ThinkingDeltaMarker:
 
 #: Why a tool loop stopped. ``completed`` is the model having answered; every
 #: other value is the loop ending on a rule of its own.
+#:
+#: ``force_stopped`` is the anti-loop ripcord: the model kept re-issuing a call
+#: the guard had already blocked, so tools were stripped and it was told to
+#: answer from what it had. It DOES produce text, which is exactly why it needs
+#: its own name — that text is a summary of a turn the platform cut short, not
+#: an answer, and a caller that reads ``completed`` delivers it as one.
 LoopEndReason = Literal[
     "completed",
     "max_rounds",
     "timeout",
     "truncated",
     "empty_response",
+    "force_stopped",
     "cancelled",
 ]
 

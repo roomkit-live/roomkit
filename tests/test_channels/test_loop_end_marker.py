@@ -117,6 +117,41 @@ async def test_the_deadline_is_named() -> None:
     assert [m.reason for m in marks] == ["timeout"]
 
 
+async def test_the_anti_loop_ripcord_is_named_not_disguised_as_an_answer() -> None:
+    """The exit that used to read ``completed``, and the reason this value
+    exists.
+
+    The ripcord works by stripping tools and demanding prose, so the model
+    DOES produce text — and text was the whole test for "the model answered".
+    A run cut after hammering one call was therefore indistinguishable from a
+    finished one, and callers delivered the cut turn's summary as the result.
+
+    ``_REPEAT_CALL_LIMIT`` short-circuits the 3rd identical call and
+    ``_REPEAT_FORCE_STOP_AT`` pulls the ripcord 3 blocked repeats later, so
+    the same call re-issued six times reaches it.
+    """
+    ch = _channel([*[_tool(0) for _ in range(6)], AIResponse(content="here is what I found")])
+
+    deltas = await _run(ch, _ctx())
+    marks = _markers(deltas)
+
+    assert [m.reason for m in marks] == ["force_stopped"]
+    # It is emphatically NOT empty: the text is what made this exit invisible.
+    assert "here is what I found" in "".join(d for d in deltas if isinstance(d, str))
+
+
+async def test_a_loop_that_never_repeats_is_untouched_by_the_ripcord() -> None:
+    """The positive control: the same amount of work with DIFFERENT arguments
+    is legitimate and must stay ``completed``. It is also the guard's blind
+    spot — a model permuting its arguments burns the whole round budget
+    without ever tripping this."""
+    ch = _channel([*[_tool(i) for i in range(6)], AIResponse(content="done")])
+
+    marks = _markers(await _run(ch, _ctx()))
+
+    assert [m.reason for m in marks] == ["completed"]
+
+
 async def test_cancellation_is_named() -> None:
     ch = _channel([_tool(), AIResponse(content="never")])
     deltas: list[object] = []

@@ -629,6 +629,7 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                         final_text=final_text,
                         finish_reason=round_finish_reason,
                         deadline_exceeded=state.deadline_exceeded(),
+                        force_stopped=loop_ctx.force_stop,
                     )
                     yield LoopEndMarker(reason=reason, rounds=_round_idx)
                     return

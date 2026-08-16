@@ -318,7 +318,8 @@ async def on_stream(conn_id: str, msg) -> None:
 
 The streaming tool loop ends on rules of its own — the round cap, the
 wall-clock deadline, a round truncated at the output cap, a model that
-answered nothing after its tools, a cancellation. It yields a final
+answered nothing after its tools, the anti-loop ripcord, a cancellation. It
+yields a final
 `LoopEndMarker(reason, rounds)` on **every** exit, `completed` included, so
 the end of the stream is never itself the signal and no consumer has to
 re-derive the cause by counting tool calls and reading a clock.
@@ -352,8 +353,16 @@ class ObservingAIChannel(AIChannel):
 ```
 
 `reason` is one of `completed`, `max_rounds`, `timeout`, `truncated`,
-`empty_response`, `cancelled`. The limits each reason refers to are the
-caller's own configuration and are not repeated on the marker.
+`empty_response`, `force_stopped`, `cancelled`. The limits each reason refers
+to are the caller's own configuration and are not repeated on the marker.
+
+`force_stopped` is the one worth special attention, because it is the only
+non-`completed` exit that ends **with text**: the anti-loop guard pulled the
+ripcord on a model re-issuing an already-blocked call, which strips the tools
+and asks for a plain-text answer. That text summarises an interrupted turn, so
+a consumer treating "the model produced prose" as "the model answered" will
+deliver a cut run as a finished one — which is precisely why the reason is
+named rather than folded into `completed`.
 
 The framework's inbound streaming path forwards text deltas and the tool-call
 and thinking markers to a channel's `deliver_stream`, but **not** the terminal

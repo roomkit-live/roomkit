@@ -85,6 +85,7 @@ def final_round_reason(
     final_text: str,
     finish_reason: str | None,
     deadline_exceeded: bool,
+    force_stopped: bool = False,
 ) -> LoopEndReason:
     """Why a loop that reached its final-answer round is stopping there.
 
@@ -93,9 +94,17 @@ def final_round_reason(
     would apply: raise the cap, raise the budget, change model. Text — or a
     turn that ran no tool at all — is a plain completion.
 
+    ``force_stopped`` outranks the text, and is the reason this parameter
+    exists: the anti-loop ripcord reaches this round precisely by stripping
+    tools and demanding prose, so its exit produced text and read as
+    ``completed`` — the one loop-cut this function could not tell from an
+    answer. A caller then delivered a cut turn's summary as the result.
+
     The other exits (round cap, deadline at a round boundary, cancellation)
     are named at their own ``return``: they know their reason without asking.
     """
+    if force_stopped:
+        return "force_stopped"
     if final_text.strip() or not had_tool_round:
         return "completed"
     if _is_truncation(finish_reason):

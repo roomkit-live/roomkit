@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **The anti-loop ripcord names its own exit: `LoopEndReason.force_stopped`.**
+  0.52.0 made every loop exit say why it stopped, and one still lied. When the
+  repeat guard blocks the same call often enough it pulls the ripcord — strip
+  the tools, tell the model to answer from what it has — so that exit is the
+  only non-`completed` one that ends **with text**. `final_round_reason` tested
+  exactly that ("did the model produce prose?") and answered `completed`, which
+  is indistinguishable from a finished turn. A headless consumer then delivered
+  the summary of a turn the platform had cut as the run's result, and recorded
+  it successful. `final_round_reason` now takes `force_stopped` and returns it
+  ahead of the text check. Additive: `completed` keeps its meaning, and a
+  consumer that only branches on `!= "completed"` picks the new value up for
+  free.
+
 ## [0.52.0] — 2026-08-15
 
 ### Added
