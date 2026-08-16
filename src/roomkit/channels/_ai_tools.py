@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
@@ -446,6 +447,18 @@ class AIToolsMixin:
             # can show "tools you've already used" and re-reveal it under Tool
             # Search. Infra/discovery tools are filtered inside record().
             self._tool_usage.record(room_id, tc.name, arguments, result)
+            # Annotate an answer this tool already gave this turn. Runs on the
+            # recorded result, so the memory above keeps the tool's own output
+            # and only the model's copy carries the note — and the hash stays
+            # stable, since annotating before hashing would make every repeat
+            # look new.
+            if isinstance(result, str):
+                result = self._repeated_result_note(tc.name, result)
+            # Annotate an answer this tool already gave this turn. Runs on the
+            # recorded result, so the memory above keeps the tool's own output
+            # and only the model's copy carries the note — and the hash stays
+            # stable, since annotating before hashing would make every repeat
+            # look new.
             return AIToolResultPart(
                 tool_call_id=tc.id,
                 name=tc.name,
@@ -505,6 +518,55 @@ class AIToolsMixin:
     # the loop. Small models otherwise ignore the error and hammer the same
     # call to the round limit (observed: sandbox_bash({}) called 37×).
     _REPEAT_FORCE_STOP_AT = 3
+    # The same ceiling on the OTHER axis: how many identical RESULTS from one
+    # tool before the model is told. Matched to ``_REPEAT_CALL_LIMIT`` for the
+    # same reason — a second identical answer is ordinary (a retry, a poll, two
+    # rows deleted), a third is a pattern.
+    _REPEAT_RESULT_LIMIT = 3
+    # Marker on this module's own advisory results, so a repeated advisory does
+    # not get annotated as a repeated result. It already says what is wrong.
+    _ADVISORY_MARKER = "these EXACT arguments"
+
+    def _repeated_result_note(self, name: str, result: str) -> str:
+        """Append a note when a tool returns an answer it already gave this turn.
+
+        The blind spot in ``_repeated_call_guard``: it keys on the arguments, so
+        a model that permutes them is never told anything. Measured on a stuck
+        turn — 54 calls, 44 distinct argument sets, **25 distinct results**, one
+        of them (`{"cards":[],"total":0}`) returned 23 times. The model narrated
+        "let me confirm" at every round because nothing in what it read said the
+        confirmation had already arrived, twenty-two times.
+
+        **Annotates, never blocks**, and that asymmetry is deliberate. Identical
+        results are not by themselves a fault: six deletions each answering
+        ``{"success": true}`` are six correct operations with one result, and
+        short-circuiting the sixth would destroy real work to save latency.
+        Blocking stays with the argument guard, which cannot mistake legitimate
+        work for a loop. This one only supplies the missing fact and lets the
+        model act on it.
+        """
+        if self._ADVISORY_MARKER in result:
+            return result
+        digest = hashlib.sha256(result.encode("utf-8", "replace")).hexdigest()
+        counts = self._get_loop_ctx().repeated_results
+        key = (name, digest)
+        counts[key] = count = counts.get(key, 0) + 1
+        if count < self._REPEAT_RESULT_LIMIT:
+            return result
+        # The only witness. The note rides on the tool result handed to the
+        # model, which is downstream of the ON_TOOL_CALL hook the audit trail
+        # listens on and absent from the turn-start context snapshot — so
+        # neither of the two places an operator would look can show that this
+        # fired. Logging it is what makes the guard observable at all.
+        logger.warning(
+            "Anti-loop: '%s' returned an identical result %d times this turn", name, count
+        )
+        return (
+            f"{result}\n\n[identical result: '{name}' has now returned exactly this "
+            f"{count} times this turn, for different arguments. Varying the arguments "
+            f"is not finding anything new — this answer is settled. Use it and move "
+            f"on, or answer with what you have.]"
+        )
 
     def _repeated_call_guard(self, name: str, arguments: dict[str, Any]) -> str | None:
         """Short-circuit a tool call repeated with identical arguments this turn."""

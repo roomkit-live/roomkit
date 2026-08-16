@@ -108,6 +108,14 @@ class _ToolLoopContext:
     # turn. Read by ``_repeated_call_guard`` to short-circuit a model stuck
     # re-issuing the same call instead of answering.
     repeated_calls: dict[tuple[str, str], int] = field(default_factory=dict)
+    # The same guard's other axis: count of identical (tool, result-hash)
+    # RESULTS this turn. ``repeated_calls`` keys on the ARGUMENTS, so a model
+    # that permutes them walks straight past it while learning nothing —
+    # measured on a stuck turn at 44 distinct argument sets for 25 distinct
+    # results, one of which came back 23 times. Read by
+    # ``_repeated_result_note`` to tell the model the thing it cannot see:
+    # this answer already arrived.
+    repeated_results: dict[tuple[str, str], int] = field(default_factory=dict)
     # Set by ``_repeated_call_guard`` once a model keeps re-issuing an
     # identical blocked call (it ignores the advisory error). The tool loop
     # reads it and force-ends the turn with a plain-text answer instead of
