@@ -21,6 +21,7 @@ import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
+from uuid import uuid4
 
 from roomkit.channels._ai_context import AIContextMixin
 from roomkit.channels._ai_events import AIEventsMixin
@@ -75,6 +76,7 @@ from roomkit.providers.ai.base import (
     AIToolResultPart,
 )
 from roomkit.realtime.base import RealtimeBackend
+from roomkit.tools.compose import compose_tool_handlers, extract_tools
 from roomkit.tools.policy import ToolPolicy
 
 if TYPE_CHECKING:
@@ -86,7 +88,10 @@ if TYPE_CHECKING:
     from roomkit.tools.external import ExternalToolHandler
     from roomkit.tools.human_input import HumanInputToolHandler
 
-ToolHandler = Callable[[str, dict[str, Any]], Awaitable[str]]
+# A tool may answer with plain text or a content-part list (text + images,
+# e.g. a screenshot) — providers without image support flatten via as_text().
+ToolResult = str | list[AITextPart | AIImagePart]
+ToolHandler = Callable[[str, dict[str, Any]], Awaitable[ToolResult]]
 
 # Content part union — matches AIMessage.content list type
 _ContentPart = AITextPart | AIImagePart | AIToolCallPart | AIToolResultPart | AIThinkingPart
@@ -151,7 +156,9 @@ class _ToolLoopContext:
         after activation) and per-call allowlist accessors see nothing.
         """
         ctx = cls()
-        ctx.loop_id = str(id(ctx))
+        # A uuid, not id(ctx): CPython recycles object ids after gc, and the
+        # _active_loops registry keyed on a recycled id could cross-target.
+        ctx.loop_id = uuid4().hex
         if parent is not None:
             ctx.current_participant_role = parent.current_participant_role
             ctx.all_context_tools = parent.all_context_tools
@@ -287,8 +294,6 @@ class AIChannel(
         self._tool_search_miss_hint = tool_search_miss_hint
 
         # Extract Tool objects: split into AITool definitions + composed handler
-        from roomkit.tools.compose import extract_tools
-
         extracted_defs: list[AITool] = []
         extracted_handler: ToolHandler | None = None
         if tools:
@@ -297,8 +302,6 @@ class AIChannel(
         # Merge explicit tool_handler with handlers extracted from Tool objects
         effective_handler = tool_handler
         if extracted_handler and tool_handler:
-            from roomkit.tools.compose import compose_tool_handlers
-
             effective_handler = compose_tool_handlers(tool_handler, extracted_handler)
         elif extracted_handler:
             effective_handler = extracted_handler
@@ -313,8 +316,6 @@ class AIChannel(
         # object that replaced it.
         self._human_input_registration: int | None = None
         if human_input_handler:
-            from roomkit.tools.compose import compose_tool_handlers
-
             if effective_handler:
                 effective_handler = compose_tool_handlers(human_input_handler, effective_handler)
             else:
@@ -324,26 +325,22 @@ class AIChannel(
         # goes through _channel_tool_handler which routes to channel-managed
         # tools (eviction, planning), skill tools, then user tools.
         self._user_tool_handler = effective_handler
-        # Set _tool_handler to the unified dispatcher only when tools actually
-        # exist.  Keeping it None when no tools are configured preserves the
-        # "no tools" fast-path guard in the tool loop (lines that check
-        # ``self._tool_handler is None``).
-        has_any_tools = bool(
-            extracted_defs
-            or effective_handler
-            or (skills and skills.skill_count > 0)
-            or enable_planning
-            or sandbox is not None
-        )
-        self._tool_handler: ToolHandler | None = (
-            self._channel_tool_handler if has_any_tools else None
-        )
 
         # User-provided tools (from constructor) and orchestration-injected
         # tools (e.g. HANDOFF_TOOL, DELEGATE_TOOL) are kept separate so that
         # orchestration code can inspect/modify injected tools independently.
         self._user_tools: list[AITool] = extracted_defs
         self._injected_tools: list[AITool] = []
+
+        # Set _tool_handler to the unified dispatcher only when tools actually
+        # exist.  Keeping it None when no tools are configured preserves the
+        # "no tools" fast-path guard in the tool loop (lines that check
+        # ``self._tool_handler is None``).
+        self._tool_handler: ToolHandler | None = (
+            self._channel_tool_handler
+            if (self._channel_tool_surface() or effective_handler)
+            else None
+        )
 
         # Active tool loops for steering (loop_id -> context)
         self._active_loops: dict[str, _ToolLoopContext] = {}
@@ -406,6 +403,24 @@ class AIChannel(
     def extra_tools(self) -> list[AITool]:
         """All extra tools (user-provided + orchestration-injected)."""
         return self._user_tools + self._injected_tools
+
+    def _channel_tool_surface(self) -> bool:
+        """Whether this channel object itself contributes tools, binding aside.
+
+        The single definition behind two decisions that once drifted apart
+        (847e2ce7 — a ``config_provider`` present in one predicate and missing
+        from the other): installing the unified dispatcher at construction,
+        and routing a turn to the tool loop. Each caller adds only its own
+        extra terms (the dispatcher needs a handler; a turn also counts the
+        binding snapshot, config provider, external and human-input tools).
+        """
+        return bool(
+            self._user_tools
+            or self._injected_tools
+            or (self._skills is not None and self._skills.skill_count > 0)
+            or self._planner is not None
+            or self._sandbox is not None
+        )
 
     def _propagate_telemetry(self) -> None:
         """Propagate telemetry to AI provider."""
@@ -480,11 +495,7 @@ class AIChannel(
             has_tools = (
                 bool(raw_tools)
                 or self._config_provider is not None
-                or bool(self._user_tools)
-                or bool(self._injected_tools)
-                or (self._skills is not None and self._skills.skill_count > 0)
-                or self._planner is not None
-                or self._sandbox is not None
+                or self._channel_tool_surface()
                 or self._external_tool_handler is not None
                 or (
                     self._human_input_handler is not None and bool(self._human_input_handler.tools)

@@ -20,6 +20,7 @@ from roomkit.orchestration.router import ConversationRouter, RoutingConditions, 
 
 if TYPE_CHECKING:
     from roomkit.channels.agent import Agent
+    from roomkit.channels.ai import ToolResult
     from roomkit.core.framework import RoomKit
 
 logger = logging.getLogger("roomkit.orchestration")
@@ -380,7 +381,7 @@ class ConversationPipeline:
         async def _realtime_tool_handler(
             name: str,
             arguments: dict[str, Any],
-        ) -> str:
+        ) -> ToolResult:
             if name != "handoff_conversation":
                 if original_handler:
                     return await original_handler(name, arguments)

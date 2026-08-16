@@ -9,7 +9,11 @@ from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from roomkit.channels._ai_events import THINKING_PREVIEW_LIMIT
-from roomkit.channels._ai_loop_rules import AIToolLoopRulesMixin, final_round_reason
+from roomkit.channels._ai_loop_rules import (
+    AIToolLoopRulesMixin,
+    _accumulate_usage,
+    final_round_reason,
+)
 from roomkit.models.channel import ChannelOutput
 from roomkit.models.enums import ChannelType
 from roomkit.models.event import RoomEvent
@@ -21,6 +25,7 @@ from roomkit.models.streaming import (
     ToolCallEndMarker,
     ToolCallStartMarker,
 )
+from roomkit.models.tool_call import AIResponseEvent, ToolCallEvent
 from roomkit.providers.ai.base import (
     AIContext,
     AIMessage,
@@ -32,6 +37,7 @@ from roomkit.providers.ai.base import (
 )
 from roomkit.realtime.base import EphemeralEventType
 from roomkit.telemetry.base import Attr, SpanKind
+from roomkit.telemetry.context import get_current_span
 
 if TYPE_CHECKING:
     from roomkit.channels.ai import _ToolLoopContext
@@ -41,18 +47,6 @@ if TYPE_CHECKING:
     from roomkit.telemetry.noop import NoopTelemetryProvider
 
 logger = logging.getLogger("roomkit.channels.ai")
-
-
-def _accumulate_usage(total: dict[str, int], round_usage: dict[str, Any]) -> None:
-    """Add one round's token counters into a turn's running totals.
-
-    Every integer counter is carried, not just input and output: cache reads
-    and writes are what tell a re-read prefix apart from fresh input, and the
-    two are billed an order of magnitude apart.
-    """
-    for counter, value in round_usage.items():
-        if isinstance(value, int):
-            total[counter] = total.get(counter, 0) + value
 
 
 class _ThinkingCoalescer:
@@ -346,7 +340,6 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
             _current_loop_ctx,
             _ToolLoopContext,
         )
-        from roomkit.telemetry.context import get_current_span
 
         # The handle_event ctx is gone from the contextvar by the time this
         # generator runs (reset in handle_event's finally); the caller
@@ -369,9 +362,6 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                 Attr.LLM_STREAMING: True,
             },
         )
-        _round_usage: dict[str, Any] | None = None
-        _total_input_tokens = 0
-        _total_output_tokens = 0
         _total_usage: dict[str, int] = {}
         _span_errored = False
         _t0_stream = time.monotonic()
@@ -380,6 +370,7 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
         try:
             context, should_cancel = self._drain_steering_queue(context, loop_ctx)
             if should_cancel:
+                yield LoopEndMarker(reason="cancelled", rounds=0)
                 return
             state = self._new_loop_state("Streaming tool loop")
 
@@ -575,12 +566,9 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                     elif isinstance(event, StreamDone):
                         round_finish_reason = event.finish_reason
                         if event.usage:
-                            _round_usage = event.usage
-                            round_in = _round_usage.get("input_tokens", 0)
-                            round_out = _round_usage.get("output_tokens", 0)
-                            _total_input_tokens += round_in
-                            _total_output_tokens += round_out
-                            _accumulate_usage(_total_usage, _round_usage)
+                            round_in = event.usage.get("input_tokens", 0)
+                            round_out = event.usage.get("output_tokens", 0)
+                            _accumulate_usage(_total_usage, event.usage)
                             telemetry.record_metric(
                                 "roomkit.llm.input_tokens",
                                 float(round_in),
@@ -644,8 +632,6 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                 if self._tool_handler is None:
                     if self._external_tool_handler is None:
                         for tc in tool_calls:
-                            from roomkit.models.tool_call import ToolCallEvent
-
                             external_args = dict(tc.arguments)
                             provider_already_executed = "_result" in external_args
                             external_result = external_args.pop("_result", None)
@@ -685,6 +671,10 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
 
                     # External tools were handled inline during streaming.
                     # Persistence markers were yielded alongside hook callbacks.
+                    # The turn's tool work is the provider's, already done, so
+                    # this exit is a completion — and it still names itself:
+                    # "every exit yields a marker" has no external-tools carve-out.
+                    yield LoopEndMarker(reason="completed", rounds=_round_idx)
                     return
 
                 if _round_idx >= self._max_tool_rounds:
@@ -738,6 +728,7 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                     telemetry,
                     room_id,
                     _round_idx,
+                    parent_span_id=span_id,
                 )
 
                 # Yield end markers with results (persistence boundary)
@@ -770,6 +761,11 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                     logger.info("Streaming tool loop cancelled after round %d", _round_idx)
                     yield LoopEndMarker(reason="cancelled", rounds=_round_idx)
                     return
+
+            # The for loop ran out of indices without returning — only possible
+            # when an empty-retry consumed the final one. The budget is spent;
+            # name it rather than letting the stream just end.
+            yield LoopEndMarker(reason="max_rounds", rounds=self._max_tool_rounds)
         except Exception as exc:
             _span_errored = True
             telemetry.end_span(span_id, status="error", error_message=str(exc))
@@ -777,24 +773,24 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
         finally:
             if not _span_errored:
                 usage_attrs: dict[str, Any] = {}
-                if _total_input_tokens or _total_output_tokens:
-                    usage_attrs[Attr.LLM_INPUT_TOKENS] = _total_input_tokens
-                    usage_attrs[Attr.LLM_OUTPUT_TOKENS] = _total_output_tokens
+                if _total_usage.get("input_tokens") or _total_usage.get("output_tokens"):
+                    usage_attrs[Attr.LLM_INPUT_TOKENS] = _total_usage.get("input_tokens", 0)
+                    usage_attrs[Attr.LLM_OUTPUT_TOKENS] = _total_usage.get("output_tokens", 0)
                 telemetry.end_span(span_id, attributes=usage_attrs)
 
             if self._after_response_hook and not _span_errored:
                 try:
-                    from roomkit.models.tool_call import AIResponseEvent
-
                     await self._after_response_hook(
                         AIResponseEvent(
                             channel_id=self.channel_id,
                             response_content="".join(_accumulated_text),
                             room_id=room_id,
+                            # The zero defaults keep the two counters always
+                            # present, as consumers of this event have read them.
                             usage={
+                                "input_tokens": 0,
+                                "output_tokens": 0,
                                 **_total_usage,
-                                "input_tokens": _total_input_tokens,
-                                "output_tokens": _total_output_tokens,
                             },
                             latency_ms=int((time.monotonic() - _t0_stream) * 1000),
                             streaming=True,

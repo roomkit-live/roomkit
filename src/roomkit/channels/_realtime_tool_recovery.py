@@ -21,6 +21,7 @@ import threading
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 from uuid import uuid4
 
+from roomkit.channels._realtime_tools import result_text
 from roomkit.models.enums import ChannelType, HookTrigger
 from roomkit.telemetry.base import Attr, SpanKind
 
@@ -204,7 +205,7 @@ class RealtimeToolRecoveryMixin:
                     raw = await self._tool_handler(tool_name, arguments)
                 finally:
                     _current_voice_session.reset(token)
-                handler_result = raw if isinstance(raw, str) else json.dumps(raw)
+                handler_result = result_text(raw)
 
             # Fire ON_TOOL_CALL hook (for observability / overrides).
             from roomkit.models.tool_call import ToolCallEvent

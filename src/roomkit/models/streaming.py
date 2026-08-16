@@ -69,6 +69,12 @@ class ThinkingDeltaMarker:
 #: answer from what it had. It DOES produce text, which is exactly why it needs
 #: its own name — that text is a summary of a turn the platform cut short, not
 #: an answer, and a caller that reads ``completed`` delivers it as one.
+#:
+#: ``error`` is the non-streaming loop's provider-error salvage: a mid-loop
+#: provider failure with accumulated text worth keeping ends the turn with
+#: that partial answer instead of raising. Like ``force_stopped``, the exit
+#: carries text that is not a finished answer. The streaming loop never emits
+#: it — there the exception itself reaches the consumer.
 LoopEndReason = Literal[
     "completed",
     "max_rounds",
@@ -77,6 +83,7 @@ LoopEndReason = Literal[
     "empty_response",
     "force_stopped",
     "cancelled",
+    "error",
 ]
 
 

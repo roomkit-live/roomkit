@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from roomkit.channels._skill_constants import TOOL_ACTIVATE_SKILL
 from roomkit.models.enums import ChannelType, HookTrigger
+from roomkit.providers.ai.base import AIImagePart, AITextPart
 from roomkit.telemetry.base import Attr, SpanKind
 from roomkit.tools.validation import validate_tool_arguments
 
@@ -29,6 +30,22 @@ The SIP pacer's jitter headroom is 60ms — one fused stretch beyond it is
 an audible drop-out on a concurrent call.  Tool-call segments are timed
 individually so the culprit is named in the logs without an asyncio
 set_debug hunt."""
+
+
+def result_text(raw: Any) -> str:
+    """Flatten a tool handler result for a voice provider.
+
+    A handler shared with an ``AIChannel`` may answer with a content-part
+    list (text + images); a speech provider cannot consume an image, so the
+    list flattens the way ``AIToolResultPart.as_text()`` does — text joined,
+    ``[image]`` placeholders. ``json.dumps`` on such a list would raise on
+    the pydantic parts instead. Anything else keeps the JSON coercion.
+    """
+    if isinstance(raw, str):
+        return raw
+    if isinstance(raw, list) and all(isinstance(p, AITextPart | AIImagePart) for p in raw):
+        return "\n".join(p.text if isinstance(p, AITextPart) else "[image]" for p in raw)
+    return json.dumps(raw)
 
 
 @runtime_checkable
@@ -314,7 +331,7 @@ class RealtimeToolsMixin:
                 )
 
                 t_seg = time.perf_counter()
-                handler_result = raw if isinstance(raw, str) else json.dumps(raw)
+                handler_result = result_text(raw)
                 ser_s = time.perf_counter() - t_seg
                 if ser_s > _LOOP_SEGMENT_BUDGET_S:
                     # Pure sync CPU (wall == loop hold), and it runs on the

@@ -163,6 +163,14 @@ class AIResilienceMixin:
             )
 
         split = len(messages) // 2
+        # Never split an assistant/tool-result pair: a ``tool`` message whose
+        # assistant tool-call turn fell into the summarized half is an orphan
+        # the provider rejects with a 400 — the compaction meant to recover an
+        # overflow would then kill the turn outright. Tool results always
+        # directly follow their assistant message here, so advancing the split
+        # past them keeps every pair whole (both summarized together).
+        while split < len(messages) and messages[split].role == "tool":
+            split += 1
         old_messages = messages[:split]
         recent_messages = messages[split:]
 

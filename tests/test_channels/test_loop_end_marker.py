@@ -152,6 +152,29 @@ async def test_a_loop_that_never_repeats_is_untouched_by_the_ripcord() -> None:
     assert [m.reason for m in marks] == ["completed"]
 
 
+async def test_a_cancel_queued_before_the_first_round_is_still_named() -> None:
+    """The pre-loop drain exit used to ``return`` bare — no marker, ever."""
+    ch = _channel([AIResponse(content="never")])
+    ch._drain_steering_queue = lambda context, loop_ctx: (context, True)  # type: ignore[method-assign]
+
+    deltas = await _run(ch, _ctx())
+
+    assert [m.reason for m in _markers(deltas)] == ["cancelled"]
+    assert isinstance(deltas[-1], LoopEndMarker)
+
+
+async def test_provider_owned_tool_calls_still_end_with_a_marker() -> None:
+    """No local handler: the calls belong to an external provider, the loop
+    only observes them — and that exit used to be the one carve-out from
+    "every exit yields a marker"."""
+    ch = AIChannel("ai1", provider=MockAIProvider(ai_responses=[_tool()], streaming=True))
+
+    deltas = await _run(ch, _ctx())
+
+    assert [m.reason for m in _markers(deltas)] == ["completed"]
+    assert isinstance(deltas[-1], LoopEndMarker)
+
+
 async def test_cancellation_is_named() -> None:
     ch = _channel([_tool(), AIResponse(content="never")])
     deltas: list[object] = []

@@ -70,6 +70,20 @@ _FORCE_STOP_NUDGE = (
 _TRUNCATION_FINISH_REASONS = frozenset({"length", "max_tokens"})
 
 
+def _accumulate_usage(total: dict[str, int], round_usage: dict[str, Any]) -> None:
+    """Add one round's token counters into a turn's running totals.
+
+    Every integer counter is carried, not just input and output: cache reads
+    and writes are what tell a re-read prefix apart from fresh input, and the
+    two are billed an order of magnitude apart. Shared by both loops — a turn
+    that only reports its final round's usage under-counts a multi-round loop
+    by every round but the last.
+    """
+    for counter, value in round_usage.items():
+        if isinstance(value, int):
+            total[counter] = total.get(counter, 0) + value
+
+
 def _is_truncation(finish_reason: str | None) -> bool:
     """Whether a round ended by exhausting its output budget.
 

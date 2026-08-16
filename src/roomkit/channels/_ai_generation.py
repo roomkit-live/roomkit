@@ -6,12 +6,18 @@ import logging
 import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
+from uuid import uuid4
 
-from roomkit.channels._ai_loop_rules import AIToolLoopRulesMixin
+from roomkit.channels._ai_loop_rules import (
+    AIToolLoopRulesMixin,
+    _accumulate_usage,
+    final_round_reason,
+)
 from roomkit.models.channel import ChannelOutput
 from roomkit.models.enums import EventType
 from roomkit.models.event import EventSource, RoomEvent, TextContent, ToolCallContent
-from roomkit.models.tool_call import AIGenerationEvent
+from roomkit.models.streaming import LoopEndReason
+from roomkit.models.tool_call import AIGenerationEvent, AIResponseEvent
 from roomkit.providers.ai.base import (
     AIContext,
     AIMessage,
@@ -20,6 +26,7 @@ from roomkit.providers.ai.base import (
 )
 from roomkit.realtime.base import EphemeralEventType
 from roomkit.telemetry.base import Attr, SpanKind
+from roomkit.telemetry.context import get_current_span
 from roomkit.telemetry.noop import NoopTelemetryProvider
 
 if TYPE_CHECKING:
@@ -42,10 +49,19 @@ class ToolRound:
 
 @dataclass
 class ToolLoopResult:
-    """Result of the non-streaming tool loop with full round history."""
+    """Result of the non-streaming tool loop with full round history.
+
+    ``reason`` is this loop's counterpart of the streaming
+    :class:`~roomkit.models.streaming.LoopEndMarker`: the loop knows which of
+    its rules ended the turn, and without a name a force-stopped or
+    round-capped turn is indistinguishable from a completed one — the exact
+    lie the marker was introduced to stop. It reaches consumers as the
+    ``loop_end_reason`` key on the response MESSAGE event's metadata.
+    """
 
     response: AIResponse
     rounds: list[ToolRound] = field(default_factory=list)
+    reason: LoopEndReason = "completed"
 
 
 logger = logging.getLogger("roomkit.channels.ai")
@@ -187,8 +203,6 @@ class AIGenerationMixin(AIToolLoopRulesMixin):
         self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
     ) -> ChannelOutput:
         """Generate an AI response, executing tool calls if needed."""
-        from roomkit.telemetry.context import get_current_span
-
         ai_context = await self._build_context(event, binding, context)  # ty: ignore[unresolved-attribute]
         ai_context, blocked = await self._fire_before_generation_hook(ai_context, event)
         if blocked:
@@ -268,8 +282,6 @@ class AIGenerationMixin(AIToolLoopRulesMixin):
 
         if self._after_response_hook:
             try:
-                from roomkit.models.tool_call import AIResponseEvent
-
                 await self._after_response_hook(
                     AIResponseEvent(
                         channel_id=self.channel_id,
@@ -313,15 +325,20 @@ class AIGenerationMixin(AIToolLoopRulesMixin):
         by the locked pipeline); every response event inherits it so the
         reply lands in the same thread. ``None`` keeps the reply top-level.
         """
-        from uuid import uuid4
-
         source = EventSource(
             channel_id=self.channel_id,
             channel_type=self.channel_type,
             provider=self.provider_name,
         )
         response = loop_result.response
-        message_metadata = {**(response_metadata or {}), "ai_usage": usage}
+        # ``loop_end_reason`` rides every MESSAGE with the usage: a consumer
+        # that reads the reply's metadata can tell a completed turn from one
+        # the loop cut (force-stop, round cap, timeout) without a stream.
+        message_metadata = {
+            **(response_metadata or {}),
+            "ai_usage": usage,
+            "loop_end_reason": loop_result.reason,
+        }
 
         if not loop_result.rounds:
             # No tool calls — single text event (existing behavior)
@@ -448,14 +465,28 @@ class AIGenerationMixin(AIToolLoopRulesMixin):
         _current_loop_ctx.set(loop_ctx)
         self._active_loops[loop_ctx.loop_id] = loop_ctx
         rounds: list[ToolRound] = []
+        # The turn's token totals, summed over EVERY generation round — a
+        # multi-round loop reported through its final response alone would
+        # under-count by every round but the last (the streaming loop already
+        # sums per round; this is the same rule on this path).
+        total_usage: dict[str, int] = {}
+
+        async def _generate(ctx: AIContext) -> AIResponse:
+            resp: AIResponse = await self._generate_with_retry(ctx)
+            _accumulate_usage(total_usage, resp.usage or {})
+            return resp
+
         try:
             context, should_cancel = self._drain_steering_queue(context, loop_ctx)
             if should_cancel:
-                return ToolLoopResult(response=AIResponse(content="", tool_calls=[]))
-            response: AIResponse = await self._generate_with_retry(context)
+                return ToolLoopResult(
+                    response=AIResponse(content="", tool_calls=[]), reason="cancelled"
+                )
+            response: AIResponse = await _generate(context)
             telemetry = self._telemetry_provider
             room_id = context.room.room.id if context.room else None
             state = self._new_loop_state("Tool loop")
+            reason: LoopEndReason = "completed"
 
             if response.thinking and room_id:
                 await self._publish_thinking_event(
@@ -478,12 +509,20 @@ class AIGenerationMixin(AIToolLoopRulesMixin):
                         final_text=response.content or "",
                         finish_reason=response.finish_reason,
                     ):
-                        response = await self._generate_with_retry(context)
+                        response = await _generate(context)
                         continue
+                    reason = final_round_reason(
+                        had_tool_round=bool(rounds),
+                        final_text=response.content or "",
+                        finish_reason=response.finish_reason,
+                        deadline_exceeded=state.deadline_exceeded(),
+                        force_stopped=loop_ctx.force_stop,
+                    )
                     break
 
                 if loop_ctx.cancel_event.is_set():
                     logger.info("Tool loop cancelled before round %d", round_idx)
+                    reason = "cancelled"
                     break
 
                 if state.deadline_exceeded():
@@ -492,6 +531,7 @@ class AIGenerationMixin(AIToolLoopRulesMixin):
                         round_idx,
                         self._tool_loop_timeout_seconds,
                     )
+                    reason = "timeout"
                     break
 
                 state.warn_if_needed(round_idx)
@@ -543,22 +583,24 @@ class AIGenerationMixin(AIToolLoopRulesMixin):
                 context, should_cancel = self._drain_steering_queue(context, loop_ctx)
                 if should_cancel:
                     logger.info("Tool loop cancelled after round %d", round_idx)
+                    reason = "cancelled"
                     break
 
                 # Anti-loop ripcord (force_stop): strip tools and do one final
                 # generation so the model must answer in plain text, then stop.
                 context = self._prepare_round_context(context, loop_ctx, state, round_idx)
                 if loop_ctx.force_stop:
-                    response = await self._generate_with_retry(context)
+                    response = await _generate(context)
+                    reason = "force_stopped"
                     break
 
                 try:
-                    response = await self._generate_with_retry(context)
+                    response = await _generate(context)
                 except ProviderError as exc:
                     if self._is_context_overflow(exc):
                         logger.warning("Context overflow at round %d. Compacting.", round_idx)
                         context = await self._compact_context(context)
-                        response = await self._generate_with_retry(context)
+                        response = await _generate(context)
                     else:
                         accumulated = self._extract_accumulated_text(context.messages)
                         if accumulated:
@@ -578,8 +620,10 @@ class AIGenerationMixin(AIToolLoopRulesMixin):
                                 response=AIResponse(
                                     content=accumulated + "\n\n[Response interrupted]",
                                     tool_calls=[],
+                                    usage=dict(total_usage),
                                 ),
                                 rounds=rounds,
+                                reason="error",
                             )
                         raise
 
@@ -593,8 +637,33 @@ class AIGenerationMixin(AIToolLoopRulesMixin):
                         response.thinking,
                         round_idx + 1,
                     )
+            else:
+                # Round budget exhausted (no break). A response still asking
+                # for tools was cut mid-work — its pending calls are dropped
+                # from execution AND from the transcript (their assistant
+                # message was never appended), so no provider sees an orphan.
+                # One that answered on the last round is classified by the
+                # same rule as any final round.
+                if response.tool_calls:
+                    reason = "max_rounds"
+                    logger.warning(
+                        "Tool loop reached max_tool_rounds=%d with %d pending tool "
+                        "call(s) dropped",
+                        self._max_tool_rounds,
+                        len(response.tool_calls),
+                    )
+                else:
+                    reason = final_round_reason(
+                        had_tool_round=bool(rounds),
+                        final_text=response.content or "",
+                        finish_reason=response.finish_reason,
+                        deadline_exceeded=state.deadline_exceeded(),
+                        force_stopped=loop_ctx.force_stop,
+                    )
 
-            return ToolLoopResult(response=response, rounds=rounds)
+            if total_usage:
+                response = response.model_copy(update={"usage": dict(total_usage)})
+            return ToolLoopResult(response=response, rounds=rounds, reason=reason)
         finally:
             self._active_loops.pop(loop_ctx.loop_id, None)
             _current_loop_ctx.set(None)

@@ -30,7 +30,7 @@ from roomkit.providers.ai.base import AIMessage, AITool
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
-    from roomkit.channels.ai import AIChannel
+    from roomkit.channels.ai import AIChannel, ToolResult
     from roomkit.core.framework import RoomKit
     from roomkit.orchestration.router import ConversationRouter
 
@@ -712,7 +712,7 @@ def setup_handoff(
     # Wrap the tool handler chain
     original = channel.tool_handler
 
-    async def handoff_aware_handler(name: str, arguments: dict[str, Any]) -> str:
+    async def handoff_aware_handler(name: str, arguments: dict[str, Any]) -> ToolResult:
         if name == "handoff_conversation":
             room_id = _room_id_var.get()
             if room_id is None:

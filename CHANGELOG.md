@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The non-streaming tool loop names its exit too: `loop_end_reason` on the
+  reply's metadata.** 0.52.0 gave the streaming loop a `LoopEndMarker` on
+  every exit; the non-streaming loop kept returning a bare `AIResponse`, so a
+  force-stopped, round-capped or timed-out turn stayed indistinguishable from
+  a completed one — the exact lie the marker was introduced to stop, alive on
+  the other path. The loop's internal `ToolLoopResult` now carries a
+  `reason: LoopEndReason`, and every response MESSAGE event's metadata carries
+  it as `loop_end_reason`, next to `ai_usage`. Exhausting `max_tool_rounds`
+  with calls still pending — an exit that previously ended the loop with no
+  log and silently vanished the pending calls — now warns with the dropped
+  count and reads `max_rounds`. The provider-error salvage (a partial answer
+  ending in `[Response interrupted]`) gets the one value the enum lacked:
+  `error` — like `force_stopped`, an exit that ends with text that is not an
+  answer. Additive: `completed` keeps its meaning and a consumer branching on
+  `!= "completed"` picks the new value up for free.
+
 - **The anti-loop ripcord names its own exit: `LoopEndReason.force_stopped`.**
   0.52.0 made every loop exit say why it stopped, and one still lied. When the
   repeat guard blocks the same call often enough it pulls the ripcord — strip
@@ -21,6 +37,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ahead of the text check. Additive: `completed` keeps its meaning, and a
   consumer that only branches on `!= "completed"` picks the new value up for
   free.
+
+### Fixed
+
+- **A multimodal tool result survives the unified dispatcher.** Since 0.50 a
+  tool can return a content-part list (text + images, e.g. a screenshot) and
+  `AIToolResultPart` carries it to providers that render image blocks — but
+  the dispatcher's user-handler branch coerced every result through `str()`,
+  flattening the list to its Python repr, base64 and all, before it could
+  reach the loop. The feature was unreachable on the standard `AIChannel`
+  path. List results now pass through intact; everything else keeps the
+  `str()` coercion it had.
+- **Two streaming exits that broke the "every exit yields a marker" rule.**
+  A cancellation drained before the first round, and the return after
+  provider-owned (external) tool calls, both ended the stream bare — the
+  0.52.0 invariant with two carve-outs nobody had named. Both now yield their
+  `LoopEndMarker` (`cancelled` and `completed` respectively), as does the
+  degenerate exit where an empty-retry consumes the final round index
+  (`max_rounds`).
+- **A multi-round non-streaming turn reports the whole turn's tokens.** Usage
+  was read from the final generation alone, so a ten-round tool loop reported
+  one round's tokens to telemetry and `ai_usage` — the streaming loop had
+  summed every round since 0.48. Both loops now share one accumulation rule
+  (`_accumulate_usage` moved to `_ai_loop_rules`), summing every integer
+  counter — cache reads and writes included — across every generation of the
+  turn, retries and compaction rounds too.
+- **Emergency compaction no longer strands a tool result.** `_compact_context`
+  cut the message list at its midpoint; a cut landing on a `tool` message
+  separated the results from the assistant turn that called for them, an
+  orphan every strict provider rejects with a 400 — turning a recoverable
+  overflow into a dead turn. The split now advances past tool messages so an
+  assistant/tool-result pair is always summarized or kept whole.
+- **Streaming tool spans are parented under their generation span.** The
+  streaming loop opened `llm.generate` and then executed its tools without
+  passing the span id, so `tool.*` spans floated at the trace root; the
+  non-streaming loop had always parented them. One missing argument, restored.
 
 ## [0.52.0] — 2026-08-15
 

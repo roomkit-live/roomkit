@@ -28,6 +28,7 @@ from roomkit.orchestration.strategies.supervisor import WorkerStrategy
 
 if TYPE_CHECKING:
     from roomkit.channels.agent import Agent
+    from roomkit.channels.ai import ToolResult
     from roomkit.core.framework import RoomKit
 
 logger = logging.getLogger("roomkit.orchestration.strategies.loop")
@@ -232,7 +233,7 @@ class Loop(Orchestration):
         original_handler = voice_channel.tool_handler
         _running = False
 
-        async def async_loop_handler(name: str, arguments: dict[str, Any]) -> str:
+        async def async_loop_handler(name: str, arguments: dict[str, Any]) -> ToolResult:
             nonlocal _running
 
             if name != "delegate_loop":

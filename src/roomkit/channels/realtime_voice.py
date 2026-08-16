@@ -25,6 +25,7 @@ from roomkit.channels._realtime_tool_recovery import RealtimeToolRecoveryMixin
 from roomkit.channels._realtime_tools import RealtimeToolsMixin
 from roomkit.channels._realtime_transcription import RealtimeTranscriptionMixin
 from roomkit.channels._voice_pipeline import VoicePipelineMixin
+from roomkit.channels.ai import ToolResult
 from roomkit.channels.base import Channel, FrameworkAwareChannel
 from roomkit.models.channel import ChannelBinding, ChannelCapabilities, ChannelOutput
 from roomkit.models.context import RoomContext
@@ -57,8 +58,11 @@ if TYPE_CHECKING:
     from roomkit.voice.pipeline.engine import AudioPipeline
     from roomkit.voice.realtime.provider import RealtimeVoiceProvider
 
-# Tool handler: async callable (name, arguments) -> result string
-ToolHandler = Callable[[str, dict[str, Any]], Awaitable[str]]
+# Tool handler: async callable (name, arguments) -> result. Same contract as
+# roomkit.channels.ai.ToolHandler — a handler shared with an AIChannel may
+# answer with a content-part list; the realtime paths flatten it to text
+# before it reaches the voice provider (see _realtime_tools.result_text).
+ToolHandler = Callable[[str, dict[str, Any]], Awaitable[ToolResult]]
 
 logger = logging.getLogger("roomkit.channels.realtime_voice")
 

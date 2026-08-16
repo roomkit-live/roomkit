@@ -37,6 +37,7 @@ from roomkit.channels._tool_search_constants import (
     TOOL_SEARCH_INFRA_TOOL_NAMES,
 )
 from roomkit.models.enums import ChannelType
+from roomkit.models.tool_call import ToolCallEvent
 from roomkit.providers.ai.base import (
     AIImagePart,
     AITextPart,
@@ -335,8 +336,6 @@ class AIToolsMixin:
             arguments = tc.arguments
             arguments_rewritten = False
             if self._before_tool_call_hook is not None:
-                from roomkit.models.tool_call import ToolCallEvent
-
                 pre_event = ToolCallEvent(
                     channel_id=self.channel_id,
                     channel_type=ChannelType.AI,
@@ -423,8 +422,6 @@ class AIToolsMixin:
 
                 # Fire unified ON_TOOL_CALL hook (if framework injected callback)
                 if self._tool_call_hook is not None:
-                    from roomkit.models.tool_call import ToolCallEvent
-
                     event = ToolCallEvent(
                         channel_id=self.channel_id,
                         channel_type=ChannelType.AI,
@@ -454,11 +451,6 @@ class AIToolsMixin:
             # look new.
             if isinstance(result, str):
                 result = self._repeated_result_note(tc.name, result)
-            # Annotate an answer this tool already gave this turn. Runs on the
-            # recorded result, so the memory above keeps the tool's own output
-            # and only the model's copy carries the note — and the hash stays
-            # stable, since annotating before hashing would make every repeat
-            # look new.
             return AIToolResultPart(
                 tool_call_id=tc.id,
                 name=tc.name,
@@ -599,7 +591,7 @@ class AIToolsMixin:
             }
         )
 
-    async def _channel_tool_handler(self, name: str, arguments: dict[str, Any]) -> str:
+    async def _channel_tool_handler(self, name: str, arguments: dict[str, Any]) -> ToolResult:
         """Unified tool dispatcher: channel-managed -> sandbox -> skill -> user tools."""
         guard = self._repeated_call_guard(name, arguments)
         if guard is not None:
@@ -625,7 +617,12 @@ class AIToolsMixin:
                 return json.dumps(
                     {"error": f"Tool '{name}' is not available in the current turn."}
                 )
-            return str(await self._user_tool_handler(name, arguments))
+            result = await self._user_tool_handler(name, arguments)
+            # A multimodal result (content-part list, e.g. a screenshot) must
+            # reach the provider intact — str() would flatten it to its repr.
+            if isinstance(result, list):
+                return result
+            return str(result)
         return json.dumps({"error": f"Unknown tool: {name}"})
 
     async def _handle_activate_skill(self, arguments: dict[str, Any]) -> str:
