@@ -35,6 +35,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A closed tool schema now rejects an argument it never declared.**
+  `validate_tool_arguments` enforced required properties and primitive types
+  but let any undeclared argument through, even when the schema said
+  `additionalProperties: false` — which is what FastMCP emits for a typed tool
+  function. A model that invents a plausible parameter (one vendor's knob
+  applied to another vendor's tool) therefore reached the tool, which answered
+  with its own framework error: opaque, unactionable, and re-issued unchanged
+  on the next round. The gate now answers at the boundary and names the
+  arguments the tool actually takes. Open schemas are unaffected: an
+  additional property is only a violation where the schema forbade one.
+
 - **A provider's configured `max_tokens` is no longer dead code.**
   `AIContext.max_tokens` defaulted to `1024` rather than `None`, and every
   provider reads `context.max_tokens or self._config.max_tokens` — so the

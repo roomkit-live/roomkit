@@ -1,10 +1,11 @@
 """Dependency-free validation of tool-call arguments against a declared schema.
 
 Manual and intentionally minimal (no ``jsonschema`` dependency): it enforces
-required properties and primitive JSON types only. Complex JSON Schema features
-($ref, anyOf/oneOf, format, pattern, nested object/array validation) are NOT
-enforced — this is a first-boundary sanity gate that stops obviously malformed
-tool calls before execution, not a full validator.
+required properties, primitive JSON types, and unknown arguments against a
+closed schema. Complex JSON Schema features ($ref, anyOf/oneOf, format,
+pattern, nested object/array validation) are NOT enforced — this is a
+first-boundary sanity gate that stops obviously malformed tool calls before
+execution, not a full validator.
 """
 
 from __future__ import annotations
@@ -38,8 +39,10 @@ def _matches_type(value: Any, json_type: str) -> bool:
 def validate_tool_arguments(parameters: dict[str, Any], arguments: dict[str, Any]) -> str | None:
     """Validate *arguments* against a JSON-Schema-style *parameters* object.
 
-    Checks that every ``required`` property is present and that each supplied
-    argument whose property declares a primitive ``type`` matches it.
+    Checks that every ``required`` property is present, that each supplied
+    argument whose property declares a primitive ``type`` matches it, and —
+    when the schema declares ``additionalProperties: false`` — that no unknown
+    argument was supplied.
 
     Returns a human-readable error string on the first violation, or ``None`` if
     the arguments pass (or the schema is empty / not enforceable).
@@ -57,10 +60,21 @@ def validate_tool_arguments(parameters: dict[str, Any], arguments: dict[str, Any
 
     properties = parameters.get("properties")
     if isinstance(properties, dict):
+        closed = parameters.get("additionalProperties") is False
         for key, value in arguments.items():
             spec = properties.get(key)
             if not isinstance(spec, dict):
-                continue  # additional / unknown property — not enforced
+                # An unknown argument is a violation only when the schema
+                # closed itself (``additionalProperties: false`` — what FastMCP
+                # emits for a typed tool function). Answering here is what makes
+                # the failure actionable: the model invented the argument, so
+                # the reply has to name the real ones. Left to the tool, the
+                # same call comes back as an opaque framework error the model
+                # cannot correct from, and it re-issues the call unchanged.
+                if closed:
+                    known = ", ".join(sorted(properties)) or "none"
+                    return f"unknown argument '{key}' (this tool accepts: {known})"
+                continue  # open schema — additional properties are allowed
             json_type = spec.get("type")
             if isinstance(json_type, str) and not _matches_type(value, json_type):
                 return f"argument '{key}' must be of type {json_type}"

@@ -62,6 +62,52 @@ def test_empty_or_unknown_schema_permissive() -> None:
     assert validate_tool_arguments(schema, {"x": object()}) is None
 
 
-def test_additional_properties_not_enforced() -> None:
-    # Properties not declared in the schema pass through untouched.
+def test_additional_properties_allowed_on_an_open_schema() -> None:
+    # The schema does not close itself, so undeclared properties pass through.
     assert validate_tool_arguments(_SCHEMA, {"city": "A", "days": 1, "extra": 9}) is None
+
+
+_CLOSED_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "query": {"type": "string"},
+        "max_results": {"type": "integer"},
+        "region": {"type": "string"},
+    },
+    "required": ["query"],
+}
+
+
+def test_unknown_argument_rejected_on_a_closed_schema() -> None:
+    # The real regression: a model invents a plausible parameter it knows from
+    # another vendor's API. Without this the call reaches the tool and comes
+    # back as an opaque framework error the model cannot correct from.
+    err = validate_tool_arguments(_CLOSED_SCHEMA, {"query": "x", "web_search_depth": "2"})
+    assert err is not None
+    assert "web_search_depth" in err
+
+
+def test_unknown_argument_error_names_the_real_arguments() -> None:
+    err = validate_tool_arguments(_CLOSED_SCHEMA, {"query": "x", "web_search_depth": "2"})
+    assert err is not None
+    for name in ("query", "max_results", "region"):
+        assert name in err
+
+
+def test_closed_schema_still_accepts_its_own_arguments() -> None:
+    assert validate_tool_arguments(_CLOSED_SCHEMA, {"query": "x"}) is None
+    assert (
+        validate_tool_arguments(
+            _CLOSED_SCHEMA, {"query": "x", "max_results": 5, "region": "fr-fr"}
+        )
+        is None
+    )
+
+
+def test_closed_schema_reports_missing_required_before_unknown() -> None:
+    # A call that is both incomplete and polluted names the missing argument
+    # first: supplying it is what unblocks the call.
+    err = validate_tool_arguments(_CLOSED_SCHEMA, {"web_search_depth": "2"})
+    assert err is not None
+    assert "query" in err
