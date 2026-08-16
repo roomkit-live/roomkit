@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`VLLMConfig` types the sampling knobs instead of leaving them to
+  `extra_body`.** `top_p`, `top_k`, `min_p`, `presence_penalty` and
+  `repetition_penalty` join `temperature` as declared fields, reaching parity
+  with `OllamaConfig`. They were reachable before, but only by hand-writing
+  `extra_body` — the escape hatch doing duty as the main road for the five most
+  common knobs, with the caller left to know which are OpenAI fields and which
+  are vLLM extensions. `sampling_body()` routes all five through the request
+  body (the SDK has no argument for `top_k`/`min_p`/`repetition_penalty`, and
+  the server reads `top_p`/`presence_penalty` from the same place), emits only
+  what was set so an unset knob still means "the server decides", and keeps an
+  explicit `0` — `min_p=0.0` and `presence_penalty=0.0` are values, not
+  absences. An `extra_body` entry still wins, same rule as the template kwargs.
+  This is what makes a vendor's published sampling profile expressible: Qwen3
+  asks for `presence_penalty=1.5` in non-thinking mode, and the failure that
+  setting addresses is degenerate repetition.
+
 - **Reasoning is steerable per room and per turn, not only per provider.**
   `enable_thinking` and `reasoning_effort` now ride the same three-tier chain
   as sampling — `binding.metadata` override, then `AIChannelTurnConfig` from

@@ -79,6 +79,44 @@ class TestVLLMConfig:
         cfg = VLLMConfig(model="m", enable_thinking=False)
         assert cfg.chat_template_kwargs() == {"enable_thinking": False}
 
+    def test_sampling_knobs_default_none(self) -> None:
+        cfg = VLLMConfig(model="m")
+        assert cfg.top_p is None
+        assert cfg.top_k is None
+        assert cfg.min_p is None
+        assert cfg.presence_penalty is None
+        assert cfg.repetition_penalty is None
+        # "The server decides" is not the same as sending its documented
+        # default, so an unset knob adds nothing to the body.
+        assert cfg.sampling_body() == {}
+
+    def test_sampling_body_from_knobs(self) -> None:
+        cfg = VLLMConfig(
+            model="m",
+            top_p=0.8,
+            top_k=20,
+            min_p=0.0,
+            presence_penalty=1.5,
+            repetition_penalty=1.0,
+        )
+        assert cfg.sampling_body() == {
+            "top_p": 0.8,
+            "top_k": 20,
+            "min_p": 0.0,
+            "presence_penalty": 1.5,
+            "repetition_penalty": 1.0,
+        }
+
+    def test_sampling_body_keeps_explicit_zero(self) -> None:
+        # Qwen's own guidance sets min_p=0.0 and presence_penalty=0.0 in
+        # thinking mode. A truthiness test would drop both as "unset".
+        cfg = VLLMConfig(model="m", min_p=0.0, presence_penalty=0.0)
+        assert cfg.sampling_body() == {"min_p": 0.0, "presence_penalty": 0.0}
+
+    def test_sampling_body_emits_only_what_was_set(self) -> None:
+        cfg = VLLMConfig(model="m", top_k=20)
+        assert cfg.sampling_body() == {"top_k": 20}
+
 
 class TestCreateVLLMProvider:
     def test_returns_openai_provider(self) -> None:
@@ -204,6 +242,69 @@ class TestCreateVLLMProvider:
             assert provider._config.extra_body == {
                 "chat_template_kwargs": {"enable_thinking": True}
             }
+
+    def test_sampling_knobs_reach_extra_body(self) -> None:
+        # top_k / min_p / repetition_penalty are vLLM extensions the OpenAI SDK
+        # has no argument for, and top_p / presence_penalty are read from the
+        # same body — so all five ride extra_body rather than named params.
+        with patch.dict("sys.modules", {"openai": _mock_openai_module()}):
+            import roomkit.providers.openai.ai as ai_mod
+
+            importlib.reload(ai_mod)
+
+            from roomkit.providers.vllm import create_vllm_provider
+
+            cfg = VLLMConfig(model="m", top_p=0.8, top_k=20, presence_penalty=1.5)
+            provider = create_vllm_provider(cfg)
+
+            assert provider._config.extra_body == {
+                "top_p": 0.8,
+                "top_k": 20,
+                "presence_penalty": 1.5,
+            }
+
+    def test_sampling_and_reasoning_coexist(self) -> None:
+        with patch.dict("sys.modules", {"openai": _mock_openai_module()}):
+            import roomkit.providers.openai.ai as ai_mod
+
+            importlib.reload(ai_mod)
+
+            from roomkit.providers.vllm import create_vllm_provider
+
+            cfg = VLLMConfig(model="m", top_p=0.8, enable_thinking=False)
+            provider = create_vllm_provider(cfg)
+
+            assert provider._config.extra_body == {
+                "top_p": 0.8,
+                "chat_template_kwargs": {"enable_thinking": False},
+            }
+
+    def test_explicit_extra_body_sampling_wins(self) -> None:
+        # Same rule as the template kwargs: extra_body is the escape hatch for
+        # a server this config does not model, so it overrides the typed field.
+        with patch.dict("sys.modules", {"openai": _mock_openai_module()}):
+            import roomkit.providers.openai.ai as ai_mod
+
+            importlib.reload(ai_mod)
+
+            from roomkit.providers.vllm import create_vllm_provider
+
+            cfg = VLLMConfig(model="m", top_p=0.8, extra_body={"top_p": 0.95})
+            provider = create_vllm_provider(cfg)
+
+            assert provider._config.extra_body == {"top_p": 0.95}
+
+    def test_no_sampling_anywhere_sends_nothing(self) -> None:
+        with patch.dict("sys.modules", {"openai": _mock_openai_module()}):
+            import roomkit.providers.openai.ai as ai_mod
+
+            importlib.reload(ai_mod)
+
+            from roomkit.providers.vllm import create_vllm_provider
+
+            provider = create_vllm_provider(VLLMConfig(model="m"))
+
+            assert provider._config.extra_body is None
 
     def test_turn_reasoning_overrides_config(self) -> None:
         # The per-turn value is the more specific one and must reach the wire.

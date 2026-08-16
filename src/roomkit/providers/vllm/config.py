@@ -26,10 +26,24 @@ class VLLMConfig(BaseModel):
         headers: Extra HTTP headers on every request — for a reverse proxy
             that needs custom headers, or a non-Bearer ``Authorization``
             scheme. Maps to ``OpenAIConfig.default_headers``.
+        top_p: Nucleus sampling cutoff. ``None`` leaves the server's default.
+        top_k: Top-k sampling cutoff — a vLLM extension, not an OpenAI field.
+            ``None`` leaves the server's default.
+        min_p: Minimum-probability sampling cutoff — a vLLM extension.
+            ``None`` leaves the server's default.
+        presence_penalty: Penalty on tokens already present in the output.
+            The knob Qwen's own guidance raises (to ``1.5``) for non-thinking
+            mode, where the failure it addresses is degenerate repetition.
+            ``None`` leaves the server's default.
+        repetition_penalty: Multiplicative repetition penalty — a vLLM
+            extension, distinct from ``presence_penalty``. ``None`` leaves the
+            server's default.
         extra_body: Extra JSON fields merged into every request body — the
-            route for vLLM-specific params (``guided_json``/``guided_choice``
-            guided decoding, ``top_k``/``repetition_penalty`` sampling).
-            Maps to ``OpenAIConfig.extra_body``.
+            route for vLLM params this config does not model
+            (``guided_json``/``guided_choice`` guided decoding, and any
+            sampler added by a newer server). Maps to
+            ``OpenAIConfig.extra_body``, and an entry here wins over the
+            typed fields above.
         enable_thinking: Turn the model's reasoning block on or off. ``None``
             leaves the model's own default, which for current Qwen builds is
             *on* at the most verbose effort — reasoning then competes with the
@@ -56,13 +70,42 @@ class VLLMConfig(BaseModel):
     headers: dict[str, str] | None = None
     """Extra HTTP headers sent on every request (proxy headers, non-Bearer
     auth). ``None`` sends only the SDK defaults."""
+    top_p: float | None = None
+    """Nucleus sampling cutoff. ``None`` leaves the server's default."""
+    top_k: int | None = None
+    """Top-k sampling cutoff (vLLM extension). ``None`` leaves the default."""
+    min_p: float | None = None
+    """Minimum-probability cutoff (vLLM extension). ``None`` leaves the default."""
+    presence_penalty: float | None = None
+    """Penalty on already-present tokens. ``None`` leaves the default."""
+    repetition_penalty: float | None = None
+    """Multiplicative repetition penalty (vLLM extension). ``None`` leaves the default."""
     extra_body: dict[str, Any] | None = None
-    """Extra request-body fields for vLLM-specific params (guided decoding,
-    extra sampling). ``None`` sends a vanilla body."""
+    """Extra request-body fields for vLLM params this config does not model
+    (guided decoding, a newer server's sampler). ``None`` sends a vanilla
+    body; an entry here wins over the typed sampling fields."""
     enable_thinking: bool | None = None
     """Reasoning block on/off. ``None`` leaves the model's own default."""
     reasoning_effort: str | None = None
     """Reasoning verbosity when thinking is on (``"low"``/``"medium"``/``"xhigh"``)."""
+
+    def sampling_body(self) -> dict[str, Any]:
+        """The request-body fields implied by the sampling settings.
+
+        All of them ride the body rather than the SDK's named parameters:
+        ``top_k``, ``min_p`` and ``repetition_penalty`` are vLLM extensions the
+        OpenAI SDK has no argument for, and ``top_p``/``presence_penalty`` are
+        read from the same body by the server, so routing the five through one
+        place keeps the split invisible to the caller.
+
+        Only the knobs actually set are emitted — ``None`` means "the server
+        decides", which is not the same as sending its documented default and
+        is the only honest answer for a server whose model we cannot see.
+        Tested with ``is not None`` so an explicit ``0`` survives: ``min_p=0``
+        and ``presence_penalty=0`` are meaningful values, not absences.
+        """
+        fields = ("top_p", "top_k", "min_p", "presence_penalty", "repetition_penalty")
+        return {name: value for name in fields if (value := getattr(self, name)) is not None}
 
     def chat_template_kwargs(self) -> dict[str, Any]:
         """The ``chat_template_kwargs`` implied by the reasoning settings.

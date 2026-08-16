@@ -116,14 +116,18 @@ def create_vllm_provider(config: VLLMConfig) -> OpenAIAIProvider:
         A provider configured for the local vLLM server.
     """
     template_kwargs = config.chat_template_kwargs()
-    extra_body = dict(config.extra_body) if config.extra_body else None
+    sampling = config.sampling_body()
+    explicit_body = dict(config.extra_body) if config.extra_body else {}
+    # The typed sampling fields lay the floor and an explicit extra_body entry
+    # wins over them, same rule as the template kwargs below: extra_body is the
+    # escape hatch for a server this config does not model, so it must always
+    # be able to override what the config decided.
+    extra_body: dict[str, Any] | None = {**sampling, **explicit_body} or None
     if template_kwargs:
         extra_body = extra_body or {}
-        # An explicit extra_body entry wins: it is the escape hatch for a
-        # template whose kwargs this config does not model.
         extra_body["chat_template_kwargs"] = {
             **template_kwargs,
-            **extra_body.get("chat_template_kwargs", {}),
+            **explicit_body.get("chat_template_kwargs", {}),
         }
 
     openai_config = OpenAIConfig(
