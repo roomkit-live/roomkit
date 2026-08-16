@@ -68,7 +68,7 @@ class TestRNNoiseInit:
     def test_invalid_sample_rate(self):
         from roomkit.voice.pipeline.denoiser.rnnoise import RNNoiseDenoiserProvider
 
-        with pytest.raises(ValueError, match="divides evenly into 48000"):
+        with pytest.raises(ValueError, match="must be 16000, 24000, or 48000"):
             RNNoiseDenoiserProvider(sample_rate=22050)
 
 
@@ -83,7 +83,7 @@ class TestRNNoiseProcess:
 
         dn = RNNoiseDenoiserProvider()
         frame_in = _frame(160, value=100)
-        frame_out = dn.process(frame_in)
+        frame_out = dn.process(frame_in, "s1")
 
         # Must return a *new* AudioFrame, not the same object.
         assert isinstance(frame_out, AudioFrame)
@@ -99,7 +99,7 @@ class TestRNNoiseProcess:
         dn = RNNoiseDenoiserProvider()
         frame_in = _frame(160)
         frame_in.timestamp_ms = 42.5
-        frame_out = dn.process(frame_in)
+        frame_out = dn.process(frame_in, "s1")
         assert frame_out.timestamp_ms == 42.5
         dn.close()
 
@@ -109,21 +109,28 @@ class TestRNNoiseProcess:
         dn = RNNoiseDenoiserProvider()
         frame_in = _frame(160)
         frame_in.metadata["source"] = "test"
-        frame_out = dn.process(frame_in)
+        frame_out = dn.process(frame_in, "s1")
         assert frame_out.metadata["source"] == "test"
         # Mutation of output metadata must not affect input.
         frame_out.metadata["extra"] = True
         assert "extra" not in frame_in.metadata
         dn.close()
 
-    def test_process_wrong_frame_size_passthrough(self):
-        """When frame size is not a multiple of chunk size, pass through."""
+    def test_process_irregular_frame_size_keeps_timeline(self):
+        """An irregular frame enters chunking mode: same length out, new frame.
+
+        Since the stream-identity refactor an irregular chunk is no longer
+        passed through — it is buffered behind a fixed 10 ms delay so the
+        output timeline stays byte-for-byte continuous.
+        """
         from roomkit.voice.pipeline.denoiser.rnnoise import RNNoiseDenoiserProvider
 
         dn = RNNoiseDenoiserProvider()
-        wrong_frame = _frame(100)  # Not a multiple of 160
-        result = dn.process(wrong_frame)
-        assert result is wrong_frame  # Same object returned
+        irregular = _frame(100)  # Not a multiple of 160
+        result = dn.process(irregular, "s1")
+        assert result is not irregular
+        assert isinstance(result, AudioFrame)
+        assert len(result.data) == len(irregular.data)
         dn.close()
 
     def test_process_multi_chunk_frame(self):
@@ -133,7 +140,7 @@ class TestRNNoiseProcess:
         dn = RNNoiseDenoiserProvider(sample_rate=24000)
         # 480 samples = 2 × 240 (two 10ms chunks at 24 kHz)
         frame_in = _frame(480, value=100, sample_rate=24000)
-        frame_out = dn.process(frame_in)
+        frame_out = dn.process(frame_in, "s1")
         assert isinstance(frame_out, AudioFrame)
         assert len(frame_out.data) == len(frame_in.data)
         dn.close()
@@ -144,7 +151,7 @@ class TestRNNoiseProcess:
         dn = RNNoiseDenoiserProvider()
         dn.close()
         frame = _frame(160)
-        result = dn.process(frame)
+        result = dn.process(frame, "s1")
         assert result is frame
 
     def test_silence_in_silence_out(self):
@@ -153,7 +160,7 @@ class TestRNNoiseProcess:
 
         dn = RNNoiseDenoiserProvider()
         frame_in = _frame(160, value=0)
-        frame_out = dn.process(frame_in)
+        frame_out = dn.process(frame_in, "s1")
         samples = struct.unpack("<160h", frame_out.data)
         # RNNoise may introduce tiny artifacts, but energy should be negligible.
         energy = sum(s * s for s in samples)
@@ -171,9 +178,9 @@ class TestRNNoiseLifecycle:
         from roomkit.voice.pipeline.denoiser.rnnoise import RNNoiseDenoiserProvider
 
         dn = RNNoiseDenoiserProvider()
-        dn.reset()
+        dn.reset("s1")
         # Should still be usable after reset.
-        result = dn.process(_frame(160))
+        result = dn.process(_frame(160), "s1")
         assert isinstance(result, AudioFrame)
         dn.close()
 
@@ -189,7 +196,7 @@ class TestRNNoiseLifecycle:
 
         dn = RNNoiseDenoiserProvider()
         dn.close()
-        dn.reset()  # Must not raise
+        dn.reset("s1")  # Must not raise
 
 
 # ---------------------------------------------------------------------------
@@ -224,10 +231,10 @@ class TestRNNoiseDenoise:
 
         # Let RNNoise warm up with several frames of the same signal.
         for _ in range(20):
-            dn.process(frame_in)
+            dn.process(frame_in, "s1")
 
         # Process one more — this is the result we check.
-        frame_out = dn.process(frame_in)
+        frame_out = dn.process(frame_in, "s1")
 
         in_samples = struct.unpack(f"<{n_samples}h", frame_in.data)
         out_samples = struct.unpack(f"<{n_samples}h", frame_out.data)
