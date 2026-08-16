@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.52.0] — 2026-08-15
+
 ### Added
 
 - **A streaming tool loop says why it stopped.** The loop ends on rules of its
@@ -5935,7 +5937,8 @@ See entries `0.7.0a1` through `0.7.0a18` below.
 - `STTProvider.transcribe()` returns `TranscriptionResult` (Phase 3.1)
 - Framework event names enriched with payloads (Phase 4)
 
-[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.51.0...HEAD
+[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.52.0...HEAD
+[0.52.0]: https://github.com/roomkit-live/roomkit/compare/v0.51.0...v0.52.0
 [0.51.0]: https://github.com/roomkit-live/roomkit/compare/v0.50.0...v0.51.0
 [0.50.0]: https://github.com/roomkit-live/roomkit/compare/v0.49.1...v0.50.0
 [0.49.1]: https://github.com/roomkit-live/roomkit/compare/v0.49.0...v0.49.1
