@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A streaming tool loop says why it stopped.** The loop ends on rules of its
+  own — the round cap, the wall-clock deadline, a round truncated at the output
+  cap, a model that answered nothing after its tools, a cancellation — and it
+  used to log that reason and `return`, so the stream simply ended. A consumer
+  could not tell a finished answer from a loop cut mid-work, and had to
+  re-derive the cause by counting tool calls and reading a clock. That guess is
+  what reports a stopped agent as a model that returned nothing. The loop now
+  yields a final `LoopEndMarker(reason, rounds)` on **every** exit,
+  `completed` included, so the end of the stream is never itself the signal.
+  Additive by construction: the streaming protocol is mixed `str | StreamMarker`
+  and consumers already ignore markers they do not handle, so a text-only
+  channel filtering on `isinstance(chunk, str)` is unaffected. Streaming only —
+  the non-streaming loop returns an `AIResponse` the caller already holds.
 - **`VLLMConfig` types the sampling knobs instead of leaving them to
   `extra_body`.** `top_p`, `top_k`, `min_p`, `presence_penalty` and
   `repetition_penalty` join `temperature` as declared fields, reaching parity

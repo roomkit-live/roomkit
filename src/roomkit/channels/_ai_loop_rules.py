@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from roomkit.channels._tool_eviction import ToolEviction
+from roomkit.models.streaming import LoopEndReason
 from roomkit.providers.ai.base import (
     AIMessage,
     AITextPart,
@@ -76,6 +77,32 @@ def _is_truncation(finish_reason: str | None) -> bool:
     ``max_tokens`` are one entry rather than two.
     """
     return finish_reason is not None and finish_reason.lower() in _TRUNCATION_FINISH_REASONS
+
+
+def final_round_reason(
+    *,
+    had_tool_round: bool,
+    final_text: str,
+    finish_reason: str | None,
+    deadline_exceeded: bool,
+) -> LoopEndReason:
+    """Why a loop that reached its final-answer round is stopping there.
+
+    The round produced no tool calls, so the loop ends here either way; what
+    differs is whether the model answered. Ordered by the fix the reader
+    would apply: raise the cap, raise the budget, change model. Text — or a
+    turn that ran no tool at all — is a plain completion.
+
+    The other exits (round cap, deadline at a round boundary, cancellation)
+    are named at their own ``return``: they know their reason without asking.
+    """
+    if final_text.strip() or not had_tool_round:
+        return "completed"
+    if _is_truncation(finish_reason):
+        return "truncated"
+    if deadline_exceeded:
+        return "timeout"
+    return "empty_response"
 
 
 @dataclass

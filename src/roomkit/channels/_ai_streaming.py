@@ -9,11 +9,13 @@ from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from roomkit.channels._ai_events import THINKING_PREVIEW_LIMIT
-from roomkit.channels._ai_loop_rules import AIToolLoopRulesMixin
+from roomkit.channels._ai_loop_rules import AIToolLoopRulesMixin, final_round_reason
 from roomkit.models.channel import ChannelOutput
 from roomkit.models.enums import ChannelType
 from roomkit.models.event import RoomEvent
 from roomkit.models.streaming import (
+    LoopEndMarker,
+    LoopEndReason,
     StreamDelta,
     ThinkingDeltaMarker,
     ToolCallEndMarker,
@@ -387,6 +389,7 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
             for _round_idx in range(self._max_tool_rounds + 1):
                 if loop_ctx.cancel_event.is_set():
                     logger.info("Streaming tool loop cancelled before round %d", _round_idx)
+                    yield LoopEndMarker(reason="cancelled", rounds=_round_idx)
                     return
 
                 # Anti-loop ripcord (force_stop): strip tools + nudge once so
@@ -410,6 +413,7 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                     # cancellation instead of waiting for the full stream to finish.
                     if loop_ctx.cancel_event.is_set():
                         logger.info("Streaming cancelled mid-generation at round %d", _round_idx)
+                        yield LoopEndMarker(reason="cancelled", rounds=_round_idx)
                         return
 
                     if isinstance(event, StreamThinkingDelta):
@@ -608,15 +612,25 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                     # Final answer round. If it produced no text *after* a tool
                     # round, the model skipped verbalizing the result — re-prompt
                     # once (bounded) for the final answer instead of ending empty.
+                    final_text = "".join(text_parts)
                     if self._try_empty_retry(
                         context,
                         loop_ctx,
                         state,
                         had_tool_round=_saw_tool_call_any,
-                        final_text="".join(text_parts),
+                        final_text=final_text,
                         finish_reason=round_finish_reason,
                     ):
                         continue
+                    # The one exit that is both the happy path and a silent
+                    # failure, which is why it is the one that has to be named.
+                    reason: LoopEndReason = final_round_reason(
+                        had_tool_round=_saw_tool_call_any,
+                        final_text=final_text,
+                        finish_reason=round_finish_reason,
+                        deadline_exceeded=state.deadline_exceeded(),
+                    )
+                    yield LoopEndMarker(reason=reason, rounds=_round_idx)
                     return
 
                 _saw_tool_call_any = True
@@ -677,6 +691,7 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                         "Streaming tool loop reached max_tool_rounds=%d",
                         self._max_tool_rounds,
                     )
+                    yield LoopEndMarker(reason="max_rounds", rounds=_round_idx)
                     return
 
                 if state.deadline_exceeded():
@@ -685,6 +700,7 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                         _round_idx,
                         self._tool_loop_timeout_seconds,
                     )
+                    yield LoopEndMarker(reason="timeout", rounds=_round_idx)
                     return
 
                 state.warn_if_needed(_round_idx)
@@ -751,6 +767,7 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                 context, should_cancel = self._drain_steering_queue(context, loop_ctx)
                 if should_cancel:
                     logger.info("Streaming tool loop cancelled after round %d", _round_idx)
+                    yield LoopEndMarker(reason="cancelled", rounds=_round_idx)
                     return
         except Exception as exc:
             _span_errored = True

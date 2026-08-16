@@ -61,8 +61,49 @@ class ThinkingDeltaMarker:
     thinking: str
 
 
+#: Why a tool loop stopped. ``completed`` is the model having answered; every
+#: other value is the loop ending on a rule of its own.
+LoopEndReason = Literal[
+    "completed",
+    "max_rounds",
+    "timeout",
+    "truncated",
+    "empty_response",
+    "cancelled",
+]
+
+
+@dataclass(slots=True)
+class LoopEndMarker:
+    """Yielded once, last, saying why the tool loop stopped.
+
+    The loop knows exactly which of its rules fired — the round cap, the
+    wall-clock deadline, a round truncated at the output cap, a model that
+    answered nothing after its tools, a cancellation. Before this marker it
+    logged that reason and returned, so the stream simply ended: a consumer
+    could not tell a finished answer from a loop cut mid-work, and had to
+    re-derive it by counting tool calls and reading a clock. Every consumer
+    that cared reimplemented the same guess, and a guess is what reports a
+    stopped agent as a model that returned nothing.
+
+    Emitted on **every** exit, ``completed`` included, so "the stream ended"
+    is never itself the signal. A consumer that only renders text keeps
+    filtering on ``isinstance(chunk, str)`` and is unaffected.
+
+    ``rounds`` is how many tool rounds ran before the stop. The limits the
+    reason refers to are the caller's own configuration, so they are not
+    repeated here.
+
+    Streaming only: the non-streaming loop hands back an ``AIResponse`` the
+    caller already holds, rather than a stream whose end is silent.
+    """
+
+    reason: LoopEndReason
+    rounds: int = 0
+
+
 #: Union of all marker types that may appear in a streaming response.
-StreamMarker = ToolCallStartMarker | ToolCallEndMarker | ThinkingDeltaMarker
+StreamMarker = ToolCallStartMarker | ToolCallEndMarker | ThinkingDeltaMarker | LoopEndMarker
 
 #: A single item in the streaming response: either a text delta or a marker.
 StreamDelta = str | StreamMarker
