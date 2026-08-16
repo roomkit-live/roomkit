@@ -7,6 +7,7 @@ Shows:
 - Streaming tool loop yielding text in real time
 - WebSocket stream_send_fn receiving progressive chunks
 - Tool handler executing between generation rounds
+- LoopEndMarker: why the loop stopped, on every exit
 
 Run with:
     uv run python examples/streaming_tools.py
@@ -16,10 +17,12 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections.abc import AsyncIterator
 from typing import Any
 
 from roomkit import (
     ChannelCategory,
+    ChannelOutput,
     InboundMessage,
     RoomEvent,
     RoomKit,
@@ -28,6 +31,9 @@ from roomkit import (
 )
 from roomkit.channels.ai import AIChannel
 from roomkit.channels.websocket import StreamChunk, StreamEnd, StreamMessage, StreamStart
+from roomkit.models.channel import ChannelBinding
+from roomkit.models.context import RoomContext
+from roomkit.models.streaming import LoopEndMarker
 from roomkit.providers.ai.base import AIResponse, AIToolCall
 from roomkit.providers.ai.mock import MockAIProvider
 
@@ -92,7 +98,53 @@ ai_responses = [
 
 
 # ---------------------------------------------------------------------------
-# 3. Main demo
+# 3. A channel that observes why the loop stopped
+# ---------------------------------------------------------------------------
+
+
+class ObservingAIChannel(AIChannel):
+    """An AI channel that reports why its tool loop stopped.
+
+    The loop yields a final ``LoopEndMarker`` on every exit, ``completed``
+    included, so the end of the stream is never itself the signal. Without
+    it, a loop cut at its round cap or its deadline is indistinguishable
+    from a model that simply finished, and every consumer that cares has to
+    re-derive the cause by counting tool calls and reading a clock.
+
+    The marker is read here, at the source, by wrapping
+    ``ChannelOutput.response_stream``. That is the consumption point: the
+    framework's inbound streaming path forwards text and the tool-call and
+    thinking markers to downstream channels, but **not** the terminal
+    marker, which would reach a renderer as noise. Swallowing it here (the
+    ``continue`` below) keeps the downstream stream text-only.
+    """
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.loop_end: LoopEndMarker | None = None
+
+    async def on_event(
+        self,
+        event: RoomEvent,
+        binding: ChannelBinding,
+        context: RoomContext,
+    ) -> ChannelOutput:
+        output = await super().on_event(event, binding, context)
+        if output.response_stream is None:
+            return output
+        return output.model_copy(update={"response_stream": self._observe(output.response_stream)})
+
+    async def _observe(self, inner: AsyncIterator[Any]) -> AsyncIterator[Any]:
+        async for delta in inner:
+            if isinstance(delta, LoopEndMarker):
+                self.loop_end = delta
+                print(f"  [loop] stopped: reason={delta.reason!r} rounds={delta.rounds}")
+                continue
+            yield delta
+
+
+# ---------------------------------------------------------------------------
+# 4. Main demo
 # ---------------------------------------------------------------------------
 
 
@@ -101,7 +153,7 @@ async def main() -> None:
 
     ws = WebSocketChannel("ws-user")
     provider = MockAIProvider(ai_responses=ai_responses, streaming=True)
-    ai = AIChannel(
+    ai = ObservingAIChannel(
         "ai-assistant",
         provider=provider,
         system_prompt="You are a helpful support agent with access to order lookup.",
@@ -185,6 +237,8 @@ async def main() -> None:
     print(f"  Provider calls: {len(provider.calls)}")
     print(f"  Stream chunks received: {len(stream_chunks)}")
     print(f"  Full streamed text: {''.join(stream_chunks)!r}")
+    if ai.loop_end is not None:
+        print(f"  Loop end reason: {ai.loop_end.reason} (after {ai.loop_end.rounds} rounds)")
 
     await kit.close()
 

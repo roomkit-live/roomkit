@@ -1499,6 +1499,36 @@ await kit.attach_channel(
 )
 ```
 
+## Per-Turn Configuration
+
+Binding metadata is a snapshot taken at attach time. When the configuration
+changes underneath you — admin edits, per-user gating, feature flags — that
+snapshot becomes a second source of truth that goes stale. `config_provider`
+resolves the config fresh at the start of every generation instead:
+
+```python
+from roomkit import AIChannel, AIChannelTurnConfig
+
+async def per_turn(binding, context) -> AIChannelTurnConfig | None:
+    settings = await load_settings(context.room.id)
+    return AIChannelTurnConfig(
+        system_prompt=settings.prompt,
+        temperature=settings.temperature,
+        enable_thinking=settings.thinking,
+        reasoning_effort=settings.effort,
+    )
+
+ai = AIChannel("ai-agent", provider=provider, config_provider=per_turn)
+```
+
+`AIChannelTurnConfig` (exported from `roomkit`) carries `system_prompt`,
+`tools`, `temperature`, `max_tokens`, `thinking_budget`, `enable_thinking`
+and `reasoning_effort`. Each setting resolves from the most specific source
+that has an opinion: binding metadata (per-room operator intent, always
+wins), then the `config_provider` result, then the `AIChannel` constructor
+default, then the provider config. `None` at a tier means "not set here" and
+defers outward, so an unset knob never overrides with a default.
+
 ## Streaming
 
 AIChannel supports streaming responses to WebSocket clients:
@@ -1515,6 +1545,66 @@ async def on_stream(conn_id: str, msg) -> None:
     # StreamStart, StreamChunk, StreamEnd
     print(f"Stream: {msg}")
 ```
+
+### Why a streaming tool loop stopped
+
+The streaming tool loop ends on rules of its own — the round cap, the
+wall-clock deadline, a round truncated at the output cap, a model that
+answered nothing after its tools, a cancellation. It yields a final
+`LoopEndMarker(reason, rounds)` on **every** exit, `completed` included, so
+the end of the stream is never itself the signal and no consumer has to
+re-derive the cause by counting tool calls and reading a clock.
+
+Read it at the source, by subclassing `AIChannel` and wrapping
+`ChannelOutput.response_stream`:
+
+```python
+from roomkit.channels.ai import AIChannel
+from roomkit.models.streaming import LoopEndMarker
+
+
+class ObservingAIChannel(AIChannel):
+    async def on_event(self, event, binding, context):
+        output = await super().on_event(event, binding, context)
+        if output.response_stream is None:
+            return output
+        return output.model_copy(
+            update={"response_stream": self._observe(output.response_stream)}
+        )
+
+    async def _observe(self, inner):
+        async for delta in inner:
+            if isinstance(delta, LoopEndMarker):
+                if delta.reason != "completed":
+                    logger.warning(
+                        "agent stopped: %s after %d rounds", delta.reason, delta.rounds
+                    )
+                continue          # keep the terminal marker out of the stream
+            yield delta
+```
+
+`reason` is one of `completed`, `max_rounds`, `timeout`, `truncated`,
+`empty_response`, `cancelled`. The limits each reason refers to are the
+caller's own configuration and are not repeated on the marker.
+
+The framework's inbound streaming path forwards text deltas and the tool-call
+and thinking markers to a channel's `deliver_stream`, but **not** the terminal
+marker — it would reach a renderer as noise. Overriding `deliver_stream` on a
+WebSocket or CLI channel will therefore not see it; wrap the AI channel's own
+`response_stream` instead.
+
+Additive by construction: the streaming protocol is a mixed
+`str | StreamMarker` whose consumers already dispatch on the markers they
+know, so a text-only consumer filtering on `isinstance(chunk, str)` is
+unaffected. Streaming only — the non-streaming loop returns an `AIResponse`
+the caller already holds.
+
+Two bounds keep a degenerate model from running away with a turn:
+`max_tool_rounds` caps how many rounds run, and a **32-call ceiling per
+round** caps how wide one round may be. The per-round cap is applied before
+the assistant message is assembled, so a dropped call is absent from the
+transcript as well as from the results — no provider sees a tool call with no
+matching result. Both loops enforce it from the shared loop rules.
 
 ## AI Thinking/Reasoning
 
@@ -1533,6 +1623,63 @@ ai = AIChannel(
 ```
 
 Per-provider mechanisms: Anthropic uses `thinking_budget` as above; OpenAI-family providers (OpenAI, Azure, OpenRouter, xAI) use the `reasoning_effort` config field — OpenRouter translates it into its unified `reasoning` object for any upstream model; Gemini (and Vertex) use `GeminiConfig.thinking_level`; Ollama exposes the native `think` parameter (see `docs/c7/ollama-provider.md`); PolarGrid uses `PolarGridConfig(thinking=True)` (the `enable_thinking` flag, surfaced as `AIResponse.thinking` / `StreamThinkingDelta`).
+
+`thinking_budget`, `enable_thinking` and `reasoning_effort` all ride the
+per-turn chain described under *Per-Turn Configuration*, so reasoning is
+steerable per room and per turn rather than only per provider instance:
+
+```python
+ai = AIChannel(
+    "ai",
+    provider=provider,
+    enable_thinking=True,
+    reasoning_effort="low",
+)
+```
+
+A thinking model costs two to three times the tokens and the latency of a
+direct answer, and that trade differs between an agent's tool loop — where the
+model mostly shapes results it already has — and a chat turn where the
+reasoning is the value.
+
+Reasoning competes with the answer for the same `max_tokens`. A round that
+spends its whole budget thinking returns empty `content` with a truncation
+finish reason; RoomKit recognises that across every provider's spelling
+(`length`, `max_tokens`, `MAX_TOKENS`, case-insensitively) and skips the
+empty-response retry, which would only truncate again under the same cap.
+
+`AIContext.max_tokens` defaults to `None`, not a number: every provider reads
+`context.max_tokens or self._config.max_tokens`, so a non-`None` default here
+would shadow the provider config and make a configured cap unreachable.
+Providers whose config also defaults it to `None` (Ollama, PolarGrid) send no
+cap at all, letting the server pick its own.
+
+### vLLM reasoning and sampling
+
+vLLM renders the model's chat template server-side, so reasoning is steered
+through `chat_template_kwargs` rather than a top-level sampling parameter.
+`VLLMConfig.enable_thinking` and `VLLMConfig.reasoning_effort` map onto them;
+both default to `None`, leaving the model's own default (current Qwen builds
+think at their most verbose effort unless told otherwise). An explicit
+`extra_body["chat_template_kwargs"]` entry still wins.
+
+`VLLMConfig` also types five sampling knobs that previously required
+`extra_body`: `top_p`, `top_k`, `min_p`, `presence_penalty` and
+`repetition_penalty`. Each defaults to `None` ("the server decides"); an
+explicit `0` is sent, since `min_p=0.0` and `presence_penalty=0.0` are values
+rather than absences.
+
+```python
+from roomkit.providers.vllm import VLLMConfig, create_vllm_provider
+
+provider = create_vllm_provider(VLLMConfig(
+    model="Qwen/Qwen3-8B",
+    enable_thinking=False,
+    presence_penalty=1.5,   # Qwen3's guidance for non-thinking mode
+    top_p=0.8,
+    top_k=20,
+))
+```
 
 ## Vision Support
 
