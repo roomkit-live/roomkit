@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.53.0] — 2026-08-16
+
 ### Added
 
 - **The non-streaming tool loop names its exit too: `loop_end_reason` on the
@@ -37,6 +39,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ahead of the text check. Additive: `completed` keeps its meaning, and a
   consumer that only branches on `!= "completed"` picks the new value up for
   free.
+
+- **A tool that keeps giving the same answer says so.** The anti-loop guard
+  keys on a call's *arguments*, which leaves a blind spot the size of the
+  failure it was written for: a model that permutes its arguments walks past
+  it while learning nothing. Measured on a stuck production turn — 54 calls,
+  44 distinct argument sets, only 25 distinct results, one empty search
+  returned 23 times. A second counter now keys on (tool, result-hash) and,
+  from the third identical answer, appends one line to the result the model
+  reads: this came back N times, for different arguments, it is settled. It
+  **annotates, never blocks** — six deletions each answering
+  `{"success": true}` are six correct operations with one result, and
+  short-circuiting on result identity would destroy real work. It also logs a
+  warning, the only witness there is: the audit trail listens upstream of the
+  annotation and the turn-start snapshot holds no tool results at all.
 
 ### Fixed
 
@@ -6003,7 +6019,8 @@ See entries `0.7.0a1` through `0.7.0a18` below.
 - `STTProvider.transcribe()` returns `TranscriptionResult` (Phase 3.1)
 - Framework event names enriched with payloads (Phase 4)
 
-[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.52.0...HEAD
+[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.53.0...HEAD
+[0.53.0]: https://github.com/roomkit-live/roomkit/compare/v0.52.0...v0.53.0
 [0.52.0]: https://github.com/roomkit-live/roomkit/compare/v0.51.0...v0.52.0
 [0.51.0]: https://github.com/roomkit-live/roomkit/compare/v0.50.0...v0.51.0
 [0.50.0]: https://github.com/roomkit-live/roomkit/compare/v0.49.1...v0.50.0
