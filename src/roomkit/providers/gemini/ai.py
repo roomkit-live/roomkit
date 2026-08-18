@@ -100,14 +100,40 @@ class GeminiAIProvider(AIProvider):
         return list(MODELS)
 
     async def list_models(self) -> list[ModelInfo]:
-        """List generate-content models the Gemini API currently exposes."""
+        """List generate-content models the Gemini API currently exposes.
+
+        Serves both surfaces this provider family speaks to, which name their
+        models differently and describe them unequally:
+
+        - Developer API (AI Studio): ``models/gemini-3.5-flash``, and each entry
+          declares ``supported_actions``.
+        - Vertex (:class:`~roomkit.providers.gemini.vertex.GeminiVertexProvider`):
+          ``publishers/google/models/gemini-2.5-flash``, with no
+          ``supported_actions`` and no metadata at all.
+
+        So the id is the last path segment rather than one stripped prefix — a
+        prefixed id matches nothing in the curated catalog, which silently
+        emptied the metadata, and would be written to a caller's config as a
+        model name the API then rejects. And where no action is declared, the
+        listing mixes in models this call cannot serve, which the family and
+        embedding checks drop without hiding a model too new to be curated.
+        """
         live: list[ModelInfo] = []
         pager = await self._client.aio.models.list()  # ty: ignore[unresolved-attribute]
+        curated_ids = {m.id for m in self.available_models()}
         async for m in pager:
-            name = (m.name or "").removeprefix("models/")
+            name = (m.name or "").rsplit("/", 1)[-1]
             actions = getattr(m, "supported_actions", None) or []
             if not name or (actions and "generateContent" not in actions):
                 continue
+            if not actions:
+                # Vertex declares no actions, so the name is the only signal
+                # left: keep the Gemini generative family (curated, or new
+                # enough that the catalog has not caught up) and drop the
+                # embedding line, which answers embedContent, not this call.
+                generative = name in curated_ids or name.startswith("gemini-")
+                if not generative or "embedding" in name:
+                    continue
             live.append(
                 ModelInfo(
                     id=name,
