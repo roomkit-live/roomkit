@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from typing import Any
 
 import pytest
@@ -540,6 +541,72 @@ async def test_request_names_the_speaker_through_the_framework() -> None:
 
     assert [e.actor_id for e in seen] == ["alice", "bob"]
     await kit.close()
+
+
+# ── Wiring diagnostics ──────────────────────────────────────────────
+
+
+def _warn_setup(tool_definitions: list[Any] | None) -> tuple[Any, Any, Any]:
+    from roomkit.models.channel import ChannelBinding
+    from roomkit.models.context import RoomContext
+    from roomkit.models.enums import ChannelCategory
+    from roomkit.models.room import Room
+    from roomkit.providers.ai.mock import MockAIProvider
+
+    human = HumanInputToolHandler(
+        tool_names={"AskUser"}, timeout=1, tool_definitions=tool_definitions
+    )
+    channel = AIChannel(
+        "ai-warn",
+        provider=MockAIProvider(responses=["ok", "ok"]),
+        human_input_handler=human,
+    )
+    binding = ChannelBinding(
+        channel_id="ai-warn",
+        room_id="r",
+        channel_type=ChannelType.AI,
+        category=ChannelCategory.INTELLIGENCE,
+    )
+    return channel, binding, RoomContext(room=Room(id="r"))
+
+
+def _unoffered_warnings(caplog: pytest.LogCaptureFixture) -> list[str]:
+    return [r.getMessage() for r in caplog.records if "never offers them" in r.getMessage()]
+
+
+async def test_warns_once_when_a_human_input_tool_is_never_offered(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A tool the turn never offers is a wiring mistake with no other symptom:
+    the model is not told it exists, so no human is ever asked."""
+    from tests.conftest import make_event
+
+    channel, binding, ctx = _warn_setup(None)
+
+    with caplog.at_level(logging.WARNING, logger="roomkit.channels.ai"):
+        for _ in range(2):
+            await channel.on_event(make_event(room_id="r", channel_id="ws"), binding, ctx)
+
+    warnings = _unoffered_warnings(caplog)
+    assert len(warnings) == 1, "the wiring does not change between turns"
+    assert "AskUser" in warnings[0]
+    assert "ai-warn" in warnings[0]
+
+
+async def test_no_warning_when_the_handler_declares_the_tool(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    from roomkit.providers.ai.base import AITool
+    from tests.conftest import make_event
+
+    channel, binding, ctx = _warn_setup(
+        [AITool(name="AskUser", description="Ask.", parameters={"type": "object"})]
+    )
+
+    with caplog.at_level(logging.WARNING, logger="roomkit.channels.ai"):
+        await channel.on_event(make_event(room_id="r", channel_id="ws"), binding, ctx)
+
+    assert _unoffered_warnings(caplog) == []
 
 
 # ── HumanInputToolHandler ───────────────────────────────────────────

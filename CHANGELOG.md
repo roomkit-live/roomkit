@@ -53,6 +53,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   example exists to demonstrate never fired. The example now declares the
   definition, and the guide says which of the two knobs offers a tool.
 
+  The silence was the real defect, so the channel now breaks it: when a name in
+  `tool_names` is absent from the turn's resolved toolset, `AIChannel` logs a
+  warning naming the channel and the tool. Once per channel per name — the
+  wiring does not change between turns.
+
 ## [0.53.0] — 2026-08-16
 
 ### Added

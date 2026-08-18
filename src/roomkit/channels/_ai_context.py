@@ -146,11 +146,41 @@ class AIContextMixin:
     _tool_search_threshold_pct: float
     channel_id: str
 
+    _warned_unoffered_human_tools: set[str]
+
     # Cross-mixin methods — Any annotations avoid MRO shadowing
     extra_tools: Any  # see AIContextHost
     _skill_tools: Any  # see AIContextHost
     _apply_tool_filters: Any  # see AIContextHost
     _get_loop_ctx: Any  # see AIContextHost
+
+    def _warn_unoffered_human_input_tools(self, offered: set[str]) -> None:
+        """Say so when a human-input tool name is absent from the turn's toolset.
+
+        ``tool_names`` gates which calls the handler intercepts; what puts the
+        tool in front of the model is ``tool_definitions`` on the handler, or
+        the channel's own ``tools`` / binding metadata. A name offered by
+        neither is a tool the model is never told exists, so it never calls it
+        — and a provider naming it anyway is failed closed at dispatch. Either
+        way no human is asked, and nothing else says so.
+
+        Once per channel per name: the wiring does not change between turns,
+        and a line per turn would bury the one that matters.
+        """
+        handler = self._human_input_handler
+        if handler is None:
+            return
+        missing = handler.tool_names - offered - self._warned_unoffered_human_tools
+        if not missing:
+            return
+        self._warned_unoffered_human_tools |= missing
+        logger.warning(
+            "Channel %s intercepts human-input tool(s) %s but never offers them to the "
+            "model: declare them via HumanInputToolHandler(tool_definitions=...) or the "
+            "channel's tools, or no human will ever be asked.",
+            self.channel_id,
+            sorted(missing),
+        )
 
     async def _build_context(
         self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
@@ -344,6 +374,14 @@ class AIContextMixin:
 
         # Store unfiltered tool list for re-application after skill activation
         loop_ctx.all_context_tools = list(tools)
+
+        # A human-input tool the turn never offers is a wiring mistake that
+        # only shows up at runtime, and quietly: the model is not told the tool
+        # exists, so it never calls it — and a scripted provider that does is
+        # failed closed at dispatch. ``tool_names`` gates interception; what
+        # offers the tool is ``tool_definitions`` on the handler, or the
+        # channel's own ``tools`` / binding metadata. Warn once per channel.
+        self._warn_unoffered_human_input_tools({t.name for t in tools})
 
         # Apply tool policy + skill gating visibility filters
         tools = self._apply_tool_filters(tools)

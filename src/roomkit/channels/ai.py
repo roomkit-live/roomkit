@@ -322,6 +322,9 @@ class AIChannel(
         # Human-input handler: compose first (highest priority) so it
         # intercepts matching tools before the user handler chain.
         self._human_input_handler = human_input_handler
+        # Names already reported as intercepted-but-never-offered; the
+        # warning is a wiring diagnostic, not a per-turn event.
+        self._warned_unoffered_human_tools: set[str] = set()
         # Token identifying this channel object as the owner of its id's
         # human-input scope; set at register_channel time (see
         # ``ChannelOpsMixin.register_channel``) and handed back on close so a
