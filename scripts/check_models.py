@@ -190,6 +190,13 @@ PRICE_DELIBERATE: dict[str, str] = {
     # the standard rate from OpenAI's pricing page (2026-08-05).
     "gpt-5.6-terra": "mirror quotes the Batch rate; roomkit bills the standard one",
     "gpt-5.6-luna": "mirror quotes the Batch rate; roomkit bills the standard one",
+    # Same divergence, different cause: the mirror is running a 50% promotion on
+    # its own `openai/gpt-5.6-sol` slug, which lands on the Batch numbers by
+    # coincidence. OpenAI's standard rate is $5/$30 with cached input at 10% and
+    # cache writes at 1.25x (model docs, 2026-08-18) — a discount the aggregator
+    # funds is not a price cut by the vendor, and the openrouter catalog carries
+    # the resold rate in its own entry.
+    "gpt-5.6-sol": "mirror runs a promo on its own slug; roomkit bills OpenAI's list rate",
     # Same shape, Google's side: the mirror resells 3.7 Flash at exactly the
     # Batch/Flex column ($0.375/$1.875/$0.0375) while Google's synchronous rate
     # is double that (pricing page, 2026-08-13). Its own `openrouter` entry

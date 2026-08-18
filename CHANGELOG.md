@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.54.0] — 2026-08-18
+
 ### Added
 
 - **A tool call knows whose turn it is** — `current_tool_actor_id()`
@@ -57,6 +59,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `tool_names` is absent from the turn's resolved toolset, `AIChannel` logs a
   warning naming the channel and the tool. Once per channel per name — the
   wiring does not change between turns.
+
+- **OpenRouter's rates for the GPT-5.6 tier moved in both directions.**
+  `openai/gpt-5.6-sol` now resells at $2.50/$15 against OpenAI's $5/$30, and
+  `openai/gpt-5.6-terra` stopped reselling at $1/$6 and matches OpenAI's
+  $2/$12. Both entries are refreshed from the vendor endpoint, and the module
+  docstring no longer states a discount that has moved to a different slug.
+  OpenAI's own catalog is unchanged: its `gpt-5.6-sol` bills the list rate, and
+  the mirror quoting the promotion is recorded as a deliberate divergence
+  rather than copied. A stale rate never fails, it just makes every cost
+  computed from it wrong.
 
 ## [0.53.0] — 2026-08-16
 
@@ -6070,7 +6082,8 @@ See entries `0.7.0a1` through `0.7.0a18` below.
 - `STTProvider.transcribe()` returns `TranscriptionResult` (Phase 3.1)
 - Framework event names enriched with payloads (Phase 4)
 
-[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.53.0...HEAD
+[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.54.0...HEAD
+[0.54.0]: https://github.com/roomkit-live/roomkit/compare/v0.53.0...v0.54.0
 [0.53.0]: https://github.com/roomkit-live/roomkit/compare/v0.52.0...v0.53.0
 [0.52.0]: https://github.com/roomkit-live/roomkit/compare/v0.51.0...v0.52.0
 [0.51.0]: https://github.com/roomkit-live/roomkit/compare/v0.50.0...v0.51.0
