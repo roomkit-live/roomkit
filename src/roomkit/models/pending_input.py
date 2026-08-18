@@ -48,6 +48,17 @@ class PendingInput:
     :meth:`HumanInputHandler.release`. ``wait()`` owns the cleanup of every
     other request."""
     created_at: datetime = field(default_factory=_utcnow)
+    # Belongs with the origin fields above; appended so adding it leaves the
+    # positional order of every existing field untouched.
+    actor_id: str | None = None
+    """Participant whose turn raised this request, when the tool loop knew one.
+
+    A request that names nobody is a request a notification layer has to
+    broadcast, and an answer it cannot attribute. ``None`` when the turn had no
+    author (a system injection, a webhook, a scheduled run) or when the creator
+    runs its own tool loop and did not supply one. It names the turn without
+    authenticating it — resolve it against the room's roster before treating it
+    as a principal, as ``current_tool_actor_id()`` documents."""
     _event: asyncio.Event = field(default_factory=asyncio.Event, repr=False)
 
 
@@ -82,3 +93,11 @@ class PendingInputEvent:
 
     timestamp: datetime = field(default_factory=_utcnow)
     """When the pending request was created."""
+
+    actor_id: str | None = None
+    """Participant whose turn raised the request, when the tool loop knew one.
+
+    What lets a notification layer ask *the person who asked* rather than
+    everyone in the room. Appended rather than grouped with the origin fields
+    above so existing positional construction keeps working. ``None`` when the
+    turn had no author."""

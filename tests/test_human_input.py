@@ -440,6 +440,108 @@ async def test_release_is_idempotent() -> None:
     assert handler.release(pending.pending_id) is False
 
 
+# ── Who the request is for ──────────────────────────────────────────
+
+
+async def test_create_carries_the_actor_to_the_request_and_the_event() -> None:
+    handler = HumanInputHandler()
+    events: list[PendingInputEvent] = []
+
+    async def capture(event: PendingInputEvent) -> bool:
+        events.append(event)
+        return True
+
+    handler._on_input_required = capture
+    pending = await handler.create(
+        "ask", {}, room_id="r1", tool_call_id="tc1", channel_id="ch1", actor_id="alice"
+    )
+    await asyncio.sleep(0.01)
+
+    assert pending.actor_id == "alice"
+    assert [e.actor_id for e in events] == ["alice"]
+
+
+async def test_a_request_with_no_actor_says_so() -> None:
+    """A creator running its own tool loop may not know who asked. ``None``
+    is the honest answer — the alternative is a notification layer inventing
+    a recipient."""
+    handler = HumanInputHandler()
+    pending = await handler.create_detached("ask", {}, room_id="r1", channel_id="ch1")
+    assert pending.actor_id is None
+
+
+async def test_request_names_the_speaker_through_the_framework() -> None:
+    """Two people, one agent, one channel object: each request names the
+    person whose turn raised it."""
+    from roomkit import (
+        HookExecution,
+        HookResult,
+        HookTrigger,
+        InboundMessage,
+        RoomKit,
+        TextContent,
+        WebSocketChannel,
+    )
+    from roomkit.providers.ai.base import AIResponse, AITool, AIToolCall
+    from roomkit.providers.ai.mock import MockAIProvider
+
+    def turn() -> list[AIResponse]:
+        return [
+            AIResponse(
+                content="",
+                finish_reason="tool_use",
+                tool_calls=[AIToolCall(id="tc", name="AskUser", arguments={"q": "?"})],
+            ),
+            AIResponse(content="Thanks.", finish_reason="stop"),
+        ]
+
+    kit = RoomKit()
+    human = HumanInputToolHandler(
+        tool_names={"AskUser"},
+        timeout=5,
+        # Without a definition the tool is absent from the turn's toolset and
+        # the loop drops the call before any handler sees it.
+        tool_definitions=[
+            AITool(
+                name="AskUser",
+                description="Ask the human.",
+                parameters={"type": "object", "properties": {}},
+            )
+        ],
+    )
+    ai = AIChannel(
+        "ai-ask",
+        provider=MockAIProvider(ai_responses=turn() * 2),
+        human_input_handler=human,
+    )
+    ws = WebSocketChannel("ws-ask")
+    kit.register_channel(ai)
+    kit.register_channel(ws)
+
+    seen: list[Any] = []
+
+    @kit.hook(HookTrigger.ON_USER_INPUT_REQUIRED, execution=HookExecution.SYNC)
+    async def capture(event: Any, ctx: Any) -> HookResult:
+        seen.append(event)
+        human.handler.resolve(event.pending_id, json.dumps({"answer": "yes"}))
+        return HookResult(action="allow")
+
+    await kit.create_room(room_id="ask-room")
+    await kit.attach_channel("ask-room", "ai-ask")
+    await kit.attach_channel("ask-room", "ws-ask")
+    # Someone has to drain the AI's stream for the tool loop to advance.
+    ws.register_connection("c1", lambda _conn, _ev: None, room_id="ask-room")
+
+    for who in ("alice", "bob"):
+        await kit.process_inbound(
+            InboundMessage(channel_id="ws-ask", sender_id=who, content=TextContent(body="hi"))
+        )
+        await asyncio.sleep(0.3)
+
+    assert [e.actor_id for e in seen] == ["alice", "bob"]
+    await kit.close()
+
+
 # ── HumanInputToolHandler ───────────────────────────────────────────
 
 

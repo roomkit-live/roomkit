@@ -63,7 +63,7 @@ from roomkit.core.task_utils import log_task_exception
 from roomkit.models.enums import ChannelType
 from roomkit.models.pending_input import PendingInput, PendingInputEvent, PendingInputStatus
 from roomkit.providers.ai.base import AITool
-from roomkit.tools.context import _current_tool_call
+from roomkit.tools.context import _current_tool_call, current_tool_actor_id
 
 logger = logging.getLogger("roomkit.tools.human_input")
 
@@ -206,6 +206,7 @@ class HumanInputHandler:
         tool_call_id: str = "",
         channel_id: str = "",
         channel_type: ChannelType = ChannelType.AI,
+        actor_id: str | None = None,
     ) -> PendingInput:
         """Register a new pending input request and schedule the callback.
 
@@ -215,6 +216,11 @@ class HumanInputHandler:
 
         ``wait()`` owns this request's cleanup; for a request no one will
         wait on, use :meth:`create_detached`.
+
+        ``actor_id`` names whose turn raised the request, so a notification
+        layer can ask that person rather than the whole room. The native
+        :class:`HumanInputToolHandler` fills it from the tool loop; a caller
+        driving its own loop passes what it knows.
         """
         return self._arm(
             tool_name,
@@ -223,6 +229,7 @@ class HumanInputHandler:
             tool_call_id=tool_call_id,
             channel_id=channel_id,
             channel_type=channel_type,
+            actor_id=actor_id,
             detached=False,
         )
 
@@ -235,6 +242,7 @@ class HumanInputHandler:
         tool_call_id: str = "",
         channel_id: str = "",
         channel_type: ChannelType = ChannelType.AI,
+        actor_id: str | None = None,
     ) -> PendingInput:
         """Register a pending request that no one will :meth:`wait` on.
 
@@ -251,6 +259,7 @@ class HumanInputHandler:
             tool_call_id=tool_call_id,
             channel_id=channel_id,
             channel_type=channel_type,
+            actor_id=actor_id,
             detached=True,
         )
 
@@ -263,6 +272,7 @@ class HumanInputHandler:
         tool_call_id: str,
         channel_id: str,
         channel_type: ChannelType,
+        actor_id: str | None,
         detached: bool,
     ) -> PendingInput:
         """Register the request, then schedule its notification."""
@@ -275,6 +285,7 @@ class HumanInputHandler:
             room_id=room_id,
             tool_call_id=tool_call_id,
             channel_id=channel_id,
+            actor_id=actor_id,
             detached=detached,
         )
         self._pending[pending_id] = pending
@@ -288,6 +299,7 @@ class HumanInputHandler:
                 tool_call_id=tool_call_id,
                 channel_id=channel_id,
                 channel_type=channel_type,
+                actor_id=actor_id,
             )
             task = asyncio.get_running_loop().create_task(
                 self._notify(event), name=f"human-input-notify-{pending_id}"
@@ -528,6 +540,10 @@ class HumanInputToolHandler:
                 room_id=room_id,
                 tool_call_id=tool_call_id,
                 channel_id=channel_id,
+                # Asking a human is where "whose turn is it" matters most: a
+                # request that names nobody has to be broadcast to the room,
+                # and whoever answers first answers for someone else.
+                actor_id=current_tool_actor_id(),
             )
             return await self._handler.wait(pending.pending_id, timeout=self.timeout)
         except TimeoutError:

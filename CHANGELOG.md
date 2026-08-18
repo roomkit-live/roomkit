@@ -31,6 +31,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `examples/tool_call_context.py` run the whole path: two people in one room,
   one identified and one not, and a system injection with no author at all.
 
+- **A human-input request names who to ask** — `PendingInput` and
+  `PendingInputEvent` carry `actor_id`, filled by `HumanInputToolHandler` from
+  the turn that raised the request. Asking a human is where whose-turn-it-is
+  matters most: one `AIChannel` object serves every room and speaker it is
+  attached to, so a request naming nobody has to be broadcast, and in a room
+  where two people talk to one agent whoever answers first answers for someone
+  else. `None` when the turn had no author, or when a caller driving its own
+  loop passes none — `create()` and `create_detached()` take it as a keyword.
+  The field is appended to both dataclasses, so existing positional
+  construction is unchanged.
+
 ## [0.53.0] — 2026-08-16
 
 ### Added
