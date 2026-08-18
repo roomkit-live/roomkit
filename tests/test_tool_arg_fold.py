@@ -28,6 +28,7 @@ from roomkit.channels.realtime_voice import RealtimeVoiceChannel
 from roomkit.models.channel import ChannelBinding
 from roomkit.models.enums import ChannelCategory, ChannelDirection, ChannelType
 from roomkit.models.event import EventSource, RoomEvent
+from roomkit.models.streaming import ToolCallEndMarker, ToolCallStartMarker
 from roomkit.models.tool_call import ToolCallEvent
 from roomkit.providers.ai.base import AIResponse, AIToolCall
 from roomkit.providers.ai.mock import MockAIProvider
@@ -61,8 +62,8 @@ WEATHER_TOOL = {
     },
 }
 
-HOISTED_CALL = {"action": "list_columns", "board_id": "1a0a495f"}
-FOLDED_CALL = {"action": "list_columns", "params": {"board_id": "1a0a495f"}}
+HOISTED_CALL = {"action": "list_columns", "board_id": "board-1"}
+FOLDED_CALL = {"action": "list_columns", "params": {"board_id": "board-1"}}
 
 
 def _recording_handler() -> tuple[Any, list[tuple[str, dict[str, Any]]]]:
@@ -80,8 +81,11 @@ def _recording_handler() -> tuple[Any, list[tuple[str, dict[str, Any]]]]:
 # ---------------------------------------------------------------------------
 
 
-def _tool_call_provider(name: str, arguments: dict[str, Any]) -> MockAIProvider:
+def _tool_call_provider(
+    name: str, arguments: dict[str, Any], *, streaming: bool = False
+) -> MockAIProvider:
     return MockAIProvider(
+        streaming=streaming,
         ai_responses=[
             AIResponse(
                 content="",
@@ -89,7 +93,7 @@ def _tool_call_provider(name: str, arguments: dict[str, Any]) -> MockAIProvider:
                 tool_calls=[AIToolCall(id="t1", name=name, arguments=arguments)],
             ),
             AIResponse(content="done", finish_reason="stop"),
-        ]
+        ],
     )
 
 
@@ -155,6 +159,33 @@ class TestClassicChannel:
         await _trigger_ai(kit, ai, room_id)
 
         assert seen_by_hook == [FOLDED_CALL]
+        assert calls == [("boards", FOLDED_CALL)]
+
+    async def test_streaming_end_marker_reports_what_actually_ran(self) -> None:
+        """``ToolCallEndMarker.arguments`` is the persistence boundary: it must
+        carry the payload the handler received, not the shape the model sent."""
+        handler, calls = _recording_handler()
+        provider = _tool_call_provider("boards", HOISTED_CALL, streaming=True)
+        kit, ai, room_id = await _ai_setup(provider, handler, [BOARDS_TOOL])
+
+        event = RoomEvent(
+            room_id=room_id,
+            source=EventSource(
+                channel_id="sms-1",
+                channel_type=ChannelType.SMS,
+                direction=ChannelDirection.INBOUND,
+            ),
+            content=TextContent(body="list the columns"),
+        )
+        binding = ChannelBinding(channel_id="ai-1", room_id=room_id, channel_type=ChannelType.AI)
+        output = await ai.on_event(event, binding, await kit._build_context(room_id))
+        assert output.response_stream is not None
+        items = [item async for item in output.response_stream]
+
+        start = next(i for i in items if isinstance(i, ToolCallStartMarker))
+        end = next(i for i in items if isinstance(i, ToolCallEndMarker))
+        assert start.arguments == HOISTED_CALL  # what the model asked for
+        assert end.arguments == FOLDED_CALL  # what ran
         assert calls == [("boards", FOLDED_CALL)]
 
     async def test_both_forms_at_once_is_refused_with_a_message_that_decides(self) -> None:
@@ -243,6 +274,24 @@ class TestRealtimeChannel:
         await rt_provider.simulate_tool_call(session, "call-1", "boards", dict(HOISTED_CALL))
         await asyncio.sleep(0.05)
 
+        assert calls == [("boards", FOLDED_CALL)]
+
+    async def test_hook_sees_the_folded_payload(self, rt_provider: MockRealtimeProvider) -> None:
+        handler, calls = _recording_handler()
+        kit, channel, room_id = await _rt_setup(rt_provider, handler, [BOARDS_TOOL])
+
+        seen_by_hook: list[dict[str, Any]] = []
+
+        @kit.hook(HookTrigger.BEFORE_TOOL_USE, execution=HookExecution.SYNC, name="observe")
+        async def observe(event: ToolCallEvent, ctx: RoomContext) -> HookResult:
+            seen_by_hook.append(event.arguments)
+            return HookResult(action="allow")
+
+        session = await channel.start_session(room_id, "user-1", "fake-ws")
+        await rt_provider.simulate_tool_call(session, "call-1", "boards", dict(HOISTED_CALL))
+        await asyncio.sleep(0.05)
+
+        assert seen_by_hook == [FOLDED_CALL]
         assert calls == [("boards", FOLDED_CALL)]
 
     async def test_both_forms_at_once_is_refused_with_a_message_that_decides(

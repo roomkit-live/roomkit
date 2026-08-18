@@ -128,10 +128,10 @@ _HUB_SCHEMA = {
 
 def test_hoisted_arguments_are_folded_into_params() -> None:
     folded, err = fold_hoisted_arguments(
-        _HUB_SCHEMA, {"action": "list_columns", "board_id": "1a0a495f"}
+        _HUB_SCHEMA, {"action": "list_columns", "board_id": "board-1"}
     )
     assert err is None
-    assert folded == {"action": "list_columns", "params": {"board_id": "1a0a495f"}}
+    assert folded == {"action": "list_columns", "params": {"board_id": "board-1"}}
     # And the repaired call is what the gate would have accepted all along.
     assert validate_tool_arguments(_HUB_SCHEMA, folded) is None
 

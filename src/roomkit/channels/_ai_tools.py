@@ -302,9 +302,9 @@ class AIToolsMixin:
                     )
                 if folded is not None:
                     logger.info(
-                        "Tool %s: folded hoisted arguments %s into 'params' (model=%s)",
+                        "Tool %s: folded hoisted arguments %s into its container (model=%s)",
                         tc.name,
-                        sorted(folded["params"]),
+                        sorted(set(call_arguments) - set(folded)),
                         self._provider.model_name,
                     )
                     call_arguments = folded

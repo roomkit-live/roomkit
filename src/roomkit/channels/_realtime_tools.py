@@ -466,10 +466,12 @@ class RealtimeToolsMixin:
                 )
             if folded is not None:
                 logger.info(
-                    "Realtime tool %s: folded hoisted arguments %s into 'params' (model=%s)",
+                    "Realtime tool %s: folded hoisted arguments %s into its container "
+                    "(provider=%s, model=%s)",
                     name,
-                    sorted(folded["params"]),
-                    getattr(self._provider, "_model", self._provider.name),
+                    sorted(set(arguments) - set(folded)),
+                    self._provider.name,
+                    getattr(self._provider, "_model", "unknown"),
                 )
                 arguments = folded
             arg_error = validate_tool_arguments(params, arguments)

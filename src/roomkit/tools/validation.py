@@ -85,12 +85,12 @@ def validate_tool_arguments(parameters: dict[str, Any], arguments: dict[str, Any
     return None
 
 
-# The container property a hub tool declares for its own arguments. Luge's
-# platform tools are hubs — one tool per domain, signature ``{action, params}``
-# — and a model trained mostly on flat schemas (one tool = its arguments)
-# hoists the inner keys one level up. The name is fixed rather than inferred
-# ("the schema's only object property") because guessing the container is how a
-# real typo lands inside an unrelated object argument.
+# The container property a hub tool declares for its own arguments. A hub tool
+# exposes one tool per domain behind a ``{action, params}`` signature, and a
+# model trained mostly on flat schemas (one tool = its arguments) hoists the
+# inner keys one level up. The name is fixed rather than inferred ("the
+# schema's only object property") because guessing the container is how a real
+# typo lands inside an unrelated object argument.
 _PARAMS_PROPERTY = "params"
 
 
