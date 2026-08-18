@@ -290,26 +290,28 @@ class RealtimeToolsMixin:
                 )
                 return
 
+            # Pre-execution gate (parity with the classic AI path): validate
+            # arguments and run BEFORE_TOOL_USE BEFORE the call is routed, so a
+            # block prevents the side effect instead of only hiding the result.
+            # Its scope is the call, not the handler: hook-only mode serves the
+            # tool from ON_TOOL_CALL and must be gated the same way.
+            arguments, denial = await self._authorize_realtime_tool(
+                name, arguments, call_id, room_id, session
+            )
+            if denial is not None:
+                await self._provider.submit_tool_result(session, call_id, denial)
+                telemetry.end_span(tool_span_id)
+                logger.info(
+                    "Realtime tool %s(%s) denied before execution for session %s",
+                    name,
+                    call_id,
+                    session.id,
+                )
+                return
+
             # Run tool_handler (if exists).
             handler_result: str | None = None
             if self._tool_handler is not None:
-                # Pre-execution gate (parity with the classic AI path): validate
-                # arguments and run BEFORE_TOOL_USE BEFORE the handler, so a block
-                # prevents the side effect instead of only hiding the result.
-                arguments, denial = await self._authorize_realtime_tool(
-                    name, arguments, call_id, room_id, session
-                )
-                if denial is not None:
-                    await self._provider.submit_tool_result(session, call_id, denial)
-                    telemetry.end_span(tool_span_id)
-                    logger.info(
-                        "Realtime tool %s(%s) denied before execution for session %s",
-                        name,
-                        call_id,
-                        session.id,
-                    )
-                    return
-
                 logger.info(
                     "Executing tool %s(%s) via handler for session %s",
                     name,

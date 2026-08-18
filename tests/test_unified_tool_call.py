@@ -734,3 +734,193 @@ class TestToolAuthorizationH1:
         handler.assert_not_awaited()
         result = json.loads(rt_provider.tool_results[0][2])
         assert result == {"error": "Tool 'delete_everything' is not declared"}
+
+
+# ---------------------------------------------------------------------------
+# RMK-131: the realtime gate is a property of the channel, not of tool_handler
+# ---------------------------------------------------------------------------
+
+
+class TestRealtimeGateWithoutToolHandler:
+    """Hook-only mode — the tool is served by ON_TOOL_CALL, not by a handler.
+
+    The pre-execution gate used to live inside ``if self._tool_handler is not
+    None``, so this mode ran unvalidated: the hook received the model's raw
+    payload and a blocking BEFORE_TOOL_USE hook blocked nothing.
+    """
+
+    @staticmethod
+    async def _hook_only_channel(
+        rt_provider: MockRealtimeProvider,
+        rt_transport: MockRealtimeTransport,
+        channel_id: str,
+        tools: list[dict[str, Any]] | None,
+    ) -> tuple[RoomKit, RealtimeVoiceChannel, Any]:
+        ch = RealtimeVoiceChannel(
+            channel_id,
+            provider=rt_provider,
+            transport=rt_transport,
+            tools=tools,
+        )
+        kit = RoomKit()
+        kit.register_channel(ch)
+        room = await kit.create_room()
+        await kit.attach_channel(room.id, channel_id)
+        session = await ch.start_session(room.id, "u1", "ws")
+        return kit, ch, session
+
+    @staticmethod
+    def _lookup_tool() -> list[dict[str, Any]]:
+        return [
+            {
+                "name": "lookup",
+                "description": "Look up a city",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"city": {"type": "string"}},
+                    "required": ["city"],
+                    "additionalProperties": False,
+                },
+            }
+        ]
+
+    async def test_invalid_arguments_are_refused_before_the_hook(
+        self,
+        rt_provider: MockRealtimeProvider,
+        rt_transport: MockRealtimeTransport,
+    ) -> None:
+        kit, _ch, session = await self._hook_only_channel(
+            rt_provider, rt_transport, "rt-hookonly-args", self._lookup_tool()
+        )
+        served: list[dict[str, Any]] = []
+
+        @kit.hook(HookTrigger.ON_TOOL_CALL, execution=HookExecution.SYNC, name="serve")
+        async def serve(event: ToolCallEvent, ctx: RoomContext) -> HookResult:
+            served.append(event.arguments)
+            return HookResult(action="allow", metadata={"result": "sunny"})
+
+        await rt_provider.simulate_tool_call(session, "c1", "lookup", {"city": 42})
+        await asyncio.sleep(0.1)
+
+        assert served == []
+        result = json.loads(rt_provider.tool_results[0][2])
+        assert "Invalid arguments" in result["error"]
+
+    async def test_an_unknown_argument_on_a_closed_schema_is_refused(
+        self,
+        rt_provider: MockRealtimeProvider,
+        rt_transport: MockRealtimeTransport,
+    ) -> None:
+        kit, _ch, session = await self._hook_only_channel(
+            rt_provider, rt_transport, "rt-hookonly-unknown", self._lookup_tool()
+        )
+        served: list[dict[str, Any]] = []
+
+        @kit.hook(HookTrigger.ON_TOOL_CALL, execution=HookExecution.SYNC, name="serve")
+        async def serve(event: ToolCallEvent, ctx: RoomContext) -> HookResult:
+            served.append(event.arguments)
+            return HookResult.allow()
+
+        await rt_provider.simulate_tool_call(
+            session, "c2", "lookup", {"city": "Paris", "country": "FR"}
+        )
+        await asyncio.sleep(0.1)
+
+        assert served == []
+        result = json.loads(rt_provider.tool_results[0][2])
+        assert "unknown argument 'country'" in result["error"]
+
+    async def test_a_blocking_before_tool_use_hook_stops_the_call(
+        self,
+        rt_provider: MockRealtimeProvider,
+        rt_transport: MockRealtimeTransport,
+    ) -> None:
+        kit, _ch, session = await self._hook_only_channel(
+            rt_provider, rt_transport, "rt-hookonly-block", self._lookup_tool()
+        )
+        served: list[dict[str, Any]] = []
+
+        @kit.hook(HookTrigger.BEFORE_TOOL_USE, execution=HookExecution.SYNC, name="deny")
+        async def deny(event: ToolCallEvent, ctx: RoomContext) -> HookResult:
+            return HookResult.block("not allowed")
+
+        @kit.hook(HookTrigger.ON_TOOL_CALL, execution=HookExecution.SYNC, name="serve")
+        async def serve(event: ToolCallEvent, ctx: RoomContext) -> HookResult:
+            served.append(event.arguments)
+            return HookResult(action="allow", metadata={"result": "sunny"})
+
+        await rt_provider.simulate_tool_call(session, "c3", "lookup", {"city": "Paris"})
+        await asyncio.sleep(0.1)
+
+        # The tool was never served — the block prevented it, not merely hid it.
+        assert served == []
+        result = json.loads(rt_provider.tool_results[0][2])
+        assert "not allowed" in result["error"]
+
+    async def test_a_hook_rewrite_reaches_the_serving_hook(
+        self,
+        rt_provider: MockRealtimeProvider,
+        rt_transport: MockRealtimeTransport,
+    ) -> None:
+        kit, _ch, session = await self._hook_only_channel(
+            rt_provider, rt_transport, "rt-hookonly-rewrite", self._lookup_tool()
+        )
+        served: list[dict[str, Any]] = []
+
+        @kit.hook(HookTrigger.BEFORE_TOOL_USE, execution=HookExecution.SYNC, name="restore")
+        async def restore(event: ToolCallEvent, ctx: RoomContext) -> HookResult:
+            return HookResult(action="allow", metadata={"arguments": {"city": "Montreal"}})
+
+        @kit.hook(HookTrigger.ON_TOOL_CALL, execution=HookExecution.SYNC, name="serve")
+        async def serve(event: ToolCallEvent, ctx: RoomContext) -> HookResult:
+            served.append(event.arguments)
+            return HookResult(action="allow", metadata={"result": "sunny"})
+
+        await rt_provider.simulate_tool_call(session, "c4", "lookup", {"city": "[CITY_1]"})
+        await asyncio.sleep(0.1)
+
+        assert served == [{"city": "Montreal"}]
+
+    async def test_a_valid_call_is_still_served_by_the_hook(
+        self,
+        rt_provider: MockRealtimeProvider,
+        rt_transport: MockRealtimeTransport,
+    ) -> None:
+        """Non-regression: the historical hook-only mode keeps working."""
+        kit, _ch, session = await self._hook_only_channel(
+            rt_provider, rt_transport, "rt-hookonly-ok", self._lookup_tool()
+        )
+        served: list[dict[str, Any]] = []
+
+        @kit.hook(HookTrigger.ON_TOOL_CALL, execution=HookExecution.SYNC, name="serve")
+        async def serve(event: ToolCallEvent, ctx: RoomContext) -> HookResult:
+            served.append(event.arguments)
+            return HookResult(action="allow", metadata={"result": "sunny"})
+
+        await rt_provider.simulate_tool_call(session, "c5", "lookup", {"city": "Paris"})
+        await asyncio.sleep(0.1)
+
+        assert served == [{"city": "Paris"}]
+        assert rt_provider.tool_results[0][2] == "sunny"
+
+    async def test_an_empty_catalogue_still_accepts_an_undeclared_name(
+        self,
+        rt_provider: MockRealtimeProvider,
+        rt_transport: MockRealtimeTransport,
+    ) -> None:
+        """Dynamic mode: no declarations means the channel cannot judge a name."""
+        kit, _ch, session = await self._hook_only_channel(
+            rt_provider, rt_transport, "rt-hookonly-dynamic", None
+        )
+        served: list[str] = []
+
+        @kit.hook(HookTrigger.ON_TOOL_CALL, execution=HookExecution.SYNC, name="serve")
+        async def serve(event: ToolCallEvent, ctx: RoomContext) -> HookResult:
+            served.append(event.name)
+            return HookResult(action="allow", metadata={"result": "done"})
+
+        await rt_provider.simulate_tool_call(session, "c6", "anything_at_all", {"x": 1})
+        await asyncio.sleep(0.1)
+
+        assert served == ["anything_at_all"]
+        assert rt_provider.tool_results[0][2] == "done"
