@@ -198,13 +198,15 @@ class TestGeminiVertexIdentity:
         def _no_adc(**_kwargs: Any) -> Any:
             raise google.auth.exceptions.DefaultCredentialsError("none found")
 
-        with patch.object(google.auth, "default", _no_adc):
-            with pytest.raises(ValueError, match="no Google credentials of its own"):
-                GeminiVertexProvider._credentials(
-                    _vconfig(
-                        impersonate_service_account="theirs@their-project.iam.gserviceaccount.com"
-                    )
+        with (
+            patch.object(google.auth, "default", _no_adc),
+            pytest.raises(ValueError, match="no Google credentials of its own"),
+        ):
+            GeminiVertexProvider._credentials(
+                _vconfig(
+                    impersonate_service_account="theirs@their-project.iam.gserviceaccount.com"
                 )
+            )
 
     def test_a_path_instead_of_the_key_says_so(self) -> None:
         """The likeliest mistake is pasting the filename, and it must not read
