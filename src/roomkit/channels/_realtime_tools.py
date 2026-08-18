@@ -486,6 +486,10 @@ class RealtimeToolsMixin:
         # BEFORE_TOOL_USE gate (needs a framework + room to run room hooks).
         if self._framework is None or not room_id:
             return arguments, None
+        # Building a context costs two store reads; skip it when nothing listens.
+        # Schema validation above stays unconditional — it needs no context.
+        if not self._framework.hook_engine.has_hooks(HookTrigger.BEFORE_TOOL_USE):
+            return arguments, None
         from roomkit.models.tool_call import ToolCallEvent
 
         pre_event = ToolCallEvent(
@@ -496,6 +500,7 @@ class RealtimeToolsMixin:
             arguments=arguments,
             result=None,
             room_id=room_id,
+            session=session,
         )
         context = await self._framework._build_context(room_id)
         hook_result = await self._framework.hook_engine.run_sync_hooks(

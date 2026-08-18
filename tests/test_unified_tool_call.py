@@ -21,6 +21,7 @@ from roomkit.channels.ai import AIChannel
 from roomkit.channels.realtime_voice import RealtimeVoiceChannel
 from roomkit.models.enums import ChannelType
 from roomkit.providers.ai.mock import MockAIProvider
+from roomkit.voice.base import VoiceSession
 from roomkit.voice.realtime.mock import MockRealtimeProvider, MockRealtimeTransport
 
 # ---------------------------------------------------------------------------
@@ -744,9 +745,9 @@ class TestToolAuthorizationH1:
 class TestRealtimeGateWithoutToolHandler:
     """Hook-only mode — the tool is served by ON_TOOL_CALL, not by a handler.
 
-    The pre-execution gate used to live inside ``if self._tool_handler is not
-    None``, so this mode ran unvalidated: the hook received the model's raw
-    payload and a blocking BEFORE_TOOL_USE hook blocked nothing.
+    The pre-execution gate is a property of the channel: the catalogue check,
+    argument validation and BEFORE_TOOL_USE run whether or not a handler
+    serves the call.
     """
 
     @staticmethod
@@ -755,7 +756,7 @@ class TestRealtimeGateWithoutToolHandler:
         rt_transport: MockRealtimeTransport,
         channel_id: str,
         tools: list[dict[str, Any]] | None,
-    ) -> tuple[RoomKit, RealtimeVoiceChannel, Any]:
+    ) -> tuple[RoomKit, RealtimeVoiceChannel, VoiceSession]:
         ch = RealtimeVoiceChannel(
             channel_id,
             provider=rt_provider,
@@ -839,9 +840,11 @@ class TestRealtimeGateWithoutToolHandler:
             rt_provider, rt_transport, "rt-hookonly-block", self._lookup_tool()
         )
         served: list[dict[str, Any]] = []
+        gated: list[str | None] = []
 
         @kit.hook(HookTrigger.BEFORE_TOOL_USE, execution=HookExecution.SYNC, name="deny")
         async def deny(event: ToolCallEvent, ctx: RoomContext) -> HookResult:
+            gated.append(event.session.id if event.session else None)
             return HookResult.block("not allowed")
 
         @kit.hook(HookTrigger.ON_TOOL_CALL, execution=HookExecution.SYNC, name="serve")
@@ -854,6 +857,9 @@ class TestRealtimeGateWithoutToolHandler:
 
         # The tool was never served — the block prevented it, not merely hid it.
         assert served == []
+        # The gate event names the voice session the call came from, so a hook
+        # can decide per call rather than per channel.
+        assert gated == [session.id]
         result = json.loads(rt_provider.tool_results[0][2])
         assert "not allowed" in result["error"]
 
@@ -886,7 +892,7 @@ class TestRealtimeGateWithoutToolHandler:
         rt_provider: MockRealtimeProvider,
         rt_transport: MockRealtimeTransport,
     ) -> None:
-        """Non-regression: the historical hook-only mode keeps working."""
+        """A valid call passes the gate and reaches the serving hook."""
         kit, _ch, session = await self._hook_only_channel(
             rt_provider, rt_transport, "rt-hookonly-ok", self._lookup_tool()
         )

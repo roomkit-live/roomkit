@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A realtime tool call is gated whoever serves it** — the pre-execution gate
+  on `RealtimeVoiceChannel` (declared-catalogue check, argument validation
+  against the declared schema, `BEFORE_TOOL_USE`) ran inside the
+  `tool_handler` branch, so hook-only hosts — those serving the tool from an
+  `ON_TOOL_CALL` hook — got none of it: the hook received the model's raw
+  payload and a blocking `BEFORE_TOOL_USE` hook blocked nothing, because it was
+  consulted after the fact. The gate now runs before the call is routed, which
+  is what makes it a property of the channel rather than of a constructor
+  argument. Hook-only hosts should expect three new refusals on that path: a
+  tool name absent from a non-empty declared catalogue, arguments that violate
+  the declared schema, and any call a `BEFORE_TOOL_USE` hook denies. A channel
+  declaring no tools keeps its dynamic mode — an undeclared name still passes.
+
 ## [0.54.0] — 2026-08-18
 
 ### Added
