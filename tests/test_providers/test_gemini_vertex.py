@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
-from pydantic import ValidationError
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
+from pydantic import SecretStr, ValidationError
 
-from roomkit.providers.gemini.vertex import GeminiVertexConfig
+from roomkit.providers.gemini.vertex import GeminiVertexConfig, GeminiVertexProvider
 
 
 def _mock_genai_module() -> MagicMock:
@@ -74,6 +77,9 @@ class TestGeminiVertexProvider:
                 vertexai=True,
                 project="my-proj",
                 location="northamerica-northeast1",
+                # No key configured: the client falls back to the ADC chain,
+                # which is what a single-project deployment runs on.
+                credentials=None,
             )
 
     def test_no_api_key_passed_to_client(self) -> None:
@@ -98,3 +104,83 @@ class TestGeminiVertexProvider:
             # Inherited behaviour works unchanged.
             assert provider.model_name == "gemini-3.5-flash"
             assert provider.supports_vision is True
+
+
+_EMAIL = "luge-agent@example-project.iam.gserviceaccount.com"
+
+
+def _service_account_key() -> str:
+    """A structurally real key file — generated, never checked in."""
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    pem = key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption(),
+    ).decode()
+    return json.dumps(
+        {
+            "type": "service_account",
+            "project_id": "example-project",
+            "private_key_id": "0" * 40,
+            "private_key": pem,
+            "client_email": _EMAIL,
+            "client_id": "1234567890",
+            "token_uri": "https://oauth2.googleapis.com/token",
+        }
+    )
+
+
+class TestGeminiVertexIdentity:
+    """Who the provider authenticates as.
+
+    Vertex takes no API key, so the identity is either a service account named
+    by a key in the configuration or whatever ADC the process happens to hold.
+    The distinction decides whether one deployment can serve several projects:
+    ADC answers "who is this machine", so a caller naming another tenant's
+    project is refused however correct that project id is.
+    """
+
+    def test_no_key_leaves_the_adc_chain_in_place(self) -> None:
+        assert GeminiVertexProvider._credentials(_vconfig()) is None
+        assert (
+            GeminiVertexProvider._credentials(_vconfig(service_account_json=SecretStr("  ")))
+            is None
+        )
+
+    def test_a_key_authenticates_as_that_service_account(self) -> None:
+        creds = GeminiVertexProvider._credentials(
+            _vconfig(service_account_json=SecretStr(_service_account_key()))
+        )
+
+        assert creds is not None
+        assert creds.service_account_email == _EMAIL
+        # Stated explicitly: credentials parsed without a scope are refused by
+        # the transport, and cloud-platform is the only scope Vertex accepts.
+        assert list(creds.scopes) == ["https://www.googleapis.com/auth/cloud-platform"]
+
+    def test_the_key_reaches_the_client(self) -> None:
+        mock_genai = _mock_genai_module()
+        with patch.dict("sys.modules", _genai_modules(mock_genai)):
+            from roomkit.providers.gemini.vertex import GeminiVertexProvider as Provider
+
+            Provider(_vconfig(service_account_json=SecretStr(_service_account_key())))
+
+            _, kwargs = mock_genai.Client.call_args
+            assert kwargs["credentials"] is not None
+            assert kwargs["credentials"].service_account_email == _EMAIL
+
+    def test_a_path_instead_of_the_key_says_so(self) -> None:
+        """The likeliest mistake is pasting the filename, and it must not read
+        as a credentials failure hours later."""
+        with pytest.raises(ValueError, match="not valid JSON"):
+            GeminiVertexProvider._credentials(
+                _vconfig(service_account_json=SecretStr("/etc/secrets/key.json"))
+            )
+
+    def test_the_other_google_json_is_named_for_what_it_is(self) -> None:
+        """An ``authorized_user`` file is what ``gcloud auth`` writes, so it is
+        the other thing someone will paste here."""
+        adc = json.dumps({"type": "authorized_user", "client_id": "x", "refresh_token": "y"})
+
+        with pytest.raises(ValueError, match="authorized_user"):
+            GeminiVertexProvider._credentials(_vconfig(service_account_json=SecretStr(adc)))
