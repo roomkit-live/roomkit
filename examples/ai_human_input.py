@@ -9,6 +9,7 @@ Shows:
 - ON_USER_INPUT_REQUIRED hook for notifications
 - An answer arriving while the notification is still in flight —
   the tool resumes on the answer, not on the notification
+- ``actor_id`` on the request: which participant's turn raised it
 - create_detached() / release() for a runtime that owns its tool loop
 
 Run with:
@@ -36,7 +37,7 @@ from roomkit import (
     WebSocketChannel,
 )
 from roomkit.channels.ai import AIChannel
-from roomkit.providers.ai.base import AIResponse, AIToolCall
+from roomkit.providers.ai.base import AIResponse, AITool, AIToolCall
 from roomkit.providers.ai.mock import MockAIProvider
 
 logging.basicConfig(level=logging.INFO, format="%(name)s | %(message)s")
@@ -89,6 +90,32 @@ async def main() -> None:
     human = HumanInputToolHandler(
         tool_names={"AskUserQuestion"},
         timeout=30,
+        # The definition is what puts the tool in the turn's resolved toolset.
+        # Name it here (or declare it on the channel) or the loop drops the
+        # call as unoffered and the human is never asked.
+        tool_definitions=[
+            AITool(
+                name="AskUserQuestion",
+                description="Ask the user a question and wait for the answer.",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "questions": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "question": {"type": "string"},
+                                    "options": {"type": "array", "items": {"type": "string"}},
+                                },
+                                "required": ["question"],
+                            },
+                        }
+                    },
+                    "required": ["questions"],
+                },
+            )
+        ],
     )
 
     ai = AIChannel(
@@ -111,10 +138,14 @@ async def main() -> None:
     @kit.hook(HookTrigger.ON_USER_INPUT_REQUIRED, execution=HookExecution.SYNC)
     async def on_input_needed(event, ctx):
         logger.info(
-            "%s | notification started: pending_id=%s tool=%s args=%s",
+            # ``actor_id`` is who to ask: the participant whose turn raised the
+            # request. Without it a notification layer can only broadcast, and
+            # whoever answers first answers for someone else.
+            "%s | notification started: pending_id=%s tool=%s actor=%s args=%s",
             elapsed(),
             event.pending_id,
             event.tool_name,
+            event.actor_id,
             event.arguments,
         )
 

@@ -42,6 +42,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The field is appended to both dataclasses, so existing positional
   construction is unchanged.
 
+### Fixed
+
+- **The human-in-the-loop example never asked a human.** `tool_names` gates
+  which calls `HumanInputToolHandler` intercepts; it does not put those tools
+  in the turn's resolved toolset, and a tool the turn does not offer is dropped
+  by the loop before any handler runs. `examples/ai_human_input.py` declared
+  none, so its `AskUserQuestion` call was rejected as unoffered, the agent
+  carried on with an error, and the `ON_USER_INPUT_REQUIRED` notification the
+  example exists to demonstrate never fired. The example now declares the
+  definition, and the guide says which of the two knobs offers a tool.
+
 ## [0.53.0] — 2026-08-16
 
 ### Added
