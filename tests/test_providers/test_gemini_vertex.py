@@ -169,6 +169,43 @@ class TestGeminiVertexIdentity:
             assert kwargs["credentials"] is not None
             assert kwargs["credentials"].service_account_email == _EMAIL
 
+    def test_borrowing_an_account_mints_tokens_for_it(self) -> None:
+        """The identity a caller needs and the secret it holds are separate.
+
+        Organizations increasingly forbid the secret — Google enforces
+        ``disableServiceAccountKeyCreation`` by default on recent ones — so a
+        project owner grants us the right to borrow an account instead, and no
+        key is ever downloaded.
+        """
+        creds = GeminiVertexProvider._credentials(
+            _vconfig(
+                service_account_json=SecretStr(_service_account_key()),
+                impersonate_service_account="theirs@their-project.iam.gserviceaccount.com",
+            )
+        )
+
+        assert creds is not None
+        assert creds.service_account_email == "theirs@their-project.iam.gserviceaccount.com"
+        # The key is the borrower, not the borrowed: it signs the request that
+        # asks Google for the other account's token.
+        assert creds._source_credentials.service_account_email == _EMAIL
+
+    def test_borrowing_without_an_identity_of_our_own_says_which_half_is_missing(self) -> None:
+        """Impersonation needs something to sign with, and "no credentials at
+        all" must not read as "that account refused us"."""
+        import google.auth
+
+        def _no_adc(**_kwargs: Any) -> Any:
+            raise google.auth.exceptions.DefaultCredentialsError("none found")
+
+        with patch.object(google.auth, "default", _no_adc):
+            with pytest.raises(ValueError, match="no Google credentials of its own"):
+                GeminiVertexProvider._credentials(
+                    _vconfig(
+                        impersonate_service_account="theirs@their-project.iam.gserviceaccount.com"
+                    )
+                )
+
     def test_a_path_instead_of_the_key_says_so(self) -> None:
         """The likeliest mistake is pasting the filename, and it must not read
         as a credentials failure hours later."""

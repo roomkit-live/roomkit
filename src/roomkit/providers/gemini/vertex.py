@@ -60,6 +60,21 @@ class GeminiVertexConfig(GeminiConfig):
     ``None`` keeps the ADC chain, which stays right for a single-project
     deployment and for local development."""
 
+    impersonate_service_account: str | None = None
+    """Email of a service account to **borrow** instead of holding its key.
+
+    The identity a caller needs and the secret it holds are separate problems,
+    and organizations increasingly forbid the second: Google enforces
+    ``constraints/iam.disableServiceAccountKeyCreation`` by default on recent
+    organizations, so a project owner cannot hand out a key even when willing.
+    Here the owner instead grants this deployment's own identity
+    ``roles/iam.serviceAccountTokenCreator`` on one of their service accounts,
+    and Vertex is called as that account with short-lived tokens nobody ever
+    downloads — revocable from their side, in one command, without telling us.
+
+    Combines with the fields above rather than replacing them: the borrowing
+    identity is ``service_account_json`` when set, otherwise ADC."""
+
 
 class GeminiVertexProvider(GeminiAIProvider):
     """Gemini provider backed by Vertex AI in a specific Google Cloud region.
@@ -93,15 +108,55 @@ class GeminiVertexProvider(GeminiAIProvider):
 
     @staticmethod
     def _credentials(config: GeminiVertexConfig) -> Any | None:
-        """Service-account credentials from the configured key, else ``None``.
+        """The identity this client calls as, or ``None`` for the ADC chain.
 
-        ``None`` is not a failure: it hands the client back to the ADC chain,
-        which is the right answer for a deployment that owns its project.
+        Three answers, in the order they are read: borrow a named service
+        account, authenticate as a configured key, or stay ambient. ``None`` is
+        not a failure — it is the right answer for a deployment that owns the
+        project it calls.
 
-        The scope is stated explicitly because a key parsed without one yields
-        credentials the transport refuses, and ``cloud-platform`` is the only
-        scope Vertex accepts — there is no narrower one to ask for.
+        The scope is stated explicitly throughout because credentials parsed
+        without one are refused by the transport, and ``cloud-platform`` is the
+        only scope Vertex accepts.
         """
+        source = GeminiVertexProvider._key_credentials(config)
+        target = (config.impersonate_service_account or "").strip()
+        if not target:
+            return source
+        return GeminiVertexProvider._borrowed_credentials(source, target)
+
+    @staticmethod
+    def _borrowed_credentials(source: Any | None, target: str) -> Any:
+        """Short-lived credentials for ``target``, minted by whoever we are.
+
+        The source is this deployment's own identity — its key when configured,
+        else ADC, resolved explicitly here because impersonation needs something
+        to sign the request with and the client cannot fall back on its own.
+        """
+        try:
+            import google.auth
+            from google.auth import impersonated_credentials
+        except ImportError as exc:  # pragma: no cover - ships with google-genai
+            raise ImportError("google-auth is required to impersonate a service account.") from exc
+
+        scopes = ["https://www.googleapis.com/auth/cloud-platform"]
+        if source is None:
+            try:
+                source, _ = google.auth.default(scopes=scopes)
+            except Exception as exc:
+                raise ValueError(
+                    f"Cannot borrow {target}: this deployment has no Google credentials "
+                    "of its own to borrow it with."
+                ) from exc
+        return impersonated_credentials.Credentials(
+            source_credentials=source,
+            target_principal=target,
+            target_scopes=scopes,
+        )
+
+    @staticmethod
+    def _key_credentials(config: GeminiVertexConfig) -> Any | None:
+        """Credentials from the configured service-account key, else ``None``."""
         if config.service_account_json is None:
             return None
         raw = config.service_account_json.get_secret_value().strip()
