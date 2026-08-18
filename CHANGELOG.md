@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **A tool call knows whose turn it is** — `current_tool_actor_id()`
+  (`roomkit.tools`) reports the participant id of the event that woke the
+  channel this round, the way `current_tool_room_id()` already reports the
+  room. Both ride the per-turn `_ToolLoopContext`, for the same reason: a
+  channel object is registered once per `channel_id` and shared by every room
+  it serves, so identity captured when a handler was built is whoever attached
+  it — not the person speaking. A host resolving "the user" from that captured
+  value acts for the wrong person in any room where two humans talk to one
+  agent. `None` outside a tool loop, and `None` when the turn carries no
+  participant (a system injection, a webhook, a scheduled run) so a caller can
+  refuse rather than borrow the last human.
+
 ## [0.53.0] — 2026-08-16
 
 ### Added

@@ -141,6 +141,15 @@ class _ToolLoopContext:
     # every round, so it is inherited across for_loop like ``all_context_tools``.
     tool_search_active: bool = False
     current_participant_role: str | None = None
+    # Participant id of whoever's turn this is — the author of the event that
+    # woke the channel. A channel object is registered once per channel_id and
+    # shared by every room it serves, so anything a tool handler wants to know
+    # about *this* turn has to ride the contextvar: the room does
+    # (``room_id``), and so must the person, or a handler acting "for the
+    # user" acts for whoever the channel was built with. ``None`` when the
+    # event carries no participant (a system injection, a webhook) — a caller
+    # must then decide for itself rather than assume the last human.
+    actor_id: str | None = None
     room_id: str | None = None
     steering_queue: asyncio.Queue[SteeringDirective] = field(default_factory=asyncio.Queue)
     cancel_event: asyncio.Event = field(default_factory=asyncio.Event)
@@ -161,6 +170,7 @@ class _ToolLoopContext:
         ctx.loop_id = uuid4().hex
         if parent is not None:
             ctx.current_participant_role = parent.current_participant_role
+            ctx.actor_id = parent.actor_id
             ctx.all_context_tools = parent.all_context_tools
             ctx.tool_search_active = parent.tool_search_active
             # Carry the used-tools re-exposition seeded in _build_context into the
@@ -484,6 +494,7 @@ class AIChannel(
         # for tool handlers to learn the originating room.
         event_ctx = _ToolLoopContext()
         event_ctx.current_participant_role = self._resolve_participant_role(event, context)
+        event_ctx.actor_id = event.source.participant_id
         event_ctx.room_id = context.room.id if context.room else event.room_id
         token = _current_loop_ctx.set(event_ctx)
         try:

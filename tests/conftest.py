@@ -116,11 +116,14 @@ def make_event(
     channel_id: str = "ch1",
     channel_type: ChannelType = ChannelType.SMS,
     body: str = "hello",
+    participant_id: str | None = None,
     **kwargs: object,
 ) -> RoomEvent:
     return RoomEvent(
         room_id=room_id,
-        source=EventSource(channel_id=channel_id, channel_type=channel_type),
+        source=EventSource(
+            channel_id=channel_id, channel_type=channel_type, participant_id=participant_id
+        ),
         content=TextContent(body=body),
         **kwargs,  # type: ignore[arg-type]
     )

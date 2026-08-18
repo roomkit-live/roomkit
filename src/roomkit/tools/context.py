@@ -60,6 +60,26 @@ def current_tool_room_id() -> str | None:
     return ctx.room_id if ctx is not None else None
 
 
+def current_tool_actor_id() -> str | None:
+    """Participant id of whoever's turn the caller is executing under.
+
+    The person a tool should act *for*: the author of the event that woke the
+    channel this round. Read it rather than the identity a handler captured
+    when it was built — one channel object serves every room and every
+    speaker, so a captured identity is whoever happened to attach it.
+
+    ``None`` outside a tool loop, and ``None`` when the turn has no
+    participant behind it (a system injection, a webhook, a scheduled run).
+    A caller that needs a person then decides for itself — refuse, or fall
+    back to a principal it configured on purpose — rather than borrow the
+    last human who spoke.
+    """
+    from roomkit.channels.ai import _current_loop_ctx
+
+    ctx = _current_loop_ctx.get()
+    return ctx.actor_id if ctx is not None else None
+
+
 def current_tool_allowed_names() -> set[str] | None:
     """Names of every tool in the current turn's resolved toolset.
 

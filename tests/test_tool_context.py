@@ -17,7 +17,11 @@ from roomkit.models.enums import ChannelCategory, ChannelType
 from roomkit.models.room import Room
 from roomkit.providers.ai.base import AIResponse, AIToolCall
 from roomkit.providers.ai.mock import MockAIProvider
-from roomkit.tools import current_tool_allowed_names, current_tool_room_id
+from roomkit.tools import (
+    current_tool_actor_id,
+    current_tool_allowed_names,
+    current_tool_room_id,
+)
 from roomkit.tools.context import _current_tool_call
 from roomkit.tools.external import BeforeToolDecision
 from tests.conftest import make_event
@@ -56,6 +60,93 @@ def _tool_round_responses() -> list[AIResponse]:
             usage={"prompt_tokens": 20, "completion_tokens": 10},
         ),
     ]
+
+
+class TestCurrentToolActorId:
+    """The person a tool acts for is the author of the turn, never the identity
+    a handler captured when it was built: one channel object serves every room
+    and every speaker."""
+
+    async def test_handler_sees_the_turn_author(self) -> None:
+        seen: list[str | None] = []
+
+        async def tool_handler(name: str, args: dict[str, Any]) -> str:
+            seen.append(current_tool_actor_id())
+            return "ok"
+
+        provider = MockAIProvider(ai_responses=_tool_round_responses(), streaming=False)
+        ch = AIChannel("ai1", provider=provider, tool_handler=tool_handler)
+
+        await ch.on_event(
+            make_event(room_id="room-a", body="go", channel_id="sms1", participant_id="alice"),
+            _binding("room-a"),
+            RoomContext(room=Room(id="room-a")),
+        )
+
+        assert seen == ["alice"]
+
+    async def test_shared_channel_tracks_each_speaker(self) -> None:
+        """Two people, one channel object: each turn reports its own author."""
+        seen: list[str | None] = []
+
+        async def tool_handler(name: str, args: dict[str, Any]) -> str:
+            seen.append(current_tool_actor_id())
+            return "ok"
+
+        provider = MockAIProvider(
+            ai_responses=_tool_round_responses() + _tool_round_responses(),
+            streaming=False,
+        )
+        ch = AIChannel("ai1", provider=provider, tool_handler=tool_handler)
+
+        for who in ("alice", "bob"):
+            await ch.on_event(
+                make_event(room_id="room-a", body="go", channel_id="sms1", participant_id=who),
+                _binding("room-a"),
+                RoomContext(room=Room(id="room-a")),
+            )
+
+        assert seen == ["alice", "bob"]
+
+    async def test_no_participant_reports_none(self) -> None:
+        """A system injection has no author. ``None`` says so, so the caller
+        decides rather than inheriting whoever spoke last."""
+        seen: list[str | None] = []
+
+        async def tool_handler(name: str, args: dict[str, Any]) -> str:
+            seen.append(current_tool_actor_id())
+            return "ok"
+
+        provider = MockAIProvider(ai_responses=_tool_round_responses(), streaming=False)
+        ch = AIChannel("ai1", provider=provider, tool_handler=tool_handler)
+
+        await ch.on_event(
+            make_event(room_id="room-a", body="go", channel_id="sms1"),
+            _binding("room-a"),
+            RoomContext(room=Room(id="room-a")),
+        )
+
+        assert seen == [None]
+
+    async def test_streaming_handler_sees_the_turn_author(self) -> None:
+        seen: list[str | None] = []
+
+        async def tool_handler(name: str, args: dict[str, Any]) -> str:
+            seen.append(current_tool_actor_id())
+            return "ok"
+
+        provider = MockAIProvider(ai_responses=_tool_round_responses(), streaming=True)
+        ch = AIChannel("ai1", provider=provider, tool_handler=tool_handler)
+
+        output = await ch.on_event(
+            make_event(room_id="room-a", body="go", channel_id="sms1", participant_id="alice"),
+            _binding("room-a"),
+            RoomContext(room=Room(id="room-a")),
+        )
+        assert output.response_stream is not None
+        _ = [chunk async for chunk in output.response_stream]
+
+        assert seen == ["alice"]
 
 
 class TestCurrentToolRoomId:
