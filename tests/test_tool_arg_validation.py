@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from roomkit.tools.validation import validate_tool_arguments
+from roomkit.tools.validation import fold_hoisted_arguments, validate_tool_arguments
 
 _SCHEMA = {
     "type": "object",
@@ -111,3 +111,88 @@ def test_closed_schema_reports_missing_required_before_unknown() -> None:
     err = validate_tool_arguments(_CLOSED_SCHEMA, {"web_search_depth": "2"})
     assert err is not None
     assert "query" in err
+
+
+# A hub tool: one tool per domain, ``{action, params}``, closed by the schema
+# generator. This is the shape a flat-schema-trained model flattens.
+_HUB_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "action": {"type": "string"},
+        "params": {"type": "object"},
+    },
+    "required": ["action"],
+}
+
+
+def test_hoisted_arguments_are_folded_into_params() -> None:
+    folded, err = fold_hoisted_arguments(
+        _HUB_SCHEMA, {"action": "list_columns", "board_id": "1a0a495f"}
+    )
+    assert err is None
+    assert folded == {"action": "list_columns", "params": {"board_id": "1a0a495f"}}
+    # And the repaired call is what the gate would have accepted all along.
+    assert validate_tool_arguments(_HUB_SCHEMA, folded) is None
+
+
+def test_fold_keeps_declared_root_arguments_at_the_root() -> None:
+    folded, err = fold_hoisted_arguments(_HUB_SCHEMA, {"action": "x", "a": 1, "b": 2})
+    assert err is None
+    assert folded == {"action": "x", "params": {"a": 1, "b": 2}}
+
+
+def test_fold_into_an_empty_params_container() -> None:
+    # ``params: {}`` carries no argument, so folding into it is unambiguous.
+    folded, err = fold_hoisted_arguments(_HUB_SCHEMA, {"action": "x", "params": {}, "a": 1})
+    assert err is None
+    assert folded == {"action": "x", "params": {"a": 1}}
+
+
+def test_both_forms_at_once_is_refused_and_names_the_survivor() -> None:
+    folded, err = fold_hoisted_arguments(_HUB_SCHEMA, {"action": "x", "params": {"a": 1}, "b": 2})
+    assert folded is None
+    assert err is not None
+    assert "'b'" in err and "params" in err
+
+
+def test_nothing_to_fold_when_the_call_is_already_well_formed() -> None:
+    assert fold_hoisted_arguments(_HUB_SCHEMA, {"action": "x", "params": {"a": 1}}) == (
+        None,
+        None,
+    )
+    assert fold_hoisted_arguments(_HUB_SCHEMA, {"action": "x"}) == (None, None)
+
+
+def test_open_schema_is_left_alone() -> None:
+    # Undeclared root keys are legal there — there is nothing to repair, and
+    # moving them would change what the tool receives.
+    open_hub = {**_HUB_SCHEMA}
+    del open_hub["additionalProperties"]
+    assert fold_hoisted_arguments(open_hub, {"action": "x", "board_id": "1"}) == (None, None)
+
+
+def test_tool_without_a_params_property_is_left_to_the_validator() -> None:
+    # A genuinely unknown argument on a flat tool must still be refused.
+    assert fold_hoisted_arguments(_CLOSED_SCHEMA, {"query": "x", "web_search_depth": "2"}) == (
+        None,
+        None,
+    )
+    assert validate_tool_arguments(_CLOSED_SCHEMA, {"query": "x", "web_search_depth": "2"})
+
+
+def test_params_declared_as_a_non_object_is_not_a_container() -> None:
+    schema = {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {"action": {"type": "string"}, "params": {"type": "string"}},
+    }
+    assert fold_hoisted_arguments(schema, {"action": "x", "a": 1}) == (None, None)
+
+
+def test_params_supplied_as_a_non_object_is_left_to_the_type_check() -> None:
+    folded, err = fold_hoisted_arguments(_HUB_SCHEMA, {"action": "x", "params": "a=1", "b": 2})
+    assert (folded, err) == (None, None)
+    type_error = validate_tool_arguments(_HUB_SCHEMA, {"action": "x", "params": "a=1", "b": 2})
+    assert type_error is not None
+    assert "object" in type_error

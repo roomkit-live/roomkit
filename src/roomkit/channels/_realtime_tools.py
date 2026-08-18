@@ -13,7 +13,7 @@ from roomkit.channels._skill_constants import TOOL_ACTIVATE_SKILL
 from roomkit.models.enums import ChannelType, HookTrigger
 from roomkit.providers.ai.base import AIImagePart, AITextPart
 from roomkit.telemetry.base import Attr, SpanKind
-from roomkit.tools.validation import validate_tool_arguments
+from roomkit.tools.validation import fold_hoisted_arguments, validate_tool_arguments
 
 if TYPE_CHECKING:
     from roomkit.core.framework import RoomKit
@@ -442,7 +442,8 @@ class RealtimeToolsMixin:
         """Pre-execution gate for realtime tool calls (parity with the classic
         AI path).
 
-        Validates arguments against the declared schema and runs BEFORE_TOOL_USE
+        Folds a flattened hub-tool call back into ``params``, validates the
+        arguments against the declared schema, and runs BEFORE_TOOL_USE
         so a block prevents the side effect rather than only hiding the result.
         Returns the effective arguments and an optional denial result. Hooks
         may replace the arguments through ``metadata["arguments"]``; the
@@ -452,9 +453,25 @@ class RealtimeToolsMixin:
             logger.warning("Realtime provider requested undeclared tool %s", name)
             return arguments, json.dumps({"error": f"Tool '{name}' is not declared"})
 
-        # Argument validation against the declared schema (fail-closed).
+        # Argument validation against the declared schema (fail-closed), after
+        # repairing a hub tool's flattened ``params`` — same gate, same order as
+        # the classic AI path.
         params = self._tool_parameters(name, session)
         if params is not None:
+            folded, fold_error = fold_hoisted_arguments(params, arguments)
+            if fold_error is not None:
+                logger.warning("Realtime tool %s arguments ambiguous: %s", name, fold_error)
+                return arguments, json.dumps(
+                    {"error": f"Invalid arguments for '{name}': {fold_error}"}
+                )
+            if folded is not None:
+                logger.info(
+                    "Realtime tool %s: folded hoisted arguments %s into 'params' (model=%s)",
+                    name,
+                    sorted(folded["params"]),
+                    getattr(self._provider, "_model", self._provider.name),
+                )
+                arguments = folded
             arg_error = validate_tool_arguments(params, arguments)
             if arg_error is not None:
                 logger.warning("Realtime tool %s arguments rejected: %s", name, arg_error)
@@ -502,6 +519,9 @@ class RealtimeToolsMixin:
             )
 
         effective_arguments = rewritten if isinstance(rewritten, dict) else arguments
+        # No fold here, deliberately: a hook's rewritten arguments are user code,
+        # and repairing them would hide the hook's bug. The model's own call was
+        # already folded above.
         if params is not None:
             arg_error = validate_tool_arguments(params, effective_arguments)
             if arg_error is not None:

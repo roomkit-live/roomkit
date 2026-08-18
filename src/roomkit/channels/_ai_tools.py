@@ -40,6 +40,7 @@ from roomkit.models.enums import ChannelType
 from roomkit.models.tool_call import ToolCallEvent
 from roomkit.providers.ai.base import (
     AIImagePart,
+    AIProvider,
     AITextPart,
     AITool,
     AIToolResultPart,
@@ -47,7 +48,7 @@ from roomkit.providers.ai.base import (
 from roomkit.sandbox.tools import SANDBOX_TOOL_PREFIX
 from roomkit.telemetry.base import SpanKind
 from roomkit.tools.context import ToolCallContext, _current_tool_call
-from roomkit.tools.validation import validate_tool_arguments
+from roomkit.tools.validation import fold_hoisted_arguments, validate_tool_arguments
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
@@ -75,6 +76,7 @@ class AIToolsHost(Protocol):
     """Contract: capabilities a host class must provide for AIToolsMixin.
 
     Attributes provided by the host's ``__init__``:
+        _provider: AI provider — read for the model id in fold diagnostics.
         _tool_handler: Tool call handler (or ``None`` if tools disabled).
         _user_tool_handler: User-provided tool handler for fallback dispatch.
         _skills: Skill registry for gated tool resolution.
@@ -97,6 +99,7 @@ class AIToolsHost(Protocol):
             Tool Search visibility filter.
     """
 
+    _provider: AIProvider
     _tool_handler: Any
     _user_tool_handler: Any
     _skills: SkillRegistry | None
@@ -138,6 +141,7 @@ class AIToolsMixin:
     Host contract: :class:`AIToolsHost`.
     """
 
+    _provider: AIProvider
     _tool_handler: Any
     _user_tool_handler: Any
     _skills: SkillRegistry | None
@@ -281,8 +285,30 @@ class AIToolsMixin:
                 # every guard below still applies.
                 logger.info("Recovered deferred catalogue tool %s at call time", tc.name)
                 params = recovered.parameters
+            call_arguments = tc.arguments
             if params is not None:
-                arg_error = validate_tool_arguments(params, tc.arguments)
+                # Repair before validating: a model that flattened a hub tool's
+                # ``params`` gets its call folded back into shape instead of
+                # spending a round on an error it can only fix by re-issuing.
+                folded, fold_error = fold_hoisted_arguments(params, call_arguments)
+                if fold_error is not None:
+                    logger.warning("Tool %s arguments ambiguous: %s", tc.name, fold_error)
+                    return AIToolResultPart(
+                        tool_call_id=tc.id,
+                        name=tc.name,
+                        result=json.dumps(
+                            {"error": f"Invalid arguments for '{tc.name}': {fold_error}"}
+                        ),
+                    )
+                if folded is not None:
+                    logger.info(
+                        "Tool %s: folded hoisted arguments %s into 'params' (model=%s)",
+                        tc.name,
+                        sorted(folded["params"]),
+                        self._provider.model_name,
+                    )
+                    call_arguments = folded
+                arg_error = validate_tool_arguments(params, call_arguments)
                 if arg_error is not None:
                     logger.warning("Tool %s arguments rejected: %s", tc.name, arg_error)
                     return AIToolResultPart(
@@ -333,7 +359,7 @@ class AIToolsMixin:
             # values back before the tool acts on the model's tokenised text).
             # Everything downstream — the handler, ON_TOOL_CALL, the usage
             # record — reads ``arguments``, so it reports what actually ran.
-            arguments = tc.arguments
+            arguments = call_arguments
             arguments_rewritten = False
             if self._before_tool_call_hook is not None:
                 pre_event = ToolCallEvent(
@@ -362,7 +388,11 @@ class AIToolsMixin:
             # Validate the payload after every hook, even when it did not
             # explicitly return a replacement. ToolCallEvent is frozen but its
             # nested dict is mutable, so an in-place edit must not bypass this
-            # fail-closed boundary either.
+            # fail-closed boundary either. No fold here, deliberately: these
+            # arguments come from user code, and repairing a hook's output
+            # would hide the hook's bug instead of naming it. The model's own
+            # call was already folded above, so a hook that rewrites nothing
+            # arrives here in the repaired shape.
             if params is not None:
                 arg_error = validate_tool_arguments(params, arguments)
                 if arg_error is not None:
