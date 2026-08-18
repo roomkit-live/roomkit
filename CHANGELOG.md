@@ -19,7 +19,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   value acts for the wrong person in any room where two humans talk to one
   agent. `None` outside a tool loop, and `None` when the turn carries no
   participant (a system injection, a webhook, a scheduled run) so a caller can
-  refuse rather than borrow the last human.
+  refuse rather than borrow whoever spoke last.
+
+  It names the turn without authenticating it: the value is a room
+  `Participant.id`, and the inbound pipeline only substitutes the resolved
+  `Identity.id` for it once identification succeeds — a sender still pending,
+  ambiguous or unknown reads back just as non-`None`, and in a multi-agent room
+  the author may be another agent. A handler reaching a person's data with it
+  loads the participant and requires `identification` to be `IDENTIFIED` first,
+  taking `identity_id` as the principal. Guide `tool-calling.md` and
+  `examples/tool_call_context.py` run the whole path: two people in one room,
+  one identified and one not, and a system injection with no author at all.
 
 ## [0.53.0] — 2026-08-16
 

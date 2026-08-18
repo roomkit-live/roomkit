@@ -24,8 +24,8 @@ __all__ = [
     "ToolDecision",
     "ToolPolicy",
     "compose_tool_handlers",
-    "current_tool_allowed_names",
     "current_tool_actor_id",
+    "current_tool_allowed_names",
     "current_tool_room_id",
     "extract_tools",
 ]

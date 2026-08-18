@@ -1,8 +1,10 @@
 """Tests for per-call tool execution context (roomkit.tools.context).
 
 The channel object is registered once per channel_id and shared by every
-room it serves — ``current_tool_room_id()`` must reflect the room of the
-turn being processed, not any state stored on the channel.
+room it serves, so every accessor here must reflect the turn being
+processed rather than any state stored on the channel: the room
+(``current_tool_room_id()``), its author (``current_tool_actor_id()``)
+and the toolset it resolved (``current_tool_allowed_names()``).
 """
 
 from __future__ import annotations
@@ -13,7 +15,8 @@ from unittest.mock import AsyncMock
 from roomkit.channels.ai import AIChannel, _current_loop_ctx, _ToolLoopContext
 from roomkit.models.channel import ChannelBinding
 from roomkit.models.context import RoomContext
-from roomkit.models.enums import ChannelCategory, ChannelType
+from roomkit.models.enums import ChannelCategory, ChannelType, IdentificationStatus
+from roomkit.models.participant import Participant
 from roomkit.models.room import Room
 from roomkit.providers.ai.base import AIResponse, AIToolCall
 from roomkit.providers.ai.mock import MockAIProvider
@@ -147,6 +150,38 @@ class TestCurrentToolActorId:
         _ = [chunk async for chunk in output.response_stream]
 
         assert seen == ["alice"]
+
+    async def test_an_unidentified_speaker_reads_back_the_same(self) -> None:
+        """The accessor names the turn, it does not vet it: a participant the
+        room has not identified reports its id like any other, so a handler
+        that treats the value as a principal has to check the roster itself."""
+        seen: list[str | None] = []
+
+        async def tool_handler(name: str, args: dict[str, Any]) -> str:
+            seen.append(current_tool_actor_id())
+            return "ok"
+
+        provider = MockAIProvider(ai_responses=_tool_round_responses(), streaming=False)
+        ch = AIChannel("ai1", provider=provider, tool_handler=tool_handler)
+
+        unidentified = Participant(
+            id="pending-9f3c2a1b",
+            room_id="room-a",
+            channel_id="sms1",
+            identification=IdentificationStatus.PENDING,
+        )
+        await ch.on_event(
+            make_event(
+                room_id="room-a", body="go", channel_id="sms1", participant_id=unidentified.id
+            ),
+            _binding("room-a"),
+            RoomContext(room=Room(id="room-a"), participants=[unidentified]),
+        )
+
+        assert seen == ["pending-9f3c2a1b"]
+
+    def test_none_outside_tool_loop(self) -> None:
+        assert current_tool_actor_id() is None
 
 
 class TestCurrentToolRoomId:

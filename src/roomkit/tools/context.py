@@ -63,16 +63,30 @@ def current_tool_room_id() -> str | None:
 def current_tool_actor_id() -> str | None:
     """Participant id of whoever's turn the caller is executing under.
 
-    The person a tool should act *for*: the author of the event that woke the
-    channel this round. Read it rather than the identity a handler captured
-    when it was built — one channel object serves every room and every
-    speaker, so a captured identity is whoever happened to attach it.
+    The author of the event that woke the channel this round. Read it rather
+    than the identity a handler captured when it was built — one channel
+    object serves every room and every speaker, so a captured identity is
+    whoever happened to attach it.
+
+    It names the turn; it does not authenticate it. The value is a room
+    ``Participant.id``, and the inbound pipeline only substitutes the resolved
+    ``Identity.id`` for it once identification succeeds — a turn still pending,
+    ambiguous or unknown carries whatever the channel supplied, or a synthetic
+    ``pending-…``, and reads back just as non-``None``. A handler that reaches
+    a person's data with it resolves it first: load the participant, require
+    ``Participant.identification`` to be ``IDENTIFIED``, and take
+    ``Participant.identity_id`` as the principal.
+
+    The author need not be human, either. In a multi-agent room the waking
+    event may be another agent's, whose participant id reads back the same
+    way — compare the participant's ``role`` against ``ParticipantRole.AGENT``
+    when that distinction matters.
 
     ``None`` outside a tool loop, and ``None`` when the turn has no
     participant behind it (a system injection, a webhook, a scheduled run).
     A caller that needs a person then decides for itself — refuse, or fall
-    back to a principal it configured on purpose — rather than borrow the
-    last human who spoke.
+    back to a principal it configured on purpose — rather than borrow whoever
+    spoke last.
     """
     from roomkit.channels.ai import _current_loop_ctx
 

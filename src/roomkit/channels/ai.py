@@ -148,7 +148,10 @@ class _ToolLoopContext:
     # (``room_id``), and so must the person, or a handler acting "for the
     # user" acts for whoever the channel was built with. ``None`` when the
     # event carries no participant (a system injection, a webhook) — a caller
-    # must then decide for itself rather than assume the last human.
+    # must then decide for itself rather than assume the last speaker. It
+    # names the turn without authenticating it: what the id is worth is the
+    # participant's ``identification``, which is why
+    # ``current_tool_actor_id()`` documents the resolution a host owes it.
     actor_id: str | None = None
     room_id: str | None = None
     steering_queue: asyncio.Queue[SteeringDirective] = field(default_factory=asyncio.Queue)
