@@ -86,6 +86,7 @@ class Attr:
     # Realtime
     REALTIME_PROVIDER = "realtime.provider"
     REALTIME_TOOL_NAME = "realtime.tool_name"
+    REALTIME_TOOL_DENIED = "realtime.tool_denied"
 
     # Delivery
     DELIVERY_CHANNEL_TYPE = "delivery.channel_type"

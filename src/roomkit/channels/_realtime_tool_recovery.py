@@ -24,7 +24,7 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 from uuid import uuid4
 
 from roomkit.channels._realtime_tools import result_text
-from roomkit.models.enums import ChannelType, HookTrigger
+from roomkit.models.enums import ChannelType
 from roomkit.telemetry.base import Attr, SpanKind
 
 if TYPE_CHECKING:
@@ -51,6 +51,7 @@ class RealtimeToolRecoveryHost(Protocol):
     _session_tools: dict[str, list[dict[str, Any]]]
     _tool_handler: Any
     _tool_recovery_enabled: bool
+    _tool_result_max_length: int
     _provider: RealtimeVoiceProvider
     _framework: RoomKit | None
     channel_id: str
@@ -67,6 +68,20 @@ class RealtimeToolRecoveryHost(Protocol):
         session: VoiceSession,
     ) -> tuple[dict[str, Any], str | None]: ...
 
+    async def _fire_tool_hook(
+        self,
+        tool_event: Any,
+        room_id: str,
+        handler_result: str | None,
+        name: str,
+        call_id: str,
+        session: VoiceSession,
+    ) -> str: ...
+
+    def _truncate_tool_result(
+        self, result_str: str, name: str, call_id: str, session_id: str
+    ) -> str: ...
+
 
 class RealtimeToolRecoveryMixin:
     """Detect and recover tool calls that a voice model emitted as text.
@@ -80,6 +95,7 @@ class RealtimeToolRecoveryMixin:
     _session_tools: dict[str, list[dict[str, Any]]]
     _tool_handler: Any
     _tool_recovery_enabled: bool
+    _tool_result_max_length: int
     _provider: RealtimeVoiceProvider
     _framework: RoomKit | None
     channel_id: str
@@ -87,6 +103,8 @@ class RealtimeToolRecoveryMixin:
 
     _track_task: Any  # cross-mixin
     _authorize_realtime_tool: Any  # cross-mixin (RealtimeToolsMixin)
+    _fire_tool_hook: Any  # cross-mixin (RealtimeToolsMixin)
+    _truncate_tool_result: Any  # cross-mixin (RealtimeToolsMixin)
 
     # ------------------------------------------------------------------
     # Public entry point (called from _realtime_transcription.py)
@@ -185,6 +203,7 @@ class RealtimeToolRecoveryMixin:
         self,
         session: VoiceSession,
         tool_name: str,
+        call_id: str,
         result_str: str,
         *,
         denied: bool = False,
@@ -195,8 +214,14 @@ class RealtimeToolRecoveryMixin:
         issuing it, so it has no pending ``FunctionResponse`` to answer. A
         denial travels the same way as a result — the model reads why it was
         refused and can correct itself on its next turn.
+
+        Oversized results go through the channel's own truncation, so this path
+        honours the host's ``tool_result_max_length`` and the model is told the
+        result was cut instead of reading a sentence that stops mid-word.
         """
-        summary = result_str[:8000] if len(result_str) > 8000 else result_str
+        summary = result_str
+        if len(summary) > self._tool_result_max_length:
+            summary = self._truncate_tool_result(summary, tool_name, call_id, session.id)
         verb = "denied" if denied else "completed"
         await self._provider.inject_text(
             session,
@@ -239,8 +264,12 @@ class RealtimeToolRecoveryMixin:
                 tool_name, arguments, call_id, room_id, session
             )
             if denial is not None:
-                await self._inject_recovered_result(session, tool_name, denial, denied=True)
-                telemetry.end_span(span_id)
+                await self._inject_recovered_result(
+                    session, tool_name, call_id, denial, denied=True
+                )
+                # The recovery span is the only signal this path emits, so a
+                # refusal has to be legible in a trace, not just in the logs.
+                telemetry.end_span(span_id, attributes={Attr.REALTIME_TOOL_DENIED: True})
                 logger.info(
                     "Recovered tool %s(%s) denied before execution for session %s",
                     tool_name,
@@ -275,25 +304,20 @@ class RealtimeToolRecoveryMixin:
                 session=session,
             )
 
-            result_str = handler_result or json.dumps({"status": "ok"})
+            # Same ON_TOOL_CALL dispatch as the API path, so a hook that
+            # raises is reported to the model rather than swallowed, and a
+            # recovered call shows up in the framework event feed like any
+            # other tool call.
             if self._framework and room_id:
-                context = await self._framework._build_context(room_id)
-                hook_result = await self._framework.hook_engine.run_sync_hooks(
-                    room_id,
-                    HookTrigger.ON_TOOL_CALL,
-                    tool_event,
-                    context,
-                    skip_event_filter=True,
+                result_str = await self._fire_tool_hook(
+                    tool_event, room_id, handler_result, tool_name, call_id, session
                 )
-                if not hook_result.allowed:
-                    result_str = json.dumps(
-                        {"error": hook_result.reason or "Tool call blocked by hook"}
-                    )
-                elif "result" in hook_result.metadata:
-                    hook_val = hook_result.metadata["result"]
-                    result_str = hook_val if isinstance(hook_val, str) else json.dumps(hook_val)
+            elif handler_result is not None:
+                result_str = handler_result
+            else:
+                result_str = json.dumps({"status": "ok"})
 
-            await self._inject_recovered_result(session, tool_name, result_str)
+            await self._inject_recovered_result(session, tool_name, call_id, result_str)
 
             telemetry.end_span(span_id)
             logger.info(

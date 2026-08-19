@@ -19,7 +19,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   them the least trustworthy the channel handles, not the most. The recovered
   call now passes the same gate as an API call, and a refusal reaches the model
   as silent context (never `submit_tool_result` — it has no pending
-  `FunctionResponse` to answer).
+  `FunctionResponse` to answer). Expect three new refusals on that path: a name
+  absent from a non-empty declared catalogue, an argument that violates the
+  declared schema, and any call a `BEFORE_TOOL_USE` hook denies. One narrowing
+  follows from the second: a spoken call carries no types, and the recovery
+  parser only coerces `boolean`/`integer`/`number`, so a tool declaring an
+  `array` or `object` parameter can no longer be invoked this way — it is
+  refused rather than handed a string. The recovered call also reaches
+  `ON_TOOL_CALL` through the same dispatch as an API call, which means a
+  serving hook that raises is now reported to the model instead of passing for
+  success, and a recovered call emits the framework `tool_call` event like any
+  other. Its result honours the channel's `tool_result_max_length` (it was
+  capped at a hardcoded 8000 characters, silently and mid-word).
 
 - **A realtime tool call is gated whoever serves it** — the pre-execution gate
   on `RealtimeVoiceChannel` (declared-catalogue check, argument validation

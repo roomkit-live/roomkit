@@ -81,9 +81,7 @@ class TestRecoveredCallsAreGated:
         async def deny(event: ToolCallEvent, ctx: RoomContext) -> HookResult:
             return HookResult.block("lookup is off limits")
 
-        await provider.simulate_transcription(
-            session, "call:lookup{city:Paris}", "assistant", True
-        )
+        await provider.simulate_transcription(session, "call:lookup{city:Paris}", "assistant")
         await asyncio.sleep(0.1)
 
         assert called == []
@@ -100,7 +98,7 @@ class TestRecoveredCallsAreGated:
 
         _kit, _channel, session = await _session(provider, "rt-rec-missing", handler=handler)
 
-        await provider.simulate_transcription(session, "call:lookup{limit:3}", "assistant", True)
+        await provider.simulate_transcription(session, "call:lookup{limit:3}", "assistant")
         await asyncio.sleep(0.1)
 
         assert called == []
@@ -119,7 +117,7 @@ class TestRecoveredCallsAreGated:
         _kit, _channel, session = await _session(provider, "rt-rec-args", handler=handler)
 
         await provider.simulate_transcription(
-            session, "call:lookup{city:Paris,limit:many}", "assistant", True
+            session, "call:lookup{city:Paris,limit:many}", "assistant"
         )
         await asyncio.sleep(0.1)
 
@@ -238,3 +236,70 @@ class TestRecoveryStillWorks:
 
         assert called == []
         assert _injected(provider) == []
+
+
+class TestRecoveredResultsFollowChannelPolicy:
+    async def test_an_oversized_result_is_truncated_with_a_notice(
+        self, provider: MockRealtimeProvider
+    ) -> None:
+        """The host's tool_result_max_length governs this path too."""
+
+        async def handler(name: str, args: dict[str, Any]) -> str:
+            return "x" * 5000
+
+        channel = RealtimeVoiceChannel(
+            "rt-rec-big",
+            provider=provider,
+            transport=MockRealtimeTransport(),
+            tools=LOOKUP_TOOL,
+            tool_handler=handler,
+            tool_result_max_length=500,
+        )
+        kit = RoomKit()
+        kit.register_channel(channel)
+        room = await kit.create_room()
+        await kit.attach_channel(room.id, "rt-rec-big")
+        session = await channel.start_session(room.id, "u1", "ws")
+
+        await provider.simulate_transcription(session, "call:lookup{city:Paris}", "assistant")
+        await asyncio.sleep(0.1)
+
+        injected = _injected(provider)[-1]
+        assert "truncated" in injected
+        assert "5000 chars" in injected
+
+    async def test_a_serving_hook_that_raises_is_reported_to_the_model(
+        self, provider: MockRealtimeProvider
+    ) -> None:
+        """Nothing served the call, so the model hears the failure, not "ok"."""
+        kit, _channel, session = await _session(provider, "rt-rec-hookboom")
+
+        @kit.hook(HookTrigger.ON_TOOL_CALL, execution=HookExecution.SYNC, name="boom")
+        async def boom(event: ToolCallEvent, ctx: RoomContext) -> HookResult:
+            raise RuntimeError("hook is broken")
+
+        await provider.simulate_transcription(session, "call:lookup{city:Paris}", "assistant")
+        await asyncio.sleep(0.1)
+
+        injected = _injected(provider)[-1]
+        assert "Tool call failed" in injected
+        assert "hook is broken" in injected
+
+    async def test_a_handler_result_outranks_a_broken_hook(
+        self, provider: MockRealtimeProvider
+    ) -> None:
+        """The tool did run; a broken observer does not erase its result."""
+
+        async def handler(name: str, args: dict[str, Any]) -> str:
+            return "sunny"
+
+        kit, _channel, session = await _session(provider, "rt-rec-hookboom2", handler=handler)
+
+        @kit.hook(HookTrigger.ON_TOOL_CALL, execution=HookExecution.SYNC, name="boom")
+        async def boom(event: ToolCallEvent, ctx: RoomContext) -> HookResult:
+            raise RuntimeError("hook is broken")
+
+        await provider.simulate_transcription(session, "call:lookup{city:Paris}", "assistant")
+        await asyncio.sleep(0.1)
+
+        assert any("sunny" in t for t in _injected(provider))
