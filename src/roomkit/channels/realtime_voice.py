@@ -190,9 +190,14 @@ class RealtimeVoiceChannel(
                 when the provider reports
                 ``supports_mid_session_reconfigure=False`` (e.g.
                 Gemini 3.x Flash Live), ``"on_demand"`` otherwise.
-            tool_recovery: If True, detect tool calls that the model emits
-                as text (e.g. ``call:name{args}``) and execute them.
-                Defaults to True.
+            tool_recovery: If True, detect tool calls that the model speaks
+                as text (e.g. ``call:name{args}``) instead of issuing through
+                the function calling API, and run them. Defaults to True.
+                Recovered calls pass the same pre-execution gate as any other
+                — declared catalogue, argument schema, ``BEFORE_TOOL_USE`` —
+                and their outcome returns as injected context rather than a
+                tool result, because the model has no pending call to answer.
+                Set to False to let a spoken call stay speech.
             tool_search: Auto-enable Tool Search when the catalogue is
                 large enough to exceed the realtime model's reliable
                 tool-selection window (Google: 10–20 active tools on

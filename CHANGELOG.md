@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A hub tool's hoisted arguments are folded back into `params`** — a model
+  trained mostly on flat schemas routinely lifts the inner keys of a
+  `{action, params}` tool one level up: `{"action": "list_columns",
+  "board_id": "b-1"}` instead of nesting `board_id` inside `params`. The schema
+  is closed, so the argument gate refused it and the turn was spent on an error
+  the model could only fix by re-issuing the call. RoomKit now repairs the
+  shape before validation, on the AI and realtime voice channels alike, and
+  logs each fold at INFO with the tool and the model id so the frequency stays
+  measurable per model. The repair is deliberately narrow: closed schema, a
+  declared `params` object, at least one undeclared root key, and `params`
+  absent or empty — both forms at once is refused as ambiguous, and arguments
+  rewritten by a `BEFORE_TOOL_USE` hook are validated but never folded.
+
 - **A realtime provider names its model** — `RealtimeVoiceProvider.model_name`
   answers which model is behind a session, so a log line, a span or a
   diagnostic can name it instead of reading `unknown`. Unlike
