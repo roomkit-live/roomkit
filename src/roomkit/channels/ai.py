@@ -420,6 +420,18 @@ class AIChannel(
         """All extra tools (user-provided + orchestration-injected)."""
         return self._user_tools + self._injected_tools
 
+    def active_skill_names(self, room_id: str | None) -> set[str]:
+        """Skills whose instructions are binding in *room_id* right now.
+
+        Runtime state, not the catalogue: these are the activations recorded for
+        this conversation, which is exactly what the system prompt already
+        carries under "Active skill instructions". A host rendering its own
+        manifest (``skills_in_prompt=False``) cannot otherwise tell an available
+        skill from an active one, and pushing the model to load what is already
+        binding costs a tool round and contradicts the rules in front of it.
+        """
+        return self._skill_activation.active_names(room_id)
+
     def _channel_tool_surface(self) -> bool:
         """Whether this channel object itself contributes tools, binding aside.
 

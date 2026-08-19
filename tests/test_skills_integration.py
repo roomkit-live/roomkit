@@ -290,6 +290,39 @@ class TestActivateSkillHandler:
         assert "gen.sh" in result_json["scripts"]
         assert "api.md" in result_json["references"]
 
+    async def test_channel_reports_the_room_s_active_skills(self, tmp_path: Path) -> None:
+        """A host rendering its own manifest needs runtime state, not the catalogue.
+
+        Without it the host cannot tell an available skill from an active one,
+        and anything it writes to push the model toward a skill (a per-message
+        nudge, a manifest row) points at rules the prompt already carries.
+        """
+        _make_skill_dir(tmp_path, "code-gen")
+        registry = SkillRegistry()
+        registry.discover(tmp_path)
+
+        provider = ToolCallMockProvider(
+            tool_calls=[
+                AIToolCall(id="tc1", name="activate_skill", arguments={"name": "code-gen"})
+            ],
+            final_response="done",
+        )
+        ch = AIChannel("ai1", provider=provider, skills=registry)
+
+        assert ch.active_skill_names("r1") == set()
+
+        await ch.on_event(
+            make_event(body="activate code-gen", channel_id="sms1"),
+            _binding(),
+            _ctx(),
+        )
+
+        # Keyed on the room the tool loop ran in, the same key the body was
+        # rendered under.
+        assert ch.active_skill_names("r1") == {"code-gen"}
+        assert ch.active_skill_names("other-room") == set()
+        assert ch.active_skill_names(None) == set()
+
     async def test_activate_unknown_skill(self, tmp_path: Path) -> None:
         _make_skill_dir(tmp_path, "known")
         registry = SkillRegistry()
