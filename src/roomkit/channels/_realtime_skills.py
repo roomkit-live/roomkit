@@ -28,6 +28,7 @@ from roomkit.channels._skill_handlers import (
     handle_run_script,
     missing_skill_error,
 )
+from roomkit.channels._tool_search_constants import TOOL_SEARCH_INFRA_TOOL_NAMES
 from roomkit.skills.registry import SkillRegistry
 from roomkit.tools.policy import matches_any_pattern
 
@@ -219,26 +220,38 @@ class RealtimeSkillSupport:
             gated.update(meta.gated_tool_names)
         return gated
 
-    def is_gated(self, name: str, session_id: str) -> bool:
+    def is_gated(self, name: str, session_id: str, gated: set[str] | None = None) -> bool:
         """Whether *name* is gated by a skill this session has not activated.
 
         Hiding a tool from the catalogue is not enforcement: a model that saw
         the name before the skill was deactivated — or that read it in a
         transcript — can still call it. Callers ask this at execution time as
         well as at listing time.
+
+        Infrastructure tools are never gated: skill tools are how a skill gets
+        activated, and the Tool Search tools are how a gated name is found in
+        the first place. Gating them would leave the model told to activate a
+        skill it has no way left to name.
+
+        *gated* lets a caller filtering a whole catalogue compute the gated set
+        once instead of once per tool.
         """
-        if name in SKILL_INFRA_TOOL_NAMES:
+        if name in SKILL_INFRA_TOOL_NAMES or name in TOOL_SEARCH_INFRA_TOOL_NAMES:
             return False
-        gated = self._gated_tool_names(session_id)
+        if gated is None:
+            gated = self._gated_tool_names(session_id)
         return bool(gated) and matches_any_pattern(name, gated)
 
     def get_visible_tools(
         self, all_tools: list[dict[str, Any]], session_id: str
     ) -> list[dict[str, Any]]:
         """Filter tool list, removing gated tools but keeping infra tools."""
-        if not self._gated_tool_names(session_id):
+        gated = self._gated_tool_names(session_id)
+        if not gated:
             return all_tools
-        return [t for t in all_tools if not self.is_gated(str(t.get("name", "")), session_id)]
+        return [
+            t for t in all_tools if not self.is_gated(str(t.get("name", "")), session_id, gated)
+        ]
 
     def newly_visible_after_activation(
         self,

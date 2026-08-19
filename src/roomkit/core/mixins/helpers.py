@@ -564,7 +564,10 @@ class HelpersMixin:
         The window is carried only when it is provably identical to what a fresh
         read returns, so a hook and an AI channel see exactly the history they
         would otherwise be given: *room*'s counter has not moved since
-        *carrying* was built, so nothing committed in between — and the timeline
+        *carrying* was built, so nothing committed in between — a check that
+        holds however long the gap is, which matters because a realtime tool
+        call carries a context across its handler's whole execution, not across
+        a pipeline step — and the timeline
         is append-only (RFC §8.1), so nothing else could have changed it. An
         edit or a delete is itself a committed event (RFC §10.3), which moves
         the counter and sends this back to a fresh read; the one thing the

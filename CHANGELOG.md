@@ -47,7 +47,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   them; and the gate ran its `BEFORE_TOOL_USE` hooks without emitting the
   `before_tool_use` framework event the classic path emits. All three now match
   `AIChannel`. `RealtimeSkillSupport.is_gated()` answers the gating question
-  for listing and for execution alike.
+  for listing and for execution alike, and never gates an infrastructure tool:
+  gating `find_tools` would tell the model to activate a skill it has no way
+  left to name.
 
 - **A spoken tool call cannot smuggle an argument past the schema** — the
   recovery parser split the text on the tool's *declared* parameter names only,
@@ -57,7 +59,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   corrupted argument no gate could catch. A key now also ends the value before
   it when it sits where a key belongs — at the start or just after a comma —
   and is returned under its own name, so a closed schema refuses it by name.
-  A colon inside a value (`note:see you at 3:30`) is still not a boundary. The
+  A declared name is read the same way, so an undeclared key *ending* with one
+  (`username:` against a declared `name`) no longer opens its value. A colon
+  inside a value (`note:see you at 3:30`) is still not a boundary, and neither
+  is a time after a comma (`, 3:30 pm`) — a key opens with a letter. The
   cost, deliberately: a free-text value containing `, word:` is refused rather
   than silently truncated.
 

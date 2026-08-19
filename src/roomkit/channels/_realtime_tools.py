@@ -476,24 +476,6 @@ class RealtimeToolsMixin:
             logger.warning("Realtime provider requested undeclared tool %s", name)
             return arguments, json.dumps({"error": f"Tool '{name}' is not declared"}), None
 
-        # Execution guard: skill gating (parity with the classic AI path).
-        # Hiding a gated tool from the catalogue is not enforcement — the model
-        # may still name one it saw before the skill was deactivated.
-        if self._skill_support is not None and self._skill_support.is_gated(name, session.id):
-            logger.warning("Realtime tool %s blocked by skill gating", name)
-            return (
-                arguments,
-                json.dumps(
-                    {
-                        "error": (
-                            f"Tool '{name}' is gated by a skill. "
-                            "Activate the skill first using activate_skill."
-                        )
-                    }
-                ),
-                None,
-            )
-
         # Argument validation against the declared schema (fail-closed), after
         # repairing a hub tool's flattened ``params`` — same gate, same order as
         # the classic AI path.
@@ -525,6 +507,24 @@ class RealtimeToolsMixin:
                     json.dumps({"error": f"Invalid arguments for '{name}': {arg_error}"}),
                     None,
                 )
+
+        # Execution guard: skill gating (parity with the classic AI path).
+        # Hiding a gated tool from the catalogue is not enforcement — the model
+        # may still name one it saw before the skill was deactivated.
+        if self._skill_support is not None and self._skill_support.is_gated(name, session.id):
+            logger.warning("Realtime tool %s blocked by skill gating", name)
+            return (
+                arguments,
+                json.dumps(
+                    {
+                        "error": (
+                            f"Tool '{name}' is gated by a skill. "
+                            "Activate the skill first using activate_skill."
+                        )
+                    }
+                ),
+                None,
+            )
 
         # BEFORE_TOOL_USE gate (needs a framework + room to run room hooks).
         if self._framework is None or not room_id:

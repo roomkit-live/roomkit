@@ -940,7 +940,10 @@ class RealtimeVoiceChannel(
 
         # Cache the resolved base tool list (channel defaults + metadata
         # overrides) so skill activation can reconfigure without losing them.
-        self._session_tools[session.id] = list(tools) if tools else []
+        # Under the lock its readers take: a recovered tool call reaches them
+        # from a background task.
+        with self._state_lock:
+            self._session_tools[session.id] = list(tools) if tools else []
 
         # Inject skills: prepend skill tool defs, apply gating, enrich prompt
         if self._skill_support:

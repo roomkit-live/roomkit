@@ -38,8 +38,9 @@ logger = logging.getLogger("roomkit.channels.realtime_voice")
 _TEXT_TOOL_CALL_RE = re.compile(r"call:(\w+)\s*\{(.+)", re.DOTALL)
 
 # A ``key:`` token where a key can legitimately start — at the beginning of the
-# argument text or just after a comma. Anywhere else (``at 3:30``) is a value.
-_UNDECLARED_KEY_RE = re.compile(r"(?:^|,)\s*(\w+)\s*:")
+# argument text or just after a comma. Anywhere else (``at 3:30``) is a value,
+# and a token opening with a digit (``, 3:30 pm``) is a time, not a key.
+_UNDECLARED_KEY_RE = re.compile(r"(?:^|,)\s*([A-Za-z_]\w*)\s*:")
 
 
 @runtime_checkable
@@ -370,13 +371,16 @@ def _parse_args(raw: str, param_names: list[str]) -> dict[str, Any]:
     if not param_names or not raw:
         return {}
 
-    # Find the first occurrence of each param followed by ':'
+    # Find the first occurrence of each param followed by ':', where a key can
+    # start: at the beginning, after a comma, or after whitespace. Without that
+    # left boundary, an undeclared key *ending* with a declared name — the
+    # ``name`` inside ``username:`` — opens the value in its place.
     positions: list[tuple[int, int, str]] = []
     for name in param_names:
-        pattern = re.compile(re.escape(name) + r"\s*:")
+        pattern = re.compile(r"(?:^|[,\s])\s*(" + re.escape(name) + r")\s*:")
         match = pattern.search(raw)
         if match:
-            positions.append((match.start(), match.end(), name))
+            positions.append((match.start(1), match.end(), name))
 
     # Undeclared keys, only where a key can legitimately start.
     declared = set(param_names)

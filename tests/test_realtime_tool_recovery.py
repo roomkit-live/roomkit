@@ -337,6 +337,22 @@ class TestSpokenCallParsing:
             "country": "FR",
         }
 
+    def test_an_undeclared_key_ending_with_a_declared_name_does_not_open_it(self) -> None:
+        """The ``name`` inside ``username:`` is not where ``name``'s value starts."""
+        assert _parse_args("username:bob,name:alice", ["name"]) == {
+            "username": "bob",
+            "name": "alice",
+        }
+
+    def test_a_time_after_a_comma_is_a_value_not_a_key(self) -> None:
+        assert _parse_args("note:ok, 3:30 pm", ["note"]) == {"note": "ok, 3:30 pm"}
+
+    def test_keys_separated_by_whitespace_still_split(self) -> None:
+        assert _parse_args("city:Paris limit:3", ["city", "limit"]) == {
+            "city": "Paris",
+            "limit": "3",
+        }
+
     def test_a_colon_inside_a_value_is_not_a_boundary(self) -> None:
         assert _parse_args("note:see you at 3:30", ["note"]) == {"note": "see you at 3:30"}
 

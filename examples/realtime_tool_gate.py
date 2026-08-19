@@ -4,10 +4,11 @@ A realtime tool call arrives one of three ways, and all three pass the same
 gate: through the function calling API, spoken as text (``call:name{args}``)
 when the model skips the API, or aimed at the channel's own infrastructure
 tools. This example drives all three against a mock provider — no API key, no
-audio device — and prints what the compliance hook let through.
+audio device — and prints what each guard let through.
 
 The tool here moves money, so the difference is easy to see: a denied call must
-not run, not merely have its result hidden.
+not run, not merely have its result hidden. It is also gated behind a skill, so
+the last two rounds show the same call refused and then allowed.
 
 Run with:
     uv run python examples/realtime_tool_gate.py
@@ -19,6 +20,7 @@ import asyncio
 import json
 import sys
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -26,6 +28,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from shared import setup_logging
 
 from roomkit import HookExecution, HookResult, HookTrigger, RealtimeVoiceChannel, RoomKit
+from roomkit.skills.registry import SkillRegistry
 from roomkit.voice.realtime.mock import MockRealtimeProvider, MockRealtimeTransport
 
 logger = setup_logging("realtime_tool_gate")
@@ -57,17 +60,37 @@ async def bank(name: str, arguments: dict[str, Any]) -> str:
     return json.dumps({"status": "sent", **arguments})
 
 
+def _skills(tmp: Path) -> SkillRegistry:
+    """One skill, gating the money tool until it is activated."""
+    skill_dir = tmp / "treasury"
+    skill_dir.mkdir(parents=True, exist_ok=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: treasury\ndescription: Moving money\n"
+        "allowed_tools: wire_transfer\n---\n"
+        "Confirm the beneficiary out loud before transferring.",
+        encoding="utf-8",
+    )
+    registry = SkillRegistry()
+    registry.discover(tmp)
+    return registry
+
+
 async def main() -> None:
     provider = MockRealtimeProvider(model="gemini-3.1-flash-live-preview")
-    channel = RealtimeVoiceChannel(
-        "voice",
-        provider=provider,
-        transport=MockRealtimeTransport(),
-        tools=TOOLS,
-        tool_handler=bank,
-        # tool_recovery defaults to True: a spoken call is recovered and gated.
-    )
+    with TemporaryDirectory() as tmp:
+        channel = RealtimeVoiceChannel(
+            "voice",
+            provider=provider,
+            transport=MockRealtimeTransport(),
+            tools=TOOLS,
+            tool_handler=bank,
+            skills=_skills(Path(tmp)),
+            # tool_recovery defaults to True: a spoken call is recovered and gated.
+        )
+        await run(provider, channel)
 
+
+async def run(provider: MockRealtimeProvider, channel: RealtimeVoiceChannel) -> None:
     kit = RoomKit()
     kit.register_channel(channel)
     room = await kit.create_room()
@@ -110,20 +133,28 @@ async def main() -> None:
         return provider.simulate_transcription(session, text, "assistant", True)
 
     await report(
-        "1. issued through the API, above the threshold",
-        issued("c1", {"amount": 5000, "to": "acct-9"}),
+        "1. issued through the API — the skill gating this tool is idle",
+        issued("c1", {"amount": 100, "to": "acct-9"}),
     )
     await report(
-        "2. spoken as text, above the threshold",
-        spoken("Bien sur. call:wire_transfer{amount:5000,to:acct-9}"),
+        "2. spoken as text — a different road, the same guard",
+        spoken("Bien sur. call:wire_transfer{amount:100,to:acct-9}"),
     )
     await report(
-        "3. spoken as text, with an argument the tool never declared",
+        "3. spoken with an argument the tool never declared — named first",
         spoken("call:wire_transfer{amount:100,to:acct-9,memo:rent}"),
     )
     await report(
-        "4. issued through the API, within policy",
-        issued("c2", {"amount": 100, "to": "acct-9"}),
+        "4. the channel's own tool, which the gate sees but never gates",
+        provider.simulate_tool_call(session, "c2", "activate_skill", {"name": "treasury"}),
+    )
+    await report(
+        "5. issued, skill now active, above the approval threshold",
+        issued("c3", {"amount": 5000, "to": "acct-9"}),
+    )
+    await report(
+        "6. issued, skill active, within policy",
+        issued("c4", {"amount": 100, "to": "acct-9"}),
     )
 
     print(f"\nOnly the compliant call moved money: {transfers}")

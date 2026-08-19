@@ -1058,6 +1058,64 @@ class TestRealtimeGateParityWithTheAIPath:
 
         assert seen == ["activate_skill"]
 
+    async def test_tool_search_survives_a_skill_that_gates_everything(
+        self,
+        rt_provider: MockRealtimeProvider,
+        rt_transport: MockRealtimeTransport,
+        tmp_path: Path,
+    ) -> None:
+        """Gating find_tools would leave the model unable to name any skill."""
+        ch = RealtimeVoiceChannel(
+            "rt-search-gated",
+            provider=rt_provider,
+            transport=rt_transport,
+            skills=self._registry_gating(tmp_path, "'*'"),
+        )
+        assert ch._skill_support is not None
+        session = await ch.start_session("room-1", "u1", "ws")
+
+        assert ch._skill_support.is_gated("find_tools", session.id) is False
+        assert ch._skill_support.is_gated("list_tools", session.id) is False
+        assert ch._skill_support.is_gated("activate_skill", session.id) is False
+        assert ch._skill_support.is_gated("refund", session.id) is True
+
+    async def test_invalid_arguments_are_named_before_the_gating_verdict(
+        self,
+        rt_provider: MockRealtimeProvider,
+        rt_transport: MockRealtimeTransport,
+        tmp_path: Path,
+    ) -> None:
+        """Same order as the classic AI path: validate, then guard."""
+        ch = RealtimeVoiceChannel(
+            "rt-order",
+            provider=rt_provider,
+            transport=rt_transport,
+            tools=[
+                {
+                    "name": "refund",
+                    "description": "Refund an order",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"order": {"type": "string"}},
+                        "additionalProperties": False,
+                    },
+                }
+            ],
+            tool_handler=AsyncMock(return_value="ran"),
+            skills=self._registry_gating(tmp_path, "refund"),
+        )
+        kit = RoomKit()
+        kit.register_channel(ch)
+        room = await kit.create_room()
+        await kit.attach_channel(room.id, "rt-order")
+        session = await ch.start_session(room.id, "u1", "ws")
+
+        await rt_provider.simulate_tool_call(session, "c4", "refund", {"bogus": 1})
+        await asyncio.sleep(0.1)
+
+        result = json.loads(rt_provider.tool_results[0][2])
+        assert "unknown argument 'bogus'" in result["error"]
+
     async def test_the_gate_announces_its_decision_as_a_framework_event(
         self,
         rt_provider: MockRealtimeProvider,
