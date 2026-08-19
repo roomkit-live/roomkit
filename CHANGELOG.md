@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.55.0] — 2026-08-18
+
 ### Added
 
 - **Vertex authenticates as a service account, or borrows one** —
@@ -81,12 +83,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   gating `find_tools` would tell the model to activate a skill it has no way
   left to name.
 
-  One consequence for existing hosts: a `BEFORE_TOOL_USE` hook written as an
-  allow-list over the host's own tool names now denies the channel's
-  infrastructure tools, and skill activation stops working. Reaching the gate
-  is the point — an audit that cannot see `activate_skill` is not an audit — so
-  such a hook must allow the infrastructure names it does not itself serve
-  rather than let them fall through to its deny.
+  **BREAKING — an allow-list `BEFORE_TOOL_USE` hook must name the
+  infrastructure tools.** A hook written as an allow-list over the host's own
+  tool names now denies `activate_skill`, `read_skill_reference`,
+  `run_skill_script`, `find_tools` and `list_tools`, and skill activation stops
+  working with no error the host author would trace to this release. Reaching
+  the gate is the point — an audit that cannot see `activate_skill` is not an
+  audit — so such a hook must allow the infrastructure names it does not itself
+  serve rather than let them fall through to its deny.
 
 - **The AI channel's skill-gating guard matches globs, like everything else
   that reads `allowed_tools`** — `AIChannel`'s execution-time guard tested tool
@@ -6255,7 +6259,8 @@ See entries `0.7.0a1` through `0.7.0a18` below.
 - `STTProvider.transcribe()` returns `TranscriptionResult` (Phase 3.1)
 - Framework event names enriched with payloads (Phase 4)
 
-[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.54.0...HEAD
+[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.55.0...HEAD
+[0.55.0]: https://github.com/roomkit-live/roomkit/compare/v0.54.0...v0.55.0
 [0.54.0]: https://github.com/roomkit-live/roomkit/compare/v0.53.0...v0.54.0
 [0.53.0]: https://github.com/roomkit-live/roomkit/compare/v0.52.0...v0.53.0
 [0.52.0]: https://github.com/roomkit-live/roomkit/compare/v0.51.0...v0.52.0
