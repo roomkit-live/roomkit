@@ -250,6 +250,140 @@ Notes:
 
 See `examples/ai_tool_search.py` for a runnable, no-API-key walkthrough.
 
+## Agent Skills
+
+A skill is a directory holding a `SKILL.md` (YAML frontmatter + an instructions
+body) and optional `scripts/` and `references/` — the
+[Agent Skills](https://agentskills.io) standard. It packages knowledge the model
+loads **on demand** instead of knowledge every system prompt has to carry.
+
+```python
+from roomkit.skills import SkillRegistry
+
+registry = SkillRegistry()
+count = registry.discover("./skills")     # returns how many were found
+
+ai = AIChannel(
+    "ai",
+    provider=provider,
+    skills=registry,
+    skills_in_prompt=True,          # False = the host renders its own manifest
+    script_executor=my_executor,    # omit and run_skill_script is not offered
+)
+```
+
+`discover()` takes one or more directories and commits only once every
+candidate has parsed, so a failure leaves the registry as it was rather than
+half filled. It raises on a malformed skill by default (`strict=False` skips it):
+a bad skill is a deployment error, and skipping it silently leaves an agent that
+quietly cannot do something it was configured to do.
+
+Three tools are registered automatically alongside the host's own:
+
+| Tool | Offered | Effect |
+|------|---------|--------|
+| `activate_skill(name)` | always | Loads the skill for the conversation |
+| `read_skill_reference(skill_name, filename)` | always | Reads one file from `references/` |
+| `run_skill_script(skill_name, script_name, arguments)` | only with `script_executor` | Runs a script through the integrator's executor |
+
+### Activation lifecycle
+
+**An activation lasts the conversation, not the turn that made it.** Re-sending
+a 9 KB body on every turn costs more than the skill is worth, so the body moves
+to where the per-turn rebuild carries it for free:
+
+| | First `activate_skill` in a room | Later calls |
+|---|---|---|
+| Tool result | Full `instructions` + the `scripts`/`references` listing | `{"ok": true, "already_active": true, ...}` — no body |
+| System prompt | *(nothing yet — composed before the call)* | `# Active skill instructions (binding rules)` carrying the body |
+| Gated tools | Revealed for the rest of the turn | Still revealed, no re-activation |
+
+- The ack is safe because the prompt carries the rules. Lose the record (process
+  restart, channel object replaced) and the prompt block goes with it, so the
+  next activation returns the body again — it degrades to reloading, never to an
+  ack with no rules.
+- The record is **hydrated** from the room's persisted tool-call history, so a
+  channel swapped mid-conversation does not restart amnesic.
+- **Bodies are never evicted.** Large tool results are normally replaced by a
+  `read_stored_result` pointer; an `activate_skill` result is exempt, because
+  binding rules cut to a head/tail preview are not rules. References still
+  evict — those are data, and paginating data is what eviction is for.
+- **Four skills stay active per room**, by recency; a fifth retires the least
+  recently used one, whose next `activate_skill` returns the body again.
+
+### Reading the active set
+
+`skills_in_prompt=False` hands the manifest to the host, and a catalogue is only
+half of what a manifest needs. `active_skill_names(room_id)` supplies the other
+half — the skills that room is already carrying:
+
+```python
+active = ai.active_skill_names("support-room")     # {"code-review"}
+rows = [
+    f"- {m.name} ({'loaded' if m.name in active else 'available'}): {m.description}"
+    for m in registry.all_metadata()
+]
+```
+
+Without it every row reads *available*, including the skill whose instructions
+the prompt already carries, so the manifest asks the model to load rules that
+are in front of it — one wasted round, answered by an ack. Keyed on the room,
+empty for a room that activated nothing and for `None`. Active bodies are
+injected whether or not `skills_in_prompt` is set: that is runtime state a host
+cannot know.
+
+### Tool gating
+
+A skill's `allowed_tools` frontmatter (a YAML list or a comma-separated scalar)
+names the tools it unlocks. Entries are `ToolPolicy` **globs** (RFC §24.2), so
+`search_*` covers every tool whose name starts with `search_` — match them, never
+test membership. A gated tool is hidden from the catalogue *and* refused at
+execution, because a model that saw the name before the skill was deactivated can
+still call it. The skill and Tool Search infrastructure tools are exempt from
+gating in both places: gating `find_tools` or `activate_skill` would tell the
+model to activate a skill it has no way left to name.
+
+### Visibility states
+
+```python
+registry.mark_unlisted("legacy-csv-import")       # activatable, absent from the manifest
+registry.mark_unavailable("deploy-helper", "needs a ScriptExecutor")
+```
+
+`registry.skill_names` is what can be activated, `registry.listed_names` what the
+manifest advertises, and `registry.unavailable_skills` maps a name to the reason
+the model can quote instead of guessing. `registry.to_prompt_xml()` renders the
+manifest RoomKit would otherwise inject.
+
+### Script execution
+
+There is **no default executor** — sandboxing, timeouts and allowed interpreters
+are the integrator's call. Implement `ScriptExecutor` and pass it as
+`script_executor`. The script name comes from the model, so RoomKit resolves it
+first: use `skill.resolve_script(name)` rather than joining
+`skill.path / "scripts" / name` yourself. A name that escapes the skill —
+including through a symlink planted in `scripts/` — raises `SkillPathError` and
+never reaches your executor.
+
+### Realtime voice
+
+`RealtimeVoiceChannel` runs the same lifecycle per **session**, with
+`skill_delivery_mode` deciding how a body reaches the model:
+
+- `"on_demand"` — metadata only in the prompt; `activate_skill` loads the body
+  through `provider.reconfigure`.
+- `"inline_full"` — every body baked into the initial `system_instruction`;
+  `activate_skill` becomes a declarative ack and no reconfigure is needed.
+
+It defaults to `"inline_full"` when the provider reports
+`supports_mid_session_reconfigure=False` (e.g. Gemini 3.x Flash Live), and to
+`"on_demand"` otherwise.
+
+Runnable, no API key needed for the last one: `examples/agent_skills.py`
+(discovery and activation), `examples/skill_visibility.py` (the three states plus
+a recommender hook), `examples/skill_active_manifest.py` (a host manifest reading
+the active set).
+
 ## Per-Room Configuration
 
 Override AI settings per room via binding metadata:
