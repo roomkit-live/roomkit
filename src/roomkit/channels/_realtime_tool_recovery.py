@@ -66,7 +66,7 @@ class RealtimeToolRecoveryHost(Protocol):
         call_id: str,
         room_id: str | None,
         session: VoiceSession,
-    ) -> tuple[dict[str, Any], str | None]: ...
+    ) -> tuple[dict[str, Any], str | None, Any]: ...
 
     async def _fire_tool_hook(
         self,
@@ -76,6 +76,7 @@ class RealtimeToolRecoveryHost(Protocol):
         name: str,
         call_id: str,
         session: VoiceSession,
+        carrying: Any = None,
     ) -> str: ...
 
     def _truncate_tool_result(
@@ -260,7 +261,7 @@ class RealtimeToolRecoveryMixin:
             # function calling API (_realtime_tools._handle_tool_call): the
             # arguments here were reconstructed from free text, so they are
             # less trustworthy than a real function call's, not more.
-            arguments, denial = await self._authorize_realtime_tool(
+            arguments, denial, gate_context = await self._authorize_realtime_tool(
                 tool_name, arguments, call_id, room_id, session
             )
             if denial is not None:
@@ -310,7 +311,7 @@ class RealtimeToolRecoveryMixin:
             # other tool call.
             if self._framework and room_id:
                 result_str = await self._fire_tool_hook(
-                    tool_event, room_id, handler_result, tool_name, call_id, session
+                    tool_event, room_id, handler_result, tool_name, call_id, session, gate_context
                 )
             elif handler_result is not None:
                 result_str = handler_result

@@ -17,6 +17,7 @@ from roomkit.tools.validation import fold_hoisted_arguments, validate_tool_argum
 
 if TYPE_CHECKING:
     from roomkit.core.framework import RoomKit
+    from roomkit.models.context import RoomContext
     from roomkit.voice.backends.base import VoiceBackend
     from roomkit.voice.base import VoiceSession
     from roomkit.voice.realtime.provider import RealtimeVoiceProvider
@@ -257,7 +258,8 @@ class RealtimeToolsMixin:
                     # session config from scratch — passing ``tools=None``
                     # erases the tool surface. Always pass the current
                     # visible tool list, even when it is unchanged.
-                    base_tools = self._session_tools.get(session.id, self._tools or [])
+                    with self._state_lock:
+                        base_tools = self._session_tools.get(session.id, self._tools or [])
                     all_tools = self._skill_support.skill_tool_dicts() + base_tools
                     current_visible = self._skill_support.get_visible_tools(all_tools, session.id)
                     addendum = self._skill_support.activated_skills_prompt(session.id)
@@ -295,7 +297,7 @@ class RealtimeToolsMixin:
             # block prevents the side effect instead of only hiding the result.
             # Its scope is the call, not the handler: hook-only mode serves the
             # tool from ON_TOOL_CALL and must be gated the same way.
-            arguments, denial = await self._authorize_realtime_tool(
+            arguments, denial, gate_context = await self._authorize_realtime_tool(
                 name, arguments, call_id, room_id, session
             )
             if denial is not None:
@@ -369,7 +371,7 @@ class RealtimeToolsMixin:
 
             if self._framework and room_id:
                 result_str = await self._fire_tool_hook(
-                    tool_event, room_id, handler_result, name, call_id, session
+                    tool_event, room_id, handler_result, name, call_id, session, gate_context
                 )
                 # Same reason as the post-handler yield: don't fuse hook
                 # dispatch with submission into one loop step.
@@ -414,7 +416,8 @@ class RealtimeToolsMixin:
 
         ``None`` when the tool's schema is unknown (skips argument validation).
         """
-        tools = self._session_tools.get(session.id) or self._tools or []
+        with self._state_lock:
+            tools = self._session_tools.get(session.id) or self._tools or []
         for t in tools:
             if isinstance(t, dict) and t.get("name") == name:
                 params = t.get("parameters")
@@ -428,7 +431,8 @@ class RealtimeToolsMixin:
         mode. Once declarations exist, however, a provider cannot invent an
         undeclared name and reach a generic dispatcher.
         """
-        tools = self._session_tools.get(session.id) or self._tools or []
+        with self._state_lock:
+            tools = self._session_tools.get(session.id) or self._tools or []
         if not tools:
             return True
         return any(isinstance(tool, dict) and tool.get("name") == name for tool in tools)
@@ -440,20 +444,24 @@ class RealtimeToolsMixin:
         call_id: str,
         room_id: str | None,
         session: VoiceSession,
-    ) -> tuple[dict[str, Any], str | None]:
+    ) -> tuple[dict[str, Any], str | None, RoomContext | None]:
         """Pre-execution gate for realtime tool calls (parity with the classic
         AI path).
 
         Folds a flattened hub-tool call back into ``params``, validates the
         arguments against the declared schema, and runs BEFORE_TOOL_USE
         so a block prevents the side effect rather than only hiding the result.
-        Returns the effective arguments and an optional denial result. Hooks
-        may replace the arguments through ``metadata["arguments"]``; the
+        Hooks may replace the arguments through ``metadata["arguments"]``; the
         replacement is validated before it can reach the handler.
+
+        Returns the effective arguments, an optional denial result, and the
+        room context this gate built — ``None`` when it built none. The caller
+        hands that context to :meth:`_fire_tool_hook` as ``carrying`` so one
+        tool call deserialises the room history once instead of twice.
         """
         if not self._is_declared_realtime_tool(name, session):
             logger.warning("Realtime provider requested undeclared tool %s", name)
-            return arguments, json.dumps({"error": f"Tool '{name}' is not declared"})
+            return arguments, json.dumps({"error": f"Tool '{name}' is not declared"}), None
 
         # Argument validation against the declared schema (fail-closed), after
         # repairing a hub tool's flattened ``params`` — same gate, same order as
@@ -463,8 +471,10 @@ class RealtimeToolsMixin:
             folded, fold_error = fold_hoisted_arguments(params, arguments)
             if fold_error is not None:
                 logger.warning("Realtime tool %s arguments ambiguous: %s", name, fold_error)
-                return arguments, json.dumps(
-                    {"error": f"Invalid arguments for '{name}': {fold_error}"}
+                return (
+                    arguments,
+                    json.dumps({"error": f"Invalid arguments for '{name}': {fold_error}"}),
+                    None,
                 )
             if folded is not None:
                 logger.info(
@@ -479,17 +489,19 @@ class RealtimeToolsMixin:
             arg_error = validate_tool_arguments(params, arguments)
             if arg_error is not None:
                 logger.warning("Realtime tool %s arguments rejected: %s", name, arg_error)
-                return arguments, json.dumps(
-                    {"error": f"Invalid arguments for '{name}': {arg_error}"}
+                return (
+                    arguments,
+                    json.dumps({"error": f"Invalid arguments for '{name}': {arg_error}"}),
+                    None,
                 )
 
         # BEFORE_TOOL_USE gate (needs a framework + room to run room hooks).
         if self._framework is None or not room_id:
-            return arguments, None
+            return arguments, None, None
         # Building a context costs two store reads; skip it when nothing listens.
         # Schema validation above stays unconditional — it needs no context.
         if not self._framework.hook_engine.has_hooks(HookTrigger.BEFORE_TOOL_USE):
-            return arguments, None
+            return arguments, None, None
         from roomkit.models.tool_call import ToolCallEvent
 
         pre_event = ToolCallEvent(
@@ -512,8 +524,12 @@ class RealtimeToolsMixin:
         )
         if not hook_result.allowed:
             logger.info("Realtime tool %s denied by BEFORE_TOOL_USE hook", name)
-            return arguments, json.dumps(
-                {"error": hook_result.reason or f"Tool '{name}' denied by pre-execution hook."}
+            return (
+                arguments,
+                json.dumps(
+                    {"error": hook_result.reason or f"Tool '{name}' denied by pre-execution hook."}
+                ),
+                context,
             )
 
         rewritten = hook_result.metadata.get("arguments")
@@ -523,8 +539,12 @@ class RealtimeToolsMixin:
                 "— denying tool call",
                 name,
             )
-            return arguments, json.dumps(
-                {"error": f"Invalid rewritten arguments for '{name}': expected an object"}
+            return (
+                arguments,
+                json.dumps(
+                    {"error": f"Invalid rewritten arguments for '{name}': expected an object"}
+                ),
+                context,
             )
 
         effective_arguments = rewritten if isinstance(rewritten, dict) else arguments
@@ -537,10 +557,14 @@ class RealtimeToolsMixin:
                 logger.warning(
                     "Realtime tool %s post-hook arguments rejected: %s", name, arg_error
                 )
-                return effective_arguments, json.dumps(
-                    {"error": f"Invalid rewritten arguments for '{name}': {arg_error}"}
+                return (
+                    effective_arguments,
+                    json.dumps(
+                        {"error": f"Invalid rewritten arguments for '{name}': {arg_error}"}
+                    ),
+                    context,
                 )
-        return effective_arguments, None
+        return effective_arguments, None, context
 
     async def _fire_tool_hook(
         self,
@@ -550,11 +574,17 @@ class RealtimeToolsMixin:
         name: str,
         call_id: str,
         session: VoiceSession,
+        carrying: RoomContext | None = None,
     ) -> str:
-        """Fire ON_TOOL_CALL hook and determine final result."""
+        """Fire ON_TOOL_CALL hook and determine final result.
+
+        ``carrying`` is the context the pre-execution gate already built for
+        this same call, when it built one: handing it over spares the room
+        history a second deserialisation per tool call.
+        """
         assert self._framework is not None  # guarded by caller  # noqa: S101
         t_seg = time.perf_counter()
-        context = await self._framework._build_context(room_id)
+        context = await self._framework._build_context(room_id, carrying=carrying)
         hook_result = await self._framework.hook_engine.run_sync_hooks(
             room_id,
             HookTrigger.ON_TOOL_CALL,
@@ -580,7 +610,7 @@ class RealtimeToolsMixin:
             errors = "; ".join(f"{e['hook']}: {e['error']}" for e in hook_result.hook_errors)
             result_str = json.dumps(
                 {
-                    "error": f"Tool call failed: {errors}. Take a fresh screenshot and retry.",
+                    "error": f"Tool call failed: {errors}",
                 }
             )
         else:

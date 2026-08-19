@@ -26,6 +26,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A realtime tool call reads the room history once** — the pre-execution gate
+  and the `ON_TOOL_CALL` dispatch each built their own `RoomContext`, so one
+  tool call deserialised the room's recent events twice. The gate now hands its
+  context to the dispatch through the existing `_build_context(carrying=...)`
+  path, and skips building one at all when no `BEFORE_TOOL_USE` hook is
+  registered.
+
+- **A generic tool failure no longer tells every voice agent to take a
+  screenshot** — the message a realtime host received when an `ON_TOOL_CALL`
+  hook raised ended with "Take a fresh screenshot and retry.", a computer-use
+  instruction reaching agents with no screen. It now names the failing hooks
+  and stops there.
+
+- **One lock discipline for the realtime tool catalogue** — the reads backing
+  the catalogue check and the schema lookup took no lock while their neighbours
+  did, and a tool call recovered from text reaches them from a background task.
+  They now take the same lock as the rest.
+
 - **A tool call the model spoke instead of issuing is gated like any other** —
   when a realtime model emits `call:name{...}` as assistant text rather than
   through the function calling API, `RealtimeVoiceChannel` recovers and runs it

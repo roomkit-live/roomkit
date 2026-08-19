@@ -930,3 +930,46 @@ class TestRealtimeGateWithoutToolHandler:
 
         assert served == ["anything_at_all"]
         assert rt_provider.tool_results[0][2] == "done"
+
+
+class TestRealtimeGateSharesItsContext:
+    async def test_one_tool_call_reads_the_history_once(
+        self,
+        rt_provider: MockRealtimeProvider,
+        rt_transport: MockRealtimeTransport,
+    ) -> None:
+        """The gate and ON_TOOL_CALL both need a context; the room has one history."""
+
+        async def handler(name: str, args: dict[str, Any]) -> str:
+            return "ok"
+
+        ch = RealtimeVoiceChannel(
+            "rt-carry", provider=rt_provider, transport=rt_transport, tool_handler=handler
+        )
+        kit = RoomKit()
+        kit.register_channel(ch)
+        room = await kit.create_room()
+        await kit.attach_channel(room.id, "rt-carry")
+        session = await ch.start_session(room.id, "u1", "ws")
+
+        @kit.hook(HookTrigger.BEFORE_TOOL_USE, execution=HookExecution.SYNC, name="gate")
+        async def gate(event: ToolCallEvent, ctx: RoomContext) -> HookResult:
+            return HookResult.allow()
+
+        @kit.hook(HookTrigger.ON_TOOL_CALL, execution=HookExecution.SYNC, name="serve")
+        async def serve(event: ToolCallEvent, ctx: RoomContext) -> HookResult:
+            return HookResult.allow()
+
+        reads: list[str] = []
+        real_get_conversation = kit._store.get_conversation
+
+        async def counting(room_id: str, **kwargs: Any) -> Any:
+            reads.append(room_id)
+            return await real_get_conversation(room_id, **kwargs)
+
+        kit._store.get_conversation = counting  # type: ignore[method-assign]
+
+        await rt_provider.simulate_tool_call(session, "c1", "anything", {})
+        await asyncio.sleep(0.1)
+
+        assert len(reads) == 1
