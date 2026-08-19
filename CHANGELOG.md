@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.55.1] — 2026-08-19
+
 ### Fixed
 
 - **The argument fold recognises a hub container by its shape, not only by its
@@ -6275,7 +6277,8 @@ See entries `0.7.0a1` through `0.7.0a18` below.
 - `STTProvider.transcribe()` returns `TranscriptionResult` (Phase 3.1)
 - Framework event names enriched with payloads (Phase 4)
 
-[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.55.0...HEAD
+[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.55.1...HEAD
+[0.55.1]: https://github.com/roomkit-live/roomkit/compare/v0.55.0...v0.55.1
 [0.55.0]: https://github.com/roomkit-live/roomkit/compare/v0.54.0...v0.55.0
 [0.54.0]: https://github.com/roomkit-live/roomkit/compare/v0.53.0...v0.54.0
 [0.53.0]: https://github.com/roomkit-live/roomkit/compare/v0.52.0...v0.53.0
