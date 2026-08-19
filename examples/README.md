@@ -78,6 +78,7 @@ CONSOLE=1 uv run python examples/<example>.py
 | `realtime_voice_sip_elevenlabs.py` | SIP + ElevenLabs | SIP calls routed to ElevenLabs Conversational AI |
 | `realtime_elevenlabs_tools.py` | ElevenLabs tools | ElevenLabs Conversational AI with client-side tool calling |
 | `realtime_av_anam.py` | Avatar | Realtime audio-video with Anam AI avatar |
+| `realtime_tool_gate.py` | Tool gate | One pre-execution gate for every realtime tool call — API, spoken, and infrastructure (mock provider, no API key) |
 
 ## Video
 
@@ -153,6 +154,7 @@ CONSOLE=1 uv run python examples/<example>.py
 | `memory_provider.py` | Memory | Custom MemoryProvider for AI context construction |
 | `mcp_tool_provider.py` | MCP | Model Context Protocol tool provider integration |
 | `agent_skills.py` | Skills | Agent skills discovery and registration |
+| `skill_active_manifest.py` | Skills | A host manifest that marks what the room already loaded, via `active_skill_names` (mock provider, no API key) |
 | `streaming_tools.py` | Streaming | Streaming text delivery with interleaved tool calls |
 | `tool_call_events.py` | Tool events | Tool call ephemeral event tracking |
 | `tool_call_context.py` | Tool context | Which room and whose turn a handler runs under, and resolving the actor before trusting it |
