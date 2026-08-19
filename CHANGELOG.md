@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Vertex authenticates as a service account, or borrows one** —
+  `GeminiVertexConfig` takes `service_account_json` (a key file's contents) and
+  `impersonate_service_account` (an account to borrow), read in that order and
+  falling back to Application Default Credentials when both are unset. ADC
+  answers "who is this machine", which is the wrong question wherever one
+  deployment serves several projects: the ambient identity belongs to whoever
+  runs the server, so a caller naming someone else's project gets
+  `PERMISSION_DENIED` no matter what it puts in `project`. A key makes the
+  identity travel with the configuration; impersonation makes it travel without
+  a secret at all, which is the only form left where the organization enforces
+  `constraints/iam.disableServiceAccountKeyCreation` — the project owner grants
+  this deployment's own identity `roles/iam.serviceAccountTokenCreator` on one
+  of their accounts, and revokes it from their side, in one command, without
+  telling us. The two combine rather than exclude each other: the borrowing
+  identity is the key when one is configured, otherwise ADC. A single-project
+  deployment and local development keep ADC and change nothing. Guide
+  `gemini-vertex.md` runs the three identities in the order they are read.
+
 - **A hub tool's hoisted arguments are folded back into `params`** — a model
   trained mostly on flat schemas routinely lifts the inner keys of a
   `{action, params}` tool one level up: `{"action": "list_columns",
@@ -37,6 +55,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the default and keep working untouched. `MockRealtimeProvider` takes an
   optional `model` so a test can exercise either shape.
 
+- **A channel reports the skills active in a room** —
+  `AIChannel.active_skill_names(room_id)` answers which skills are binding in
+  that room right now: runtime state, not the catalogue. A host rendering its
+  own manifest (`skills_in_prompt=False`) could read what is *available* and
+  never what is *loaded*, so anything it wrote to push the model toward a skill
+  — a manifest row, a per-message nudge — pointed at rules the system prompt
+  was already carrying under "Active skill instructions". The model obeyed: an
+  `activate_skill` round answered by an ack, and a user watching the same skill
+  load twice. Empty for a room with no activation, and for `None`.
+  `examples/skill_active_manifest.py` renders a manifest both ways against the
+  same room.
+
 ### Fixed
 
 - **The realtime tool gate closes the three gaps the AI channel did not have**
@@ -50,6 +80,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   for listing and for execution alike, and never gates an infrastructure tool:
   gating `find_tools` would tell the model to activate a skill it has no way
   left to name.
+
+  One consequence for existing hosts: a `BEFORE_TOOL_USE` hook written as an
+  allow-list over the host's own tool names now denies the channel's
+  infrastructure tools, and skill activation stops working. Reaching the gate
+  is the point — an audit that cannot see `activate_skill` is not an audit — so
+  such a hook must allow the infrastructure names it does not itself serve
+  rather than let them fall through to its deny.
+
+- **The AI channel's skill-gating guard matches globs, like everything else
+  that reads `allowed_tools`** — `AIChannel`'s execution-time guard tested tool
+  names for exact membership in the gated set, but the entries are ToolPolicy
+  globs (RFC §24.2), so `search_*` matched nothing there. The guard is defence
+  in depth behind the catalogue filter, which was already glob-aware, so no
+  gated tool became reachable — but a defence that never fires is not one. It
+  now uses the shared matcher, and exempts the Tool Search tools alongside the
+  skill tools, as the catalogue filter does.
 
 - **A spoken tool call cannot smuggle an argument past the schema** — the
   recovery parser split the text on the tool's *declared* parameter names only,
@@ -119,6 +165,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   tool name absent from a non-empty declared catalogue, arguments that violate
   the declared schema, and any call a `BEFORE_TOOL_USE` hook denies. A channel
   declaring no tools keeps its dynamic mode — an undeclared name still passes.
+
+- **`list_models()` answers Vertex with model names, not resource paths** — the
+  call serves two surfaces that name and describe their models differently. The
+  Developer API returns `models/<id>` and declares `supported_actions`; Vertex
+  returns `publishers/google/models/<id>` and declares nothing at all. Stripping
+  the one fixed prefix therefore left every Vertex id prefixed, which matched
+  nothing in the curated catalog — so each model came back with empty metadata —
+  and would be stored by a caller as a model name the API then rejects. The id
+  is now the last path segment, which serves both surfaces, and tuned models by
+  the same rule. With no actions declared the generate-content filter also had
+  nothing to filter on and passed embedding and image models straight through;
+  where the API says nothing, the Gemini family name is the signal left, so a
+  `gemini-*` id is kept (curated, or too new to be curated) and the embedding
+  line dropped.
 
 ## [0.54.0] — 2026-08-18
 

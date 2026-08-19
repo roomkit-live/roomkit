@@ -48,6 +48,7 @@ from roomkit.providers.ai.base import (
 from roomkit.sandbox.tools import SANDBOX_TOOL_PREFIX
 from roomkit.telemetry.base import SpanKind
 from roomkit.tools.context import ToolCallContext, _current_tool_call
+from roomkit.tools.policy import matches_any_pattern
 from roomkit.tools.validation import fold_hoisted_arguments, validate_tool_arguments
 
 if TYPE_CHECKING:
@@ -338,8 +339,16 @@ class AIToolsMixin:
                     ),
                 )
 
-            # Execution guard: skill gating
-            if tc.name not in self._SKILL_INFRA_TOOLS and tc.name in self._gated_tool_names:
+            # Execution guard: skill gating. The gated entries are ToolPolicy
+            # globs (RFC §24.2), so they are matched, never tested for
+            # membership — ``search_*`` gates ``search_web``. Tool Search's own
+            # tools are exempt with the skill tools, as in the listing filter:
+            # they are how a gated name is found and its skill activated.
+            if (
+                tc.name not in self._SKILL_INFRA_TOOLS
+                and tc.name not in TOOL_SEARCH_INFRA_TOOL_NAMES
+                and matches_any_pattern(tc.name, self._gated_tool_names)
+            ):
                 logger.warning("Tool %s blocked by skill gating", tc.name)
                 return AIToolResultPart(
                     tool_call_id=tc.id,
