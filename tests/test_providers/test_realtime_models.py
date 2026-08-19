@@ -18,12 +18,17 @@ from pathlib import Path
 import pytest
 
 from roomkit.providers.ai.base import ModelInfo
+from roomkit.providers.anam.config import AnamConfig
+from roomkit.providers.anam.realtime import AnamRealtimeProvider
 from roomkit.providers.deepgram.realtime import DeepgramAgentProvider
+from roomkit.providers.elevenlabs.config import ElevenLabsRealtimeConfig
 from roomkit.providers.elevenlabs.realtime import ElevenLabsRealtimeProvider
 from roomkit.providers.gemini.realtime import GeminiLiveProvider
 from roomkit.providers.openai.realtime import OpenAIRealtimeProvider
+from roomkit.providers.personaplex.realtime import PersonaPlexRealtimeProvider
 from roomkit.providers.xai.config import XAIRealtimeConfig
 from roomkit.providers.xai.realtime import XAIRealtimeProvider
+from roomkit.voice.realtime.mock import MockRealtimeProvider
 from roomkit.voice.realtime.provider import RealtimeVoiceProvider
 
 CATALOGED = [OpenAIRealtimeProvider, GeminiLiveProvider, XAIRealtimeProvider]
@@ -104,3 +109,51 @@ def test_the_check_script_names_every_realtime_catalog() -> None:
     assert {"openai-realtime", "gemini-realtime", "xai-realtime"} <= set(
         module.UNMIRRORED_CATALOGS
     )
+
+
+# --- model_name ----------------------------------------------------------------
+
+
+def test_a_self_hosted_single_model_provider_keeps_the_default() -> None:
+    """PersonaPlex serves one model and names none: the default answers."""
+    provider = PersonaPlexRealtimeProvider()
+    assert provider.model_name == provider.name == "PersonaPlexRealtimeProvider"
+
+
+def test_openai_reports_the_model_it_connects_to() -> None:
+    provider = OpenAIRealtimeProvider(api_key="sk-test", model="gpt-realtime-2.1")
+    assert provider.model_name == "gpt-realtime-2.1"
+
+
+def test_xai_reports_the_model_it_connects_to() -> None:
+    provider = XAIRealtimeProvider(XAIRealtimeConfig(api_key="xai-test", model="grok-2-audio"))
+    assert provider.model_name == "grok-2-audio"
+
+
+def test_deepgram_reports_its_think_model() -> None:
+    """A composed stack names the stage that decides what the agent says."""
+    provider = DeepgramAgentProvider(api_key="dg-test")
+    assert provider.model_name == provider._config.think_model  # noqa: SLF001
+    assert provider.model_name != provider.name
+
+
+def test_an_agent_bound_provider_keeps_the_default() -> None:
+    """ElevenLabs binds a dashboard-configured agent: no model id to give."""
+    provider = ElevenLabsRealtimeProvider(
+        ElevenLabsRealtimeConfig(api_key="el-test", agent_id="agent-1")
+    )
+    assert provider.model_name == provider.name
+
+
+def test_anam_names_its_llm_only_for_an_inline_persona() -> None:
+    inline = AnamRealtimeProvider(AnamConfig(api_key="ak-test", llm_id="llm-1"))
+    assert inline.model_name == "llm-1"
+
+    lab_persona = AnamRealtimeProvider(AnamConfig(api_key="ak-test", persona_id="persona-1"))
+    assert lab_persona.model_name == lab_persona.name
+
+
+def test_the_mock_shows_both_shapes() -> None:
+    """A mock that always named a model would lie about half the fleet."""
+    assert MockRealtimeProvider().model_name == "MockRealtimeProvider"
+    assert MockRealtimeProvider(model="gpt-realtime-2.1").model_name == "gpt-realtime-2.1"

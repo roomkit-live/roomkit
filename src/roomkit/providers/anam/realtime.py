@@ -107,6 +107,16 @@ class AnamRealtimeProvider(RealtimeAudioVideoProvider):
     def name(self) -> str:
         return "AnamRealtimeProvider"
 
+    @property
+    def model_name(self) -> str:
+        """The LLM driving the avatar, when this side of the wire knows it.
+
+        Only an inline persona names one (``llm_id``). A ``persona_id`` binds
+        a persona configured in Anam Lab, whose model is not exposed here, so
+        that case falls back to the default.
+        """
+        return self._config.llm_id or super().model_name
+
     # -- Connection lifecycle --------------------------------------------------
 
     async def connect(

@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **A realtime provider names its model** — `RealtimeVoiceProvider.model_name`
+  answers which model is behind a session, so a log line, a span or a
+  diagnostic can name it instead of reading `unknown` (or, worse, printing a
+  provider name in a field labelled "model"). Unlike
+  `AIProvider.model_name` it is **not** abstract: every conversational provider
+  runs one named model, but a speech-to-speech service need not expose one —
+  ElevenLabs binds a dashboard-configured agent, PersonaPlex serves a single
+  self-hosted model — so the default returns `name` and a caller must read the
+  value as the best identifier the provider can give, not as a guaranteed model
+  id. Gemini Live, OpenAI Realtime and xAI report their end-to-end model; a
+  composed stack names the stage it means (Deepgram reports its *think* model);
+  Anam reports its `llm_id` for an inline persona and falls back to the default
+  for one configured in Anam Lab. Providers written outside this repo inherit
+  the default and keep working untouched. `MockRealtimeProvider` takes an
+  optional `model` so a test can exercise either shape.
+
 ### Fixed
 
 - **A tool call the model spoke instead of issuing is gated like any other** —

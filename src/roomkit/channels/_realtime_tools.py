@@ -473,7 +473,7 @@ class RealtimeToolsMixin:
                     name,
                     sorted(set(arguments) - set(folded)),
                     self._provider.name,
-                    getattr(self._provider, "_model", "unknown"),
+                    self._provider.model_name,
                 )
                 arguments = folded
             arg_error = validate_tool_arguments(params, arguments)

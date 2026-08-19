@@ -181,6 +181,11 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
     def name(self) -> str:
         return "GeminiLiveProvider"
 
+    @property
+    def model_name(self) -> str:
+        """The Gemini Live model this provider connects to, end to end."""
+        return self._model
+
     @classmethod
     def available_voices(cls) -> list[VoiceInfo]:
         """Curated, offline catalog of Gemini Live native-audio voices (fixed set)."""

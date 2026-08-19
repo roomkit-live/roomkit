@@ -35,8 +35,11 @@ class OpenAIRealtimeBase(OpenAIRealtimeEventHandlersMixin):
 
     Subclasses must implement: :attr:`name`, :meth:`available_voices`,
     :attr:`_log_tag`, :attr:`_recv_task_prefix`, :attr:`_websockets_install_hint`,
-    :meth:`_connect_url`, :meth:`_auth_headers`, and :meth:`_build_session_config`.
+    :meth:`_connect_url`, :meth:`_auth_headers`, and :meth:`_build_session_config`,
+    and set ``_model`` to the realtime model id they connect to.
     """
+
+    _model: str
 
     def __init__(self) -> None:
         super().__init__()
@@ -54,6 +57,11 @@ class OpenAIRealtimeBase(OpenAIRealtimeEventHandlersMixin):
         # the unheard tail in provider context.
         self._output_audio: dict[str, _OutputAudioState] = {}
         self._output_bytes_per_ms: dict[str, float] = {}
+
+    @property
+    def model_name(self) -> str:
+        """The realtime model this provider connects to, end to end."""
+        return self._model
 
     def is_responding(self, session_id: str) -> bool:
         return session_id in self._responding

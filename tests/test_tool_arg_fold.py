@@ -347,3 +347,21 @@ class TestRealtimeChannel:
         error = _rt_error(rt_provider)
         assert "rewritten arguments" in error
         assert "unknown argument 'board_id'" in error
+
+    async def test_the_fold_log_names_the_model_that_hoisted(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """The line exists to measure the case per model, so it must name one."""
+        provider = MockRealtimeProvider(model="gemini-3.1-flash-live-preview")
+        handler, _calls = _recording_handler()
+        _kit, channel, room_id = await _rt_setup(provider, handler, [BOARDS_TOOL])
+        session = await channel.start_session(room_id, "user-1", "fake-ws")
+
+        with caplog.at_level("INFO", logger="roomkit.channels.realtime_voice"):
+            await provider.simulate_tool_call(session, "call-1", "boards", dict(HOISTED_CALL))
+            await asyncio.sleep(0.05)
+
+        folds = [r.getMessage() for r in caplog.records if "folded hoisted arguments" in r.message]
+        assert len(folds) == 1
+        assert "model=gemini-3.1-flash-live-preview" in folds[0]
+        assert "provider=MockRealtimeProvider" in folds[0]

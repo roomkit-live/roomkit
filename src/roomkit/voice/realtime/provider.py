@@ -99,6 +99,28 @@ class RealtimeVoiceProvider(ABC):
         ...
 
     @property
+    def model_name(self) -> str:
+        """Identifier of the model behind this session, for logs and traces.
+
+        Deliberately **not** abstract, unlike
+        :attr:`~roomkit.providers.ai.base.AIProvider.model_name`: every
+        conversational provider runs one named model, but a speech-to-speech
+        service need not expose one — ElevenLabs binds an agent configured in
+        its dashboard, PersonaPlex serves a single self-hosted model. Those
+        keep this default, which returns :attr:`name`.
+
+        So a caller must read the value as *"the best identifier this provider
+        can give"*, not as a guaranteed model id: it may be a provider name.
+        Compare it against :meth:`available_models` when the distinction
+        matters.
+
+        For a composed stack the question has several answers, and the
+        override says which stage it names — Deepgram's is its *think* model,
+        not its speech-to-text or its voice.
+        """
+        return self.name
+
+    @property
     def supports_mid_session_reconfigure(self) -> bool:
         """Whether ``reconfigure(...)`` can safely run mid-session.
 

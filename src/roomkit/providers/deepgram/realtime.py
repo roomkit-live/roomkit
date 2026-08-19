@@ -169,6 +169,17 @@ class DeepgramAgentProvider(RealtimeVoiceProvider):
     def name(self) -> str:
         return "DeepgramAgentProvider"
 
+    @property
+    def model_name(self) -> str:
+        """The *think* model — the stage that decides what the agent says.
+
+        Deepgram composes its agent from three stages (listen, think, speak),
+        so no single id describes it end to end. This names the reasoning one,
+        because that is the model a log line about a tool call is asking
+        about; ``listen_model`` and ``speak_model`` stay on the config.
+        """
+        return self._config.think_model
+
     @classmethod
     def available_voices(cls) -> list[VoiceInfo]:
         """Curated, offline catalog of Deepgram Aura voices."""

@@ -58,7 +58,11 @@ class MockRealtimeProvider(RealtimeVoiceProvider):
         await provider.simulate_tool_call(session, "call-1", "get_weather", {"city": "NYC"})
     """
 
-    def __init__(self) -> None:
+    def __init__(self, model: str | None = None) -> None:
+        # Left None by default so a test sees what a provider that names no
+        # model reports — the case ElevenLabs and PersonaPlex are really in.
+        # Pass one to stand in for a provider that does name its model.
+        self._model = model
         self.calls: list[MockCall] = []
         self.sent_audio: list[tuple[str, bytes]] = []
         self.injected_texts: list[tuple[str, str, str]] = []  # (session_id, text, role)
@@ -77,6 +81,10 @@ class MockRealtimeProvider(RealtimeVoiceProvider):
     @property
     def name(self) -> str:
         return "MockRealtimeProvider"
+
+    @property
+    def model_name(self) -> str:
+        return self._model or super().model_name
 
     async def connect(
         self,

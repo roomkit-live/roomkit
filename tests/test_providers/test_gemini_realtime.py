@@ -116,6 +116,15 @@ class TestGeminiLiveProvider:
         )
         assert provider._model == "gemini-2.0-flash-live"
 
+    def test_model_name_reports_the_live_model(self):
+        """A log or a trace naming "the model" must not read a provider name."""
+        mod = _load_provider()
+        provider = mod.GeminiLiveProvider(
+            api_key="test-key",
+            model="gemini-2.0-flash-live",
+        )
+        assert provider.model_name == "gemini-2.0-flash-live"
+
     def test_3x_models_disable_mid_session_reconfigure(self):
         """gemini-3.* models reject send_client_content with WS 1007
         after the first model turn and offer no documented dynamic
