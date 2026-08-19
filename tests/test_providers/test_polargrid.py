@@ -377,6 +377,9 @@ class TestPolarGridRegionRouting:
         call_kwargs = mod.PolarGrid.create.await_args.kwargs
         assert "region" not in call_kwargs
         assert call_kwargs["api_key"] == "pg_test"
+        # Auto-routing is model-aware (polargrid-sdk 0.10.0): the autorouter
+        # picks an edge that already serves the configured model.
+        assert call_kwargs["routing_model"] == "qwen-3.5-27b"
 
     @pytest.mark.asyncio
     async def test_region_pinned_uses_sync_constructor(self) -> None:
@@ -388,6 +391,8 @@ class TestPolarGridRegionRouting:
         mod.PolarGrid.assert_called_once()
         call_kwargs = mod.PolarGrid.call_args.kwargs
         assert call_kwargs["region"] == "toronto"
+        # A pinned region bypasses the autorouter entirely — no routing hint.
+        assert "routing_model" not in call_kwargs
         mod.PolarGrid.create.assert_not_called()
 
 
@@ -770,28 +775,37 @@ class TestPolarGridModels:
         by_id = {m.id: m for m in models}
         assert "qwen-3.5-27b" in by_id
         assert "qwen-3.6-35b-a3b" in by_id
+        assert "qwen-3.8-27b" in by_id
         assert by_id["qwen-3.5-27b"].display_name == "Qwen 3.5 27B"
-        # 3.6 is the thinking-capable model (validated on yul-02).
+        assert by_id["qwen-3.8-27b"].display_name == "Qwen 3.8 27B"
+        # 3.6 and 3.8 are the thinking-capable models (validated live on
+        # yul-02 and yto-01 respectively).
         assert "thinking" in by_id["qwen-3.6-35b-a3b"].capabilities
+        assert "thinking" in by_id["qwen-3.8-27b"].capabilities
         # Vision landed with polargrid-sdk 0.9.0, but only qwen-3.6-35b-a3b
-        # (yul-02) actually reads the image (verified live); 3.5 is text-only.
+        # (yul-02) actually reads the image (verified live); 3.5 is text-only
+        # and 3.8 is refused server-side ("does not support image input").
         assert by_id["qwen-3.5-27b"].supports_vision is False
         assert by_id["qwen-3.6-35b-a3b"].supports_vision is True
+        assert by_id["qwen-3.8-27b"].supports_vision is False
 
     def test_available_models_is_offline_classmethod(self) -> None:
         # Callable on the class without an SDK/instance (no network/key).
         from roomkit.providers.polargrid.ai import PolarGridAIProvider
 
         ids = [m.id for m in PolarGridAIProvider.available_models()]
-        assert ids == ["qwen-3.5-27b", "qwen-3.6-35b-a3b"]
+        assert ids == ["qwen-3.5-27b", "qwen-3.6-35b-a3b", "qwen-3.8-27b"]
 
     def test_supports_vision_is_model_driven(self) -> None:
-        # Per-model: only qwen-3.6-35b-a3b reads images; 3.5 and any unknown
-        # model are text-only.
+        # Per-model: only qwen-3.6-35b-a3b reads images; 3.5, 3.8 and any
+        # unknown model are text-only.
         vision, _ = _provider(model="qwen-3.6-35b-a3b")
         assert vision.supports_vision is True
 
-        text_default, _ = _provider(model="qwen-3.5-27b")
+        text_35, _ = _provider(model="qwen-3.5-27b")
+        assert text_35.supports_vision is False
+
+        text_default, _ = _provider(model="qwen-3.8-27b")
         assert text_default.supports_vision is False
 
         unknown, _ = _provider(model="some-text-only-model")
@@ -944,7 +958,7 @@ class TestPolarGridErrors:
 class TestPolarGridConfig:
     def test_defaults(self) -> None:
         config = PolarGridConfig(api_key="pg_test")
-        assert config.model == "qwen-3.5-27b"
+        assert config.model == "qwen-3.8-27b"
         assert config.region is None
         assert config.temperature == 0.7
         assert config.top_p == 0.9

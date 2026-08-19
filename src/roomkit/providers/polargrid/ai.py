@@ -216,8 +216,15 @@ class PolarGridAIProvider(AIProvider):
             # Region pinned — synchronous constructor is fine.
             self._client = self._sdk.PolarGrid(region=self._config.region, **kwargs)
         else:
-            # Auto-routing — discovers the fastest edge.
-            self._client = await self._sdk.PolarGrid.create(**kwargs)
+            # Auto-routing — the autorouter picks the nearest edge that
+            # already serves the configured model (``routing_model``,
+            # polargrid-sdk 0.10.0), falling back to the default edge when
+            # none does. Edges diverge on which qwen they carry during a
+            # fleet rollout, so model-blind routing could land on an edge
+            # that answers model-not-found to every request.
+            self._client = await self._sdk.PolarGrid.create(
+                routing_model=self._config.model, **kwargs
+            )
         return self._client
 
     # -- Message + tool conversion ------------------------------------------

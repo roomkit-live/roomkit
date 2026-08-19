@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The PolarGrid default model follows the fleet: `qwen-3.8-27b`** — PolarGrid
+  replaced `qwen-3.5-27b` with `qwen-3.8-27b` on five of its seven reachable
+  edges, including `yto-01`, the SDK's default region (live sweep 2026-08-19),
+  so the old default answered model-not-found precisely where an unconfigured
+  client lands. `PolarGridConfig.model` now defaults to `qwen-3.8-27b`, verified
+  live on Toronto: completion, tool calling and `enable_thinking` all work;
+  image input is refused server-side, so the catalog keeps it
+  `supports_vision=False`. Auto-routing (`region=None`) is also model-aware now:
+  the autorouter picks an edge that already has the configured model loaded
+  (`routing_model`, polargrid-sdk 0.10.0) instead of the nearest one regardless
+  — mid-rollout the edges diverge, and model-blind routing could land every
+  request on an edge without the model. The `polargrid` extra floor rises to
+  `polargrid-sdk>=0.10.0` accordingly. Deployments pinned to `yul-01` — the one
+  edge still serving the old model — should set `model="qwen-3.5-27b"`
+  explicitly.
+
 ## [0.55.1] — 2026-08-19
 
 ### Fixed

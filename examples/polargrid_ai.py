@@ -28,17 +28,19 @@ responses are larger and slower.
 as a base64 ``data:`` URI and sent as an ``image_url`` part; with no
 question it defaults to "Analyse this image." Vision needs a vision-capable
 model — run with ``POLARGRID_MODEL=qwen-3.6-35b-a3b POLARGRID_REGION=yul-02``
-(the default ``qwen-3.5-27b`` is text-only; the ``vision=`` flag in the
-welcome banner reflects the configured model).
+(the default ``qwen-3.8-27b`` is text-only: the server refuses image input
+for it; the ``vision=`` flag in the welcome banner reflects the configured
+model).
 
 Run with:
     POLARGRID_API_KEY=pg_... uv run python examples/polargrid_ai.py
 
 Optional overrides (defaults come from PolarGridConfig):
-    POLARGRID_MODEL=qwen-3.5-27b
+    POLARGRID_MODEL=qwen-3.8-27b
     POLARGRID_REGION=toronto    # pin a region (toronto/vancouver/montreal
                                 #   or yto-01/yvr-02/yul-01).
-                                # Unset to auto-route to the fastest edge.
+                                # Unset to auto-route to the nearest edge
+                                #   already serving the configured model.
     POLARGRID_THINKING=1        # activate qwen reasoning (enable_thinking).
     POLARGRID_DEBUG=1           # log the exact request sent + SDK HTTP debug.
     TAVILY_API_KEY=tvly-...     # enable real web search (else Wikipedia).

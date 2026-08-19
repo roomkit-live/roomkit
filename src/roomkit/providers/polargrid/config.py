@@ -17,16 +17,19 @@ class PolarGridConfig(BaseModel):
 
     Attributes:
         api_key: PolarGrid API key (``pg_...``), sent as a Bearer token.
-        model: Model identifier. As of polargrid-sdk 0.7.0 the
-            Toronto edge serves ``"qwen-3.5-27b"`` (LLM),
-            ``"cohere-transcribe-03-2026"`` (STT), and ``"tada-3b-ml"``.
-            The catalog varies per edge — call ``list_models()`` on
-            the raw SDK client to enumerate what's loaded.
+        model: Model identifier. Defaults to ``"qwen-3.8-27b"``, the LLM
+            the Toronto edge (the SDK's default region) serves — verified
+            live 2026-08-19. The fleet is mid-rollout from
+            ``"qwen-3.5-27b"``, which only ``yul-01`` still serves; pin
+            that model explicitly if you are pinned to ``yul-01``. The
+            catalog varies per edge — call ``list_models()`` on the raw
+            SDK client to enumerate what's loaded.
         region: Region to pin. One of ``"toronto"``/``"vancouver"``/
             ``"montreal"`` (or the IDs ``"yto-01"``/``"yvr-02"``/
             ``"yul-01"``). ``None`` lets the SDK auto-route to the
-            fastest edge — convenient for dev, but pin a region in
-            production when residency matters.
+            nearest edge that already serves the configured model
+            (``routing_model``, polargrid-sdk 0.10.0) — convenient for
+            dev, but pin a region in production when residency matters.
         max_tokens: Maximum tokens in the response. ``None`` lets the
             server pick its default (the API caps at 4096).
         temperature: Sampling temperature (0.0-2.0).
@@ -47,7 +50,7 @@ class PolarGridConfig(BaseModel):
     """
 
     api_key: SecretStr
-    model: str = "qwen-3.5-27b"
+    model: str = "qwen-3.8-27b"
     region: str | None = None
     max_tokens: int | None = None
     temperature: float = 0.7

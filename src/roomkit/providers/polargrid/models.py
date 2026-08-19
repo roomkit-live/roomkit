@@ -10,11 +10,15 @@ surfaces the STT / TTS models (``whisper-large-v3-turbo``,
 ``cohere-transcribe-03-2026``, ``kokoro-82m``, ``tada-3b-ml``).
 
 Availability is **regional** — the catalog ids are not loaded on every
-edge:
+edge. Live sweep of the LLM-serving edges on 2026-08-19, mid-rollout of
+qwen 3.8:
 
-- ``qwen-3.5-27b`` — yto-01, yul-01, yvr-02, nyc-01/02, sfo-01, dfw-01/02
-- ``qwen-3.6-35b-a3b`` — **yul-02 only** (Montreal serves it in place of
-  the standard ``qwen-3.5-27b``)
+- ``qwen-3.8-27b`` — yto-01, yvr-02, nyc-02, sfo-01, dfw-02 (it *replaced*
+  ``qwen-3.5-27b`` on each; the two are never co-loaded)
+- ``qwen-3.5-27b`` — **yul-01 only** now; nyc-01 and dfw-01, which also
+  carried it, no longer resolved in DNS at the sweep
+- ``qwen-3.6-35b-a3b`` — **yul-02 only** (unreachable at the 2026-08-19
+  sweep; entry kept from the 2026-07-09 live verification)
 
 PolarGrid's guide does not publish context windows, so they are left
 unset (``None`` = unknown) rather than guessed.
@@ -82,7 +86,7 @@ _REGION_IDS: frozenset[str] = frozenset(r.id for r in REGIONS if r.id)
 
 # Friendly region aliases → canonical edge id. Mirrors the PolarGrid SDK's
 # own resolution table (``polargrid.client.REGION_ALIASES``, unchanged in
-# polargrid-sdk 0.9.2, re-verified 2026-08-05) so a region roomkit accepts is
+# polargrid-sdk 0.10.0, re-verified 2026-08-19) so a region roomkit accepts is
 # one the SDK can actually route. Deliberately not extended past what the SDK
 # carries: the newer edges have no alias upstream, and inventing one here would
 # make this a table roomkit maintains rather than a mirror it tracks. Their
@@ -132,6 +136,9 @@ def region_choices() -> str:
 # deployed model's capability, not the SDK's. Only qwen-3.6-35b-a3b (yul-02)
 # actually reads the image — verified live 2026-07-09; qwen-3.5-27b accepts the
 # request but answers as if no image was sent, so it stays text-only.
+# qwen-3.8-27b is refused server-side ("model 'qwen-3.8-27b' does not support
+# image input", verified live 2026-08-19) — a clean error rather than 3.5's
+# silent ignore, but text-only all the same.
 MODELS: list[ModelInfo] = [
     ModelInfo(
         id="qwen-3.5-27b",
@@ -145,6 +152,14 @@ MODELS: list[ModelInfo] = [
         supports_vision=True,
         # enable_thinking + vision validated end-to-end on yul-02.
         capabilities=["completion", "tools", "thinking", "vision"],
+    ),
+    ModelInfo(
+        id="qwen-3.8-27b",
+        display_name="Qwen 3.8 27B",
+        supports_vision=False,
+        # completion + tools + enable_thinking validated live on yto-01
+        # (2026-08-19); image input refused server-side.
+        capabilities=["completion", "tools", "thinking"],
     ),
 ]
 
