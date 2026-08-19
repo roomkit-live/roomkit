@@ -26,6 +26,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A spoken tool call cannot smuggle an argument past the schema** — the
+  recovery parser split the text on the tool's *declared* parameter names only,
+  so an undeclared key was absorbed into the value before it:
+  `call:lookup{city:Paris,country:FR}` produced `{"city": "Paris,country:FR"}`,
+  which passes a `{"city": {"type": "string"}}` schema and hands the tool a
+  corrupted argument no gate could catch. A key now also ends the value before
+  it when it sits where a key belongs — at the start or just after a comma —
+  and is returned under its own name, so a closed schema refuses it by name.
+  A colon inside a value (`note:see you at 3:30`) is still not a boundary. The
+  cost, deliberately: a free-text value containing `, word:` is refused rather
+  than silently truncated.
+
 - **A realtime tool call reads the room history once** — the pre-execution gate
   and the `ON_TOOL_CALL` dispatch each built their own `RoomContext`, so one
   tool call deserialised the room's recent events twice. The gate now hands its

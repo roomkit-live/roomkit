@@ -37,6 +37,10 @@ logger = logging.getLogger("roomkit.channels.realtime_voice")
 # Matches ``call:tool_name{`` with optional leading text.
 _TEXT_TOOL_CALL_RE = re.compile(r"call:(\w+)\s*\{(.+)", re.DOTALL)
 
+# A ``key:`` token where a key can legitimately start — at the beginning of the
+# argument text or just after a comma. Anywhere else (``at 3:30``) is a value.
+_UNDECLARED_KEY_RE = re.compile(r"(?:^|,)\s*(\w+)\s*:")
+
 
 @runtime_checkable
 class RealtimeToolRecoveryHost(Protocol):
@@ -350,6 +354,18 @@ def _parse_args(raw: str, param_names: list[str]) -> dict[str, Any]:
     by position, and slices values between consecutive boundaries.
     This avoids false splits when a value contains a substring like
     ``task:`` (only the first, true boundary is used per param).
+
+    A key the tool does not declare also ends the value before it, provided it
+    sits where a key belongs — at the start or just after a comma. It is
+    returned under its own name so the schema gate can refuse it by name. The
+    alternative is worse than a refusal: the undeclared text would otherwise be
+    swallowed into the preceding value, and ``{"city": "Paris,country:FR"}``
+    passes a ``{"city": {"type": "string"}}`` schema, handing the tool a
+    corrupted argument nothing downstream can catch.
+
+    The cost is a free-text value containing ``, word:`` — refused rather than
+    truncated silently. On a path that reconstructs a call the model failed to
+    issue properly, saying so beats guessing.
     """
     if not param_names or not raw:
         return {}
@@ -361,6 +377,16 @@ def _parse_args(raw: str, param_names: list[str]) -> dict[str, Any]:
         match = pattern.search(raw)
         if match:
             positions.append((match.start(), match.end(), name))
+
+    # Undeclared keys, only where a key can legitimately start.
+    declared = set(param_names)
+    taken = {start for start, _end, _name in positions}
+    for match in _UNDECLARED_KEY_RE.finditer(raw):
+        name = match.group(1)
+        start = match.start(1)
+        if name not in declared and start not in taken:
+            positions.append((start, match.end(), name))
+            taken.add(start)
 
     if not positions:
         return {}
