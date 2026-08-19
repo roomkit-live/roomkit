@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A tool call the model spoke instead of issuing is gated like any other** —
+  when a realtime model emits `call:name{...}` as assistant text rather than
+  through the function calling API, `RealtimeVoiceChannel` recovers and runs it
+  (`tool_recovery=True` by default). That path executed the tool with no
+  pre-execution gate at all: no argument validation, no `BEFORE_TOOL_USE`, only
+  `ON_TOOL_CALL` fired *after* the handler had acted — so a denying hook denied
+  nothing, it reported. Its arguments are rebuilt from free text, which makes
+  them the least trustworthy the channel handles, not the most. The recovered
+  call now passes the same gate as an API call, and a refusal reaches the model
+  as silent context (never `submit_tool_result` — it has no pending
+  `FunctionResponse` to answer).
+
 - **A realtime tool call is gated whoever serves it** — the pre-execution gate
   on `RealtimeVoiceChannel` (declared-catalogue check, argument validation
   against the declared schema, `BEFORE_TOOL_USE`) ran inside the

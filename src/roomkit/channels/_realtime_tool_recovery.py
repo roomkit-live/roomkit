@@ -4,7 +4,9 @@ Some voice models (notably Gemini Live) occasionally emit tool calls as
 spoken text instead of using the function calling API.  This mixin detects
 the ``call:{name}{key:value,...}`` pattern in assistant transcriptions,
 parses the arguments, and dispatches the tool call through the normal
-handler pipeline.
+handler pipeline — behind the same pre-execution gate as a call that came
+through the function calling API, because arguments rebuilt from free text
+are the least trustworthy the channel handles.
 
 Because the model did not issue a real function call, we do NOT call
 ``submit_tool_result`` on the provider.  Instead, the tool result is
@@ -56,6 +58,15 @@ class RealtimeToolRecoveryHost(Protocol):
 
     def _track_task(self, loop: Any, coro: Any, *, name: str) -> Any: ...
 
+    async def _authorize_realtime_tool(
+        self,
+        name: str,
+        arguments: dict[str, Any],
+        call_id: str,
+        room_id: str | None,
+        session: VoiceSession,
+    ) -> tuple[dict[str, Any], str | None]: ...
+
 
 class RealtimeToolRecoveryMixin:
     """Detect and recover tool calls that a voice model emitted as text.
@@ -75,6 +86,7 @@ class RealtimeToolRecoveryMixin:
     _telemetry_provider: Any
 
     _track_task: Any  # cross-mixin
+    _authorize_realtime_tool: Any  # cross-mixin (RealtimeToolsMixin)
 
     # ------------------------------------------------------------------
     # Public entry point (called from _realtime_transcription.py)
@@ -169,6 +181,30 @@ class RealtimeToolRecoveryMixin:
                 return {k: v.get("type", "string") for k, v in props.items()}
         return {}
 
+    async def _inject_recovered_result(
+        self,
+        session: VoiceSession,
+        tool_name: str,
+        result_str: str,
+        *,
+        denied: bool = False,
+    ) -> None:
+        """Hand an outcome back to the model as silent context.
+
+        Never ``submit_tool_result``: the model spoke the call instead of
+        issuing it, so it has no pending ``FunctionResponse`` to answer. A
+        denial travels the same way as a result — the model reads why it was
+        refused and can correct itself on its next turn.
+        """
+        summary = result_str[:8000] if len(result_str) > 8000 else result_str
+        verb = "denied" if denied else "completed"
+        await self._provider.inject_text(
+            session,
+            f"[Tool {tool_name} {verb}: {summary}]",
+            role="user",
+            silent=True,
+        )
+
     async def _dispatch_recovered_tool_call(
         self,
         session: VoiceSession,
@@ -195,6 +231,24 @@ class RealtimeToolRecoveryMixin:
         )
 
         try:
+            # Same pre-execution gate as a call that arrived through the
+            # function calling API (_realtime_tools._handle_tool_call): the
+            # arguments here were reconstructed from free text, so they are
+            # less trustworthy than a real function call's, not more.
+            arguments, denial = await self._authorize_realtime_tool(
+                tool_name, arguments, call_id, room_id, session
+            )
+            if denial is not None:
+                await self._inject_recovered_result(session, tool_name, denial, denied=True)
+                telemetry.end_span(span_id)
+                logger.info(
+                    "Recovered tool %s(%s) denied before execution for session %s",
+                    tool_name,
+                    call_id,
+                    session.id,
+                )
+                return
+
             # Run tool_handler.
             handler_result: str | None = None
             if self._tool_handler is not None:
@@ -239,15 +293,7 @@ class RealtimeToolRecoveryMixin:
                     hook_val = hook_result.metadata["result"]
                     result_str = hook_val if isinstance(hook_val, str) else json.dumps(hook_val)
 
-            # Inject result as silent context (NOT submit_tool_result).
-            # Gemini didn't issue the call, so it doesn't expect a FunctionResponse.
-            summary = result_str[:8000] if len(result_str) > 8000 else result_str
-            await self._provider.inject_text(
-                session,
-                f"[Tool {tool_name} completed: {summary}]",
-                role="user",
-                silent=True,
-            )
+            await self._inject_recovered_result(session, tool_name, result_str)
 
             telemetry.end_span(span_id)
             logger.info(
