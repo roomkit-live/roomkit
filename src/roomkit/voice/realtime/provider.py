@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel
 
+from roomkit.telemetry.base import Attr
 from roomkit.voice.base import VoiceSession
 
 logger = logging.getLogger("roomkit.voice.realtime.provider")
@@ -442,7 +443,7 @@ class RealtimeVoiceProvider(ABC):
 
         telemetry = getattr(self, "_telemetry", None)
         if telemetry is not None:
-            attrs = {"session_id": session.id, "model": getattr(self, "_model", self.name)}
+            attrs = {"session_id": session.id, Attr.MODEL: self.model_name}
             telemetry.record_metric(
                 "roomkit.realtime.input_tokens",
                 float(input_tokens),

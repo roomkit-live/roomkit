@@ -11,8 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **A realtime provider names its model** — `RealtimeVoiceProvider.model_name`
   answers which model is behind a session, so a log line, a span or a
-  diagnostic can name it instead of reading `unknown` (or, worse, printing a
-  provider name in a field labelled "model"). Unlike
+  diagnostic can name it instead of reading `unknown`. Unlike
   `AIProvider.model_name` it is **not** abstract: every conversational provider
   runs one named model, but a speech-to-speech service need not expose one —
   ElevenLabs binds a dashboard-configured agent, PersonaPlex serves a single

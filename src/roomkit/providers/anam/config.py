@@ -12,13 +12,13 @@ class AnamConfig(BaseModel):
     pipeline (STT → LLM → TTS → face animation) and delivers
     synchronized audio+video over WebRTC.
 
-    Either ``persona_id`` (pre-configured on Anam dashboard) or inline
+    Either ``persona_id`` (pre-configured on Anam Lab) or inline
     persona fields (``avatar_id``, ``voice_id``, ``llm_id``) can be
     used — but not both.
 
     Attributes:
         api_key: Anam API key.
-        persona_id: Pre-configured persona ID on Anam dashboard.
+        persona_id: Pre-configured persona ID on Anam Lab.
         avatar_id: Inline persona: avatar model ID.
         voice_id: Inline persona: voice ID.
         llm_id: Inline persona: LLM model ID.

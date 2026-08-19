@@ -20,6 +20,7 @@ import pytest
 from roomkit.providers.ai.base import ModelInfo
 from roomkit.providers.anam.config import AnamConfig
 from roomkit.providers.anam.realtime import AnamRealtimeProvider
+from roomkit.providers.deepgram.config import DeepgramAgentConfig
 from roomkit.providers.deepgram.realtime import DeepgramAgentProvider
 from roomkit.providers.elevenlabs.config import ElevenLabsRealtimeConfig
 from roomkit.providers.elevenlabs.realtime import ElevenLabsRealtimeProvider
@@ -28,7 +29,7 @@ from roomkit.providers.openai.realtime import OpenAIRealtimeProvider
 from roomkit.providers.personaplex.realtime import PersonaPlexRealtimeProvider
 from roomkit.providers.xai.config import XAIRealtimeConfig
 from roomkit.providers.xai.realtime import XAIRealtimeProvider
-from roomkit.voice.realtime.mock import MockRealtimeProvider
+from roomkit.voice.realtime.mock import MockRealtimeAudioVideoProvider, MockRealtimeProvider
 from roomkit.voice.realtime.provider import RealtimeVoiceProvider
 
 CATALOGED = [OpenAIRealtimeProvider, GeminiLiveProvider, XAIRealtimeProvider]
@@ -133,7 +134,8 @@ def test_xai_reports_the_model_it_connects_to() -> None:
 def test_deepgram_reports_its_think_model() -> None:
     """A composed stack names the stage that decides what the agent says."""
     provider = DeepgramAgentProvider(api_key="dg-test")
-    assert provider.model_name == provider._config.think_model  # noqa: SLF001
+    default_think = DeepgramAgentConfig.model_fields["think_model"].default
+    assert provider.model_name == default_think
     assert provider.model_name != provider.name
 
 
@@ -157,3 +159,9 @@ def test_the_mock_shows_both_shapes() -> None:
     """A mock that always named a model would lie about half the fleet."""
     assert MockRealtimeProvider().model_name == "MockRealtimeProvider"
     assert MockRealtimeProvider(model="gpt-realtime-2.1").model_name == "gpt-realtime-2.1"
+
+
+def test_the_av_mock_can_name_a_model_too() -> None:
+    """Anam is the avatar shape, and its model id is the conditional one."""
+    assert MockRealtimeAudioVideoProvider().model_name == "MockRealtimeAudioVideoProvider"
+    assert MockRealtimeAudioVideoProvider(model="llm-1").model_name == "llm-1"

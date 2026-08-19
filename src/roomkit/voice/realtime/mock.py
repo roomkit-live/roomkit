@@ -280,8 +280,8 @@ class MockRealtimeAudioVideoProvider(MockRealtimeProvider, RealtimeAudioVideoPro
         await provider.simulate_video(session, video_frame)
     """
 
-    def __init__(self) -> None:
-        super().__init__()
+    def __init__(self, model: str | None = None) -> None:
+        super().__init__(model)
         self._video_callbacks: list[RealtimeVideoCallback] = []
 
     @property
