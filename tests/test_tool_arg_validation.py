@@ -190,6 +190,54 @@ def test_params_declared_as_a_non_object_is_not_a_container() -> None:
     assert fold_hoisted_arguments(schema, {"action": "x", "a": 1}) == (None, None)
 
 
+# Not a hub tool: ``params`` is an ordinary options object with a shape of its
+# own. It only shares the name.
+_OPTIONS_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "title": {"type": "string"},
+        "params": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {"width": {"type": "integer"}, "height": {"type": "integer"}},
+        },
+    },
+}
+
+
+def test_params_declaring_its_own_shape_is_not_a_hub_container() -> None:
+    # A hub container declares no properties — its shape varies with ``action``.
+    # One that declares them is an options object, so the call is left alone.
+    assert fold_hoisted_arguments(_OPTIONS_SCHEMA, {"title": "Q3", "width": 800}) == (None, None)
+
+
+def test_a_misspelt_root_property_is_named_rather_than_buried() -> None:
+    # The reason for the check above. Folding would produce
+    # ``{"params": {"titel": "Q3"}}``, which passes validation — nothing
+    # recurses into ``params`` — handing the tool a bogus key under a missing
+    # title. Refusing names the mistake the model can actually correct.
+    call = {"titel": "Q3"}
+    assert fold_hoisted_arguments(_OPTIONS_SCHEMA, call) == (None, None)
+    err = validate_tool_arguments(_OPTIONS_SCHEMA, call)
+    assert err is not None
+    assert "titel" in err and "title" in err
+
+
+def test_an_empty_properties_declaration_is_still_free_form() -> None:
+    schema = {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "action": {"type": "string"},
+            "params": {"type": "object", "properties": {}},
+        },
+    }
+    folded, err = fold_hoisted_arguments(schema, {"action": "x", "a": 1})
+    assert err is None
+    assert folded == {"action": "x", "params": {"a": 1}}
+
+
 def test_params_supplied_as_a_non_object_is_left_to_the_type_check() -> None:
     folded, err = fold_hoisted_arguments(_HUB_SCHEMA, {"action": "x", "params": "a=1", "b": 2})
     assert (folded, err) == (None, None)

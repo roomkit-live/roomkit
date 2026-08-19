@@ -91,6 +91,11 @@ def validate_tool_arguments(parameters: dict[str, Any], arguments: dict[str, Any
 # inner keys one level up. The name is fixed rather than inferred ("the
 # schema's only object property") because guessing the container is how a real
 # typo lands inside an unrelated object argument.
+#
+# The name alone is not enough, though: ``params`` is an ordinary name for an
+# ordinary options object. What separates a hub container from one is that a
+# hub container declares no shape of its own — it cannot, its shape varies with
+# ``action``. See the free-form check in :func:`fold_hoisted_arguments`.
 _PARAMS_PROPERTY = "params"
 
 
@@ -112,6 +117,9 @@ def fold_hoisted_arguments(
     - the schema closed itself (``additionalProperties: false``) — an open
       schema already accepts root keys, so there is nothing to repair;
     - it declares a ``params`` property of type ``object``;
+    - that ``params`` declares no ``properties`` of its own — a hub container
+      cannot, its shape varies with ``action``, and a declared shape means the
+      property is an ordinary options object that merely shares the name;
     - at least one supplied root key is undeclared;
     - ``params`` is absent or empty.
 
@@ -130,6 +138,15 @@ def fold_hoisted_arguments(
         return None, None
     params_spec = properties.get(_PARAMS_PROPERTY)
     if not isinstance(params_spec, dict) or params_spec.get("type") != "object":
+        return None, None
+    if params_spec.get("properties"):
+        # Declaring its own shape is what disqualifies it: a hub container
+        # cannot declare one, so this is an ordinary options object that shares
+        # the name. Folding into it would relocate an undeclared root key —
+        # a misspelt *root* property, most often — inside the container instead
+        # of naming it back to the model, and the validator cannot catch it
+        # there because it does not recurse (see the module docstring). Left
+        # alone, the same call is refused by name.
         return None, None
 
     hoisted = [key for key in arguments if key not in properties]

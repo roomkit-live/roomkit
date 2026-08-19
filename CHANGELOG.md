@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The argument fold recognises a hub container by its shape, not only by its
+  name** — 0.55.0 folded undeclared root keys into any closed schema's `params`
+  property of type `object`, and `params` is an ordinary name for an ordinary
+  options object. On a tool declaring `{title, params: {width, height}}`, a
+  misspelt *root* property was therefore relocated into the container rather
+  than named back to the model: `{"titel": "Q3"}` became
+  `{"params": {"titel": "Q3"}}`, which passes validation — nothing recurses into
+  a nested object — handing the tool a bogus key under a missing title. A hub
+  container cannot declare properties of its own, since its shape varies with
+  `action`, so a `params` that declares them disqualifies the fold and the call
+  is refused by name again: `unknown argument 'titel' (this tool accepts:
+  params, title)`. A genuine hub tool is unaffected, and so is a `params`
+  declaring an empty `properties`.
+
 ## [0.55.0] — 2026-08-18
 
 ### Added
