@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock
 
@@ -21,6 +22,7 @@ from roomkit.channels.ai import AIChannel
 from roomkit.channels.realtime_voice import RealtimeVoiceChannel
 from roomkit.models.enums import ChannelType
 from roomkit.providers.ai.mock import MockAIProvider
+from roomkit.skills.registry import SkillRegistry
 from roomkit.voice.base import VoiceSession
 from roomkit.voice.realtime.mock import MockRealtimeProvider, MockRealtimeTransport
 
@@ -973,3 +975,122 @@ class TestRealtimeGateSharesItsContext:
         await asyncio.sleep(0.1)
 
         assert len(reads) == 1
+
+
+class TestRealtimeGateParityWithTheAIPath:
+    """Three guards the classic AI path applies and the realtime one skipped."""
+
+    @staticmethod
+    def _registry_gating(tmp_path: Path, tool: str) -> SkillRegistry:
+        skill_dir = tmp_path / "billing"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text(
+            f"---\nname: billing\ndescription: Billing operations\n"
+            f"allowed_tools: {tool}\n---\nUse the billing tools.",
+            encoding="utf-8",
+        )
+        registry = SkillRegistry()
+        registry.discover(tmp_path)
+        return registry
+
+    async def test_a_skill_gated_tool_is_refused_at_execution_not_only_hidden(
+        self,
+        rt_provider: MockRealtimeProvider,
+        rt_transport: MockRealtimeTransport,
+        tmp_path: Path,
+    ) -> None:
+        """A model can name a tool it saw before the skill was deactivated."""
+        called: list[str] = []
+
+        async def handler(name: str, args: dict[str, Any]) -> str:
+            called.append(name)
+            return "ran"
+
+        ch = RealtimeVoiceChannel(
+            "rt-gated",
+            provider=rt_provider,
+            transport=rt_transport,
+            tools=[{"name": "refund", "description": "Refund an order", "parameters": {}}],
+            tool_handler=handler,
+            skills=self._registry_gating(tmp_path, "refund"),
+        )
+        kit = RoomKit()
+        kit.register_channel(ch)
+        room = await kit.create_room()
+        await kit.attach_channel(room.id, "rt-gated")
+        session = await ch.start_session(room.id, "u1", "ws")
+
+        await rt_provider.simulate_tool_call(session, "c1", "refund", {})
+        await asyncio.sleep(0.1)
+
+        assert called == []
+        result = json.loads(rt_provider.tool_results[0][2])
+        assert "gated by a skill" in result["error"]
+
+    async def test_an_infrastructure_tool_passes_the_gate_too(
+        self,
+        rt_provider: MockRealtimeProvider,
+        rt_transport: MockRealtimeTransport,
+        tmp_path: Path,
+    ) -> None:
+        """A host auditing tool use must see the channel's own tools as well."""
+        ch = RealtimeVoiceChannel(
+            "rt-infra-gate",
+            provider=rt_provider,
+            transport=rt_transport,
+            skills=self._registry_gating(tmp_path, "refund"),
+        )
+        kit = RoomKit()
+        kit.register_channel(ch)
+        room = await kit.create_room()
+        await kit.attach_channel(room.id, "rt-infra-gate")
+        session = await ch.start_session(room.id, "u1", "ws")
+
+        seen: list[str] = []
+
+        @kit.hook(HookTrigger.BEFORE_TOOL_USE, execution=HookExecution.SYNC, name="audit")
+        async def audit(event: ToolCallEvent, ctx: RoomContext) -> HookResult:
+            seen.append(event.name)
+            return HookResult.allow()
+
+        await rt_provider.simulate_tool_call(session, "c2", "activate_skill", {"name": "billing"})
+        await asyncio.sleep(0.1)
+
+        assert seen == ["activate_skill"]
+
+    async def test_the_gate_announces_its_decision_as_a_framework_event(
+        self,
+        rt_provider: MockRealtimeProvider,
+        rt_transport: MockRealtimeTransport,
+    ) -> None:
+        handler = AsyncMock(return_value="ok")
+        ch = RealtimeVoiceChannel(
+            "rt-fw-event", provider=rt_provider, transport=rt_transport, tool_handler=handler
+        )
+        kit = RoomKit()
+        kit.register_channel(ch)
+        room = await kit.create_room()
+        await kit.attach_channel(room.id, "rt-fw-event")
+        session = await ch.start_session(room.id, "u1", "ws")
+
+        emitted: list[tuple[str, dict[str, Any]]] = []
+        real_emit = kit._emit_framework_event
+
+        async def capture(event_type: str, **kwargs: Any) -> Any:
+            emitted.append((event_type, kwargs.get("data", {})))
+            return await real_emit(event_type, **kwargs)
+
+        kit._emit_framework_event = capture  # type: ignore[method-assign]
+
+        @kit.hook(HookTrigger.BEFORE_TOOL_USE, execution=HookExecution.SYNC, name="deny")
+        async def deny(event: ToolCallEvent, ctx: RoomContext) -> HookResult:
+            return HookResult.block("nope")
+
+        await rt_provider.simulate_tool_call(session, "c3", "anything", {})
+        await asyncio.sleep(0.1)
+
+        gate_events = [data for kind, data in emitted if kind == "before_tool_use"]
+        assert len(gate_events) == 1
+        assert gate_events[0]["tool_name"] == "anything"
+        assert gate_events[0]["allowed"] is False
+        assert gate_events[0]["reason"] == "nope"

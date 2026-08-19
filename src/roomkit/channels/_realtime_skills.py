@@ -219,19 +219,26 @@ class RealtimeSkillSupport:
             gated.update(meta.gated_tool_names)
         return gated
 
+    def is_gated(self, name: str, session_id: str) -> bool:
+        """Whether *name* is gated by a skill this session has not activated.
+
+        Hiding a tool from the catalogue is not enforcement: a model that saw
+        the name before the skill was deactivated — or that read it in a
+        transcript — can still call it. Callers ask this at execution time as
+        well as at listing time.
+        """
+        if name in SKILL_INFRA_TOOL_NAMES:
+            return False
+        gated = self._gated_tool_names(session_id)
+        return bool(gated) and matches_any_pattern(name, gated)
+
     def get_visible_tools(
         self, all_tools: list[dict[str, Any]], session_id: str
     ) -> list[dict[str, Any]]:
         """Filter tool list, removing gated tools but keeping infra tools."""
-        gated = self._gated_tool_names(session_id)
-        if not gated:
+        if not self._gated_tool_names(session_id):
             return all_tools
-        return [
-            t
-            for t in all_tools
-            if t.get("name") in SKILL_INFRA_TOOL_NAMES
-            or not matches_any_pattern(str(t.get("name", "")), gated)
-        ]
+        return [t for t in all_tools if not self.is_gated(str(t.get("name", "")), session_id)]
 
     def newly_visible_after_activation(
         self,

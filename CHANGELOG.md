@@ -26,6 +26,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The realtime tool gate closes the three gaps the AI channel did not have**
+  — a skill-gated tool was only hidden from the catalogue, never refused at
+  execution, so a model naming one it saw before the skill was deactivated ran
+  it; the channel's own infrastructure tools (Tool Search, `activate_skill`)
+  returned before the gate, so a host auditing or denying tool use never saw
+  them; and the gate ran its `BEFORE_TOOL_USE` hooks without emitting the
+  `before_tool_use` framework event the classic path emits. All three now match
+  `AIChannel`. `RealtimeSkillSupport.is_gated()` answers the gating question
+  for listing and for execution alike.
+
 - **A spoken tool call cannot smuggle an argument past the schema** — the
   recovery parser split the text on the tool's *declared* parameter names only,
   so an undeclared key was absorbed into the value before it:

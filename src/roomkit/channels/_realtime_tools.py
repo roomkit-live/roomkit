@@ -192,6 +192,26 @@ class RealtimeToolsMixin:
         try:
             result_str: str
 
+            # Pre-execution gate (parity with the classic AI path): validate
+            # arguments and run BEFORE_TOOL_USE BEFORE the call is routed, so a
+            # block prevents the side effect instead of only hiding the result.
+            # Its scope is every call: hook-only mode serves the tool from
+            # ON_TOOL_CALL, and an infrastructure tool serves itself, but a
+            # host auditing or denying tool use must see both.
+            arguments, denial, gate_context = await self._authorize_realtime_tool(
+                name, arguments, call_id, room_id, session
+            )
+            if denial is not None:
+                await self._provider.submit_tool_result(session, call_id, denial)
+                telemetry.end_span(tool_span_id)
+                logger.info(
+                    "Realtime tool %s(%s) denied before execution for session %s",
+                    name,
+                    call_id,
+                    session.id,
+                )
+                return
+
             # Tool Search infrastructure tools — handle internally
             if self._tool_search_support and self._tool_search_support.is_search_tool(name):
                 await self._dispatch_tool_search_call(
@@ -286,25 +306,6 @@ class RealtimeToolsMixin:
                 telemetry.end_span(tool_span_id)
                 logger.info(
                     "Skill tool %s(%s) handled for session %s",
-                    name,
-                    call_id,
-                    session.id,
-                )
-                return
-
-            # Pre-execution gate (parity with the classic AI path): validate
-            # arguments and run BEFORE_TOOL_USE BEFORE the call is routed, so a
-            # block prevents the side effect instead of only hiding the result.
-            # Its scope is the call, not the handler: hook-only mode serves the
-            # tool from ON_TOOL_CALL and must be gated the same way.
-            arguments, denial, gate_context = await self._authorize_realtime_tool(
-                name, arguments, call_id, room_id, session
-            )
-            if denial is not None:
-                await self._provider.submit_tool_result(session, call_id, denial)
-                telemetry.end_span(tool_span_id)
-                logger.info(
-                    "Realtime tool %s(%s) denied before execution for session %s",
                     name,
                     call_id,
                     session.id,
@@ -430,12 +431,24 @@ class RealtimeToolsMixin:
         An empty catalogue retains the historical hook-only/dynamic-handler
         mode. Once declarations exist, however, a provider cannot invent an
         undeclared name and reach a generic dispatcher.
+
+        Infrastructure tools (Tool Search, skills) are declared by the channel
+        rather than by the caller's catalogue, so they answer ``True`` without
+        appearing in it.
         """
+        if self._is_infrastructure_tool(name):
+            return True
         with self._state_lock:
             tools = self._session_tools.get(session.id) or self._tools or []
         if not tools:
             return True
         return any(isinstance(tool, dict) and tool.get("name") == name for tool in tools)
+
+    def _is_infrastructure_tool(self, name: str) -> bool:
+        """Whether *name* is served by the channel itself, not by the host."""
+        if self._tool_search_support and self._tool_search_support.is_search_tool(name):
+            return True
+        return bool(self._skill_support and self._skill_support.is_skill_tool(name))
 
     async def _authorize_realtime_tool(
         self,
@@ -462,6 +475,24 @@ class RealtimeToolsMixin:
         if not self._is_declared_realtime_tool(name, session):
             logger.warning("Realtime provider requested undeclared tool %s", name)
             return arguments, json.dumps({"error": f"Tool '{name}' is not declared"}), None
+
+        # Execution guard: skill gating (parity with the classic AI path).
+        # Hiding a gated tool from the catalogue is not enforcement — the model
+        # may still name one it saw before the skill was deactivated.
+        if self._skill_support is not None and self._skill_support.is_gated(name, session.id):
+            logger.warning("Realtime tool %s blocked by skill gating", name)
+            return (
+                arguments,
+                json.dumps(
+                    {
+                        "error": (
+                            f"Tool '{name}' is gated by a skill. "
+                            "Activate the skill first using activate_skill."
+                        )
+                    }
+                ),
+                None,
+            )
 
         # Argument validation against the declared schema (fail-closed), after
         # repairing a hub tool's flattened ``params`` — same gate, same order as
@@ -522,6 +553,18 @@ class RealtimeToolsMixin:
             context,
             skip_event_filter=True,
         )
+        await self._framework._emit_framework_event(
+            "before_tool_use",
+            room_id=room_id,
+            channel_id=self.channel_id,
+            data={
+                "tool_name": name,
+                "tool_call_id": call_id,
+                "allowed": hook_result.allowed,
+                "reason": hook_result.reason,
+            },
+        )
+
         if not hook_result.allowed:
             logger.info("Realtime tool %s denied by BEFORE_TOOL_USE hook", name)
             return (
