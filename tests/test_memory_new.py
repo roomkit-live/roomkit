@@ -7,8 +7,10 @@ from roomkit.memory.compacting import CompactingMemory
 from roomkit.memory.mock import MockMemoryProvider
 from roomkit.memory.token_estimator import (
     estimate_context_tokens,
+    estimate_event_tokens,
     estimate_message_tokens,
     estimate_tokens,
+    history_budget,
 )
 from roomkit.models.context import RoomContext
 from roomkit.models.room import Room
@@ -136,6 +138,22 @@ class TestEstimateContextTokens:
         assert result > 0
 
 
+class TestHistoryBudget:
+    def test_margin_only_when_nothing_is_declared(self) -> None:
+        assert history_budget(max_context_tokens=1000) == 850
+
+    def test_reserved_and_messages_are_both_subtracted(self) -> None:
+        block = AIMessage(role="user", content="x" * 400)
+        expected = 850 - 100 - estimate_message_tokens(block)
+        assert (
+            history_budget(max_context_tokens=1000, reserved_tokens=100, messages=[block])
+            == expected
+        )
+
+    def test_never_negative(self) -> None:
+        assert history_budget(max_context_tokens=1000, reserved_tokens=5000) == 0
+
+
 class TestBudgetAwareMemory:
     async def test_returns_all_events_when_under_budget(self) -> None:
         """Events that fit within budget are returned unchanged."""
@@ -186,6 +204,91 @@ class TestBudgetAwareMemory:
         result = await mem.retrieve("r1", event, ctx)
 
         assert len(result.events) >= 3
+
+    async def test_reserved_tokens_shrink_the_history_budget(self) -> None:
+        """What the caller already spent on the prompt is not the history's to spend."""
+        events = [make_event(body="x" * 1000) for _ in range(10)]
+        ctx = RoomContext(room=Room(id="r1"))
+        current = make_event(body="current")
+
+        unreserved = await BudgetAwareMemory(
+            inner=MockMemoryProvider(events=events),
+            max_context_tokens=4_000,
+        ).retrieve("r1", current, ctx)
+        reserved = await BudgetAwareMemory(
+            inner=MockMemoryProvider(events=events),
+            max_context_tokens=4_000,
+            reserved_tokens=2_000,
+        ).retrieve("r1", current, ctx)
+
+        assert len(reserved.events) < len(unreserved.events)
+
+    async def test_injected_messages_count_against_the_budget(self) -> None:
+        """Blocks the wrapper passes through occupy the same window the events do."""
+        events = [make_event(body="x" * 1000) for _ in range(10)]
+        block = AIMessage(role="user", content="y" * 8_000)
+        ctx = RoomContext(room=Room(id="r1"))
+        current = make_event(body="current")
+
+        without = await BudgetAwareMemory(
+            inner=MockMemoryProvider(events=events),
+            max_context_tokens=4_000,
+        ).retrieve("r1", current, ctx)
+        with_block = await BudgetAwareMemory(
+            inner=MockMemoryProvider(messages=[block], events=events),
+            max_context_tokens=4_000,
+        ).retrieve("r1", current, ctx)
+
+        assert len(with_block.events) < len(without.events)
+        # Not trimmed away — subtracted from the budget, then handed on.
+        assert with_block.messages == [block]
+
+    async def test_result_fits_the_window_it_was_given(self) -> None:
+        """The property: everything the turn will carry fits what the wrapper was told.
+
+        This is what makes the wrapper's name true. Trimming only the events
+        against the whole window let the harness plus the kept history exceed
+        that window — the mechanism meant to prevent overflow causing it.
+        """
+        window = 40_000
+        margin = 0.15
+        reserved = 25_000
+        block = AIMessage(role="user", content="y" * 4_000)
+        events = [make_event(body="x" * 2_000) for _ in range(40)]
+
+        mem = BudgetAwareMemory(
+            inner=MockMemoryProvider(messages=[block], events=events),
+            max_context_tokens=window,
+            safety_margin_ratio=margin,
+            reserved_tokens=reserved,
+            min_events=1,
+        )
+        result = await mem.retrieve(
+            "r1", make_event(body="current"), RoomContext(room=Room(id="r1"))
+        )
+
+        carried = (
+            reserved
+            + sum(estimate_message_tokens(m) for m in result.messages)
+            + sum(estimate_event_tokens(e) for e in result.events)
+        )
+        assert carried <= int(window * (1 - margin))
+
+    async def test_no_reserve_and_no_messages_keeps_the_plain_window_budget(self) -> None:
+        """A caller that declares nothing gets the budget it always got."""
+        events = [make_event(body="x" * 1000) for _ in range(10)]
+        mem = BudgetAwareMemory(
+            inner=MockMemoryProvider(events=events),
+            max_context_tokens=1000,
+            safety_margin_ratio=0.15,
+        )
+        result = await mem.retrieve(
+            "r1", make_event(body="current"), RoomContext(room=Room(id="r1"))
+        )
+
+        budget = int(1000 * 0.85)
+        assert sum(estimate_event_tokens(e) for e in result.events) <= budget
+        assert 0 < len(result.events) < 10
 
     async def test_preserves_inner_messages(self) -> None:
         """Pre-built messages from inner provider are preserved."""

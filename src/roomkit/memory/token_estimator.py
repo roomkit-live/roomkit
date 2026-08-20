@@ -84,3 +84,35 @@ def estimate_context_tokens(context: AIContext) -> int:
         for tool in context.tools:
             total += estimate_tool_tokens(tool)
     return total
+
+
+def history_budget(
+    *,
+    max_context_tokens: int,
+    reserved_tokens: int = 0,
+    messages: list[AIMessage] | None = None,
+    safety_margin_ratio: float = 0.15,
+) -> int:
+    """Tokens the conversation history may occupy, once the rest of the prompt is paid for.
+
+    A context window holds four things, not one: the system prompt, the tool
+    schemas, whatever pre-built messages the memory layer injects, and the
+    history. A trimmer handed the whole window and measuring only the history
+    can return a result that overflows the very window it was given — which is
+    what ``max_context_tokens * (1 - safety_margin_ratio)`` computed alone did.
+
+    So the arithmetic is explicit here, in one place:
+
+    - ``max_context_tokens * (1 - safety_margin_ratio)`` is what the *whole*
+      prompt may occupy; the margin is headroom for the model's reply.
+    - ``reserved_tokens`` is the non-history part the caller knows about and the
+      trimmer cannot see — system prompt and tool schemas. Callers that don't
+      know pass 0 and get the previous behaviour.
+    - ``messages`` are the injected blocks the trimmer passes through untouched.
+      They are not trimmable, so they are subtracted rather than cut.
+
+    What remains is the history's, and nothing else's.
+    """
+    prompt_budget = int(max_context_tokens * (1 - safety_margin_ratio))
+    injected = sum(estimate_message_tokens(m) for m in messages or ())
+    return max(0, prompt_budget - reserved_tokens - injected)

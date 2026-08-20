@@ -7,7 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.57.0] — 2026-08-20
+
 ### Fixed
+
+- **`BudgetAwareMemory` now budgets the whole window, not just the events it
+  trims.** The budget was `max_context_tokens * (1 - safety_margin_ratio)` and
+  the measurement covered `MemoryResult.events` alone, so two parts of the same
+  prompt rode free: the caller's system prompt and tool schemas, which the
+  wrapper cannot see, and the pre-built `messages` it passes through untouched.
+  Handed a model's full context window — the natural reading of the parameter's
+  name — the wrapper could therefore return a history that, once the harness was
+  added back, exceeded that window: the mechanism meant to prevent overflow
+  causing it. A caller now declares its footprint with `reserved_tokens`, the
+  injected messages are measured here, and the arithmetic lives in one place,
+  `roomkit.memory.history_budget`, so the two sides of the question cannot
+  disagree. `reserved_tokens` defaults to 0, which reproduces the previous
+  budget for a caller that declares nothing. `min_events` remains the one path
+  by which the result can still exceed the budget — returning an empty history
+  is worse than returning one that needs compaction — and is now documented as
+  such. `CompactingMemory` and `SummarizingMemory` carry the same conflation and
+  can adopt the shared helper in one line.
 
 - **The Gemini image provider no longer names a delivery mode, which is what
   made every call fail.** `response_format.delivery` passes the schema — the

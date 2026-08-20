@@ -12,6 +12,7 @@ from roomkit.memory.token_estimator import (
     estimate_event_tokens,
     estimate_tokens,
     extract_event_text,
+    history_budget,
 )
 
 __all__ = [
@@ -27,4 +28,5 @@ __all__ = [
     "estimate_event_tokens",
     "estimate_tokens",
     "extract_event_text",
+    "history_budget",
 ]
