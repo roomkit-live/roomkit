@@ -121,7 +121,14 @@ class GeminiImageProvider(ImageProvider):
             self._image_content(part, index) for index, part in enumerate(reference_images)
         )
 
-        response_format: dict[str, Any] = {"type": "image", "delivery": "inline"}
+        # No ``delivery``: the field is schema-valid (the API validates its
+        # enum) and then refused per model — every image model answers
+        # "Image delivery mode is not supported" to ``inline`` and to ``uri``
+        # alike, so naming the mode we want is what makes the call fail. The
+        # default is the inline payload anyway, and RFC §25.3's "never a link"
+        # is enforced where it can actually be checked: on the response, in
+        # :meth:`_result`.
+        response_format: dict[str, Any] = {"type": "image"}
         if size is not None:
             # The requested pixels win over the deployment default: a caller
             # naming a geometry is more specific than a configured tier.
@@ -197,6 +204,19 @@ class GeminiImageProvider(ImageProvider):
         image = getattr(interaction, "output_image", None)
         payload = getattr(image, "data", None) if image is not None else None
         if not payload:
+            # A link instead of bytes is its own failure, and worth its own
+            # words: it is where RFC §25.3 is enforced, the request having no
+            # say in the delivery mode (see :meth:`_build_request`). Reported
+            # as retryable — the vendor chose the mode, and the same request
+            # may well come back inline.
+            if image is not None and getattr(image, "uri", None):
+                raise ProviderError(
+                    "Gemini delivered the image as a URI; roomkit returns inline bytes "
+                    "only, since a link expires while an ImageResult is expected to "
+                    "outlive the call",
+                    retryable=True,
+                    provider="gemini",
+                )
             raise ProviderError(
                 "Gemini returned an interaction with no image; "
                 f"status={getattr(interaction, 'status', None)!r}",

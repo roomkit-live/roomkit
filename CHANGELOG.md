@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The Gemini image provider no longer names a delivery mode, which is what
+  made every call fail.** `response_format.delivery` passes the schema — the
+  API validates its enum, refusing `b64_json` by listing `inline` and `uri` as
+  the supported values — and is then refused per model: `gemini-3-pro-image`,
+  `gemini-3.1-flash-image` and `gemini-2.5-flash-image` all answer `400 Image
+  delivery mode is not supported` to `inline` *and* to `uri`. Asking for the
+  mode we wanted was the one thing that could not work, so RMK-122 shipped a
+  provider that returned that 400 for every prompt. The default delivery is the
+  inline payload — what RFC §25.3 wanted all along — so the request now names
+  only the type. The "never a link" invariant moves to where it can actually be
+  checked: a response carrying a `uri` instead of bytes is refused by name, and
+  as retryable, instead of becoming an `ImageResult` that would decay into a
+  dead link.
+
 ## [0.56.0] — 2026-08-19
 
 ### Changed

@@ -89,16 +89,37 @@ async def test_generate_returns_a_decodable_data_uri() -> None:
     assert result.decoded() == PNG
 
 
-async def test_generate_asks_for_inline_delivery() -> None:
-    """A URI delivery would decay into a dead link; RFC §25.3 forbids returning one."""
+async def test_generate_names_no_delivery_mode() -> None:
+    """Naming one is what fails the call.
+
+    ``delivery`` passes the schema — the API validates its enum, refusing
+    ``b64_json`` with the supported values — and is then refused per model:
+    every image model answers "Image delivery mode is not supported" to
+    ``inline`` and to ``uri`` alike. The default is the inline payload, which
+    is what §25.3 wants; the invariant is enforced on the response instead.
+    """
     provider = _provider()
     create = _arm(provider, _interaction())
 
     await provider.generate("a fox")
 
     response_format = create.await_args.kwargs["response_format"]
-    assert response_format["delivery"] == "inline"
+    assert "delivery" not in response_format
     assert response_format["type"] == "image"
+
+
+async def test_a_uri_delivered_image_is_refused_by_its_own_name() -> None:
+    """§25.3 enforced where it is checkable: a link never becomes an ImageResult."""
+    provider = _provider()
+    linked = SimpleNamespace(
+        output_image=SimpleNamespace(data=None, uri="https://example.test/fox.png"),
+        usage=None,
+        status="completed",
+    )
+    _arm(provider, linked)
+
+    with pytest.raises(ProviderError, match="URI"):
+        await provider.generate("a fox")
 
 
 async def test_the_prompt_becomes_a_text_content_block() -> None:
