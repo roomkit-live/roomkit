@@ -168,6 +168,33 @@ class ProviderError(Exception):
 RETRYABLE_STATUS_CODES: frozenset[int] = frozenset({429, 500, 502, 503})
 
 
+# The wordings observed across providers for a context-window refusal. One
+# list for every layer that must read provider prose — a consumer keeping its
+# own copy drifts from this one, and both then miss what the other catches.
+_CONTEXT_OVERFLOW_PHRASES: tuple[str, ...] = (
+    "context length",  # OpenAI / vLLM: "maximum context length", "context length exceeded"
+    "context_length",  # OpenAI error-code spelling
+    "maximum context",
+    "context window",
+    "token limit",
+    "too many tokens",
+    "request too large",
+    "prompt is too long",  # Anthropic
+    "exceeds the model",
+)
+
+
+def is_context_overflow_message(text: str) -> bool:
+    """Does this provider error text describe a context-window overflow?
+
+    Phrase matching is the fallback, not the fact: an error classified
+    structurally carries ``ProviderError.context_overflow`` instead, which
+    survives envelopes that rewrap the provider's prose.
+    """
+    haystack = text.lower()
+    return any(phrase in haystack for phrase in _CONTEXT_OVERFLOW_PHRASES)
+
+
 class AIMessage(BaseModel):
     """A message in the AI conversation context."""
 

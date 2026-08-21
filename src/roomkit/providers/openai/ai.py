@@ -141,6 +141,21 @@ class _ThinkTagParser:
         return 0
 
 
+def _is_overflow_status(exc: object) -> bool:
+    """Read the structured overflow code off an OpenAI-style status error.
+
+    The Chat Completions error body carries ``error.code ==
+    "context_length_exceeded"`` — a first-hand fact, unlike the message
+    wording, and shared by the whole OpenAI-compatible provider family.
+    """
+    body = getattr(exc, "body", None)
+    if isinstance(body, dict):
+        error = body.get("error", body)
+        if isinstance(error, dict):
+            return error.get("code") == "context_length_exceeded"
+    return False
+
+
 class OpenAIAIProvider(AIProvider):
     """AI provider using the OpenAI Chat Completions API."""
 
@@ -453,6 +468,7 @@ class OpenAIAIProvider(AIProvider):
                 retryable=retryable,
                 provider=self._provider_name,
                 status_code=exc.status_code,
+                context_overflow=_is_overflow_status(exc),
             ) from exc
         except Exception as exc:
             raise ProviderError(
@@ -639,6 +655,7 @@ class OpenAIAIProvider(AIProvider):
                 retryable=exc.status_code in RETRYABLE_STATUS_CODES,
                 provider=self._provider_name,
                 status_code=exc.status_code,
+                context_overflow=_is_overflow_status(exc),
             ) from exc
         except Exception as exc:
             raise ProviderError(

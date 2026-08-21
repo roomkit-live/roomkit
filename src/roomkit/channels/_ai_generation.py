@@ -89,8 +89,6 @@ class AIGenerationHost(Protocol):
         _generate_with_retry: ``AIResilienceMixin`` — generate with retry/fallback.
         _publish_thinking_event: ``AIEventsMixin`` — publish thinking events.
         _publish_tool_event: ``AIEventsMixin`` — publish tool call events.
-        _is_context_overflow: ``AIResilienceMixin`` static — detect overflow errors.
-        _compact_context: ``AIResilienceMixin`` — emergency context compaction.
         _extract_accumulated_text: ``AIResilienceMixin`` static — extract text.
 
     The shared per-round loop rules (force-stop, empty-retry, budget, parts
@@ -135,9 +133,6 @@ class AIGenerationHost(Protocol):
         duration_ms: int | None = ...,
     ) -> None: ...
     @staticmethod
-    def _is_context_overflow(exc: ProviderError) -> bool: ...
-    async def _compact_context(self, context: AIContext) -> AIContext: ...
-    @staticmethod
     def _extract_accumulated_text(messages: list[AIMessage]) -> str: ...
 
 
@@ -168,8 +163,6 @@ class AIGenerationMixin(AIToolLoopRulesMixin):
     _generate_with_retry: Any  # see AIGenerationHost
     _publish_thinking_event: Any  # see AIGenerationHost
     _publish_tool_event: Any  # see AIGenerationHost
-    _is_context_overflow: Any  # see AIGenerationHost
-    _compact_context: Any  # see AIGenerationHost
     _extract_accumulated_text: Any  # see AIGenerationHost
 
     @property
@@ -596,36 +589,34 @@ class AIGenerationMixin(AIToolLoopRulesMixin):
 
                 try:
                     response = await _generate(context)
-                except ProviderError as exc:
-                    if self._is_context_overflow(exc):
-                        logger.warning("Context overflow at round %d. Compacting.", round_idx)
-                        context = await self._compact_context(context)
-                        response = await _generate(context)
-                    else:
-                        accumulated = self._extract_accumulated_text(context.messages)
-                        if accumulated:
-                            # The partial answer is worth keeping; the reason it
-                            # stopped is not for the room to read. `exc` is the
-                            # provider SDK's own string — status codes, request
-                            # ids, model and organisation names — and this
-                            # content is broadcast to every participant. The
-                            # detail goes to the log, where an operator can
-                            # correlate it; the delivery pipeline already
-                            # normalises its provider errors the same way
-                            # (`providers/http_errors.py`).
-                            logger.exception(
-                                "Tool loop interrupted by provider error at round %d", round_idx
-                            )
-                            return ToolLoopResult(
-                                response=AIResponse(
-                                    content=accumulated + "\n\n[Response interrupted]",
-                                    tool_calls=[],
-                                    usage=dict(total_usage),
-                                ),
-                                rounds=rounds,
-                                reason="error",
-                            )
-                        raise
+                except ProviderError:
+                    # Overflow recovery (compact and replay once) already ran
+                    # inside ``_generate_with_retry``; whatever reaches here
+                    # is spent, whichever kind it is.
+                    accumulated = self._extract_accumulated_text(context.messages)
+                    if accumulated:
+                        # The partial answer is worth keeping; the reason it
+                        # stopped is not for the room to read. The error is
+                        # the provider SDK's own string — status codes,
+                        # request ids, model and organisation names — and
+                        # this content is broadcast to every participant.
+                        # The detail goes to the log, where an operator can
+                        # correlate it; the delivery pipeline already
+                        # normalises its provider errors the same way
+                        # (`providers/http_errors.py`).
+                        logger.exception(
+                            "Tool loop interrupted by provider error at round %d", round_idx
+                        )
+                        return ToolLoopResult(
+                            response=AIResponse(
+                                content=accumulated + "\n\n[Response interrupted]",
+                                tool_calls=[],
+                                usage=dict(total_usage),
+                            ),
+                            rounds=rounds,
+                            reason="error",
+                        )
+                    raise
 
                 if response.thinking and room_id:
                     await self._publish_thinking_event(

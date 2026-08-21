@@ -30,7 +30,6 @@ from roomkit.providers.ai.base import (
     AIContext,
     AIMessage,
     AIToolResultPart,
-    ProviderError,
     StreamDone,
     StreamTextDelta,
     StreamThinkingDelta,
@@ -129,10 +128,8 @@ class AIStreamingHost(Protocol):
 
     Properties / methods provided by other mixins:
         _build_context: ``AIContextMixin`` — builds AI context from room state.
-        _compact_context: ``AIResilienceMixin`` — emergency context compaction.
         _drain_steering_queue: ``AISteeringMixin`` — drains pending directives.
         _generate_stream_with_retry: ``AIResilienceMixin`` — stream with retry.
-        _is_context_overflow: ``AIResilienceMixin`` static — detect overflow errors.
         _publish_thinking_event: ``AIEventsMixin`` — publish thinking events.
         _publish_tool_event: ``AIEventsMixin`` — publish tool call events.
         _telemetry_provider: ``AIGenerationMixin`` property — telemetry provider.
@@ -161,9 +158,6 @@ class AIStreamingHost(Protocol):
     async def _build_context(
         self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
     ) -> AIContext: ...
-    @staticmethod
-    def _is_context_overflow(exc: ProviderError) -> bool: ...
-    async def _compact_context(self, context: AIContext) -> AIContext: ...
     def _drain_steering_queue(
         self, context: AIContext, loop_ctx: _ToolLoopContext
     ) -> tuple[AIContext, bool]: ...
@@ -216,10 +210,8 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
     # _build_context is NOT annotated here: it's a real typed method on
     # AIContextMixin whose return type must be preserved for subclasses
     # (Agent.super()._build_context()). Call sites use type: ignore instead.
-    _compact_context: Any  # see AIStreamingHost
     _drain_steering_queue: Any  # see AIStreamingHost
     _generate_stream_with_retry: Any  # see AIStreamingHost
-    _is_context_overflow: Any  # see AIStreamingHost
     _publish_thinking_event: Any  # see AIStreamingHost
     _publish_tool_event: Any  # see AIStreamingHost
     _telemetry_provider: Any  # see AIStreamingHost
@@ -279,7 +271,10 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
         thinking_started = False
         coalescer = self._new_thinking_coalescer(room_id, round_idx=0)
 
-        async for ev in self._provider.generate_structured_stream(ai_context):
+        # Through the resilience wrapper, like every structured generation:
+        # this path used to call the provider directly and was the one place
+        # a transient failure got no retry, no fallback and no compaction.
+        async for ev in self._generate_stream_with_retry(ai_context):
             if isinstance(ev, StreamThinkingDelta):
                 if not thinking_started and room_id:
                     thinking_started = True
@@ -396,228 +391,199 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                 # hammering the same call to the round limit.
                 context = self._prepare_round_context(context, loop_ctx, state, _round_idx)
 
-                for _already_compacted in (False, True):
-                    thinking_parts: list[str] = []
-                    thinking_signature: str | None = None
-                    text_parts: list[str] = []
-                    tool_calls: list[StreamToolCall] = []
-                    thinking_started = False
-                    round_finish_reason: str | None = None
-                    coalescer = self._new_thinking_coalescer(room_id, round_idx=_round_idx)
-                    _dedup_active = bool(_dedup_prefix)
-                    _dedup_offset = 0
-                    _dedup_buffer: list[str] = []
+                thinking_parts: list[str] = []
+                thinking_signature: str | None = None
+                text_parts: list[str] = []
+                tool_calls: list[StreamToolCall] = []
+                thinking_started = False
+                round_finish_reason: str | None = None
+                coalescer = self._new_thinking_coalescer(room_id, round_idx=_round_idx)
+                _dedup_active = bool(_dedup_prefix)
+                _dedup_offset = 0
+                _dedup_buffer: list[str] = []
 
-                    try:
-                        async for event in self._generate_stream_with_retry(context):
-                            # Check cancel between every stream event — allows immediate
-                            # cancellation instead of waiting for the full stream to finish.
-                            if loop_ctx.cancel_event.is_set():
-                                logger.info(
-                                    "Streaming cancelled mid-generation at round %d", _round_idx
-                                )
-                                yield LoopEndMarker(reason="cancelled", rounds=_round_idx)
-                                return
+                async for event in self._generate_stream_with_retry(context):
+                    # Check cancel between every stream event — allows immediate
+                    # cancellation instead of waiting for the full stream to finish.
+                    if loop_ctx.cancel_event.is_set():
+                        logger.info("Streaming cancelled mid-generation at round %d", _round_idx)
+                        yield LoopEndMarker(reason="cancelled", rounds=_round_idx)
+                        return
 
-                            if isinstance(event, StreamThinkingDelta):
-                                if event.signature:
-                                    # Signature arrives as its own delta (empty text);
-                                    # capture it so the thinking block round-trips.
-                                    thinking_signature = event.signature
-                                if not event.thinking:
+                    if isinstance(event, StreamThinkingDelta):
+                        if event.signature:
+                            # Signature arrives as its own delta (empty text);
+                            # capture it so the thinking block round-trips.
+                            thinking_signature = event.signature
+                        if not event.thinking:
+                            continue
+                        if not thinking_started and room_id:
+                            thinking_started = True
+                            await self._publish_thinking_event(
+                                EphemeralEventType.THINKING_START,
+                                room_id,
+                                "",
+                                _round_idx,
+                            )
+                        thinking_parts.append(event.thinking)
+                        # Buffer the per-chunk delta and publish in windows on the
+                        # realtime bus so remote WS subscribers stream the reasoning
+                        # live; the buffered THINKING_END below still fires so
+                        # observers joining mid-stream recover the complete trace.
+                        await coalescer.add(event.thinking)
+                        # Inline marker so channels can render reasoning in
+                        # arrival order with text deltas.
+                        yield ThinkingDeltaMarker(thinking=event.thinking)
+                    elif isinstance(event, StreamTextDelta):
+                        if thinking_started and thinking_parts and room_id:
+                            thinking_started = False
+                            await coalescer.flush()
+                            await self._publish_thinking_event(
+                                EphemeralEventType.THINKING_END,
+                                room_id,
+                                "".join(thinking_parts),
+                                _round_idx,
+                            )
+                        text_parts.append(event.text)
+                        _accumulated_text.append(event.text)
+
+                        # --- Dedup: skip text that repeats previous rounds ---
+                        if _dedup_active:
+                            end = _dedup_offset + len(event.text)
+                            if end <= len(_dedup_prefix):
+                                if _dedup_prefix[_dedup_offset:end] == event.text:
+                                    _dedup_offset = end
+                                    _dedup_buffer.append(event.text)
                                     continue
-                                if not thinking_started and room_id:
-                                    thinking_started = True
-                                    await self._publish_thinking_event(
-                                        EphemeralEventType.THINKING_START,
-                                        room_id,
-                                        "",
-                                        _round_idx,
-                                    )
-                                thinking_parts.append(event.thinking)
-                                # Buffer the per-chunk delta and publish in windows on the
-                                # realtime bus so remote WS subscribers stream the reasoning
-                                # live; the buffered THINKING_END below still fires so
-                                # observers joining mid-stream recover the complete trace.
-                                await coalescer.add(event.thinking)
-                                # Inline marker so channels can render reasoning in
-                                # arrival order with text deltas.
-                                yield ThinkingDeltaMarker(thinking=event.thinking)
-                            elif isinstance(event, StreamTextDelta):
-                                if thinking_started and thinking_parts and room_id:
-                                    thinking_started = False
-                                    await coalescer.flush()
-                                    await self._publish_thinking_event(
-                                        EphemeralEventType.THINKING_END,
-                                        room_id,
-                                        "".join(thinking_parts),
-                                        _round_idx,
-                                    )
-                                text_parts.append(event.text)
-                                _accumulated_text.append(event.text)
-
-                                # --- Dedup: skip text that repeats previous rounds ---
-                                if _dedup_active:
-                                    end = _dedup_offset + len(event.text)
-                                    if end <= len(_dedup_prefix):
-                                        if _dedup_prefix[_dedup_offset:end] == event.text:
-                                            _dedup_offset = end
-                                            _dedup_buffer.append(event.text)
-                                            continue
-                                        _dedup_active = False
-                                        for buf in _dedup_buffer:
-                                            yield buf
-                                        _dedup_buffer.clear()
-                                        yield event.text
-                                    else:
-                                        prefix_tail = _dedup_prefix[_dedup_offset:]
-                                        if event.text[: len(prefix_tail)] == prefix_tail:
-                                            _dedup_active = False
-                                            _dedup_buffer.clear()
-                                            new_text = event.text[len(prefix_tail) :]
-                                            if new_text:
-                                                yield new_text
-                                        else:
-                                            _dedup_active = False
-                                            for buf in _dedup_buffer:
-                                                yield buf
-                                            _dedup_buffer.clear()
-                                            yield event.text
-                                    continue
-
+                                _dedup_active = False
+                                for buf in _dedup_buffer:
+                                    yield buf
+                                _dedup_buffer.clear()
                                 yield event.text
-                            elif isinstance(event, StreamToolCall):
-                                tool_calls.append(event)
-                                # External tools: fire hooks and yield persistence markers
-                                if (
-                                    self._tool_handler is None
-                                    and self._external_tool_handler is not None
-                                ):
-                                    handler = self._external_tool_handler
-                                    # Extract result from arguments if embedded by proxy
-                                    args = dict(event.arguments)
-                                    provider_already_executed = "_result" in args
-                                    tool_result = args.pop("_result", None)
-                                    tool_is_error = args.pop("_is_error", False)
+                            else:
+                                prefix_tail = _dedup_prefix[_dedup_offset:]
+                                if event.text[: len(prefix_tail)] == prefix_tail:
+                                    _dedup_active = False
+                                    _dedup_buffer.clear()
+                                    new_text = event.text[len(prefix_tail) :]
+                                    if new_text:
+                                        yield new_text
+                                else:
+                                    _dedup_active = False
+                                    for buf in _dedup_buffer:
+                                        yield buf
+                                    _dedup_buffer.clear()
+                                    yield event.text
+                            continue
 
-                                    # Yield start marker for store persistence
-                                    yield ToolCallStartMarker(
-                                        tool_name=event.name,
-                                        tool_id=event.id,
-                                        arguments=args,
+                        yield event.text
+                    elif isinstance(event, StreamToolCall):
+                        tool_calls.append(event)
+                        # External tools: fire hooks and yield persistence markers
+                        if self._tool_handler is None and self._external_tool_handler is not None:
+                            handler = self._external_tool_handler
+                            # Extract result from arguments if embedded by proxy
+                            args = dict(event.arguments)
+                            provider_already_executed = "_result" in args
+                            tool_result = args.pop("_result", None)
+                            tool_is_error = args.pop("_is_error", False)
+
+                            # Yield start marker for store persistence
+                            yield ToolCallStartMarker(
+                                tool_name=event.name,
+                                tool_id=event.id,
+                                arguments=args,
+                            )
+                            if room_id:
+                                await self._publish_tool_event(
+                                    EphemeralEventType.TOOL_CALL_START,
+                                    room_id,
+                                    [event.model_copy(update={"arguments": args})],
+                                    _round_idx,
+                                )
+
+                            t0_ext = time.monotonic()
+                            effective_result = tool_result or ""
+                            if not provider_already_executed:
+                                # Some external transports expose a pending call
+                                # through the stream. Only those calls can still
+                                # be gated or rewritten. A proxy that embeds
+                                # ``_result`` has already performed the side
+                                # effect; firing BEFORE_TOOL_USE then would give
+                                # a dangerous, retroactive illusion of control.
+                                decision = await handler.process_tool_call(
+                                    event.name,
+                                    args,
+                                    tool_call_id=event.id,
+                                    room_id=room_id,
+                                )
+                                if not decision.approved:
+                                    effective_result = json.dumps(
+                                        {
+                                            "error": decision.reason
+                                            or f"Tool '{event.name}' was denied"
+                                        }
                                     )
-                                    if room_id:
-                                        await self._publish_tool_event(
-                                            EphemeralEventType.TOOL_CALL_START,
-                                            room_id,
-                                            [event.model_copy(update={"arguments": args})],
-                                            _round_idx,
-                                        )
+                                    tool_is_error = True
+                                else:
+                                    if decision.modified_input is not None:
+                                        args = decision.modified_input
+                                    if decision.result is not None:
+                                        effective_result = decision.result
+                                        tool_is_error = False
+                            # Fire on_tool_result with actual result
+                            await handler.on_tool_result(
+                                event.name,
+                                args,
+                                effective_result,
+                                is_error=bool(tool_is_error),
+                                tool_call_id=event.id,
+                                room_id=room_id,
+                            )
 
-                                    t0_ext = time.monotonic()
-                                    effective_result = tool_result or ""
-                                    if not provider_already_executed:
-                                        # Some external transports expose a pending call
-                                        # through the stream. Only those calls can still
-                                        # be gated or rewritten. A proxy that embeds
-                                        # ``_result`` has already performed the side
-                                        # effect; firing BEFORE_TOOL_USE then would give
-                                        # a dangerous, retroactive illusion of control.
-                                        decision = await handler.process_tool_call(
-                                            event.name,
-                                            args,
+                            # Yield end marker for store persistence
+                            ext_duration_ms = int((time.monotonic() - t0_ext) * 1000)
+                            yield ToolCallEndMarker(
+                                tool_name=event.name,
+                                tool_id=event.id,
+                                arguments=args,
+                                result=effective_result,
+                                status="failed" if tool_is_error else "completed",
+                                duration_ms=ext_duration_ms,
+                                error=effective_result if tool_is_error else None,
+                            )
+                            if room_id:
+                                await self._publish_tool_event(
+                                    EphemeralEventType.TOOL_CALL_END,
+                                    room_id,
+                                    [
+                                        AIToolResultPart(
                                             tool_call_id=event.id,
-                                            room_id=room_id,
+                                            name=event.name,
+                                            result=effective_result,
                                         )
-                                        if not decision.approved:
-                                            effective_result = json.dumps(
-                                                {
-                                                    "error": decision.reason
-                                                    or f"Tool '{event.name}' was denied"
-                                                }
-                                            )
-                                            tool_is_error = True
-                                        else:
-                                            if decision.modified_input is not None:
-                                                args = decision.modified_input
-                                            if decision.result is not None:
-                                                effective_result = decision.result
-                                                tool_is_error = False
-                                    # Fire on_tool_result with actual result
-                                    await handler.on_tool_result(
-                                        event.name,
-                                        args,
-                                        effective_result,
-                                        is_error=bool(tool_is_error),
-                                        tool_call_id=event.id,
-                                        room_id=room_id,
-                                    )
-
-                                    # Yield end marker for store persistence
-                                    ext_duration_ms = int((time.monotonic() - t0_ext) * 1000)
-                                    yield ToolCallEndMarker(
-                                        tool_name=event.name,
-                                        tool_id=event.id,
-                                        arguments=args,
-                                        result=effective_result,
-                                        status="failed" if tool_is_error else "completed",
-                                        duration_ms=ext_duration_ms,
-                                        error=effective_result if tool_is_error else None,
-                                    )
-                                    if room_id:
-                                        await self._publish_tool_event(
-                                            EphemeralEventType.TOOL_CALL_END,
-                                            room_id,
-                                            [
-                                                AIToolResultPart(
-                                                    tool_call_id=event.id,
-                                                    name=event.name,
-                                                    result=effective_result,
-                                                )
-                                            ],
-                                            _round_idx,
-                                            duration_ms=ext_duration_ms,
-                                        )
-                            elif isinstance(event, StreamDone):
-                                round_finish_reason = event.finish_reason
-                                if event.usage:
-                                    round_in = event.usage.get("input_tokens", 0)
-                                    round_out = event.usage.get("output_tokens", 0)
-                                    _accumulate_usage(_total_usage, event.usage)
-                                    telemetry.record_metric(
-                                        "roomkit.llm.input_tokens",
-                                        float(round_in),
-                                        unit="tokens",
-                                        attributes={"channel_id": self.channel_id},
-                                    )
-                                    telemetry.record_metric(
-                                        "roomkit.llm.output_tokens",
-                                        float(round_out),
-                                        unit="tokens",
-                                        attributes={"channel_id": self.channel_id},
-                                    )
-                    except ProviderError as exc:
-                        # Reactive compaction, mirroring the non-streaming
-                        # loop's recovery. This try spans the whole round body
-                        # — tool execution and event publishing included — so
-                        # the guard below, not the catch's reach, is what makes
-                        # a replay safe: only a round that has not spoken is
-                        # replayed. Text and thinking deltas were already
-                        # handed to the consumer, and a received tool call may
-                        # already have run its side effect — replaying any of
-                        # them would duplicate what the room saw. The rebound
-                        # context persists, so later rounds build on the
-                        # compacted history.
-                        round_spoke = bool(text_parts or thinking_parts or tool_calls)
-                        if _already_compacted or round_spoke or not self._is_context_overflow(exc):
-                            raise
-                        logger.warning(
-                            "Context overflow at streaming round %d. Compacting.",
-                            _round_idx,
-                        )
-                        context = await self._compact_context(context)
-                        continue
-                    break
+                                    ],
+                                    _round_idx,
+                                    duration_ms=ext_duration_ms,
+                                )
+                    elif isinstance(event, StreamDone):
+                        round_finish_reason = event.finish_reason
+                        if event.usage:
+                            round_in = event.usage.get("input_tokens", 0)
+                            round_out = event.usage.get("output_tokens", 0)
+                            _accumulate_usage(_total_usage, event.usage)
+                            telemetry.record_metric(
+                                "roomkit.llm.input_tokens",
+                                float(round_in),
+                                unit="tokens",
+                                attributes={"channel_id": self.channel_id},
+                            )
+                            telemetry.record_metric(
+                                "roomkit.llm.output_tokens",
+                                float(round_out),
+                                unit="tokens",
+                                attributes={"channel_id": self.channel_id},
+                            )
 
                 if _dedup_buffer:
                     for buf in _dedup_buffer:

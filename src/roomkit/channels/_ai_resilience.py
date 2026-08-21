@@ -17,6 +17,7 @@ from roomkit.providers.ai.base import (
     AITextPart,
     ProviderError,
     StreamEvent,
+    is_context_overflow_message,
 )
 
 if TYPE_CHECKING:
@@ -54,15 +55,32 @@ class AIResilienceMixin:
     _eviction: ToolEviction
 
     async def _generate_with_retry(self, context: AIContext) -> AIResponse:
-        """Call provider.generate() with retry and optional fallback."""
+        """Call provider.generate() with compaction, retry and optional fallback.
+
+        A context overflow is handled before the retry budget and the
+        fallback provider see it: replaying the same context is a
+        deterministic refusal, so the one recovery with a chance is the
+        compacted replay — once per call. The compaction mutates
+        ``context.messages`` in place, so a caller running a tool loop
+        builds its next rounds on the compacted history.
+        """
         policy = self._retry_policy or RetryPolicy(max_retries=0)
         last_error: ProviderError | None = None
+        compacted = False
 
         provider = self._provider
-        for attempt in range(policy.max_retries + 1):
+        attempt = 0
+        while attempt <= policy.max_retries:
             try:
                 return await provider.generate(context)
             except ProviderError as exc:
+                if self._is_context_overflow(exc):
+                    if compacted:
+                        raise
+                    logger.warning("Context overflow. Compacting and replaying.")
+                    compacted = True
+                    context.messages[:] = (await self._compact_context(context)).messages
+                    continue
                 last_error = exc
                 if not exc.retryable:
                     raise
@@ -81,6 +99,7 @@ class AIResilienceMixin:
                     delay,
                 )
                 await asyncio.sleep(delay)
+                attempt += 1
 
         # All retries exhausted — try fallback provider
         if self._fallback_provider and last_error:
@@ -99,16 +118,43 @@ class AIResilienceMixin:
         raise RuntimeError("_generate_with_retry completed without result or exception")
 
     async def _generate_stream_with_retry(self, context: AIContext) -> AsyncIterator[StreamEvent]:
-        """Stream with retry on provider errors."""
+        """Stream with compaction, retry and optional fallback.
+
+        This wrapper is the one layer positioned to know two facts, and both
+        gate every recovery below:
+
+        * **Whether anything already left for the consumer.** A stream that
+          has yielded cannot be re-entered — by retry, compaction or fallback
+          alike — without duplicating delivered output in the room and in the
+          persisted message, so a mid-stream failure propagates as-is.
+        * **Whether the refusal is a context overflow.** Replaying the same
+          context is a deterministic refusal, so neither the retry budget nor
+          the fallback provider get it; the compacted replay runs first, once
+          per call, and mutates ``context.messages`` in place so a tool loop
+          builds its next rounds on the compacted history.
+        """
         policy = self._retry_policy or RetryPolicy(max_retries=0)
         last_error: ProviderError | None = None
+        compacted = False
 
-        for attempt in range(policy.max_retries + 1):
+        attempt = 0
+        while attempt <= policy.max_retries:
+            emitted = False
             try:
                 async for event in self._provider.generate_structured_stream(context):
+                    emitted = True
                     yield event
                 return  # Stream completed successfully
             except ProviderError as exc:
+                if emitted:
+                    raise
+                if self._is_context_overflow(exc):
+                    if compacted:
+                        raise
+                    logger.warning("Context overflow on stream. Compacting and replaying.")
+                    compacted = True
+                    context.messages[:] = (await self._compact_context(context)).messages
+                    continue
                 last_error = exc
                 if not exc.retryable:
                     raise
@@ -126,8 +172,9 @@ class AIResilienceMixin:
                     delay,
                 )
                 await asyncio.sleep(delay)
+                attempt += 1
 
-        # Fallback
+        # Fallback — only reachable when nothing was emitted.
         if self._fallback_provider and last_error:
             logger.warning("Trying fallback provider for stream.")
             async for event in self._fallback_provider.generate_structured_stream(context):
@@ -142,21 +189,8 @@ class AIResilienceMixin:
         """Check if a provider error indicates context window overflow."""
         # The typed fact outranks the prose: an envelope that classified the
         # failure structurally may have rewrapped the provider's wording into
-        # something no phrase below can match.
-        if exc.context_overflow:
-            return True
-        msg = str(exc).lower()
-        return any(
-            phrase in msg
-            for phrase in [
-                "context length exceeded",
-                "maximum context length",
-                "token limit",
-                "too many tokens",
-                "request too large",
-                "prompt is too long",
-            ]
-        )
+        # something no phrase can match.
+        return exc.context_overflow or is_context_overflow_message(str(exc))
 
     async def _compact_context(self, context: AIContext) -> AIContext:
         """Emergency compaction: summarize the first half of messages."""
