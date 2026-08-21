@@ -524,7 +524,6 @@ class TestContextOverflowRecovery:
             "maximum context length is 200000",
             "token limit reached",
             "too many tokens in the request",
-            "request too large",
             "prompt is too long for model",
         ]
         for pattern in patterns:
@@ -534,6 +533,10 @@ class TestContextOverflowRecovery:
     def test_is_context_overflow_rejects_unrelated_errors(self) -> None:
         """_is_context_overflow does not match unrelated errors."""
         exc = ProviderError("Invalid API key", retryable=False)
+        assert not AIChannel._is_context_overflow(exc)
+        # "Request too large" is OpenAI's tokens-per-minute rate limit — a
+        # retryable 429, not an overflow to compact for.
+        exc = ProviderError("Request too large for gpt-4o on tokens per min (TPM)")
         assert not AIChannel._is_context_overflow(exc)
 
     async def test_compact_context_splits_messages(self) -> None:

@@ -272,8 +272,8 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
         coalescer = self._new_thinking_coalescer(room_id, round_idx=0)
 
         # Through the resilience wrapper, like every structured generation:
-        # this path used to call the provider directly and was the one place
-        # a transient failure got no retry, no fallback and no compaction.
+        # retry, fallback and overflow compaction are the wrapper's to give,
+        # never a per-path courtesy.
         async for ev in self._generate_stream_with_retry(ai_context):
             if isinstance(ev, StreamThinkingDelta):
                 if not thinking_started and room_id:

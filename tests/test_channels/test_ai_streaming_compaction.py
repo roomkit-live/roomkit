@@ -1,19 +1,22 @@
 """Overflow recovery and replay safety live in the resilience wrappers.
 
-A context-window overflow that surfaces *during* a streamed turn used to kill
-it: compaction only had a call site in the non-streaming loop. Both retry
-wrappers now own the recovery — every generation path that goes through them
-(the streaming tool loop, the no-tools streaming path, the non-streaming
-loop) compacts and replays a refusal, under one guard the wrapper alone can
-enforce: **a stream that has yielded anything is never re-entered** — not by
-compaction, not by retry, not by fallback — because the consumer already got
-the events and a replay would duplicate them.
+Every generation path that goes through the retry wrappers (the streaming
+tool loop, the no-tools streaming path, the non-streaming loop) compacts and
+replays a context-window refusal once, before the retry budget or the
+fallback provider see the oversized request. One guard rules every recovery,
+and only the wrapper can enforce it: **a stream that has yielded anything is
+never re-entered** — not by compaction, not by retry, not by fallback —
+because the consumer already got the events and a replay would duplicate
+them. A refusal that survives its compacted replay falls through to the
+ordinary retry semantics, so an error that only *sounded* like an overflow
+keeps its budget.
 
-Detection is a typed fact first: a producer that classifies the failure
-structurally sets ``ProviderError.context_overflow`` (the OpenAI-compatible
-family reads its error code; an envelope may set it after measuring) and may
-reword the message freely; the shared phrase list in
-``is_context_overflow_message`` stays as the fallback for raw provider prose.
+Detection is a tri-state typed fact first: a producer that classifies the
+failure structurally sets ``ProviderError.context_overflow`` to ``True`` or
+``False`` (the OpenAI-compatible family reads its error code; an envelope may
+answer after measuring) and is believed in both directions; the shared phrase
+list in ``is_context_overflow_message`` decides only when the flag is
+``None``.
 """
 
 from __future__ import annotations
@@ -215,8 +218,8 @@ async def test_a_non_overflow_error_propagates_without_compaction() -> None:
 
 
 async def test_a_stream_that_spoke_is_not_reentered_even_by_the_retry() -> None:
-    # Before the guard, a retryable mid-stream failure re-entered the
-    # generator from the start and duplicated everything already delivered.
+    # A retryable mid-stream failure must not re-enter the generator: the
+    # round consuming it has already forwarded the delivered events.
     provider = _ScriptedStreamProvider(
         [([StreamTextDelta(text="Voici")], ProviderError("503", retryable=True))]
     )
@@ -246,6 +249,62 @@ async def test_stream_done_counts_as_emission() -> None:
         await _drain(_channel(provider)._generate_stream_with_retry(_ctx()))
 
     assert len(provider.calls) == 1
+
+
+_TPM_RATE_LIMIT = (
+    "Request too large for gpt-4o in organization org-x on tokens per min (TPM): "
+    "Limit 30000, Requested 31000."
+)
+
+
+async def test_a_rate_limit_worded_like_an_overflow_keeps_its_retries() -> None:
+    # The property, not the incident: a retryable 429 reaches the provider
+    # max_retries + 1 times whatever its prose says, and nobody compacts the
+    # caller's context for a transient refusal.
+    fallback = MockAIProvider(streaming=True, responses=["from fallback"])
+    provider = _ScriptedStreamProvider([ProviderError(_TPM_RATE_LIMIT, retryable=True)])
+    ch = _channel(provider, retry_policy=RetryPolicy(max_retries=3), fallback=fallback)
+
+    items = await _drain(ch._generate_stream_with_retry(_ctx()))
+
+    assert len(provider.calls) == 4  # every attempt the policy announces
+    assert provider.seen_compacted == [False, False, False, False]
+    assert len(set(provider.seen_message_counts)) == 1  # context untouched
+    assert any(isinstance(e, StreamTextDelta) and e.text == "from fallback" for e in items)
+
+
+async def test_an_explicit_no_beats_matching_prose() -> None:
+    # An envelope that classified structurally and answered "not an overflow"
+    # is believed, even when the wording matches the fallback list.
+    provider = _ScriptedStreamProvider(
+        [ProviderError("maximum context length exceeded", retryable=True, context_overflow=False)]
+    )
+    ch = _channel(provider, retry_policy=RetryPolicy(max_retries=2))
+
+    with pytest.raises(ProviderError):
+        await _drain(ch._generate_stream_with_retry(_ctx()))
+
+    assert len(provider.calls) == 3  # retried, never compacted
+    assert provider.seen_compacted == [False, False, False]
+
+
+async def test_a_refusal_that_survives_compaction_falls_through_to_retry() -> None:
+    # One compacted replay, then ordinary retry semantics: a retryable error
+    # that still sounds like an overflow after compaction keeps its budget.
+    provider = _ScriptedStreamProvider(
+        [
+            _overflow_by_phrase(retryable=True),
+            _overflow_by_phrase(retryable=True),
+            AIResponse(content="Done", tool_calls=[]),
+        ]
+    )
+    ch = _channel(provider, retry_policy=RetryPolicy(max_retries=3))
+
+    items = await _drain(ch._generate_stream_with_retry(_ctx()))
+
+    assert len(provider.calls) == 3  # refusal, compacted replay, retry
+    assert provider.seen_compacted == [False, True, True]
+    assert any(isinstance(e, StreamTextDelta) and e.text == "Done" for e in items)
 
 
 async def test_overflow_is_recovered_before_retry_and_fallback() -> None:
@@ -284,8 +343,8 @@ async def test_the_no_tools_streaming_path_compacts_too() -> None:
 
 
 async def test_the_no_tools_streaming_path_retries_and_falls_back() -> None:
-    # This path used to call the provider directly: one attempt, no fallback,
-    # whatever the channel's policy announced.
+    # The no-tools path draws retry and fallback from the wrapper like every
+    # other generation path — the policy's word holds here too.
     fallback = MockAIProvider(streaming=True, responses=["from fallback"])
     provider = _ScriptedStreamProvider([ProviderError("503", retryable=True)])
     ch = _channel(
@@ -316,13 +375,17 @@ def test_the_shared_phrase_list_covers_both_packages_wordings() -> None:
         "input exceeds the model capacity",
         "the request rode past the token limit",
         "prompt is too long: 210000 tokens > 200000 maximum",
+        "Range of input length should be [1, 30720]",
     ):
         assert is_context_overflow_message(text), text
     assert not is_context_overflow_message("invalid api key")
+    # OpenAI's tokens-per-minute rate limit — a 429 worth retrying, and the
+    # wording that once cost a transient error its whole retry budget.
+    assert not is_context_overflow_message(_TPM_RATE_LIMIT)
 
 
 def test_openai_status_errors_carry_the_typed_fact() -> None:
-    from roomkit.providers.openai.ai import _is_overflow_status
+    from roomkit.providers.openai.ai import _overflow_fact
 
     class _FakeStatusError(Exception):
         def __init__(self, body: Any) -> None:
@@ -330,6 +393,9 @@ def test_openai_status_errors_carry_the_typed_fact() -> None:
 
     overflow = _FakeStatusError({"error": {"code": "context_length_exceeded"}})
     other = _FakeStatusError({"error": {"code": "invalid_request_error"}})
-    assert _is_overflow_status(overflow) is True
-    assert _is_overflow_status(other) is False
-    assert _is_overflow_status(_FakeStatusError(None)) is False
+    assert _overflow_fact(overflow) is True
+    # A miss is "nobody classified", never "no": the compatible vendors put
+    # integers or generic strings in ``code`` and their overflows must stay
+    # catchable by the phrase fallback.
+    assert _overflow_fact(other) is None
+    assert _overflow_fact(_FakeStatusError(None)) is None

@@ -141,19 +141,21 @@ class _ThinkTagParser:
         return 0
 
 
-def _is_overflow_status(exc: object) -> bool:
-    """Read the structured overflow code off an OpenAI-style status error.
+def _overflow_fact(exc: object) -> bool | None:
+    """The structured overflow fact off an OpenAI-style status error, if any.
 
-    The Chat Completions error body carries ``error.code ==
-    "context_length_exceeded"`` — a first-hand fact, unlike the message
-    wording, and shared by the whole OpenAI-compatible provider family.
+    OpenAI and Azure carry ``error.code == "context_length_exceeded"`` in the
+    error body — a first-hand fact, unlike the message wording. The other
+    compatible vendors put integers or generic strings in ``code``, so a miss
+    is ``None`` (nobody classified), never ``False``: their overflows are
+    still caught by the shared phrase fallback.
     """
     body = getattr(exc, "body", None)
     if isinstance(body, dict):
-        error = body.get("error", body)
-        if isinstance(error, dict):
-            return error.get("code") == "context_length_exceeded"
-    return False
+        error = body.get("error")
+        if isinstance(error, dict) and error.get("code") == "context_length_exceeded":
+            return True
+    return None
 
 
 class OpenAIAIProvider(AIProvider):
@@ -468,7 +470,7 @@ class OpenAIAIProvider(AIProvider):
                 retryable=retryable,
                 provider=self._provider_name,
                 status_code=exc.status_code,
-                context_overflow=_is_overflow_status(exc),
+                context_overflow=_overflow_fact(exc),
             ) from exc
         except Exception as exc:
             raise ProviderError(
@@ -655,7 +657,7 @@ class OpenAIAIProvider(AIProvider):
                 retryable=exc.status_code in RETRYABLE_STATUS_CODES,
                 provider=self._provider_name,
                 status_code=exc.status_code,
-                context_overflow=_is_overflow_status(exc),
+                context_overflow=_overflow_fact(exc),
             ) from exc
         except Exception as exc:
             raise ProviderError(

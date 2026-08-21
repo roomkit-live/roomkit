@@ -74,12 +74,14 @@ class AIResilienceMixin:
             try:
                 return await provider.generate(context)
             except ProviderError as exc:
-                if self._is_context_overflow(exc):
-                    if compacted:
-                        raise
+                if not compacted and self._is_context_overflow(exc):
+                    # Compact once and replay. A refusal that survives the
+                    # replay falls through to the ordinary retry semantics
+                    # below, so an error that only *sounded* like an overflow
+                    # keeps its retry budget and its fallback.
                     logger.warning("Context overflow. Compacting and replaying.")
                     compacted = True
-                    context.messages[:] = (await self._compact_context(context)).messages
+                    await self._compact_context(context)
                     continue
                 last_error = exc
                 if not exc.retryable:
@@ -148,12 +150,12 @@ class AIResilienceMixin:
             except ProviderError as exc:
                 if emitted:
                     raise
-                if self._is_context_overflow(exc):
-                    if compacted:
-                        raise
+                if not compacted and self._is_context_overflow(exc):
+                    # Same fall-through as the non-streaming wrapper: one
+                    # compacted replay, then ordinary retry semantics.
                     logger.warning("Context overflow on stream. Compacting and replaying.")
                     compacted = True
-                    context.messages[:] = (await self._compact_context(context)).messages
+                    await self._compact_context(context)
                     continue
                 last_error = exc
                 if not exc.retryable:
@@ -187,13 +189,24 @@ class AIResilienceMixin:
     @staticmethod
     def _is_context_overflow(exc: ProviderError) -> bool:
         """Check if a provider error indicates context window overflow."""
-        # The typed fact outranks the prose: an envelope that classified the
-        # failure structurally may have rewrapped the provider's wording into
-        # something no phrase can match.
-        return exc.context_overflow or is_context_overflow_message(str(exc))
+        # A structural classification is believed in both directions; the
+        # prose decides only when nobody classified. Letting wording override
+        # an explicit "no" is how a rate limit whose message resembles an
+        # overflow once lost its retry budget to a pointless compaction.
+        if exc.context_overflow is not None:
+            return exc.context_overflow
+        return is_context_overflow_message(str(exc))
 
     async def _compact_context(self, context: AIContext) -> AIContext:
-        """Emergency compaction: summarize the first half of messages."""
+        """Emergency compaction: summarize the first half of messages.
+
+        Mutates ``context.messages`` in place and returns the same context.
+        In-place is load-bearing, and owned here so no caller can forget it:
+        the round-context chain passes shallow copies that share this list,
+        so a returned replacement a caller had to assign would be silently
+        dropped by the first copy in between — while the shared list reaches
+        every holder, and the compacted history is what later rounds build on.
+        """
         messages = context.messages
         if len(messages) <= 4:
             raise ProviderError(
@@ -234,7 +247,8 @@ class AIResilienceMixin:
             content=(f"[Context compacted — earlier conversation summary]\n{summary_text}"),
         )
 
-        return context.model_copy(update={"messages": [summary_msg] + recent_messages})
+        context.messages[:] = [summary_msg] + recent_messages
+        return context
 
     @staticmethod
     def _extract_accumulated_text(messages: list[AIMessage]) -> str:
