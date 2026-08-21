@@ -141,6 +141,10 @@ class ProviderError(Exception):
         retryable: Whether the caller should retry the request.
         provider: Name of the provider that raised the error.
         status_code: HTTP status code from the provider, if available.
+        context_overflow: The request exceeded the model's context window.
+            An envelope that classified the failure structurally (measurement,
+            an error code) states the fact here; message wording is only a
+            fallback, since an envelope may rewrap the provider's prose.
     """
 
     def __init__(
@@ -150,11 +154,13 @@ class ProviderError(Exception):
         retryable: bool = False,
         provider: str = "",
         status_code: int | None = None,
+        context_overflow: bool = False,
     ) -> None:
         super().__init__(message)
         self.retryable = retryable
         self.provider = provider
         self.status_code = status_code
+        self.context_overflow = context_overflow
 
 
 # HTTP status codes that are transient and worth retrying for any AI provider.

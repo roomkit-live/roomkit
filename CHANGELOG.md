@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The streaming tool loop now recovers from a context-window overflow.**
+  `_compact_context` only had a call site in the non-streaming loop, and every
+  streaming-capable provider routes to the streaming one — so an overflow that
+  surfaced mid-turn (tool results inflating the context long after memory was
+  sized) killed the turn instead of triggering the compaction built for exactly
+  that case. The streaming loop now compacts and replays the failed round, with
+  one guard: only a round that has not spoken is replayed — text and thinking
+  deltas already reached the consumer, and replaying them would duplicate the
+  answer in the room and in the persisted message.
+
+### Added
+
+- **`ProviderError.context_overflow`, a typed overflow fact.** Detection by
+  English phrase list breaks as soon as an envelope rewraps the provider's
+  prose (a wrapper that classifies failures structurally reports its own
+  message). An envelope that knows the failure is an overflow — by measurement
+  or by error code — now states it on the exception; `_is_context_overflow`
+  reads the flag first and keeps the phrase list as fallback for raw provider
+  errors.
+
 ### Changed
 
 - **`history_budget` requires `safety_margin_ratio` explicitly.** The default it

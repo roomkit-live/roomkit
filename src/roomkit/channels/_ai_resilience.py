@@ -140,6 +140,11 @@ class AIResilienceMixin:
     @staticmethod
     def _is_context_overflow(exc: ProviderError) -> bool:
         """Check if a provider error indicates context window overflow."""
+        # The typed fact outranks the prose: an envelope that classified the
+        # failure structurally may have rewrapped the provider's wording into
+        # something no phrase below can match.
+        if getattr(exc, "context_overflow", False):
+            return True
         msg = str(exc).lower()
         return any(
             phrase in msg
