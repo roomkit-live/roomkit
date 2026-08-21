@@ -54,6 +54,11 @@ class OpenAIImageProvider(ImageProvider):
         )
 
     @property
+    def _provider_name(self) -> str:
+        """Provider identifier used in error messages and telemetry."""
+        return "openai"
+
+    @property
     def model_name(self) -> str:
         return self._config.model
 
@@ -102,16 +107,16 @@ class OpenAIImageProvider(ImageProvider):
         except ProviderError:
             raise
         except self._api_connection_error as exc:
-            raise ProviderError(str(exc), retryable=True, provider="openai") from exc
+            raise ProviderError(str(exc), retryable=True, provider=self._provider_name) from exc
         except self._api_status_error as exc:
             raise ProviderError(
                 str(exc),
                 retryable=exc.status_code in RETRYABLE_STATUS_CODES,
-                provider="openai",
+                provider=self._provider_name,
                 status_code=exc.status_code,
             ) from exc
         except Exception as exc:
-            raise ProviderError(str(exc), retryable=False, provider="openai") from exc
+            raise ProviderError(str(exc), retryable=False, provider=self._provider_name) from exc
 
         return self._results(response, n)
 
@@ -153,9 +158,10 @@ class OpenAIImageProvider(ImageProvider):
         images = list(getattr(response, "data", None) or [])
         if len(images) != expected:
             raise ProviderError(
-                f"OpenAI returned {len(images)} image(s) for a request of {expected}",
+                f"{self._provider_name} returned {len(images)} image(s) "
+                f"for a request of {expected}",
                 retryable=False,
-                provider="openai",
+                provider=self._provider_name,
             )
         mime_type = self._response_mime_type(response)
         # The usage counters describe the whole call, not one image; splitting
@@ -167,11 +173,11 @@ class OpenAIImageProvider(ImageProvider):
             payload = getattr(image, "b64_json", None)
             if not payload:
                 raise ProviderError(
-                    f"OpenAI returned image {index} without inline bytes. The GPT image "
-                    "models this provider catalogs always answer in base64; a model that "
+                    f"{self._provider_name} returned image {index} without inline bytes. The GPT "
+                    "image models on this endpoint always answer in base64; a model that "
                     "answers with an expiring URL instead is not one roomkit supports here.",
                     retryable=False,
-                    provider="openai",
+                    provider=self._provider_name,
                 )
             results.append(
                 ImageResult(

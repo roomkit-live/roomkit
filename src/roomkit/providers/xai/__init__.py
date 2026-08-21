@@ -8,6 +8,13 @@ lazily-imported ``openai`` SDK, so it is safe to export.
 """
 
 from roomkit.providers.xai.ai import XAIAIProvider
-from roomkit.providers.xai.config import XAIConfig, XAIRealtimeConfig
+from roomkit.providers.xai.config import XAIConfig, XAIImageConfig, XAIRealtimeConfig
+from roomkit.providers.xai.image import XAIImageProvider
 
-__all__ = ["XAIAIProvider", "XAIConfig", "XAIRealtimeConfig"]
+__all__ = [
+    "XAIAIProvider",
+    "XAIConfig",
+    "XAIImageConfig",
+    "XAIImageProvider",
+    "XAIRealtimeConfig",
+]

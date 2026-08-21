@@ -21,17 +21,25 @@ from roomkit.providers.image import (
     ImageResult,
     MockImageProvider,
     parse_size,
+    sniff_mime_type,
     to_data_uri,
 )
 from roomkit.providers.openai.config import OpenAIImageConfig
 from roomkit.providers.openai.image import OpenAIImageProvider
+from roomkit.providers.openrouter.image import OpenRouterImageProvider
+from roomkit.providers.xai.image import XAIImageProvider
 
 PNG = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk"
     "YPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
 )
 
-IMAGE_CATALOGS = [OpenAIImageProvider, GeminiImageProvider]
+# Catalogs whose vendors meter per token, and so carry ModelPricing.
+PRICED_IMAGE_CATALOGS = [OpenAIImageProvider, GeminiImageProvider]
+# Catalogs whose vendors bill a flat amount per image — a unit ModelPricing
+# cannot state, so their entries deliberately carry no pricing.
+PER_IMAGE_BILLED_CATALOGS = [XAIImageProvider, OpenRouterImageProvider]
+IMAGE_CATALOGS = PRICED_IMAGE_CATALOGS + PER_IMAGE_BILLED_CATALOGS
 
 
 # --- parse_size / to_data_uri --------------------------------------------------
@@ -157,6 +165,27 @@ async def test_mock_rejects_n_below_one() -> None:
         await provider.generate("hi", n=0)
 
 
+# --- sniff_mime_type -----------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("head", "expected"),
+    [
+        (b"\x89PNG\r\n\x1a\n rest", "image/png"),
+        (b"\xff\xd8\xff\xe0 rest", "image/jpeg"),
+        (b"RIFF\x00\x00\x00\x00WEBPVP8 ", "image/webp"),
+        (b"GIF89a rest", "image/gif"),
+    ],
+)
+def test_sniff_mime_type_reads_the_magic_number(head: bytes, expected: str) -> None:
+    assert sniff_mime_type(head) == expected
+
+
+def test_sniff_mime_type_falls_back_when_bytes_say_nothing() -> None:
+    assert sniff_mime_type(b"not an image") == "image/png"
+    assert sniff_mime_type(b"", fallback="image/jpeg") == "image/jpeg"
+
+
 # --- ImageProvider base --------------------------------------------------------
 
 
@@ -199,7 +228,7 @@ def test_image_catalog_entries_are_tagged(provider: type[ImageProvider]) -> None
         assert IMAGE_GEN_CAPABILITY in model.capabilities, model.id
 
 
-@pytest.mark.parametrize("provider", IMAGE_CATALOGS)
+@pytest.mark.parametrize("provider", PRICED_IMAGE_CATALOGS)
 def test_image_catalog_entries_price_the_pixels(provider: type[ImageProvider]) -> None:
     """A catalog that omits the image-output rate bills a generation as free."""
     for model in provider.available_models():
@@ -208,14 +237,25 @@ def test_image_catalog_entries_price_the_pixels(provider: type[ImageProvider]) -
         assert model.pricing.image_input_per_million, model.id
 
 
+@pytest.mark.parametrize("provider", PER_IMAGE_BILLED_CATALOGS)
+def test_per_image_billed_catalogs_state_no_rate(provider: type[ImageProvider]) -> None:
+    """A flat per-image charge restated per token would be a wrong number, not a missing one."""
+    for model in provider.available_models():
+        assert model.pricing is None, model.id
+
+
 def test_image_catalog_is_disjoint_from_the_conversational_one() -> None:
     """RFC §25.6 — no id draws and converses, and neither list carries the other's."""
     from roomkit.providers.gemini.ai import GeminiAIProvider
     from roomkit.providers.openai.ai import OpenAIAIProvider
+    from roomkit.providers.openrouter.ai import OpenRouterAIProvider
+    from roomkit.providers.xai.ai import XAIAIProvider
 
     for chat, image in (
         (OpenAIAIProvider, OpenAIImageProvider),
         (GeminiAIProvider, GeminiImageProvider),
+        (XAIAIProvider, XAIImageProvider),
+        (OpenRouterAIProvider, OpenRouterImageProvider),
     ):
         chat_ids = {m.id for m in chat.available_models()}
         image_ids = {m.id for m in image.available_models()}

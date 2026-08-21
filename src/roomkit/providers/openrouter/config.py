@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from roomkit.providers.openai.config import OpenAIConfig
+from roomkit.providers.openai.config import OpenAIConfig, OpenAIImageConfig
 
 
 class OpenRouterConfig(OpenAIConfig):
@@ -38,3 +38,35 @@ class OpenRouterConfig(OpenAIConfig):
     app_name: str | None = None
     """Sent as the ``X-Title`` header — your app's display name in OpenRouter's
     rankings. Only creates an app page when paired with ``site_url``."""
+
+
+class OpenRouterImageConfig(OpenAIImageConfig):
+    """OpenRouter image-generation provider configuration (RFC §25).
+
+    OpenRouter's Image API routes one request shape to every image model it
+    aggregates, so this **subclasses** :class:`OpenAIImageConfig` and inherits
+    its request fields (``quality``, ``background``, ``output_format``,
+    ``timeout``, ``max_retries``, ``default_headers``) — the Image API accepts
+    each of them, forwarding what the routed model understands. Only the
+    endpoint and OpenRouter's app-attribution headers are added on top.
+
+    The endpoint is OpenRouter's own (``POST {base_url}/images``), not the
+    OpenAI images path — see
+    :class:`~roomkit.providers.openrouter.image.OpenRouterImageProvider`.
+    """
+
+    base_url: str = "https://openrouter.ai/api/v1"
+    """OpenRouter's API root. Override only to point at a self-hosted proxy."""
+
+    model: str
+    """OpenRouter image model slug — e.g. ``"google/gemini-3.1-flash-image"``
+    or ``"x-ai/grok-imagine-image-2.0"``. Required (the value of OpenRouter is
+    choosing the model). Browse the live set at ``GET /api/v1/images/models``."""
+
+    site_url: str | None = None
+    """Sent as the ``HTTP-Referer`` header — same attribution role as on
+    :class:`OpenRouterConfig`."""
+
+    app_name: str | None = None
+    """Sent as the ``X-Title`` header — same attribution role as on
+    :class:`OpenRouterConfig`."""

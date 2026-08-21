@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Three more vendors draw: xAI, OpenRouter, and Azure OpenAI.**
+  `XAIImageProvider` speaks Grok Imagine's images API — generation through the
+  OpenAI-compatible endpoint, editing as JSON on `/images/edits` (the SDK's
+  multipart `images.edit` is not accepted there), a caller's
+  `"WIDTHxHEIGHT"` translated to xAI's aspect-ratio-and-tier form.
+  `OpenRouterImageProvider` speaks OpenRouter's own Image API
+  (`POST /api/v1/images`) and so reaches its whole aggregated lineup —
+  Seedream, FLUX, Recraft and the rest — fanning `n` out as concurrent
+  single-image requests because per-model batch caps vary, and surfacing the
+  billed amount OpenRouter reports on every call as
+  `ImageResult.usage["cost"]`. `AzureImageProvider` subclasses the OpenAI
+  provider the way the chat pair does: same `gpt-image-*` lineup behind a
+  deployment name, so sizes pass through to the vendor instead of being judged
+  against a list the deployment name conceals. The xAI and OpenRouter catalogs
+  carry no `pricing` — both vendors bill a flat amount per image, a unit
+  `ModelPricing`'s per-token rates cannot state — and are verified at release
+  against OpenRouter's public image-model listing, which `check_models` now
+  reads alongside the chat one.
+- **`sniff_mime_type`, magic-number detection for undeclared image bytes.**
+  xAI and OpenRouter may both answer with base64 and no media type; labelling
+  a JPEG `image/png` because a fallback said so would be repeated by every
+  consumer of the result's data URI.
+
 ## [0.58.0] — 2026-08-21
 
 ### Fixed

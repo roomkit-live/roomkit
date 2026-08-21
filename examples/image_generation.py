@@ -22,10 +22,18 @@ Requires:
     pip install roomkit            # mock path, no key
     pip install roomkit[openai]    # OPENAI_API_KEY
     pip install roomkit[gemini]    # GEMINI_API_KEY
+    pip install roomkit[xai]       # XAI_API_KEY
+    pip install roomkit[openrouter]  # OPENROUTER_API_KEY
+    pip install roomkit[azure]     # AZURE_OPENAI_API_KEY + AZURE_OPENAI_ENDPOINT
 
-Environment variables:
+Environment variables (first configured provider wins):
     OPENAI_API_KEY — draws with OpenAI (gpt-image-2 by default)
     GEMINI_API_KEY — draws with Gemini (gemini-3.1-flash-image by default)
+    XAI_API_KEY    — draws with xAI (grok-imagine-image-2.0 by default)
+    OPENROUTER_API_KEY — draws through OpenRouter's Image API
+                         (google/gemini-3.1-flash-image by default)
+    AZURE_OPENAI_API_KEY + AZURE_OPENAI_ENDPOINT — draws with an Azure OpenAI
+                         deployment (IMAGE_MODEL names the deployment)
     IMAGE_MODEL    — override the model id for whichever provider is selected
     ANTHROPIC_API_KEY — optional: hold the conversation with Claude instead of
                         the mock AI, to see the decoupling for real
@@ -159,7 +167,30 @@ def build_image_provider() -> ImageProvider:
         return GeminiImageProvider(
             GeminiImageConfig(api_key=api_key, model=model or "gemini-3.1-flash-image")
         )
-    print("No OPENAI_API_KEY / GEMINI_API_KEY — drawing with MockImageProvider.\n")
+    if api_key := os.environ.get("XAI_API_KEY"):
+        from roomkit.providers.xai import XAIImageConfig, XAIImageProvider
+
+        return XAIImageProvider(
+            XAIImageConfig(api_key=api_key, model=model or "grok-imagine-image-2.0")
+        )
+    if api_key := os.environ.get("OPENROUTER_API_KEY"):
+        from roomkit.providers.openrouter import OpenRouterImageConfig, OpenRouterImageProvider
+
+        return OpenRouterImageProvider(
+            OpenRouterImageConfig(api_key=api_key, model=model or "google/gemini-3.1-flash-image")
+        )
+    api_key = os.environ.get("AZURE_OPENAI_API_KEY")
+    endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT")
+    if api_key and endpoint:
+        from roomkit.providers.azure import AzureImageConfig, AzureImageProvider
+
+        # Azure deployments are user-named; IMAGE_MODEL is the deployment name.
+        return AzureImageProvider(
+            AzureImageConfig(
+                api_key=api_key, azure_endpoint=endpoint, model=model or "gpt-image-1"
+            )
+        )
+    print("No image-provider key in the environment — drawing with MockImageProvider.\n")
     return MockImageProvider()
 
 

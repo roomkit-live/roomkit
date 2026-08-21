@@ -6,6 +6,7 @@ from roomkit.providers.image.base import (
     ImageResult,
     parse_data_uri,
     parse_size,
+    sniff_mime_type,
     to_data_uri,
 )
 from roomkit.providers.image.mock import MockImageProvider
@@ -17,5 +18,6 @@ __all__ = [
     "MockImageProvider",
     "parse_data_uri",
     "parse_size",
+    "sniff_mime_type",
     "to_data_uri",
 ]

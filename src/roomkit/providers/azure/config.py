@@ -50,3 +50,44 @@ class AzureAIConfig(BaseModel):
     """Extra JSON fields merged into every request body via the SDK's
     ``extra_body`` — for deployment-specific params the OpenAI schema omits.
     ``None`` sends a vanilla body."""
+
+
+class AzureImageConfig(BaseModel):
+    """Azure OpenAI image-generation provider configuration (RFC §25).
+
+    Configures the images endpoint of an Azure OpenAI resource — the same
+    ``gpt-image-*`` lineup :class:`~roomkit.providers.openai.config.OpenAIImageConfig`
+    reaches on openai.com, deployed under a name the resource owner chose.
+    Separate from :class:`AzureAIConfig` for the reason the OpenAI configs are
+    separate: a different endpoint, a disjoint model lineup, and none of the
+    chat request fields mean anything to it.
+
+    Attributes:
+        api_key: Azure API key for authentication.
+        azure_endpoint: Azure OpenAI resource endpoint URL.
+        api_version: Azure API version string. The default is the version
+            Azure's image-generation documentation currently requires; older
+            versions predate ``gpt-image-1`` and reject it.
+        model: Deployment name (no default — deployment names are chosen per
+            Azure resource, so there is nothing sensible to guess).
+        quality: ``"low"`` | ``"medium"`` | ``"high"`` | ``"auto"``, or ``None``
+            for the deployment's default.
+        background: ``"transparent"`` | ``"opaque"`` | ``"auto"``. Transparent
+            requires a ``png`` or ``webp`` output format.
+        output_format: ``"png"`` | ``"jpeg"``. ``None`` leaves the vendor
+            default. Azure does not offer ``webp`` on this endpoint.
+        timeout: HTTP request timeout in seconds. Higher than the chat default
+            because a high-quality image routinely takes more than 30s.
+        max_retries: SDK-level retry count. 0 because RoomKit's RetryPolicy
+            handles retries at the right layer.
+    """
+
+    api_key: SecretStr
+    azure_endpoint: str
+    api_version: str = "2025-04-01-preview"
+    model: str
+    quality: str | None = None
+    background: str | None = None
+    output_format: str | None = None
+    timeout: float = 120.0
+    max_retries: int = 0

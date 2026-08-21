@@ -42,6 +42,41 @@ class XAIConfig(OpenAIConfig):
     worth more than the one extra chunk it costs."""
 
 
+class XAIImageConfig(BaseModel):
+    """xAI (Grok Imagine) image-generation provider configuration (RFC §25).
+
+    Separate from :class:`XAIConfig` because it configures a different
+    endpoint with a disjoint model lineup — sampling temperature and reasoning
+    effort mean nothing to ``/v1/images``, and an image model means nothing to
+    Chat Completions. Distinct from :class:`XAIRealtimeConfig` for the same
+    reason — same vendor, three protocols.
+
+    Attributes:
+        api_key: xAI API key for authentication.
+        base_url: xAI's API endpoint. Override only to point at a proxy.
+        model: Grok Imagine image model id — see
+            :mod:`roomkit.providers.xai.image_models` for the curated catalog.
+            Defaults to the model xAI's own docs recommend for images.
+        quality: ``"low"`` | ``"medium"``, or ``None`` for the model's default.
+            Only ``grok-imagine-image-2.0`` accepts it; sent only when set.
+        resolution: Default resolution tier — ``"1k"`` | ``"2k"`` — applied
+            when a call names no size. ``None`` leaves the vendor default. A
+            ``size`` passed to ``generate`` wins over this.
+        timeout: HTTP request timeout in seconds. Higher than the chat default
+            because image synthesis routinely takes more than 30s.
+        max_retries: SDK-level retry count. 0 because RoomKit's RetryPolicy
+            handles retries at the right layer.
+    """
+
+    api_key: SecretStr
+    base_url: str = "https://api.x.ai/v1"
+    model: str = "grok-imagine-image-2.0"
+    quality: str | None = None
+    resolution: str | None = None
+    timeout: float = 120.0
+    max_retries: int = 0
+
+
 class XAIRealtimeConfig(BaseModel):
     """Configuration for the xAI Grok Realtime provider.
 

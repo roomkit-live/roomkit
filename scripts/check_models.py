@@ -10,9 +10,11 @@ so a release does not quietly ship last quarter's lineup.
 
 The reference is OpenRouter's ``/api/v1/models``, which is public, needs no key,
 and republishes ids, context windows, modalities, and rates for every major
-vendor — one request covers Anthropic, OpenAI, Google, Mistral, and xAI. It is a
-mirror, not the vendor, so treat a finding as "go read the vendor's docs", never
-as a value to paste in blind.
+vendor — one request covers Anthropic, OpenAI, Google, Mistral, and xAI. The
+Image-API-only lineups it does not route there are checked against its equally
+public ``/api/v1/images/models`` instead (see ``Catalog.source``). Either way
+it is a mirror, not the vendor, so treat a finding as "go read the vendor's
+docs", never as a value to paste in blind.
 
 A catalog is compared against the upstream slice matching its output modality
 (:func:`belongs_to`), so the chat and image lineups a vendor publishes under one
@@ -64,6 +66,7 @@ from typing import Any
 from roomkit.providers.ai.base import ModelInfo
 
 UPSTREAM_URL = "https://openrouter.ai/api/v1/models"
+IMAGES_UPSTREAM_URL = "https://openrouter.ai/api/v1/images/models"
 
 
 @dataclass(frozen=True)
@@ -82,6 +85,14 @@ class Catalog:
             text and image slices from contaminating each other — a vendor
             publishes both under one namespace, and comparing a catalog
             against the wrong half reports every id as retired.
+        source: Which upstream listing to compare against. ``"models"`` is
+            ``/api/v1/models`` — chat-completions routing, with context
+            windows and per-token rates. ``"images"`` is
+            ``/api/v1/images/models`` — the Image API's own listing, which is
+            the only mirror that carries the per-image-billed lineups (xAI's
+            Grok Imagine, Seedream, FLUX…). It republishes ids and creation
+            dates but no windows and no inline rates, so an image-sourced
+            catalog is checked for existence and retirement, not price.
     """
 
     label: str
@@ -90,6 +101,7 @@ class Catalog:
     prefixed: bool = False
     track_new: bool = True
     modality: str = "text"
+    source: str = "models"
 
 
 CATALOGS: list[Catalog] = [
@@ -111,6 +123,24 @@ CATALOGS: list[Catalog] = [
         "openrouter", "roomkit.providers.openrouter.models", "", prefixed=True, track_new=False
     ),
     Catalog("gemini-image", "roomkit.providers.gemini.image_models", "google/", modality="image"),
+    Catalog(
+        "xai-image",
+        "roomkit.providers.xai.image_models",
+        "x-ai/",
+        modality="image",
+        source="images",
+    ),
+    # An intentionally partial slice of 40+ aggregated image models, so
+    # "something newer exists" is always true and would be noise.
+    Catalog(
+        "openrouter-image",
+        "roomkit.providers.openrouter.image_models",
+        "",
+        prefixed=True,
+        track_new=False,
+        modality="image",
+        source="images",
+    ),
 ]
 
 # Catalogs with no upstream to compare against, and why. Printed on every run:
@@ -172,6 +202,10 @@ DELIBERATE: dict[str, str] = {
     "gpt-5.6-luna": "OpenAI documents 400K; mirror reports the 1.05M Sol/Terra ceiling",
     # Project Glasswing only — never published on a public aggregator.
     "claude-mythos-5": "Project Glasswing access only, absent from public mirrors",
+    # xAI hosts it, but OpenRouter's Image API routes only the 2.0 and quality
+    # ids, so absence from the mirror says nothing (docs.x.ai models page,
+    # 2026-08-21).
+    "grok-imagine-image": "hosted by xAI; the images mirror routes only its siblings",
     # xAI's dated variant ids; the mirror republishes only the undated forms.
     "grok-4.20-0309-reasoning": "mirror carries the undated grok-4.20 alias instead",
     "grok-4.20-0309-non-reasoning": "mirror carries the undated grok-4.20 alias instead",
@@ -412,8 +446,9 @@ def belongs_to(item: dict[str, Any], modality: str) -> bool:
 def fetch_upstream(url: str = UPSTREAM_URL, timeout: float = 30.0) -> list[dict[str, Any]]:
     """Return every upstream model that declares an output modality.
 
-    Both slices this script compares against — text and image — come from the
-    one request; :func:`belongs_to` splits them. Raises on any fetch failure.
+    One call per ``Catalog.source`` URL; within a listing,
+    :func:`belongs_to` splits the text and image slices. Raises on any fetch
+    failure.
     """
     request = urllib.request.Request(  # noqa: S310 - constant https URL
         url, headers={"User-Agent": "roomkit-check-models"}
@@ -501,12 +536,18 @@ def check_catalog(catalog: Catalog, upstream: list[dict[str, Any]]) -> Findings:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--url", default=UPSTREAM_URL, help="upstream models endpoint")
+    parser.add_argument(
+        "--images-url", default=IMAGES_UPSTREAM_URL, help="upstream image models endpoint"
+    )
     args = parser.parse_args()
 
+    urls = {"models": args.url, "images": args.images_url}
+    upstream_by_source: dict[str, list[dict[str, Any]]] = {}
     try:
-        upstream = fetch_upstream(args.url)
+        for source in sorted({c.source for c in CATALOGS}):
+            upstream_by_source[source] = fetch_upstream(urls[source])
     except (urllib.error.URLError, TimeoutError, ValueError, json.JSONDecodeError) as exc:
-        print(f"could not reach {args.url}: {exc}", file=sys.stderr)
+        print(f"could not reach upstream: {exc}", file=sys.stderr)
         print("model catalogs NOT verified", file=sys.stderr)
         return 2
 
@@ -514,7 +555,7 @@ def main() -> int:
     warnings: list[str] = []
     expected = 0
     for catalog in CATALOGS:
-        found = check_catalog(catalog, upstream)
+        found = check_catalog(catalog, upstream_by_source[catalog.source])
         errors.extend(found.errors)
         warnings.extend(found.gone)
         expected += found.expected
@@ -539,9 +580,10 @@ def main() -> int:
     unmirrored = (
         f", {len(UNMIRRORED_CATALOGS)} catalog(s) with no mirror" if UNMIRRORED_CATALOGS else ""
     )
+    fetched = sum(len(models) for models in upstream_by_source.values())
     print(
         f"{len(CATALOGS)} model catalogs match upstream "
-        f"({len(upstream)} models fetched{noted}{unmirrored})."
+        f"({fetched} models fetched{noted}{unmirrored})."
     )
     return 0
 
