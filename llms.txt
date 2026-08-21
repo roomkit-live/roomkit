@@ -1,6 +1,6 @@
 # RoomKit
 
-> Minimum version: 0.55.0 | Python 3.12+
+> Minimum version: 0.58.0 | Python 3.12+
 
 > Full documentation: [llms-full.txt](llms-full.txt)
 
@@ -65,6 +65,7 @@ with distributed implementations (Redis, PostgreSQL, etc.) for production deploy
 - [Messenger Providers](docs/api/providers-messenger.md): MessengerProvider ABC, FacebookMessengerProvider
 - [Teams Providers](docs/api/providers-teams.md): TeamsProvider ABC, BotFrameworkTeamsProvider, ConversationReferenceStore, parse_teams_activity, is_bot_added - Bot Framework SDK integration with proactive messaging, bot mention detection, lifecycle events
 - [Voice Providers](docs/api/providers-voice.md): VoiceBackend, STTProvider (Deepgram), TTSProvider (ElevenLabs), FastRTCVoiceBackend
+- [Image Providers](docs/api/providers-image.md): ImageProvider ABC, ImageResult (always a data URI), OpenAIImageProvider, GeminiImageProvider, XAIImageProvider (Grok Imagine), OpenRouterImageProvider (OpenRouter Image API), AzureImageProvider, MockImageProvider - decoupled image generation and editing, disjoint model catalogs (RFC §25)
 - [Realtime Voice Providers](docs/api/providers-realtime-voice.md): GeminiLiveProvider (speech-to-speech via Gemini Live API), OpenAIRealtimeProvider (speech-to-speech via OpenAI Realtime API), WebSocketRealtimeTransport (browser audio via WebSocket), FastRTCRealtimeTransport (browser audio via WebRTC)
 - [WhatsApp Providers](docs/api/providers-whatsapp.md): WhatsAppProvider (Business API), WhatsAppPersonalProvider (neonize - unofficial multidevice protocol with typing indicators, read receipts, media handling)
 

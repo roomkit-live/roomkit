@@ -23,6 +23,7 @@ PAGES = [
     "ai-channels.md",
     "ollama-provider.md",
     "acp.md",
+    "image-generation.md",
     "voice-channels.md",
     "voice-pipeline.md",
     "realtime-voice.md",
