@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **RoomKit talks to a LiteLLM proxy as a first-class provider.**
+  `LiteLLMAIProvider` / `LiteLLMConfig` (`pip install roomkit[litellm]`) point
+  roomkit at a self-hosted LiteLLM gateway — virtual keys, per-key budgets and
+  routing stay on the gateway, and the wire is the OpenAI Chat Completions API
+  the provider already speaks, so the extra installs the `openai` SDK and
+  deliberately not the `litellm` package (roomkit is a provider abstraction
+  already; running LiteLLM's in-process one underneath it would trade the
+  native providers' fidelity for a second normalisation layer). What the
+  subclass exists for is what a gateway makes deployment-specific:
+  `available_models()` is empty because the model list is the operator's
+  config, and `list_models()` reads the proxy's `/model/info` instead — public
+  alias, context window, vision support and per-token costs from the
+  deployment's own cost map, so history trimming and budget dashboards work
+  against the gateway's real numbers, with load-balanced deployments collapsed
+  to one model. Reasoning rides LiteLLM's cross-provider normalisation: a
+  configured or per-turn `reasoning_effort` passes through, `thinking_budget >
+  0` maps to a `thinking` token budget, `0` disables explicitly via
+  `reasoning_effort="none"`, and the streamed trace lands in
+  `reasoning_content` — the field the inherited reader already surfaces.
+  Runnable end-to-end without an upstream key: `examples/litellm_ai.py`
+  includes a mock-response proxy config.
+
 ## [0.58.0] — 2026-08-21
 
 ### Fixed

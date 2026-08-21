@@ -38,6 +38,7 @@ await kit.attach_channel("support", "ai-assistant", category=ChannelCategory.INT
 | Mistral | `MistralAIProvider` | `MistralConfig` | `roomkit[mistral]` |
 | Azure OpenAI | `AzureAIProvider` | `AzureAIConfig` | `roomkit[azure]` |
 | OpenRouter (300+ models) | `OpenRouterAIProvider` | `OpenRouterConfig` | `roomkit[openrouter]` |
+| LiteLLM proxy (self-hosted gateway) | `LiteLLMAIProvider` | `LiteLLMConfig` | `roomkit[litellm]` |
 | xAI (Grok) | `XAIAIProvider` | `XAIConfig` | `roomkit[xai]` |
 | PolarGrid (Canadian-hosted) | `PolarGridAIProvider` | `PolarGridConfig` | `roomkit[polargrid]` |
 | vLLM (local) | `create_vllm_provider()` | `VLLMConfig` | `roomkit[vllm]` |
@@ -56,6 +57,7 @@ Provider notes:
 
 - **Gemini on Vertex AI** (`roomkit.providers.gemini.vertex`) — subclass of `GeminiAIProvider` serving the same Gemini models through a Google Cloud project with a pinned region (`GeminiVertexConfig` requires `project` and `location`, e.g. `"northamerica-northeast1"`; no API key — the identity is `impersonate_service_account`, else `service_account_json`, else ADC). Use it when data residency matters (Québec Law 25 / PIPEDA). Generation, streaming, thinking, and the model catalog are inherited unchanged.
 - **OpenRouter** (`roomkit.providers.openrouter`) — subclass of `OpenAIAIProvider` pointed at `https://openrouter.ai/api/v1`; `OpenRouterConfig` subclasses `OpenAIConfig` (adds `site_url`/`app_name` attribution headers) and `model` is a required slug like `"anthropic/claude-sonnet-4.5"`. Reasoning is forwarded to any upstream model via OpenRouter's unified `reasoning` object. Model-listing nuance: OpenRouter's `/models` items omit the `object`/`owned_by` fields the OpenAI SDK expects, so `list_models()` reads the raw JSON instead.
+- **LiteLLM proxy** (`roomkit.providers.litellm`) — subclass of `OpenAIAIProvider` pointed at a self-hosted LiteLLM gateway (default `http://localhost:4000`); the extra installs the `openai` SDK, deliberately **not** the `litellm` package (the gateway keeps keys/budgets/routing server-side). `model` is the deployment's public alias and `api_key` a virtual or master key, both required. Reasoning rides LiteLLM's cross-provider normalisation: `reasoning_effort` passes through (`"none"` when `thinking_budget=0`), `thinking_budget>0` maps to a `thinking` token budget, and the trace comes back in `reasoning_content`. `available_models()` is empty (the model list is the operator's config); `list_models()` reads the proxy's `/model/info` — context window, vision flag, and per-token costs per alias, with load-balanced deployments collapsed and LiteLLM's `0`-for-unknown costs mapped to "unpriced" rather than free.
 - **xAI (Grok)** (`roomkit.providers.xai`) — subclass of `OpenAIAIProvider` pointed at `https://api.x.ai/v1`; defaults to `max_completion_tokens` and stream usage. `XAIRealtimeProvider` (Grok speech-to-speech) is a separate import from `roomkit.providers.xai.realtime`.
 - **PolarGrid** (`roomkit.providers.polargrid`) — Canadian-hosted inference network (edges in Toronto, Vancouver, Montréal) via the official `polargrid-sdk` async client; OpenAI-shaped chat-completions surface. Supports tool calling, thinking (`PolarGridConfig(thinking=True)` sets the `enable_thinking` request flag; reasoning is surfaced as `AIResponse.thinking` / `StreamThinkingDelta`), and vision (`image_url` content parts). Pin `region` in production when residency matters.
 
@@ -549,7 +551,7 @@ ai = AIChannel(
 )
 ```
 
-Per-provider mechanisms: Anthropic uses `thinking_budget` as above; OpenAI-family providers (OpenAI, Azure, OpenRouter, xAI) use the `reasoning_effort` config field — OpenRouter translates it into its unified `reasoning` object for any upstream model; Gemini (and Vertex) use `GeminiConfig.thinking_level`; Ollama exposes the native `think` parameter (see `docs/c7/ollama-provider.md`); PolarGrid uses `PolarGridConfig(thinking=True)` (the `enable_thinking` flag, surfaced as `AIResponse.thinking` / `StreamThinkingDelta`).
+Per-provider mechanisms: Anthropic uses `thinking_budget` as above; OpenAI-family providers (OpenAI, Azure, OpenRouter, LiteLLM, xAI) use the `reasoning_effort` config field — OpenRouter translates it into its unified `reasoning` object for any upstream model, and a LiteLLM gateway normalises it (plus an explicit `thinking` budget when `thinking_budget>0`) for every upstream it fronts; Gemini (and Vertex) use `GeminiConfig.thinking_level`; Ollama exposes the native `think` parameter (see `docs/c7/ollama-provider.md`); PolarGrid uses `PolarGridConfig(thinking=True)` (the `enable_thinking` flag, surfaced as `AIResponse.thinking` / `StreamThinkingDelta`).
 
 `thinking_budget`, `enable_thinking` and `reasoning_effort` all ride the
 per-turn chain described under *Per-Turn Configuration*, so reasoning is
@@ -625,7 +627,7 @@ await kit.process_inbound(
 # AI sees the image and responds with analysis
 ```
 
-OpenAI-family providers (OpenAI, Azure, OpenRouter, xAI) and PolarGrid send images as OpenAI-shaped `image_url` content parts (remote URL or `data:` URI); PolarGrid and xAI gate this on the model's `supports_vision` from their curated catalogs — whether the model actually reads the image is the deployed model's capability.
+OpenAI-family providers (OpenAI, Azure, OpenRouter, LiteLLM, xAI) and PolarGrid send images as OpenAI-shaped `image_url` content parts (remote URL or `data:` URI); PolarGrid and xAI gate this on the model's `supports_vision` from their curated catalogs — whether the model actually reads the image is the deployed model's capability.
 
 ## Agentic Features
 

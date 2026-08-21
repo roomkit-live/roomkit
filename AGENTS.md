@@ -98,6 +98,7 @@ src/roomkit/
 │   ├── mistral/             # MistralAIProvider, MistralConfig
 │   ├── vllm/                # VLLMConfig, create_vllm_provider (local AI)
 │   ├── openrouter/          # OpenRouterAIProvider, OpenRouterConfig (300+ models)
+│   ├── litellm/             # LiteLLMAIProvider, LiteLLMConfig (self-hosted gateway)
 │   ├── xai/                 # XAIAIProvider, XAIConfig (Grok) + XAIRealtimeProvider (voice)
 │   ├── deepseek/            # DeepSeekAIProvider, DeepSeekConfig (nested thinking object)
 │   ├── qwen/                # QwenAIProvider, QwenConfig (Alibaba Model Studio)

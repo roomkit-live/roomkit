@@ -38,6 +38,9 @@ openai = ["openai>=2.28,<3"]
 azure = ["openai>=2.28,<3"]
 vllm = ["openai>=2.28,<3"]
 openrouter = ["openai>=2.28,<3"]
+# The extra equips roomkit to talk *to* a LiteLLM proxy (an OpenAI-compatible
+# gateway); it intentionally does not install the `litellm` package itself.
+litellm = ["openai>=2.28,<3"]
 xai = ["openai>=2.28,<3"]
 deepseek = ["openai>=2.28,<3"]
 # Named `qwen-ai` rather than `qwen`: the Qwen *voice* extras below install
@@ -127,6 +130,7 @@ providers = [
     "roomkit[openai]",
     "roomkit[vllm]",
     "roomkit[openrouter]",
+    "roomkit[litellm]",
     "roomkit[xai]",
     "roomkit[deepseek]",
     "roomkit[qwen-ai]",
