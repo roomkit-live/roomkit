@@ -123,6 +123,15 @@ CATALOGS: list[Catalog] = [
         "openrouter", "roomkit.providers.openrouter.models", "", prefixed=True, track_new=False
     ),
     Catalog("gemini-image", "roomkit.providers.gemini.image_models", "google/", modality="image"),
+    # Ids only: the per-token rates in this catalog come from OpenAI's own
+    # pricing page, which the images listing does not quote.
+    Catalog(
+        "openai-image",
+        "roomkit.providers.openai.image_models",
+        "openai/",
+        modality="image",
+        source="images",
+    ),
     Catalog(
         "xai-image",
         "roomkit.providers.xai.image_models",
@@ -147,11 +156,6 @@ CATALOGS: list[Catalog] = [
 # a catalog nobody checks is the one that goes stale, and silence about it
 # reads as coverage. Each entry is a claim that someone looked for a mirror.
 UNMIRRORED_CATALOGS: dict[str, str] = {
-    "openai-image": (
-        "the mirror republishes chat models; OpenAI's gpt-image-* live on the images "
-        "endpoint and are absent from it (checked 2026-08-07). Rates come from OpenAI's "
-        "own pricing page and are only as fresh as the `verified` date they carry."
-    ),
     "openai-realtime": (
         "the mirror routes chat completions; the gpt-realtime-* lineup lives on the "
         "Realtime WebSocket API and is absent from it — its gpt-audio/gpt-audio-mini "
@@ -184,6 +188,12 @@ MIRROR_ONLY: dict[str, str] = {
         "not a separate -high model id (official model page, 2026-08-05)"
     ),
     "openai/gpt-5.6-sol-pro": "no -pro id in OpenAI's 5.6 tier (pricing page, 2026-08-05)",
+    # The images mirror sells OpenAI's lineup under product slugs of its own;
+    # none of these is an id the OpenAI API answers to (SDK 2.54.0 ImageModel
+    # literal, checked 2026-08-21).
+    "openai/gpt-5-image": "mirror-side slug; not an OpenAI API image model id",
+    "openai/gpt-5-image-mini": "mirror-side slug; not an OpenAI API image model id",
+    "openai/gpt-5.4-image-2": "mirror-side slug; not an OpenAI API image model id",
     "openai/gpt-5.6-terra-pro": "no -pro id in OpenAI's 5.6 tier (pricing page, 2026-08-05)",
     "openai/gpt-5.6-luna-pro": "no -pro id in OpenAI's 5.6 tier (pricing page, 2026-08-05)",
 }
@@ -206,6 +216,9 @@ DELIBERATE: dict[str, str] = {
     # ids, so absence from the mirror says nothing (docs.x.ai models page,
     # 2026-08-21).
     "grok-imagine-image": "hosted by xAI; the images mirror routes only its siblings",
+    # OpenAI sells it (SDK ImageModel literal, 2026-08-21); the images mirror
+    # routes the rest of the gpt-image lineup but not this id.
+    "gpt-image-1.5": "hosted by OpenAI; the images mirror does not route it",
     # xAI's dated variant ids; the mirror republishes only the undated forms.
     "grok-4.20-0309-reasoning": "mirror carries the undated grok-4.20 alias instead",
     "grok-4.20-0309-non-reasoning": "mirror carries the undated grok-4.20 alias instead",
