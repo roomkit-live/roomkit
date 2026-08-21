@@ -142,6 +142,11 @@ class TestHistoryBudget:
     def test_margin_only_when_nothing_is_declared(self) -> None:
         assert history_budget(max_context_tokens=1000, safety_margin_ratio=0.15) == 850
 
+    def test_margin_defaults_to_the_published_fifteen_percent(self) -> None:
+        # Public signature since 0.57.0 — requiring the ratio would TypeError
+        # every caller that relied on the default.
+        assert history_budget(max_context_tokens=1000) == 850
+
     def test_reserved_and_messages_are_both_subtracted(self) -> None:
         block = AIMessage(role="user", content="x" * 400)
         expected = 850 - 100 - estimate_message_tokens(block)

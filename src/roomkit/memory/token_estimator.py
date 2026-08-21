@@ -89,7 +89,7 @@ def estimate_context_tokens(context: AIContext) -> int:
 def history_budget(
     *,
     max_context_tokens: int,
-    safety_margin_ratio: float,
+    safety_margin_ratio: float = 0.15,
     reserved_tokens: int = 0,
     messages: list[AIMessage] | None = None,
 ) -> int:
@@ -104,7 +104,10 @@ def history_budget(
     So the arithmetic is explicit here, in one place:
 
     - ``max_context_tokens * (1 - safety_margin_ratio)`` is what the *whole*
-      prompt may occupy; the margin is headroom for the model's reply.
+      prompt may occupy; the margin is headroom for the model's reply. The
+      default duplicates the ``0.15`` the provider constructors declare, and
+      stays anyway: it shipped in the public signature (0.57.0), so dropping
+      it is an API break, not a cleanup.
     - ``reserved_tokens`` is the non-history part the caller knows about and the
       trimmer cannot see — system prompt and tool schemas. 0 declares "nothing
       besides what is passed here occupies the window".
