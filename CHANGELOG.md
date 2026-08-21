@@ -7,35 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-
-- **RoomKit talks to a LiteLLM proxy as a first-class provider.**
-  `LiteLLMAIProvider` / `LiteLLMConfig` (`pip install roomkit[litellm]`) point
-  roomkit at a self-hosted LiteLLM gateway — virtual keys, per-key budgets and
-  routing stay on the gateway, and the wire is the OpenAI Chat Completions API
-  the provider already speaks, so the extra installs the `openai` SDK and
-  deliberately not the `litellm` package (roomkit is a provider abstraction
-  already; running LiteLLM's in-process one underneath it would trade the
-  native providers' fidelity for a second normalisation layer). What the
-  subclass exists for is what a gateway makes deployment-specific:
-  `available_models()` is empty because the model list is the operator's
-  config, and `list_models()` reads the proxy's `/model/info` instead — public
-  alias, context window, vision support and per-token costs from the
-  deployment's own cost map, so history trimming and budget dashboards work
-  against the gateway's real numbers, with load-balanced deployments collapsed
-  to one model. Reasoning rides LiteLLM's cross-provider normalisation: a
-  configured or per-turn `reasoning_effort` passes through, `thinking_budget >
-  0` maps to a `thinking` token budget, and the streamed trace lands in
-  `reasoning_content` — the field the inherited reader already surfaces. `0`
-  sends no reasoning parameters at all: LiteLLM has no disable token that
-  survives every translator (live against 1.79.0, its Gemini mapper 500s on
-  `"none"` and its Anthropic mapper rejects `"none"` and `"disable"` alike),
-  so omission is the one portable spelling and forcing thinking off for an
-  alias belongs where the upstream is known — the proxy's per-model config,
-  or `extra_body`.
-  Runnable end-to-end without an upstream key: `examples/litellm_ai.py`
-  includes a mock-response proxy config.
-
 ## [0.58.0] — 2026-08-21
 
 ### Fixed
@@ -59,14 +30,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   wrappers now own the recovery — compact and replay a refused generation,
   once per call, before the retry budget or the fallback provider see the
   oversized request — and the no-tools path goes through them like everything
-  else. One guard rules every recovery, enforced where it cannot be
-  forgotten: a stream that has yielded anything is never re-entered — by
+  else. A refusal that survives its compacted replay falls through to the
+  ordinary retry semantics, so an error that only sounded like an overflow
+  keeps its budget. One guard rules every recovery, enforced where it cannot
+  be forgotten: a stream that has yielded anything is never re-entered — by
   retry, compaction or fallback — because the consumer already got the events
   and a replay would duplicate the answer in the room and in the persisted
   message.
 
 ### Added
 
+- **RoomKit talks to a LiteLLM proxy as a first-class provider.**
+  `LiteLLMAIProvider` / `LiteLLMConfig` (`pip install roomkit[litellm]`) point
+  roomkit at a self-hosted LiteLLM gateway — virtual keys, per-key budgets and
+  routing stay on the gateway, and the wire is the OpenAI Chat Completions API
+  the provider already speaks, so the extra installs the `openai` SDK and
+  deliberately not the `litellm` package (roomkit is a provider abstraction
+  already; running LiteLLM's in-process one underneath it would trade the
+  native providers' fidelity for a second normalisation layer). What the
+  subclass exists for is what a gateway makes deployment-specific:
+  `available_models()` is empty because the model list is the operator's
+  config, and `list_models()` reads the proxy's `/model/info` instead — public
+  alias, context window, vision support and per-token costs from the
+  deployment's own cost map, so history trimming and budget dashboards work
+  against the gateway's real numbers, with a load-balanced group folded into
+  the one entry every deployment can honour — smallest window, vision and
+  price only when unanimous. Reasoning rides LiteLLM's cross-provider
+  normalisation: a configured or per-turn `reasoning_effort` passes through,
+  `thinking_budget > 0` maps to a `thinking` token budget, and the streamed
+  trace lands in `reasoning_content` — the field the inherited reader already
+  surfaces. `0` sends no reasoning parameters at all: LiteLLM has no disable
+  token that survives every translator (live against 1.79.0, its Gemini
+  mapper 500s on `"none"` and its Anthropic mapper rejects `"none"` and
+  `"disable"` alike), so omission is the one portable spelling and forcing
+  thinking off for an alias belongs where the upstream is known — the proxy's
+  per-model config, or `extra_body`.
+  Runnable end-to-end without an upstream key: `examples/litellm_ai.py`
+  includes a mock-response proxy config.
 - **Three more vendors draw: xAI, OpenRouter, and Azure OpenAI.**
   `XAIImageProvider` speaks Grok Imagine's images API — generation through the
   OpenAI-compatible endpoint, editing as JSON on `/images/edits` (the SDK's
@@ -74,8 +74,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `"WIDTHxHEIGHT"` translated to xAI's aspect-ratio-and-tier form.
   `OpenRouterImageProvider` speaks OpenRouter's own Image API
   (`POST /api/v1/images`) and so reaches its whole aggregated lineup —
-  Seedream, FLUX, Recraft and the rest — fanning `n` out as concurrent
-  single-image requests because per-model batch caps vary, and surfacing the
+  Seedream, FLUX, Recraft and the rest — fanning `n` (capped at 10, the
+  lineup's largest batch, since every unit is a concurrent billed request) out
+  as single-image requests because per-model batch caps vary, and surfacing the
   billed amount OpenRouter reports on every call as
   `ImageResult.usage["cost"]`. `AzureImageProvider` subclasses the OpenAI
   provider the way the chat pair does: same `gpt-image-*` lineup behind a
@@ -89,23 +90,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   xAI and OpenRouter may both answer with base64 and no media type; labelling
   a JPEG `image/png` because a fallback said so would be repeated by every
   consumer of the result's data URI.
-- **`ProviderError.context_overflow`, a typed overflow fact.** Detection by
-  English phrase list breaks as soon as an envelope rewraps the provider's
-  prose (a wrapper that classifies failures structurally reports its own
-  message). A producer that knows the failure is an overflow — by measurement
-  or by error code — now states it on the exception, and the OpenAI-compatible
-  provider family sets it first-hand from the error body's
-  `context_length_exceeded` code. The phrase fallback for raw provider prose
-  is one shared list, `is_context_overflow_message` in `providers.ai.base`,
-  importable by hosts so a consumer's copy cannot drift from it.
-
-### Changed
-
-- **`history_budget` requires `safety_margin_ratio` explicitly.** The default it
-  carried was a third copy of `0.15`, never used by its only caller, and the
-  helper is not the authority for a margin two provider constructors already
-  declare. `BudgetAwareMemory` also drops its hand-rolled event costing for the
-  module's own `estimate_event_tokens`, which is the same formula.
+- **`ProviderError.context_overflow`, a tri-state typed overflow fact.**
+  Detection by English phrase list breaks as soon as an envelope rewraps the
+  provider's prose (a wrapper that classifies failures structurally reports
+  its own message) — and prose must not override an explicit answer either:
+  OpenAI words a tokens-per-minute rate limit "Request too large", and a
+  phrase list with the last word would spend that 429's whole retry budget on
+  a pointless compaction. A producer that classified — by measurement or by
+  error code — states `True` or `False` and is believed in both directions;
+  `None` means nobody classified and the shared phrase list decides
+  (`is_context_overflow_message`, exported from `roomkit.providers.ai` so a
+  host's copy cannot drift from it). The OpenAI-compatible family sets the
+  fact first-hand from the error body's `context_length_exceeded` code.
 
 ## [0.57.0] — 2026-08-20
 
