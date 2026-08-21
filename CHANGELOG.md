@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **`history_budget` requires `safety_margin_ratio` explicitly.** The default it
+  carried was a third copy of `0.15`, never used by its only caller, and the
+  helper is not the authority for a margin two provider constructors already
+  declare. `BudgetAwareMemory` also drops its hand-rolled event costing for the
+  module's own `estimate_event_tokens`, which is the same formula.
+
 ## [0.57.0] — 2026-08-20
 
 ### Fixed

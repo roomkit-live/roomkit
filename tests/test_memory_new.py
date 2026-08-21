@@ -140,18 +140,26 @@ class TestEstimateContextTokens:
 
 class TestHistoryBudget:
     def test_margin_only_when_nothing_is_declared(self) -> None:
-        assert history_budget(max_context_tokens=1000) == 850
+        assert history_budget(max_context_tokens=1000, safety_margin_ratio=0.15) == 850
 
     def test_reserved_and_messages_are_both_subtracted(self) -> None:
         block = AIMessage(role="user", content="x" * 400)
         expected = 850 - 100 - estimate_message_tokens(block)
         assert (
-            history_budget(max_context_tokens=1000, reserved_tokens=100, messages=[block])
+            history_budget(
+                max_context_tokens=1000,
+                safety_margin_ratio=0.15,
+                reserved_tokens=100,
+                messages=[block],
+            )
             == expected
         )
 
     def test_never_negative(self) -> None:
-        assert history_budget(max_context_tokens=1000, reserved_tokens=5000) == 0
+        assert (
+            history_budget(max_context_tokens=1000, safety_margin_ratio=0.15, reserved_tokens=5000)
+            == 0
+        )
 
 
 class TestBudgetAwareMemory:

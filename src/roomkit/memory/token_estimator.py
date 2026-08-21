@@ -89,9 +89,9 @@ def estimate_context_tokens(context: AIContext) -> int:
 def history_budget(
     *,
     max_context_tokens: int,
+    safety_margin_ratio: float,
     reserved_tokens: int = 0,
     messages: list[AIMessage] | None = None,
-    safety_margin_ratio: float = 0.15,
 ) -> int:
     """Tokens the conversation history may occupy, once the rest of the prompt is paid for.
 
@@ -106,8 +106,8 @@ def history_budget(
     - ``max_context_tokens * (1 - safety_margin_ratio)`` is what the *whole*
       prompt may occupy; the margin is headroom for the model's reply.
     - ``reserved_tokens`` is the non-history part the caller knows about and the
-      trimmer cannot see — system prompt and tool schemas. Callers that don't
-      know pass 0 and get the previous behaviour.
+      trimmer cannot see — system prompt and tool schemas. 0 declares "nothing
+      besides what is passed here occupies the window".
     - ``messages`` are the injected blocks the trimmer passes through untouched.
       They are not trimmable, so they are subtracted rather than cut.
 

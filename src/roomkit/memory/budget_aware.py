@@ -5,9 +5,9 @@ from __future__ import annotations
 import logging
 
 from roomkit.memory.base import MemoryProvider, MemoryResult
-from roomkit.memory.token_estimator import estimate_tokens, history_budget
+from roomkit.memory.token_estimator import estimate_event_tokens, history_budget
 from roomkit.models.context import RoomContext
-from roomkit.models.event import RoomEvent, TextContent
+from roomkit.models.event import RoomEvent
 
 logger = logging.getLogger("roomkit.memory.budget_aware")
 
@@ -76,11 +76,7 @@ class BudgetAwareMemory(MemoryProvider):
         if not events:
             return events
 
-        # Estimate tokens per event
-        event_costs = []
-        for e in events:
-            text = e.content.body if isinstance(e.content, TextContent) else str(e.content)
-            event_costs.append(estimate_tokens(text))
+        event_costs = [estimate_event_tokens(e) for e in events]
 
         # Keep from most recent, working backward
         total = 0
