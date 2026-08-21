@@ -115,8 +115,20 @@ async def test_n_fans_out_into_n_billed_requests() -> None:
 
 async def test_generate_rejects_n_below_one() -> None:
     provider = _provider()
-    with pytest.raises(ValueError, match="at least 1"):
+    with pytest.raises(ValueError, match="between 1 and 10"):
         await provider.generate("a fox", n=0)
+
+
+async def test_generate_rejects_n_above_the_batch_cap() -> None:
+    """Every unit of ``n`` is an immediately spawned billed request, so the
+    fan-out is refused past the lineup's largest batch cap — before the first
+    call is made, not after ten of eleven succeeded."""
+    provider = _provider()
+    post = _respond(provider, _payload())
+
+    with pytest.raises(ValueError, match="between 1 and 10"):
+        await provider.generate("a fox", n=11)
+    post.assert_not_awaited()
 
 
 async def test_more_than_one_image_per_request_is_an_error() -> None:

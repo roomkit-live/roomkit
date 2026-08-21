@@ -6,7 +6,10 @@ the same request as ``input_references``, geometry may be pixels or a tier,
 and the response states the amount billed. One request yields one model's
 answer, so ``n`` images are ``n`` concurrent requests: per-model batch caps
 vary from 1 to 10 across the aggregated lineup, and concurrent singles are the
-one form every routed model accepts.
+one form every routed model accepts. ``n`` is capped at 10 — the lineup's
+largest batch — because every unit past validation becomes an immediately
+spawned, billed call, and an unchecked caller-supplied number would turn into
+unbounded concurrency and spend.
 """
 
 from __future__ import annotations
@@ -95,8 +98,8 @@ class OpenRouterImageProvider(ImageProvider):
         n: int = 1,
         reference_images: list[AIImagePart] | None = None,
     ) -> list[ImageResult]:
-        if n < 1:
-            raise ValueError(f"n must be at least 1, got {n}")
+        if not 1 <= n <= 10:
+            raise ValueError(f"n must be between 1 and 10, got {n}")
         body = self._build_body(prompt, size, reference_images or [])
         # A task group rather than ``gather``: when one request fails the
         # siblings are cancelled instead of running to completion for a result
