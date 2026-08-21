@@ -37,9 +37,6 @@ class LiteLLMAIProvider(OpenAIAIProvider):
     _config: LiteLLMConfig
     _install_extra: ClassVar[str] = "litellm"
 
-    def __init__(self, config: LiteLLMConfig) -> None:
-        super().__init__(config)
-
     @property
     def _provider_name(self) -> str:
         """Provider identifier used in error messages and telemetry."""

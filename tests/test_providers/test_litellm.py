@@ -97,7 +97,6 @@ class TestLiteLLMConfig:
 
 
 class TestLiteLLMAIProvider:
-    @pytest.mark.asyncio
     async def test_generate_success(self) -> None:
         with patch.dict("sys.modules", {"openai": _mock_openai_module()}):
             from roomkit.providers.litellm.ai import LiteLLMAIProvider
@@ -120,7 +119,6 @@ class TestLiteLLMAIProvider:
             provider = LiteLLMAIProvider(_config())
             assert provider._provider_name == "litellm"
 
-    @pytest.mark.asyncio
     async def test_sdk_error_wrapped_with_litellm_provider(self) -> None:
         with patch.dict("sys.modules", {"openai": _mock_openai_module()}):
             from roomkit.providers.litellm.ai import LiteLLMAIProvider
@@ -244,7 +242,6 @@ class TestLiteLLMMetadata:
         )
         assert info.pricing is None
 
-    @pytest.mark.asyncio
     async def test_list_models_collapses_load_balanced_deployments(self) -> None:
         # /model/info lists one entry per deployment; a load-balanced group
         # repeats the public name and must surface as one model.
@@ -331,7 +328,6 @@ class TestLiteLLMReasoning:
         self._provider()._apply_sampling_kwargs(kwargs, _context(temperature=0.3))
         assert kwargs["temperature"] == 0.3
 
-    @pytest.mark.asyncio
     async def test_config_extra_body_merges_with_thinking(self) -> None:
         # A configured extra_body must not clobber the thinking object set in
         # _apply_sampling_kwargs — both ride the request together.
