@@ -254,7 +254,10 @@ class TestLiteLLMMetadata:
                     "model_name": "claude-sonnet",
                     "model_info": {"max_input_tokens": 200_000, "supports_vision": True},
                 },
-                {"model_name": "claude-sonnet", "model_info": {"max_input_tokens": 200_000}},
+                {
+                    "model_name": "claude-sonnet",
+                    "model_info": {"max_input_tokens": 200_000, "supports_vision": True},
+                },
                 {"model_name": "gpt-5.5", "model_info": {"max_input_tokens": 400_000}},
                 {"litellm_params": {"model": "entry-without-a-name"}},
             ]
@@ -265,6 +268,78 @@ class TestLiteLLMMetadata:
         assert models["claude-sonnet"].context_window == 200_000
         assert models["claude-sonnet"].supports_vision is True
         assert models["gpt-5.5"].context_window == 400_000
+
+    async def test_load_balanced_group_promises_only_what_every_deployment_delivers(self) -> None:
+        # The router may hand a request to any deployment in the group and the
+        # payload order is just routing config — so the merged entry must not
+        # change with a reshuffle: smallest window, vision only when unanimous,
+        # a price only when the deployments quote the same one.
+        from roomkit.providers.litellm.ai import LiteLLMAIProvider
+
+        provider = LiteLLMAIProvider.__new__(LiteLLMAIProvider)
+        provider._fetch_model_info = AsyncMock(  # type: ignore[method-assign]
+            return_value=[
+                {
+                    "model_name": "balanced",
+                    "model_info": {
+                        "max_input_tokens": 200_000,
+                        "supports_vision": True,
+                        "input_cost_per_token": 3e-06,
+                        "output_cost_per_token": 1.5e-05,
+                    },
+                },
+                {
+                    "model_name": "balanced",
+                    "model_info": {
+                        "max_input_tokens": 32_000,
+                        "supports_vision": False,
+                        "input_cost_per_token": 5e-07,
+                        "output_cost_per_token": 2.5e-06,
+                    },
+                },
+                {
+                    "model_name": "half-known",
+                    "model_info": {"max_input_tokens": 200_000, "supports_vision": True},
+                },
+                {"model_name": "half-known"},
+                {
+                    "model_name": "twins",
+                    "model_info": {
+                        "max_input_tokens": 128_000,
+                        "supports_vision": True,
+                        "input_cost_per_token": 3e-06,
+                        "output_cost_per_token": 1.5e-05,
+                    },
+                },
+                {
+                    "model_name": "twins",
+                    "model_info": {
+                        "max_input_tokens": 128_000,
+                        "supports_vision": True,
+                        "input_cost_per_token": 3e-06,
+                        "output_cost_per_token": 1.5e-05,
+                    },
+                },
+            ]
+        )
+
+        models = {m.id: m for m in await provider.list_models()}
+
+        balanced = models["balanced"]
+        assert balanced.context_window == 32_000
+        assert balanced.supports_vision is False
+        assert balanced.pricing is None
+
+        half_known = models["half-known"]
+        assert half_known.context_window is None
+        assert half_known.supports_vision is None
+        assert half_known.pricing is None
+
+        twins = models["twins"]
+        assert twins.context_window == 128_000
+        assert twins.supports_vision is True
+        assert twins.pricing is not None
+        assert twins.pricing.input_per_million == 3.0
 
 
 class TestLiteLLMReasoning:

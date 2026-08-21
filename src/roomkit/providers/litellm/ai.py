@@ -115,17 +115,57 @@ class LiteLLMAIProvider(OpenAIAIProvider):
         straight into :class:`ModelInfo`, so history trimming and budget
         dashboards work against the deployment's real numbers. A load-balanced
         model group lists one entry per deployment under the same public name;
-        they are collapsed to the first, which carries the group's metadata.
+        they are folded into one :class:`ModelInfo` that promises only what
+        every deployment delivers (see :meth:`_merge_deployments`).
         """
         data = await self._fetch_model_info()
         models: dict[str, ModelInfo] = {}
         for item in data:
             name = item.get("model_name")
-            if not isinstance(name, str) or name in models:
+            if not isinstance(name, str):
                 continue
             info = item.get("model_info")
-            models[name] = self._parse_model(name, info if isinstance(info, dict) else {})
+            parsed = self._parse_model(name, info if isinstance(info, dict) else {})
+            previous = models.get(name)
+            models[name] = (
+                parsed if previous is None else self._merge_deployments(previous, parsed)
+            )
         return list(models.values())
+
+    @staticmethod
+    def _merge_deployments(a: ModelInfo, b: ModelInfo) -> ModelInfo:
+        """Fold two deployments of one load-balanced alias into the group's promise.
+
+        The router may hand any request to any deployment, and ``/model/info``
+        does not say which — so the group's metadata is what every member can
+        honour. Payload order is routing config, not truth: keeping the first
+        entry made the window, vision flag and price flip with a reshuffle of
+        the proxy's ``config.yaml``.
+
+        The window is the smallest (the larger one overflows on the smaller
+        route; one unknown makes the group's unknown). Vision is ``False`` as
+        soon as one deployment says so — that route refuses images — ``True``
+        only when unanimous, otherwise unknown. Pricing survives only when the
+        deployments quote the same rates: a group billing differently per
+        route has no single honest price, and picking one would misprice every
+        request the router sends the other way.
+        """
+        if a.context_window is None or b.context_window is None:
+            window = None
+        else:
+            window = min(a.context_window, b.context_window)
+        if a.supports_vision is False or b.supports_vision is False:
+            vision: bool | None = False
+        elif a.supports_vision is None or b.supports_vision is None:
+            vision = None
+        else:
+            vision = True
+        return ModelInfo(
+            id=a.id,
+            context_window=window,
+            supports_vision=vision,
+            pricing=a.pricing if a.pricing == b.pricing else None,
+        )
 
     async def _fetch_model_info(self) -> list[dict[str, Any]]:
         """GET the raw ``/model/info`` payload and return its ``data`` array."""
