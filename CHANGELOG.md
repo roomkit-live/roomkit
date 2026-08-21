@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.58.0] — 2026-08-21
+
+### Fixed
+
+- **The OpenAI image provider no longer refuses sizes the vendor accepts.**
+  It validated requests against a fixed five-entry list, and the list went
+  stale: `gpt-image-2` takes near-arbitrary geometry — edges in multiples of
+  16 up to a 3840px long edge, ratios to 3:1 — and the SDK now types `size`
+  as an open string. A request like `3840x2160` was refused locally for no
+  vendor reason. The size is normalized and the vendor judges; a rejection
+  still raises rather than substituting another geometry. The Azure provider,
+  which existed to pass sizes through, simply inherits this now.
+- **Overflow recovery and replay safety moved into the retry wrappers, and
+  every generation path now has both.** Compaction only had a call site in
+  the non-streaming tool loop, and every streaming-capable provider routes to
+  the streaming one — so a context-window overflow that surfaced mid-turn
+  (tool results inflating the context long after memory was sized) killed the
+  turn instead of triggering the recovery built for exactly that case. Worse,
+  the no-tools streaming path called the provider directly: one attempt, no
+  fallback, whatever the channel's retry policy announced. Both retry
+  wrappers now own the recovery — compact and replay a refused generation,
+  once per call, before the retry budget or the fallback provider see the
+  oversized request — and the no-tools path goes through them like everything
+  else. One guard rules every recovery, enforced where it cannot be
+  forgotten: a stream that has yielded anything is never re-entered — by
+  retry, compaction or fallback — because the consumer already got the events
+  and a replay would duplicate the answer in the room and in the persisted
+  message.
+
 ### Added
 
 - **Three more vendors draw: xAI, OpenRouter, and Azure OpenAI.**
@@ -31,30 +60,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   xAI and OpenRouter may both answer with base64 and no media type; labelling
   a JPEG `image/png` because a fallback said so would be repeated by every
   consumer of the result's data URI.
-
-## [0.58.0] — 2026-08-21
-
-### Fixed
-
-- **The streaming tool loop now recovers from a context-window overflow.**
-  `_compact_context` only had a call site in the non-streaming loop, and every
-  streaming-capable provider routes to the streaming one — so an overflow that
-  surfaced mid-turn (tool results inflating the context long after memory was
-  sized) killed the turn instead of triggering the compaction built for exactly
-  that case. The streaming loop now compacts and replays the failed round, with
-  one guard: only a round that has not spoken is replayed — text and thinking
-  deltas already reached the consumer, and replaying them would duplicate the
-  answer in the room and in the persisted message.
-
-### Added
-
 - **`ProviderError.context_overflow`, a typed overflow fact.** Detection by
   English phrase list breaks as soon as an envelope rewraps the provider's
   prose (a wrapper that classifies failures structurally reports its own
-  message). An envelope that knows the failure is an overflow — by measurement
-  or by error code — now states it on the exception; `_is_context_overflow`
-  reads the flag first and keeps the phrase list as fallback for raw provider
-  errors.
+  message). A producer that knows the failure is an overflow — by measurement
+  or by error code — now states it on the exception, and the OpenAI-compatible
+  provider family sets it first-hand from the error body's
+  `context_length_exceeded` code. The phrase fallback for raw provider prose
+  is one shared list, `is_context_overflow_message` in `providers.ai.base`,
+  importable by hosts so a consumer's copy cannot drift from it.
 
 ### Changed
 

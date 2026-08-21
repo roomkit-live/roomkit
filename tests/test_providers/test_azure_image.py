@@ -1,10 +1,9 @@
 """Tests for the Azure OpenAI image provider (RFC §25).
 
 Offline: the ``openai`` module is replaced by a stub. Only what Azure changes
-over the OpenAI parent is tested here — the client, the provider name, the
-empty catalog, and pass-through size validation. Request building, editing,
-response mapping and usage accounting are the parent's, covered by
-``test_openai_image.py``.
+over the OpenAI parent is tested here — the client, the provider name, and the
+empty catalog. Request building, editing, response mapping and usage
+accounting are the parent's, covered by ``test_openai_image.py``.
 """
 
 from __future__ import annotations
@@ -88,7 +87,7 @@ async def test_generate_addresses_the_deployment() -> None:
     assert kwargs["model"] == "img-deploy"
 
 
-async def test_a_size_off_openais_list_passes_through_to_the_vendor() -> None:
+async def test_sizes_pass_through_normalized() -> None:
     """A deployment name hides which model's size list applies, so Azure judges."""
     provider, _ = _provider()
     provider._client.images.generate = AsyncMock(return_value=_response())

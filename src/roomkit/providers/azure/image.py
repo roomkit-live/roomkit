@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from roomkit.providers.ai.base import ModelInfo
 from roomkit.providers.azure.config import AzureImageConfig
-from roomkit.providers.image.base import parse_size
 from roomkit.providers.openai.image import OpenAIImageProvider
 
 
@@ -14,11 +13,9 @@ class AzureImageProvider(OpenAIImageProvider):
     Subclasses :class:`OpenAIImageProvider` the way the chat providers pair up
     — Azure serves the same ``gpt-image-*`` lineup through the same SDK, so
     request building, the generate/edit split, response mapping and usage
-    accounting are all inherited. Three things are genuinely Azure's: the
-    client (endpoint, key and API version instead of a bearer token), the
-    catalog (none — deployments are user-named), and size validation (passed
-    through to the vendor, because a deployment name does not say which
-    model's size list applies).
+    accounting are all inherited. Two things are genuinely Azure's: the
+    client (endpoint, key and API version instead of a bearer token), and the
+    catalog (none — deployments are user-named).
     """
 
     _config: AzureImageConfig
@@ -58,17 +55,3 @@ class AzureImageProvider(OpenAIImageProvider):
         deliberately not inherited either.
         """
         return []
-
-    @staticmethod
-    def _validated_size(size: str) -> str:
-        """Normalize a ``"WIDTHxHEIGHT"`` request and send it as-is.
-
-        The parent refuses sizes off OpenAI's published list so the error can
-        name the ones that work. Behind a deployment name that list is not
-        knowable offline — ``gpt-image-2`` deployments take near-arbitrary
-        geometries the ``gpt-image-1`` series refuses — so the size goes to
-        the vendor, whose rejection still raises rather than substituting
-        another geometry (RFC §25.2).
-        """
-        width, height = parse_size(size)
-        return f"{width}x{height}"

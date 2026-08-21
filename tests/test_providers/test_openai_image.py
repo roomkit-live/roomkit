@@ -104,12 +104,22 @@ async def test_generate_forwards_size_quality_and_format() -> None:
     assert result.mime_type == "image/webp"
 
 
-async def test_generate_refuses_a_size_openai_does_not_offer() -> None:
+async def test_a_size_off_the_classic_menu_goes_to_the_vendor() -> None:
+    """gpt-image-2 takes near-arbitrary geometry, so no local list can judge."""
     provider = _provider()
     provider._client.images.generate = AsyncMock(return_value=_response())
 
-    with pytest.raises(ValueError, match="not offered by the OpenAI images API"):
-        await provider.generate("a fox", size="3000x3000")
+    await provider.generate("a fox", size="3840X2160")
+
+    assert provider._client.images.generate.await_args.kwargs["size"] == "3840x2160"
+
+
+async def test_a_malformed_size_is_still_refused_locally() -> None:
+    provider = _provider()
+    provider._client.images.generate = AsyncMock(return_value=_response())
+
+    with pytest.raises(ValueError, match="WIDTHxHEIGHT"):
+        await provider.generate("a fox", size="huge")
     provider._client.images.generate.assert_not_awaited()
 
 

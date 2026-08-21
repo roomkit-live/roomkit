@@ -19,10 +19,6 @@ from roomkit.providers.image.base import (
 from roomkit.providers.openai.config import OpenAIImageConfig
 from roomkit.providers.openai.image_models import MODELS
 
-# Sizes OpenAI's image endpoints accept. Sent verbatim; anything else is
-# refused here rather than at the vendor, so the caller gets the list back.
-_SUPPORTED_SIZES = ("1024x1024", "1536x1024", "1024x1536", "256x256", "512x512")
-
 _EXTENSIONS = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"}
 
 
@@ -122,20 +118,18 @@ class OpenAIImageProvider(ImageProvider):
 
     @staticmethod
     def _validated_size(size: str) -> str:
-        """Normalize a ``"WIDTHxHEIGHT"`` request, refusing what OpenAI rejects.
+        """Normalize a ``"WIDTHxHEIGHT"`` request and send it as-is.
 
-        Refused here rather than at the vendor so the error names the sizes
-        that would have worked — and so a rejected size never becomes a
-        silently substituted one (RFC §25.2).
+        This used to refuse anything off a fixed list, and the list went
+        stale: ``gpt-image-2`` takes near-arbitrary geometry (edges in
+        multiples of 16, long edge up to 3840, ratio up to 3:1 — the SDK types
+        ``size`` as an open string) while the ``gpt-image-1`` series keeps a
+        fixed menu, so no one list is right across the lineup this provider
+        configures. The vendor judges instead; its rejection still raises
+        rather than substituting another geometry (RFC §25.2).
         """
         width, height = parse_size(size)
-        normalized = f"{width}x{height}"
-        if normalized not in _SUPPORTED_SIZES:
-            raise ValueError(
-                f"size {size!r} is not offered by the OpenAI images API; "
-                f"supported sizes are {', '.join(_SUPPORTED_SIZES)}"
-            )
-        return normalized
+        return f"{width}x{height}"
 
     @staticmethod
     def _as_upload(part: AIImagePart, index: int) -> tuple[str, bytes, str]:
