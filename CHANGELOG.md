@@ -25,9 +25,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   against the gateway's real numbers, with load-balanced deployments collapsed
   to one model. Reasoning rides LiteLLM's cross-provider normalisation: a
   configured or per-turn `reasoning_effort` passes through, `thinking_budget >
-  0` maps to a `thinking` token budget, `0` disables explicitly via
-  `reasoning_effort="none"`, and the streamed trace lands in
-  `reasoning_content` — the field the inherited reader already surfaces.
+  0` maps to a `thinking` token budget, and the streamed trace lands in
+  `reasoning_content` — the field the inherited reader already surfaces. `0`
+  sends no reasoning parameters at all: LiteLLM has no disable token that
+  survives every translator (live against 1.79.0, its Gemini mapper 500s on
+  `"none"` and its Anthropic mapper rejects `"none"` and `"disable"` alike),
+  so omission is the one portable spelling and forcing thinking off for an
+  alias belongs where the upstream is known — the proxy's per-model config,
+  or `extra_body`.
   Runnable end-to-end without an upstream key: `examples/litellm_ai.py`
   includes a mock-response proxy config.
 

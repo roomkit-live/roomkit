@@ -79,11 +79,20 @@ class LiteLLMAIProvider(OpenAIAIProvider):
         and accepts Anthropic's ``thinking`` object where an explicit token
         budget is wanted. ``thinking_budget`` gates per-turn (mirrors the
         OpenRouter provider): ``None`` passes the effort through, the turn's
-        own effort outranking the configured one; ``0`` disables reasoning
-        explicitly via LiteLLM's ``reasoning_effort="none"``; ``>0`` maps to a
+        own effort outranking the configured one; ``>0`` maps to a
         ``thinking`` budget, sent via the SDK's ``extra_body`` passthrough.
         Reasoning is omitted on tool turns, matching the parent — the gateway
         fronts the same upstreams that reject it alongside tools.
+
+        ``0`` sends no reasoning parameters at all. LiteLLM has no disable
+        token that survives every translator (verified live on 1.79.0: the
+        Gemini mapper rejects ``"none"`` with a 500, the Anthropic mapper
+        rejects both ``"none"`` and ``"disable"``), so an explicit off would
+        break on some routes while working on others. Omission is the one
+        portable spelling — the routed model's own default applies. A
+        deployment that must force thinking off for an alias states it where
+        the upstream is known: per-model in the proxy's ``config.yaml``, or
+        via ``extra_body`` here with the token its translator accepts.
         """
         if context.temperature is not None and self._config.supports_custom_temperature:
             kwargs["temperature"] = context.temperature
@@ -94,9 +103,7 @@ class LiteLLMAIProvider(OpenAIAIProvider):
             effort = context.reasoning_effort or self._config.reasoning_effort
             if effort is not None:
                 kwargs["reasoning_effort"] = effort
-        elif budget <= 0:
-            kwargs["reasoning_effort"] = "none"
-        else:
+        elif budget > 0:
             kwargs.setdefault("extra_body", {})["thinking"] = {
                 "type": "enabled",
                 "budget_tokens": budget,

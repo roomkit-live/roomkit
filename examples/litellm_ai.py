@@ -94,8 +94,8 @@ async def main(args: argparse.Namespace) -> None:
         provider=provider,
         system_prompt="You are a helpful assistant. Think step by step, then answer concisely.",
         # >0 requests reasoning through LiteLLM's normalised thinking budget;
-        # 0 turns it off (reasoning_effort="none"). Works on any
-        # reasoning-capable route the gateway fronts.
+        # 0 sends no reasoning params (the routed model's default applies —
+        # LiteLLM has no disable token every upstream translator accepts).
         thinking_budget=0 if args.no_think else 4096,
     )
 

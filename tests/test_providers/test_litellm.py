@@ -298,12 +298,17 @@ class TestLiteLLMReasoning:
         assert kwargs["extra_body"]["thinking"] == {"type": "enabled", "budget_tokens": 4096}
         assert "reasoning_effort" not in kwargs
 
-    def test_zero_budget_disables_reasoning(self) -> None:
+    def test_zero_budget_sends_no_reasoning_params(self) -> None:
+        # LiteLLM has no disable token every translator accepts (Gemini
+        # rejects "none", Anthropic rejects "none" and "disable" — seen live
+        # on 1.79.0 as 500s), so 0 must send nothing rather than a spelling
+        # that breaks on some routes. The configured effort must not leak
+        # through either.
         kwargs: dict[str, Any] = {}
         self._provider(reasoning_effort="high")._apply_sampling_kwargs(
             kwargs, _context(thinking_budget=0)
         )
-        assert kwargs["reasoning_effort"] == "none"
+        assert "reasoning_effort" not in kwargs
         assert "extra_body" not in kwargs
 
     def test_omitted_when_no_effort_and_no_budget(self) -> None:
