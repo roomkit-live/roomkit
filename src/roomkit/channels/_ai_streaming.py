@@ -396,7 +396,7 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                 # hammering the same call to the round limit.
                 context = self._prepare_round_context(context, loop_ctx, state, _round_idx)
 
-                for _compact_attempt in (False, True):
+                for _already_compacted in (False, True):
                     thinking_parts: list[str] = []
                     thinking_signature: str | None = None
                     text_parts: list[str] = []
@@ -597,16 +597,19 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                                         attributes={"channel_id": self.channel_id},
                                     )
                     except ProviderError as exc:
-                        # Reactive compaction, the streaming edition of the
-                        # non-streaming loop's catch. Only a round that has not
-                        # spoken may be replayed: text and thinking deltas were
-                        # already handed to the consumer, and a received tool
-                        # call may already have run its side effect — replaying
-                        # any of them would duplicate what the room saw. The
-                        # rebound context persists, so later rounds build on
-                        # the compacted history.
+                        # Reactive compaction, mirroring the non-streaming
+                        # loop's recovery. This try spans the whole round body
+                        # — tool execution and event publishing included — so
+                        # the guard below, not the catch's reach, is what makes
+                        # a replay safe: only a round that has not spoken is
+                        # replayed. Text and thinking deltas were already
+                        # handed to the consumer, and a received tool call may
+                        # already have run its side effect — replaying any of
+                        # them would duplicate what the room saw. The rebound
+                        # context persists, so later rounds build on the
+                        # compacted history.
                         round_spoke = bool(text_parts or thinking_parts or tool_calls)
-                        if _compact_attempt or round_spoke or not self._is_context_overflow(exc):
+                        if _already_compacted or round_spoke or not self._is_context_overflow(exc):
                             raise
                         logger.warning(
                             "Context overflow at streaming round %d. Compacting.",

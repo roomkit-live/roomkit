@@ -143,7 +143,7 @@ class AIResilienceMixin:
         # The typed fact outranks the prose: an envelope that classified the
         # failure structurally may have rewrapped the provider's wording into
         # something no phrase below can match.
-        if getattr(exc, "context_overflow", False):
+        if exc.context_overflow:
             return True
         msg = str(exc).lower()
         return any(

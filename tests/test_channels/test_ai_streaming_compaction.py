@@ -84,7 +84,7 @@ def _overflow_by_phrase() -> ProviderError:
 
 def _overflow_by_flag() -> ProviderError:
     # Wording no phrase in the fallback list matches — the envelope's own
-    # message after it rewrapped the provider's prose (the Luge seam).
+    # message after it rewrapped the provider's prose (a classifying host).
     return ProviderError(
         '{"code": "provider_context_overflow", "message": "window blown"}',
         retryable=False,
