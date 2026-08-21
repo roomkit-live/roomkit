@@ -71,7 +71,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `XAIImageProvider` speaks Grok Imagine's images API — generation through the
   OpenAI-compatible endpoint, editing as JSON on `/images/edits` (the SDK's
   multipart `images.edit` is not accepted there), a caller's
-  `"WIDTHxHEIGHT"` translated to xAI's aspect-ratio-and-tier form.
+  `"WIDTHxHEIGHT"` translated to xAI's aspect-ratio-and-tier form — including
+  the fractionally named `19.5:9` / `9:19.5`, which are exactly the `13:6` and
+  `6:13` an integer size like `1300x600` reduces to.
   `OpenRouterImageProvider` speaks OpenRouter's own Image API
   (`POST /api/v1/images`) and so reaches its whole aggregated lineup —
   Seedream, FLUX, Recraft and the rest — fanning `n` (capped at 10, the

@@ -34,14 +34,32 @@ from roomkit.providers.xai.image_models import MODELS
 
 _MODELS_BY_ID: dict[str, ModelInfo] = {m.id: m for m in MODELS}
 
-# Aspect ratios the images API accepts, restricted to the ones an integer
-# WIDTHxHEIGHT can reduce to (the API also names "19.5:9" forms no integer
-# pair reduces to). An unlisted ratio is refused rather than rounded to a
-# neighbour, because a silently different geometry is a failure the caller
-# can neither see nor correct (RFC §25.2).
+# Aspect ratios the images API accepts. An unlisted ratio is refused rather
+# than rounded to a neighbour, because a silently different geometry is a
+# failure the caller can neither see nor correct (RFC §25.2).
 _ASPECT_RATIOS = frozenset(
-    {"1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3", "2:1", "1:2", "20:9", "9:20"}
+    {
+        "1:1",
+        "16:9",
+        "9:16",
+        "4:3",
+        "3:4",
+        "3:2",
+        "2:3",
+        "2:1",
+        "1:2",
+        "20:9",
+        "9:20",
+        "19.5:9",
+        "9:19.5",
+    }
 )
+
+# Two ratios xAI spells fractionally: 19.5:9 *is* 13:6 (both 2.1666…), just
+# under another name, so the gcd's integer spelling is renamed — not rounded —
+# before the lookup. Without this, 1300x600 reduces to a "13:6" the API does
+# not take and an exactly-offered geometry is refused.
+_RATIO_ALIASES = {"13:6": "19.5:9", "6:13": "9:19.5"}
 
 # Resolution tiers, keyed by the largest dimension the caller asked for. xAI
 # names tiers, not pixel counts, so the request is mapped to the smallest tier
@@ -178,7 +196,8 @@ class XAIImageProvider(ImageProvider):
         """
         width, height = parse_size(size)
         divisor = gcd(width, height)
-        aspect_ratio = f"{width // divisor}:{height // divisor}"
+        reduced = f"{width // divisor}:{height // divisor}"
+        aspect_ratio = _RATIO_ALIASES.get(reduced, reduced)
         if aspect_ratio not in _ASPECT_RATIOS:
             raise ValueError(
                 f"size {size!r} reduces to aspect ratio {aspect_ratio}, which xAI does not "

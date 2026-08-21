@@ -102,6 +102,30 @@ async def test_a_large_size_lands_on_the_2k_tier() -> None:
     assert kwargs["resolution"] == "2k"
 
 
+async def test_a_fractional_ratio_spelling_is_translated_not_refused() -> None:
+    """xAI names 19.5:9, which *is* 13:6 — the fraction the gcd produces for
+    1300x600. Same geometry under another spelling, so it is renamed, not
+    rounded to a neighbour."""
+    provider = _provider()
+    provider._client.images.generate = AsyncMock(return_value=_response())
+
+    await provider.generate("a fox", size="1300x600")
+
+    kwargs = provider._client.images.generate.await_args.kwargs
+    assert kwargs["aspect_ratio"] == "19.5:9"
+    assert kwargs["resolution"] == "2k"
+
+
+async def test_the_portrait_fractional_spelling_translates_too() -> None:
+    provider = _provider()
+    provider._client.images.generate = AsyncMock(return_value=_response())
+
+    await provider.generate("a fox", size="600x1300")
+
+    kwargs = provider._client.images.generate.await_args.kwargs
+    assert kwargs["aspect_ratio"] == "9:19.5"
+
+
 async def test_an_unoffered_ratio_is_refused_not_rounded() -> None:
     provider = _provider()
     provider._client.images.generate = AsyncMock(return_value=_response())
