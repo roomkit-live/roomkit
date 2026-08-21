@@ -9,35 +9,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.58.0] — 2026-08-21
 
-### Fixed
-
-- **The OpenAI image provider no longer refuses sizes the vendor accepts.**
-  It validated requests against a fixed five-entry list, and the list went
-  stale: `gpt-image-2` takes near-arbitrary geometry — edges in multiples of
-  16 up to a 3840px long edge, ratios to 3:1 — and the SDK now types `size`
-  as an open string. A request like `3840x2160` was refused locally for no
-  vendor reason. The size is normalized and the vendor judges; a rejection
-  still raises rather than substituting another geometry. The Azure provider,
-  which existed to pass sizes through, simply inherits this now.
-- **Overflow recovery and replay safety moved into the retry wrappers, and
-  every generation path now has both.** Compaction only had a call site in
-  the non-streaming tool loop, and every streaming-capable provider routes to
-  the streaming one — so a context-window overflow that surfaced mid-turn
-  (tool results inflating the context long after memory was sized) killed the
-  turn instead of triggering the recovery built for exactly that case. Worse,
-  the no-tools streaming path called the provider directly: one attempt, no
-  fallback, whatever the channel's retry policy announced. Both retry
-  wrappers now own the recovery — compact and replay a refused generation,
-  once per call, before the retry budget or the fallback provider see the
-  oversized request — and the no-tools path goes through them like everything
-  else. A refusal that survives its compacted replay falls through to the
-  ordinary retry semantics, so an error that only sounded like an overflow
-  keeps its budget. One guard rules every recovery, enforced where it cannot
-  be forgotten: a stream that has yielded anything is never re-entered — by
-  retry, compaction or fallback — because the consumer already got the events
-  and a replay would duplicate the answer in the room and in the persisted
-  message.
-
 ### Added
 
 - **RoomKit talks to a LiteLLM proxy as a first-class provider.**
@@ -104,6 +75,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`is_context_overflow_message`, exported from `roomkit.providers.ai` so a
   host's copy cannot drift from it). The OpenAI-compatible family sets the
   fact first-hand from the error body's `context_length_exceeded` code.
+
+### Fixed
+
+- **The OpenAI image provider no longer refuses sizes the vendor accepts.**
+  It validated requests against a fixed five-entry list, and the list went
+  stale: `gpt-image-2` takes near-arbitrary geometry — edges in multiples of
+  16 up to a 3840px long edge, ratios to 3:1 — and the SDK now types `size`
+  as an open string. A request like `3840x2160` was refused locally for no
+  vendor reason. The size is normalized and the vendor judges; a rejection
+  still raises rather than substituting another geometry. The Azure provider,
+  which existed to pass sizes through, simply inherits this now.
+- **Overflow recovery and replay safety moved into the retry wrappers, and
+  every generation path now has both.** Compaction only had a call site in
+  the non-streaming tool loop, and every streaming-capable provider routes to
+  the streaming one — so a context-window overflow that surfaced mid-turn
+  (tool results inflating the context long after memory was sized) killed the
+  turn instead of triggering the recovery built for exactly that case. Worse,
+  the no-tools streaming path called the provider directly: one attempt, no
+  fallback, whatever the channel's retry policy announced. Both retry
+  wrappers now own the recovery — compact and replay a refused generation,
+  once per call, before the retry budget or the fallback provider see the
+  oversized request — and the no-tools path goes through them like everything
+  else. A refusal that survives its compacted replay falls through to the
+  ordinary retry semantics, so an error that only sounded like an overflow
+  keeps its budget. One guard rules every recovery, enforced where it cannot
+  be forgotten: a stream that has yielded anything is never re-entered — by
+  retry, compaction or fallback — because the consumer already got the events
+  and a replay would duplicate the answer in the room and in the persisted
+  message.
 
 ## [0.57.0] — 2026-08-20
 
@@ -6431,7 +6431,9 @@ See entries `0.7.0a1` through `0.7.0a18` below.
 - `STTProvider.transcribe()` returns `TranscriptionResult` (Phase 3.1)
 - Framework event names enriched with payloads (Phase 4)
 
-[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.56.0...HEAD
+[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.58.0...HEAD
+[0.58.0]: https://github.com/roomkit-live/roomkit/compare/v0.57.0...v0.58.0
+[0.57.0]: https://github.com/roomkit-live/roomkit/compare/v0.56.0...v0.57.0
 [0.56.0]: https://github.com/roomkit-live/roomkit/compare/v0.55.1...v0.56.0
 [0.55.1]: https://github.com/roomkit-live/roomkit/compare/v0.55.0...v0.55.1
 [0.55.0]: https://github.com/roomkit-live/roomkit/compare/v0.54.0...v0.55.0

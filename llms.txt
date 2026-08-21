@@ -54,7 +54,7 @@ with distributed implementations (Redis, PostgreSQL, etc.) for production deploy
 
 ## Providers
 
-- [AI Providers](docs/api/providers-ai.md): AIProvider ABC, AnthropicAIProvider, OpenAIAIProvider, AzureAIProvider, GeminiAIProvider, GeminiVertexProvider (Vertex AI), MistralAIProvider, OllamaAIProvider, OpenRouterAIProvider, PolarGridAIProvider, XAIAIProvider (Grok), DeepSeekAIProvider, QwenAIProvider (Alibaba Model Studio), vLLM, MockAIProvider - context building, tool calling, vision, thinking/reasoning
+- [AI Providers](docs/api/providers-ai.md): AIProvider ABC, AnthropicAIProvider, OpenAIAIProvider, AzureAIProvider, GeminiAIProvider, GeminiVertexProvider (Vertex AI), MistralAIProvider, OllamaAIProvider, OpenRouterAIProvider, LiteLLMAIProvider (LiteLLM proxy), PolarGridAIProvider, XAIAIProvider (Grok), DeepSeekAIProvider, QwenAIProvider (Alibaba Model Studio), vLLM, MockAIProvider - context building, tool calling, vision, thinking/reasoning
 - [SMS Providers](docs/api/providers-sms.md): SMSProvider ABC, TwilioSMSProvider, TelnyxSMSProvider, SinchSMSProvider, VoiceMeUpSMSProvider - webhook parsing, signature verification, MMS support
 - [RCS Providers](docs/api/providers-rcs.md): RCSProvider ABC, Twilio and Telnyx implementations - rich cards, carousels, suggested replies
 - [Email Providers](docs/api/providers-email.md): EmailProvider ABC, ElasticEmailProvider, SendGridProvider
