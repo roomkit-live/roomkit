@@ -46,6 +46,16 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("roomkit.channels.ai")
 
+# Injected once per turn when the history window holds several speakers: the
+# model must read the "Name:" prefixes as transcript metadata, and not start
+# prefixing its own replies with one.
+_SPEAKER_ATTRIBUTION_NOTE = (
+    "Several people take part in this conversation. Their messages are "
+    'prefixed with the sender\'s name ("Name: message"). The prefix is '
+    "transcript metadata, not text they typed: rely on it to know who said "
+    "what, and never prefix your own replies with a name."
+)
+
 
 @runtime_checkable
 class AIContextHost(Protocol):
@@ -406,20 +416,47 @@ class AIContextMixin:
         # Pre-built messages from memory (e.g. summaries)
         messages.extend(memory_result.messages)
 
-        # Convert memory events using AIChannel content extraction
+        # Convert memory events using AIChannel content extraction.
+        # ``_determine_role`` flattens every non-self event into one "user"
+        # stream, which erases who said what in a room where several people
+        # speak — the model can only guess the addressee, and it guesses wrong.
+        # The speaker is a fact of the event (``metadata["sender_name"]``,
+        # stamped at ingress by hosts and transport providers), so when the
+        # window holds two or more distinct speakers each user turn carries its
+        # speaker's name. A single-speaker room (a 1:1 DM) is left untouched.
+        past_turns: list[tuple[str, str | list[_ContentPart], str | None]] = []
         for past_event in memory_result.events:
             role = self._determine_role(past_event)
             content = self._extract_content(past_event)
             if content:
-                messages.append(AIMessage(role=role, content=content))
+                speaker = _event_speaker(past_event, context) if role == "user" else None
+                past_turns.append((role, content, speaker))
+
+        current_content = self._extract_content(event)
+        current_speaker = _event_speaker(event, context)
+
+        speakers = {speaker for _, _, speaker in past_turns if speaker}
+        if current_content and current_speaker:
+            speakers.add(current_speaker)
+        attribute_speakers = len(speakers) >= 2
+
+        for role, content, speaker in past_turns:
+            if attribute_speakers and speaker:
+                content = _with_speaker_prefix(content, speaker)
+            messages.append(AIMessage(role=role, content=content))
 
         # Patch orphaned tool calls from interrupted tool loops (barge-in)
         messages = patch_dangling_tool_calls(messages)
 
         # Add current event
-        content = self._extract_content(event)
-        if content:
+        if current_content:
+            content = current_content
+            if attribute_speakers and current_speaker:
+                content = _with_speaker_prefix(content, current_speaker)
             messages.append(AIMessage(role="user", content=content))
+
+        if attribute_speakers:
+            system_prompt = (system_prompt or "") + f"\n\n{_SPEAKER_ATTRIBUTION_NOTE}"
 
         # Determine target channel capabilities for capability-aware generation
         # Use intersection of all transport bindings' media types (weakest common)
@@ -569,3 +606,29 @@ class AIContextMixin:
         if isinstance(event.content, TextContent):
             return event.content.body
         return ""
+
+
+def _event_speaker(event: RoomEvent, context: RoomContext) -> str | None:
+    """Display name of whoever is behind an event, or ``None``.
+
+    ``metadata["sender_name"]`` is the stamp transports and hosts write at
+    ingress (the Teams/WhatsApp providers do, and so does a host's session
+    ingress); the room's participant record is the fallback for transports
+    that register named participants without stamping events.
+    """
+    name = event.metadata.get("sender_name")
+    if isinstance(name, str) and name.strip():
+        return name.strip()
+    participant_id = event.source.participant_id
+    if participant_id:
+        for participant in context.participants:
+            if participant.id == participant_id and participant.display_name:
+                return participant.display_name
+    return None
+
+
+def _with_speaker_prefix(content: str | list[_ContentPart], name: str) -> str | list[_ContentPart]:
+    """Carry the speaker on a user turn: ``"Name: text"``; parts get a lead part."""
+    if isinstance(content, str):
+        return f"{name}: {content}"
+    return [AITextPart(text=f"{name}:"), *content]
