@@ -18,6 +18,7 @@ from roomkit.models.enums import (
     Visibility,
 )
 from roomkit.models.event import RoomEvent
+from roomkit.models.response_metadata import ResponseMetadata
 from roomkit.models.task import Observation, Task
 
 
@@ -119,12 +120,14 @@ class ChannelOutput(BaseModel):
     responded: bool = False
     response_events: list[RoomEvent] = Field(default_factory=list)
     response_stream: Any = Field(default=None, exclude=True)
-    response_metadata: dict[str, Any] = Field(
-        default_factory=dict,
+    response_metadata: ResponseMetadata = Field(
+        default_factory=ResponseMetadata,
         description=(
-            "Turn-level metadata (AIContext.response_metadata) merged into "
-            "the MESSAGE events persisted from response_stream. The "
-            "non-streaming path bakes it into response_events directly."
+            "The turn's response-metadata record (AIContext.response_metadata, "
+            "the same instance), merged into each MESSAGE event persisted from "
+            "response_stream as it stands when that segment is persisted — a "
+            "tool handler's writes mid-loop reach the segments that follow. The "
+            "non-streaming path bakes its final state into response_events."
         ),
     )
     provider_result: ProviderResult | None = None

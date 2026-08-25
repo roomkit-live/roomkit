@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 from uuid import uuid4
@@ -300,7 +301,7 @@ class AIGenerationMixin(AIToolLoopRulesMixin):
         room_id: str,
         chain_depth: int,
         usage: dict[str, Any] | None,
-        response_metadata: dict[str, Any] | None = None,
+        response_metadata: Mapping[str, Any] | None = None,
         parent_event_id: str | None = None,
     ) -> list[RoomEvent]:
         """Build interleaved text + tool call events from tool loop result.
@@ -309,10 +310,12 @@ class AIGenerationMixin(AIToolLoopRulesMixin):
         (backward compatible). When rounds exist, returns text segments
         and tool call events in order, sharing a correlation_id.
 
-        ``response_metadata`` (``AIContext.response_metadata``) is merged
-        into every MESSAGE event's metadata — turn-level attribution set
-        by the host travels with the reply from creation, so it is
-        persisted and broadcast without any post-hoc rewrite.
+        ``response_metadata`` (``AIContext.response_metadata``, the turn's
+        live record) is merged into every MESSAGE event's metadata in its
+        final state — the events are built once the loop has run, so
+        turn-level attribution set by the host at any point of the turn
+        travels with the reply from creation, persisted and broadcast
+        without any post-hoc rewrite.
 
         ``parent_event_id`` is the trigger's thread root (already normalised
         by the locked pipeline); every response event inherits it so the

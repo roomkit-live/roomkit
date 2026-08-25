@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -122,7 +122,9 @@ class StreamingResponse:
     source_channel_id: str
     source_channel_type: Any  # ChannelType
     trigger_event: RoomEvent
-    response_metadata: dict[str, Any] = field(default_factory=dict)
+    # The turn's live record (``ChannelOutput.response_metadata``), read by the
+    # persistence of each segment as it stands then — never copied here.
+    response_metadata: Mapping[str, Any] = field(default_factory=dict)
 
 
 @dataclass

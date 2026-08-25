@@ -58,6 +58,7 @@ from roomkit.models.hook import HookResult, InjectedEvent
 from roomkit.models.identity import Identity, IdentityHookResult, IdentityResult
 from roomkit.models.participant import Participant
 from roomkit.models.plan_event import PlanUpdatedEvent
+from roomkit.models.response_metadata import ResponseMetadata
 from roomkit.models.room import Room, RoomTimers
 from roomkit.models.session_event import SessionStartedEvent
 from roomkit.models.store_filter import EventFilter, PersistencePolicy
@@ -112,6 +113,7 @@ __all__ = [
     "ProtocolTrace",
     "ProviderResult",
     "RateLimit",
+    "ResponseMetadata",
     "RetryPolicy",
     "RichContent",
     "Room",

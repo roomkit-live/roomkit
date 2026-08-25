@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field, SecretStr, field_validator
 from roomkit.models.channel import ChannelCapabilities
 from roomkit.models.context import RoomContext
 from roomkit.models.enums import ChannelMediaType
+from roomkit.models.response_metadata import ResponseMetadata
 from roomkit.models.task import Observation, Task
 
 
@@ -301,13 +302,17 @@ class AIContext(BaseModel):
     target_capabilities: ChannelCapabilities | None = None
     target_media_types: list[ChannelMediaType] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
-    response_metadata: dict[str, Any] = Field(
-        default_factory=dict,
+    response_metadata: ResponseMetadata = Field(
+        default_factory=ResponseMetadata,
         description=(
-            "Merged into the metadata of every MESSAGE response event built "
-            "for this turn, on both the streaming and non-streaming paths. "
-            "Set by hosts (e.g. a BEFORE_AI_GENERATION hook) to attach "
-            "turn-level attribution such as RAG sources to the reply."
+            "The turn's one response-metadata record, merged into every MESSAGE "
+            "event built for the turn, on both the streaming and non-streaming "
+            "paths — each event carries the record as it stands when the event "
+            "is created. Live for the whole turn: a memory provider writes it "
+            "while the context is built, a BEFORE_AI_GENERATION hook through "
+            "this attribute, a tool handler through "
+            "roomkit.tools.current_response_metadata(). Shared by identity, so "
+            "a host that keeps the instance keeps the turn's record."
         ),
     )
 

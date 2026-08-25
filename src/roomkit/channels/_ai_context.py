@@ -522,6 +522,9 @@ class AIContextMixin:
             room=context,
             target_capabilities=target_caps,
             target_media_types=target_media,
+            # The turn's record, not a fresh dict: hooks and tool handlers write
+            # into what the loop context already holds (by identity — see the type).
+            response_metadata=loop_ctx.response_metadata,
         )
 
     async def _hydrate_room_memories(

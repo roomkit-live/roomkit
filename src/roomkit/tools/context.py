@@ -19,6 +19,8 @@ import contextvars
 from dataclasses import dataclass
 from typing import Any
 
+from roomkit.models.response_metadata import ResponseMetadata
+
 
 @dataclass
 class ToolCallContext:
@@ -113,3 +115,24 @@ def current_tool_allowed_names() -> set[str] | None:
     if ctx is None or ctx.all_context_tools is None:
         return None
     return {t.name for t in ctx.all_context_tools if getattr(t, "name", None)}
+
+
+def current_response_metadata() -> ResponseMetadata | None:
+    """The response-metadata record of the turn the caller is executing under.
+
+    The one mapping RoomKit merges into every MESSAGE event the turn produces
+    (see :mod:`roomkit.models.response_metadata`): a memory provider writing it
+    during context build, a ``BEFORE_AI_GENERATION`` hook writing
+    ``event.ai_context.response_metadata`` and a tool handler writing here all
+    reach the same object. A tool handler is the case this exists for — the
+    ``ToolHandler`` protocol hands it nothing but ``(name, arguments)``, and a
+    document it read is a fact about the turn, not about the tool's string
+    result.
+
+    Returns ``None`` outside a turn (a realtime pipeline, a direct call): the
+    caller then has nothing to attribute to, and writes nothing.
+    """
+    from roomkit.channels.ai import _current_loop_ctx
+
+    ctx = _current_loop_ctx.get()
+    return ctx.response_metadata if ctx is not None else None

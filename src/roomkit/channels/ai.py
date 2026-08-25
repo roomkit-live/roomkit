@@ -65,6 +65,7 @@ from roomkit.models.enums import (
     EventType,
 )
 from roomkit.models.event import RoomEvent
+from roomkit.models.response_metadata import ResponseMetadata
 from roomkit.models.steering import SteeringDirective
 from roomkit.providers.ai.base import (
     AIImagePart,
@@ -157,6 +158,12 @@ class _ToolLoopContext:
     steering_queue: asyncio.Queue[SteeringDirective] = field(default_factory=asyncio.Queue)
     cancel_event: asyncio.Event = field(default_factory=asyncio.Event)
     loop_id: str = ""
+    # The turn's one response-metadata record (see ``roomkit.models.response_metadata``).
+    # Created here, at the start of the turn, so a memory provider writing during
+    # ``_build_context`` writes the same object a tool handler reaches mid-loop;
+    # ``_build_context`` hands it to ``AIContext`` and ``for_loop`` inherits the
+    # reference, never a copy.
+    response_metadata: ResponseMetadata = field(default_factory=ResponseMetadata)
 
     @classmethod
     def for_loop(cls, parent: _ToolLoopContext | None, room_id: str | None) -> _ToolLoopContext:
@@ -180,6 +187,9 @@ class _ToolLoopContext:
             # loop: the per-round re-filter runs under THIS child ctx, so without
             # this the seed is dropped at round 0 and the model must re-find_tools.
             ctx.sticky_tools = set(parent.sticky_tools)
+            # By reference: the loop writes into the record the turn already
+            # holds, and the output built before the loop ran reads the same one.
+            ctx.response_metadata = parent.response_metadata
         ctx.room_id = room_id or (parent.room_id if parent else None)
         return ctx
 

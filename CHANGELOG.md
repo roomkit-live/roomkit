@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **A tool handler can attribute what it read to the turn.**
+  `roomkit.tools.current_response_metadata()` returns the turn's
+  response-metadata record from inside a tool handler (or a memory provider
+  building the context) — the same object a `BEFORE_AI_GENERATION` hook reaches
+  as `event.ai_context.response_metadata`. A host whose tool read a document
+  mid-loop can now name it as a source of the reply, where before only what was
+  known before generation could be stamped.
+
+### Changed
+
+- **`AIContext.response_metadata` and `ChannelOutput.response_metadata` are one
+  live record per turn**, typed `ResponseMetadata` (`roomkit.models`), a
+  dict-like mapping Pydantic keeps by identity instead of copying. Every MESSAGE
+  event of the turn carries the record as it stands when the event is created:
+  a streamed segment persisted before a tool round shows what was known then,
+  the final answer shows everything the turn learned; the non-streaming path
+  builds its events at the end, so they read alike. Before, the output captured
+  a copy at stream start and a write during the tool loop reached nothing.
+  Passing a plain dict still works — it is wrapped as a snapshot.
+
 ## [0.59.0] — 2026-08-25
 
 ### Added

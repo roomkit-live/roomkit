@@ -5,6 +5,7 @@ from __future__ import annotations
 from roomkit.tools.base import Tool
 from roomkit.tools.compose import compose_tool_handlers, extract_tools
 from roomkit.tools.context import (
+    current_response_metadata,
     current_tool_actor_id,
     current_tool_allowed_names,
     current_tool_room_id,
@@ -24,6 +25,7 @@ __all__ = [
     "ToolDecision",
     "ToolPolicy",
     "compose_tool_handlers",
+    "current_response_metadata",
     "current_tool_actor_id",
     "current_tool_allowed_names",
     "current_tool_room_id",

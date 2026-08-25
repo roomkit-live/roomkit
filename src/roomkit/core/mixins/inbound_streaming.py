@@ -177,10 +177,12 @@ class InboundStreamingMixin(HelpersMixin):
         async def _persist_text_segment(*, cancelled: bool = False) -> None:
             """Persist the accumulated text as a MESSAGE event.
 
-            ``sr.response_metadata`` (AIContext.response_metadata captured at
-            stream start) rides every MESSAGE segment — persisted before
-            broadcast, so turn-level attribution lands in the stored row
-            and in the stream_end frame without any post-hoc rewrite.
+            ``sr.response_metadata`` (the turn's ``AIContext.response_metadata``,
+            the same live record) rides every MESSAGE segment as it stands
+            when the segment is persisted — persisted before broadcast, so
+            turn-level attribution, including what a tool handler wrote
+            mid-loop, lands in the stored row and in the stream_end frame
+            without any post-hoc rewrite.
 
             ``cancelled`` marks a segment cut short by an interrupted turn, so
             a reader can tell a finished answer from one the user stopped.
