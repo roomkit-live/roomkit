@@ -103,6 +103,7 @@ from roomkit.models.channel import ChannelBinding, ChannelCapabilities, ChannelO
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import (
     DeliveryError,
+    DeliveryHandle,
     DeliveryResult,
     DeliveryStatus,
     InboundMessage,
@@ -382,6 +383,7 @@ __all__ = [
     "ChannelCapabilities",
     "ChannelOutput",
     "DeliveryError",
+    "DeliveryHandle",
     "DeliveryResult",
     "DeliveryStatus",
     "EventSource",

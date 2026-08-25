@@ -10,6 +10,8 @@ room lock anew; they are never drained inside the trigger's lock tenure).
 
 from __future__ import annotations
 
+import asyncio
+import contextvars
 import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
@@ -357,7 +359,7 @@ class LaneExecutionMixin(HelpersMixin):
 
     def _consume_streams_when_cascade_completes(
         self, cascade: DeliveryCascade, room_id: str
-    ) -> None:
+    ) -> asyncio.Task[None]:
         """Arrange stream consumption for a detached caller.
 
         A ``send_event`` issued from inside a sync hook (under the room
@@ -366,14 +368,20 @@ class LaneExecutionMixin(HelpersMixin):
         its stream is consumed. This schedules the consumption on a clean
         background task (fresh context: an inherited ``_held_rooms`` would
         fake lock reentrancy), tracked like every fire-and-forget hook task.
+
+        Returns the consumer task: its completion is when the caller's whole
+        turn is over — cascade AND streamed responses — which is what a
+        deferred ``process_inbound``'s :class:`DeliveryHandle` waits on. A
+        consumption failure is recorded on the cascade so that handle can
+        surface it; the fire-and-forget callers never look, as before.
         """
-        import asyncio
-        import contextvars
 
         async def _consume() -> None:
             await cascade.wait_detached()
             if cascade.streams and cascade.cancelled is None:
-                await self._process_streaming_responses(cascade.streams, room_id)
+                stream_error = await self._process_streaming_responses(cascade.streams, room_id)
+                if stream_error is not None:
+                    cascade.record_error(stream_error)
 
         task = asyncio.get_running_loop().create_task(
             _consume(),
@@ -382,6 +390,7 @@ class LaneExecutionMixin(HelpersMixin):
         )
         task.add_done_callback(self._pending_hook_tasks.discard)
         self._pending_hook_tasks.add(task)
+        return task
 
     # -- Lane executor callbacks (LaneHost) --
 

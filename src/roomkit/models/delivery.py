@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime
 from typing import Any, Literal
 
@@ -75,6 +76,49 @@ class InboundMessage(BaseModel):
     response_visibility: str | None = None
 
 
+class DeliveryHandle:
+    """A deferred caller's grip on its in-flight delivery (RFC §10.1 step 18).
+
+    ``process_inbound(..., defer_delivery=True)`` returns at the commit; this
+    handle, on :attr:`InboundResult.delivery`, is what remains of step 18:
+    the event's delivery set, the reentry passes it transitively spawns (an
+    AI reply included) and the consumption of streamed responses, all running
+    in the room's delivery lane. ``wait()`` resolves once that whole tail has
+    run — not merely the cascade, because a streamed reply is only generated
+    while its stream is consumed, which starts after the cascade completes.
+
+    The cascade and the consumer task are duck-typed on purpose: models do
+    not import from :mod:`roomkit.core`.
+    """
+
+    __slots__ = ("_cascade", "_consumer", "_result")
+
+    def __init__(self, cascade: Any, consumer: asyncio.Task[None], result: InboundResult) -> None:
+        self._cascade = cascade
+        self._consumer = consumer
+        self._result = result
+
+    @property
+    def done(self) -> bool:
+        """Whether the deferred delivery, streamed responses included, finished."""
+        return self._consumer.done()
+
+    async def wait(self) -> InboundResult:
+        """Wait for the deferred delivery to complete, then report it.
+
+        Backfills ``delivery_results`` and ``error`` on the result this
+        handle belongs to — after this the result reads exactly like a
+        non-deferred call's — and returns that result. Never raises: a
+        consumer cancelled by ``close()`` resolves the wait too, with
+        whatever the cascade recorded by then.
+        """
+        await asyncio.wait({self._consumer})
+        self._result.delivery_results = self._cascade.delivery_results
+        if self._result.error is None:
+            self._result.error = self._cascade.error
+        return self._result
+
+
 class InboundResult(BaseModel):
     """Result of processing an inbound message.
 
@@ -95,7 +139,14 @@ class InboundResult(BaseModel):
     """Per-channel outcome of this event's delivery set, keyed by channel id
     (RFC §10.1 step 18). ``process_inbound`` waits for that set to complete, so
     this is populated by the time it returns — for the caller's own event only,
-    never for a reentry's, which is a separate event with its own result."""
+    never for a reentry's, which is a separate event with its own result. A
+    deferred call returns before the set executes: there it is backfilled by
+    ``delivery.wait()`` instead."""
+
+    delivery: DeliveryHandle | None = None
+    """Set only by ``process_inbound(..., defer_delivery=True)``: the handle
+    on the in-flight delivery (RFC §10.1 step 18 detached completion). ``None``
+    on the waiting path, where the result already reports the completed set."""
 
 
 class DeliveryError(BaseModel):

@@ -11,7 +11,7 @@ from roomkit.core.exceptions import ChannelNotRegisteredError
 from roomkit.core.mixins.channel_ops import is_channel_detached
 from roomkit.core.mixins.helpers import HelpersMixin
 from roomkit.core.mixins.inbound_identity import _IdentityBlockedError
-from roomkit.models.delivery import InboundMessage, InboundResult
+from roomkit.models.delivery import DeliveryHandle, InboundMessage, InboundResult
 from roomkit.models.enums import (
     ChannelType,
     HookTrigger,
@@ -99,7 +99,11 @@ class InboundMixin(HelpersMixin):
     attach_channel: Any  # see InboundHost
 
     async def process_inbound(
-        self, message: InboundMessage, *, room_id: str | None = None
+        self,
+        message: InboundMessage,
+        *,
+        room_id: str | None = None,
+        defer_delivery: bool = False,
     ) -> InboundResult:
         """Process an inbound message through the full pipeline.
 
@@ -107,6 +111,17 @@ class InboundMixin(HelpersMixin):
             message: The inbound message to process.
             room_id: Explicit room to route to, bypassing the inbound router.
                 Useful for shared channels attached to multiple rooms.
+            defer_delivery: Return at the commit instead of waiting for the
+                delivery set (RFC §10.1 step 18 detached completion). The
+                result carries the committed event — a hook refusal is still
+                decided under the room lock and reported synchronously — and
+                ``result.delivery`` holds a :class:`DeliveryHandle` on the
+                rest of the turn: delivery execution, reentry passes (an AI
+                reply included) and streamed responses, all following in the
+                room's lane. For a caller that must answer with the committed
+                event while the agent's turn runs on (an HTTP route returning
+                200, say); ``delivery_results`` is backfilled by
+                ``delivery.wait()``.
         """
         from roomkit.telemetry.base import SpanKind
         from roomkit.telemetry.context import get_current_span, reset_span, set_current_span
@@ -141,7 +156,7 @@ class InboundMixin(HelpersMixin):
         _inbound_result: InboundResult | None = None
         try:
             _inbound_result = await self._process_inbound_inner(
-                message, channel, room_id, telemetry, inbound_span_id
+                message, channel, room_id, telemetry, inbound_span_id, defer_delivery
             )
             return _inbound_result
         except Exception as exc:
@@ -162,6 +177,7 @@ class InboundMixin(HelpersMixin):
         room_id: str | None,
         telemetry: Any,
         inbound_span_id: str,
+        defer_delivery: bool,
     ) -> InboundResult:
         """Inner inbound processing (extracted for telemetry wrapping)."""
 
@@ -199,6 +215,7 @@ class InboundMixin(HelpersMixin):
             channel,
             room_id,
             deadline,
+            defer_delivery=defer_delivery,
         )
 
     async def _refuse_on_timeout(self, room_id: str, channel_id: str) -> InboundResult:
@@ -310,6 +327,8 @@ class InboundMixin(HelpersMixin):
         channel: Channel,
         room_id: str,
         deadline: float,
+        *,
+        defer_delivery: bool = False,
     ) -> InboundResult:
         """RFC §10.1 steps 6-18: the locked region, then the delivery set.
 
@@ -340,6 +359,21 @@ class InboundMixin(HelpersMixin):
                 deadline=deadline,
             )
 
+        if defer_delivery:
+            # Deferred completion (RFC §10.1 step 18): the caller takes the
+            # committed event now — blocked was decided under the lock above,
+            # so a refusal is still synchronous — and the rest of the turn
+            # (delivery set, reentry passes, streamed responses) follows in
+            # the room's lane, its streams consumed on the same background
+            # task a detached caller uses. The handle is the caller's grip on
+            # that tail; it backfills delivery_results/error on completion. A
+            # blocked result gets one too — its near-empty cascade resolves
+            # at once — so the contract does not fork on the outcome.
+            consumer = self._consume_streams_when_cascade_completes(cascade, room_id)
+            result.delivery = DeliveryHandle(cascade, consumer, result)
+            await self._connect_session_if_ready(message, channel, room_id, result)
+            return result
+
         # The caller observes its event's delivery-set completion (RFC §10.1
         # step 18): wait for the cascade — the trigger's delivery set plus
         # every reentry pass it transitively spawned. AFTER_BROADCAST,
@@ -366,15 +400,27 @@ class InboundMixin(HelpersMixin):
             if stream_error is not None and result.error is None:
                 result.error = stream_error
 
-        # Bind session for stateful channels (voice, persistent WS, etc.)
-        # Runs AFTER hooks passed and the event was stored — a blocked
-        # event never reaches connect_session.
+        await self._connect_session_if_ready(message, channel, room_id, result)
+        return result
+
+    async def _connect_session_if_ready(
+        self,
+        message: InboundMessage,
+        channel: Channel,
+        room_id: str,
+        result: InboundResult,
+    ) -> None:
+        """Bind the session for stateful channels (voice, persistent WS, etc.).
+
+        Runs AFTER hooks passed and the event was stored — a blocked event
+        never reaches ``connect_session``. On the deferred path this still
+        happens before ``process_inbound`` returns: the session-connected
+        invariant does not depend on the caller waiting for delivery.
+        """
         if message.session is not None and not result.blocked:
             binding = await self._store.get_binding(room_id, message.channel_id)
             if binding is not None:
                 await channel.connect_session(message.session, room_id, binding)
-
-        return result
 
     async def _route_to_room(
         self,

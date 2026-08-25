@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`process_inbound` can return at the commit instead of waiting for the
+  delivery set.** `process_inbound(..., defer_delivery=True)` hands back the
+  committed event immediately — a hook refusal still refuses the call
+  synchronously — while the delivery set, the reentry passes (an AI reply
+  included) and streamed responses follow in the room's delivery lane. The
+  result carries the new `DeliveryHandle` on `InboundResult.delivery`:
+  `wait()` resolves once the whole turn has run, streamed responses included,
+  and backfills `delivery_results` / `error` so the result then reads exactly
+  like a non-deferred call's. This is the detached completion RFC §10.1
+  step 18 already permits — built for HTTP surfaces that must answer with the
+  created message while the agent's turn runs on, instead of publishing a
+  second, synthetic copy of the message to solicit the agent. See
+  `examples/deferred_inbound.py`.
+
 ## [0.58.0] — 2026-08-21
 
 ### Added
