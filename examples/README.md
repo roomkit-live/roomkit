@@ -147,6 +147,7 @@ CONSOLE=1 uv run python examples/<example>.py
 | `ai_tools_function_calling.py` | Tools | Custom tools, function calling, and per-room tool config |
 | `ai_tool_search.py` | Tools | Progressive tool disclosure for large catalogues (find_tools/list_tools) |
 | `ai_thinking.py` | Reasoning | Extended thinking / chain-of-thought support |
+| `ai_multi_speaker.py` | Context | Speaker attribution on user turns when several people talk in a room (mock provider, no API key) |
 | `ai_planning.py` | Planning | Structured task tracking with `plan_tasks` tool |
 | `ai_eviction.py` | Token mgmt | Auto-pagination of large tool results to avoid overflow |
 | `ai_memory.py` | Memory | SummarizingMemory for long conversations with compression |

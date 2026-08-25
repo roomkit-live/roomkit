@@ -629,6 +629,33 @@ await kit.process_inbound(
 
 OpenAI-family providers (OpenAI, Azure, OpenRouter, LiteLLM, xAI) and PolarGrid send images as OpenAI-shaped `image_url` content parts (remote URL or `data:` URI); PolarGrid and xAI gate this on the model's `supports_vision` from their curated catalogs — whether the model actually reads the image is the deployed model's capability.
 
+## Multi-Speaker Rooms
+
+AIChannel builds the model's history from the room's events, and every event that is not the AI's own becomes a `user` turn. In a room where several people speak — a Teams channel, a WhatsApp group, a shared inbox — that flattening erases who said what, and the model guesses the addressee wrong (a reply opening with the wrong colleague's name). So when the history window holds **two or more distinct speakers**, each attributable user turn reaches the model as `"Name: text"` and a one-line note is appended to the system prompt:
+
+```text
+Several people take part in this conversation. Their messages are prefixed with
+the sender's name ("Name: message"). The prefix is transcript metadata, not text
+they typed: rely on it to know who said what, and never prefix your own replies
+with a name.
+```
+
+The speaker of an event is resolved in this order:
+
+1. `event.metadata["sender_name"]` — stamped at ingress. The Teams webhook parser and the WhatsApp Personal (neonize) source write it; a host does the same by passing `InboundMessage(..., metadata={"sender_name": "Alice"})`.
+2. The room's participant record: `Participant.display_name` for the participant whose `id` equals `event.source.participant_id` (the inbound `sender_id`).
+3. Otherwise the turn has no speaker and is left bare, even in a multi-speaker room.
+
+Rules that follow from the definition:
+
+- Assistant turns are never prefixed — only `user` turns are.
+- A multimodal user turn (`list[AITextPart | AIImagePart]`) gets a lead `AITextPart("Name:")` rather than a rewritten body.
+- The trigger turn (the event the AI is replying to) is attributed like the history.
+- The note is appended once per turn, after the channel's own `system_prompt`.
+- A single-speaker room — a 1:1 DM — builds a byte-identical prompt: no prefixes, no note. Attribution is decided per turn from the window the memory provider returns, so it switches on the moment a second named speaker appears in it and off when the window no longer holds one.
+
+There is nothing to configure. See `examples/ai_multi_speaker.py`.
+
 ## Agentic Features
 
 ### Dangling Tool Call Recovery
