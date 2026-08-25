@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.59.0] — 2026-08-25
+
 ### Added
 
 - **`process_inbound` can return at the commit instead of waiting for the
@@ -17,7 +19,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   result carries the new `DeliveryHandle` on `InboundResult.delivery`:
   `wait()` resolves once the whole turn has run, streamed responses included,
   and backfills `delivery_results` / `error` so the result then reads exactly
-  like a non-deferred call's. This is the detached completion RFC §10.1
+  like a non-deferred call's. The handle is there whenever `blocked` is
+  `False`; a refusal shed before the locked region (rate limited, pre-commit
+  timeout, identity block) has no delivery to follow and leaves it `None`.
+  `wait()` never raises: a failure escaping the detached tail lands on the
+  result's `error` instead of dying unretrieved on a background task, and a
+  turn abandoned by `close()` resolves the wait with whatever ran. Called
+  from a context the lane cannot progress past — a sync hook under the room
+  lock, a tool handler inside the lane — it returns the result unwaited, the
+  same short-circuit the waiting path's step 18 applies, with delivery
+  following in lane order. This is the detached completion RFC §10.1
   step 18 already permits — built for HTTP surfaces that must answer with the
   created message while the agent's turn runs on, instead of publishing a
   second, synthetic copy of the message to solicit the agent. In the trace,
@@ -27,7 +38,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   duration stays readable and every span of the tail keeps the parent the
   waiting path gives it. See `examples/deferred_inbound.py`.
 
+- **User turns carry their speaker when several people talk in a room.** The
+  AI channel flattened every non-self event into one anonymous `user`
+  stream, so in a room where several people speak the model could only guess
+  who said what from the prompt's single audience line — and it guessed wrong
+  (a reply opening with the wrong colleague's name, observed against a
+  six-member channel). The speaker is a fact of the event:
+  `metadata["sender_name"]`, stamped at ingress by hosts and by the Teams and
+  WhatsApp providers, with the room's participant record (`display_name`) as
+  the fallback for transports that register named participants without
+  stamping events. When the history window holds two or more distinct
+  speakers, each attributable user turn reaches the model as `"Name: text"`
+  (a multimodal turn gets a lead text part) and a one-line note appended to
+  the system prompt tells it to read the prefix as transcript metadata and
+  never to prefix its own replies with a name. A single-speaker room — a 1:1
+  DM — builds a byte-identical prompt.
+
 ### Fixed
+
+- **OpenRouter's resale rate for `openai/gpt-5.6-sol` moved again.** The slug
+  now resells at $2/$10 per million (cache read $0.20, cache write $2.50),
+  down from the $2.50/$15 it took on 2026-08-18 and further from OpenAI's own
+  $5/$30 list price. The entry is refreshed from the vendor endpoint and the
+  catalog's verification date moves with it; OpenAI's own catalog is unchanged,
+  as is the divergence `scripts/check_models.py` records for the mirror that
+  quotes the promotion. A stale rate never fails, it just overstates every
+  cost estimate for the slug by a quarter on input and a half on output.
 
 - **The lane-side spans of a turn no longer surface as trace roots.** The
   reentry pass (an AI reply's `framework.broadcast` and its BEFORE_BROADCAST
@@ -6463,7 +6499,8 @@ See entries `0.7.0a1` through `0.7.0a18` below.
 - `STTProvider.transcribe()` returns `TranscriptionResult` (Phase 3.1)
 - Framework event names enriched with payloads (Phase 4)
 
-[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.58.0...HEAD
+[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.59.0...HEAD
+[0.59.0]: https://github.com/roomkit-live/roomkit/compare/v0.58.0...v0.59.0
 [0.58.0]: https://github.com/roomkit-live/roomkit/compare/v0.57.0...v0.58.0
 [0.57.0]: https://github.com/roomkit-live/roomkit/compare/v0.56.0...v0.57.0
 [0.56.0]: https://github.com/roomkit-live/roomkit/compare/v0.55.1...v0.56.0

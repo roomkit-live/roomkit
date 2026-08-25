@@ -18,16 +18,17 @@ capability.
 Prices are OpenRouter's own, from the same endpoint on the same date — here
 the aggregator *is* the seller, so its ``pricing`` object is the rate card,
 not a mirror of someone else's. It can differ from the upstream vendor's own
-list price, and does: ``openai/gpt-5.6-sol`` resells at $2.50/$15 where OpenAI
+list price, and does: ``openai/gpt-5.6-sol`` resells at $2/$10 where OpenAI
 charges $5/$30, and ``google/gemini-3.7-flash`` at $0.375/$1.875 where Google's
 synchronous rate is $0.75/$3.75. Both are right for whoever bills.
 
 Which slug carries a discount is the aggregator's decision, and it changes.
 ``openai/gpt-5.6-terra`` resold at $1/$6 against OpenAI's $2/$12 until
 2026-08-18 and now matches the list price, while ``openai/gpt-5.6-sol`` went
-the other way on the same day. Neither is a fact about the model, so nothing
-here may be inferred from a sibling entry — every rate is read from the
-endpoint, and ``make check-models`` is what notices when one moves.
+the other way on the same day — to $2.50/$15 — and deepened to $2/$10 by
+2026-08-25. Neither is a fact about the model, so nothing here may be inferred
+from a sibling entry — every rate is read from the endpoint, and
+``make check-models`` is what notices when one moves.
 
 That equivalence holds only where one seller stands behind the slug. An
 open-weights model served by many hosts has no single rate: OpenRouter quotes
@@ -50,7 +51,7 @@ from datetime import date
 
 from roomkit.providers.ai.base import ModelInfo, ModelPricing
 
-_VERIFIED = date(2026, 8, 18)
+_VERIFIED = date(2026, 8, 25)
 
 MODELS: list[ModelInfo] = [
     ModelInfo(
@@ -98,10 +99,10 @@ MODELS: list[ModelInfo] = [
         context_window=1_050_000,
         supports_vision=True,
         pricing=ModelPricing(
-            input_per_million=2.5,
-            output_per_million=15.0,
-            cache_read_per_million=0.25,
-            cache_write_per_million=3.125,
+            input_per_million=2.0,
+            output_per_million=10.0,
+            cache_read_per_million=0.2,
+            cache_write_per_million=2.5,
             verified=_VERIFIED,
         ),
     ),
