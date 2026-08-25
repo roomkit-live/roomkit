@@ -401,22 +401,23 @@ class LaneExecutionMixin(HelpersMixin):
         )
 
         async def _consume() -> None:
-            with restored_span(parent_id, parent_ctx):
+            with restored_span(parent_id, telemetry_ctx=parent_ctx):
                 await cascade.wait_detached()
-                if cascade.streams and cascade.cancelled is None:
-                    # An escape here would otherwise die un-retrieved on this
-                    # task while the waiting path propagates the same failure
-                    # to its caller — record it so a DeliveryHandle surfaces it.
-                    try:
-                        stream_error = await self._process_streaming_responses(
-                            cascade.streams, room_id
-                        )
-                    except Exception as exc:
-                        logger.exception("Detached stream consumption failed for room %s", room_id)
-                        cascade.record_error(exc)
-                    else:
-                        if stream_error is not None:
-                            cascade.record_error(stream_error)
+                if not cascade.streams or cascade.cancelled is not None:
+                    return
+                # An escape here would otherwise die un-retrieved on this
+                # task while the waiting path propagates the same failure
+                # to its caller — record it so a DeliveryHandle surfaces it.
+                try:
+                    stream_error = await self._process_streaming_responses(
+                        cascade.streams, room_id
+                    )
+                except Exception as exc:
+                    logger.exception("Detached stream consumption failed for room %s", room_id)
+                    cascade.record_error(exc)
+                else:
+                    if stream_error is not None:
+                        cascade.record_error(stream_error)
 
         def _end_tail(done: asyncio.Task[None]) -> None:
             # On the task's completion rather than inside it: close() cancels
@@ -426,6 +427,12 @@ class LaneExecutionMixin(HelpersMixin):
             if done.cancelled():
                 status, message = "error", "cancelled"
             elif (exc := done.exception()) is not None:
+                # Nothing in _consume escapes today; if something ever does,
+                # retrieving it here silences asyncio's own warning, so the
+                # failure must stay loud and reach the handle's waiter.
+                logger.error("Detached tail failed for room %s", room_id, exc_info=exc)
+                if isinstance(exc, Exception):
+                    cascade.record_error(exc)
                 status, message = "error", str(exc)
             elif cascade.error is not None:
                 status, message = "error", str(cascade.error)
@@ -437,7 +444,7 @@ class LaneExecutionMixin(HelpersMixin):
                 tail_span,
                 status=status,
                 error_message=message,
-                attributes={"streams": len(cascade.streams), "cancelled": cascade.cancelled or ""},
+                attributes={"streams": len(cascade.streams)},
             )
 
         task = asyncio.get_running_loop().create_task(

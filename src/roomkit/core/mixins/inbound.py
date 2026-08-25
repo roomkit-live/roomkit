@@ -160,7 +160,12 @@ class InboundMixin(HelpersMixin):
             )
             return _inbound_result
         except Exception as exc:
-            telemetry.end_span(inbound_span_id, status="error", error_message=str(exc))
+            telemetry.end_span(
+                inbound_span_id,
+                status="error",
+                error_message=str(exc),
+                attributes={"deferred": defer_delivery},
+            )
             raise
         finally:
             reset_span(token)

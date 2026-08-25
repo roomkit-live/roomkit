@@ -647,7 +647,7 @@ class RoomDeliveryLane:
         plan = entry.plan
         try:
             if result is not None:
-                with restored_span(plan.parent_span_id, plan.parent_span_ctx):
+                with restored_span(plan.parent_span_id, telemetry_ctx=plan.parent_span_ctx):
                     await self._host._post_plan_effects(plan, result, entry.cascade)
                     await self._host._reentry_commit_pass(
                         self.room_id, plan, result, entry.cascade
