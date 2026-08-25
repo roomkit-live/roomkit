@@ -51,6 +51,22 @@ _current_tool_call: contextvars.ContextVar[ToolCallContext | None] = contextvars
 )
 
 
+def current_tool_call() -> ToolCallContext | None:
+    """The per-call context of the tool call the caller is executing under.
+
+    What ``_run_one`` set before invoking the handler — the call's id, its
+    room, its channel — and the reverse channel the handler may fill:
+    ``structured_content``, the MCP structured result the tool-call events
+    carry verbatim for UI surfaces. A host that rewrites a result before the
+    model reads it (a provider's private address turned into its own relay
+    link, say) reaches the structured copy here, so the persisted event does
+    not keep what the text no longer says.
+
+    ``None`` outside a tool call.
+    """
+    return _current_tool_call.get()
+
+
 def current_tool_room_id() -> str | None:
     """Room id of the tool loop the caller is executing under.
 

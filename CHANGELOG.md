@@ -16,6 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   as `event.ai_context.response_metadata`. A host whose tool read a document
   mid-loop can now name it as a source of the reply, where before only what was
   known before generation could be stamped.
+- **`roomkit.tools.current_tool_call()`** returns the per-call `ToolCallContext`
+  from inside a tool handler — the call's id, room and channel, and the
+  `structured_content` reverse channel — so a host that rewrites a result
+  before the model reads it can rewrite the structured copy the tool-call
+  events persist as well.
 
 ### Changed
 

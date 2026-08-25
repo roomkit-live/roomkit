@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock
 from roomkit.channels.ai import AIChannel, _current_loop_ctx, _ToolLoopContext
 from roomkit.models.channel import ChannelBinding
 from roomkit.models.context import RoomContext
-from roomkit.models.enums import ChannelCategory, ChannelType, IdentificationStatus
+from roomkit.models.enums import ChannelCategory, ChannelType, EventType, IdentificationStatus
 from roomkit.models.participant import Participant
 from roomkit.models.room import Room
 from roomkit.providers.ai.base import AIResponse, AIToolCall
@@ -23,6 +23,7 @@ from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.tools import (
     current_tool_actor_id,
     current_tool_allowed_names,
+    current_tool_call,
     current_tool_room_id,
 )
 from roomkit.tools.context import _current_tool_call
@@ -370,3 +371,42 @@ class TestCurrentToolAllowedNames:
         _ = [chunk async for chunk in output.response_stream]
 
         handler.assert_not_awaited()
+
+
+class TestCurrentToolCall:
+    def test_none_outside_a_tool_call(self) -> None:
+        assert current_tool_call() is None
+
+    async def test_handler_sees_its_call_and_may_fill_the_structured_copy(self) -> None:
+        from roomkit.providers.ai.base import AIResponse, AIToolCall
+
+        seen: list[Any] = []
+
+        async def handler(name: str, args: dict[str, Any]) -> str:
+            call = current_tool_call()
+            assert call is not None
+            seen.append((call.tool_call_id, call.room_id, call.channel_id))
+            call.structured_content = {"rewritten": True}
+            return "ok"
+
+        provider = MockAIProvider(
+            ai_responses=[
+                AIResponse(
+                    content="",
+                    finish_reason="tool_calls",
+                    tool_calls=[AIToolCall(id="tc-9", name="search", arguments={"q": "x"})],
+                ),
+                AIResponse(content="done", finish_reason="stop"),
+            ]
+        )
+        ch = AIChannel("ai1", provider=provider, tool_handler=handler)
+        output = await ch.on_event(
+            make_event(room_id="r1", body="go", channel_id="sms1"),
+            _binding("r1"),
+            RoomContext(room=Room(id="r1")),
+        )
+
+        assert seen == [("tc-9", "r1", "ai1")]
+        tool_ends = [e for e in output.response_events if e.type == EventType.TOOL_CALL_END]
+        assert tool_ends and tool_ends[0].content.structured_content == {"rewritten": True}
+        assert current_tool_call() is None
