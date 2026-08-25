@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import contextvars
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Any
 
 _parent_span: contextvars.ContextVar[str | None] = contextvars.ContextVar(
@@ -48,3 +50,26 @@ def set_current_span(
 def reset_span(token: contextvars.Token[str | None]) -> None:
     """Reset the span context variable to its previous value."""
     _parent_span.reset(token)
+
+
+@contextmanager
+def restored_span(span_id: str | None, telemetry_ctx: Any = None) -> Iterator[None]:
+    """Make a captured span the current one for the duration of the block.
+
+    For work that runs on a fresh :mod:`contextvars` context — a delivery
+    lane executor, a detached stream consumer — and must attach the spans it
+    opens to the caller that planned it. Both variables are set
+    unconditionally and both are reset on exit: :func:`set_current_span`
+    keeps the previous backend context when handed ``None`` and
+    :func:`reset_span` never touches it, so restoring through that pair
+    would leave a stale backend context behind for the next span the task
+    opens. ``telemetry_ctx`` is whatever the provider's ``get_span_context``
+    returned for ``span_id`` (``None`` for providers that carry none).
+    """
+    span_token = _parent_span.set(span_id)
+    ctx_token = _parent_telemetry_ctx.set(telemetry_ctx)
+    try:
+        yield
+    finally:
+        _parent_telemetry_ctx.reset(ctx_token)
+        _parent_span.reset(span_token)

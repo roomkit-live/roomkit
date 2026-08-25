@@ -7,6 +7,7 @@ from typing import Any
 
 import pytest
 
+from roomkit.channels.ai import AIChannel
 from roomkit.channels.base import Channel
 from roomkit.core.exceptions import ProviderDeliveryError
 from roomkit.core.framework import RoomKit
@@ -14,12 +15,14 @@ from roomkit.models.channel import ChannelBinding, ChannelOutput
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundMessage, ProviderResult
 from roomkit.models.enums import (
+    ChannelCategory,
     ChannelType,
     HookTrigger,
 )
 from roomkit.models.event import EventSource, RoomEvent, TextContent
 from roomkit.models.hook import HookResult
 from roomkit.providers.ai.base import AIContext, AIProvider, AIResponse
+from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.telemetry import (
     Attr,
     ConsoleTelemetryProvider,
@@ -1261,6 +1264,35 @@ class TestTelemetryPhase4:
         root_spans = [s for s in inbound_spans if s.name == "framework.inbound"]
         assert len(root_spans) == 1
         assert broadcast_spans[0].parent_id == root_spans[0].id
+
+    async def test_lane_side_spans_parent_to_inbound(self) -> None:
+        """The reentry pass and AFTER_BROADCAST run in the lane executor, on
+        a fresh context: their spans must still hang under the inbound span
+        (the planner's span rides the plan), never surface as trace roots."""
+        mock = MockTelemetryProvider()
+        kit = RoomKit(telemetry=mock)
+        kit.register_channel(SimpleChannel("ch1"))
+        kit.register_channel(SimpleChannel("ch2"))
+        kit.register_channel(AIChannel("ai1", provider=MockAIProvider(responses=["reply"])))
+
+        @kit.hook(HookTrigger.AFTER_BROADCAST, name="after")
+        async def after(event: Any, context: RoomContext) -> None:
+            pass
+
+        room = await kit.create_room()
+        await kit.attach_channel(room.id, "ch1")
+        await kit.attach_channel(room.id, "ch2")
+        await kit.attach_channel(room.id, "ai1", category=ChannelCategory.INTELLIGENCE)
+        msg = InboundMessage(channel_id="ch1", sender_id="user1", content=TextContent(body="hi"))
+        await kit.process_inbound(msg, room_id=room.id)
+
+        (inbound,) = [s for s in mock.spans if s.name == "framework.inbound"]
+        broadcasts = mock.get_spans(SpanKind.BROADCAST)
+        assert len(broadcasts) == 2  # the trigger's delivery set, then the reply's
+        assert {s.parent_id for s in broadcasts} == {inbound.id}
+        after_spans = mock.get_spans(SpanKind.HOOK_ASYNC)
+        assert after_spans and {s.parent_id for s in after_spans} == {inbound.id}
+        assert [s.name for s in mock.spans if s.parent_id is None] == ["framework.inbound"]
 
     async def test_delivery_span_parents_to_broadcast(self) -> None:
         """DELIVERY span should be a child of BROADCAST span."""

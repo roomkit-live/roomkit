@@ -20,8 +20,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   like a non-deferred call's. This is the detached completion RFC §10.1
   step 18 already permits — built for HTTP surfaces that must answer with the
   created message while the agent's turn runs on, instead of publishing a
-  second, synthetic copy of the message to solicit the agent. See
-  `examples/deferred_inbound.py`.
+  second, synthetic copy of the message to solicit the agent. In the trace,
+  `framework.inbound` still ends at the return (what the caller waited for,
+  stamped `deferred=true`) and a `framework.detached` child span covers the
+  tail — delivery set, reentry passes and streamed responses — so the turn's
+  duration stays readable and every span of the tail keeps the parent the
+  waiting path gives it. See `examples/deferred_inbound.py`.
+
+### Fixed
+
+- **The lane-side spans of a turn no longer surface as trace roots.** The
+  reentry pass (an AI reply's `framework.broadcast` and its BEFORE_BROADCAST
+  `hook.sync`) and the AFTER_BROADCAST `hook.async` spans run in the room's
+  delivery lane, on a fresh context, and were emitted with no parent — a
+  turn read as one root per pass in Jaeger. The lane now restores the
+  planner's span around its post-delivery callbacks, the way it already did
+  for the delivery set itself, so the whole turn hangs under
+  `framework.inbound` (or `framework.send_event`) and AI-to-AI chains inherit
+  it pass after pass.
 
 ## [0.58.0] — 2026-08-21
 

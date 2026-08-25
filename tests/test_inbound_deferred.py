@@ -15,8 +15,12 @@ import asyncio
 from collections.abc import AsyncIterator
 from typing import Any
 
+import pytest
+
 from roomkit.channels.ai import AIChannel
 from roomkit.core.framework import RoomKit
+from roomkit.core.lanes import DeliveryCascade, _active_lane_room
+from roomkit.core.locks import _held_rooms
 from roomkit.models.channel import ChannelBinding, RateLimit
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundMessage
@@ -25,6 +29,9 @@ from roomkit.models.event import TextContent
 from roomkit.models.hook import HookResult
 from roomkit.providers.ai.base import AIContext, AIResponse, StreamEvent
 from roomkit.providers.ai.mock import MockAIProvider
+from roomkit.telemetry.base import SpanKind
+from roomkit.telemetry.context import get_current_span, reset_span, set_current_span
+from roomkit.telemetry.mock import MockTelemetryProvider
 from tests.test_framework import SimpleChannel
 
 
@@ -63,8 +70,13 @@ class _SessionChannel(SimpleChannel):
         self.connected.append(session)
 
 
-async def _make_kit(ai: AIChannel, transport: SimpleChannel | None = None) -> RoomKit:
-    kit = RoomKit()
+async def _make_kit(
+    ai: AIChannel,
+    transport: SimpleChannel | None = None,
+    *,
+    telemetry: MockTelemetryProvider | None = None,
+) -> RoomKit:
+    kit = RoomKit(telemetry=telemetry)
     kit.register_channel(transport or SimpleChannel("sms1"))
     # A second transport so the trigger has a delivery set of its own — the
     # source channel is not delivered back to, and delivery_results only
@@ -277,4 +289,158 @@ async def test_handle_wait_short_circuits_under_room_lock() -> None:
     provider.gate.set()
     final = await asyncio.wait_for(result.delivery.wait(), timeout=5.0)
     assert final.error is None
+    await kit.close()
+
+
+# -- Trace shape: the deferred tail stays in the inbound span's tree --
+
+
+def _span_tree(telemetry: MockTelemetryProvider) -> list[tuple[str, str | None]]:
+    """``(name, parent name)`` for every completed span, sorted."""
+    by_id = {s.id: s for s in telemetry.spans}
+    return sorted(
+        (s.name, by_id[s.parent_id].name if s.parent_id in by_id else None)
+        for s in telemetry.spans
+    )
+
+
+async def _traced_turn(*, streaming: bool, defer: bool) -> MockTelemetryProvider:
+    """One full turn — trigger, AI reply, both hook passes — under a mock tracer."""
+    telemetry = MockTelemetryProvider()
+    provider = MockAIProvider(responses=["reply"], streaming=streaming)
+    kit = await _make_kit(AIChannel("ai1", provider=provider), telemetry=telemetry)
+
+    @kit.hook(HookTrigger.BEFORE_BROADCAST)
+    async def before(event: Any, ctx: RoomContext) -> HookResult:
+        return HookResult.allow()
+
+    @kit.hook(HookTrigger.AFTER_BROADCAST)
+    async def after(event: Any, ctx: RoomContext) -> None:
+        return None
+
+    result = await kit.process_inbound(_message(), defer_delivery=defer)
+    if result.delivery is not None:
+        await asyncio.wait_for(result.delivery.wait(), timeout=5.0)
+    await kit.close()
+    return telemetry
+
+
+@pytest.mark.parametrize("streaming", [False, True], ids=["reentry", "streamed"])
+async def test_deferred_span_tree_matches_the_waiting_path(streaming: bool) -> None:
+    """Every span of a deferred turn keeps the parent the waiting path gives
+    it. The streamed segments and their hooks ride the detached consumer, the
+    reentry pass and AFTER_BROADCAST ride the lane executor — both on fresh
+    contexts — and none of them may surface as a trace root. The one
+    deferred-only span is ``framework.detached``, a child of the inbound span."""
+    waiting = _span_tree(await _traced_turn(streaming=streaming, defer=False))
+    deferred = _span_tree(await _traced_turn(streaming=streaming, defer=True))
+
+    assert ("framework.detached", "framework.inbound") in deferred
+    deferred.remove(("framework.detached", "framework.inbound"))
+    assert deferred == waiting
+    assert [name for name, parent in deferred if parent is None] == ["framework.inbound"]
+    # The whole turn hangs under the inbound span: the trigger's delivery
+    # set, the reply's (reentry or streamed segment), and both hook passes.
+    assert deferred.count(("framework.broadcast", "framework.inbound")) == 2
+    assert ("hook.async.after", "framework.inbound") in deferred
+
+
+async def test_detached_span_measures_the_deferred_tail() -> None:
+    """``framework.inbound`` ends at the return — what the caller waited for —
+    and a ``framework.detached`` child, opened at the deferral, covers the
+    rest of the turn: still open when the call returns, ended with the
+    consumer, so the turn's duration is readable from the trace."""
+    telemetry = MockTelemetryProvider()
+    provider = MockAIProvider(responses=["streamed reply"], streaming=True)
+    kit = await _make_kit(AIChannel("ai1", provider=provider), telemetry=telemetry)
+
+    result = await kit.process_inbound(_message(), defer_delivery=True)
+
+    (inbound,) = [s for s in telemetry.spans if s.name == "framework.inbound"]
+    assert inbound.attributes["deferred"] is True
+    assert "framework.detached" in {s.name for s in telemetry.get_active_spans()}
+
+    assert result.delivery is not None
+    await asyncio.wait_for(result.delivery.wait(), timeout=5.0)
+
+    (tail,) = [s for s in telemetry.spans if s.name == "framework.detached"]
+    assert tail.parent_id == inbound.id
+    assert tail.status == "ok"
+    assert tail.attributes["streams"] == 1
+    assert inbound.end_time is not None and tail.end_time is not None
+    assert tail.end_time >= inbound.end_time
+    await kit.close()
+
+
+async def test_detached_span_reports_a_failed_tail() -> None:
+    exc = RuntimeError("stream exploded")
+    telemetry = MockTelemetryProvider()
+    kit = await _make_kit(
+        AIChannel("ai1", provider=_StreamRaisingProvider(exc)), telemetry=telemetry
+    )
+
+    result = await kit.process_inbound(_message(), defer_delivery=True)
+    assert result.delivery is not None
+    await asyncio.wait_for(result.delivery.wait(), timeout=5.0)
+
+    (tail,) = [s for s in telemetry.spans if s.name == "framework.detached"]
+    assert tail.status == "error"
+    assert tail.error_message == str(exc)
+    await kit.close()
+
+
+async def test_close_in_flight_ends_the_detached_span() -> None:
+    """close() cancels the consumer while the tail is still running: the
+    detached span must not be left open — it ends as cancelled."""
+    telemetry = MockTelemetryProvider()
+    provider = _GatedAIProvider()
+    kit = await _make_kit(AIChannel("ai1", provider=provider), telemetry=telemetry)
+
+    result = await kit.process_inbound(_message(), defer_delivery=True)
+    assert result.delivery is not None
+    assert result.delivery.done is False
+
+    # Open the gate only once close() has cancelled the consumer: the lane
+    # then drains cleanly while the tail itself was abandoned mid-flight.
+    asyncio.get_running_loop().call_later(0.05, provider.gate.set)
+    await kit.close()
+
+    assert result.delivery.done is True
+    assert telemetry.get_active_spans() == []
+    (tail,) = [s for s in telemetry.spans if s.name == "framework.detached"]
+    assert tail.status == "error"
+    assert tail.error_message == "cancelled"
+
+
+async def test_detached_consumer_runs_lock_free_under_the_callers_span() -> None:
+    """The consumer task starts on a fresh context — an inherited
+    ``_held_rooms`` would fake lock reentrancy — and gets the caller's span
+    back explicitly, the way the lane executor gets the planner's."""
+    telemetry = MockTelemetryProvider()
+    kit = RoomKit(telemetry=telemetry)
+    seen: dict[str, Any] = {}
+
+    async def observe(streams: Any, room_id: str) -> Exception | None:
+        seen["held"] = _held_rooms.get()
+        seen["lane"] = _active_lane_room.get()
+        seen["span"] = get_current_span()
+        return None
+
+    kit._process_streaming_responses = observe  # type: ignore[method-assign]
+    cascade = DeliveryCascade("r1", reentry_budget=1)
+    cascade.add_streams([object()])
+
+    caller_span = telemetry.start_span(SpanKind.CUSTOM, "caller")
+    token = set_current_span(caller_span)
+    try:
+        async with kit._lock_manager.locked("r1"):
+            task = kit._consume_streams_when_cascade_completes(cascade, "r1")
+    finally:
+        reset_span(token)
+    await asyncio.wait_for(task, timeout=2.0)
+    telemetry.end_span(caller_span)
+
+    assert seen == {"held": frozenset(), "lane": None, "span": caller_span}
+    (tail,) = [s for s in telemetry.spans if s.name == "framework.detached"]
+    assert tail.parent_id == caller_span
     await kit.close()

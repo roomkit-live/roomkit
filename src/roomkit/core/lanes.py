@@ -35,6 +35,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from roomkit.core.locks import _held_rooms
+from roomkit.telemetry.context import restored_span
 
 if TYPE_CHECKING:
     from roomkit.core.locks import RoomLockManager
@@ -107,7 +108,8 @@ class DeliveryPlan:
     # Trace continuity across the lane boundary: the caller's current span
     # (and its backend context), captured at plan time. The lane executor
     # runs on a fresh contextvars context, so without these the broadcast
-    # span would be an orphan instead of a child of the inbound span.
+    # span, the post-plan hook spans and the reentry pass's plan would be
+    # orphans instead of children of the inbound span.
     parent_span_id: str | None = None
     parent_span_ctx: Any = None
     # True on the root pass of an inbound/send_event call: emits
@@ -633,13 +635,23 @@ class RoomDeliveryLane:
             return None
 
     async def _finish(self, entry: ExecEntry, result: Any) -> None:
-        """Post-claim aftermath of one executed plan, then the unit release."""
+        """Post-claim aftermath of one executed plan, then the unit release.
+
+        Runs under the planner's span (``DeliveryPlan.parent_span_id``), the
+        way ``execute_plan`` does for the delivery set: this task's context
+        is fresh, so without the restore the AFTER_BROADCAST hook spans and
+        the reentry pass — whose own plan captures the current span as its
+        parent — would be trace roots instead of children of the inbound or
+        send_event span that started the turn.
+        """
+        plan = entry.plan
         try:
             if result is not None:
-                await self._host._post_plan_effects(entry.plan, result, entry.cascade)
-                await self._host._reentry_commit_pass(
-                    self.room_id, entry.plan, result, entry.cascade
-                )
+                with restored_span(plan.parent_span_id, plan.parent_span_ctx):
+                    await self._host._post_plan_effects(plan, result, entry.cascade)
+                    await self._host._reentry_commit_pass(
+                        self.room_id, plan, result, entry.cascade
+                    )
         except asyncio.CancelledError:
             raise
         except Exception as exc:

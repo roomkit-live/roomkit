@@ -165,9 +165,11 @@ class InboundMixin(HelpersMixin):
         finally:
             reset_span(token)
             if _inbound_result is not None:
+                # ``deferred``: the turn's tail lives in a ``framework.detached``
+                # child span; this span measures what the caller waited for.
                 telemetry.end_span(
                     inbound_span_id,
-                    attributes={"blocked": _inbound_result.blocked},
+                    attributes={"blocked": _inbound_result.blocked, "deferred": defer_delivery},
                 )
 
     async def _process_inbound_inner(

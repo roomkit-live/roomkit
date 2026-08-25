@@ -20,6 +20,8 @@ from roomkit.core.mixins.helpers import _RECENT_EVENTS_LIMIT, HelpersMixin
 from roomkit.models.delivery import DeliveryError, DeliveryResult
 from roomkit.models.enums import ChannelCategory, EventStatus, HookTrigger
 from roomkit.models.event import EventSource, RoomEvent
+from roomkit.telemetry.base import SpanKind
+from roomkit.telemetry.context import get_current_span, restored_span
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -33,6 +35,7 @@ if TYPE_CHECKING:
     from roomkit.models.context import RoomContext
     from roomkit.models.hook import InjectedEvent
     from roomkit.store.base import ConversationStore
+    from roomkit.telemetry.base import TelemetryProvider
 
 logger = logging.getLogger("roomkit.framework")
 
@@ -101,6 +104,7 @@ class LaneExecutionHost(Protocol):
         _lock_manager: Room lock, taken fresh by each reentry pass.
         _lanes: The delivery-lane registry.
         _max_chain_depth: Chain depth ceiling (RFC §8.3).
+        _telemetry: Telemetry / tracing provider.
 
     Methods provided by the host class (RoomKit):
         _get_router: Lazily create / return the ``EventRouter``.
@@ -112,6 +116,7 @@ class LaneExecutionHost(Protocol):
     _lock_manager: RoomLockManager
     _lanes: RoomLaneRegistry
     _max_chain_depth: int
+    _telemetry: TelemetryProvider
 
     def _get_router(self) -> EventRouter: ...
 
@@ -124,6 +129,7 @@ class LaneExecutionMixin(HelpersMixin):
 
     _lock_manager: RoomLockManager
     _max_chain_depth: int
+    _telemetry: TelemetryProvider
 
     # Cross-mixin methods — attribute annotations avoid MRO shadowing
     _get_router: Any  # RoomKit._get_router
@@ -374,30 +380,72 @@ class LaneExecutionMixin(HelpersMixin):
         deferred ``process_inbound``'s :class:`DeliveryHandle` waits on. A
         consumption failure is recorded on the cascade so that handle can
         surface it; the fire-and-forget callers never look, as before.
+
+        Trace continuity is explicit, never inherited (the same rule as
+        ``DeliveryPlan.parent_span_id``): the caller's span is captured here
+        and restored inside the task, so the streamed segments keep the
+        parent the waiting path gives them. A ``framework.detached`` span,
+        child of the caller's span and opened at the detachment instant,
+        measures the tail — what a deferred call's caller did not wait for.
+        It is not made current: it measures without re-parenting, so a
+        streamed reply and a non-streaming one sit at the same depth.
         """
+        telemetry = self._telemetry
+        parent_id = get_current_span()
+        parent_ctx = telemetry.get_span_context(parent_id) if parent_id is not None else None
+        tail_span = telemetry.start_span(
+            SpanKind.INBOUND_PIPELINE,
+            "framework.detached",
+            parent_id=parent_id,
+            room_id=room_id,
+        )
 
         async def _consume() -> None:
-            await cascade.wait_detached()
-            if cascade.streams and cascade.cancelled is None:
-                # An escape here would otherwise die un-retrieved on this
-                # task while the waiting path propagates the same failure to
-                # its caller — record it so a DeliveryHandle surfaces it.
-                try:
-                    stream_error = await self._process_streaming_responses(
-                        cascade.streams, room_id
-                    )
-                except Exception as exc:
-                    logger.exception("Detached stream consumption failed for room %s", room_id)
-                    cascade.record_error(exc)
-                else:
-                    if stream_error is not None:
-                        cascade.record_error(stream_error)
+            with restored_span(parent_id, parent_ctx):
+                await cascade.wait_detached()
+                if cascade.streams and cascade.cancelled is None:
+                    # An escape here would otherwise die un-retrieved on this
+                    # task while the waiting path propagates the same failure
+                    # to its caller — record it so a DeliveryHandle surfaces it.
+                    try:
+                        stream_error = await self._process_streaming_responses(
+                            cascade.streams, room_id
+                        )
+                    except Exception as exc:
+                        logger.exception("Detached stream consumption failed for room %s", room_id)
+                        cascade.record_error(exc)
+                    else:
+                        if stream_error is not None:
+                            cascade.record_error(stream_error)
+
+        def _end_tail(done: asyncio.Task[None]) -> None:
+            # On the task's completion rather than inside it: close() cancels
+            # the consumer before the telemetry provider closes, and a task
+            # cancelled before its first step never runs a single line of
+            # its coroutine — a span ended from within would stay open.
+            if done.cancelled():
+                status, message = "error", "cancelled"
+            elif (exc := done.exception()) is not None:
+                status, message = "error", str(exc)
+            elif cascade.error is not None:
+                status, message = "error", str(cascade.error)
+            elif cascade.cancelled is not None:
+                status, message = "error", cascade.cancelled
+            else:
+                status, message = "ok", None
+            telemetry.end_span(
+                tail_span,
+                status=status,
+                error_message=message,
+                attributes={"streams": len(cascade.streams), "cancelled": cascade.cancelled or ""},
+            )
 
         task = asyncio.get_running_loop().create_task(
             _consume(),
             name=f"roomkit-detached-streams-{room_id}",
             context=contextvars.Context(),
         )
+        task.add_done_callback(_end_tail)
         task.add_done_callback(self._pending_hook_tasks.discard)
         self._pending_hook_tasks.add(task)
         return task
