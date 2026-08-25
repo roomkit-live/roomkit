@@ -4,12 +4,26 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from roomkit.models.enums import EventType, Visibility
 from roomkit.models.event import EventContent, RoomEvent
+
+if TYPE_CHECKING:
+
+    class _CascadeLike(Protocol):
+        """What a DeliveryHandle reads off the in-flight cascade.
+
+        Structural on purpose: models do not import from
+        :mod:`roomkit.core`, where :class:`DeliveryCascade` implements this.
+        """
+
+        delivery_results: dict[str, Any]
+        error: Exception | None
+
+        def waiter_would_deadlock(self) -> bool: ...
 
 
 class ProviderResult(BaseModel):
@@ -87,20 +101,28 @@ class DeliveryHandle:
     run — not merely the cascade, because a streamed reply is only generated
     while its stream is consumed, which starts after the cascade completes.
 
-    The cascade and the consumer task are duck-typed on purpose: models do
-    not import from :mod:`roomkit.core`.
+    The cascade is structurally typed (:class:`_CascadeLike`): models do not
+    import from :mod:`roomkit.core`.
     """
 
     __slots__ = ("_cascade", "_consumer", "_result")
 
-    def __init__(self, cascade: Any, consumer: asyncio.Task[None], result: InboundResult) -> None:
+    def __init__(
+        self, cascade: _CascadeLike, consumer: asyncio.Task[None], result: InboundResult
+    ) -> None:
         self._cascade = cascade
         self._consumer = consumer
         self._result = result
 
     @property
     def done(self) -> bool:
-        """Whether the deferred delivery, streamed responses included, finished."""
+        """Whether the deferred delivery will make no further progress.
+
+        True once the turn finished — but also for a consumer cancelled by
+        ``close()``, where the turn was abandoned mid-flight: this reports
+        "nothing more will happen", not "everything ran". ``wait()``'s
+        backfill is where the two read differently.
+        """
         return self._consumer.done()
 
     async def wait(self) -> InboundResult:
@@ -111,7 +133,16 @@ class DeliveryHandle:
         non-deferred call's — and returns that result. Never raises: a
         consumer cancelled by ``close()`` resolves the wait too, with
         whatever the cascade recorded by then.
+
+        Called from a context that must not wait on this room's delivery —
+        the room's own lane executor (a tool handler) or under the room
+        lock (a sync hook), where the lane cannot progress past the caller
+        — it returns the result immediately, unwaited and un-backfilled:
+        the same short-circuit the waiting path's step 18 applies, with
+        delivery following in lane order.
         """
+        if not self._consumer.done() and self._cascade.waiter_would_deadlock():
+            return self._result
         await asyncio.wait({self._consumer})
         self._result.delivery_results = self._cascade.delivery_results
         if self._result.error is None:
@@ -146,7 +177,12 @@ class InboundResult(BaseModel):
     delivery: DeliveryHandle | None = None
     """Set only by ``process_inbound(..., defer_delivery=True)``: the handle
     on the in-flight delivery (RFC §10.1 step 18 detached completion). ``None``
-    on the waiting path, where the result already reports the completed set."""
+    on the waiting path, where the result already reports the completed set —
+    and on a deferred call refused before the locked region (rate limited,
+    pre-commit timeout, identity block), which has no delivery to follow.
+    Whenever ``blocked`` is ``False`` the handle is there; a hook refusal,
+    decided inside the locked region, gets one too (its near-empty cascade
+    resolves at once)."""
 
 
 class DeliveryError(BaseModel):

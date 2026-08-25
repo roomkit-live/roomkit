@@ -366,9 +366,12 @@ class InboundMixin(HelpersMixin):
             # (delivery set, reentry passes, streamed responses) follows in
             # the room's lane, its streams consumed on the same background
             # task a detached caller uses. The handle is the caller's grip on
-            # that tail; it backfills delivery_results/error on completion. A
-            # blocked result gets one too — its near-empty cascade resolves
-            # at once — so the contract does not fork on the outcome.
+            # that tail; it backfills delivery_results/error on completion.
+            # Every result that reached this locked region gets one — a hook
+            # refusal included, whose near-empty cascade resolves at once. A
+            # refusal shed before it (rate limited, pre-commit timeout,
+            # identity block) returned above with delivery=None: there is no
+            # delivery to follow.
             consumer = self._consume_streams_when_cascade_completes(cascade, room_id)
             result.delivery = DeliveryHandle(cascade, consumer, result)
             await self._connect_session_if_ready(message, channel, room_id, result)

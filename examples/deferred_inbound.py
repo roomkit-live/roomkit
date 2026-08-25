@@ -39,7 +39,7 @@ from roomkit.providers.ai.mock import MockAIProvider
 class RestChannel(Channel):
     """A minimal transport standing in for an HTTP API surface."""
 
-    channel_type = ChannelType.WEBSOCKET
+    channel_type = ChannelType.WEBHOOK
 
     async def handle_inbound(self, message: InboundMessage, context: RoomContext) -> RoomEvent:
         return RoomEvent(

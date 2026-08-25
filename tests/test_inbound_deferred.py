@@ -17,7 +17,7 @@ from typing import Any
 
 from roomkit.channels.ai import AIChannel
 from roomkit.core.framework import RoomKit
-from roomkit.models.channel import ChannelBinding
+from roomkit.models.channel import ChannelBinding, RateLimit
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundMessage
 from roomkit.models.enums import ChannelCategory, EventStatus, EventType, HookTrigger
@@ -212,4 +212,69 @@ async def test_deferred_blocked_never_connects_session() -> None:
 
     assert result.blocked is True
     assert transport.connected == []
+    await kit.close()
+
+
+async def test_deferred_refused_before_locked_region_has_no_handle() -> None:
+    """A refusal shed before the locked region (here: rate limited) has no
+    delivery to follow — the contract is `blocked is False implies delivery`,
+    not `deferred implies delivery`."""
+    kit = RoomKit(inbound_rate_limit=RateLimit(max_per_second=1))
+    kit.register_channel(SimpleChannel("sms1"))
+    await kit.create_room(room_id="r1")
+    await kit.attach_channel("r1", "sms1")
+
+    first = await kit.process_inbound(_message(), defer_delivery=True)
+    assert first.blocked is False
+    assert first.delivery is not None
+    await asyncio.wait_for(first.delivery.wait(), timeout=5.0)
+
+    second = await kit.process_inbound(_message(), defer_delivery=True)
+    assert second.blocked is True
+    assert second.reason == "rate_limited"
+    assert second.delivery is None
+    await kit.close()
+
+
+async def test_consumer_crash_surfaces_on_result() -> None:
+    """An exception ESCAPING stream consumption (not one it returns) must
+    reach the deferred caller — the waiting path propagates it, so wait()
+    reporting success would be the silent fork."""
+    provider = MockAIProvider(responses=["streamed reply"], streaming=True)
+    kit = await _make_kit(AIChannel("ai1", provider=provider))
+
+    boom = RuntimeError("consumption infrastructure exploded")
+
+    async def raising(streams: Any, room_id: str) -> Exception | None:
+        raise boom
+
+    kit._process_streaming_responses = raising  # type: ignore[method-assign]
+
+    result = await kit.process_inbound(_message(), defer_delivery=True)
+    assert result.delivery is not None
+    await asyncio.wait_for(result.delivery.wait(), timeout=5.0)
+
+    assert result.error is boom
+    await kit.close()
+
+
+async def test_handle_wait_short_circuits_under_room_lock() -> None:
+    """wait() from a context the lane cannot progress past (a sync hook under
+    the room lock, a tool handler inside the lane) must return unwaited, the
+    way cascade.wait() short-circuits — not hang on its own turn."""
+    provider = _GatedAIProvider()
+    kit = await _make_kit(AIChannel("ai1", provider=provider))
+
+    result = await kit.process_inbound(_message(), defer_delivery=True)
+    assert result.delivery is not None
+    assert result.delivery.done is False
+
+    async with kit._lock_manager.locked("r1"):
+        # Generation still gated: a real wait would hang until timeout.
+        same = await asyncio.wait_for(result.delivery.wait(), timeout=2.0)
+    assert same is result
+
+    provider.gate.set()
+    final = await asyncio.wait_for(result.delivery.wait(), timeout=5.0)
+    assert final.error is None
     await kit.close()

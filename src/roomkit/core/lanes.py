@@ -202,7 +202,7 @@ class DeliveryCascade:
         """
         if self._pending <= 0:
             return True
-        if _active_lane_room.get() == self.room_id or self.room_id in _held_rooms.get():
+        if self.waiter_would_deadlock():
             return False
         await self._done.wait()
         return True
@@ -214,6 +214,17 @@ class DeliveryCascade:
         its own clean task, where waiting cannot deadlock.
         """
         await self._done.wait()
+
+    def waiter_would_deadlock(self) -> bool:
+        """Whether the current task must not wait on this room's delivery.
+
+        The same condition ``wait()`` short-circuits on — the caller is the
+        room's own lane executor or holds the room lock, so the lane cannot
+        progress past it — exposed for waiters outside this module: a
+        :class:`~roomkit.models.delivery.DeliveryHandle` awaited from a tool
+        handler or a sync hook would otherwise hang on its own turn.
+        """
+        return _active_lane_room.get() == self.room_id or self.room_id in _held_rooms.get()
 
 
 @dataclass(slots=True)

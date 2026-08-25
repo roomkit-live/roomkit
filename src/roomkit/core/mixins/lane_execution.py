@@ -379,9 +379,19 @@ class LaneExecutionMixin(HelpersMixin):
         async def _consume() -> None:
             await cascade.wait_detached()
             if cascade.streams and cascade.cancelled is None:
-                stream_error = await self._process_streaming_responses(cascade.streams, room_id)
-                if stream_error is not None:
-                    cascade.record_error(stream_error)
+                # An escape here would otherwise die un-retrieved on this
+                # task while the waiting path propagates the same failure to
+                # its caller — record it so a DeliveryHandle surfaces it.
+                try:
+                    stream_error = await self._process_streaming_responses(
+                        cascade.streams, room_id
+                    )
+                except Exception as exc:
+                    logger.exception("Detached stream consumption failed for room %s", room_id)
+                    cascade.record_error(exc)
+                else:
+                    if stream_error is not None:
+                        cascade.record_error(stream_error)
 
         task = asyncio.get_running_loop().create_task(
             _consume(),
