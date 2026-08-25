@@ -22,7 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   from inside a tool handler — the call's id, room and channel, and the
   `structured_content` reverse channel — so a host that rewrites a result
   before the model reads it can rewrite the structured copy the tool-call
-  events persist as well.
+  events persist as well. `ToolCallContext` is exported from `roomkit.tools`
+  alongside it, for hosts that annotate what they read.
 
 ### Changed
 
@@ -34,10 +35,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the final answer shows everything the turn learned; the non-streaming path
   builds its events at the end, so they read alike. Before, the output captured
   a copy at stream start and a write during the tool loop reached nothing.
-  Passing a plain dict still works — it is wrapped as a snapshot. What a host
-  loses: the field is no longer a `dict` instance — `isinstance(x, dict)` is
-  `False`, `json.dumps(x)` and the `|` operators refuse it; read it, write it,
-  `**x` or `dict(x)` as before.
+  Passing a plain dict still works — it is wrapped as a snapshot.
+
+  **BREAKING — the field is no longer a `dict` instance.**
+  `isinstance(x, dict)` is `False`, and `json.dumps(x)` and the `|`
+  operators refuse it, so a host that serialises the field directly or
+  merges it with `|` now raises `TypeError` where it used to work.
+  Reading it, writing it, `**x`, `dict(x)` and `==` against a dict
+  behave as before; wrap it in `dict(x)` at the JSON boundary.
 
 ## [0.59.0] — 2026-08-25
 
@@ -6531,7 +6536,8 @@ See entries `0.7.0a1` through `0.7.0a18` below.
 - `STTProvider.transcribe()` returns `TranscriptionResult` (Phase 3.1)
 - Framework event names enriched with payloads (Phase 4)
 
-[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.59.0...HEAD
+[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.60.0...HEAD
+[0.60.0]: https://github.com/roomkit-live/roomkit/compare/v0.59.0...v0.60.0
 [0.59.0]: https://github.com/roomkit-live/roomkit/compare/v0.58.0...v0.59.0
 [0.58.0]: https://github.com/roomkit-live/roomkit/compare/v0.57.0...v0.58.0
 [0.57.0]: https://github.com/roomkit-live/roomkit/compare/v0.56.0...v0.57.0

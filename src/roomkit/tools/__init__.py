@@ -5,6 +5,7 @@ from __future__ import annotations
 from roomkit.tools.base import Tool
 from roomkit.tools.compose import compose_tool_handlers, extract_tools
 from roomkit.tools.context import (
+    ToolCallContext,
     current_response_metadata,
     current_tool_actor_id,
     current_tool_allowed_names,
@@ -23,6 +24,7 @@ __all__ = [
     "PolicyExternalToolHandler",
     "RoleOverride",
     "Tool",
+    "ToolCallContext",
     "ToolDecision",
     "ToolPolicy",
     "compose_tool_handlers",
