@@ -128,6 +128,7 @@ from roomkit.models.hook import HookResult, InjectedEvent
 from roomkit.models.participant import Participant
 from roomkit.models.pending_input import PendingInput, PendingInputEvent, PendingInputStatus
 from roomkit.models.plan_event import PlanUpdatedEvent
+from roomkit.models.response_metadata import ResponseMetadata
 from roomkit.models.room import Room, RoomTimers
 from roomkit.models.session_event import SessionStartedEvent
 from roomkit.models.store_filter import EventFilter, PersistencePolicy
@@ -267,6 +268,7 @@ __all__ = [
     "HTTPChannel",
     "MessengerChannel",
     "RCSChannel",
+    "ResponseMetadata",
     "RealtimeAudioVideoChannel",
     "RealtimeVoiceChannel",
     "SMSChannel",

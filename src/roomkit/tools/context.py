@@ -145,8 +145,11 @@ def current_response_metadata() -> ResponseMetadata | None:
     document it read is a fact about the turn, not about the tool's string
     result.
 
-    Returns ``None`` outside a turn (a realtime pipeline, a direct call): the
-    caller then has nothing to attribute to, and writes nothing.
+    Returns ``None`` when no loop context is set (a realtime pipeline, a direct
+    call): the caller then has nothing to attribute to, and writes nothing. A
+    loop started without a turn — no ``handle_event`` above it — carries a
+    record of its own that no MESSAGE event is built from; writes to it are
+    harmless and go nowhere.
     """
     from roomkit.channels.ai import _current_loop_ctx
 

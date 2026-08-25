@@ -289,8 +289,8 @@ class TestLiveRecord:
         ai_context = AIContext(messages=[], response_metadata=record)
         assert ai_context.response_metadata is record
         # A bare dict is still accepted — wrapped, as a snapshot the caller chose.
-        legacy = AIContext(messages=[], response_metadata={"rag_sources": _SOURCES})
-        assert legacy.response_metadata == {"rag_sources": _SOURCES}
+        bare_dict = AIContext(messages=[], response_metadata={"rag_sources": _SOURCES})
+        assert bare_dict.response_metadata == {"rag_sources": _SOURCES}
         assert ChannelOutput.empty().response_metadata == {}
 
     def test_accessor_is_none_outside_a_turn(self) -> None:
@@ -371,3 +371,33 @@ class TestLiveRecord:
         assert len(ai_events) == 1
         assert ai_events[0].metadata["rag_sources"] == _SOURCES
         await kit.close()
+
+    async def test_a_hook_that_replaces_the_context_keeps_one_record(self) -> None:
+        # A hook may return a NEW AIContext instead of mutating the one it got.
+        # The turn still has one record: the tool handler's writes must land on
+        # the record the reply is built from, whichever object the hook returned.
+        provider = MockAIProvider(ai_responses=list(_TOOL_ROUNDS))
+        ch = AIChannel("ai1", provider=provider, tool_handler=_citing_handler)
+
+        async def _replacing_hook(gen_event: AIGenerationEvent) -> SyncPipelineResult:
+            fresh = gen_event.ai_context.model_copy(
+                update={"response_metadata": ResponseMetadata({"rag_sources": _SOURCES})}
+            )
+            gen_event.ai_context = fresh
+            return SyncPipelineResult(allowed=True)
+
+        ch._before_generation_hook = _replacing_hook
+        binding = ChannelBinding(
+            channel_id="ai1",
+            room_id="r1",
+            channel_type=ChannelType.AI,
+            category=ChannelCategory.INTELLIGENCE,
+            metadata=_TOOLS_BINDING_META,
+        )
+        output = await ch.on_event(make_event(body="read", channel_id="sms1"), binding, _ctx())
+
+        messages = [e for e in output.response_events if e.type == EventType.MESSAGE]
+        assert messages
+        for e in messages:
+            assert e.metadata["rag_sources"] == _SOURCES
+            assert e.metadata["cited"] == [{"tool": "read_page", "page": 3}]

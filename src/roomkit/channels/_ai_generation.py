@@ -191,6 +191,16 @@ class AIGenerationMixin(AIToolLoopRulesMixin):
                 sync_result.blocked_by,
             )
             return ai_context, True
+        # A hook that REPLACES the context (rather than mutating it) brings a
+        # record of its own. The turn has one record — the one the events are
+        # built from — so the loop context adopts the hook's: a tool handler's
+        # writes then land where the reply reads, whichever object the hook
+        # returned.
+        from roomkit.channels.ai import _current_loop_ctx
+
+        loop_ctx = _current_loop_ctx.get()
+        if loop_ctx is not None:
+            loop_ctx.response_metadata = gen_event.ai_context.response_metadata
         return gen_event.ai_context, False
 
     async def _generate_response(

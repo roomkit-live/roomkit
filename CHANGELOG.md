@@ -32,7 +32,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the final answer shows everything the turn learned; the non-streaming path
   builds its events at the end, so they read alike. Before, the output captured
   a copy at stream start and a write during the tool loop reached nothing.
-  Passing a plain dict still works — it is wrapped as a snapshot.
+  Passing a plain dict still works — it is wrapped as a snapshot. What a host
+  loses: the field is no longer a `dict` instance — `isinstance(x, dict)` is
+  `False`, `json.dumps(x)` and the `|` operators refuse it; read it, write it,
+  `**x` or `dict(x)` as before.
 
 ## [0.59.0] — 2026-08-25
 
