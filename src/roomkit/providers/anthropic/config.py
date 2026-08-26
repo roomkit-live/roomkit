@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, SecretStr
+from pydantic import BaseModel, SecretStr, field_validator
 
 _ADAPTIVE_THINKING_MODEL_PREFIXES = (
     "claude-opus-4-7",
@@ -28,7 +28,14 @@ class AnthropicConfig(BaseModel):
     timeout: float = 60.0
     """Request timeout in seconds (default 60s)."""
     base_url: str | None = None
-    """Override the base URL (e.g., for Claude Code sandbox proxy)."""
+    """Override the base URL (e.g., for Claude Code sandbox proxy).
+
+    The SDK appends ``/v1/messages`` to this, so a value that already ends in
+    that path is dropped down to its parent: Microsoft Foundry documents the
+    Claude surface as the whole ``<resource>/anthropic/v1/messages`` URL, and
+    pasting it verbatim would otherwise post to ``/v1/messages/v1/messages``.
+    A bare trailing ``/v1`` is deliberately left alone — unlike the full path
+    it is not unambiguously wrong, and a gateway may route on it."""
     extra_headers: dict[str, str] | None = None
     """Extra headers sent with every request (e.g., X-Tenant-ID)."""
     enable_prompt_caching: bool = True
@@ -49,6 +56,18 @@ class AnthropicConfig(BaseModel):
     modern reasoning models removed the sampling parameters and reject
     ``temperature`` with HTTP 400. Official modern models are profiled
     automatically unless this field is explicitly set."""
+
+    @field_validator("base_url")
+    @classmethod
+    def _drop_the_path_the_sdk_appends(cls, value: str | None) -> str | None:
+        """Reduce a pasted endpoint to the base the SDK expects."""
+        if value is None:
+            return value
+        trimmed = value.strip().rstrip("/")
+        suffix = "/v1/messages"
+        if trimmed.lower().endswith(suffix):
+            trimmed = trimmed[: -len(suffix)]
+        return trimmed or value.strip()
 
     def model_post_init(self, __context: Any) -> None:
         """Apply safe defaults for Anthropic's modern first-party models."""

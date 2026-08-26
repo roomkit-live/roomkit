@@ -1046,3 +1046,57 @@ class TestPerRequestCredential:
                 result = await provider.generate(_context(metadata={API_KEY_METADATA_KEY: bad}))
                 assert result.content == "shared"
             assert provider._per_request_clients == {}
+
+
+class TestBaseUrlNormalization:
+    """``base_url`` is a base, and the SDK owns the path it appends.
+
+    Microsoft Foundry documents its Claude surface as the whole
+    ``<resource>/anthropic/v1/messages`` URL, so that is what gets pasted into
+    an endpoint field. The SDK appends ``/v1/messages`` to whatever it is
+    given, which would post to ``/v1/messages/v1/messages``.
+    """
+
+    @pytest.mark.parametrize(
+        ("pasted", "expected"),
+        [
+            (
+                "https://res.services.ai.azure.com/anthropic/v1/messages",
+                "https://res.services.ai.azure.com/anthropic",
+            ),
+            (
+                "https://res.services.ai.azure.com/anthropic/v1/messages/",
+                "https://res.services.ai.azure.com/anthropic",
+            ),
+            (
+                "  https://res.services.ai.azure.com/anthropic/v1/messages  ",
+                "https://res.services.ai.azure.com/anthropic",
+            ),
+        ],
+    )
+    def test_the_appended_path_is_dropped(self, pasted: str, expected: str) -> None:
+        config = AnthropicConfig(api_key="k", model="claude-sonnet-4-5", base_url=pasted)
+        assert config.base_url == expected
+
+    @pytest.mark.parametrize(
+        "base_url",
+        [
+            # A Foundry Claude base, already correct.
+            "https://res.services.ai.azure.com/anthropic",
+            # A bare ``/v1``: not unambiguously wrong, and a gateway may route
+            # on it, so it is deliberately left alone.
+            "https://gateway.example/anthropic/v1",
+            # The Claude Code sandbox proxy, and the vendor endpoint.
+            "http://sandbox-service:8001",
+            "https://api.anthropic.com",
+        ],
+    )
+    def test_a_legitimate_base_is_left_alone(self, base_url: str) -> None:
+        config = AnthropicConfig(api_key="k", model="claude-sonnet-4-5", base_url=base_url)
+        assert config.base_url == base_url
+
+    def test_none_stays_none_so_model_profiling_still_applies(self) -> None:
+        # ``model_post_init`` profiles first-party models only when no custom
+        # base_url is set; the validator must not turn None into a string.
+        config = AnthropicConfig(api_key="k", model="claude-opus-4-8")
+        assert config.base_url is None
