@@ -311,3 +311,67 @@ class TestAzureAIProvider:
                 timeout=30.0,
                 max_retries=0,
             )
+
+
+class TestAzureEndpointNormalization:
+    """Azure hands out several different full URLs; only the root works.
+
+    ``AsyncAzureOpenAI`` appends ``/openai/deployments/<name>/chat/completions``
+    to whatever it is given, so a base carrying a path the client re-appends
+    produces a doubled route and an opaque 404 one agent turn later. The
+    portal's Keys and Endpoint blade gives the root, the v1 API documentation
+    says to append ``/openai/v1``, and a deployment's page gives the whole
+    target URI: all three get pasted into this field.
+    """
+
+    @pytest.mark.parametrize(
+        "pasted",
+        [
+            "https://res.openai.azure.com",
+            "https://res.openai.azure.com/",
+            "https://res.openai.azure.com/openai/v1",
+            "https://res.openai.azure.com/openai/v1/",
+            "https://res.openai.azure.com/openai/v1/chat/completions",
+            "https://res.openai.azure.com/openai/v1/responses",
+            "https://res.openai.azure.com/openai/deployments/gpt-5/chat/completions"
+            "?api-version=2024-12-01-preview",
+            "  https://res.openai.azure.com/openai/v1  ",
+        ],
+    )
+    def test_every_documented_paste_reduces_to_the_resource_root(self, pasted: str) -> None:
+        assert _config(azure_endpoint=pasted).azure_endpoint == "https://res.openai.azure.com"
+
+    @pytest.mark.parametrize(
+        "endpoint",
+        [
+            # A Foundry multi-service resource, and the Cognitive Services host:
+            # the hostname is never rewritten, only the path.
+            "https://res.services.ai.azure.com",
+            "https://res.cognitiveservices.azure.com",
+            # An API Management gateway in front of the resource. Its route
+            # prefix is a legitimate base, including when it is spelled
+            # ``/openai`` — which is why a bare ``/openai`` is left alone.
+            "https://apim.contoso.com/my-route",
+            "https://apim.contoso.com/openai",
+        ],
+    )
+    def test_a_legitimate_base_is_left_alone(self, endpoint: str) -> None:
+        assert _config(azure_endpoint=endpoint).azure_endpoint == endpoint
+
+    def test_a_value_that_is_not_a_url_is_not_mangled(self) -> None:
+        # Half-typed input reaches this validator on every keystroke of a form
+        # preview. Refusing here would replace a clear downstream error with a
+        # confusing one; the only cleanup is the trailing slash.
+        assert _config(azure_endpoint="res.openai.azure.com/").azure_endpoint == (
+            "res.openai.azure.com"
+        )
+
+    def test_the_image_config_normalizes_the_same_field(self) -> None:
+        from roomkit.providers.azure.config import AzureImageConfig
+
+        config = AzureImageConfig(
+            api_key="k",
+            azure_endpoint="https://res.openai.azure.com/openai/v1/",
+            model="gpt-image-1",
+        )
+        assert config.azure_endpoint == "https://res.openai.azure.com"

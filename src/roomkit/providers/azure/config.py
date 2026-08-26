@@ -2,9 +2,55 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
-from pydantic import BaseModel, SecretStr
+from pydantic import BaseModel, SecretStr, field_validator
+
+# Path suffixes that can never belong to an Azure *base* endpoint, because the
+# SDK is about to append its own copy of them. Azure hands out a different full
+# URL depending on the blade you copied from — the portal's Keys and Endpoint
+# gives the resource root, the v1 API documentation says to append
+# ``/openai/v1``, and a deployment's page gives the whole target URI — so all
+# three are pasted into this field in practice, and only the first works.
+#
+# A bare trailing ``/openai`` is deliberately NOT in this list: it is
+# indistinguishable from the route prefix of an API Management gateway sitting
+# in front of the resource, which is a legitimate base.
+_REWRITABLE_SUFFIX = re.compile(
+    r"(?:/openai/v1|/openai/deployments/[^/]+|/chat/completions|/responses)/?$",
+    re.IGNORECASE,
+)
+
+
+def normalize_azure_endpoint(value: str) -> str:
+    """Reduce a pasted Azure URL to the resource base the SDK expects.
+
+    Drops the query string (an ``api-version`` copied along with a target URI),
+    the fragment, trailing slashes, and any suffix the client re-appends. Host
+    and scheme are never touched, so a Foundry ``services.ai.azure.com``
+    resource, a ``cognitiveservices.azure.com`` one and an APIM gateway all
+    survive unchanged.
+    """
+    raw = value.strip()
+    if not raw:
+        return raw
+    parts = urlsplit(raw)
+    if not parts.scheme or not parts.netloc:
+        # Not a URL we can reason about (a bare host, a half-typed value).
+        # Leave it alone: refusing here would be a second, worse failure.
+        return raw.rstrip("/")
+    path = parts.path
+    # Loop: a full target URI carries two rewritable suffixes
+    # (``/openai/deployments/<name>`` then ``/chat/completions``), and the v1
+    # form carries ``/openai/v1`` under ``/chat/completions``.
+    for _ in range(4):
+        stripped = _REWRITABLE_SUFFIX.sub("", path)
+        if stripped == path:
+            break
+        path = stripped
+    return urlunsplit((parts.scheme, parts.netloc, path.rstrip("/"), "", ""))
 
 
 class AzureAIConfig(BaseModel):
@@ -42,6 +88,19 @@ class AzureAIConfig(BaseModel):
     supports_custom_temperature: bool = True
     """When False, ``temperature`` is omitted — reasoning deployments accept
     only the default and reject any other value with HTTP 400."""
+
+    @field_validator("azure_endpoint")
+    @classmethod
+    def _normalize_endpoint(cls, value: str) -> str:
+        """Accept any of the URLs Azure hands out; keep the one the SDK needs.
+
+        ``AsyncAzureOpenAI`` builds ``{azure_endpoint}/openai/deployments/...``
+        itself, so a pasted ``/openai/v1`` suffix produces a doubled path and
+        an opaque 404 one agent turn later. Normalising here rather than
+        refusing keeps every documented copy-paste working.
+        """
+        return normalize_azure_endpoint(value)
+
     reasoning_effort: str | None = None
     """Reasoning depth for reasoning deployments (``"low"``/``"medium"``/
     ``"high"``); ``None`` uses the model default. Only sent for models that
@@ -91,3 +150,15 @@ class AzureImageConfig(BaseModel):
     output_format: str | None = None
     timeout: float = 120.0
     max_retries: int = 0
+
+    @field_validator("azure_endpoint")
+    @classmethod
+    def _normalize_endpoint(cls, value: str) -> str:
+        """Accept any of the URLs Azure hands out; keep the one the SDK needs.
+
+        ``AsyncAzureOpenAI`` builds ``{azure_endpoint}/openai/deployments/...``
+        itself, so a pasted ``/openai/v1`` suffix produces a doubled path and
+        an opaque 404 one agent turn later. Normalising here rather than
+        refusing keeps every documented copy-paste working.
+        """
+        return normalize_azure_endpoint(value)
