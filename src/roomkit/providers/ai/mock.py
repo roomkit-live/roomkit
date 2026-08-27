@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import json
 from collections.abc import AsyncIterator
-from typing import Any
 
 from roomkit.providers.ai.base import (
     AIContext,
     AIProvider,
     AIResponse,
+    AIToolCall,
     ModelInfo,
     StreamDone,
     StreamEvent,
@@ -105,13 +105,13 @@ class MockAIProvider(AIProvider):
             metadata=response.metadata,
         )
 
-    def _tool_call_deltas(self, tool_call: Any) -> list[StreamToolCallDelta]:
+    def _tool_call_deltas(self, tool_call: AIToolCall) -> list[StreamToolCallDelta]:
         """Split a call's arguments into ``tool_call_delta_chunks`` fragments.
 
         Real providers deliver a tool call's arguments fragment by fragment;
         this reproduces that for tests of the composition events. Zero chunks
-        (the default) emits none, which is the behaviour every existing test
-        was written against.
+        (the default) emits none, so a test that does not ask for them sees a
+        plain complete call.
         """
         chunks = self._tool_call_delta_chunks
         if chunks <= 0:

@@ -755,6 +755,10 @@ class AIProvider(ABC):
     async def generate_structured_stream(self, context: AIContext) -> AsyncIterator[StreamEvent]:
         """Yield structured events (thinking deltas, text deltas, tool calls, done).
 
+        A provider whose wire format fragments a tool call's arguments SHOULD
+        also yield :class:`StreamToolCallDelta` per fragment; it is optional,
+        and one that delivers whole calls yields none.
+
         Default implementation wraps ``generate()`` so every provider works
         without changes.  Override for true streaming support.
         """

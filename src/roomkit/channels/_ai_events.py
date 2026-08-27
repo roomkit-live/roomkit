@@ -56,10 +56,21 @@ class AIEventsMixin:
                     {"id": tc.id, "name": tc.name, "arguments": tc.arguments} for tc in tool_calls
                 ]
             elif event_type == EphemeralEventType.TOOL_CALL_DELTA:
-                # Name and running size only. The argument text is deliberately
-                # absent — it can be megabytes or personal data, and START
-                # delivers it whole once the call is complete.
-                tc_data = [dict(tc) for tc in tool_calls]
+                # Name and running size only, projected field by field like the
+                # other two branches rather than copied wholesale: the argument
+                # text can be megabytes or personal data, and a guarantee the
+                # publish boundary does not enforce is a guarantee one careless
+                # caller away from being false. START delivers the arguments,
+                # once, when the call is complete. An empty list is the
+                # terminal frame: nothing is being composed any more.
+                tc_data = [
+                    {
+                        "id": tc["id"],
+                        "name": tc["name"],
+                        "arguments_chars": tc["arguments_chars"],
+                    }
+                    for tc in tool_calls
+                ]
             else:  # TOOL_CALL_END — tool_calls are AIToolResultPart
                 tc_data = [
                     {

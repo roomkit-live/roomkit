@@ -427,12 +427,18 @@ await kit.unsubscribe_room(sub_id)
 
 #### Tool Call Events
 
-AIChannel automatically broadcasts `TOOL_CALL_START` and `TOOL_CALL_END` ephemeral events
-when executing tools in both streaming and non-streaming tool loops. The streamed text
-stays clean — no inline XML.
+AIChannel automatically broadcasts `TOOL_CALL_DELTA`, `TOOL_CALL_START` and `TOOL_CALL_END`
+ephemeral events when executing tools in both streaming and non-streaming tool loops
+(`TOOL_CALL_DELTA` on the streaming path only). The streamed text stays clean — no inline XML.
 
+- **TOOL_CALL_DELTA** payload: `{tool_calls: [{id, name, arguments_chars}], round, channel_id}`
 - **TOOL_CALL_START** payload: `{tool_calls: [{id, name, arguments}], round, channel_id}`
 - **TOOL_CALL_END** payload: `{tool_calls: [{id, name, result}], round, channel_id, duration_ms}`
+
+DELTA fires while the model composes a call's arguments, carrying the running size and
+**never the argument content**; an empty `tool_calls` is the terminal frame saying the
+composition ended, which a round that never reaches START (cancelled, out of rounds, out
+of time) still sends.
 
 Results in END events are preview-truncated to 500 characters. Events are best-effort
 (failures are logged at DEBUG, never break the tool loop).

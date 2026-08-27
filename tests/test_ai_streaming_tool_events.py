@@ -19,7 +19,7 @@ from roomkit import HookExecution, HookResult, HookTrigger, RoomContext, ToolCal
 from roomkit.channels._ai_streaming import _ToolCallDeltaCoalescer
 from roomkit.channels.ai import AIChannel
 from roomkit.core.framework import RoomKit
-from roomkit.models.channel import ChannelBinding
+from roomkit.models.channel import ChannelBinding, RetryPolicy
 from roomkit.models.delivery import InboundMessage
 from roomkit.models.enums import ChannelCategory, ChannelType
 from roomkit.models.event import RoomEvent, TextContent
@@ -31,7 +31,9 @@ from roomkit.providers.ai.base import (
     AIResponse,
     AITool,
     AIToolCall,
+    ProviderError,
     StreamDone,
+    StreamTextDelta,
     StreamToolCall,
     StreamToolCallDelta,
 )
@@ -332,7 +334,20 @@ async def test_no_streaming_target_error_fires_on_error() -> None:
 
 
 def _delta_events(received: list[EphemeralEvent]) -> list[EphemeralEvent]:
-    return [e for e in received if e.type == EphemeralEventType.TOOL_CALL_DELTA]
+    """Composition frames only — the terminal empty one is read separately."""
+    return [
+        e
+        for e in received
+        if e.type == EphemeralEventType.TOOL_CALL_DELTA and e.data["tool_calls"]
+    ]
+
+
+def _terminal_events(received: list[EphemeralEvent]) -> list[EphemeralEvent]:
+    return [
+        e
+        for e in received
+        if e.type == EphemeralEventType.TOOL_CALL_DELTA and not e.data["tool_calls"]
+    ]
 
 
 async def test_composition_deltas_reach_the_bus_before_the_call_completes() -> None:
@@ -456,6 +471,8 @@ async def test_first_fragment_publishes_without_waiting_for_the_window() -> None
 
     assert len(deltas) == 1
     assert deltas[0].data["tool_calls"][0]["name"] == "search"
+    # The window held every later fragment; the round still closes.
+    assert len(_terminal_events(received)) == 1
 
     await kit.close()
 
@@ -607,7 +624,7 @@ async def test_composition_coalescer_publishes_the_first_fragment_at_once() -> N
         published.append(args)
 
     coalescer = _ToolCallDeltaCoalescer(publish, "r1", 0, flush_ms=1e9, flush_chars=100_000)
-    await coalescer.add("tc1", "search", 10)
+    await coalescer.add(0, "tc1", "search", 10)
 
     assert len(published) == 1
     assert published[0][0] == EphemeralEventType.TOOL_CALL_DELTA
@@ -622,7 +639,7 @@ async def test_composition_coalescer_accumulates_and_batches_by_size() -> None:
 
     coalescer = _ToolCallDeltaCoalescer(publish, "r1", 0, flush_ms=1e9, flush_chars=100)
     for _ in range(10):
-        await coalescer.add("tc1", "search", 30)
+        await coalescer.add(0, "tc1", "search", 30)
 
     # One publish for the first fragment, then one per 100 accumulated chars.
     # The last 30 characters stay unpublished on purpose: a residual under the
@@ -638,9 +655,9 @@ async def test_composition_coalescer_carries_every_call_in_flight() -> None:
         published.append(calls)
 
     coalescer = _ToolCallDeltaCoalescer(publish, "r1", 0, flush_ms=0, flush_chars=1)
-    await coalescer.add("tc1", "search", 10)
-    await coalescer.add("tc2", "fetch", 20)
-    await coalescer.add("tc1", "search", 5)
+    await coalescer.add(0, "tc1", "search", 10)
+    await coalescer.add(1, "tc2", "fetch", 20)
+    await coalescer.add(0, "tc1", "search", 5)
 
     assert published[-1] == [
         {"id": "tc1", "name": "search", "arguments_chars": 15},
@@ -658,3 +675,148 @@ async def test_composition_coalescer_flush_without_a_call_is_a_noop() -> None:
     await coalescer.flush()
 
     assert published == []
+
+
+# --- what the review caught ------------------------------------------------
+
+
+async def test_a_round_that_never_reaches_execution_still_closes_the_composition() -> None:
+    """Cancelled mid-composition, the host is told the composition ended.
+
+    Publishing sizes with no terminal moves the original defect rather than
+    fixing it: a UI stuck on "working" becomes a UI stuck on "composing
+    publish_artifact (3.2 kB)".
+    """
+    holder: dict[str, AIChannel] = {}
+
+    class _ComposingProvider(MockAIProvider):
+        def __init__(self) -> None:
+            super().__init__(streaming=True)
+            self.pulled = 0
+
+        async def generate_structured_stream(self, context: AIContext) -> Any:
+            for _ in range(50):
+                self.pulled += 1
+                yield StreamToolCallDelta(id="tc1", name="publish", arguments_delta="x" * 64)
+                if self.pulled == 3:
+                    holder["ai"].steer(Cancel())
+            yield StreamToolCall(id="tc1", name="publish", arguments={"svg": "x" * 3200})
+            yield StreamDone(finish_reason="tool_calls")
+
+    async def tool_handler(name: str, args: dict[str, Any]) -> str:
+        return "ok"
+
+    provider = _ComposingProvider()
+    kit = RoomKit()
+    ai = AIChannel("ai1", provider=provider, tool_handler=tool_handler)
+    holder["ai"] = ai
+
+    received = await _run_turn(kit, ai)
+    starts, _ = _tool_events(received)
+
+    assert starts == []  # the call never ran, so no START is right
+    terminals = _terminal_events(received)
+    assert len(terminals) == 1  # but the host is not left composing forever
+    assert received.index(_delta_events(received)[0]) < received.index(terminals[0])
+
+    await kit.close()
+
+
+async def test_a_composition_frame_does_not_spend_the_turn_s_retry_budget() -> None:
+    """A retryable failure mid-composition is replayed, not raised.
+
+    The stream wrapper refuses to replay a stream that has already emitted,
+    because replaying would duplicate delivered output. A composition frame is
+    neither delivered nor persisted, so it must not arm that flag — otherwise
+    every tool round silently loses its retries the moment fragments start
+    arriving before the call.
+    """
+    attempts = {"n": 0}
+
+    class _FlakyProvider(MockAIProvider):
+        """Fails once mid-composition, calls the tool on the replay, then answers."""
+
+        async def generate_structured_stream(self, context: AIContext) -> Any:
+            attempts["n"] += 1
+            if attempts["n"] > 2:
+                yield StreamTextDelta(text="Done.")
+                yield StreamDone(finish_reason="stop")
+                return
+            yield StreamToolCallDelta(id="tc1", name="search", arguments_delta='{"q":')
+            if attempts["n"] == 1:
+                raise ProviderError("upstream 503", retryable=True, provider="flaky")
+            yield StreamToolCall(id="tc1", name="search", arguments={"q": "cats"})
+            yield StreamDone(finish_reason="tool_calls")
+
+    async def tool_handler(name: str, args: dict[str, Any]) -> str:
+        return "ok"
+
+    provider = _FlakyProvider(streaming=True)
+    kit = RoomKit()
+    ai = AIChannel(
+        "ai1",
+        provider=provider,
+        tool_handler=tool_handler,
+        retry_policy=RetryPolicy(max_retries=2, base_delay_seconds=0.001),
+    )
+
+    received = await _run_turn(kit, ai)
+    starts, _ = _tool_events(received)
+
+    assert attempts["n"] == 3, "the round was not replayed"
+    assert len(starts) == 1
+    assert starts[0].data["tool_calls"][0]["name"] == "search"
+
+    await kit.close()
+
+
+async def test_composition_coalescer_keys_on_the_slot_not_the_id() -> None:
+    """An id that arrives late must not split one call across two entries.
+
+    Providers carry ``index`` on every fragment; an id can arrive on a later
+    one, or not at all — PolarGrid keeps an explicit fallback for a missing
+    one. Keyed on the id, the first fragments would form their own entry and
+    two parallel unidentified calls would merge under one name.
+    """
+    published: list[list[dict[str, Any]]] = []
+
+    async def publish(_type: Any, _room: Any, calls: list[dict[str, Any]], _round: int) -> None:
+        published.append(calls)
+
+    coalescer = _ToolCallDeltaCoalescer(publish, "r1", 0, flush_ms=0, flush_chars=1)
+    await coalescer.add(0, "", "search", 4)  # the id has not arrived yet
+    await coalescer.add(0, "call_1", "search", 5)
+
+    assert published[-1] == [{"id": "call_1", "name": "search", "arguments_chars": 9}]
+
+    # Two calls composed in parallel with no id yet stay two calls.
+    parallel = _ToolCallDeltaCoalescer(publish, "r1", 0, flush_ms=0, flush_chars=1)
+    await parallel.add(0, "", "search", 10)
+    await parallel.add(1, "", "fetch", 20)
+    assert published[-1] == [
+        {"id": "", "name": "search", "arguments_chars": 10},
+        {"id": "", "name": "fetch", "arguments_chars": 20},
+    ]
+
+
+async def test_composition_coalescer_closes_only_what_it_opened() -> None:
+    """No composition, no terminal: a round with no tool call stays silent."""
+    published: list[Any] = []
+
+    async def publish(*args: Any, **kwargs: Any) -> None:
+        published.append(args)
+
+    coalescer = _ToolCallDeltaCoalescer(publish, "r1", 0, flush_ms=0, flush_chars=1)
+    await coalescer.close()
+    assert published == []
+
+    await coalescer.add(0, "tc1", "search", 4)
+    await coalescer.close()
+    assert [a[2] for a in published] == [
+        [{"id": "tc1", "name": "search", "arguments_chars": 4}],
+        [],
+    ]
+
+    # Closing twice publishes one terminal, not two.
+    await coalescer.close()
+    assert len(published) == 2

@@ -52,8 +52,10 @@ class RealtimeOpsMixin:
         Args:
             room_id: The room to publish the event in.
             channel_id: The AI channel executing tool calls.
-            tool_calls: List of tool call dicts (id, name, arguments/result).
-            event_type: ``TOOL_CALL_START`` or ``TOOL_CALL_END``.
+            tool_calls: List of tool call dicts (id, name, and
+                arguments/result/arguments_chars, per event type).
+            event_type: ``TOOL_CALL_DELTA``, ``TOOL_CALL_START`` or
+                ``TOOL_CALL_END``.
             duration_ms: Optional execution duration (for END events).
         """
         data: dict[str, Any] = {"tool_calls": tool_calls, "channel_id": channel_id}

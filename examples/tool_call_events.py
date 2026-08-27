@@ -137,6 +137,11 @@ async def main() -> None:
             # What the model is composing, live. A real argument can be
             # megabytes and take minutes; this is the only signal until the
             # call is complete. Note there is no argument text in the payload.
+            if not ev.data["tool_calls"]:
+                # The terminal frame: nothing is being composed any more.
+                # Clear the indicator on it — it arrives even on the rounds
+                # that never reach TOOL_CALL_START.
+                print(f"  TOOL_CALL_DELTA (round {ev.data['round']}) - composition ended")
             for t in ev.data["tool_calls"]:
                 print(
                     f"  TOOL_CALL_DELTA (round {ev.data['round']}) "

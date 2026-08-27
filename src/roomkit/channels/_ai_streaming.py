@@ -129,9 +129,8 @@ class _ToolCallDeltaCoalescer:
     ``TOOL_CALL_START`` delivers it whole at the end of the round.
 
     A call's first fragment publishes immediately, whatever the window: the
-    tool's name is the signal a host is waiting for. Nothing is flushed at the
-    end of the round — a residual below the threshold loses no information,
-    since the complete arguments follow in ``TOOL_CALL_START``.
+    tool's name is the signal a host is waiting for. The round closes with a
+    terminal frame carrying an empty ``tool_calls`` — see :meth:`close`.
     """
 
     def __init__(
@@ -148,17 +147,28 @@ class _ToolCallDeltaCoalescer:
         self._round_idx = round_idx
         self._flush_ms = flush_ms
         self._flush_chars = flush_chars
-        self._calls: dict[str, dict[str, Any]] = {}
+        self._calls: dict[int, dict[str, Any]] = {}
         self._pending_chars = 0
+        self._published = False
         self._last_publish = time.monotonic()
 
-    async def add(self, call_id: str, name: str, chars: int) -> None:
-        """Fold one fragment in; publish if the call is new or the window is exceeded."""
-        call = self._calls.get(call_id)
+    async def add(self, index: int, call_id: str, name: str, chars: int) -> None:
+        """Fold one fragment in; publish if the call is new or the window is exceeded.
+
+        Keyed on ``index`` — the provider's slot for the call — because that
+        is the one identifier every provider carries on every fragment. An id
+        can arrive late or not at all (PolarGrid's non-streaming path keeps an
+        explicit fallback for a missing one), and keying on it would split a
+        single call across two entries, or merge two parallel calls that have
+        none yet into one frame with the wrong name and the sum of both sizes.
+        """
+        call = self._calls.get(index)
         if call is None:
-            self._calls[call_id] = {"id": call_id, "name": name, "arguments_chars": chars}
+            self._calls[index] = {"id": call_id, "name": name, "arguments_chars": chars}
             await self.flush()
             return
+        if call_id:
+            call["id"] = call_id
         if name:
             call["name"] = name
         call["arguments_chars"] += chars
@@ -175,11 +185,34 @@ class _ToolCallDeltaCoalescer:
         if not self._calls:
             return
         self._pending_chars = 0
+        self._published = True
         self._last_publish = time.monotonic()
         await self._publish(
             EphemeralEventType.TOOL_CALL_DELTA,
             self._room_id,
             [dict(call) for call in self._calls.values()],
+            self._round_idx,
+        )
+
+    async def close(self) -> None:
+        """Publish the terminal frame — an empty ``tool_calls`` — if anything was.
+
+        A round can end without ever reaching ``TOOL_CALL_START``: cancelled
+        mid-composition, out of rounds, out of time, or handed to an external
+        tool provider that publishes its own events. A host shown a
+        composition and never told it ended is stuck on "composing
+        publish_artifact (3.2 kB)" exactly as it used to be stuck on
+        "working" — the defect this class exists to remove, moved rather than
+        fixed. So the round always closes, and an empty list is what says so.
+        """
+        if not self._published:
+            return
+        self._calls.clear()
+        self._published = False
+        await self._publish(
+            EphemeralEventType.TOOL_CALL_DELTA,
+            self._room_id,
+            [],
             self._round_idx,
         )
 
@@ -296,6 +329,28 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
             round_idx,
             flush_ms=self._thinking_coalesce_ms,
             flush_chars=self._thinking_coalesce_chars,
+        )
+
+    async def _close_thinking_window(
+        self,
+        coalescer: _ThinkingCoalescer,
+        room_id: str,
+        thinking_parts: list[str],
+        round_idx: int,
+    ) -> None:
+        """Flush the buffered reasoning and publish ``THINKING_END``.
+
+        The window closes whenever the model stops reasoning and starts
+        producing — a text delta, a tool call's first fragment, or the end of
+        the round's stream. One place, so a fourth producer cannot close it
+        differently from the other three.
+        """
+        await coalescer.flush()
+        await self._publish_thinking_event(
+            EphemeralEventType.THINKING_END,
+            room_id,
+            "".join(thinking_parts),
+            round_idx,
         )
 
     def _new_tool_call_coalescer(
@@ -497,6 +552,8 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                     # cancellation instead of waiting for the full stream to finish.
                     if loop_ctx.cancel_event.is_set():
                         logger.info("Streaming cancelled mid-generation at round %d", _round_idx)
+                        if room_id:
+                            await tool_coalescer.close()
                         yield LoopEndMarker(reason="cancelled", rounds=_round_idx)
                         return
 
@@ -527,12 +584,8 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                     elif isinstance(event, StreamTextDelta):
                         if thinking_started and thinking_parts and room_id:
                             thinking_started = False
-                            await coalescer.flush()
-                            await self._publish_thinking_event(
-                                EphemeralEventType.THINKING_END,
-                                room_id,
-                                "".join(thinking_parts),
-                                _round_idx,
+                            await self._close_thinking_window(
+                                coalescer, room_id, thinking_parts, _round_idx
                             )
                         text_parts.append(event.text)
                         _accumulated_text.append(event.text)
@@ -576,16 +629,15 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                         # composition.
                         if thinking_started and thinking_parts and room_id:
                             thinking_started = False
-                            await coalescer.flush()
-                            await self._publish_thinking_event(
-                                EphemeralEventType.THINKING_END,
-                                room_id,
-                                "".join(thinking_parts),
-                                _round_idx,
+                            await self._close_thinking_window(
+                                coalescer, room_id, thinking_parts, _round_idx
                             )
                         if room_id:
                             await tool_coalescer.add(
-                                event.id, event.name, len(event.arguments_delta)
+                                event.index,
+                                event.id,
+                                event.name,
+                                len(event.arguments_delta),
                             )
                     elif isinstance(event, StreamToolCall):
                         tool_calls.append(event)
@@ -701,13 +753,14 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                     _dedup_buffer.clear()
 
                 if thinking_started and thinking_parts and room_id:
-                    await coalescer.flush()
-                    await self._publish_thinking_event(
-                        EphemeralEventType.THINKING_END,
-                        room_id,
-                        "".join(thinking_parts),
-                        _round_idx,
+                    await self._close_thinking_window(
+                        coalescer, room_id, thinking_parts, _round_idx
                     )
+                # The composition is over for this round, whichever way the
+                # round now ends — including the exits below that never reach
+                # TOOL_CALL_START.
+                if room_id:
+                    await tool_coalescer.close()
 
                 if not tool_calls:
                     # Final answer round. If it produced no text *after* a tool

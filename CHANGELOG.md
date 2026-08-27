@@ -22,8 +22,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   megabytes or hold personal data, and `TOOL_CALL_START` already delivers it in
   full. A call's first fragment publishes immediately — the tool's name is the
   signal — and the rest are batched on the existing `thinking_coalesce_ms` /
-  `thinking_coalesce_chars` windows. Nothing is persisted: like `THINKING_DELTA`
-  this is a projection, and a client that ignores it loses nothing.
+  `thinking_coalesce_chars` windows, and a round always closes with a terminal
+  frame carrying an empty `tool_calls` — including the rounds that never reach
+  `TOOL_CALL_START` (cancelled, out of rounds, out of time), so a host is never
+  left showing a composition that ended. Nothing is persisted: like
+  `THINKING_DELTA` this is a projection, and a client that ignores it loses
+  nothing.
 - **`StreamToolCallDelta`** joins the `StreamEvent` union
   (`roomkit.providers.ai`): one fragment of a tool call's arguments, emitted by
   the OpenAI-compatible, Anthropic, Mistral and PolarGrid providers. The
@@ -37,12 +41,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **Cancelling a turn no longer waits out a tool call's composition.** The
-  streaming loop checks its cancel event between two events of the provider
-  stream, and a provider accumulating arguments yielded none — so a cancel
-  landed only once the complete call arrived, minutes later for a large
-  argument. With the composition events above it is honoured at the next
-  fragment.
+- **Cancelling a turn no longer waits out a tool call's composition**, on the
+  four providers that fragment arguments. The streaming loop checks its cancel
+  event between two events of the provider stream, and a provider accumulating
+  arguments yielded none — so a cancel landed only once the complete call
+  arrived, minutes later for a large argument. With the composition events
+  above it is honoured at the next fragment. Gemini and Ollama deliver whole
+  calls and are unchanged.
 - **`THINKING_END` now fires when the model starts composing a tool call**, as
   it already did on the first text delta. A round that reasoned and then called
   a tool without producing text left `THINKING_START` open for the whole

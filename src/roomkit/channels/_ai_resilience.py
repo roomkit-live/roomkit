@@ -17,6 +17,7 @@ from roomkit.providers.ai.base import (
     AITextPart,
     ProviderError,
     StreamEvent,
+    StreamToolCallDelta,
     is_context_overflow_message,
 )
 
@@ -144,7 +145,15 @@ class AIResilienceMixin:
             emitted = False
             try:
                 async for event in self._provider.generate_structured_stream(context):
-                    emitted = True
+                    # A composition delta is a projection: it is neither
+                    # delivered as text nor persisted, so a stream that has
+                    # only produced those can still be replayed without
+                    # duplicating anything — which is the whole test this
+                    # flag exists to make. Arming it on one would silently
+                    # cost every tool round its retry budget, since a call's
+                    # fragments now arrive long before the call itself.
+                    if not isinstance(event, StreamToolCallDelta):
+                        emitted = True
                     yield event
                 return  # Stream completed successfully
             except ProviderError as exc:
