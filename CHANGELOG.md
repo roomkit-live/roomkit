@@ -57,6 +57,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `StreamToolCallDelta`. Third-party *providers* are unaffected: emitting it is
   optional.
 
+### Fixed
+
+- **A `THINKING_END` no longer repeats the reasoning the earlier ones already
+  carried.** A round in which the model reasons more than once — reason,
+  answer, reason again, which is the shape Anthropic's interleaved thinking
+  produces — closed a reasoning window per switch but published the round's
+  whole accumulator every time: the second `THINKING_END` shipped the first
+  block glued to its own, a third would have shipped all three, and every
+  subscriber (UI, dashboard, audit log) saw the reasoning duplicated and
+  growing. Each window now carries its own block and nothing else. The
+  reasoning replayed to the model in the assistant message is unchanged and
+  still complete; nothing was ever persisted, so no stored history is affected.
+
 ## [0.60.0] — 2026-08-25
 
 ### Added

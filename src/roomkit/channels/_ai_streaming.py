@@ -170,21 +170,30 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
         room_id: str,
         thinking_parts: list[str],
         round_idx: int,
-    ) -> None:
-        """Flush the buffered reasoning and publish ``THINKING_END``.
+        published: int,
+    ) -> int:
+        """Flush the buffered reasoning, publish ``THINKING_END``, return the offset.
 
         The window closes whenever the model stops reasoning and starts
         producing — a text delta, a tool call's first fragment, or the end of
         the round's stream. One place, so a fourth producer cannot close it
         differently from the other three.
+
+        A round can open several windows (reason, answer, reason again), and
+        each ``THINKING_END`` must carry its own block. ``published`` is how
+        many of ``thinking_parts`` earlier windows already sent; the caller
+        keeps the returned value and hands it back at the next close. The list
+        itself is never truncated — the tool loop replays it whole into the
+        assistant message it sends back to the model.
         """
         await coalescer.flush()
         await self._publish_thinking_event(
             EphemeralEventType.THINKING_END,
             room_id,
-            "".join(thinking_parts),
+            "".join(thinking_parts[published:]),
             round_idx,
         )
+        return len(thinking_parts)
 
     def _new_tool_call_coalescer(
         self, room_id: str | None, round_idx: int
@@ -245,6 +254,7 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
 
         room_id = ai_context.room.room.id if ai_context.room else None
         thinking_parts: list[str] = []
+        thinking_published = 0
         thinking_started = False
         coalescer = self._new_thinking_coalescer(room_id, round_idx=0)
 
@@ -269,25 +279,16 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
             elif isinstance(ev, StreamTextDelta):
                 if thinking_started and thinking_parts and room_id:
                     thinking_started = False
-                    await coalescer.flush()
-                    await self._publish_thinking_event(
-                        EphemeralEventType.THINKING_END,
-                        room_id,
-                        "".join(thinking_parts),
-                        0,
+                    thinking_published = await self._close_thinking_window(
+                        coalescer, room_id, thinking_parts, 0, thinking_published
                     )
-                    thinking_parts = []
                 yield ev.text
 
         # Thinking with no following text — close the boundary anyway so
         # subscribers see the reasoning even if the model emitted nothing else.
         if thinking_started and thinking_parts and room_id:
-            await coalescer.flush()
-            await self._publish_thinking_event(
-                EphemeralEventType.THINKING_END,
-                room_id,
-                "".join(thinking_parts),
-                0,
+            await self._close_thinking_window(
+                coalescer, room_id, thinking_parts, 0, thinking_published
             )
 
     async def _start_streaming_tool_response(
@@ -369,6 +370,7 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                 context = self._prepare_round_context(context, loop_ctx, state, _round_idx)
 
                 thinking_parts: list[str] = []
+                thinking_published = 0
                 thinking_signature: str | None = None
                 text_parts: list[str] = []
                 tool_calls: list[StreamToolCall] = []
@@ -417,8 +419,8 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                     elif isinstance(event, StreamTextDelta):
                         if thinking_started and thinking_parts and room_id:
                             thinking_started = False
-                            await self._close_thinking_window(
-                                coalescer, room_id, thinking_parts, _round_idx
+                            thinking_published = await self._close_thinking_window(
+                                coalescer, room_id, thinking_parts, _round_idx, thinking_published
                             )
                         text_parts.append(event.text)
                         _accumulated_text.append(event.text)
@@ -462,8 +464,8 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                         # composition.
                         if thinking_started and thinking_parts and room_id:
                             thinking_started = False
-                            await self._close_thinking_window(
-                                coalescer, room_id, thinking_parts, _round_idx
+                            thinking_published = await self._close_thinking_window(
+                                coalescer, room_id, thinking_parts, _round_idx, thinking_published
                             )
                         if room_id:
                             await tool_coalescer.add(
@@ -587,7 +589,7 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
 
                 if thinking_started and thinking_parts and room_id:
                     await self._close_thinking_window(
-                        coalescer, room_id, thinking_parts, _round_idx
+                        coalescer, room_id, thinking_parts, _round_idx, thinking_published
                     )
                 # The composition is over for this round, whichever way the
                 # round now ends — including the exits below that never reach

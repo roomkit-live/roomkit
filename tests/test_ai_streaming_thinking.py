@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator
+from typing import Any
 
 import pytest
 
@@ -30,12 +31,16 @@ from roomkit.models.room import Room
 from roomkit.models.streaming import ThinkingDeltaMarker
 from roomkit.providers.ai.base import (
     AIContext,
+    AIMessage,
     AIProvider,
     AIResponse,
+    AIThinkingPart,
     StreamDone,
     StreamEvent,
     StreamTextDelta,
     StreamThinkingDelta,
+    StreamToolCall,
+    StreamToolCallDelta,
 )
 from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.realtime.base import EphemeralEvent, EphemeralEventType
@@ -465,3 +470,202 @@ async def test_cli_defers_agent_prefix_until_real_answer(
     assert out.count("Bot:") == 1  # exactly one prefix, not one per round
     # The prefix lands after the 2nd thinking block and right before the answer.
     assert out.index("Now summarizing.") < out.index("Bot:") < out.index("The answer.")
+
+
+class _ScriptedStreamProvider(AIProvider):
+    """Replays one caller-supplied event sequence per round.
+
+    ``MockAIProvider`` derives its stream from an :class:`AIResponse`, so it
+    always emits reasoning first and production after. The defect below needs
+    the opposite: reasoning *interleaved* with production inside one round.
+    """
+
+    def __init__(self, rounds: list[list[StreamEvent]]) -> None:
+        self._rounds = rounds
+        self._round = 0
+        self.sent_messages: list[AIMessage] = []
+
+    @property
+    def model_name(self) -> str:
+        return "scripted-mock"
+
+    @property
+    def supports_streaming(self) -> bool:
+        return True
+
+    @property
+    def supports_structured_streaming(self) -> bool:
+        return True
+
+    async def generate(self, context: AIContext) -> AIResponse:
+        return AIResponse(content="", finish_reason="stop")
+
+    async def generate_stream(self, context: AIContext) -> AsyncIterator[str]:
+        yield ""
+
+    async def generate_structured_stream(self, context: AIContext) -> AsyncIterator[StreamEvent]:
+        self.sent_messages = list(context.messages)
+        events = self._rounds[min(self._round, len(self._rounds) - 1)]
+        self._round += 1
+        for event in events:
+            yield event
+
+
+async def _run_scripted_turn(
+    provider: _ScriptedStreamProvider, *, tools: bool
+) -> tuple[list[EphemeralEvent], AIChannel, RoomKit]:
+    """One inbound turn against a scripted provider; returns the bus events."""
+
+    async def tool_handler(name: str, args: dict[str, Any]) -> str:
+        return "ok"
+
+    kit = RoomKit()
+    sms = SimpleChannel("sms1")
+    ai = AIChannel(
+        "ai1",
+        provider=provider,
+        tool_handler=tool_handler if tools else None,
+        thinking_budget=4096,
+        thinking_coalesce_ms=0,
+    )
+    kit.register_channel(sms)
+    kit.register_channel(ai)
+
+    await kit.create_room(room_id="r1")
+    await kit.attach_channel("r1", "sms1")
+    await kit.attach_channel(
+        "r1",
+        "ai1",
+        category=ChannelCategory.INTELLIGENCE,
+        metadata={"tools": [{"name": "search", "description": "Search"}]} if tools else {},
+    )
+
+    received: list[EphemeralEvent] = []
+
+    async def on_event(ev: EphemeralEvent) -> None:
+        received.append(ev)
+
+    await kit.realtime.subscribe_to_room("r1", on_event)
+    await kit.process_inbound(
+        InboundMessage(channel_id="sms1", sender_id="u1", content=TextContent(body="go"))
+    )
+    # InMemoryRealtime dispatches subscriber callbacks via background tasks;
+    # yield once so they run before we inspect the list.
+    await asyncio.sleep(0.05)
+    return received, ai, kit
+
+
+def _thinking_ends(received: list[EphemeralEvent]) -> list[str]:
+    return [e.data["thinking"] for e in received if e.type == EphemeralEventType.THINKING_END]
+
+
+async def test_each_thinking_end_carries_only_its_own_block_across_text() -> None:
+    """Reason, answer, reason again: two THINKING_END, each with its own block.
+
+    The window closed on the first text delta but the accumulator kept growing,
+    so the second END shipped ``FIRST-BLOCKSECOND-BLOCK`` — every subscriber
+    saw the first block twice, and a third window would have shipped three.
+    """
+    provider = _ScriptedStreamProvider(
+        [
+            [
+                StreamThinkingDelta(thinking="FIRST-BLOCK"),
+                StreamTextDelta(text="Let me look."),
+                StreamThinkingDelta(thinking="SECOND-BLOCK"),
+                StreamTextDelta(text=" Here it is."),
+                StreamDone(finish_reason="stop", usage={}),
+            ]
+        ]
+    )
+    received, _ai, kit = await _run_scripted_turn(provider, tools=True)
+
+    assert _thinking_ends(received) == ["FIRST-BLOCK", "SECOND-BLOCK"]
+
+    await kit.close()
+
+
+async def test_each_thinking_end_carries_only_its_own_block_across_a_tool_call() -> None:
+    """Same, when the window closes on a tool call's first fragment.
+
+    This is the site RMK-140 added, and the shape Anthropic's interleaved
+    thinking produces: reason, answer, reason again, then call.
+    """
+    provider = _ScriptedStreamProvider(
+        [
+            [
+                StreamThinkingDelta(thinking="FIRST-BLOCK"),
+                StreamTextDelta(text="Let me look."),
+                StreamThinkingDelta(thinking="SECOND-BLOCK"),
+                StreamToolCallDelta(id="tc1", name="search", index=0, arguments_delta='{"q":'),
+                StreamToolCallDelta(id="tc1", name="search", index=0, arguments_delta='"cats"}'),
+                StreamToolCall(id="tc1", name="search", arguments={"q": "cats"}),
+                StreamDone(finish_reason="tool_calls", usage={}),
+            ],
+            [
+                StreamTextDelta(text="Done."),
+                StreamDone(finish_reason="stop", usage={}),
+            ],
+        ]
+    )
+    received, _ai, kit = await _run_scripted_turn(provider, tools=True)
+
+    assert _thinking_ends(received) == ["FIRST-BLOCK", "SECOND-BLOCK"]
+
+    await kit.close()
+
+
+async def test_assistant_message_keeps_the_whole_round_reasoning() -> None:
+    """Windows publish their own block; the model still gets the full round.
+
+    The invariant that rules out simply clearing the accumulator: the assistant
+    message replayed at the next round must carry every block the model
+    produced, not just the last window's.
+    """
+    provider = _ScriptedStreamProvider(
+        [
+            [
+                StreamThinkingDelta(thinking="FIRST-BLOCK"),
+                StreamTextDelta(text="Let me look."),
+                StreamThinkingDelta(thinking="SECOND-BLOCK"),
+                StreamToolCall(id="tc1", name="search", arguments={"q": "cats"}),
+                StreamDone(finish_reason="tool_calls", usage={}),
+            ],
+            [
+                StreamTextDelta(text="Done."),
+                StreamDone(finish_reason="stop", usage={}),
+            ],
+        ]
+    )
+    _received, _ai, kit = await _run_scripted_turn(provider, tools=True)
+
+    # The second round's context is what the first round handed back.
+    thinking_parts = [
+        part
+        for message in provider.sent_messages
+        if message.role == "assistant"
+        for part in (message.content if isinstance(message.content, list) else [])
+        if isinstance(part, AIThinkingPart)
+    ]
+    assert [p.thinking for p in thinking_parts] == ["FIRST-BLOCKSECOND-BLOCK"]
+
+    await kit.close()
+
+
+async def test_no_tools_path_also_scopes_each_window_to_its_block() -> None:
+    """The streaming-no-tools path closes windows through the same helper."""
+    provider = _ScriptedStreamProvider(
+        [
+            [
+                StreamThinkingDelta(thinking="FIRST-BLOCK"),
+                StreamTextDelta(text="Let me look."),
+                StreamThinkingDelta(thinking="SECOND-BLOCK"),
+                StreamDone(finish_reason="stop", usage={}),
+            ]
+        ]
+    )
+    received, _ai, kit = await _run_scripted_turn(provider, tools=False)
+
+    # The trailing window has no text after it — the end-of-stream close fires.
+    assert _thinking_ends(received) == ["FIRST-BLOCK", "SECOND-BLOCK"]
+
+    await kit.close()
