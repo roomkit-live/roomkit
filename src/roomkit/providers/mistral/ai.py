@@ -26,10 +26,10 @@ from roomkit.providers.ai.base import (
     StreamTextDelta,
     StreamThinkingDelta,
     StreamToolCall,
-    StreamToolCallDelta,
 )
 from roomkit.providers.mistral.config import MistralConfig
 from roomkit.providers.mistral.models import MODELS
+from roomkit.providers.openai.ai import _ThinkTagParser, fold_tool_call_fragment
 
 
 class MistralAIProvider(AIProvider):
@@ -289,8 +289,6 @@ class MistralAIProvider(AIProvider):
         :class:`StreamTextDelta`.  Tool calls are accumulated from deltas
         and yielded as :class:`StreamToolCall`.
         """
-        from roomkit.providers.openai.ai import _ThinkTagParser
-
         kwargs = self._build_kwargs(context)
         t0 = time.monotonic()
         first_token = True
@@ -331,24 +329,17 @@ class MistralAIProvider(AIProvider):
                         if tc_delta.id:
                             acc["id"] = tc_delta.id
                         if hasattr(tc_delta, "function") and tc_delta.function:
-                            first_name = bool(tc_delta.function.name) and not acc["name"]
-                            if tc_delta.function.name:
-                                acc["name"] = tc_delta.function.name
-                            fragment = tc_delta.function.arguments or ""
-                            if fragment:
-                                acc["arguments"] += fragment
-                            # Surface the call while it is being composed: the
-                            # name on the fragment that first carries it, then
-                            # one delta per argument fragment. The complete
-                            # StreamToolCall below is unchanged and remains the
-                            # unit of execution and persistence.
-                            if acc["name"] and (first_name or fragment):
-                                yield StreamToolCallDelta(
-                                    id=acc["id"],
-                                    name=acc["name"],
-                                    index=idx,
-                                    arguments_delta=fragment,
-                                )
+                            # Surface the call while it is being composed. The
+                            # complete StreamToolCall below is unchanged and
+                            # remains the unit of execution and persistence.
+                            composed = fold_tool_call_fragment(
+                                acc,
+                                idx,
+                                tc_delta.function.name,
+                                tc_delta.function.arguments or "",
+                            )
+                            if composed is not None:
+                                yield composed
 
                 # Reasoning models stream content as a list of typed chunks
                 # (ThinkChunk / TextChunk); older or non-reasoning models stream

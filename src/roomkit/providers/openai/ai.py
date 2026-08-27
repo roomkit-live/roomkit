@@ -598,24 +598,17 @@ class OpenAIAIProvider(AIProvider):
                         if tc_delta.id:
                             acc["id"] = tc_delta.id
                         if hasattr(tc_delta, "function") and tc_delta.function:
-                            first_name = bool(tc_delta.function.name) and not acc["name"]
-                            if tc_delta.function.name:
-                                acc["name"] = tc_delta.function.name
-                            fragment = tc_delta.function.arguments or ""
-                            if fragment:
-                                acc["arguments"] += fragment
-                            # Surface the call while it is being composed: the
-                            # name on the fragment that first carries it, then
-                            # one delta per argument fragment. The complete
-                            # StreamToolCall below is unchanged and remains the
-                            # unit of execution and persistence.
-                            if acc["name"] and (first_name or fragment):
-                                yield StreamToolCallDelta(
-                                    id=acc["id"],
-                                    name=acc["name"],
-                                    index=idx,
-                                    arguments_delta=fragment,
-                                )
+                            # Surface the call while it is being composed. The
+                            # complete StreamToolCall below is unchanged and
+                            # remains the unit of execution and persistence.
+                            composed = fold_tool_call_fragment(
+                                acc,
+                                idx,
+                                tc_delta.function.name,
+                                tc_delta.function.arguments or "",
+                            )
+                            if composed is not None:
+                                yield composed
 
                 # OpenAI-compatible reasoning models (DeepSeek-R1, vLLM with a
                 # reasoning parser) stream reasoning in a dedicated field instead
@@ -690,6 +683,35 @@ class OpenAIAIProvider(AIProvider):
     async def close(self) -> None:
         """Close the underlying HTTP client."""
         await self._client.close()
+
+
+def fold_tool_call_fragment(
+    slot: dict[str, str], index: int, name: str | None, fragment: str
+) -> StreamToolCallDelta | None:
+    """Fold one tool-call fragment into its slot; return the event it warrants.
+
+    Every provider speaking OpenAI's dialect fragments a tool call the same
+    way: the name arrives on one fragment, the arguments accumulate across the
+    rest, and a composition event is due whenever either actually changed. What
+    differs between them is only how the fragment is read — attributes here and
+    in Mistral, a plain dict in PolarGrid — so the accessors stay at the call
+    site and the folding lives once, here, beside the other helpers those
+    providers already share.
+
+    ``slot`` is mutated in place: it is the caller's accumulator for this
+    call's index, and the complete :class:`StreamToolCall` is still built from
+    it once the stream ends.
+    """
+    first_name = bool(name) and not slot["name"]
+    if name:
+        slot["name"] = name
+    if fragment:
+        slot["arguments"] += fragment
+    if not slot["name"] or not (first_name or fragment):
+        return None
+    return StreamToolCallDelta(
+        id=slot["id"], name=slot["name"], index=index, arguments_delta=fragment
+    )
 
 
 def _extract_think_tags(text: str) -> tuple[str | None, str]:

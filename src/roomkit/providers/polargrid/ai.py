@@ -61,7 +61,11 @@ from roomkit.providers.ai.base import (
     StreamToolCall,
     StreamToolCallDelta,
 )
-from roomkit.providers.openai.ai import _extract_think_tags, _ThinkTagParser
+from roomkit.providers.openai.ai import (
+    _extract_think_tags,
+    _ThinkTagParser,
+    fold_tool_call_fragment,
+)
 from roomkit.providers.polargrid.config import PolarGridConfig
 from roomkit.providers.polargrid.models import (
     MODELS,
@@ -600,22 +604,11 @@ class PolarGridAIProvider(AIProvider):
             func = getattr(d, "function", None)
             if not isinstance(func, dict):
                 continue
-            name = func.get("name")
-            first_name = bool(name) and not slot["name"]
-            if name:
-                slot["name"] = name
-            args = func.get("arguments") or ""
-            if args:
-                slot["arguments"] += args
-            if slot["name"] and (first_name or args):
-                composed.append(
-                    StreamToolCallDelta(
-                        id=slot["id"],
-                        name=slot["name"],
-                        index=idx,
-                        arguments_delta=args,
-                    )
-                )
+            event = fold_tool_call_fragment(
+                slot, idx, func.get("name"), func.get("arguments") or ""
+            )
+            if event is not None:
+                composed.append(event)
         return composed
 
     def _finalize_tool_calls(self, accum: dict[int, dict[str, str]]) -> list[StreamToolCall]:
