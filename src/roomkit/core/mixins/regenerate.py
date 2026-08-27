@@ -162,12 +162,16 @@ class RegenerateMixin(HelpersMixin):
                 visibility=trigger.response_visibility or "all",
                 parent_event_id=trigger.parent_event_id,
             )
-        stream_error: Exception | None = None
         record = ResponseMetadata()
+        for output in broadcast_result.outputs.values():
+            if output.response_stream is None:
+                record.update(output.response_metadata)
+        stream_error: Exception | None = None
         if pending_streams:
-            stream_error, record = await self._process_streaming_responses(
+            stream_error, stream_record = await self._process_streaming_responses(
                 pending_streams, room_id
             )
+            record.update(stream_record)
 
         return InboundResult(
             event=trigger,

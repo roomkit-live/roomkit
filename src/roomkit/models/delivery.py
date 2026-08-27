@@ -23,6 +23,7 @@ if TYPE_CHECKING:
 
         delivery_results: dict[str, Any]
         error: Exception | None
+        response_metadata: ResponseMetadata
 
         def waiter_would_deadlock(self) -> bool: ...
 
@@ -129,11 +130,11 @@ class DeliveryHandle:
     async def wait(self) -> InboundResult:
         """Wait for the deferred delivery to complete, then report it.
 
-        Backfills ``delivery_results`` and ``error`` on the result this
-        handle belongs to — after this the result reads exactly like a
-        non-deferred call's — and returns that result. Never raises: a
-        consumer cancelled by ``close()`` resolves the wait too, with
-        whatever the cascade recorded by then.
+        Backfills ``delivery_results``, ``error`` and ``response_metadata`` on
+        the result this handle belongs to — after this the result reads exactly
+        like a non-deferred call's — and returns that result. Never raises: a
+        consumer cancelled by ``close()`` resolves the wait too, with whatever
+        the cascade recorded by then.
 
         Called from a context that must not wait on this room's delivery —
         the room's own lane executor (a tool handler) or under the room
@@ -146,6 +147,7 @@ class DeliveryHandle:
             return self._result
         await asyncio.wait({self._consumer})
         self._result.delivery_results = self._cascade.delivery_results
+        self._result.response_metadata.update(self._cascade.response_metadata)
         if self._result.error is None:
             self._result.error = self._cascade.error
         return self._result

@@ -35,6 +35,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from roomkit.core.locks import _held_rooms
+from roomkit.models.response_metadata import ResponseMetadata
 from roomkit.telemetry.context import restored_span
 
 if TYPE_CHECKING:
@@ -136,6 +137,7 @@ class DeliveryCascade:
         "cancelled",
         "delivery_results",
         "error",
+        "response_metadata",
         "room_id",
         "streams",
     )
@@ -152,6 +154,10 @@ class DeliveryCascade:
         self.streams: list[Any] = []
         # First intelligence-channel failure, surfaced on InboundResult.error.
         self.error: Exception | None = None
+        # Final response metadata produced by the root delivery set. Non-streaming
+        # outputs land here when the plan finishes; detached streaming consumers
+        # add their records after consuming the streams, before their handle wakes.
+        self.response_metadata = ResponseMetadata()
         # Reason the cascade was cancelled (close/seal), or None.
         self.cancelled: str | None = None
         # Per-channel outcome of the ROOT pass's delivery set, keyed by channel

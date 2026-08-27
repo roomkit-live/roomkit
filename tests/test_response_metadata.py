@@ -282,6 +282,60 @@ class _CitingMemory(MockMemoryProvider):
         return await super().retrieve(room_id, current_event, context, channel_id=channel_id)
 
 
+class TestInboundResultResponseMetadata:
+    """The caller receives the turn record on every completion path."""
+
+    async def test_non_streaming_turn_returns_its_final_record(self) -> None:
+        kit = await _setup_kit(streaming=False)
+
+        result = await kit.process_inbound(
+            InboundMessage(
+                channel_id="sms1",
+                sender_id="user1",
+                content=TextContent(body="Hello AI"),
+            )
+        )
+
+        assert result.response_metadata["rag_sources"] == _SOURCES
+        await kit.close()
+
+    async def test_deferred_wait_backfills_writes_made_during_the_stream(self) -> None:
+        from roomkit.channels import SMSChannel
+        from roomkit.providers.sms.mock import MockSMSProvider
+
+        kit = RoomKit()
+        ai = AIChannel(
+            "ai1",
+            provider=MockAIProvider(ai_responses=list(_TOOL_ROUNDS), streaming=True),
+            tool_handler=_citing_handler,
+        )
+        kit.register_channel(ai)
+        kit.register_channel(SMSChannel("sms1", provider=MockSMSProvider()))
+        await kit.create_room(room_id="r1")
+        await kit.attach_channel(
+            "r1", "ai1", category=ChannelCategory.INTELLIGENCE, metadata=_TOOLS_BINDING_META
+        )
+        await kit.attach_channel("r1", "sms1")
+
+        result = await kit.process_inbound(
+            InboundMessage(
+                channel_id="sms1",
+                sender_id="user1",
+                content=TextContent(body="Read page 3"),
+            ),
+            defer_delivery=True,
+        )
+        record = result.response_metadata
+        assert result.delivery is not None
+
+        waited = await result.delivery.wait()
+
+        assert waited is result
+        assert result.response_metadata is record
+        assert record["cited"] == [{"tool": "read_page", "page": 3}]
+        await kit.close()
+
+
 class TestLiveRecord:
     def test_type_keeps_identity_where_a_dict_was_copied(self) -> None:
         record = ResponseMetadata()

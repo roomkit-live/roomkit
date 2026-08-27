@@ -1957,9 +1957,7 @@ class TestTurnOutcomeReachesTheCaller:
     the shape the test has to take.
     """
 
-    async def test_a_turn_ending_on_a_tool_call_still_reports_its_end(
-        self, tmp_path: Any
-    ) -> None:
+    async def test_a_turn_ending_on_a_tool_call_still_reports_its_end(self, tmp_path: Any) -> None:
         kit = RoomKit()
         source = SimpleChannel("sms")
         channel, connection, _ = _channel(tmp_path, emit_updates=False)

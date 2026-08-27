@@ -51,6 +51,15 @@ For each non-self text event, `on_event()` returns `ChannelOutput(responded=True
 
 `register_channel()` wires `kit`'s realtime backend in automatically. A failed prompt surfaces as `ProviderError(provider="acp")`; cancellation ends the stream silently and closes any open thinking block.
 
+Every output starts a live response record containing
+`{"acp": {"protocol_version": "..."}}`. When the prompt returns for a reason
+other than `end_turn`, the channel adds `stop_reason`; if it never returns
+because of an exception or cancellation, it adds `interrupted: true`. A clean
+turn adds neither marker. The final record is available on
+`InboundResult.response_metadata`, even when the last activity was a tool call
+and no final `MESSAGE` was persisted. With `defer_delivery=True`, await
+`result.delivery.wait()` before reading it.
+
 A turn never outlives its tool calls. Whichever way it ends — error, cancellation, or a stop the user asked for, which returns through the ordinary end of a prompt — every tool started without a terminal `tool_call_update` is closed first: a `ToolCallEndMarker` with `status="failed"` and an `error` saying the turn ended before the tool reported, emitted into the stream so the stored `TOOL_CALL_END` exists, plus the matching ephemeral. A turn whose tools all reported emits nothing extra. One gap remains by construction: a stream closed from the outside (its consumer cancelled, a muted binding) is past yielding, so only the ephemeral goes out and the stored row stays pending.
 
 ACP fixes the envelope and leaves the payload to the agent, so `CLIChannel(console=True)` unwraps rather than prints (`roomkit.console._tool_preview`): ACP `text`/`diff` blocks, MCP `content`, and `raw_output` wrappers (`formatted_output`+`exit_code` from Codex, `output`, `result`/`error`) all reduce to their text; a `terminal` block carries no text, so the preview falls back to `raw_output`; `image`/`audio`/`resource` blocks are named, never dumped as base64; 5 lines per result, 200 chars per line; unknown shapes render as compact JSON.

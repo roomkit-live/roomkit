@@ -373,7 +373,8 @@ class InboundMixin(HelpersMixin):
             # (delivery set, reentry passes, streamed responses) follows in
             # the room's lane, its streams consumed on the same background
             # task a detached caller uses. The handle is the caller's grip on
-            # that tail; it backfills delivery_results/error on completion.
+            # that tail; it backfills delivery results, errors and response
+            # metadata on completion.
             # Every result that reached this locked region gets one — a hook
             # refusal included, whose near-empty cascade resolves at once. A
             # refusal shed before it (rate limited, pre-commit timeout,
@@ -394,6 +395,7 @@ class InboundMixin(HelpersMixin):
             result.error = cascade.error
         # Step 18 reports the delivery set the caller waited for.
         result.delivery_results = cascade.delivery_results
+        result.response_metadata.update(cascade.response_metadata)
 
         # Handle streaming responses outside the lane (TTS delivery can take
         # seconds; the lane must not stall behind it). A failure while
@@ -411,7 +413,7 @@ class InboundMixin(HelpersMixin):
             )
             if stream_error is not None and result.error is None:
                 result.error = stream_error
-            result.response_metadata = record
+            result.response_metadata.update(record)
 
         await self._connect_session_if_ready(message, channel, room_id, result)
         return result

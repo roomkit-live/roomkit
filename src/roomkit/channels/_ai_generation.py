@@ -303,6 +303,7 @@ class AIGenerationMixin(AIToolLoopRulesMixin):
         return ChannelOutput(
             responded=True,
             response_events=response_events,
+            response_metadata=ai_context.response_metadata,
         )
 
     def _build_response_events(

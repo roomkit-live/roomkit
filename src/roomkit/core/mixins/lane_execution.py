@@ -409,13 +409,14 @@ class LaneExecutionMixin(HelpersMixin):
                 # task while the waiting path propagates the same failure
                 # to its caller — record it so a DeliveryHandle surfaces it.
                 try:
-                    stream_error, _record = await self._process_streaming_responses(
+                    stream_error, record = await self._process_streaming_responses(
                         cascade.streams, room_id
                     )
                 except Exception as exc:
                     logger.exception("Detached stream consumption failed for room %s", room_id)
                     cascade.record_error(exc)
                 else:
+                    cascade.response_metadata.update(record)
                     if stream_error is not None:
                         cascade.record_error(stream_error)
 
@@ -614,6 +615,13 @@ class LaneExecutionMixin(HelpersMixin):
             first_error = self._first_intelligence_error(result, context)
             if first_error is not None:
                 cascade.record_error(first_error)
+            # A non-streaming channel has finished generation before execute_plan
+            # returns, so its record is final now. Streaming records stay live
+            # until their generators are consumed outside the lane and are merged
+            # there instead — copying them here would freeze late tool writes.
+            for output in result.outputs.values():
+                if output.response_stream is None:
+                    cascade.response_metadata.update(output.response_metadata)
             cascade.add_streams(result.streaming_responses)
 
         # Commit blocked responses atomically (RFC §8.1 / §8.3 / §14.3 —

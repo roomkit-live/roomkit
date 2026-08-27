@@ -1,6 +1,6 @@
 # API Reference
 
-RoomKit exports **170 symbols** from `roomkit`. Providers and voice types import from subpackages.
+RoomKit exports **191 symbols** from `roomkit`. Providers and voice types import from subpackages.
 
 ## Top-Level Imports (`from roomkit import ...`)
 
@@ -115,7 +115,7 @@ RoomKit exports **170 symbols** from `roomkit`. Providers and voice types import
 | `HookResult` | Result from sync hooks: `.allow()`, `.block(reason)`, `.modify(event)` |
 | `InjectedEvent` | Event injected by a hook |
 | `InboundMessage` | Incoming message from a provider |
-| `InboundResult` | Result of processing an inbound message |
+| `InboundResult` | Inbound outcome; `response_metadata` contains the final root intelligence response record |
 | `Participant` | Participant data model |
 | `ProviderResult` | Result from a provider operation |
 | `Room` | Room data model |
@@ -305,7 +305,7 @@ kit = RoomKit(
 
 | Method | Description |
 |--------|-------------|
-| `process_inbound(message, room_id?)` | Process an inbound message |
+| `process_inbound(message, room_id?, defer_delivery=False)` | Process an inbound message; deferred results are backfilled by `DeliveryHandle.wait()` |
 
 ### Hooks
 
