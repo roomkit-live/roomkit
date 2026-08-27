@@ -14,6 +14,7 @@ from roomkit.channels._ai_loop_rules import (
     _accumulate_usage,
     final_round_reason,
 )
+from roomkit.channels._ai_resilience import _StreamRetryBoundary
 from roomkit.models.channel import ChannelOutput
 from roomkit.models.enums import ChannelType
 from roomkit.models.event import RoomEvent
@@ -101,7 +102,7 @@ class AIStreamingHost(Protocol):
     ) -> tuple[AIContext, bool]: ...
     async def _generate_stream_with_retry(
         self, context: AIContext
-    ) -> AsyncIterator[StreamEvent]: ...
+    ) -> AsyncIterator[StreamEvent | _StreamRetryBoundary]: ...
     async def _publish_thinking_event(
         self,
         event_type: EphemeralEventType,
@@ -265,6 +266,8 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
         # retry, fallback and overflow compaction are the wrapper's to give,
         # never a per-path courtesy.
         async for ev in self._generate_stream_with_retry(ai_context):
+            if isinstance(ev, _StreamRetryBoundary):
+                continue
             if isinstance(ev, StreamThinkingDelta):
                 if not thinking_started and room_id:
                     thinking_started = True
@@ -395,7 +398,13 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                         yield LoopEndMarker(reason="cancelled", rounds=_round_idx)
                         return
 
-                    if isinstance(event, StreamThinkingDelta):
+                    if isinstance(event, _StreamRetryBoundary):
+                        if room_id:
+                            await tool_coalescer.close()
+                            tool_coalescer = self._new_tool_call_coalescer(
+                                room_id, round_idx=_round_idx
+                            )
+                    elif isinstance(event, StreamThinkingDelta):
                         if event.signature:
                             # Signature arrives as its own delta (empty text);
                             # capture it so the thinking block round-trips.

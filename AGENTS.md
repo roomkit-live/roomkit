@@ -438,7 +438,8 @@ ephemeral events when executing tools in both streaming and non-streaming tool l
 DELTA fires while the model composes a call's arguments, carrying the running size and
 **never the argument content**; an empty `tool_calls` is the terminal frame saying the
 composition ended, which a round that never reaches START (cancelled, out of rounds, out
-of time) still sends.
+of time, provider failure, retry, or fallback) still sends. A retry begins a new
+composition attempt, so its cumulative character counts restart from zero.
 
 Results in END events are preview-truncated to 500 characters. Events are best-effort
 (failures are logged at DEBUG, never break the tool loop).

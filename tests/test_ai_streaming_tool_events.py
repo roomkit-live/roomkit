@@ -745,6 +745,7 @@ async def test_a_composition_frame_does_not_spend_the_turn_s_retry_budget() -> N
             yield StreamToolCallDelta(id="tc1", name="search", arguments_delta='{"q":')
             if attempts["n"] == 1:
                 raise ProviderError("upstream 503", retryable=True, provider="flaky")
+            yield StreamToolCallDelta(id="tc1", name="search", arguments_delta='"cats"}')
             yield StreamToolCall(id="tc1", name="search", arguments={"q": "cats"})
             yield StreamDone(finish_reason="tool_calls")
 
@@ -758,6 +759,7 @@ async def test_a_composition_frame_does_not_spend_the_turn_s_retry_budget() -> N
         provider=provider,
         tool_handler=tool_handler,
         retry_policy=RetryPolicy(max_retries=2, base_delay_seconds=0.001),
+        thinking_coalesce_ms=0,
     )
 
     received = await _run_turn(kit, ai)
@@ -766,7 +768,71 @@ async def test_a_composition_frame_does_not_spend_the_turn_s_retry_budget() -> N
     assert attempts["n"] == 3, "the round was not replayed"
     assert len(starts) == 1
     assert starts[0].data["tool_calls"][0]["name"] == "search"
+    sizes = [event.data["tool_calls"][0]["arguments_chars"] for event in _delta_events(received)]
+    assert sizes == [len('{"q":'), len('{"q":'), len('{"q":"cats"}')]
+    assert len(_terminal_events(received)) == 2
 
+    await kit.close()
+
+
+async def test_a_provider_failure_mid_composition_closes_the_composition() -> None:
+    """A terminal frame survives the error path that skips normal round cleanup."""
+
+    class _BrokenProvider(MockAIProvider):
+        async def generate_structured_stream(self, context: AIContext) -> Any:
+            yield StreamToolCallDelta(id="tc1", name="publish", arguments_delta='{"body":')
+            raise ProviderError("upstream stopped", retryable=False, provider="broken")
+
+    async def tool_handler(name: str, args: dict[str, Any]) -> str:
+        return "never reached"
+
+    kit = RoomKit()
+    ai = AIChannel(
+        "ai1",
+        provider=_BrokenProvider(streaming=True),
+        tool_handler=tool_handler,
+        thinking_coalesce_ms=0,
+    )
+
+    received = await _run_turn(kit, ai)
+
+    assert len(_delta_events(received)) == 1
+    assert len(_terminal_events(received)) == 1
+    assert received.index(_delta_events(received)[0]) < received.index(
+        _terminal_events(received)[0]
+    )
+    await kit.close()
+
+
+async def test_a_fallback_failure_mid_composition_closes_the_composition() -> None:
+    """The provider substituted after an early failure owns the same contract."""
+
+    class _PrimaryProvider(MockAIProvider):
+        async def generate_structured_stream(self, context: AIContext) -> Any:
+            raise ProviderError("primary stopped", retryable=True, provider="primary")
+            yield  # pragma: no cover - keeps this an async generator
+
+    class _BrokenFallback(MockAIProvider):
+        async def generate_structured_stream(self, context: AIContext) -> Any:
+            yield StreamToolCallDelta(id="tc1", name="publish", arguments_delta='{"body":')
+            raise ProviderError("fallback stopped", retryable=False, provider="fallback")
+
+    async def tool_handler(name: str, args: dict[str, Any]) -> str:
+        return "never reached"
+
+    kit = RoomKit()
+    ai = AIChannel(
+        "ai1",
+        provider=_PrimaryProvider(streaming=True),
+        fallback_provider=_BrokenFallback(streaming=True),
+        tool_handler=tool_handler,
+        thinking_coalesce_ms=0,
+    )
+
+    received = await _run_turn(kit, ai)
+
+    assert len(_delta_events(received)) == 1
+    assert len(_terminal_events(received)) == 1
     await kit.close()
 
 

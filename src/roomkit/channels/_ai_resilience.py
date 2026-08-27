@@ -27,6 +27,16 @@ if TYPE_CHECKING:
 logger = logging.getLogger("roomkit.channels.ai")
 
 
+class _StreamRetryBoundary:
+    """Separate two provider attempts of one model round.
+
+    Composition deltas are not persisted and therefore remain retryable, but
+    they are visible on the realtime bus. The streaming consumer uses this
+    marker to close the abandoned composition and reset its counters before
+    the replacement attempt starts.
+    """
+
+
 @runtime_checkable
 class ResilienceHost(Protocol):
     """Contract: capabilities a host class must provide for AIResilienceMixin.
@@ -120,7 +130,9 @@ class AIResilienceMixin:
             raise last_error
         raise RuntimeError("_generate_with_retry completed without result or exception")
 
-    async def _generate_stream_with_retry(self, context: AIContext) -> AsyncIterator[StreamEvent]:
+    async def _generate_stream_with_retry(
+        self, context: AIContext
+    ) -> AsyncIterator[StreamEvent | _StreamRetryBoundary]:
         """Stream with compaction, retry and optional fallback.
 
         This wrapper is the one layer positioned to know two facts, and both
@@ -143,6 +155,7 @@ class AIResilienceMixin:
         attempt = 0
         while attempt <= policy.max_retries:
             emitted = False
+            projected_composition = False
             try:
                 async for event in self._provider.generate_structured_stream(context):
                     # A composition delta is a projection: it is neither
@@ -154,9 +167,15 @@ class AIResilienceMixin:
                     # fragments now arrive long before the call itself.
                     if not isinstance(event, StreamToolCallDelta):
                         emitted = True
+                    else:
+                        projected_composition = True
                     yield event
                 return  # Stream completed successfully
             except ProviderError as exc:
+                if projected_composition:
+                    # Close this visible attempt before a retry/fallback starts
+                    # or before its terminal failure reaches the caller.
+                    yield _StreamRetryBoundary()
                 if emitted:
                     raise
                 if not compacted and self._is_context_overflow(exc):
@@ -184,12 +203,24 @@ class AIResilienceMixin:
                 )
                 await asyncio.sleep(delay)
                 attempt += 1
+            except Exception:
+                if projected_composition:
+                    yield _StreamRetryBoundary()
+                raise
 
         # Fallback — only reachable when nothing was emitted.
         if self._fallback_provider and last_error:
             logger.warning("Trying fallback provider for stream.")
-            async for event in self._fallback_provider.generate_structured_stream(context):
-                yield event
+            projected_composition = False
+            try:
+                async for event in self._fallback_provider.generate_structured_stream(context):
+                    if isinstance(event, StreamToolCallDelta):
+                        projected_composition = True
+                    yield event
+            except Exception:
+                if projected_composition:
+                    yield _StreamRetryBoundary()
+                raise
             return
 
         if last_error:

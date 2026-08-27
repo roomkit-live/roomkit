@@ -131,9 +131,16 @@ await kit.unsubscribe_room(sub_id)
 | `PRESENCE_OFFLINE` | User went offline |
 | `READ_RECEIPT` | User read a message |
 | `REACTION` | User reacted to a message |
+| `TOOL_CALL_DELTA` | AI is composing a tool call (streaming only) |
 | `TOOL_CALL_START` | AI started executing a tool |
 | `TOOL_CALL_END` | AI finished executing a tool |
 | `CUSTOM` | Custom ephemeral event |
+
+AI channels publish `TOOL_CALL_DELTA` with the tool name and cumulative
+`arguments_chars`, never the argument content. A terminal frame with an empty
+`tool_calls` closes every composition attempt, including cancellation, provider
+failure, retry, and fallback; counts restart for a retry. The complete call
+still arrives in `TOOL_CALL_START`.
 
 ### Read Tracking
 

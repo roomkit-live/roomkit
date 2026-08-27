@@ -807,12 +807,22 @@ await kit.submit_feedback("room-1", rating=0.9, comment="Very helpful", dimensio
 
 ## Tool Call Events
 
-AIChannel automatically broadcasts ephemeral `TOOL_CALL_START` and `TOOL_CALL_END` events when executing tools. Subscribe to these for UI indicators:
+AIChannel automatically broadcasts ephemeral `TOOL_CALL_DELTA`,
+`TOOL_CALL_START`, and `TOOL_CALL_END` events when executing tools. Subscribe
+to these for UI indicators:
 
 ```python
 await kit.subscribe_room("room-1", my_callback)
 
 # Callback receives:
+# TOOL_CALL_DELTA: {tool_calls: [{id, name, arguments_chars}], round, channel_id}
 # TOOL_CALL_START: {tool_calls: [{id, name, arguments}], round, channel_id}
 # TOOL_CALL_END: {tool_calls: [{id, name, result}], round, channel_id, duration_ms}
 ```
+
+`TOOL_CALL_DELTA` is streaming-only. It reports the running argument size while
+the model composes a call, but never exposes the argument content. An empty
+`tool_calls` is the terminal frame for that composition, including cancellation,
+provider failure, retry, and fallback. Each retry is a new attempt, so its
+cumulative `arguments_chars` counts restart from zero. These projection events
+are not persisted; the complete arguments still arrive in `TOOL_CALL_START`.
