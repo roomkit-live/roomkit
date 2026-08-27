@@ -7,8 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.61.0] — 2026-08-27
+
 ### Added
 
+- **The final intelligence response record now reaches the inbound caller.**
+  `InboundResult.response_metadata` contains the merged root-turn
+  `ResponseMetadata` for both streaming and non-streaming responses. On a
+  deferred call it is backfilled, alongside delivery results and errors, when
+  `await result.delivery.wait()` completes. This lets a headless caller read
+  citations, provenance, or turn outcomes even when the final activity was a
+  tool call and no final `MESSAGE` event exists.
+- **ACP turns report unclean outcomes.** `ACPChannel` records a non-`end_turn`
+  ACP stop reason under `response_metadata["acp"]["stop_reason"]`; a prompt
+  that never returns records `response_metadata["acp"]["interrupted"] = True`.
+  Clean turns add neither marker, so callers can distinguish completed work
+  from refusals, token limits, cancellation, and interrupted transports without
+  parsing the agent's text.
 - **What the model is composing during a tool call is now visible while it
   happens.** A model calling a tool spends the whole composition of its
   arguments producing tokens the provider hands over fragment by fragment; for
@@ -23,11 +38,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   full. A call's first fragment publishes immediately — the tool's name is the
   signal — and the rest are batched on the existing `thinking_coalesce_ms` /
   `thinking_coalesce_chars` windows, and a round always closes with a terminal
-  frame carrying an empty `tool_calls` — including the rounds that never reach
-  `TOOL_CALL_START` (cancelled, out of rounds, out of time), so a host is never
-  left showing a composition that ended. Nothing is persisted: like
-  `THINKING_DELTA` this is a projection, and a client that ignores it loses
-  nothing.
+  frame carrying an empty `tool_calls` — including attempts that never reach
+  `TOOL_CALL_START` (cancelled, out of rounds, out of time, provider failure,
+  retry, or fallback), so a host is never left showing a composition that
+  ended. A retry starts a fresh composition and its cumulative character
+  counts restart instead of including the failed attempt. Nothing is
+  persisted: like `THINKING_DELTA` this is a projection, and a client that
+  ignores it loses nothing.
 - **`StreamToolCallDelta`** joins the `StreamEvent` union
   (`roomkit.providers.ai`): one fragment of a tool call's arguments, emitted by
   the OpenAI-compatible, Anthropic, Mistral and PolarGrid providers. The
@@ -59,6 +76,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Azure endpoint fields accept every URL Azure documents.** `AzureAIConfig`
+  and `AzureImageConfig` reduce resource roots, `/openai/v1` URLs, and full
+  deployment, chat-completions, or Responses URLs to the base expected by the
+  SDK, dropping copied query strings without changing the host or legitimate
+  API Management route prefixes. This prevents doubled `/openai/...` paths and
+  misleading 404 responses.
+- **Anthropic custom endpoints no longer duplicate the SDK's request path.** A
+  `base_url` pasted as the complete Microsoft Foundry Claude endpoint ending in
+  `/v1/messages` is reduced to its parent before the Anthropic SDK appends that
+  same path. Existing bases, including gateway routes ending in `/v1`, remain
+  unchanged.
 - **A `THINKING_END` no longer repeats the reasoning the earlier ones already
   carried.** A round in which the model reasons more than once — reason,
   answer, reason again, which is the shape Anthropic's interleaved thinking
@@ -6604,7 +6632,8 @@ See entries `0.7.0a1` through `0.7.0a18` below.
 - `STTProvider.transcribe()` returns `TranscriptionResult` (Phase 3.1)
 - Framework event names enriched with payloads (Phase 4)
 
-[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.60.0...HEAD
+[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.61.0...HEAD
+[0.61.0]: https://github.com/roomkit-live/roomkit/compare/v0.60.0...v0.61.0
 [0.60.0]: https://github.com/roomkit-live/roomkit/compare/v0.59.0...v0.60.0
 [0.59.0]: https://github.com/roomkit-live/roomkit/compare/v0.58.0...v0.59.0
 [0.58.0]: https://github.com/roomkit-live/roomkit/compare/v0.57.0...v0.58.0

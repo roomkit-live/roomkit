@@ -2039,15 +2039,25 @@ await kit.submit_feedback("room-1", rating=0.9, comment="Very helpful", dimensio
 
 ## Tool Call Events
 
-AIChannel automatically broadcasts ephemeral `TOOL_CALL_START` and `TOOL_CALL_END` events when executing tools. Subscribe to these for UI indicators:
+AIChannel automatically broadcasts ephemeral `TOOL_CALL_DELTA`,
+`TOOL_CALL_START`, and `TOOL_CALL_END` events when executing tools. Subscribe
+to these for UI indicators:
 
 ```python
 await kit.subscribe_room("room-1", my_callback)
 
 # Callback receives:
+# TOOL_CALL_DELTA: {tool_calls: [{id, name, arguments_chars}], round, channel_id}
 # TOOL_CALL_START: {tool_calls: [{id, name, arguments}], round, channel_id}
 # TOOL_CALL_END: {tool_calls: [{id, name, result}], round, channel_id, duration_ms}
 ```
+
+`TOOL_CALL_DELTA` is streaming-only. It reports the running argument size while
+the model composes a call, but never exposes the argument content. An empty
+`tool_calls` is the terminal frame for that composition, including cancellation,
+provider failure, retry, and fallback. Each retry is a new attempt, so its
+cumulative `arguments_chars` counts restart from zero. These projection events
+are not persisted; the complete arguments still arrive in `TOOL_CALL_START`.
 ---
 
 `OllamaAIProvider` talks to the native Ollama `/api/chat` endpoint
@@ -2243,6 +2253,15 @@ For each non-self text event, `on_event()` returns `ChannelOutput(responded=True
 - `usage_update` → ephemeral `CUSTOM` `{"type": "acp_usage"}`.
 
 `register_channel()` wires `kit`'s realtime backend in automatically. A failed prompt surfaces as `ProviderError(provider="acp")`; cancellation ends the stream silently and closes any open thinking block.
+
+Every output starts a live response record containing
+`{"acp": {"protocol_version": "..."}}`. When the prompt returns for a reason
+other than `end_turn`, the channel adds `stop_reason`; if it never returns
+because of an exception or cancellation, it adds `interrupted: true`. A clean
+turn adds neither marker. The final record is available on
+`InboundResult.response_metadata`, even when the last activity was a tool call
+and no final `MESSAGE` was persisted. With `defer_delivery=True`, await
+`result.delivery.wait()` before reading it.
 
 A turn never outlives its tool calls. Whichever way it ends — error, cancellation, or a stop the user asked for, which returns through the ordinary end of a prompt — every tool started without a terminal `tool_call_update` is closed first: a `ToolCallEndMarker` with `status="failed"` and an `error` saying the turn ended before the tool reported, emitted into the stream so the stored `TOOL_CALL_END` exists, plus the matching ephemeral. A turn whose tools all reported emits nothing extra. One gap remains by construction: a stream closed from the outside (its consumer cancelled, a muted binding) is past yielding, so only the ephemeral goes out and the stored row stays pending.
 
@@ -4489,9 +4508,16 @@ await kit.unsubscribe_room(sub_id)
 | `PRESENCE_OFFLINE` | User went offline |
 | `READ_RECEIPT` | User read a message |
 | `REACTION` | User reacted to a message |
+| `TOOL_CALL_DELTA` | AI is composing a tool call (streaming only) |
 | `TOOL_CALL_START` | AI started executing a tool |
 | `TOOL_CALL_END` | AI finished executing a tool |
 | `CUSTOM` | Custom ephemeral event |
+
+AI channels publish `TOOL_CALL_DELTA` with the tool name and cumulative
+`arguments_chars`, never the argument content. A terminal frame with an empty
+`tool_calls` closes every composition attempt, including cancellation, provider
+failure, retry, and fallback; counts restart for a retry. The complete call
+still arrives in `TOOL_CALL_START`.
 
 ### Read Tracking
 
@@ -5075,7 +5101,7 @@ modified = event.model_copy(update={"content": TextContent(body="new")})
 ```
 ---
 
-RoomKit exports **170 symbols** from `roomkit`. Providers and voice types import from subpackages.
+RoomKit exports **191 symbols** from `roomkit`. Providers and voice types import from subpackages.
 
 ## Top-Level Imports (`from roomkit import ...`)
 
@@ -5190,7 +5216,7 @@ RoomKit exports **170 symbols** from `roomkit`. Providers and voice types import
 | `HookResult` | Result from sync hooks: `.allow()`, `.block(reason)`, `.modify(event)` |
 | `InjectedEvent` | Event injected by a hook |
 | `InboundMessage` | Incoming message from a provider |
-| `InboundResult` | Result of processing an inbound message |
+| `InboundResult` | Inbound outcome; `response_metadata` contains the final root intelligence response record |
 | `Participant` | Participant data model |
 | `ProviderResult` | Result from a provider operation |
 | `Room` | Room data model |
@@ -5380,7 +5406,7 @@ kit = RoomKit(
 
 | Method | Description |
 |--------|-------------|
-| `process_inbound(message, room_id?)` | Process an inbound message |
+| `process_inbound(message, room_id?, defer_delivery=False)` | Process an inbound message; deferred results are backfilled by `DeliveryHandle.wait()` |
 
 ### Hooks
 
