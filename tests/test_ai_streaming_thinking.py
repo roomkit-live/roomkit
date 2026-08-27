@@ -306,8 +306,8 @@ async def test_thinking_coalescer_disabled_publishes_each_delta() -> None:
 
 async def test_thinking_coalescer_flush_splits_at_preview_limit() -> None:
     """A flush larger than the publish preview cap splits losslessly, never truncates."""
-    from roomkit.channels._ai_events import THINKING_PREVIEW_LIMIT
     from roomkit.channels._ai_coalescers import _ThinkingCoalescer
+    from roomkit.channels._ai_events import THINKING_PREVIEW_LIMIT
 
     published: list[str] = []
 
