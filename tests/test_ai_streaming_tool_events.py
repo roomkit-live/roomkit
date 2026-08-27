@@ -16,7 +16,7 @@ from typing import Any
 from unittest.mock import AsyncMock
 
 from roomkit import HookExecution, HookResult, HookTrigger, RoomContext, ToolCallEvent
-from roomkit.channels._ai_streaming import _ToolCallDeltaCoalescer
+from roomkit.channels._ai_coalescers import _ToolCallDeltaCoalescer
 from roomkit.channels.ai import AIChannel
 from roomkit.core.framework import RoomKit
 from roomkit.models.channel import ChannelBinding, RetryPolicy

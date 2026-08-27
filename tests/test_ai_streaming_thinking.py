@@ -266,7 +266,7 @@ async def test_thinking_markers_stream_inline_before_text() -> None:
 
 async def test_thinking_coalescer_batches_by_size_without_loss() -> None:
     """Deltas batch into size-bounded publishes; concatenation stays lossless."""
-    from roomkit.channels._ai_streaming import _ThinkingCoalescer
+    from roomkit.channels._ai_coalescers import _ThinkingCoalescer
 
     published: list[str] = []
 
@@ -290,7 +290,7 @@ async def test_thinking_coalescer_batches_by_size_without_loss() -> None:
 
 async def test_thinking_coalescer_disabled_publishes_each_delta() -> None:
     """flush_ms=0 disables batching: one publish per delta (pre-coalescing path)."""
-    from roomkit.channels._ai_streaming import _ThinkingCoalescer
+    from roomkit.channels._ai_coalescers import _ThinkingCoalescer
 
     published: list[str] = []
 
@@ -307,7 +307,7 @@ async def test_thinking_coalescer_disabled_publishes_each_delta() -> None:
 async def test_thinking_coalescer_flush_splits_at_preview_limit() -> None:
     """A flush larger than the publish preview cap splits losslessly, never truncates."""
     from roomkit.channels._ai_events import THINKING_PREVIEW_LIMIT
-    from roomkit.channels._ai_streaming import _ThinkingCoalescer
+    from roomkit.channels._ai_coalescers import _ThinkingCoalescer
 
     published: list[str] = []
 
@@ -330,7 +330,7 @@ async def test_thinking_coalescer_flush_splits_at_preview_limit() -> None:
 
 async def test_thinking_coalescer_flush_empty_is_noop() -> None:
     """Flushing an empty buffer publishes nothing — no stray events at boundaries."""
-    from roomkit.channels._ai_streaming import _ThinkingCoalescer
+    from roomkit.channels._ai_coalescers import _ThinkingCoalescer
 
     published: list[object] = []
 
