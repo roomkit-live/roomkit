@@ -842,6 +842,55 @@ class TestOpenAIAIProvider:
             assert all(d.name == "search" and d.id == "call_1" for d in deltas)
             assert events.index(deltas[-1]) < events.index(tool_events[0])
 
+    @pytest.mark.asyncio
+    async def test_structured_stream_tool_call_arguments_that_never_parse(self) -> None:
+        """Unparseable arguments still stream, and still fall back to {"raw": ...}.
+
+        The fragments are surfaced as they arrive, which means they are
+        surfaced before anything could know whether the whole will parse.
+        """
+        with patch.dict("sys.modules", {"openai": _mock_openai_module()}):
+            from roomkit.providers.openai.ai import OpenAIAIProvider
+
+            provider = OpenAIAIProvider(_config())
+            provider._client = MagicMock()
+
+            def _chunk(name: str | None, arguments: str, finish: str | None = None) -> Any:
+                return SimpleNamespace(
+                    choices=[
+                        SimpleNamespace(
+                            delta=SimpleNamespace(
+                                content=None,
+                                tool_calls=[
+                                    SimpleNamespace(
+                                        index=0,
+                                        id="call_1" if name else None,
+                                        function=SimpleNamespace(name=name, arguments=arguments),
+                                    )
+                                ],
+                            ),
+                            finish_reason=finish,
+                        )
+                    ]
+                )
+
+            chunks = [_chunk("search", "{not"), _chunk(None, " json")]
+
+            async def _fake_stream() -> Any:
+                for c in chunks:
+                    yield c
+
+            provider._client.chat.completions.create = AsyncMock(return_value=_fake_stream())
+
+            events = [e async for e in provider.generate_structured_stream(_context())]
+
+            deltas = [e for e in events if isinstance(e, StreamToolCallDelta)]
+            assert [d.arguments_delta for d in deltas] == ["{not", " json"]
+
+            calls = [e for e in events if isinstance(e, StreamToolCall)]
+            assert len(calls) == 1
+            assert calls[0].arguments == {"raw": "{not json"}
+
 
 class TestOpenAIToolResultImages:
     """Image tool results (screenshot-style output) reach the model as a real

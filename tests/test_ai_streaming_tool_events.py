@@ -19,10 +19,13 @@ from roomkit import HookExecution, HookResult, HookTrigger, RoomContext, ToolCal
 from roomkit.channels._ai_streaming import _ToolCallDeltaCoalescer
 from roomkit.channels.ai import AIChannel
 from roomkit.core.framework import RoomKit
+from roomkit.models.channel import ChannelBinding
 from roomkit.models.delivery import InboundMessage
-from roomkit.models.enums import ChannelCategory
-from roomkit.models.event import TextContent
+from roomkit.models.enums import ChannelCategory, ChannelType
+from roomkit.models.event import RoomEvent, TextContent
+from roomkit.models.room import Room
 from roomkit.models.steering import Cancel
+from roomkit.models.streaming import LoopEndMarker
 from roomkit.providers.ai.base import (
     AIContext,
     AIResponse,
@@ -35,6 +38,7 @@ from roomkit.providers.ai.base import (
 from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.realtime.base import EphemeralEvent, EphemeralEventType
 from roomkit.tools.external import PolicyExternalToolHandler
+from tests.conftest import make_event
 from tests.test_framework import SimpleChannel
 
 _TOOLS = [{"name": "search", "description": "Search"}]
@@ -280,7 +284,6 @@ async def test_no_streaming_target_error_fires_on_error() -> None:
 
     from roomkit.core.hooks import HookRegistration
     from roomkit.models.enums import HookExecution, HookTrigger
-    from roomkit.models.event import RoomEvent
     from roomkit.providers.ai.base import StreamEvent
 
     class _RaisingProvider(MockAIProvider):
@@ -542,6 +545,56 @@ async def test_cancelling_mid_composition_ends_the_loop_at_the_next_fragment() -
     assert starts == []
 
     await kit.close()
+
+
+async def test_cancelling_mid_composition_names_its_exit() -> None:
+    """The loop says why it stopped — any other exit looks the same from outside.
+
+    ``process_inbound`` consumes the marker stream internally, so this drives
+    ``on_event`` directly to read what the loop said on its way out.
+    """
+    holder: dict[str, AIChannel] = {}
+
+    class _ComposingProvider(MockAIProvider):
+        def __init__(self) -> None:
+            super().__init__(streaming=True)
+            self.pulled = 0
+
+        async def generate_structured_stream(self, context: AIContext) -> Any:
+            for _ in range(50):
+                self.pulled += 1
+                yield StreamToolCallDelta(id="tc1", name="publish", arguments_delta="x" * 64)
+                if self.pulled == 3:
+                    holder["ai"].steer(Cancel())
+            yield StreamToolCall(id="tc1", name="publish", arguments={"svg": "x" * 3200})
+            yield StreamDone(finish_reason="tool_calls")
+
+    async def tool_handler(name: str, args: dict[str, Any]) -> str:
+        return "ok"
+
+    provider = _ComposingProvider()
+    ai = AIChannel("ai1", provider=provider, tool_handler=tool_handler)
+    holder["ai"] = ai
+
+    output = await ai.on_event(
+        make_event(room_id="r1", body="go", channel_id="sms1"),
+        ChannelBinding(
+            channel_id="ai1",
+            room_id="r1",
+            channel_type=ChannelType.AI,
+            category=ChannelCategory.INTELLIGENCE,
+            metadata={"tools": _TOOLS},
+        ),
+        RoomContext(room=Room(id="r1")),
+    )
+    reasons = []
+    if output.response_stream is not None:
+        async for item in output.response_stream:
+            if isinstance(item, LoopEndMarker):
+                reasons.append(item.reason)
+
+    assert reasons == ["cancelled"]
+    assert provider.pulled == 4
 
 
 # --- the coalescer itself --------------------------------------------------
