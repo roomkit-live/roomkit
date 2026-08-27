@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import socket
 import sys
 from importlib import metadata
@@ -1835,4 +1836,109 @@ class TestHostContext:
         assert (await channel.on_event(mine, _binding(), _context(mine))).responded is False
 
         assert seen == []
+        await channel.close()
+
+
+class TestTurnOutcomeMetadata:
+    """How a turn ended, carried on the segments it produced.
+
+    A caller with nobody watching (a scheduled run) has to tell an answer
+    from a turn that stopped early, and the text alone cannot say which it
+    is: an agent that refuses says so in prose, and one that dies mid-work
+    has usually said plenty already.
+    """
+
+    async def test_a_clean_turn_marks_nothing(self, tmp_path: Any) -> None:
+        channel, _connection, _ = _channel(tmp_path)
+        context = RoomContext(room=Room(id="room-1"))
+
+        output = await channel.on_event(make_event(body="Go"), _binding(), context)
+        _ = [chunk async for chunk in output.response_stream]
+
+        acp_meta = output.response_metadata["acp"]
+        assert "stop_reason" not in acp_meta
+        assert "interrupted" not in acp_meta
+        await channel.close()
+
+    async def test_a_refusal_is_named_on_the_turn(self, tmp_path: Any) -> None:
+        channel, connection, _ = _channel(tmp_path)
+        context = RoomContext(room=Room(id="room-1"))
+        inner = connection.prompt
+
+        async def refuses(session_id: str, prompt: list[Any], **kwargs: Any) -> PromptResponse:
+            await inner(session_id, prompt, **kwargs)
+            return PromptResponse(stop_reason="refusal")
+
+        connection.prompt = refuses  # type: ignore[method-assign]
+
+        output = await channel.on_event(make_event(body="Go"), _binding(), context)
+        _ = [chunk async for chunk in output.response_stream]
+
+        assert output.response_metadata["acp"]["stop_reason"] == "refusal"
+        await channel.close()
+
+    async def test_a_truncated_turn_is_named_too(self, tmp_path: Any) -> None:
+        channel, connection, _ = _channel(tmp_path)
+        context = RoomContext(room=Room(id="room-1"))
+        inner = connection.prompt
+
+        async def truncated(session_id: str, prompt: list[Any], **kwargs: Any) -> PromptResponse:
+            await inner(session_id, prompt, **kwargs)
+            return PromptResponse(stop_reason="max_tokens")
+
+        connection.prompt = truncated  # type: ignore[method-assign]
+
+        output = await channel.on_event(make_event(body="Go"), _binding(), context)
+        _ = [chunk async for chunk in output.response_stream]
+
+        assert output.response_metadata["acp"]["stop_reason"] == "max_tokens"
+        await channel.close()
+
+    async def test_a_turn_that_never_returned_is_marked_interrupted(self, tmp_path: Any) -> None:
+        channel, connection, _ = _channel(tmp_path)
+        context = RoomContext(room=Room(id="room-1"))
+        inner = connection.prompt
+
+        async def dies(session_id: str, prompt: list[Any], **kwargs: Any) -> PromptResponse:
+            await inner(session_id, prompt, **kwargs)
+            raise RuntimeError("the provider hung up")
+
+        connection.prompt = dies  # type: ignore[method-assign]
+
+        output = await channel.on_event(make_event(body="Go"), _binding(), context)
+        with contextlib.suppress(Exception):
+            _ = [chunk async for chunk in output.response_stream]
+
+        # No stop reason exists to record: the prompt never returned one, and
+        # inventing a clean one would be the lie this whole record prevents.
+        assert output.response_metadata["acp"]["interrupted"] is True
+        assert "stop_reason" not in output.response_metadata["acp"]
+        await channel.close()
+
+    async def test_the_record_is_the_one_the_output_carries(self, tmp_path: Any) -> None:
+        """Identity, not a copy: the outcome is learned after the output is built.
+
+        A dict literal here would freeze the record at stream start, which is
+        before the turn has any outcome to report, and the fact would never
+        reach a persisted segment.
+        """
+        channel, connection, _ = _channel(tmp_path)
+        context = RoomContext(room=Room(id="room-1"))
+        seen: list[Any] = []
+        inner = connection.prompt
+
+        async def capture(session_id: str, prompt: list[Any], **kwargs: Any) -> PromptResponse:
+            seen.append(True)
+            await inner(session_id, prompt, **kwargs)
+            return PromptResponse(stop_reason="refusal")
+
+        connection.prompt = capture  # type: ignore[method-assign]
+
+        output = await channel.on_event(make_event(body="Go"), _binding(), context)
+        before = output.response_metadata
+        _ = [chunk async for chunk in output.response_stream]
+
+        assert seen  # the prompt really ran
+        assert output.response_metadata is before
+        assert before["acp"]["stop_reason"] == "refusal"
         await channel.close()

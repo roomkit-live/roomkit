@@ -55,6 +55,7 @@ from roomkit.models.enums import (
     EventType,
 )
 from roomkit.models.event import RoomEvent
+from roomkit.models.response_metadata import ResponseMetadata
 from roomkit.models.streaming import StreamDelta
 from roomkit.models.tool_call import AfterResponseCallback, AIResponseEvent
 from roomkit.providers.ai.base import ProviderError
@@ -65,6 +66,9 @@ if TYPE_CHECKING:
     from roomkit.tools.external import ExternalToolHandler
 
 logger = logging.getLogger("roomkit.channels.acp")
+
+_CLEAN_STOP_REASON = "end_turn"
+"""The one ACP stop reason that means the agent finished what it was asked."""
 
 _SHUTDOWN_TIMEOUT = 5.0
 """Seconds the agent gets to acknowledge cancellation and session closes."""
@@ -350,6 +354,12 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
         blocks = await contributed_blocks(
             self._context_contributor, context, event, channel_id=self.channel_id
         )
+        # One live record for the turn, handed to the stream and to the output
+        # alike: the stop reason is only known when the prompt returns, and
+        # every MESSAGE segment reads this mapping as it stands when it is
+        # persisted. A dict literal here would be a snapshot taken now, before
+        # the turn has an outcome to report.
+        metadata = ResponseMetadata({"acp": {"protocol_version": _STABLE_PROTOCOL_VERSION}})
         return ChannelOutput(
             responded=True,
             response_stream=self._prompt_stream(
@@ -360,8 +370,9 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
                 event,
                 text,
                 event.index,
+                metadata,
             ),
-            response_metadata={"acp": {"protocol_version": _STABLE_PROTOCOL_VERSION}},
+            response_metadata=metadata,
         )
 
     def session_id(self, room_id: str) -> str | None:
@@ -515,6 +526,7 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
         trigger: RoomEvent,
         text: str,
         event_index: int,
+        metadata: ResponseMetadata,
     ) -> AsyncIterator[StreamDelta]:
         async with self._room_turn_lock(room_id):
             connection = await self._ensure_connection()
@@ -543,6 +555,7 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
                     turn,
                     room_id,
                     event_index,
+                    metadata,
                 )
             )
 
@@ -629,7 +642,18 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
         turn: _TurnState,
         room_id: str,
         event_index: int,
+        metadata: ResponseMetadata,
     ) -> None:
+        """Run one prompt to its end, recording how that end came about.
+
+        The turn's outcome rides ``metadata`` so that the MESSAGE segments
+        persisted for this turn carry it: a caller with nobody watching (a
+        scheduled run) has to tell an answer from a turn that stopped early,
+        and the text alone cannot say which it is. Only an outcome that is
+        *not* a clean end is written, the way an interrupted segment is
+        marked ``cancelled`` and a finished one is marked by nothing.
+        """
+        acp_meta = metadata.setdefault("acp", {})
         try:
             response = await connection.prompt(
                 session_id,
@@ -643,8 +667,19 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
             # the usage notifications describe the context window, not what
             # answering cost.
             turn.tokens = _usage_tokens(getattr(response, "usage", None))
+            # ``end_turn`` is the agent saying it finished; every other reason
+            # (``refusal``, ``max_tokens``, ``cancelled``) means the work
+            # stopped for a cause the caller must be able to act on. A reason
+            # the agent did not name stays unwritten rather than being read as
+            # either outcome.
+            stop_reason = getattr(response, "stop_reason", None)
+            if stop_reason and stop_reason != _CLEAN_STOP_REASON:
+                acp_meta["stop_reason"] = stop_reason
             await self._drain_session_updates(session_id)
         except BaseException as exc:
+            # The prompt never returned, so no stop reason exists to record:
+            # the turn ended on the way, and that is the fact to carry.
+            acp_meta["interrupted"] = True
             turn.queue.put_nowait(_TurnDone(error=exc))
         else:
             turn.queue.put_nowait(_TurnDone())
