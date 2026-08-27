@@ -24,6 +24,7 @@ from roomkit.providers.ai.base import (
     StreamTextDelta,
     StreamThinkingDelta,
     StreamToolCall,
+    StreamToolCallDelta,
 )
 from roomkit.providers.polargrid.config import PolarGridConfig
 
@@ -488,6 +489,12 @@ class TestPolarGridStreaming:
         assert done_events[0].finish_reason == "tool_calls"
         assert done_events[0].usage == {"input_tokens": 4, "output_tokens": 2}
 
+        # One composition event per fragment, all before the completed call.
+        deltas = [e for e in events if isinstance(e, StreamToolCallDelta)]
+        assert [d.arguments_delta for d in deltas] == ['{"ci', 'ty": "Montreal"}']
+        assert all(d.name == "get_weather" and d.id == "call_1" for d in deltas)
+        assert events.index(deltas[-1]) < events.index(tool_events[0])
+
     @pytest.mark.asyncio
     async def test_streaming_text_then_tool_call_ordering(self) -> None:
         provider, mod = _provider()
@@ -501,8 +508,15 @@ class TestPolarGridStreaming:
 
         events = [e async for e in provider.generate_structured_stream(_context())]
         kinds = [type(e).__name__ for e in events]
-        # Text deltas come before tool calls, StreamDone last.
-        assert kinds == ["StreamTextDelta", "StreamToolCall", "StreamDone"]
+        # Text deltas come before tool calls, StreamDone last. A call's
+        # arguments are surfaced as they are composed, so its fragments sit
+        # between the text and the completed call.
+        assert kinds == [
+            "StreamTextDelta",
+            "StreamToolCallDelta",
+            "StreamToolCall",
+            "StreamDone",
+        ]
 
 
 # ---------------------------------------------------------------------------

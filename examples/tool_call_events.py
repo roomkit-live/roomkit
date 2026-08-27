@@ -1,8 +1,10 @@
 """Tool call ephemeral events.
 
-Demonstrates how AI channels broadcast TOOL_CALL_START and TOOL_CALL_END
-ephemeral events during tool execution. Shows:
+Demonstrates how AI channels broadcast TOOL_CALL_DELTA, TOOL_CALL_START and
+TOOL_CALL_END ephemeral events during tool execution. Shows:
 - Subscribing to tool call events in a room
+- TOOL_CALL_DELTA fires while the model composes the call's arguments,
+  carrying the tool's name and how much it has produced — never the content
 - TOOL_CALL_START fires before tool execution with tool names and arguments
 - TOOL_CALL_END fires after with results and duration_ms
 - The streamed text stays clean — no inline XML
@@ -59,8 +61,17 @@ async def main() -> None:
         await asyncio.sleep(0.1)  # Simulate work
         return f"Found 5 results for: {args.get('query', '')}"
 
-    provider = MockAIProvider(ai_responses=responses, streaming=True)
-    ai = AIChannel("ai-agent", provider=provider, tool_handler=tool_handler)
+    # tool_call_delta_chunks makes the mock fragment the arguments the way a
+    # real provider does; thinking_coalesce_ms=0 publishes every fragment so
+    # the composition is legible in this short example (the default 80 ms
+    # window is what you want in production).
+    provider = MockAIProvider(ai_responses=responses, streaming=True, tool_call_delta_chunks=5)
+    ai = AIChannel(
+        "ai-agent",
+        provider=provider,
+        tool_handler=tool_handler,
+        thinking_coalesce_ms=0,
+    )
 
     ws = WebSocketChannel("ws-user")
 
@@ -96,7 +107,11 @@ async def main() -> None:
 
     # --- Subscribe to ephemeral events ---
     async def on_ephemeral(event: EphemeralEvent) -> None:
-        if event.type in (EphemeralEventType.TOOL_CALL_START, EphemeralEventType.TOOL_CALL_END):
+        if event.type in (
+            EphemeralEventType.TOOL_CALL_DELTA,
+            EphemeralEventType.TOOL_CALL_START,
+            EphemeralEventType.TOOL_CALL_END,
+        ):
             tool_events.append(event)
 
     sub_id = await kit.subscribe_room("tool-room", on_ephemeral)
@@ -118,7 +133,17 @@ async def main() -> None:
     print(f"\nReceived {len(tool_events)} tool call events:\n")
 
     for ev in tool_events:
-        if ev.type == EphemeralEventType.TOOL_CALL_START:
+        if ev.type == EphemeralEventType.TOOL_CALL_DELTA:
+            # What the model is composing, live. A real argument can be
+            # megabytes and take minutes; this is the only signal until the
+            # call is complete. Note there is no argument text in the payload.
+            for t in ev.data["tool_calls"]:
+                print(
+                    f"  TOOL_CALL_DELTA (round {ev.data['round']}) "
+                    f"- composing {t['name']}: {t['arguments_chars']} chars"
+                )
+
+        elif ev.type == EphemeralEventType.TOOL_CALL_START:
             tools = ev.data["tool_calls"]
             names = ", ".join(t["name"] for t in tools)
             print(f"  TOOL_CALL_START (round {ev.data['round']})")

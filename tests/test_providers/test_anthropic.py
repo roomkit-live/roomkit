@@ -150,6 +150,38 @@ class _FakeTextStream:
             raise StopAsyncIteration from None
 
 
+class _FakeRawStream:
+    """Async context manager yielding raw SDK events verbatim.
+
+    ``_FakeStream`` composes its events from text and thinking chunks; a
+    ``tool_use`` block is content_block_start / input_json_delta /
+    content_block_stop, which it models not at all.
+    """
+
+    def __init__(self, events: list[SimpleNamespace], final_message: SimpleNamespace) -> None:
+        self._events = events
+        self._final_message = final_message
+
+    async def __aenter__(self) -> _FakeRawStream:
+        return self
+
+    async def __aexit__(self, *args: Any) -> None:
+        pass
+
+    def __aiter__(self) -> _FakeRawStream:
+        self._iter = iter(self._events)
+        return self
+
+    async def __anext__(self) -> SimpleNamespace:
+        try:
+            return next(self._iter)
+        except StopIteration:
+            raise StopAsyncIteration from None
+
+    async def get_final_message(self) -> SimpleNamespace:
+        return self._final_message
+
+
 def _mock_stream(
     text: str = "Hello!",
     stop_reason: str = "end_turn",
@@ -626,6 +658,59 @@ class TestAnthropicAIProvider:
                 i for i, e in enumerate(events) if isinstance(e, StreamTextDelta)
             )
             assert first_thinking_idx < first_text_idx
+
+    @pytest.mark.asyncio
+    async def test_structured_stream_surfaces_a_tool_call_as_it_is_composed(self) -> None:
+        """The name lands before a single argument byte, then one event per fragment.
+
+        Anthropic knows the tool's name at ``content_block_start`` and streams
+        the arguments as ``input_json_delta``. Held back until
+        ``content_block_stop``, a large argument is minutes of silence.
+        """
+        with patch.dict("sys.modules", {"anthropic": _mock_anthropic_module()}):
+            from roomkit.providers.ai.base import StreamToolCall, StreamToolCallDelta
+            from roomkit.providers.anthropic.ai import AnthropicAIProvider
+
+            provider = AnthropicAIProvider(_config())
+            provider._client = MagicMock()
+            stream = _FakeRawStream(
+                [
+                    SimpleNamespace(
+                        type="content_block_start",
+                        index=0,
+                        content_block=SimpleNamespace(type="tool_use", id="tool_1", name="search"),
+                    ),
+                    SimpleNamespace(
+                        type="content_block_delta",
+                        index=0,
+                        delta=SimpleNamespace(type="input_json_delta", partial_json='{"q":'),
+                    ),
+                    SimpleNamespace(
+                        type="content_block_delta",
+                        index=0,
+                        delta=SimpleNamespace(type="input_json_delta", partial_json='"cats"}'),
+                    ),
+                    SimpleNamespace(type="content_block_stop", index=0),
+                ],
+                _mock_response(
+                    text="",
+                    tool_use=[{"id": "tool_1", "name": "search", "input": {"q": "cats"}}],
+                ),
+            )
+            provider._client.messages.stream = MagicMock(return_value=stream)
+
+            events = [e async for e in provider.generate_structured_stream(_context())]
+
+            deltas = [e for e in events if isinstance(e, StreamToolCallDelta)]
+            assert [d.arguments_delta for d in deltas] == ["", '{"q":', '"cats"}']
+            assert all(d.name == "search" and d.id == "tool_1" for d in deltas)
+
+            # The completed call is unchanged, still yielded exactly once.
+            calls = [e for e in events if isinstance(e, StreamToolCall)]
+            assert len(calls) == 1
+            assert calls[0].id == "tool_1"
+            assert calls[0].arguments == {"q": "cats"}
+            assert events.index(deltas[-1]) < events.index(calls[0])
 
     @pytest.mark.asyncio
     async def test_thinking_part_round_trip(self) -> None:

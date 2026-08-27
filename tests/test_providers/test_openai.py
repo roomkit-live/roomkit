@@ -17,6 +17,7 @@ from roomkit.providers.ai.base import (
     StreamTextDelta,
     StreamThinkingDelta,
     StreamToolCall,
+    StreamToolCallDelta,
 )
 from roomkit.providers.openai.ai import _extract_think_tags, _ThinkTagParser
 from roomkit.providers.openai.config import OpenAIConfig
@@ -833,6 +834,13 @@ class TestOpenAIAIProvider:
             assert tool_events[0].name == "search"
             assert tool_events[0].arguments == {"q": "cats"}
             assert tool_events[0].id == "call_1"
+
+            # Each fragment is surfaced as it arrives, so a host can show what
+            # is being composed instead of waiting out the whole composition.
+            deltas = [e for e in events if isinstance(e, StreamToolCallDelta)]
+            assert [d.arguments_delta for d in deltas] == ['{"q":', '"cats"}']
+            assert all(d.name == "search" and d.id == "call_1" for d in deltas)
+            assert events.index(deltas[-1]) < events.index(tool_events[0])
 
 
 class TestOpenAIToolResultImages:

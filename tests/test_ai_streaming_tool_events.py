@@ -11,16 +11,27 @@ handler path, and the non-streaming tool loop.
 from __future__ import annotations
 
 import asyncio
+import json
 from typing import Any
 from unittest.mock import AsyncMock
 
 from roomkit import HookExecution, HookResult, HookTrigger, RoomContext, ToolCallEvent
+from roomkit.channels._ai_streaming import _ToolCallDeltaCoalescer
 from roomkit.channels.ai import AIChannel
 from roomkit.core.framework import RoomKit
 from roomkit.models.delivery import InboundMessage
 from roomkit.models.enums import ChannelCategory
 from roomkit.models.event import TextContent
-from roomkit.providers.ai.base import AIResponse, AITool, AIToolCall
+from roomkit.models.steering import Cancel
+from roomkit.providers.ai.base import (
+    AIContext,
+    AIResponse,
+    AITool,
+    AIToolCall,
+    StreamDone,
+    StreamToolCall,
+    StreamToolCallDelta,
+)
 from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.realtime.base import EphemeralEvent, EphemeralEventType
 from roomkit.tools.external import PolicyExternalToolHandler
@@ -270,7 +281,7 @@ async def test_no_streaming_target_error_fires_on_error() -> None:
     from roomkit.core.hooks import HookRegistration
     from roomkit.models.enums import HookExecution, HookTrigger
     from roomkit.models.event import RoomEvent
-    from roomkit.providers.ai.base import AIContext, StreamEvent
+    from roomkit.providers.ai.base import StreamEvent
 
     class _RaisingProvider(MockAIProvider):
         async def generate_structured_stream(
@@ -306,3 +317,291 @@ async def test_no_streaming_target_error_fires_on_error() -> None:
     assert "exceeds the available context size" in str(meta.get("error", ""))
 
     await kit.close()
+
+
+# --- TOOL_CALL_DELTA: the composition of a call's arguments ----------------
+#
+# A model calling a tool spends the whole composition of its arguments
+# producing tokens the provider hands over fragment by fragment. Until the
+# call is complete nothing reached the bus, so a five-kilobyte argument was
+# eight minutes of "working" with no name, no size, and no way to tell a
+# model still generating from one that had hung.
+
+
+def _delta_events(received: list[EphemeralEvent]) -> list[EphemeralEvent]:
+    return [e for e in received if e.type == EphemeralEventType.TOOL_CALL_DELTA]
+
+
+async def test_composition_deltas_reach_the_bus_before_the_call_completes() -> None:
+    """TOOL_CALL_DELTA lands before TOOL_CALL_START, and START/END are unchanged."""
+
+    async def tool_handler(name: str, args: dict[str, Any]) -> str:
+        return f"result of {name}"
+
+    provider = MockAIProvider(
+        streaming=True,
+        tool_call_delta_chunks=4,
+        ai_responses=[
+            AIResponse(
+                content="",
+                finish_reason="tool_calls",
+                tool_calls=[AIToolCall(id="tc1", name="search", arguments={"q": "cats"})],
+            ),
+            AIResponse(content="Done.", finish_reason="stop"),
+        ],
+    )
+    kit = RoomKit()
+    # A zero-millisecond window publishes every fragment, so the assertions
+    # below read the composition rather than one coalesced snapshot.
+    ai = AIChannel("ai1", provider=provider, tool_handler=tool_handler, thinking_coalesce_ms=0)
+
+    received = await _run_turn(kit, ai)
+    deltas = _delta_events(received)
+    starts, ends = _tool_events(received)
+
+    assert deltas, "the composition of the arguments was never published"
+    assert received.index(deltas[0]) < received.index(starts[0])
+    assert deltas[0].data["round"] == 0
+    assert deltas[0].channel_id == "ai1"
+
+    # The name is there from the first frame; the size grows and never shrinks.
+    assert all(d.data["tool_calls"][0]["name"] == "search" for d in deltas)
+    sizes = [d.data["tool_calls"][0]["arguments_chars"] for d in deltas]
+    assert sizes == sorted(sizes)
+    assert sizes[-1] == len(json.dumps({"q": "cats"}))
+
+    # START and END are exactly what they were before composition events existed.
+    assert len(starts) == 1
+    assert starts[0].data["tool_calls"] == [
+        {"id": "tc1", "name": "search", "arguments": {"q": "cats"}}
+    ]
+    assert len(ends) == 1
+    assert ends[0].data["tool_calls"] == [
+        {"id": "tc1", "name": "search", "result": "result of search"}
+    ]
+
+    await kit.close()
+
+
+async def test_composition_delta_never_carries_the_argument_content() -> None:
+    """The payload is a name and a size. Arguments can be megabytes, or personal."""
+    secret = "ROSEBUD-" + "x" * 4000
+
+    async def tool_handler(name: str, args: dict[str, Any]) -> str:
+        return "ok"
+
+    provider = MockAIProvider(
+        streaming=True,
+        tool_call_delta_chunks=8,
+        ai_responses=[
+            AIResponse(
+                content="",
+                finish_reason="tool_calls",
+                tool_calls=[AIToolCall(id="tc1", name="publish", arguments={"svg": secret})],
+            ),
+            AIResponse(content="Done.", finish_reason="stop"),
+        ],
+    )
+    kit = RoomKit()
+    ai = AIChannel("ai1", provider=provider, tool_handler=tool_handler, thinking_coalesce_ms=0)
+
+    received = await _run_turn(kit, ai)
+    deltas = _delta_events(received)
+
+    assert deltas
+    for delta in deltas:
+        payload = json.dumps(delta.data)
+        assert "ROSEBUD" not in payload
+        assert set(delta.data["tool_calls"][0]) == {"id", "name", "arguments_chars"}
+    # The complete arguments still arrive once, at the end, where they belong.
+    starts, _ = _tool_events(received)
+    assert starts[0].data["tool_calls"][0]["arguments"] == {"svg": secret}
+
+    await kit.close()
+
+
+async def test_first_fragment_publishes_without_waiting_for_the_window() -> None:
+    """The tool's name is the signal — holding it for a window would defeat the point."""
+
+    async def tool_handler(name: str, args: dict[str, Any]) -> str:
+        return "ok"
+
+    provider = MockAIProvider(
+        streaming=True,
+        tool_call_delta_chunks=6,
+        ai_responses=[
+            AIResponse(
+                content="",
+                finish_reason="tool_calls",
+                tool_calls=[AIToolCall(id="tc1", name="search", arguments={"q": "cats"})],
+            ),
+            AIResponse(content="Done.", finish_reason="stop"),
+        ],
+    )
+    kit = RoomKit()
+    # A window nothing can cross: only the immediate first-fragment publish fires.
+    ai = AIChannel(
+        "ai1",
+        provider=provider,
+        tool_handler=tool_handler,
+        thinking_coalesce_ms=1e9,
+        thinking_coalesce_chars=100_000,
+    )
+
+    received = await _run_turn(kit, ai)
+    deltas = _delta_events(received)
+
+    assert len(deltas) == 1
+    assert deltas[0].data["tool_calls"][0]["name"] == "search"
+
+    await kit.close()
+
+
+async def test_reasoning_window_closes_when_the_model_starts_composing() -> None:
+    """THINKING_END fires on the first fragment, as it does on the first text delta.
+
+    A round that reasons and then calls a tool with no text left THINKING_START
+    open for the whole composition: the UI showed "thinking" while the model was
+    already producing.
+    """
+
+    async def tool_handler(name: str, args: dict[str, Any]) -> str:
+        return "ok"
+
+    provider = MockAIProvider(
+        streaming=True,
+        tool_call_delta_chunks=4,
+        ai_responses=[
+            AIResponse(
+                content="",
+                thinking="I should search for that",
+                finish_reason="tool_calls",
+                tool_calls=[AIToolCall(id="tc1", name="search", arguments={"q": "cats"})],
+            ),
+            AIResponse(content="Done.", finish_reason="stop"),
+        ],
+    )
+    kit = RoomKit()
+    ai = AIChannel(
+        "ai1",
+        provider=provider,
+        tool_handler=tool_handler,
+        thinking_budget=4096,
+        thinking_coalesce_ms=0,
+    )
+
+    received = await _run_turn(kit, ai)
+    deltas = _delta_events(received)
+    thinking_ends = [e for e in received if e.type == EphemeralEventType.THINKING_END]
+
+    assert deltas and thinking_ends
+    assert received.index(thinking_ends[0]) < received.index(deltas[0])
+    assert thinking_ends[0].data["thinking"] == "I should search for that"
+
+    await kit.close()
+
+
+async def test_cancelling_mid_composition_ends_the_loop_at_the_next_fragment() -> None:
+    """Cancellation no longer waits out the composition.
+
+    ``cancel_event`` is checked between two events of the stream. While a
+    provider accumulated a call's arguments it yielded nothing, so a cancel
+    landed only once the complete call arrived — minutes, for a large argument.
+    """
+    channel: dict[str, AIChannel] = {}
+
+    class _ComposingProvider(MockAIProvider):
+        """Composes 50 fragments, cancelling the loop after the third."""
+
+        def __init__(self) -> None:
+            super().__init__(streaming=True)
+            self.pulled = 0
+
+        async def generate_structured_stream(self, context: AIContext) -> Any:
+            for _ in range(50):
+                self.pulled += 1
+                yield StreamToolCallDelta(id="tc1", name="publish", arguments_delta="x" * 64)
+                if self.pulled == 3:
+                    channel["ai"].steer(Cancel())
+            yield StreamToolCall(id="tc1", name="publish", arguments={"svg": "x" * 3200})
+            yield StreamDone(finish_reason="tool_calls")
+
+    async def tool_handler(name: str, args: dict[str, Any]) -> str:
+        return "ok"
+
+    provider = _ComposingProvider()
+    kit = RoomKit()
+    ai = AIChannel("ai1", provider=provider, tool_handler=tool_handler)
+    channel["ai"] = ai
+
+    received = await _run_turn(kit, ai)
+    starts, _ = _tool_events(received)
+
+    # The loop took one more fragment, saw the cancel, and returned.
+    assert provider.pulled == 4
+    assert starts == []
+
+    await kit.close()
+
+
+# --- the coalescer itself --------------------------------------------------
+
+
+async def test_composition_coalescer_publishes_the_first_fragment_at_once() -> None:
+    published: list[tuple[Any, ...]] = []
+
+    async def publish(*args: Any, **kwargs: Any) -> None:
+        published.append(args)
+
+    coalescer = _ToolCallDeltaCoalescer(publish, "r1", 0, flush_ms=1e9, flush_chars=100_000)
+    await coalescer.add("tc1", "search", 10)
+
+    assert len(published) == 1
+    assert published[0][0] == EphemeralEventType.TOOL_CALL_DELTA
+    assert published[0][2] == [{"id": "tc1", "name": "search", "arguments_chars": 10}]
+
+
+async def test_composition_coalescer_accumulates_and_batches_by_size() -> None:
+    published: list[list[dict[str, Any]]] = []
+
+    async def publish(_type: Any, _room: Any, calls: list[dict[str, Any]], _round: int) -> None:
+        published.append(calls)
+
+    coalescer = _ToolCallDeltaCoalescer(publish, "r1", 0, flush_ms=1e9, flush_chars=100)
+    for _ in range(10):
+        await coalescer.add("tc1", "search", 30)
+
+    # One publish for the first fragment, then one per 100 accumulated chars.
+    # The last 30 characters stay unpublished on purpose: a residual under the
+    # threshold loses nothing, since TOOL_CALL_START carries the whole call.
+    assert [p[0]["arguments_chars"] for p in published] == [30, 150, 270]
+
+
+async def test_composition_coalescer_carries_every_call_in_flight() -> None:
+    """Providers interleave parallel calls; a frame is the round's snapshot."""
+    published: list[list[dict[str, Any]]] = []
+
+    async def publish(_type: Any, _room: Any, calls: list[dict[str, Any]], _round: int) -> None:
+        published.append(calls)
+
+    coalescer = _ToolCallDeltaCoalescer(publish, "r1", 0, flush_ms=0, flush_chars=1)
+    await coalescer.add("tc1", "search", 10)
+    await coalescer.add("tc2", "fetch", 20)
+    await coalescer.add("tc1", "search", 5)
+
+    assert published[-1] == [
+        {"id": "tc1", "name": "search", "arguments_chars": 15},
+        {"id": "tc2", "name": "fetch", "arguments_chars": 20},
+    ]
+
+
+async def test_composition_coalescer_flush_without_a_call_is_a_noop() -> None:
+    published: list[Any] = []
+
+    async def publish(*args: Any, **kwargs: Any) -> None:
+        published.append(args)
+
+    coalescer = _ToolCallDeltaCoalescer(publish, "r1", 0, flush_ms=1e9, flush_chars=16)
+    await coalescer.flush()
+
+    assert published == []

@@ -402,6 +402,27 @@ class StreamToolCall(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class StreamToolCallDelta(BaseModel):
+    """A fragment of a tool call's arguments, as the model composes it.
+
+    A model that calls a tool spends the whole composition of its arguments
+    producing tokens the provider delivers fragment by fragment — for a large
+    argument (a document, an SVG, base64) that is minutes during which the
+    stream would otherwise carry nothing at all. This item surfaces that work
+    as it happens; the complete :class:`StreamToolCall` still follows and
+    remains the unit of execution and persistence.
+
+    ``arguments_delta`` is the raw fragment, not valid JSON on its own.
+    Providers that deliver whole tool calls (Gemini, Ollama) never emit this.
+    """
+
+    type: Literal["tool_call_delta"] = "tool_call_delta"
+    id: str
+    name: str
+    index: int = 0
+    arguments_delta: str = ""
+
+
 class StreamDone(BaseModel):
     """Signals the end of a streaming AI response."""
 
@@ -411,7 +432,9 @@ class StreamDone(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
-StreamEvent = StreamThinkingDelta | StreamTextDelta | StreamToolCall | StreamDone
+StreamEvent = (
+    StreamThinkingDelta | StreamTextDelta | StreamToolCallDelta | StreamToolCall | StreamDone
+)
 
 
 class ModelPricing(BaseModel):

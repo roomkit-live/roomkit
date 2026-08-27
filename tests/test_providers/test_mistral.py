@@ -18,6 +18,7 @@ from roomkit.providers.ai.base import (
     StreamTextDelta,
     StreamThinkingDelta,
     StreamToolCall,
+    StreamToolCallDelta,
 )
 from roomkit.providers.mistral.config import MistralConfig
 
@@ -467,6 +468,12 @@ class TestMistralAIProvider:
             assert tool_calls[0].name == "search"
             assert tool_calls[0].arguments == {"q": "test"}
             assert len(done_events) == 1
+
+            # The composition of the arguments is surfaced as it arrives.
+            deltas = [e for e in events if isinstance(e, StreamToolCallDelta)]
+            assert "".join(d.arguments_delta for d in deltas) == '{"q": "test"}'
+            assert all(d.name == "search" for d in deltas)
+            assert events.index(deltas[-1]) < events.index(tool_calls[0])
 
     @pytest.mark.asyncio
     async def test_structured_stream_with_think_tags(self) -> None:

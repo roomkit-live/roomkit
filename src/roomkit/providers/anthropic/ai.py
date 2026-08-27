@@ -26,6 +26,7 @@ from roomkit.providers.ai.base import (
     StreamTextDelta,
     StreamThinkingDelta,
     StreamToolCall,
+    StreamToolCallDelta,
     request_api_key,
 )
 from roomkit.providers.anthropic.config import AnthropicConfig
@@ -404,6 +405,15 @@ class AnthropicAIProvider(AIProvider):
                                 "name": cb.name,
                                 "input_json": "",
                             }
+                            # The name is known here, before a single argument
+                            # byte: emit it at once so a host can say what is
+                            # being composed for the whole composition.
+                            yield StreamToolCallDelta(
+                                id=cb.id,
+                                name=cb.name,
+                                index=event.index,
+                                arguments_delta="",
+                            )
 
                     elif event.type == "content_block_delta" and hasattr(event.delta, "type"):
                         delta = event.delta
@@ -429,7 +439,14 @@ class AnthropicAIProvider(AIProvider):
                         elif delta.type == "input_json_delta":
                             idx = event.index
                             if idx in _tool_blocks:
-                                _tool_blocks[idx]["input_json"] += delta.partial_json
+                                tb = _tool_blocks[idx]
+                                tb["input_json"] += delta.partial_json
+                                yield StreamToolCallDelta(
+                                    id=tb["id"],
+                                    name=tb["name"],
+                                    index=idx,
+                                    arguments_delta=delta.partial_json,
+                                )
 
                     elif event.type == "content_block_stop":
                         idx = event.index

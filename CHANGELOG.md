@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **What the model is composing during a tool call is now visible while it
+  happens.** A model calling a tool spends the whole composition of its
+  arguments producing tokens the provider hands over fragment by fragment; for
+  a large argument — a document, an SVG, base64 — that is minutes during which
+  the room saw nothing at all, since `TOOL_CALL_START` only fires once the call
+  is complete. `AIChannel` now publishes an ephemeral `TOOL_CALL_DELTA` as the
+  arguments are composed, carrying the tool's **name** and `arguments_chars`,
+  the running size of what has been produced. Hosts can name what is being
+  composed and tell a model still generating from one that has hung.
+  The payload deliberately **never carries the argument content**: it can be
+  megabytes or hold personal data, and `TOOL_CALL_START` already delivers it in
+  full. A call's first fragment publishes immediately — the tool's name is the
+  signal — and the rest are batched on the existing `thinking_coalesce_ms` /
+  `thinking_coalesce_chars` windows. Nothing is persisted: like `THINKING_DELTA`
+  this is a projection, and a client that ignores it loses nothing.
+- **`StreamToolCallDelta`** joins the `StreamEvent` union
+  (`roomkit.providers.ai`): one fragment of a tool call's arguments, emitted by
+  the OpenAI-compatible, Anthropic, Mistral and PolarGrid providers. The
+  complete `StreamToolCall` still follows and remains the unit of execution and
+  persistence. Providers that deliver whole tool calls (Gemini, Ollama) emit
+  none, and neither does the non-streaming path.
+- `MockAIProvider(tool_call_delta_chunks=N)` fragments a mocked call's arguments
+  the way a real provider does, for tests and examples of the above. The default
+  of `0` emits none, which is the behaviour every existing test was written
+  against.
+
+### Changed
+
+- **Cancelling a turn no longer waits out a tool call's composition.** The
+  streaming loop checks its cancel event between two events of the provider
+  stream, and a provider accumulating arguments yielded none — so a cancel
+  landed only once the complete call arrived, minutes later for a large
+  argument. With the composition events above it is honoured at the next
+  fragment.
+- **`THINKING_END` now fires when the model starts composing a tool call**, as
+  it already did on the first text delta. A round that reasoned and then called
+  a tool without producing text left `THINKING_START` open for the whole
+  composition, so a UI showed "thinking" while the model was already producing.
+- A third-party consumer of `generate_structured_stream` that matches stream
+  events exhaustively without a default branch will see the new
+  `StreamToolCallDelta`. Third-party *providers* are unaffected: emitting it is
+  optional.
+
 ## [0.60.0] — 2026-08-25
 
 ### Added

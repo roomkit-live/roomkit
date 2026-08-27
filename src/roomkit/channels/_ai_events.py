@@ -35,7 +35,14 @@ class AIEventsMixin:
         *,
         duration_ms: int | None = None,
     ) -> None:
-        """Publish a tool call ephemeral event. Best-effort, never breaks the loop."""
+        """Publish a tool call ephemeral event. Best-effort, never breaks the loop.
+
+        ``tool_calls`` carries one of three shapes, picked by ``event_type``:
+        ``StreamToolCall`` for START, ``AIToolResultPart`` for END, and
+        already-built dicts for DELTA — the composition frames are assembled by
+        the streaming coalescer, which is the only place that knows a call's
+        running size.
+        """
         if self._realtime is None or not room_id:
             return
         # Payload build is inside the try to honour the best-effort contract in
@@ -48,6 +55,11 @@ class AIEventsMixin:
                 tc_data = [
                     {"id": tc.id, "name": tc.name, "arguments": tc.arguments} for tc in tool_calls
                 ]
+            elif event_type == EphemeralEventType.TOOL_CALL_DELTA:
+                # Name and running size only. The argument text is deliberately
+                # absent — it can be megabytes or personal data, and START
+                # delivers it whole once the call is complete.
+                tc_data = [dict(tc) for tc in tool_calls]
             else:  # TOOL_CALL_END — tool_calls are AIToolResultPart
                 tc_data = [
                     {

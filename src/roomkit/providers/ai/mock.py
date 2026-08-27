@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import AsyncIterator
+from typing import Any
 
 from roomkit.providers.ai.base import (
     AIContext,
@@ -14,6 +16,7 @@ from roomkit.providers.ai.base import (
     StreamTextDelta,
     StreamThinkingDelta,
     StreamToolCall,
+    StreamToolCallDelta,
 )
 
 _MOCK_MODELS = [
@@ -34,6 +37,7 @@ class MockAIProvider(AIProvider):
         vision: bool = False,
         ai_responses: list[AIResponse] | None = None,
         streaming: bool = False,
+        tool_call_delta_chunks: int = 0,
     ) -> None:
         self.responses = responses or ["Hello from AI"]
         self._ai_responses = ai_responses
@@ -41,6 +45,7 @@ class MockAIProvider(AIProvider):
         self._index = 0
         self._vision = vision
         self._streaming = streaming
+        self._tool_call_delta_chunks = tool_call_delta_chunks
 
     @property
     def model_name(self) -> str:
@@ -91,9 +96,30 @@ class MockAIProvider(AIProvider):
         if response.content:
             yield StreamTextDelta(text=response.content)
         for tc in response.tool_calls:
+            for delta in self._tool_call_deltas(tc):
+                yield delta
             yield StreamToolCall(id=tc.id, name=tc.name, arguments=tc.arguments)
         yield StreamDone(
             finish_reason=response.finish_reason,
             usage=response.usage,
             metadata=response.metadata,
         )
+
+    def _tool_call_deltas(self, tool_call: Any) -> list[StreamToolCallDelta]:
+        """Split a call's arguments into ``tool_call_delta_chunks`` fragments.
+
+        Real providers deliver a tool call's arguments fragment by fragment;
+        this reproduces that for tests of the composition events. Zero chunks
+        (the default) emits none, which is the behaviour every existing test
+        was written against.
+        """
+        chunks = self._tool_call_delta_chunks
+        if chunks <= 0:
+            return []
+        payload = json.dumps(tool_call.arguments)
+        size = max(1, -(-len(payload) // chunks))
+        fragments = [payload[i : i + size] for i in range(0, len(payload), size)] or [""]
+        return [
+            StreamToolCallDelta(id=tool_call.id, name=tool_call.name, arguments_delta=fragment)
+            for fragment in fragments
+        ]

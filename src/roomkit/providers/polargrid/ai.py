@@ -59,6 +59,7 @@ from roomkit.providers.ai.base import (
     StreamTextDelta,
     StreamThinkingDelta,
     StreamToolCall,
+    StreamToolCallDelta,
 )
 from roomkit.providers.openai.ai import _extract_think_tags, _ThinkTagParser
 from roomkit.providers.polargrid.config import PolarGridConfig
@@ -512,7 +513,8 @@ class PolarGridAIProvider(AIProvider):
                     if first_token:
                         self._record_ttfb(t0)
                         first_token = False
-                    self._accumulate_tool_deltas(tool_accum, tool_deltas)
+                    for composed in self._accumulate_tool_deltas(tool_accum, tool_deltas):
+                        yield composed
 
                 text = getattr(delta, "content", None)
                 if text:
@@ -580,8 +582,15 @@ class PolarGridAIProvider(AIProvider):
     def _accumulate_tool_deltas(
         accum: dict[int, dict[str, str]],
         deltas: list[Any],
-    ) -> None:
-        """Fold streamed ``ToolCallDelta`` fragments into per-index slots."""
+    ) -> list[StreamToolCallDelta]:
+        """Fold streamed ``ToolCallDelta`` fragments into per-index slots.
+
+        Returns the composition events the caller yields: the call's name on
+        the fragment that first carries it, then one per argument fragment, so
+        the minutes a large argument takes to compose are visible while they
+        happen rather than only in the completed call.
+        """
+        composed: list[StreamToolCallDelta] = []
         for d in deltas:
             idx = getattr(d, "index", 0) or 0
             slot = accum.setdefault(idx, {"id": "", "name": "", "arguments": ""})
@@ -592,11 +601,22 @@ class PolarGridAIProvider(AIProvider):
             if not isinstance(func, dict):
                 continue
             name = func.get("name")
+            first_name = bool(name) and not slot["name"]
             if name:
                 slot["name"] = name
-            args = func.get("arguments")
+            args = func.get("arguments") or ""
             if args:
                 slot["arguments"] += args
+            if slot["name"] and (first_name or args):
+                composed.append(
+                    StreamToolCallDelta(
+                        id=slot["id"],
+                        name=slot["name"],
+                        index=idx,
+                        arguments_delta=args,
+                    )
+                )
+        return composed
 
     def _finalize_tool_calls(self, accum: dict[int, dict[str, str]]) -> list[StreamToolCall]:
         """Turn accumulated tool-call slots into StreamToolCall events."""

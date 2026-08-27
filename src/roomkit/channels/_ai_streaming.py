@@ -34,6 +34,7 @@ from roomkit.providers.ai.base import (
     StreamTextDelta,
     StreamThinkingDelta,
     StreamToolCall,
+    StreamToolCallDelta,
 )
 from roomkit.realtime.base import EphemeralEventType
 from roomkit.telemetry.base import Attr, SpanKind
@@ -110,6 +111,77 @@ class _ThinkingCoalescer:
                 text[i : i + THINKING_PREVIEW_LIMIT],
                 self._round_idx,
             )
+
+
+class _ToolCallDeltaCoalescer:
+    """Batches tool-call argument fragments into one ``TOOL_CALL_DELTA`` per window.
+
+    A model composing a large tool argument — a document, an SVG, base64 —
+    spends minutes producing tokens that reach no one: the complete call, and
+    with it ``TOOL_CALL_START``, only lands once the last fragment is in. This
+    publishes the composition as it happens, so a host can say *what* is being
+    composed and *how far along* instead of "working".
+
+    It shares :class:`_ThinkingCoalescer`'s window and its two settings, but
+    carries sizes rather than text: the payload is every call in flight this
+    round with the number of argument characters composed so far, **never the
+    argument content** — that can be megabytes or personal data, and
+    ``TOOL_CALL_START`` delivers it whole at the end of the round.
+
+    A call's first fragment publishes immediately, whatever the window: the
+    tool's name is the signal a host is waiting for. Nothing is flushed at the
+    end of the round — a residual below the threshold loses no information,
+    since the complete arguments follow in ``TOOL_CALL_START``.
+    """
+
+    def __init__(
+        self,
+        publish: Any,
+        room_id: str | None,
+        round_idx: int,
+        *,
+        flush_ms: float,
+        flush_chars: int,
+    ) -> None:
+        self._publish = publish
+        self._room_id = room_id
+        self._round_idx = round_idx
+        self._flush_ms = flush_ms
+        self._flush_chars = flush_chars
+        self._calls: dict[str, dict[str, Any]] = {}
+        self._pending_chars = 0
+        self._last_publish = time.monotonic()
+
+    async def add(self, call_id: str, name: str, chars: int) -> None:
+        """Fold one fragment in; publish if the call is new or the window is exceeded."""
+        call = self._calls.get(call_id)
+        if call is None:
+            self._calls[call_id] = {"id": call_id, "name": name, "arguments_chars": chars}
+            await self.flush()
+            return
+        if name:
+            call["name"] = name
+        call["arguments_chars"] += chars
+        self._pending_chars += chars
+        if self._flush_ms <= 0:
+            await self.flush()
+            return
+        elapsed_ms = (time.monotonic() - self._last_publish) * 1000.0
+        if self._pending_chars >= self._flush_chars or elapsed_ms >= self._flush_ms:
+            await self.flush()
+
+    async def flush(self) -> None:
+        """Publish every call in flight with its running size, then reset the window."""
+        if not self._calls:
+            return
+        self._pending_chars = 0
+        self._last_publish = time.monotonic()
+        await self._publish(
+            EphemeralEventType.TOOL_CALL_DELTA,
+            self._room_id,
+            [dict(call) for call in self._calls.values()],
+            self._round_idx,
+        )
 
 
 @runtime_checkable
@@ -220,6 +292,23 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
         """Coalescer bound to this channel's publish hook and window config."""
         return _ThinkingCoalescer(
             self._publish_thinking_event,
+            room_id,
+            round_idx,
+            flush_ms=self._thinking_coalesce_ms,
+            flush_chars=self._thinking_coalesce_chars,
+        )
+
+    def _new_tool_call_coalescer(
+        self, room_id: str | None, round_idx: int
+    ) -> _ToolCallDeltaCoalescer:
+        """Coalescer bound to this channel's publish hook and window config.
+
+        It shares the thinking windows on purpose: both bound the rate at which
+        one round's in-progress work reaches the bus, and a second pair of knobs
+        would be public surface with no demonstrated need behind it.
+        """
+        return _ToolCallDeltaCoalescer(
+            self._publish_tool_event,
             room_id,
             round_idx,
             flush_ms=self._thinking_coalesce_ms,
@@ -398,6 +487,7 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                 thinking_started = False
                 round_finish_reason: str | None = None
                 coalescer = self._new_thinking_coalescer(room_id, round_idx=_round_idx)
+                tool_coalescer = self._new_tool_call_coalescer(room_id, round_idx=_round_idx)
                 _dedup_active = bool(_dedup_prefix)
                 _dedup_offset = 0
                 _dedup_buffer: list[str] = []
@@ -477,6 +567,26 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                             continue
 
                         yield event.text
+                    elif isinstance(event, StreamToolCallDelta):
+                        # Composing a tool call's arguments ends the reasoning
+                        # window exactly as the first text delta does: the model
+                        # has stopped thinking and started producing. Without
+                        # this a round that reasons and then calls a tool with
+                        # no text leaves THINKING_START open for the whole
+                        # composition.
+                        if thinking_started and thinking_parts and room_id:
+                            thinking_started = False
+                            await coalescer.flush()
+                            await self._publish_thinking_event(
+                                EphemeralEventType.THINKING_END,
+                                room_id,
+                                "".join(thinking_parts),
+                                _round_idx,
+                            )
+                        if room_id:
+                            await tool_coalescer.add(
+                                event.id, event.name, len(event.arguments_delta)
+                            )
                     elif isinstance(event, StreamToolCall):
                         tool_calls.append(event)
                         # External tools: fire hooks and yield persistence markers

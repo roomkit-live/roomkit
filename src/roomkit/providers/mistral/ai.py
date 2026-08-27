@@ -26,6 +26,7 @@ from roomkit.providers.ai.base import (
     StreamTextDelta,
     StreamThinkingDelta,
     StreamToolCall,
+    StreamToolCallDelta,
 )
 from roomkit.providers.mistral.config import MistralConfig
 from roomkit.providers.mistral.models import MODELS
@@ -330,10 +331,24 @@ class MistralAIProvider(AIProvider):
                         if tc_delta.id:
                             acc["id"] = tc_delta.id
                         if hasattr(tc_delta, "function") and tc_delta.function:
+                            first_name = bool(tc_delta.function.name) and not acc["name"]
                             if tc_delta.function.name:
                                 acc["name"] = tc_delta.function.name
-                            if tc_delta.function.arguments:
-                                acc["arguments"] += tc_delta.function.arguments
+                            fragment = tc_delta.function.arguments or ""
+                            if fragment:
+                                acc["arguments"] += fragment
+                            # Surface the call while it is being composed: the
+                            # name on the fragment that first carries it, then
+                            # one delta per argument fragment. The complete
+                            # StreamToolCall below is unchanged and remains the
+                            # unit of execution and persistence.
+                            if acc["name"] and (first_name or fragment):
+                                yield StreamToolCallDelta(
+                                    id=acc["id"],
+                                    name=acc["name"],
+                                    index=idx,
+                                    arguments_delta=fragment,
+                                )
 
                 # Reasoning models stream content as a list of typed chunks
                 # (ThinkChunk / TextChunk); older or non-reasoning models stream

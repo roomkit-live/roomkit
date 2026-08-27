@@ -21,6 +21,7 @@ from roomkit.providers.ai.base import (
     StreamTextDelta,
     StreamThinkingDelta,
     StreamToolCall,
+    StreamToolCallDelta,
     is_context_overflow_message,
 )
 from roomkit.providers.ai.mock import MockAIProvider
@@ -47,5 +48,6 @@ __all__ = [
     "StreamTextDelta",
     "StreamThinkingDelta",
     "StreamToolCall",
+    "StreamToolCallDelta",
     "is_context_overflow_message",
 ]
