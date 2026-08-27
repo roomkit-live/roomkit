@@ -56,8 +56,10 @@ class _ThinkingCoalescer:
     token — thousands for a long trace, all on the shared event loop. Buffering
     and publishing once per time/size window (~80 ms / ~256 chars) cuts that
     10-100x while keeping the reasoning visibly real-time: the UI appends deltas,
-    so a coalesced delta renders identically to many small ones. The complete
-    trace is still published verbatim at ``THINKING_END``.
+    so a coalesced delta renders identically to many small ones. Closing the
+    window still publishes its block at ``THINKING_END`` — that block only, and
+    capped at ``THINKING_PREVIEW_LIMIT``, so a client that renders the deltas
+    already holds more than the terminal event carries.
 
     A window of ``0`` ms disables batching — every delta publishes immediately.
     Flushes larger than ``_publish_thinking_event``'s preview cap are split

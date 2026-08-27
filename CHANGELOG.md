@@ -66,7 +66,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   whole accumulator every time: the second `THINKING_END` shipped the first
   block glued to its own, a third would have shipped all three, and every
   subscriber (UI, dashboard, audit log) saw the reasoning duplicated and
-  growing. Each window now carries its own block and nothing else. The
+  growing. Past a certain length it stopped being merely duplicated and
+  started being **lost**: payloads are capped at 1000 characters, so a first
+  block longer than that filled the cap on its own and every later window's
+  event carried nothing but a preview of the first — the reasoning that
+  window was there to deliver never reached the bus at all. Each window now
+  carries its own block and nothing else. The
   reasoning replayed to the model in the assistant message is unchanged and
   still complete; nothing was ever persisted, so no stored history is affected.
 

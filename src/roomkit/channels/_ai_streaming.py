@@ -170,14 +170,15 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
         room_id: str,
         thinking_parts: list[str],
         round_idx: int,
+        *,
         published: int,
     ) -> int:
         """Flush the buffered reasoning, publish ``THINKING_END``, return the offset.
 
         The window closes whenever the model stops reasoning and starts
         producing — a text delta, a tool call's first fragment, or the end of
-        the round's stream. One place, so a fourth producer cannot close it
-        differently from the other three.
+        the stream. One place for all five call sites, so a new producer
+        cannot close a window differently from the others.
 
         A round can open several windows (reason, answer, reason again), and
         each ``THINKING_END`` must carry its own block. ``published`` is how
@@ -239,10 +240,12 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
           the answer (CLI, web) consume them; text-only channels filter
           them out via ``isinstance(chunk, str)``.
 
-        * **Out-of-band (realtime bus)** — a single ``THINKING_END`` event
-          carrying the full accumulated reasoning is published for
-          observers (dashboards, audit logs). This matches the tool-loop
-          and non-streaming paths so subscribers see consistent payloads.
+        * **Out-of-band (realtime bus)** — one ``THINKING_END`` event per
+          reasoning window, carrying that window's block and nothing else,
+          is published for observers (dashboards, audit logs). A model that
+          reasons, answers and reasons again opens several windows in one
+          round, and a subscriber appends what it receives. This matches the
+          tool-loop and non-streaming paths so payloads stay consistent.
 
         Falls back to ``generate_stream`` for providers that don't expose
         a structured stream.
@@ -280,7 +283,7 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                 if thinking_started and thinking_parts and room_id:
                     thinking_started = False
                     thinking_published = await self._close_thinking_window(
-                        coalescer, room_id, thinking_parts, 0, thinking_published
+                        coalescer, room_id, thinking_parts, 0, published=thinking_published
                     )
                 yield ev.text
 
@@ -288,7 +291,7 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
         # subscribers see the reasoning even if the model emitted nothing else.
         if thinking_started and thinking_parts and room_id:
             await self._close_thinking_window(
-                coalescer, room_id, thinking_parts, 0, thinking_published
+                coalescer, room_id, thinking_parts, 0, published=thinking_published
             )
 
     async def _start_streaming_tool_response(
@@ -410,8 +413,11 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                         thinking_parts.append(event.thinking)
                         # Buffer the per-chunk delta and publish in windows on the
                         # realtime bus so remote WS subscribers stream the reasoning
-                        # live; the buffered THINKING_END below still fires so
-                        # observers joining mid-stream recover the complete trace.
+                        # live; the buffered THINKING_END below still fires so an
+                        # observer that joined mid-window recovers that window whole.
+                        # Windows the observer missed are gone — these events are
+                        # ephemeral, and the round's full reasoning lives in the
+                        # assistant message, not on the bus.
                         await coalescer.add(event.thinking)
                         # Inline marker so channels can render reasoning in
                         # arrival order with text deltas.
@@ -420,7 +426,11 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                         if thinking_started and thinking_parts and room_id:
                             thinking_started = False
                             thinking_published = await self._close_thinking_window(
-                                coalescer, room_id, thinking_parts, _round_idx, thinking_published
+                                coalescer,
+                                room_id,
+                                thinking_parts,
+                                _round_idx,
+                                published=thinking_published,
                             )
                         text_parts.append(event.text)
                         _accumulated_text.append(event.text)
@@ -465,7 +475,11 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                         if thinking_started and thinking_parts and room_id:
                             thinking_started = False
                             thinking_published = await self._close_thinking_window(
-                                coalescer, room_id, thinking_parts, _round_idx, thinking_published
+                                coalescer,
+                                room_id,
+                                thinking_parts,
+                                _round_idx,
+                                published=thinking_published,
                             )
                         if room_id:
                             await tool_coalescer.add(
@@ -589,7 +603,11 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
 
                 if thinking_started and thinking_parts and room_id:
                     await self._close_thinking_window(
-                        coalescer, room_id, thinking_parts, _round_idx, thinking_published
+                        coalescer,
+                        room_id,
+                        thinking_parts,
+                        _round_idx,
+                        published=thinking_published,
                     )
                 # The composition is over for this round, whichever way the
                 # round now ends — including the exits below that never reach

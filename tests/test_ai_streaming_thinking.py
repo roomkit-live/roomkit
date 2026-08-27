@@ -513,7 +513,7 @@ class _ScriptedStreamProvider(AIProvider):
 
 async def _run_scripted_turn(
     provider: _ScriptedStreamProvider, *, tools: bool
-) -> tuple[list[EphemeralEvent], AIChannel, RoomKit]:
+) -> tuple[list[EphemeralEvent], RoomKit]:
     """One inbound turn against a scripted provider; returns the bus events."""
 
     async def tool_handler(name: str, args: dict[str, Any]) -> str:
@@ -552,7 +552,7 @@ async def _run_scripted_turn(
     # InMemoryRealtime dispatches subscriber callbacks via background tasks;
     # yield once so they run before we inspect the list.
     await asyncio.sleep(0.05)
-    return received, ai, kit
+    return received, kit
 
 
 def _thinking_ends(received: list[EphemeralEvent]) -> list[str]:
@@ -577,7 +577,7 @@ async def test_each_thinking_end_carries_only_its_own_block_across_text() -> Non
             ]
         ]
     )
-    received, _ai, kit = await _run_scripted_turn(provider, tools=True)
+    received, kit = await _run_scripted_turn(provider, tools=True)
 
     assert _thinking_ends(received) == ["FIRST-BLOCK", "SECOND-BLOCK"]
 
@@ -587,8 +587,8 @@ async def test_each_thinking_end_carries_only_its_own_block_across_text() -> Non
 async def test_each_thinking_end_carries_only_its_own_block_across_a_tool_call() -> None:
     """Same, when the window closes on a tool call's first fragment.
 
-    This is the site RMK-140 added, and the shape Anthropic's interleaved
-    thinking produces: reason, answer, reason again, then call.
+    The shape Anthropic's interleaved thinking produces: reason, answer,
+    reason again, then call.
     """
     provider = _ScriptedStreamProvider(
         [
@@ -607,7 +607,7 @@ async def test_each_thinking_end_carries_only_its_own_block_across_a_tool_call()
             ],
         ]
     )
-    received, _ai, kit = await _run_scripted_turn(provider, tools=True)
+    received, kit = await _run_scripted_turn(provider, tools=True)
 
     assert _thinking_ends(received) == ["FIRST-BLOCK", "SECOND-BLOCK"]
 
@@ -636,7 +636,7 @@ async def test_assistant_message_keeps_the_whole_round_reasoning() -> None:
             ],
         ]
     )
-    _received, _ai, kit = await _run_scripted_turn(provider, tools=True)
+    _received, kit = await _run_scripted_turn(provider, tools=True)
 
     # The second round's context is what the first round handed back.
     thinking_parts = [
@@ -647,6 +647,30 @@ async def test_assistant_message_keeps_the_whole_round_reasoning() -> None:
         if isinstance(part, AIThinkingPart)
     ]
     assert [p.thinking for p in thinking_parts] == ["FIRST-BLOCKSECOND-BLOCK"]
+
+    await kit.close()
+
+
+async def test_the_tool_loop_end_of_round_close_also_scopes_its_block() -> None:
+    """The round's last window closes at the end of the stream, not on a delta.
+
+    The one close site whose returned offset nobody reads: it is terminal in
+    its scope, so handing it the wrong offset would still pass every other
+    test in this file while shipping the round's whole accumulator.
+    """
+    provider = _ScriptedStreamProvider(
+        [
+            [
+                StreamThinkingDelta(thinking="FIRST-BLOCK"),
+                StreamTextDelta(text="Let me look."),
+                StreamThinkingDelta(thinking="SECOND-BLOCK"),
+                StreamDone(finish_reason="stop", usage={}),
+            ]
+        ]
+    )
+    received, kit = await _run_scripted_turn(provider, tools=True)
+
+    assert _thinking_ends(received) == ["FIRST-BLOCK", "SECOND-BLOCK"]
 
     await kit.close()
 
@@ -663,7 +687,7 @@ async def test_no_tools_path_also_scopes_each_window_to_its_block() -> None:
             ]
         ]
     )
-    received, _ai, kit = await _run_scripted_turn(provider, tools=False)
+    received, kit = await _run_scripted_turn(provider, tools=False)
 
     # The trailing window has no text after it — the end-of-stream close fires.
     assert _thinking_ends(received) == ["FIRST-BLOCK", "SECOND-BLOCK"]
