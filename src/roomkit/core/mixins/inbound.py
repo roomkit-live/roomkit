@@ -406,9 +406,12 @@ class InboundMixin(HelpersMixin):
         if not completed:
             self._consume_streams_when_cascade_completes(cascade, room_id)
         elif cascade.streams:
-            stream_error = await self._process_streaming_responses(cascade.streams, room_id)
+            stream_error, record = await self._process_streaming_responses(
+                cascade.streams, room_id
+            )
             if stream_error is not None and result.error is None:
                 result.error = stream_error
+            result.response_metadata = record
 
         await self._connect_session_if_ready(message, channel, room_id, result)
         return result

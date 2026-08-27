@@ -10,6 +10,7 @@ from roomkit.core.mixins.helpers import HelpersMixin
 from roomkit.models.delivery import InboundResult
 from roomkit.models.enums import ChannelCategory, EventStatus
 from roomkit.models.event import EventSource, RoomEvent
+from roomkit.models.response_metadata import ResponseMetadata
 
 if TYPE_CHECKING:
     from roomkit.core.locks import RoomLockManager
@@ -162,7 +163,14 @@ class RegenerateMixin(HelpersMixin):
                 parent_event_id=trigger.parent_event_id,
             )
         stream_error: Exception | None = None
+        record = ResponseMetadata()
         if pending_streams:
-            stream_error = await self._process_streaming_responses(pending_streams, room_id)
+            stream_error, record = await self._process_streaming_responses(
+                pending_streams, room_id
+            )
 
-        return InboundResult(event=trigger, error=stream_error or broadcast_error)
+        return InboundResult(
+            event=trigger,
+            error=stream_error or broadcast_error,
+            response_metadata=record,
+        )

@@ -653,7 +653,7 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
         *not* a clean end is written, the way an interrupted segment is
         marked ``cancelled`` and a finished one is marked by nothing.
         """
-        acp_meta = metadata.setdefault("acp", {})
+        acp_meta = metadata["acp"]
         try:
             response = await connection.prompt(
                 session_id,

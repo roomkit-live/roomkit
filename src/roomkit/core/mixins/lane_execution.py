@@ -409,7 +409,7 @@ class LaneExecutionMixin(HelpersMixin):
                 # task while the waiting path propagates the same failure
                 # to its caller — record it so a DeliveryHandle surfaces it.
                 try:
-                    stream_error = await self._process_streaming_responses(
+                    stream_error, _record = await self._process_streaming_responses(
                         cascade.streams, room_id
                     )
                 except Exception as exc:

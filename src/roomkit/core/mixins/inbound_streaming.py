@@ -21,6 +21,7 @@ from roomkit.models.enums import (
     HookTrigger,
 )
 from roomkit.models.event import RoomEvent, ToolCallContent
+from roomkit.models.response_metadata import ResponseMetadata
 from roomkit.models.streaming import ThinkingDeltaMarker, ToolCallEndMarker, ToolCallStartMarker
 from roomkit.providers.ai.base import ProviderError
 
@@ -468,7 +469,7 @@ class InboundStreamingMixin(HelpersMixin):
         self,
         pending_streams: list[Any],
         room_id: str,
-    ) -> Exception | None:
+    ) -> tuple[Exception | None, ResponseMetadata]:
         """Handle streaming responses outside the room lock.
 
         Streaming delivery (TTS playback) can take seconds. Running it outside
@@ -484,15 +485,25 @@ class InboundStreamingMixin(HelpersMixin):
 
         Returns the first response-stream failure encountered (so the inbound
         pipeline can surface it to a headless caller), or ``None`` when every
-        stream completed.
+        stream completed, plus the turn's response-metadata record.
+
+        The record is handed back rather than left to be read off a persisted
+        segment: a turn that ends on a tool call persists no segment after it,
+        and one that ends before writing any text persists none at all, so the
+        room is not a place where "how did that turn end" can always be asked.
         """
         router = self._get_router()
         context = await self._build_context(room_id)
 
         first_error: Exception | None = None
+        record = ResponseMetadata()
         for sr in pending_streams:
             sr_result = await self._handle_streaming_response(router, sr, room_id, context)
             if sr_result and sr_result.error and first_error is None:
                 first_error = sr_result.error
+            # Several streams answer one inbound only when several channels
+            # replied; each writes under its own key, so merging keeps them
+            # all rather than letting the last one win.
+            record.update(sr.response_metadata or {})
 
-        return first_error
+        return first_error, record

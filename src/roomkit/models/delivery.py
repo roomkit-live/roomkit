@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from roomkit.models.enums import EventType, Visibility
 from roomkit.models.event import EventContent, RoomEvent
+from roomkit.models.response_metadata import ResponseMetadata
 
 if TYPE_CHECKING:
 
@@ -158,6 +159,12 @@ class InboundResult(BaseModel):
     streaming target to render an error card) can observe it and react —
     instead of the failure vanishing after ``ON_ERROR`` fires. ``None`` on
     success. Interactive callers ignore it; the ``ON_ERROR`` hooks still fire.
+
+    ``response_metadata`` is the turn's own record, for the same reader and
+    the same reason. It also rides each MESSAGE segment the turn persisted,
+    but only segments that had text to carry: a turn ending on a tool call
+    persists nothing after it, so the room cannot be asked how such a turn
+    ended. The caller is handed the record instead of hunting for it.
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -166,6 +173,9 @@ class InboundResult(BaseModel):
     blocked: bool = False
     reason: str | None = None
     error: Exception | None = None
+    response_metadata: ResponseMetadata = Field(default_factory=ResponseMetadata)
+    """The turn's response-metadata record; empty when no turn ran."""
+
     delivery_results: dict[str, DeliveryResult] = Field(default_factory=dict)
     """Per-channel outcome of this event's delivery set, keyed by channel id
     (RFC §10.1 step 18). ``process_inbound`` waits for that set to complete, so

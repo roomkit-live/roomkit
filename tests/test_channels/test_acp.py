@@ -1942,3 +1942,99 @@ class TestTurnOutcomeMetadata:
         assert output.response_metadata is before
         assert before["acp"]["stop_reason"] == "refusal"
         await channel.close()
+
+
+class TestTurnOutcomeReachesTheCaller:
+    """The record reaches a headless caller even when no segment carries it.
+
+    A MESSAGE segment is persisted only when text has accumulated, and the
+    accumulator is emptied at every tool call. So a turn that ends on a tool
+    call persists nothing after it: the newest agent message in the room was
+    committed BEFORE the turn had an outcome, and asking the room how the
+    turn ended answers with the state of an earlier moment.
+
+    That is the shape of the incident this whole record exists for, so it is
+    the shape the test has to take.
+    """
+
+    async def test_a_turn_ending_on_a_tool_call_still_reports_its_end(
+        self, tmp_path: Any
+    ) -> None:
+        kit = RoomKit()
+        source = SimpleChannel("sms")
+        channel, connection, _ = _channel(tmp_path, emit_updates=False)
+        kit.register_channel(source)
+        kit.register_channel(channel)
+        await kit.create_room(room_id="room-1")
+        await kit.attach_channel("room-1", "sms")
+        await kit.attach_channel("room-1", "acp-agent", category=ChannelCategory.INTELLIGENCE)
+
+        async def speaks_then_calls_a_tool_then_refuses(
+            session_id: str, prompt: list[Any], **kwargs: Any
+        ) -> PromptResponse:
+            await connection.client.session_update(
+                session_id, acp.update_agent_message_text("Let me look that up.")
+            )
+            await connection.client.session_update(
+                session_id,
+                acp.start_tool_call("tool-1", "Read file", kind="read", status="in_progress"),
+            )
+            # Nothing after the tool call: the agent stops here.
+            return PromptResponse(stop_reason="refusal")
+
+        connection.prompt = speaks_then_calls_a_tool_then_refuses  # type: ignore[method-assign]
+
+        result = await kit.process_inbound(
+            InboundMessage(
+                channel_id="sms",
+                sender_id="user",
+                content=TextContent(body="Inspect"),
+            )
+        )
+
+        # The caller is told how the turn ended...
+        assert result.response_metadata["acp"]["stop_reason"] == "refusal"
+
+        # ...and this is why it has to be told rather than left to look: the
+        # turn's last agent event is the tool call, so every MESSAGE segment
+        # it persisted was committed before the outcome existed. A store that
+        # serialises a row at insert time (Postgres, which is what a real
+        # deployment runs) keeps what the segment held at that moment; the
+        # in-memory store here aliases the mapping and would hide it, which
+        # is exactly why this asserts the ordering rather than the row.
+        timeline = await kit.get_timeline("room-1", limit=20)
+        agent_events = [
+            event
+            for event in timeline
+            if event.source.channel_id == "acp-agent"
+            and event.type in (EventType.MESSAGE, EventType.TOOL_CALL_START)
+        ]
+        assert agent_events, "the turn did produce events"
+        assert agent_events[-1].type == EventType.TOOL_CALL_START
+        assert any(event.type == EventType.MESSAGE for event in agent_events)
+        await channel.close()
+
+    async def test_a_clean_turn_tells_the_caller_nothing_to_act_on(self, tmp_path: Any) -> None:
+        """The control: same path, a turn that finished, and no outcome to read."""
+        kit = RoomKit()
+        source = SimpleChannel("sms")
+        channel, _connection, _ = _channel(tmp_path)
+        kit.register_channel(source)
+        kit.register_channel(channel)
+        await kit.create_room(room_id="room-1")
+        await kit.attach_channel("room-1", "sms")
+        await kit.attach_channel("room-1", "acp-agent", category=ChannelCategory.INTELLIGENCE)
+
+        result = await kit.process_inbound(
+            InboundMessage(
+                channel_id="sms",
+                sender_id="user",
+                content=TextContent(body="Inspect"),
+            )
+        )
+
+        assert result.error is None
+        acp_record = result.response_metadata["acp"]
+        assert "stop_reason" not in acp_record
+        assert "interrupted" not in acp_record
+        await channel.close()
