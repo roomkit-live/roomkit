@@ -1,6 +1,6 @@
 ---
 name: roomkit-release
-description: Cut a roomkit release end to end — pre-flight state, version choice, full CHANGELOG review and promote, docs/derived artifacts, local gates, CI green on HEAD, `make release VERSION=x.y.z`, then verify tag + GitHub Release + SBOM + PyPI + next dev cycle all landed. Use for /roomkit-release, "release roomkit", "cut a release", "publish x.y.z".
+description: Cut a roomkit release end to end — pre-flight state, version choice, full CHANGELOG review and promote, docs/derived artifacts, local gates, CI green on HEAD, `make release VERSION=x.y.z`, then verify tag + GitHub Release + SBOM + PyPI + next dev cycle all landed. Every decision is parked in Luge's HITL inbox, never asked in the terminal. Use for /roomkit-release, "release roomkit", "cut a release", "publish x.y.z".
 ---
 
 # Release roomkit
@@ -21,9 +21,10 @@ sanity-check, not an order — step 2 still runs.
 
 ## Guardrails (read once, hold for the whole run)
 
-- **Everything in English** — the narration, the questions, the final report, and
-  everything written into the repo (CHANGELOG prose, commit messages, code),
-  matching `git log`.
+- **Everything in English** — the narration, the final report, and everything
+  written into the repo (CHANGELOG prose, commit messages, code), matching
+  `git log`. The one exception is what lands on Luge: a HITL ask is written in
+  the language of the person who answers it, French by default.
 - **Never pipe a gate through `tail`/`head`.** `make all 2>&1 | tail -20` reports
   *tail's* exit code; a green "exit 0" then proves nothing. Run gates unpiped and
   read the real exit status.
@@ -31,16 +32,19 @@ sanity-check, not an order — step 2 still runs.
 - **Never hand-tag, hand-publish, or hand-create the GitHub Release** to "finish"
   a failed run. The script is idempotent and resumable — fix the cause, re-run the
   same `make release VERSION=…`. See *Resume states* at the end.
-- **Stop and ask** before: the version number (step 2), promoting the CHANGELOG
+- **Three decisions are the human's, and every one of them is asked through
+  Luge's HITL inbox** — the version number (step 2), promoting the CHANGELOG
   (step 3), and launching `make release` (step 7, the tail of which is
-  irreversible). Everything else is autonomous.
+  irreversible). Never `AskUserQuestion`, never a terminal prompt: the protocol
+  is *Asking through Luge* below. Everything else is autonomous.
 - **The working tree must be empty in `git status --porcelain`, untracked files
   included** — the script only tolerates a dirty `src/roomkit/_version.py`. This
   skill's own file is tracked (`.claude/skills/` is the one exception to the
   ignored `.claude/*`), so an edit to it is a change like any other: commit it
   before releasing.
-- **Never fake completion.** A run ends *published + verified*, or *stopped* with
-  the exact blocker and the state main was left in.
+- **Never fake completion.** A run ends *published + verified*, *parked* on a
+  named HITL task, or *stopped* with the exact blocker — the last two always
+  with the state main was left in.
 
 ## Step-by-step tracking (do this first)
 
@@ -59,9 +63,76 @@ The run must show where it stands at every moment.
    ✅ Step 3/9 — CHANGELOG: 11 commits since v0.41.4, 9 covered, 2 chore skipped. Promoted to [0.42.0] — 2026-08-06.
    ⚠️  Step 4/9 — Docs: llms-full.txt regenerated (docs/c7 had drifted), to commit.
    ⛔ Step 6/9 — CI: run 1234 red on test_voice_pipeline. Release stopped.
+   ⏸ Step 7/9 — Go: HITL 3f2a… unanswered after 5h. Parked — prep pushed, CI green, nothing released.
    ```
 
-   A skipped step gets a line too, saying why it was skipped.
+   A skipped step gets a line too, saying why it was skipped; a step parked on
+   an unanswered ask gets a ⏸ line naming the task id.
+
+## Asking through Luge (HITL)
+
+Every question this run puts to a human is parked in Luge's HITL inbox — not in
+this terminal. A release is as likely to be started by a scheduler or another
+agent as by someone sitting in front of it, and a question asked in a terminal
+nobody is watching is a run that hangs on nothing. The inbox is where the human
+looks: it rings, it keeps a deadline, and the answer is readable back by a
+later run.
+
+```bash
+export LUGE_CLI_JSON=1                  # once — never the ellipsized human view
+luge-cli --profile prod auth show       # the inbox lives on prod, like the team channel
+```
+
+**Three asks, two kinds.** The version (step 2) is a `choice` — the candidates
+enumerate, the human taps. The CHANGELOG promote (step 3) and the go (step 7)
+are `approval`s — approve, or reject with a comment. **An approval body carries
+no question mark and offers no alternative**: `approve`/`reject` cannot answer
+"OK, or would you rather…", and the only way out is a rejection that reads as a
+plan that was wrong. Anything still open is a `text` or `choice` ask first; the
+approval comes after, once the answer is in.
+
+The body is the positional argument and the inbox renders it as markdown —
+write the whole ask there, structured, in a file under the session's scratchpad
+directory, and skip `--context` (it appends a second block and splits the ask in
+two):
+
+```bash
+cat > "$SCRATCH/ask-version.md" <<'EOF'
+<the ask — each step below says what its body carries>
+EOF
+luge-cli --profile prod hitl create "$(cat "$SCRATCH/ask-version.md")" \
+    -t "roomkit release — version" --kind choice -o "0.62.0 (minor)" -o "0.61.1 (patch)" \
+    --asked-by "roomkit-release" --wait 900
+```
+
+`--wait` returns two outcomes; **branch on `answered`, never on the exit code**
+(an elapsed wait exits 0 on purpose):
+
+- **`answered: true`** — read `task.response`: a `choice` answers
+  `{"value", "label", "comment"?}`, an `approval` `{"decision":
+  "approve"|"reject", "comment"?}`. **A rejection's comment is the
+  instruction**: apply it, then park a fresh ask for the corrected version —
+  never proceed on a rejected ask, never treat the comment as optional.
+- **`answered: false`** — nobody was there yet. Not the end of the run: write
+  one ⏸ line in the transcript (task id, what the answer unblocks), then keep
+  waiting on the same task in half-hour polls:
+
+  ```bash
+  for i in 1 2 3 4 5 6 7 8 9 10; do
+      luge-cli --profile prod hitl show "$TASK_ID" --wait 1800   # answered: true → continue
+  done
+  ```
+
+  An elapsed poll is silent — no re-ask, no second task. **Ten polls elapsed
+  (five hours): park and stop.** Close the step with its ⏸ line, state exactly
+  what main holds (prep committed? pushed? CI green?), and end the run without
+  proceeding on an assumption. The question stays live in the inbox.
+
+**A run that resumes picks the parked ask up, never re-asks it.** Step 1 lists
+the inbox; a pending or answered `roomkit-release` task is the previous run's
+state — read it with `hitl show <id>` and continue at the step it belongs to.
+Never treat a timeout as an answer, never answer for the human (the CLI refuses
+it server-side anyway).
 
 ---
 
@@ -78,7 +149,13 @@ grep '^__version__' src/roomkit/_version.py
 git describe --tags --abbrev=0             # last tag
 gh release list --limit 5
 curl -s https://pypi.org/pypi/roomkit/json | python3 -c "import sys,json;print(json.load(sys.stdin)['info']['version'])"
+luge-cli --profile prod hitl list      # a roomkit-release task here = a run to resume
 ```
+
+**A `roomkit-release` task in the inbox is a previous run's state**, not a fresh
+start: pending → `hitl show <id> --wait 1800` and resume at that step; answered →
+read the response and continue from there. Never park a second ask for a
+question that is already parked.
 
 Report a compact table: branch · tree · HEAD sha · dev version · last tag · last
 GitHub Release · latest on PyPI.
@@ -110,9 +187,12 @@ curl -sfL "https://pypi.org/pypi/roomkit/X.Y.Z/json" -o /dev/null && echo ON-PYP
 grep -n "^## \[X.Y.Z\]" CHANGELOG.md                   # only the pending promote
 ```
 
-Propose the number with the one-line rationale (`AskUserQuestion` when there is a
-real choice) and get an explicit confirmation. PEP 440 only: `1.2.3` or `1.2.3rc1`
-— the script rejects `1.2.3-rc.1`.
+Park the number as a `choice` ask — the candidate first, the other bump second.
+The body carries the commit list, the classification in one line, and the three
+availability checks with their results. The answer's `value` is the version; a
+different number in its `comment` is the instruction — verify that one is free
+the same way, and continue with it. PEP 440 only: `1.2.3` or `1.2.3rc1` — the
+script rejects `1.2.3-rc.1`.
 
 ## 3. CHANGELOG review
 
@@ -142,7 +222,7 @@ it is deliberate.
   the old floor. A lockfile bump does not protect installs.
 - Nothing internal or private leaks into a public file.
 
-**c. Promote.** Show the user the exact edit, then apply it:
+**c. Promote.** Park the exact edit as an `approval` ask; apply it once approved:
 
 - `## [Unreleased]` stays in place, empty; insert `## [X.Y.Z] — YYYY-MM-DD` below
   it (em dash `—`, today's date) and move the content under it.
@@ -151,6 +231,11 @@ it is deliberate.
   [Unreleased]: https://github.com/roomkit-live/roomkit/compare/vX.Y.Z...HEAD
   [X.Y.Z]: https://github.com/roomkit-live/roomkit/compare/vPREV...vX.Y.Z
   ```
+
+The approval body is the coverage table from (a) — every commit and the bullet
+that covers it, or why it has none — the findings from (b) with what was
+rewritten, and the exact heading and footer lines that will land. Rejected: the
+comment says what to rewrite; rewrite, re-park. Approved: apply the edit.
 
 If the promote was already done in an earlier session (a `## [X.Y.Z] — DATE`
 section with no tag), do not redo it: verify the date is still right, verify the
@@ -244,7 +329,11 @@ Red CI stops the release. Only the `CI` workflow counts — the guard filters on
 
 ## 7. `make release VERSION=X.Y.Z`
 
-Ask for an explicit go: everything from the PyPI upload on is irreversible.
+The go is an `approval` ask — everything from the PyPI upload on is
+irreversible. The body states the version, HEAD's sha and the CI run that is
+green on it, the lane that ran at step 5, the CHANGELOG section the script will
+lift, and that approving launches PyPI + tag + GitHub Release in one command.
+Rejected: stop — the comment is the instruction, and nothing has been published.
 
 ```bash
 make release VERSION=X.Y.Z
