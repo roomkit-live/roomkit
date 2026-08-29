@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.62.0] — 2026-08-29
+
 ### Added
 
 - **A channel says how many turns it is running.** `Channel.active_turns`
@@ -25,6 +27,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   provider down under a running stream, so a caller retiring a displaced
   `AIChannel` can now wait for zero instead of closing on a timer. Reported in
   `info` as well.
+
+### Fixed
+
+- **OpenRouter stopped discounting `google/gemini-3.7-flash`.** The slug resold
+  at $0.375/$1.875 per million, half Google's synchronous rate, through
+  2026-08-25 and now bills that rate: $0.75 input, $3.75 output, cache read
+  $0.075, cache write $0.79. The `openrouter` entry is refreshed from the
+  vendor endpoint and the catalog's verification date moves with it; Google's
+  own catalog is unchanged, and the divergence `scripts/check_models.py`
+  recorded for the mirror that quoted the discount is retired. A stale rate
+  never fails, it just understated every cost estimate for the slug by half.
 
 ## [0.61.0] — 2026-08-27
 
@@ -6651,7 +6664,8 @@ See entries `0.7.0a1` through `0.7.0a18` below.
 - `STTProvider.transcribe()` returns `TranscriptionResult` (Phase 3.1)
 - Framework event names enriched with payloads (Phase 4)
 
-[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.61.0...HEAD
+[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.62.0...HEAD
+[0.62.0]: https://github.com/roomkit-live/roomkit/compare/v0.61.0...v0.62.0
 [0.61.0]: https://github.com/roomkit-live/roomkit/compare/v0.60.0...v0.61.0
 [0.60.0]: https://github.com/roomkit-live/roomkit/compare/v0.59.0...v0.60.0
 [0.59.0]: https://github.com/roomkit-live/roomkit/compare/v0.58.0...v0.59.0

@@ -245,11 +245,6 @@ PRICE_DELIBERATE: dict[str, str] = {
     # funds is not a price cut by the vendor, and the openrouter catalog carries
     # the resold rate in its own entry.
     "gpt-5.6-sol": "mirror runs a promo on its own slug; roomkit bills OpenAI's list rate",
-    # Same shape, Google's side: the mirror resells 3.7 Flash at exactly the
-    # Batch/Flex column ($0.375/$1.875/$0.0375) while Google's synchronous rate
-    # is double that (pricing page, 2026-08-13). Its own `openrouter` entry
-    # carries the resold rate, because there the mirror is the seller.
-    "gemini-3.7-flash": "mirror resells at the Batch rate; roomkit bills Google's standard one",
     # No seller to agree with. Eighteen hosts serve this open-weights model
     # through OpenRouter between $0.42 and $1.74 per million input, and the
     # top-level quote follows whichever endpoint routing prefers: $0.435 on
@@ -282,9 +277,18 @@ PRICE_DELIBERATE: dict[str, str] = {
     "qwen3.6-flash": "mirror resells at a discounted rate; catalog carries Alibaba's list price",
 }
 
-# Per-field normalization where the upstream pricing object quotes only one
-# component but RoomKit's disjoint usage counter must carry the complete charge.
+# Per-field suppressions: a normalization where the upstream pricing object
+# quotes only one component but RoomKit's disjoint usage counter must carry the
+# complete charge, or a single rate the mirror gets wrong against the vendor's
+# own price list.
 PRICE_FIELD_DELIBERATE: dict[tuple[str, str, str], str] = {
+    # The mirror quotes cached input at $0.03 where OpenAI's pricing page lists
+    # $0.025 for gpt-4.1-nano (checked 2026-08-29). The catalog keeps the vendor's.
+    (
+        "openai",
+        "gpt-4.1-nano",
+        "input_cache_read",
+    ): "mirror quotes $0.03; OpenAI's pricing page lists cached input at $0.025",
     (
         "openrouter",
         "google/gemini-3.6-flash",
@@ -467,7 +471,7 @@ def fetch_upstream(url: str = UPSTREAM_URL, timeout: float = 30.0) -> list[dict[
     request = urllib.request.Request(  # noqa: S310 - constant https URL
         url, headers={"User-Agent": "roomkit-check-models"}
     )
-    with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
+    with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310  # nosec B310
         payload = json.load(response)
     data = payload.get("data")
     if not isinstance(data, list) or not data:
