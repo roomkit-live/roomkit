@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **A channel says how many turns it is running.** `Channel.active_turns`
+  (default 0) lets a caller that retires a channel object — displaced from the
+  registry by a rebuild, or removed with the agent it served — wait for its
+  in-flight turns instead of closing under them: `ACPChannel.close()` cancels
+  every running turn on both sides of the wire, so a deferred close on a fixed
+  timer was cutting long turns. `ACPChannel` counts its turns from the prompt
+  going out until the stream closes, and reports the count in `info`. A channel
+  that does not count answers 0 and is treated as idle, as before.
+
 ## [0.61.0] — 2026-08-27
 
 ### Added

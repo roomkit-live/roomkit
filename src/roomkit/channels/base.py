@@ -155,6 +155,21 @@ class Channel(ABC):
         return {}
 
     @property
+    def active_turns(self) -> int:
+        """How many turns this channel is running right now.
+
+        What a caller retiring the object needs to know: a channel taken out
+        of the registry (displaced by a rebuild, or removed with the thing it
+        served) may still be answering for a turn that captured it, and
+        ``close`` on most intelligence channels cancels that turn rather than
+        waiting for it. A channel that counts its turns answers here so the
+        caller can wait until it is idle; one that does not count them
+        answers 0 and is treated as idle, which is the behaviour it had
+        before the property existed.
+        """
+        return 0
+
+    @property
     def recent_events_window(self) -> int:
         """How many recent room events this channel reads per turn.
 

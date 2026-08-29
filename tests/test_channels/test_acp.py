@@ -676,6 +676,54 @@ class TestACPChannel:
         assert process_context.exited is True
         assert channel.session_config("room-1") == {}
 
+    async def test_active_turns_counts_a_turn_from_prompt_to_stream_end(
+        self, tmp_path: Any
+    ) -> None:
+        """A caller retiring the object can ask whether a turn is in flight.
+
+        ``close()`` cancels every running turn on both sides of the wire, so
+        whoever holds a displaced channel (a registry swap under a rebuild)
+        has to wait for the count to reach zero rather than close on a timer.
+        The count covers the turn as its consumer sees it: from the prompt
+        going out until the stream is drained.
+        """
+        channel, connection, _ = _channel(tmp_path, emit_updates=False)
+        release = asyncio.Event()
+
+        async def prompt_until_released(
+            session_id: str, prompt: list[Any], **kwargs: Any
+        ) -> PromptResponse:
+            await release.wait()
+            return PromptResponse(stop_reason="end_turn")
+
+        connection.prompt = prompt_until_released  # type: ignore[method-assign]
+        # Idle before any turn, and the base contract answers idle for a
+        # channel that does not count at all.
+        assert channel.active_turns == 0
+        assert SimpleChannel("plain").active_turns == 0
+
+        output = await channel.on_event(
+            make_event(body="Go"), _binding(), RoomContext(room=Room(id="room-1"))
+        )
+        # The turn registers when the stream is first consumed, not when the
+        # output is handed back.
+        assert channel.active_turns == 0
+
+        async def drain() -> list[Any]:
+            return [chunk async for chunk in output.response_stream]
+
+        consumer = asyncio.create_task(drain())
+        while channel.active_turns == 0:
+            await asyncio.sleep(0)
+        assert channel.active_turns == 1
+        assert channel.info["active_turns"] == 1
+
+        release.set()
+        await asyncio.wait_for(consumer, timeout=5)
+        assert channel.active_turns == 0
+        assert channel.info["active_turns"] == 0
+        await channel.close()
+
     async def test_streams_updates_and_reuses_room_session(self, tmp_path: Any) -> None:
         handler = _RecordingToolHandler(approved=True)
         channel, connection, _ = _channel(tmp_path, handler=handler)

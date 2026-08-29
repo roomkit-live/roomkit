@@ -236,7 +236,15 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
             "connected": self._connection is not None,
             "agent": self._agent_info,
             "session_count": len(self._sessions),
+            "active_turns": self.active_turns,
         }
+
+    @property
+    def active_turns(self) -> int:
+        """Turns in flight: registered by ``_prompt_stream`` when the prompt
+        goes out, dropped when its stream closes. The whole of the turn as
+        the consumer sees it, not only while the agent is answering."""
+        return len(self._turns)
 
     def session_config(self, room_id: str) -> dict[str, str | bool]:
         """Current ACP session config values for *room_id*, keyed by config id.
