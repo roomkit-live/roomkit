@@ -164,8 +164,7 @@ class Channel(ABC):
         ``close`` on most intelligence channels cancels that turn rather than
         waiting for it. A channel that counts its turns answers here so the
         caller can wait until it is idle; one that does not count them
-        answers 0 and is treated as idle, which is the behaviour it had
-        before the property existed.
+        answers 0 and is treated as idle.
         """
         return 0
 

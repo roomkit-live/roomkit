@@ -713,8 +713,14 @@ class TestACPChannel:
             return [chunk async for chunk in output.response_stream]
 
         consumer = asyncio.create_task(drain())
-        while channel.active_turns == 0:
-            await asyncio.sleep(0)
+
+        async def registered() -> None:
+            while channel.active_turns == 0:
+                await asyncio.sleep(0)
+
+        # Bounded: a consumer that fails before the turn registers must fail
+        # the test, not hang it.
+        await asyncio.wait_for(registered(), timeout=5)
         assert channel.active_turns == 1
         assert channel.info["active_turns"] == 1
 
