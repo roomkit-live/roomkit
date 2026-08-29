@@ -475,13 +475,16 @@ class AIChannel(
 
     @property
     def active_turns(self) -> int:
-        """Turns being produced right now, on every path that produces one.
+        """Turns being produced right now.
 
         A tool loop — streamed or not — registers itself in ``_active_loops``
         for steering, from the start of its generation to its ``finally``; a
         text-only stream has no loop context to register and is counted on
-        its own. ``close()`` tears the provider down under whichever of them
-        is running, so a caller retiring this object waits for zero first.
+        its own. Both spans start when the turn is *consumed*: a streaming
+        output handed back by ``on_event`` and not yet iterated reads 0, a
+        window the caller's own wait has to cover. ``close()`` tears the
+        provider down under whichever of them is running, so a caller
+        retiring this object waits for zero first.
         """
         return len(self._active_loops) + self._text_streams
 

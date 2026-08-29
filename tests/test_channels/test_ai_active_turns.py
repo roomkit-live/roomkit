@@ -57,7 +57,32 @@ def _binding(tools: list[dict[str, Any]] | None = None) -> ChannelBinding:
     )
 
 
-_CONTEXT = RoomContext(room=Room(id="room-1"))
+def _context() -> RoomContext:
+    return RoomContext(room=Room(id="room-1"))
+
+
+class _TextOnlyGatedProvider(_GatedProvider):
+    """Streams, but not structurally: the ``generate_stream`` fallback."""
+
+    @property
+    def supports_structured_streaming(self) -> bool:
+        return False
+
+    async def generate_stream(self, context: AIContext) -> Any:
+        yield "Working "
+        self.reached.set()
+        await self.gate.wait()
+        yield "done"
+
+
+class _FailingMidStreamProvider(_GatedProvider):
+    async def generate_structured_stream(self, context: AIContext) -> Any:
+        yield StreamTextDelta(text="Working ")
+        self.reached.set()
+        await self.gate.wait()
+        raise RuntimeError("provider went away")
+
+
 _SEARCH_TOOL = {
     "name": "search",
     "description": "Search",
@@ -79,7 +104,7 @@ class TestActiveTurns:
         provider = _GatedProvider(streaming=True)
         ch = AIChannel("ai1", provider=provider)
 
-        output = await ch.on_event(make_event(body="hi"), _binding(), _CONTEXT)
+        output = await ch.on_event(make_event(body="hi"), _binding(), _context())
         # Handing the output back produces nothing yet: the generator runs
         # when its consumer iterates it.
         assert ch.active_turns == 0
@@ -104,7 +129,7 @@ class TestActiveTurns:
         )
         ch = AIChannel("ai1", provider=provider, tool_handler=AsyncMock(return_value="ok"))
 
-        output = await ch.on_event(make_event(body="hi"), _binding([_SEARCH_TOOL]), _CONTEXT)
+        output = await ch.on_event(make_event(body="hi"), _binding([_SEARCH_TOOL]), _context())
         consumer = asyncio.create_task(_drain(output.response_stream))
         await asyncio.wait_for(provider.reached.wait(), timeout=5)
         assert ch.active_turns == 1
@@ -118,7 +143,7 @@ class TestActiveTurns:
         provider = _GatedProvider(streaming=False)
         ch = AIChannel("ai1", provider=provider)
 
-        turn = asyncio.create_task(ch.on_event(make_event(body="hi"), _binding(), _CONTEXT))
+        turn = asyncio.create_task(ch.on_event(make_event(body="hi"), _binding(), _context()))
         await asyncio.wait_for(provider.reached.wait(), timeout=5)
         assert ch.active_turns == 1
 
@@ -131,7 +156,7 @@ class TestActiveTurns:
         provider = _GatedProvider(streaming=True)
         ch = AIChannel("ai1", provider=provider)
 
-        output = await ch.on_event(make_event(body="hi"), _binding(), _CONTEXT)
+        output = await ch.on_event(make_event(body="hi"), _binding(), _context())
         consumer = asyncio.create_task(_drain(output.response_stream))
         await asyncio.wait_for(provider.reached.wait(), timeout=5)
         assert ch.active_turns == 1
@@ -148,7 +173,7 @@ class TestActiveTurns:
         memory = MockMemoryProvider()
         ch = AIChannel("ai1", provider=provider, memory=memory)
 
-        output = await ch.on_event(make_event(body="hi"), _binding(), _CONTEXT)
+        output = await ch.on_event(make_event(body="hi"), _binding(), _context())
         consumer = asyncio.create_task(_drain(output.response_stream))
         await asyncio.wait_for(provider.reached.wait(), timeout=5)
 
@@ -166,3 +191,62 @@ class TestActiveTurns:
         await asyncio.wait_for(retiring, timeout=5)
         assert "".join(c for c in chunks if isinstance(c, str)) == "Working Hello from AI"
         assert memory.closed is True
+
+    async def test_plain_generate_stream_fallback_is_counted_too(self) -> None:
+        """The one branch that returns from inside the counted span."""
+        provider = _TextOnlyGatedProvider(streaming=True)
+        ch = AIChannel("ai1", provider=provider)
+
+        output = await ch.on_event(make_event(body="hi"), _binding(), _context())
+        consumer = asyncio.create_task(_drain(output.response_stream))
+        await asyncio.wait_for(provider.reached.wait(), timeout=5)
+        assert ch.active_turns == 1
+
+        provider.gate.set()
+        chunks = await asyncio.wait_for(consumer, timeout=5)
+        assert "".join(chunks) == "Working done"
+        assert ch.active_turns == 0
+
+    async def test_a_provider_error_mid_stream_returns_to_zero(self) -> None:
+        provider = _FailingMidStreamProvider(streaming=True)
+        ch = AIChannel("ai1", provider=provider)
+
+        output = await ch.on_event(make_event(body="hi"), _binding(), _context())
+        consumer = asyncio.create_task(_drain(output.response_stream))
+        await asyncio.wait_for(provider.reached.wait(), timeout=5)
+        assert ch.active_turns == 1
+
+        provider.gate.set()
+        results = await asyncio.gather(consumer, return_exceptions=True)
+        assert isinstance(results[0], Exception)
+        assert ch.active_turns == 0
+
+    async def test_a_text_stream_and_a_tool_loop_add_up(self) -> None:
+        """The two counters are a sum, not one of the halves."""
+        provider = _GatedProvider(
+            streaming=True,
+            ai_responses=[
+                AIResponse(content="", tool_calls=[AIToolCall(id="tc1", name="search")]),
+                AIResponse(content="Done", tool_calls=[]),
+            ],
+        )
+        ch = AIChannel("ai1", provider=provider, tool_handler=AsyncMock(return_value="ok"))
+
+        text = await ch.on_event(make_event(body="hi"), _binding(), _context())
+        loop = await ch.on_event(make_event(body="hi"), _binding([_SEARCH_TOOL]), _context())
+        consumers = [
+            asyncio.create_task(_drain(text.response_stream)),
+            asyncio.create_task(_drain(loop.response_stream)),
+        ]
+
+        async def both_started() -> None:
+            while ch.active_turns < 2:
+                await asyncio.sleep(0)
+
+        await asyncio.wait_for(both_started(), timeout=5)
+        assert ch.active_turns == 2
+        assert len(ch._active_loops) == 1 and ch._text_streams == 1
+
+        provider.gate.set()
+        await asyncio.wait_for(asyncio.gather(*consumers), timeout=5)
+        assert ch.active_turns == 0

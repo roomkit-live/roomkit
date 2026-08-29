@@ -161,8 +161,10 @@ class Channel(ABC):
         What a caller retiring the object needs to know: a channel taken out
         of the registry (displaced by a rebuild, or removed with the thing it
         served) may still be answering for a turn that captured it, and
-        ``close`` on most intelligence channels cancels that turn rather than
-        waiting for it. A channel that counts its turns answers here so the
+        ``close`` on an intelligence channel ends that turn rather than
+        waiting for it — an ACP channel cancels it on both sides of the wire,
+        an AI channel tears the provider down under it. A channel that counts
+        its turns answers here so the
         caller can wait until it is idle; one that does not count them
         answers 0 and is treated as idle.
         """

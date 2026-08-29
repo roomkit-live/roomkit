@@ -62,6 +62,7 @@ class AIStreamingHost(Protocol):
         _tool_loop_warn_after: Log a warning after this many rounds.
         _tool_handler: Tool call handler (or ``None`` if tools disabled).
         _active_loops: Registry of currently running tool loops.
+        _text_streams: Count of text-only streams currently being produced.
         _after_response_hook: Optional callback fired after response generation.
         channel_id: Unique identifier for this channel.
 
@@ -87,6 +88,7 @@ class AIStreamingHost(Protocol):
     _thinking_coalesce_chars: int
     _tool_handler: Any
     _active_loops: dict[str, _ToolLoopContext]
+    _text_streams: int
     _after_response_hook: Any
     _before_generation_hook: Any
     _before_tool_call_hook: Any
