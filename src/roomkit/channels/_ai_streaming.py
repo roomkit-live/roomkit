@@ -138,6 +138,7 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
     _thinking_coalesce_chars: int
     _tool_handler: Any
     _active_loops: dict[str, Any]
+    _text_streams: int
     _after_response_hook: Any
     _before_generation_hook: Any
     _before_tool_call_hook: Any
@@ -251,51 +252,60 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
         Falls back to ``generate_stream`` for providers that don't expose
         a structured stream.
         """
-        if not self._provider.supports_structured_streaming:
-            async for chunk in self._provider.generate_stream(ai_context):
-                yield chunk
-            return
+        # Counted from the first consumption to the close of the generator, the
+        # way a tool loop registers itself in ``_active_loops`` for the same
+        # span: a caller retiring this object (``active_turns``) must know a
+        # text-only stream is still being produced, and this path has no loop
+        # context to register.
+        self._text_streams += 1
+        try:
+            if not self._provider.supports_structured_streaming:
+                async for chunk in self._provider.generate_stream(ai_context):
+                    yield chunk
+                return
 
-        room_id = ai_context.room.room.id if ai_context.room else None
-        thinking_parts: list[str] = []
-        thinking_published = 0
-        thinking_started = False
-        coalescer = self._new_thinking_coalescer(room_id, round_idx=0)
+            room_id = ai_context.room.room.id if ai_context.room else None
+            thinking_parts: list[str] = []
+            thinking_published = 0
+            thinking_started = False
+            coalescer = self._new_thinking_coalescer(room_id, round_idx=0)
 
-        # Through the resilience wrapper, like every structured generation:
-        # retry, fallback and overflow compaction are the wrapper's to give,
-        # never a per-path courtesy.
-        async for ev in self._generate_stream_with_retry(ai_context):
-            if isinstance(ev, _StreamRetryBoundary):
-                continue
-            if isinstance(ev, StreamThinkingDelta):
-                if not thinking_started and room_id:
-                    thinking_started = True
-                    await self._publish_thinking_event(
-                        EphemeralEventType.THINKING_START, room_id, "", 0
-                    )
-                thinking_parts.append(ev.thinking)
-                # Buffer each delta and publish in windows on the realtime bus so
-                # remote subscribers (browser WS clients, etc.) stream the
-                # reasoning as it arrives, not only the buffered text at
-                # THINKING_END. The ``thinking`` field carries the delta, not the
-                # accumulator — clients append to their own buffer.
-                await coalescer.add(ev.thinking)
-                yield ThinkingDeltaMarker(thinking=ev.thinking)
-            elif isinstance(ev, StreamTextDelta):
-                if thinking_started and thinking_parts and room_id:
-                    thinking_started = False
-                    thinking_published = await self._close_thinking_window(
-                        coalescer, room_id, thinking_parts, 0, published=thinking_published
-                    )
-                yield ev.text
+            # Through the resilience wrapper, like every structured generation:
+            # retry, fallback and overflow compaction are the wrapper's to give,
+            # never a per-path courtesy.
+            async for ev in self._generate_stream_with_retry(ai_context):
+                if isinstance(ev, _StreamRetryBoundary):
+                    continue
+                if isinstance(ev, StreamThinkingDelta):
+                    if not thinking_started and room_id:
+                        thinking_started = True
+                        await self._publish_thinking_event(
+                            EphemeralEventType.THINKING_START, room_id, "", 0
+                        )
+                    thinking_parts.append(ev.thinking)
+                    # Buffer each delta and publish in windows on the realtime bus so
+                    # remote subscribers (browser WS clients, etc.) stream the
+                    # reasoning as it arrives, not only the buffered text at
+                    # THINKING_END. The ``thinking`` field carries the delta, not the
+                    # accumulator — clients append to their own buffer.
+                    await coalescer.add(ev.thinking)
+                    yield ThinkingDeltaMarker(thinking=ev.thinking)
+                elif isinstance(ev, StreamTextDelta):
+                    if thinking_started and thinking_parts and room_id:
+                        thinking_started = False
+                        thinking_published = await self._close_thinking_window(
+                            coalescer, room_id, thinking_parts, 0, published=thinking_published
+                        )
+                    yield ev.text
 
-        # Thinking with no following text — close the boundary anyway so
-        # subscribers see the reasoning even if the model emitted nothing else.
-        if thinking_started and thinking_parts and room_id:
-            await self._close_thinking_window(
-                coalescer, room_id, thinking_parts, 0, published=thinking_published
-            )
+            # Thinking with no following text — close the boundary anyway so
+            # subscribers see the reasoning even if the model emitted nothing else.
+            if thinking_started and thinking_parts and room_id:
+                await self._close_thinking_window(
+                    coalescer, room_id, thinking_parts, 0, published=thinking_published
+                )
+        finally:
+            self._text_streams -= 1
 
     async def _start_streaming_tool_response(
         self, event: RoomEvent, binding: ChannelBinding, context: RoomContext

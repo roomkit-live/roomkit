@@ -17,6 +17,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   timer was cutting long turns. `ACPChannel` counts its turns from the prompt
   going out until the stream closes, and reports the count in `info`. A channel
   that does not count answers 0 and is treated as idle, as before.
+- **`AIChannel` counts its turns too.** `AIChannel.active_turns` covers every
+  path that produces a turn: a tool loop, streamed or not, is counted through
+  the steering registry it already joins, and a text-only stream is counted
+  from its first consumption to the close of its generator. `close()` tears the
+  provider down under a running stream, so a caller retiring a displaced
+  `AIChannel` can now wait for zero instead of closing on a timer. Reported in
+  `info` as well.
 
 ## [0.61.0] — 2026-08-27
 

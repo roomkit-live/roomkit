@@ -370,6 +370,9 @@ class AIChannel(
 
         # Active tool loops for steering (loop_id -> context)
         self._active_loops: dict[str, _ToolLoopContext] = {}
+        # Text-only streams being produced — the one turn path that has no loop
+        # context to register above (see ``active_turns``).
+        self._text_streams = 0
 
         # Realtime backend for ephemeral tool call events (set by register_channel)
         self._realtime: RealtimeBackend | None = None
@@ -468,7 +471,19 @@ class AIChannel(
 
     @property
     def info(self) -> dict[str, Any]:
-        return {"provider": type(self._provider).__name__}
+        return {"provider": type(self._provider).__name__, "active_turns": self.active_turns}
+
+    @property
+    def active_turns(self) -> int:
+        """Turns being produced right now, on every path that produces one.
+
+        A tool loop — streamed or not — registers itself in ``_active_loops``
+        for steering, from the start of its generation to its ``finally``; a
+        text-only stream has no loop context to register and is counted on
+        its own. ``close()`` tears the provider down under whichever of them
+        is running, so a caller retiring this object waits for zero first.
+        """
+        return len(self._active_loops) + self._text_streams
 
     def capabilities(self) -> ChannelCapabilities:
         media_types = [ChannelMediaType.TEXT, ChannelMediaType.RICH]
