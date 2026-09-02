@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import time
 from collections.abc import AsyncIterator
@@ -30,6 +31,7 @@ if TYPE_CHECKING:
     from roomkit.voice.pipeline.engine import AudioPipeline
     from roomkit.voice.pipeline.turn.base import TurnEntry
     from roomkit.voice.stt.base import STTProvider
+    from roomkit.voice.stt.language import STTLanguageLock
 
     from .voice import TTSPlaybackState, _STTStreamState
 
@@ -67,6 +69,8 @@ class STTHost(Protocol):
         _playback_done_events: Signals that send_audio() has returned for a session.
         _last_tts_ended_at: Monotonic timestamp of last TTS completion per session.
         _stt_streams: Active STT stream states per session.
+        _stt_languages: STT language chosen per session (absent = provider default).
+        _stt_language_lock: Policy choosing the session language, or None.
         _continuous_stt: Whether continuous STT mode is enabled.
         _batch_mode: Whether batch STT mode is enabled.
         _batch_audio_buffers: Accumulated audio per session for batch transcription.
@@ -91,6 +95,8 @@ class STTHost(Protocol):
     _playback_done_events: dict[str, asyncio.Event]
     _last_tts_ended_at: dict[str, float]
     _stt_streams: dict[str, _STTStreamState]
+    _stt_languages: dict[str, str]
+    _stt_language_lock: STTLanguageLock | None
     _continuous_stt: bool
     _batch_mode: bool
     _batch_audio_buffers: dict[str, bytearray]
@@ -123,6 +129,8 @@ class VoiceSTTMixin:
     _playback_done_events: dict[str, asyncio.Event]
     _last_tts_ended_at: dict[str, float]
     _stt_streams: dict[str, _STTStreamState]
+    _stt_languages: dict[str, str]
+    _stt_language_lock: STTLanguageLock | None
     _continuous_stt: bool
     _batch_mode: bool
     _batch_audio_buffers: dict[str, bytearray]
@@ -146,6 +154,69 @@ class VoiceSTTMixin:
     _resolve_session_backend: Any  # see STTHost — VoiceChannel._resolve_session_backend
     _broadcast_bridge_transcription: Any  # see STTHost — VoiceChannel
     _task_done: Any  # see STTHost — VoiceChannel._task_done
+
+    # -----------------------------------------------------------------
+    # Per-session STT language
+    # -----------------------------------------------------------------
+
+    def _stt_call_kwargs(self, session_id: str) -> dict[str, Any]:
+        """``language=`` for a provider call — only when one is chosen for the
+        session and the provider honours it; otherwise the call is unchanged."""
+        # getattr: a duck-typed provider on the older contract has no flag
+        if self._stt is None or not getattr(self._stt, "supports_language_override", False):
+            return {}
+        with self._state_lock:
+            language = self._stt_languages.get(session_id)
+        return {"language": language} if language else {}
+
+    def _store_stt_language(self, session_id: str, language: str | None) -> bool:
+        """Record the session's language; return whether it changed."""
+        with self._state_lock:
+            current = self._stt_languages.get(session_id)
+            if language is None:
+                self._stt_languages.pop(session_id, None)
+            else:
+                self._stt_languages[session_id] = language
+        if current == language:
+            return False
+        logger.info(
+            "STT language for session %s: %s -> %s",
+            session_id,
+            current or "default",
+            language or "default",
+        )
+        return True
+
+    def _restart_continuous_stt_cycle(self, session_id: str) -> None:
+        """End the current continuous cycle so the loop reconnects.
+
+        The sentinel goes to the queue the loop is reading right now; the
+        next cycle opens with whatever language is set by then, and the
+        frames buffered in between are carried over as on every reconnect.
+        """
+        state = self._stt_streams.get(session_id)
+        if state is None or state.cancelled:
+            return
+        with contextlib.suppress(asyncio.QueueFull):
+            state.queue.put_nowait(None)
+
+    def _observe_stt_language(
+        self, session: VoiceSession, result: TranscriptionResult, *, restart: bool = True
+    ) -> None:
+        """Feed a final result to the language lock and apply its decision.
+
+        ``restart=False`` is for the continuous loop, which reconnects on its
+        own after a final — ending the cycle a second time would only add an
+        empty one.
+        """
+        lock = self._stt_language_lock
+        if lock is None:
+            return
+        target = lock.observe(session.id, result)
+        if not self._store_stt_language(session.id, target):
+            return
+        if restart and self._continuous_stt:
+            self._restart_continuous_stt_cycle(session.id)
 
     # -----------------------------------------------------------------
     # VAD-driven STT streaming
@@ -242,13 +313,17 @@ class VoiceSTTMixin:
             try:
                 if self._stt is None:
                     raise RuntimeError("STT provider not configured")
-                async for result in self._stt.transcribe_stream(audio_gen()):
+                async for result in self._stt.transcribe_stream(
+                    audio_gen(), **self._stt_call_kwargs(session.id)
+                ):
                     if state.cancelled:
                         return
                     if result.is_final and result.text:
                         state.final_text = result.text
+                        state.final_result = result
                     elif not result.is_final and result.text:
                         state.partial_text = result.text
+                        state.partial_result = result
                         self._schedule(
                             self._fire_partial_transcription_hook(session, result, room_id),
                             name=f"partial_stt:{session.id}",
@@ -504,7 +579,9 @@ class VoiceSTTMixin:
                         session.id,
                         since_tts,
                     )
-                    async for result in self._stt.transcribe_stream(audio_gen(first_chunk)):
+                    async for result in self._stt.transcribe_stream(
+                        audio_gen(first_chunk), **self._stt_call_kwargs(session.id)
+                    ):
                         if state.cancelled:
                             break
                         with self._state_lock:
@@ -551,10 +628,13 @@ class VoiceSTTMixin:
 
                             with contextlib.suppress(asyncio.QueueFull):
                                 cur_queue.put_nowait(None)
+                            # The lock sees the final before the next cycle
+                            # opens, so a new language lands on that cycle.
+                            self._observe_stt_language(session, result, restart=False)
                             # Provider signals turn complete — route to AI
                             self._schedule(
                                 self._handle_continuous_transcription(
-                                    session, result.text, room_id
+                                    session, result.text, room_id, language=result.language
                                 ),
                                 name=f"continuous_stt:{session.id}",
                             )
@@ -623,7 +703,12 @@ class VoiceSTTMixin:
         self._cancel_stt_stream(session_id)
 
     async def _handle_continuous_transcription(
-        self, session: VoiceSession, text: str, room_id: str
+        self,
+        session: VoiceSession,
+        text: str,
+        room_id: str,
+        *,
+        language: str | None = None,
     ) -> None:
         """Process a transcription result from continuous STT."""
         if not self._framework or not text.strip():
@@ -673,7 +758,7 @@ class VoiceSTTMixin:
             )
 
             # Fire ON_TRANSCRIPTION hooks
-            tx_event = TranscriptionEvent(session=session, text=text)
+            tx_event = TranscriptionEvent(session=session, text=text, language=language)
             transcription_result = await self._framework.hook_engine.run_sync_hooks(
                 room_id,
                 HookTrigger.ON_TRANSCRIPTION,
@@ -768,11 +853,15 @@ class VoiceSTTMixin:
 
             # Try to collect streaming STT result; fall back to batch
             text: str | None = None
+            result: TranscriptionResult | None = None
             if stream_state is not None and not stream_state.error and not stream_state.cancelled:
                 try:
                     if stream_state.task is not None:
                         await asyncio.wait_for(stream_state.task, timeout=5.0)
-                    text = stream_state.final_text or stream_state.partial_text
+                    if stream_state.final_text:
+                        text, result = stream_state.final_text, stream_state.final_result
+                    else:
+                        text, result = stream_state.partial_text, stream_state.partial_result
                     if text:
                         logger.debug("STT stream result for %s: %s", session.id, redact(text))
                     else:
@@ -832,8 +921,11 @@ class VoiceSTTMixin:
                     attributes={Attr.PROVIDER: self._stt.name, Attr.STT_MODE: "batch"},
                 )
                 try:
-                    stt_result = await self._stt.transcribe(audio_frame)
+                    stt_result = await self._stt.transcribe(
+                        audio_frame, **self._stt_call_kwargs(session.id)
+                    )
                     text = stt_result.text
+                    result = stt_result
                     ttfb_ms = (time.monotonic() - t0) * 1000
                     telemetry.end_span(
                         span_id,
@@ -871,6 +963,11 @@ class VoiceSTTMixin:
                     },
                 )
 
+            # The lock hears every final, an empty one included — a locked
+            # language that stopped fitting shows up as empties and noise.
+            if result is not None:
+                self._observe_stt_language(session, result)
+
             if not text.strip():
                 logger.debug("Empty transcription, skipping")
                 return
@@ -885,7 +982,9 @@ class VoiceSTTMixin:
             await self._broadcast_bridge_transcription(session, text, room_id)
 
             # Fire ON_TRANSCRIPTION hooks (sync, can modify)
-            tx_event = TranscriptionEvent(session=session, text=text)
+            tx_event = TranscriptionEvent(
+                session=session, text=text, language=result.language if result else None
+            )
             transcription_result = await self._framework.hook_engine.run_sync_hooks(
                 room_id,
                 HookTrigger.ON_TRANSCRIPTION,
@@ -991,7 +1090,8 @@ class VoiceSTTMixin:
             channels=1,
             sample_width=2,
         )
-        result = await self._stt.transcribe(audio_frame)
+        result = await self._stt.transcribe(audio_frame, **self._stt_call_kwargs(session.id))
+        self._observe_stt_language(session, result)
 
         if route and result.text.strip() and self._framework:
             with self._state_lock:
@@ -1010,7 +1110,9 @@ class VoiceSTTMixin:
                 )
 
                 # Fire ON_TRANSCRIPTION hooks (sync, can modify/block)
-                tx_event = TranscriptionEvent(session=session, text=result.text)
+                tx_event = TranscriptionEvent(
+                    session=session, text=result.text, language=result.language
+                )
                 transcription_result = await self._framework.hook_engine.run_sync_hooks(
                     room_id,
                     HookTrigger.ON_TRANSCRIPTION,

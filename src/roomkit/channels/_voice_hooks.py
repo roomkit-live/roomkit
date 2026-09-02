@@ -212,6 +212,7 @@ class VoiceHooksMixin:
                     text=result.text,
                     confidence=result.confidence or 0.0,
                     is_stable=result.is_final,
+                    language=result.language,
                 )
                 await self._framework.hook_engine.run_async_hooks(
                     room_id,

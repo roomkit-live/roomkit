@@ -43,13 +43,14 @@ if TYPE_CHECKING:
     from roomkit.recorder.base import ChannelRecordingConfig
     from roomkit.voice.audio_frame import AudioFrame
     from roomkit.voice.backends.base import VoiceBackend
-    from roomkit.voice.base import VoiceSession
+    from roomkit.voice.base import TranscriptionResult, VoiceSession
     from roomkit.voice.pipeline.config import AudioPipelineConfig
     from roomkit.voice.pipeline.diarization.base import DiarizationResult
     from roomkit.voice.pipeline.engine import AudioPipeline
     from roomkit.voice.pipeline.turn.base import TurnEntry
     from roomkit.voice.pipeline.vad.base import VADEvent
     from roomkit.voice.stt.base import STTProvider
+    from roomkit.voice.stt.language import STTLanguageLock
     from roomkit.voice.tts.base import TTSProvider
 
 logger = logging.getLogger("roomkit.voice")
@@ -89,6 +90,8 @@ class _STTStreamState:
     frame_buffer_rate: int = 16000
     final_text: str | None = None
     partial_text: str | None = None
+    final_result: TranscriptionResult | None = None
+    partial_result: TranscriptionResult | None = None
     error: bool = False
     cancelled: bool = False
 
@@ -141,6 +144,13 @@ class VoiceChannel(
 
     When no pipeline is configured, the channel operates without VAD — the backend
     must handle speech detection externally.
+
+    The STT language can be chosen per session at runtime with
+    :meth:`set_stt_language`; it applies from the session's next stream.
+    ``stt_language_lock`` installs an
+    :class:`~roomkit.voice.stt.language.STTLanguageLock` that starts every
+    session detecting (Deepgram ``multi``), pins it to the language the
+    speaker uses, and releases it when the results stop fitting.
     """
 
     channel_type = ChannelType.VOICE
@@ -166,6 +176,7 @@ class VoiceChannel(
         bridge: bool | AudioBridgeConfig | None = None,
         recording: ChannelRecordingConfig | None = None,
         close_providers: bool = True,
+        stt_language_lock: STTLanguageLock | None = None,
     ) -> None:
         super().__init__(channel_id)
         self._stt = stt
@@ -211,6 +222,19 @@ class VoiceChannel(
         self._pending_audio: dict[str, bytearray] = {}
         # Active streaming STT sessions (session_id -> state)
         self._stt_streams: dict[str, _STTStreamState] = {}
+        # STT language chosen per session (session_id -> language); absent
+        # means the provider's own configuration. Read when a stream opens.
+        self._stt_languages: dict[str, str] = {}
+        # Policy that picks the session language from what the speaker uses
+        if stt_language_lock is not None:
+            if stt is None:
+                raise ValueError("stt_language_lock requires an STT provider")
+            if not getattr(stt, "supports_language_override", False):
+                raise ValueError(
+                    f"stt_language_lock requires an STT provider that supports a "
+                    f"per-session language; {stt.name} does not"
+                )
+        self._stt_language_lock = stt_language_lock
         # Continuous STT mode: stream all audio to STT, no local VAD
         self._continuous_stt = False
         # Post-denoiser energy barge-in state (continuous STT mode, per-session)
@@ -926,6 +950,10 @@ class VoiceChannel(
             # _on_session_ready cannot interleave between the two.
             was_ready_pending = session.id in self._session_ready_pending
             self._session_ready_pending.discard(session.id)
+            # The lock decides the opening language before the first stream
+            # (continuous mode opens it right below).
+            if self._stt_language_lock is not None:
+                self._stt_languages[session.id] = self._stt_language_lock.language_for(session.id)
         # Start VOICE_SESSION telemetry span early so pipeline activation
         # and subsequent operations appear as children in traces.
         from roomkit.telemetry.base import Attr, SpanKind
@@ -1051,6 +1079,11 @@ class VoiceChannel(
         self._pending_turns.pop(session.id, None)
         self._pending_audio.pop(session.id, None)
         self._last_tts_ended_at.pop(session.id, None)
+        # Clear the session's STT language and what the lock knew about it
+        with self._state_lock:
+            self._stt_languages.pop(session.id, None)
+        if self._stt_language_lock is not None:
+            self._stt_language_lock.forget(session.id)
         # Clear per-session audio level timestamps
         self._last_input_level_at.pop(session.id, None)
         self._last_output_level_at.pop(session.id, None)
@@ -1126,6 +1159,51 @@ class VoiceChannel(
         voice IDs from :class:`Agent` instances.
         """
         self._voice_map.update(entries)
+
+    # -------------------------------------------------------------------------
+    # Per-session STT language
+    # -------------------------------------------------------------------------
+
+    def set_stt_language(self, session: VoiceSession, language: str | None) -> None:
+        """Choose the STT language for one session, from its next stream on.
+
+        ``None`` returns the session to the provider's configured language.
+        A streaming STT fixes its language when the stream opens, so the
+        choice lands on the next stream:
+
+        - **VAD mode** — the next utterance. A stream that is open stays
+          open; restarting it would cut the utterance in progress in two.
+        - **Continuous mode** — right away: the current cycle is ended and
+          the loop reconnects with the new language. Audio arriving in the
+          gap is kept, as on every reconnect.
+        - **Batch mode** — the next :meth:`flush_stt`.
+
+        The typical caller is an ``ON_TRANSCRIPTION`` hook reading
+        ``event.language`` from a detecting stream (Deepgram ``multi``) and
+        pinning the session to what it heard;
+        :class:`~roomkit.voice.stt.language.STTLanguageLock` packages that
+        loop.
+
+        Raises:
+            RuntimeError: No STT provider, or one whose
+                ``supports_language_override`` is false.
+        """
+        if self._stt is None:
+            raise RuntimeError("set_stt_language() requires an STT provider")
+        if not getattr(self._stt, "supports_language_override", False):
+            raise RuntimeError(
+                f"{self._stt.name} does not support a per-session language "
+                "(supports_language_override is false)"
+            )
+        if not self._store_stt_language(session.id, language):
+            return
+        if self._continuous_stt:
+            self._restart_continuous_stt_cycle(session.id)
+
+    def get_stt_language(self, session: VoiceSession) -> str | None:
+        """The STT language chosen for a session, ``None`` for the provider's default."""
+        with self._state_lock:
+            return self._stt_languages.get(session.id)
 
     # -------------------------------------------------------------------------
     # Outbound DTMF

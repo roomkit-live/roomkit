@@ -20,6 +20,7 @@ CONSOLE=1 uv run python examples/<example>.py
 | `voice_cloud.py` | Cloud pipeline | Deepgram STT + Claude + ElevenLabs TTS with full audio pipeline |
 | `voice_gradium.py` | Cloud pipeline | Gradium STT/TTS + Claude with local mic |
 | `voice_deepgram_grok.py` | Cloud pipeline | Deepgram STT + Claude Haiku + Grok TTS |
+| `voice_deepgram_language_lock.py` | STT language | Deepgram Nova-3 starts in `multi`, locks the next stream to the language the caller uses |
 | `voice_expressive.py` | TTS | ElevenLabs expressive voice with emotion and accent tags |
 | `voice_neutts.py` | TTS | NeuTTS with zero-shot voice cloning from reference audio |
 | `voice_local_onnx_vllm.py` | Local AI | Fully local voice assistant with sherpa-onnx STT/TTS + vLLM |

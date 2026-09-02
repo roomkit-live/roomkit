@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **The STT language follows the speaker, per session.** A streaming STT does
+  better with its language set than in a detecting mode, but the language is
+  only known once the caller speaks — and every streaming API RoomKit targets
+  fixes it for the life of a stream. RoomKit opens a stream per utterance (VAD
+  mode) or per turn (continuous mode), so it can change between them:
+  `VoiceChannel.set_stt_language(session, "fr-CA")` applies from the session's
+  next stream, `get_stt_language` reads it back, and `None` returns to the
+  provider's configuration. In continuous mode the current cycle is ended so
+  the loop reconnects with the new language right away. `STTLanguageLock`
+  packages the loop — start in Deepgram `multi`, lock to the reported language
+  mapped through `prefer={"fr": "fr-CA"}`, release after consecutive misses —
+  as `VoiceChannel(stt_language_lock=...)`. Example:
+  `examples/voice_deepgram_language_lock.py`.
+- **Deepgram reports the language it heard.** With Nova-3 `multi`,
+  `TranscriptionResult.language` carries the language most words were tagged
+  with (`languages` as the fallback, `detected_language` for prerecorded
+  detection). A stream pinned to one language reports nothing rather than
+  echoing the request. `TranscriptionEvent` and `PartialTranscriptionEvent`
+  carry `language`, so hooks see it.
+
+### Changed
+
+- **`STTProvider.transcribe` and `transcribe_stream` take a keyword-only
+  `language`**, honoured by providers whose new `supports_language_override`
+  is true (Deepgram, `MockSTTProvider`). `VoiceChannel` passes it only to
+  those, so a provider written against the previous signature keeps working
+  unchanged; the RFC (§12.2) states the contract.
+
 ## [0.62.0] — 2026-08-29
 
 ### Added

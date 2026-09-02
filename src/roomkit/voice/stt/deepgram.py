@@ -33,6 +33,42 @@ def _import_deepgram() -> Any:
         ) from exc
 
 
+def _language_of(entry: Any) -> str | None:
+    """A language code from a word, a ``languages`` entry, or a plain string."""
+    if isinstance(entry, str):
+        return entry or None
+    code = entry.get("language") if isinstance(entry, dict) else getattr(entry, "language", None)
+    return code if isinstance(code, str) and code else None
+
+
+def _reported_language(alt: Any, channel: Any = None) -> str | None:
+    """The language Deepgram reports for a result, ``None`` when it reports none.
+
+    Nova-3 ``multi`` tags every word with its language and lists the
+    languages heard in ``languages``. The word tags decide — the language
+    most words carry is the one the speaker used, and a tie keeps the first
+    heard — with ``languages`` as the fallback when words are missing.
+    Prerecorded detection (``detect_language``) reports on the channel.
+    A stream pinned to one language reports nothing, and this returns
+    ``None`` rather than echoing the request. The SDK models accept these
+    fields without typing them, and the v2 shape carries ``{language,
+    score}`` objects where v1 carries strings, so every shape is read.
+    """
+    counts: dict[str, int] = {}
+    for word in getattr(alt, "words", None) or []:
+        code = _language_of(word)
+        if code:
+            counts[code] = counts.get(code, 0) + 1
+    if counts:
+        return max(counts, key=lambda code: counts[code])
+    for entry in getattr(alt, "languages", None) or []:
+        code = _language_of(entry)
+        if code:
+            return code
+    detected = getattr(channel, "detected_language", None)
+    return detected if isinstance(detected, str) and detected else None
+
+
 @dataclass
 class DeepgramConfig:
     """Configuration for Deepgram STT provider.
@@ -101,10 +137,17 @@ class DeepgramSTTProvider(STTProvider):
     def supports_streaming(self) -> bool:
         return True
 
-    def _build_connect_options(self, sample_rate: int = 16000) -> dict[str, Any]:
+    @property
+    def supports_language_override(self) -> bool:
+        return True
+
+    def _build_connect_options(
+        self, sample_rate: int = 16000, language: str | None = None
+    ) -> dict[str, Any]:
         """Build keyword arguments for the SDK connect() call.
 
         The SDK v6 connect() accepts all values as Optional[str].
+        ``language`` replaces the configured one for this connection.
         """
         c = self._config
 
@@ -113,7 +156,7 @@ class DeepgramSTTProvider(STTProvider):
 
         opts: dict[str, Any] = {
             "model": c.model,
-            "language": c.language,
+            "language": language or c.language,
             "encoding": "linear16",
             "sample_rate": str(sample_rate),
             "punctuate": _b(c.punctuate),
@@ -154,6 +197,8 @@ class DeepgramSTTProvider(STTProvider):
     async def transcribe(
         self,
         audio: AudioContent | AudioChunk | AudioFrame,
+        *,
+        language: str | None = None,
     ) -> TranscriptionResult:
         """Transcribe complete audio using the Deepgram REST API.
 
@@ -161,15 +206,17 @@ class DeepgramSTTProvider(STTProvider):
         ``transcribe_url`` so the fetch happens from Deepgram's network,
         not ours — this removes us from the SSRF surface entirely. Raw
         bytes (``AudioChunk`` / ``AudioFrame``) go through
-        ``transcribe_file`` as before.
+        ``transcribe_file`` as before. ``language`` replaces the configured
+        one for this call.
         """
         t0 = time.monotonic()
+        effective_language = language or self._config.language
 
         if hasattr(audio, "url"):
             response = await self._client.listen.v1.media.transcribe_url(
                 url=audio.url,
                 model=self._config.model,
-                language=self._config.language,
+                language=effective_language,
                 smart_format=self._config.smart_format,
                 punctuate=self._config.punctuate,
             )
@@ -181,7 +228,7 @@ class DeepgramSTTProvider(STTProvider):
             response = await self._client.listen.v1.media.transcribe_file(
                 request=audio_data,
                 model=self._config.model,
-                language=self._config.language,
+                language=effective_language,
                 smart_format=self._config.smart_format,
                 punctuate=self._config.punctuate,
                 encoding="linear16",
@@ -198,10 +245,12 @@ class DeepgramSTTProvider(STTProvider):
         logger.debug("Deepgram batch transcription: %.0fms", ttfb_ms)
 
         try:
-            alt = response.results.channels[0].alternatives[0]
+            channel = response.results.channels[0]
+            alt = channel.alternatives[0]
             return TranscriptionResult(
                 text=alt.transcript.strip(),
                 confidence=alt.confidence,
+                language=_reported_language(alt, channel),
             )
         except (AttributeError, IndexError):
             logger.warning("No transcript in Deepgram response")
@@ -210,8 +259,15 @@ class DeepgramSTTProvider(STTProvider):
     async def transcribe_stream(
         self,
         audio_stream: AsyncIterator[AudioChunk],
+        *,
+        language: str | None = None,
     ) -> AsyncIterator[TranscriptionResult]:
-        """Stream transcription using the Deepgram SDK WebSocket client."""
+        """Stream transcription using the Deepgram SDK WebSocket client.
+
+        ``language`` replaces the configured one for this stream. Deepgram
+        fixes the language in the connection URL, so it holds for the life
+        of the stream; the caller opens a new stream to change it.
+        """
         from deepgram.core.events import EventType  # noqa: N813
 
         # Read first chunk to detect sample rate
@@ -231,7 +287,7 @@ class DeepgramSTTProvider(STTProvider):
             sample_rate,
         )
 
-        opts = self._build_connect_options(sample_rate)
+        opts = self._build_connect_options(sample_rate, language)
         logger.info(
             "Deepgram stream: connecting with model=%s, sample_rate=%s, opts=%s",
             opts.get("model"),
@@ -266,6 +322,7 @@ class DeepgramSTTProvider(STTProvider):
                         text=transcript,
                         is_final=is_final,
                         confidence=confidence,
+                        language=_reported_language(alt),
                         words=words,
                     )
                 )

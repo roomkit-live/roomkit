@@ -77,6 +77,48 @@ stt = DeepgramSTTProvider(DeepgramConfig(
 ))
 ```
 
+### STT language per session
+
+A streaming STT fixes its language when the stream opens. RoomKit opens one
+stream per utterance (VAD mode) or per turn (continuous mode), so the
+language can change between them: `VoiceChannel.set_stt_language(session,
+"fr-CA")` applies from the session's next stream, `None` returns to the
+provider's configuration, `get_stt_language(session)` reads it back. Only
+providers with `supports_language_override` (Deepgram, the mock) are handed
+a language. `TranscriptionResult.language`, `TranscriptionEvent.language`
+and `PartialTranscriptionEvent.language` carry what the provider reported —
+Deepgram Nova-3 in `language="multi"` reports the language most words were
+tagged with; a pinned stream reports nothing.
+
+`STTLanguageLock` packages the detect-then-lock loop:
+
+```python
+from roomkit import STTLanguageLock, VoiceChannel
+
+voice = VoiceChannel(
+    "voice",
+    stt=DeepgramSTTProvider(DeepgramConfig(api_key="...", model="nova-3", language="multi")),
+    backend=backend,
+    pipeline=AudioPipelineConfig(),
+    stt_language_lock=STTLanguageLock(
+        detect_language="multi",   # every session starts here
+        prefer={"fr": "fr-CA"},    # reported -> locked
+        lock_after=1,              # agreeing finals before locking
+        release_after=2,           # consecutive misses (no text, low confidence,
+    ),                             # another language) before detecting again
+)
+```
+
+Or from a hook, with the same primitives:
+
+```python
+@kit.hook(HookTrigger.ON_TRANSCRIPTION)
+async def pin_language(event, ctx):
+    if event.language == "fr":
+        voice.set_stt_language(event.session, "fr-CA")
+    return HookResult.allow()
+```
+
 ## TTS Providers
 
 | Provider | Class | Config | Extra |

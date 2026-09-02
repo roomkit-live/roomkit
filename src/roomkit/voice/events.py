@@ -82,6 +82,11 @@ class TranscriptionEvent:
     text: str
     """The transcribed text."""
 
+    language: str | None = None
+    """The language the STT provider reports for the text — what it detected
+    when it was asked to detect (Deepgram ``multi``), ``None`` when it said
+    nothing. Never an echo of the language it was configured with."""
+
     timestamp: datetime = field(default_factory=_utcnow)
     """When the transcription was produced."""
 
@@ -112,6 +117,9 @@ class PartialTranscriptionEvent:
 
     role: str = "user"
     """Who spoke: 'user' (input) or 'assistant' (AI output)."""
+
+    language: str | None = None
+    """The language the STT provider reports for this partial, if any."""
 
     timestamp: datetime = field(default_factory=_utcnow)
     """When this transcription was received."""

@@ -134,7 +134,10 @@ class GradiumSTTProvider(STTProvider):
         return setup
 
     async def transcribe(
-        self, audio: AudioContent | AudioChunk | AudioFrame
+        self,
+        audio: AudioContent | AudioChunk | AudioFrame,
+        *,
+        language: str | None = None,
     ) -> TranscriptionResult:
         """Transcribe complete audio to text using the Gradium SDK."""
         if hasattr(audio, "url"):
@@ -154,7 +157,10 @@ class GradiumSTTProvider(STTProvider):
         return TranscriptionResult(text=result.text)
 
     async def transcribe_stream(
-        self, audio_stream: AsyncIterator[AudioChunk]
+        self,
+        audio_stream: AsyncIterator[AudioChunk],
+        *,
+        language: str | None = None,
     ) -> AsyncIterator[TranscriptionResult]:
         """Stream transcription with real-time results.
 

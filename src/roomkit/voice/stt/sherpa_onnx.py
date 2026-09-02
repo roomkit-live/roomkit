@@ -165,7 +165,10 @@ class SherpaOnnxSTTProvider(STTProvider):
         logger.info("STT model warmed up (mode=%s)", self._config.mode)
 
     async def transcribe(
-        self, audio: AudioContent | AudioChunk | AudioFrame
+        self,
+        audio: AudioContent | AudioChunk | AudioFrame,
+        *,
+        language: str | None = None,
     ) -> TranscriptionResult:
         """Transcribe complete audio.
 
@@ -225,7 +228,10 @@ class SherpaOnnxSTTProvider(STTProvider):
         return TranscriptionResult(text=text)
 
     async def transcribe_stream(
-        self, audio_stream: AsyncIterator[AudioChunk]
+        self,
+        audio_stream: AsyncIterator[AudioChunk],
+        *,
+        language: str | None = None,
     ) -> AsyncIterator[TranscriptionResult]:
         """Stream transcription with partial results using OnlineRecognizer.
 

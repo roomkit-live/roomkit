@@ -365,7 +365,10 @@ class GeminiSTTProvider(STTProvider):
     # ------------------------------------------------------------------
 
     async def transcribe(
-        self, audio: AudioContent | AudioChunk | AudioFrame
+        self,
+        audio: AudioContent | AudioChunk | AudioFrame,
+        *,
+        language: str | None = None,
     ) -> TranscriptionResult:
         """Transcribe a complete recording.
 

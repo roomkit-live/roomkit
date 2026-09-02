@@ -93,3 +93,115 @@ class TestDeepgramSTTProvider:
         assert opts["language"] == "fr"
         assert opts["sample_rate"] == "24000"
         assert opts["encoding"] == "linear16"
+
+
+# ---------------------------------------------------------------------------
+# Language: what Deepgram reports, and the per-call override
+# ---------------------------------------------------------------------------
+
+
+def _alt(**fields: Any) -> SimpleNamespace:
+    return SimpleNamespace(transcript="x", confidence=0.9, **fields)
+
+
+class TestReportedLanguage:
+    """``_reported_language`` reads every shape Deepgram uses, and only reports."""
+
+    def test_word_majority_wins(self) -> None:
+        from roomkit.voice.stt.deepgram import _reported_language
+
+        words = [
+            SimpleNamespace(word="bonjour", language="fr"),
+            SimpleNamespace(word="hello", language="en"),
+            SimpleNamespace(word="monde", language="fr"),
+        ]
+        assert _reported_language(_alt(words=words, languages=["en", "fr"])) == "fr"
+
+    def test_tie_keeps_the_first_heard(self) -> None:
+        from roomkit.voice.stt.deepgram import _reported_language
+
+        words = [
+            SimpleNamespace(word="hello", language="en"),
+            SimpleNamespace(word="bonjour", language="fr"),
+        ]
+        assert _reported_language(_alt(words=words)) == "en"
+
+    def test_languages_list_when_words_are_untagged(self) -> None:
+        from roomkit.voice.stt.deepgram import _reported_language
+
+        words = [SimpleNamespace(word="hola")]
+        assert _reported_language(_alt(words=words, languages=["es"])) == "es"
+        # v2 shape: objects with a score
+        scored = [{"language": "de", "score": 0.97}]
+        assert _reported_language(_alt(words=words, languages=scored)) == "de"
+        objs = [SimpleNamespace(language="it", score=0.9)]
+        assert _reported_language(_alt(words=words, languages=objs)) == "it"
+
+    def test_dict_words_are_read_too(self) -> None:
+        from roomkit.voice.stt.deepgram import _reported_language
+
+        words = [{"word": "oui", "language": "fr"}, {"word": "oui", "language": "fr"}]
+        assert _reported_language(_alt(words=words)) == "fr"
+
+    def test_pinned_stream_reports_nothing(self) -> None:
+        """No tags, no list: None — never an echo of the requested language."""
+        from roomkit.voice.stt.deepgram import _reported_language
+
+        words = [SimpleNamespace(word="bonjour"), SimpleNamespace(word="monde")]
+        assert _reported_language(_alt(words=words)) is None
+        assert _reported_language(_alt()) is None
+
+    def test_prerecorded_detection_on_the_channel(self) -> None:
+        from roomkit.voice.stt.deepgram import _reported_language
+
+        channel = SimpleNamespace(detected_language="pt")
+        assert _reported_language(_alt(words=[]), channel) == "pt"
+
+
+class TestLanguageOverride:
+    def test_supports_language_override(self) -> None:
+        dg = _mock_deepgram_module()
+        provider = _make_provider(dg, api_key="k")
+        assert provider.supports_language_override is True
+
+    def test_connect_options_take_the_override(self) -> None:
+        dg = _mock_deepgram_module()
+        provider = _make_provider(dg, api_key="k", model="nova-3", language="multi")
+        assert provider._build_connect_options(16000)["language"] == "multi"
+        assert provider._build_connect_options(16000, None)["language"] == "multi"
+        assert provider._build_connect_options(16000, "fr-CA")["language"] == "fr-CA"
+
+    async def test_batch_transcribe_takes_the_override_and_reports(self) -> None:
+        dg = _mock_deepgram_module()
+        provider = _make_provider(dg, api_key="k", language="multi")
+
+        alt = SimpleNamespace(
+            transcript="bonjour le monde",
+            confidence=0.95,
+            words=[SimpleNamespace(word="bonjour", language="fr")],
+        )
+        channel = SimpleNamespace(alternatives=[alt])
+        response = SimpleNamespace(results=SimpleNamespace(channels=[channel]))
+        provider._client.listen.v1.media.transcribe_file = AsyncMock(return_value=response)
+
+        audio = AudioChunk(data=b"\x00\x01" * 100, sample_rate=16000)
+        result = await provider.transcribe(audio, language="fr-CA")
+
+        kwargs = provider._client.listen.v1.media.transcribe_file.await_args.kwargs
+        assert kwargs["language"] == "fr-CA"
+        assert result.language == "fr"
+
+    async def test_batch_transcribe_default_is_the_config(self) -> None:
+        dg = _mock_deepgram_module()
+        provider = _make_provider(dg, api_key="k", language="multi")
+        alt = SimpleNamespace(transcript="hi", confidence=0.9)
+        response = SimpleNamespace(
+            results=SimpleNamespace(channels=[SimpleNamespace(alternatives=[alt])])
+        )
+        provider._client.listen.v1.media.transcribe_file = AsyncMock(return_value=response)
+
+        result = await provider.transcribe(AudioChunk(data=b"\x00\x01" * 10, sample_rate=16000))
+
+        kwargs = provider._client.listen.v1.media.transcribe_file.await_args.kwargs
+        assert kwargs["language"] == "multi"
+        assert result.language is None

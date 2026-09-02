@@ -1,6 +1,6 @@
 # API Reference
 
-RoomKit exports **191 symbols** from `roomkit`. Providers and voice types import from subpackages.
+RoomKit exports **192 symbols** from `roomkit`. Providers and voice types import from subpackages.
 
 ## Top-Level Imports (`from roomkit import ...`)
 
@@ -417,6 +417,7 @@ from roomkit.voice.pipeline import (
     MockAudioRecorder, MockTurnDetector, MockBackchannelDetector,
 )
 from roomkit.voice.interruption import InterruptionConfig, InterruptionStrategy
+from roomkit.voice.stt.language import STTLanguageLock  # also exported from roomkit
 from roomkit.voice.audio_frame import AudioFrame
 ```
 

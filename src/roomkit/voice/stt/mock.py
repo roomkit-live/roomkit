@@ -14,35 +14,69 @@ if TYPE_CHECKING:
 
 
 class MockSTTProvider(STTProvider):
-    """Mock speech-to-text for testing."""
+    """Mock speech-to-text for testing.
 
-    def __init__(self, transcripts: list[str] | None = None, *, streaming: bool = False) -> None:
+    Args:
+        transcripts: Texts returned in turn, cycling.
+        streaming: Whether to advertise streaming support.
+        languages: The language each result reports, in step with
+            ``transcripts`` and cycling the same way — what a detecting
+            provider would have heard. ``None`` entries report nothing.
+    """
+
+    def __init__(
+        self,
+        transcripts: list[str] | None = None,
+        *,
+        streaming: bool = False,
+        languages: list[str | None] | None = None,
+    ) -> None:
         self.transcripts = transcripts or ["Hello", "How can I help you?"]
         self.calls: list[AudioContent | AudioChunk | AudioFrame] = []
+        self.languages_requested: list[str | None] = []
+        """The ``language`` handed to each call, in order (``None`` = the default)."""
         self._index = 0
         self._streaming = streaming
+        self._languages = languages
 
     @property
     def supports_streaming(self) -> bool:
         return self._streaming
 
+    @property
+    def supports_language_override(self) -> bool:
+        return True
+
+    def _next(self) -> tuple[str, str | None]:
+        i = self._index
+        self._index += 1
+        text = self.transcripts[i % len(self.transcripts)]
+        language = self._languages[i % len(self._languages)] if self._languages else None
+        return text, language
+
     async def transcribe(
-        self, audio: AudioContent | AudioChunk | AudioFrame
+        self,
+        audio: AudioContent | AudioChunk | AudioFrame,
+        *,
+        language: str | None = None,
     ) -> TranscriptionResult:
         self.calls.append(audio)
-        text = self.transcripts[self._index % len(self.transcripts)]
-        self._index += 1
-        return TranscriptionResult(text=text)
+        self.languages_requested.append(language)
+        text, reported = self._next()
+        return TranscriptionResult(text=text, language=reported)
 
     async def transcribe_stream(
-        self, audio_stream: AsyncIterator[AudioChunk]
+        self,
+        audio_stream: AsyncIterator[AudioChunk],
+        *,
+        language: str | None = None,
     ) -> AsyncIterator[TranscriptionResult]:
+        self.languages_requested.append(language)
         chunks = []
         async for chunk in audio_stream:
             chunks.append(chunk)
 
-        text = self.transcripts[self._index % len(self.transcripts)]
-        self._index += 1
+        text, reported = self._next()
         self.calls.extend(chunks)
 
-        yield TranscriptionResult(text=text, is_final=True)
+        yield TranscriptionResult(text=text, is_final=True, language=reported)

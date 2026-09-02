@@ -137,7 +137,10 @@ class Qwen3ASRProvider(STTProvider):
         logger.info("Qwen3-ASR model warmed up (backend=%s)", self._config.backend)
 
     async def transcribe(
-        self, audio: AudioContent | AudioChunk | AudioFrame
+        self,
+        audio: AudioContent | AudioChunk | AudioFrame,
+        *,
+        language: str | None = None,
     ) -> TranscriptionResult:
         """Transcribe complete audio.
 
@@ -171,7 +174,10 @@ class Qwen3ASRProvider(STTProvider):
         return TranscriptionResult(text=text)
 
     async def transcribe_stream(
-        self, audio_stream: AsyncIterator[AudioChunk]
+        self,
+        audio_stream: AsyncIterator[AudioChunk],
+        *,
+        language: str | None = None,
     ) -> AsyncIterator[TranscriptionResult]:
         """Stream transcription with partial results.
 

@@ -109,6 +109,7 @@ from roomkit.voice.pipeline import (
     WebRTCNoiseSuppressorProvider,
 )
 from roomkit.voice.stt.base import STTProvider
+from roomkit.voice.stt.language import STTLanguageLock
 from roomkit.voice.tts.base import TTSProvider
 from roomkit.voice.tts.filters import StripBrackets, StripInternalTags, TTSStreamFilter
 
@@ -220,6 +221,7 @@ __all__ = [
     # Inbound helpers
     "parse_voice_session",
     # Providers
+    "STTLanguageLock",
     "STTProvider",
     "TTSProvider",
     # TTS filters
