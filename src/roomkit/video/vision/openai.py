@@ -34,6 +34,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
+from roomkit.providers.utils import http_timeout
 from roomkit.video.video_frame import VideoFrame
 from roomkit.video.vision.base import DEFAULT_VISION_PROMPT, VisionProvider, VisionResult
 from roomkit.video.vision.encode import frame_to_jpeg_base64
@@ -53,6 +54,7 @@ class OpenAIVisionConfig:
         max_tokens: Max response tokens.
         temperature: Sampling temperature.
         timeout: HTTP timeout in seconds.
+        connect_timeout: TCP connect timeout in seconds, apart from ``timeout``.
         detail: Image detail level (``low``, ``high``, ``auto``).
     """
 
@@ -63,6 +65,7 @@ class OpenAIVisionConfig:
     max_tokens: int = 100
     temperature: float = 0.3
     timeout: float = 30.0
+    connect_timeout: float = 5.0
     detail: Literal["low", "high", "auto"] = "low"
 
 
@@ -119,7 +122,7 @@ class OpenAIVisionProvider(VisionProvider):
             self._client = openai.AsyncOpenAI(
                 api_key=self._config.api_key,
                 base_url=self._config.base_url,
-                timeout=self._config.timeout,
+                timeout=http_timeout(self._config),
             )
         return self._client
 

@@ -133,6 +133,7 @@ class SSESource(BaseSourceProvider):
         headers: dict[str, str] | None = None,
         params: dict[str, str] | None = None,
         timeout: float = 30.0,
+        connect_timeout: float = 5.0,
         last_event_id: str | None = None,
         reconnect: bool = False,
         max_reconnect_backoff: float = 30.0,
@@ -148,7 +149,9 @@ class SSESource(BaseSourceProvider):
                 If None, uses default JSON parser.
             headers: HTTP headers for the request (e.g., Authorization).
             params: Query parameters for the URL.
-            timeout: Connection timeout in seconds.
+            timeout: Write and pool timeout in seconds. The read side is left
+                unbounded so the stream survives idle periods between events.
+            connect_timeout: TCP connect timeout in seconds, apart from ``timeout``.
             last_event_id: Resume from this event ID (sent as Last-Event-ID header).
             reconnect: Automatically reconnect with exponential backoff on errors.
                 When enabled, ``Last-Event-ID`` is sent on reconnection for resumption.
@@ -164,6 +167,7 @@ class SSESource(BaseSourceProvider):
         self._reconnect = reconnect
         self._max_reconnect_backoff = max_reconnect_backoff
         self._timeout = timeout
+        self._connect_timeout = connect_timeout
         self._last_event_id = last_event_id
         self._client: Any = None
         self._rate_limit = rate_limit
@@ -197,9 +201,10 @@ class SSESource(BaseSourceProvider):
                 headers["Last-Event-ID"] = self._last_event_id
 
             try:
-                # Use read_timeout=None so the SSE stream isn't closed
-                # during idle periods between events.
-                timeout = httpx.Timeout(self._timeout, read=None)
+                # ``read=None`` keeps the stream open through idle periods
+                # between events; the connect is bounded on its own so a dead
+                # host is given up on in seconds, not after ``timeout``.
+                timeout = httpx.Timeout(self._timeout, connect=self._connect_timeout, read=None)
                 async with httpx.AsyncClient(timeout=timeout) as client:
                     self._client = client
 

@@ -155,6 +155,7 @@ class TestMetadata:
             ({"language": "  "}, "language"),
             ({"timeout": 0}, "timeout"),
             ({"timeout": float("inf")}, "timeout"),
+            ({"connect_timeout": 0}, "connect_timeout"),
         ],
     )
     def test_invalid_config_is_rejected(self, overrides: dict[str, Any], message: str) -> None:
@@ -203,7 +204,9 @@ class TestSynthesize:
         # ``mime_type``/``delivery`` are 400s on the live API — only ``type``.
         assert call["response_format"] == {"type": "audio"}
         assert call["generation_config"] == {"speech_config": [{"voice": "Puck"}]}
-        assert call["timeout"] == 120.0
+        # The split lives on the SDK's httpx client: a per-request timeout
+        # would be flattened by google-genai to one float (RMK-149).
+        assert "timeout" not in call
 
     async def test_language_is_forwarded_when_configured(self) -> None:
         provider, client = _provider(language="fr-CA")

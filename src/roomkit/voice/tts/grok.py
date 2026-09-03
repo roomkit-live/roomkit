@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 
 import httpx
 
+from roomkit.providers.utils import http_timeout
 from roomkit.voice.base import AudioChunk
 from roomkit.voice.tts.base import TTSProvider
 
@@ -49,6 +50,7 @@ class GrokTTSConfig:
         base_url: Override the REST API base URL.
         ws_url: Override the WebSocket streaming URL.
         timeout: HTTP request timeout in seconds.
+        connect_timeout: TCP connect timeout in seconds, apart from ``timeout``.
     """
 
     api_key: str = field(repr=False)
@@ -60,6 +62,7 @@ class GrokTTSConfig:
     base_url: str = "https://api.x.ai/v1"
     ws_url: str = "wss://api.x.ai/v1/tts"
     timeout: float = 60.0
+    connect_timeout: float = 5.0
 
 
 class GrokTTSProvider(TTSProvider):
@@ -100,7 +103,7 @@ class GrokTTSProvider(TTSProvider):
                     "Authorization": f"Bearer {self._config.api_key}",
                     "Content-Type": "application/json",
                 },
-                timeout=self._config.timeout,
+                timeout=http_timeout(self._config),
             )
         return self._client
 

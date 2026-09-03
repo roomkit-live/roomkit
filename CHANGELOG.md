@@ -56,6 +56,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   proxy slow enough to need more sets `connect_timeout` on the config. A
   parametrized test reads back the timeout each client construction actually
   received and fails the day one passes the float again.
+- **The HTTP clients outside `roomkit.providers` split the connect timeout
+  too.** Grok TTS, OpenAI vision, the WebSocket avatar, the SSE source and
+  Gemini TTS/STT still handed httpx or their SDK `timeout` as a bare float,
+  so a dead host held them for the read budget (30 to 600 s) before the
+  kernel gave up. They carry `connect_timeout` (default 5 s) beside
+  `timeout` now: a field on `GrokTTSConfig`, `OpenAIVisionConfig`,
+  `GeminiTTSConfig` and `GeminiSTTConfig`, a keyword on
+  `WebSocketAvatarProvider` and `SSESource`. Two differ from the rest.
+  `SSESource.timeout` no longer bounds the connect, only write and pool; its
+  read side stays unbounded so the stream survives idle periods. Gemini sets
+  the split on the SDK's httpx client through `HttpOptions` rather than per
+  request, because google-genai flattens a per-request `httpx.Timeout` to
+  its largest value. A parametrized test reads back the timeout each of
+  these eight client constructions received.
 
 ## [0.62.0] — 2026-08-29
 

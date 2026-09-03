@@ -63,6 +63,7 @@ from roomkit.providers.voicemeup.sms import VoiceMeUpSMSProvider
 from roomkit.providers.xai.ai import XAIAIProvider
 from roomkit.providers.xai.config import XAIConfig, XAIImageConfig
 from roomkit.providers.xai.image import XAIImageProvider
+from tests.http_timeout_fakes import RecordingAsyncClient, read_and_close
 
 # Distinctive on purpose: equal values would let a swapped connect/read pass.
 TIMEOUT = 42.0
@@ -78,48 +79,11 @@ Builder = Callable[[], Awaitable[Any]]
 # ---------------------------------------------------------------------------
 
 
-class _FakeResponse:
-    def raise_for_status(self) -> None:
-        return None
-
-    def json(self) -> dict[str, Any]:
-        return {"data": []}
-
-
-class _RecordingAsyncClient:
-    """Stand-in for ``httpx.AsyncClient`` that records its constructor kwargs.
-
-    For the two providers that open a throwaway client inside a method
-    (``GET /models``), where nothing holds the client afterwards.
-    """
-
-    calls: list[dict[str, Any]] = []
-
-    def __init__(self, **kwargs: Any) -> None:
-        type(self).calls.append(kwargs)
-
-    async def __aenter__(self) -> _RecordingAsyncClient:
-        return self
-
-    async def __aexit__(self, *exc: object) -> None:
-        return None
-
-    async def get(self, *args: Any, **kwargs: Any) -> _FakeResponse:
-        return _FakeResponse()
-
-
 def _sdk_module() -> MagicMock:
     """A module stub whose constructors record what the provider passed."""
     mod = MagicMock()
     mod.PolarGrid.create = AsyncMock(return_value=MagicMock())
     return mod
-
-
-async def _read_and_close(client: httpx.AsyncClient) -> httpx.Timeout:
-    try:
-        return client.timeout
-    finally:
-        await client.aclose()
 
 
 # ---------------------------------------------------------------------------
@@ -129,64 +93,64 @@ async def _read_and_close(client: httpx.AsyncClient) -> httpx.Timeout:
 
 async def _twilio_sms() -> Any:
     cfg = TwilioConfig(account_sid="AC1", auth_token="t", from_number=_NUMBER, **_TIMEOUTS)
-    return await _read_and_close(TwilioSMSProvider(cfg)._client)
+    return await read_and_close(TwilioSMSProvider(cfg)._client)
 
 
 async def _twilio_rcs() -> Any:
     cfg = TwilioRCSConfig(
         account_sid="AC1", auth_token="t", messaging_service_sid="MG1", **_TIMEOUTS
     )
-    return await _read_and_close(TwilioRCSProvider(cfg)._client)
+    return await read_and_close(TwilioRCSProvider(cfg)._client)
 
 
 async def _telnyx_sms() -> Any:
     cfg = TelnyxConfig(api_key="k", from_number=_NUMBER, **_TIMEOUTS)
-    return await _read_and_close(TelnyxSMSProvider(cfg)._client)
+    return await read_and_close(TelnyxSMSProvider(cfg)._client)
 
 
 async def _telnyx_rcs() -> Any:
     cfg = TelnyxRCSConfig(api_key="k", agent_id="agent", **_TIMEOUTS)
-    return await _read_and_close(TelnyxRCSProvider(cfg)._client)
+    return await read_and_close(TelnyxRCSProvider(cfg)._client)
 
 
 async def _sinch_sms() -> Any:
     cfg = SinchConfig(service_plan_id="sp", api_token="t", from_number=_NUMBER, **_TIMEOUTS)
-    return await _read_and_close(SinchSMSProvider(cfg)._client)
+    return await read_and_close(SinchSMSProvider(cfg)._client)
 
 
 async def _voicemeup_sms() -> Any:
     cfg = VoiceMeUpConfig(username="u", auth_token="t", from_number=_NUMBER, **_TIMEOUTS)
-    return await _read_and_close(VoiceMeUpSMSProvider(cfg)._client)
+    return await read_and_close(VoiceMeUpSMSProvider(cfg)._client)
 
 
 async def _telegram() -> Any:
     cfg = TelegramConfig(bot_token="t", **_TIMEOUTS)
-    return await _read_and_close(TelegramBotAPI(cfg)._client)
+    return await read_and_close(TelegramBotAPI(cfg)._client)
 
 
 async def _messenger() -> Any:
     cfg = MessengerConfig(page_access_token="t", **_TIMEOUTS)
-    return await _read_and_close(FacebookMessengerProvider(cfg)._client)
+    return await read_and_close(FacebookMessengerProvider(cfg)._client)
 
 
 async def _webhook_http() -> Any:
     cfg = HTTPProviderConfig(webhook_url="https://example.com/hook", **_TIMEOUTS)
-    return await _read_and_close(WebhookHTTPProvider(cfg)._client)
+    return await read_and_close(WebhookHTTPProvider(cfg)._client)
 
 
 async def _sendgrid() -> Any:
     cfg = SendGridConfig(api_key="k", from_email="a@example.com", **_TIMEOUTS)
-    return await _read_and_close(SendGridProvider(cfg)._client)
+    return await read_and_close(SendGridProvider(cfg)._client)
 
 
 async def _elasticemail() -> Any:
     cfg = ElasticEmailConfig(api_key="k", from_email="a@example.com", **_TIMEOUTS)
-    return await _read_and_close(ElasticEmailProvider(cfg)._client)
+    return await read_and_close(ElasticEmailProvider(cfg)._client)
 
 
 async def _openrouter_image() -> Any:
     cfg = OpenRouterImageConfig(api_key="k", model="m", **_TIMEOUTS)
-    return await _read_and_close(OpenRouterImageProvider(cfg)._http)
+    return await read_and_close(OpenRouterImageProvider(cfg)._http)
 
 
 async def _openai() -> Any:
@@ -307,19 +271,19 @@ async def _xai_image() -> Any:
 async def _openrouter_models_fetch() -> Any:
     with patch.dict("sys.modules", {"openai": _sdk_module()}):
         provider = OpenRouterAIProvider(OpenRouterConfig(api_key="k", model="m", **_TIMEOUTS))
-    _RecordingAsyncClient.calls.clear()
-    with patch("httpx.AsyncClient", _RecordingAsyncClient):
+    RecordingAsyncClient.calls.clear()
+    with patch("httpx.AsyncClient", RecordingAsyncClient):
         await provider._fetch_models_json()
-    return _RecordingAsyncClient.calls[-1]["timeout"]
+    return RecordingAsyncClient.calls[-1]["timeout"]
 
 
 async def _litellm_model_info_fetch() -> Any:
     with patch.dict("sys.modules", {"openai": _sdk_module()}):
         provider = LiteLLMAIProvider(LiteLLMConfig(api_key="k", model="m", **_TIMEOUTS))
-    _RecordingAsyncClient.calls.clear()
-    with patch("httpx.AsyncClient", _RecordingAsyncClient):
+    RecordingAsyncClient.calls.clear()
+    with patch("httpx.AsyncClient", RecordingAsyncClient):
         await provider._fetch_model_info()
-    return _RecordingAsyncClient.calls[-1]["timeout"]
+    return RecordingAsyncClient.calls[-1]["timeout"]
 
 
 CASES: dict[str, Builder] = {

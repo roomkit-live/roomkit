@@ -29,6 +29,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from roomkit.providers.gemini.voices import VOICES
+from roomkit.providers.utils import http_timeout
 from roomkit.voice.base import AudioChunk
 from roomkit.voice.tts.audio_utils import wrap_wav
 from roomkit.voice.tts.base import TTSProvider
@@ -84,6 +85,7 @@ class GeminiTTSConfig:
         timeout: Per-request timeout in seconds. Generous by design: measured
             time-to-first-audio for a one-sentence prompt ranges from ~1.2 s to
             ~8 s on the default model, and long text is slower still.
+        connect_timeout: TCP connect timeout in seconds, apart from ``timeout``.
     """
 
     api_key: str = field(repr=False)
@@ -92,6 +94,7 @@ class GeminiTTSConfig:
     language: str | None = None
     style_prompt: str | None = None
     timeout: float = 120.0
+    connect_timeout: float = 5.0
 
     def __post_init__(self) -> None:
         if not self.api_key.strip():
@@ -104,6 +107,8 @@ class GeminiTTSConfig:
             raise ValueError("language must not be blank when provided")
         if not math.isfinite(self.timeout) or self.timeout <= 0:
             raise ValueError("timeout must be a positive finite number")
+        if not math.isfinite(self.connect_timeout) or self.connect_timeout <= 0:
+            raise ValueError("connect_timeout must be a positive finite number")
 
 
 class GeminiTTSProvider(TTSProvider):
@@ -150,7 +155,17 @@ class GeminiTTSProvider(TTSProvider):
                     "Install it with: pip install roomkit[gemini]"
                 ) from exc
 
-            self._client = genai.Client(api_key=self._config.api_key)
+            # The connect/read split lives on the SDK's httpx client: a
+            # per-request ``timeout`` would be flattened by google-genai to
+            # its largest value and hand the read budget to the connect again.
+            timeout = http_timeout(self._config)
+            self._client = genai.Client(
+                api_key=self._config.api_key,
+                http_options=genai.types.HttpOptions(
+                    client_args={"timeout": timeout},
+                    async_client_args={"timeout": timeout},
+                ),
+            )
         return self._client
 
     def _build_prompt(self, text: str) -> str:
@@ -212,7 +227,8 @@ class GeminiTTSProvider(TTSProvider):
             # ``type`` is the only field it accepts here.
             response_format={"type": "audio"},
             generation_config=self._generation_config(voice),
-            timeout=self._config.timeout,
+            # No per-request ``timeout``: the SDK would flatten it to one float;
+            # the connect/read split is on the client (``_get_client``).
         )
 
     # ------------------------------------------------------------------

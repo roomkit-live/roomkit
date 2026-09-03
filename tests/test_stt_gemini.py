@@ -135,6 +135,7 @@ class TestMetadata:
             ({"language": " "}, "language"),
             ({"timeout": 0}, "timeout"),
             ({"timeout": float("nan")}, "timeout"),
+            ({"connect_timeout": float("nan")}, "connect_timeout"),
             ({"max_inline_bytes": 0}, "max_inline_bytes"),
         ],
     )
@@ -156,7 +157,9 @@ class TestRequestShape:
 
         call = client.interactions.calls[0]
         assert call["model"] == "gemini-3.6-flash"
-        assert call["timeout"] == 600.0
+        # The split lives on the SDK's httpx client: a per-request timeout
+        # would be flattened by google-genai to one float (RMK-149).
+        assert "timeout" not in call
         audio, prompt = call["input"]
         assert audio["type"] == "audio"
         assert audio["mime_type"] == "audio/wav"

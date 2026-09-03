@@ -38,6 +38,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
+from roomkit.providers.utils import http_timeout
 from roomkit.voice.base import TranscriptionResult
 from roomkit.voice.stt.base import STTProvider
 
@@ -161,6 +162,7 @@ class GeminiSTTConfig:
             formatting rules, anything the model should know before it listens.
         timeout: Per-request timeout in seconds. Generous by design: a model
             answering on an hour of audio is not answering in milliseconds.
+        connect_timeout: TCP connect timeout in seconds, apart from ``timeout``.
         max_inline_bytes: Recordings larger than this are uploaded through the
             Files API instead of being inlined in the request.
     """
@@ -171,6 +173,7 @@ class GeminiSTTConfig:
     diarize: bool = True
     prompt: str | None = None
     timeout: float = 600.0
+    connect_timeout: float = 5.0
     max_inline_bytes: int = _MAX_INLINE_BYTES
 
     def __post_init__(self) -> None:
@@ -182,6 +185,8 @@ class GeminiSTTConfig:
             raise ValueError("language must not be blank when provided")
         if not math.isfinite(self.timeout) or self.timeout <= 0:
             raise ValueError("timeout must be a positive finite number")
+        if not math.isfinite(self.connect_timeout) or self.connect_timeout <= 0:
+            raise ValueError("connect_timeout must be a positive finite number")
         if self.max_inline_bytes <= 0:
             raise ValueError("max_inline_bytes must be positive")
 
@@ -229,7 +234,17 @@ class GeminiSTTProvider(STTProvider):
                     "Install it with: pip install roomkit[gemini]"
                 ) from exc
 
-            self._client = genai.Client(api_key=self._config.api_key)
+            # The connect/read split lives on the SDK's httpx client: a
+            # per-request ``timeout`` would be flattened by google-genai to
+            # its largest value and hand the read budget to the connect again.
+            timeout = http_timeout(self._config)
+            self._client = genai.Client(
+                api_key=self._config.api_key,
+                http_options=genai.types.HttpOptions(
+                    client_args={"timeout": timeout},
+                    async_client_args={"timeout": timeout},
+                ),
+            )
         return self._client
 
     def _build_prompt(self) -> str:
@@ -415,7 +430,8 @@ class GeminiSTTProvider(STTProvider):
                     "mime_type": "application/json",
                     "schema": _TRANSCRIPT_SCHEMA,
                 },
-                timeout=self._config.timeout,
+                # No per-request ``timeout``: the SDK would flatten it to one
+                # float; the connect/read split is on the client (``_get_client``).
             )
         finally:
             if uploaded_name is not None:

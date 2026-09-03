@@ -64,6 +64,8 @@ class WebSocketAvatarProvider(AvatarProvider):
     Args:
         base_url: URL of the avatar service (e.g. ``http://localhost:8765``).
         timeout: HTTP request timeout in seconds (default 30).
+        connect_timeout: TCP connect timeout in seconds (default 5), apart
+            from ``timeout``.
         fps: Expected output frame rate (must match the server).
         sample_rate: Audio sample rate sent to server in ``/start`` payload.
     """
@@ -73,12 +75,14 @@ class WebSocketAvatarProvider(AvatarProvider):
         base_url: str,
         *,
         timeout: float = 30.0,
+        connect_timeout: float = 5.0,
         fps: int = 30,
         sample_rate: int = 16000,
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._ws_url = _http_to_ws_url(self._base_url, "/ws/stream")
         self._timeout = timeout
+        self._connect_timeout = connect_timeout
         self._fps = fps
         self._sample_rate = sample_rate
         self._http: httpx.Client | None = None
@@ -102,6 +106,18 @@ class WebSocketAvatarProvider(AvatarProvider):
     def is_started(self) -> bool:
         return self._started
 
+    def _http_timeout(self) -> httpx.Timeout:
+        """The connect/read split every client here hands httpx.
+
+        A bare float would apply the read budget to the TCP connect too, so
+        a dead avatar server would only be given up on once the kernel ran
+        out of SYN retries. httpx is imported lazily, as in the methods
+        that build the clients.
+        """
+        import httpx
+
+        return httpx.Timeout(self._timeout, connect=self._connect_timeout)
+
     async def start(
         self,
         reference_image: bytes,
@@ -117,7 +133,7 @@ class WebSocketAvatarProvider(AvatarProvider):
 
         payload = self._build_start_payload()
         try:
-            async with httpx.AsyncClient(timeout=self._timeout) as client:
+            async with httpx.AsyncClient(timeout=self._http_timeout()) as client:
                 resp = await client.post(f"{self._base_url}/start", json=payload)
             resp.raise_for_status()
             self._fps = resp.json().get("fps", self._fps)
@@ -135,7 +151,7 @@ class WebSocketAvatarProvider(AvatarProvider):
             )
 
         # Sync client for thread-pool operations (get_idle_frame, _try_restart)
-        self._http = httpx.Client(timeout=self._timeout)
+        self._http = httpx.Client(timeout=self._http_timeout())
         self._started = True
         self._idle_frame_cache = None
         self._idle_error_logged = False
@@ -304,7 +320,7 @@ class WebSocketAvatarProvider(AvatarProvider):
             import httpx as _httpx
 
             with contextlib.suppress(Exception):
-                async with _httpx.AsyncClient(timeout=self._timeout) as client:
+                async with _httpx.AsyncClient(timeout=self._http_timeout()) as client:
                     await client.post(f"{self._base_url}/stop")
             self._http.close()
             self._http = None
