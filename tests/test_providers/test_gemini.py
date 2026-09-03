@@ -20,6 +20,7 @@ from roomkit.providers.ai.base import (
     StreamToolCall,
 )
 from roomkit.providers.gemini.config import GeminiConfig
+from roomkit.providers.gemini.request import format_content, format_messages
 
 
 class _FakeStreamIterator:
@@ -219,11 +220,12 @@ class TestGeminiAIProvider:
             provider = GeminiAIProvider(_config())
             raw = b"\x89PNG\r\n\x1a\n fake image bytes"
             b64 = base64.b64encode(raw).decode()
-            parts = provider._format_content(
+            parts = format_content(
+                provider._types,
                 [
                     AITextPart(text="what is this?"),
                     AIImagePart(url=f"data:image/png;base64,{b64}", mime_type="image/png"),
-                ]
+                ],
             )
 
             mock_genai.types.Part.from_uri.assert_not_called()
@@ -241,8 +243,9 @@ class TestGeminiAIProvider:
             from roomkit.providers.gemini.ai import GeminiAIProvider
 
             provider = GeminiAIProvider(_config())
-            parts = provider._format_content(
-                [AIImagePart(url="https://example.com/cat.png", mime_type="image/png")]
+            parts = format_content(
+                provider._types,
+                [AIImagePart(url="https://example.com/cat.png", mime_type="image/png")],
             )
 
             mock_genai.types.Part.from_bytes.assert_not_called()
@@ -261,13 +264,14 @@ class TestGeminiAIProvider:
             from roomkit.providers.gemini.ai import GeminiAIProvider
 
             provider = GeminiAIProvider(_config())
-            contents = provider._format_messages(
+            contents = format_messages(
+                provider._types,
                 [
                     AIMessage(
                         role="tool",
                         content=[AIToolResultPart(tool_call_id="t1", name="foo", result="hello")],
                     )
-                ]
+                ],
             )
 
             assert len(contents) == 1
@@ -289,7 +293,8 @@ class TestGeminiAIProvider:
             provider = GeminiAIProvider(_config())
             raw = b"\x89PNG\r\n\x1a\n screenshot bytes"
             b64 = base64.b64encode(raw).decode()
-            contents = provider._format_messages(
+            contents = format_messages(
+                provider._types,
                 [
                     AIMessage(
                         role="tool",
@@ -306,7 +311,7 @@ class TestGeminiAIProvider:
                             )
                         ],
                     )
-                ]
+                ],
             )
 
             # Function response carries the text only; image is a second user
@@ -598,7 +603,8 @@ class TestGeminiAIProvider:
 
             sig = base64.b64encode(b"sigbytes").decode("ascii")
             provider = GeminiAIProvider(_config())
-            provider._format_messages(
+            format_messages(
+                provider._types,
                 [
                     AIMessage(
                         role="assistant",
@@ -612,7 +618,7 @@ class TestGeminiAIProvider:
                             ),
                         ],
                     )
-                ]
+                ],
             )
 
             signed = [c.kwargs for c in mock_genai.types.Part.call_args_list]
@@ -638,7 +644,8 @@ class TestGeminiAIProvider:
                 )
 
             provider = GeminiAIProvider(_config())
-            provider._format_messages(
+            format_messages(
+                provider._types,
                 [
                     AIMessage(
                         role="assistant",
@@ -647,7 +654,7 @@ class TestGeminiAIProvider:
                             _signed("c2", "b", b"second"),
                         ],
                     )
-                ]
+                ],
             )
 
             sigs = [c.kwargs["thought_signature"] for c in mock_genai.types.Part.call_args_list]
@@ -687,7 +694,7 @@ class TestGeminiAIProvider:
     async def test_partially_signed_round_does_not_warn(
         self, caplog: pytest.LogCaptureFixture
     ) -> None:
-        # One signature anywhere in the round is enough: _format_messages lends
+        # One signature anywhere in the round is enough: format_messages lends
         # it to the others, so the replay is valid and there is nothing to say.
         mock_genai = _mock_genai_module()
         with patch.dict("sys.modules", _genai_modules(mock_genai)):
