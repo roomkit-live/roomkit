@@ -32,7 +32,6 @@ public import path for all of them.
 from __future__ import annotations
 
 import json
-import logging
 import math
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
@@ -48,8 +47,6 @@ if TYPE_CHECKING:
     from roomkit.voice.audio_frame import AudioFrame
     from roomkit.voice.base import AudioChunk
 
-logger = logging.getLogger(__name__)
-
 __all__ = [
     "SUPPORTED_MIME_TYPES",
     "GeminiSTTConfig",
@@ -59,7 +56,8 @@ __all__ = [
 ]
 
 _MAX_INLINE_BYTES = 15 * 1024 * 1024
-"""Above this, a file is uploaded instead of inlined — the request has a size
+"""Default for ``GeminiSTTConfig.max_inline_bytes``, the bound the audio sources
+apply: above it a file is uploaded instead of inlined — the request has a size
 limit and a base64 payload is a third larger than the file it carries."""
 
 _TRANSCRIPT_SCHEMA: dict[str, Any] = {
@@ -248,7 +246,10 @@ class GeminiSTTProvider(STTProvider):
             RuntimeError: The model answered without a usable transcript.
         """
         part, uploaded_name = await audio_part(
-            source, config=self._config, get_client=self._get_client
+            source,
+            max_inline_bytes=self._config.max_inline_bytes,
+            upload_timeout=self._config.timeout,
+            get_client=self._get_client,
         )
         try:
             interaction = await self._get_client().aio.interactions.create(

@@ -7,9 +7,10 @@ enough and uploaded through the Files API otherwise, with the mime
 normalisation the interactions endpoint demands and the cleanup of what was
 uploaded.
 
-``get_client`` is the provider's lazy client accessor rather than the client:
-only the upload and the delete need one, and an inline recording never
-builds it.
+It takes the two facts it needs (the inline size bound and the upload's read
+budget) and a ``get_client`` accessor rather than a client or the config, so
+it neither owns a client nor depends on the provider module: the upload and
+the delete ask for one when they run, and the provider decides how it is built.
 """
 
 from __future__ import annotations
@@ -21,11 +22,8 @@ import mimetypes
 import stat
 from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 from urllib.parse import urlparse
-
-if TYPE_CHECKING:
-    from roomkit.voice.stt.gemini import GeminiSTTConfig
 
 # The provider's logger, so the upload and cleanup lines keep the name they
 # had when they lived there.
@@ -62,6 +60,9 @@ _FILES_API_HOST = "generativelanguage.googleapis.com"
 
 _FILES_DELETE_TIMEOUT = 10.0
 """The Files API delete is cleanup, not the transcript: seconds, not minutes."""
+
+ClientFactory = Callable[[], Any]
+"""The provider's lazy client accessor, invoked only by the paths that need one."""
 
 
 def _files_config(seconds: float) -> dict[str, Any]:
@@ -108,7 +109,7 @@ def _mime_for(path: Path) -> str:
 
 
 async def audio_part(
-    source: Any, *, config: GeminiSTTConfig, get_client: Callable[[], Any]
+    source: Any, *, max_inline_bytes: int, upload_timeout: float, get_client: ClientFactory
 ) -> tuple[dict[str, Any], str | None]:
     """Turn *source* into an audio content block.
 
@@ -118,12 +119,27 @@ async def audio_part(
     if isinstance(source, str | Path):
         text = str(source)
         if text.startswith(("data:", "http://", "https://", "file://")):
-            return await _part_from_url(text, config=config, get_client=get_client)
-        return await _part_from_path(Path(source), config=config, get_client=get_client)
+            return await _part_from_url(
+                text,
+                max_inline_bytes=max_inline_bytes,
+                upload_timeout=upload_timeout,
+                get_client=get_client,
+            )
+        return await _part_from_path(
+            Path(source),
+            max_inline_bytes=max_inline_bytes,
+            upload_timeout=upload_timeout,
+            get_client=get_client,
+        )
 
     url = getattr(source, "url", None)
     if url is not None:
-        return await _part_from_url(str(url), config=config, get_client=get_client)
+        return await _part_from_url(
+            str(url),
+            max_inline_bytes=max_inline_bytes,
+            upload_timeout=upload_timeout,
+            get_client=get_client,
+        )
 
     data = getattr(source, "data", None)
     if not isinstance(data, bytes):
@@ -143,7 +159,7 @@ async def audio_part(
 
 
 async def _part_from_path(
-    path: Path, *, config: GeminiSTTConfig, get_client: Callable[[], Any]
+    path: Path, *, max_inline_bytes: int, upload_timeout: float, get_client: ClientFactory
 ) -> tuple[dict[str, Any], str | None]:
     mime = _mime_for(path)
     try:
@@ -154,7 +170,7 @@ async def _part_from_path(
         raise FileNotFoundError(f"Not a recording file: {path}")
 
     size = info.st_size
-    if size <= config.max_inline_bytes:
+    if size <= max_inline_bytes:
         data = await asyncio.to_thread(path.read_bytes)
         return (
             {
@@ -167,7 +183,7 @@ async def _part_from_path(
 
     logger.debug("Uploading %s (%d bytes) through the Files API", path.name, size)
     uploaded = await get_client().aio.files.upload(
-        file=str(path), config=_files_config(config.timeout)
+        file=str(path), config=_files_config(upload_timeout)
     )
     # The upload guesses its own mime and can answer ``audio/x-wav``, which
     # the interactions endpoint rejects — send the normalised one.
@@ -175,7 +191,7 @@ async def _part_from_path(
 
 
 async def _part_from_url(
-    url: str, *, config: GeminiSTTConfig, get_client: Callable[[], Any]
+    url: str, *, max_inline_bytes: int, upload_timeout: float, get_client: ClientFactory
 ) -> tuple[dict[str, Any], str | None]:
     if url.startswith("data:"):
         header, _, payload = url.partition(",")
@@ -187,7 +203,10 @@ async def _part_from_url(
     parsed = urlparse(url)
     if parsed.scheme in ("", "file"):
         return await _part_from_path(
-            Path(parsed.path or url), config=config, get_client=get_client
+            Path(parsed.path or url),
+            max_inline_bytes=max_inline_bytes,
+            upload_timeout=upload_timeout,
+            get_client=get_client,
         )
     if parsed.hostname == _FILES_API_HOST:
         return ({"type": "audio", "uri": url, "mime_type": "audio/wav"}, None)
@@ -199,7 +218,7 @@ async def _part_from_url(
     )
 
 
-async def delete_upload(name: str, *, get_client: Callable[[], Any]) -> None:
+async def delete_upload(name: str, *, get_client: ClientFactory) -> None:
     """Remove an uploaded recording. Failing to is not worth an exception —
     the Files API expires uploads on its own."""
     try:
