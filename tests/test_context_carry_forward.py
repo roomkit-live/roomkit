@@ -10,6 +10,10 @@ a message costs on the measured bench, and a second copy of it buys nothing.
 What is asserted here is the number of history reads — deterministic, where a
 second copy regresses silently — together with what that number must not cost:
 a hook and a broadcast MUST see the history a fresh read would give them.
+
+Every room here has a reader: since RMK-103 the history is loaded for a hook
+or a channel that declares it reads it, and for nobody else, so a room with
+neither makes no read at all — and there is nothing to carry.
 """
 
 from __future__ import annotations
@@ -21,7 +25,7 @@ from roomkit.core.framework import RoomKit
 from roomkit.models.channel import ChannelBinding, ChannelOutput
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundMessage
-from roomkit.models.enums import ChannelType, EventType, HookTrigger
+from roomkit.models.enums import ChannelType, EventType, HookExecution, HookTrigger
 from roomkit.models.event import EventSource, RoomEvent, TextContent
 from roomkit.models.hook import HookResult
 from roomkit.store.memory import InMemoryStore
@@ -116,8 +120,17 @@ async def _send(kit: RoomKit, room_id: str, channel_id: str, count: int) -> None
         )
 
 
+def _with_a_reader(kit: RoomKit) -> None:
+    """One no-op hook: the reason the floor of history is loaded at all."""
+
+    @kit.hook(HookTrigger.AFTER_BROADCAST, execution=HookExecution.ASYNC)
+    async def observe(event: RoomEvent, ctx: RoomContext) -> None:
+        return None
+
+
 async def _room_with(channel: Channel, store: InMemoryStore) -> tuple[RoomKit, str]:
     kit = RoomKit(store=store)
+    _with_a_reader(kit)
     kit.register_channel(channel)
     room = await kit.create_room(room_id="carry")
     await kit.attach_channel(room.id, channel.channel_id)
@@ -304,6 +317,7 @@ async def test_the_delivered_context_carries_the_committed_event() -> None:
     channel: Any = PlainChannel("sms")
     other = PlainChannel("sms2")
     kit = RoomKit(store=store)
+    _with_a_reader(kit)
     kit.register_channel(channel)
     kit.register_channel(other)
     room = await kit.create_room(room_id="carry")
