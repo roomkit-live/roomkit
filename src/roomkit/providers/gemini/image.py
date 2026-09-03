@@ -63,9 +63,10 @@ class GeminiImageProvider(ImageProvider):
         self._config = config
         # The client carries the connect/read split; see ``build_genai_client``
         # for why it cannot go on the request.
-        self._client, self._http = build_genai_client(
+        built = build_genai_client(
             config, provider="GeminiImageProvider", api_key=config.api_key.get_secret_value()
         )
+        self._client, self._http = built.client, built.http
 
     @property
     def model_name(self) -> str:

@@ -35,14 +35,26 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Awaitable, Callable
-from typing import TYPE_CHECKING, Any
+from typing import Any, NamedTuple
+
+import httpx
 
 from roomkit.providers.utils import HTTPTimeouts, http_timeout
 
-if TYPE_CHECKING:
-    import httpx
-
 logger = logging.getLogger("roomkit.providers.gemini.sdk")
+
+
+class GenaiClient(NamedTuple):
+    """A ``genai.Client``, the httpx client it runs on, and ``google.genai.types``.
+
+    The caller owns the first two and closes them together with
+    :func:`close_genai_client`. ``types`` rides along so a provider needs no
+    import of its own once the client exists.
+    """
+
+    client: Any
+    http: httpx.AsyncClient
+    types: Any
 
 
 def _restore_client_timeout(timeout: httpx.Timeout) -> Callable[[httpx.Request], Awaitable[None]]:
@@ -71,20 +83,43 @@ def _restore_client_timeout(timeout: httpx.Timeout) -> Callable[[httpx.Request],
     return restore
 
 
-def build_genai_client(
-    timeouts: HTTPTimeouts, *, provider: str, **client_kwargs: Any
-) -> tuple[Any, httpx.AsyncClient]:
-    """Return a ``genai.Client`` and the httpx client it runs on.
+def build_genai_client(timeouts: HTTPTimeouts, *, provider: str, api_key: str) -> GenaiClient:
+    """A client for the Gemini Developer API, authenticated by *api_key*.
 
     ``timeouts.timeout`` is the read/write/pool budget, ``connect_timeout``
     bounds the TCP connect. *provider* names the caller in the ImportError
-    raised when google-genai is not installed. *client_kwargs* reach
-    ``genai.Client`` as they are: ``api_key`` for the Developer API;
-    ``vertexai``, ``project``, ``location`` and ``credentials`` for Vertex,
-    where the identity is never a key on the request.
+    raised when google-genai is not installed.
     """
+    return _build_client(timeouts, provider, api_key=api_key)
+
+
+def build_vertex_genai_client(
+    timeouts: HTTPTimeouts,
+    *,
+    provider: str,
+    project: str,
+    location: str,
+    credentials: Any | None,
+) -> GenaiClient:
+    """A client for Gemini on Vertex AI, same budget as :func:`build_genai_client`.
+
+    The identity is *credentials*, or the ADC chain when ``None``; a key on
+    the request is not a thing Vertex accepts, which is why this is its own
+    entry point rather than a keyword the caller could leave out.
+    """
+    return _build_client(
+        timeouts,
+        provider,
+        vertexai=True,
+        project=project,
+        location=location,
+        credentials=credentials,
+    )
+
+
+def _build_client(timeouts: HTTPTimeouts, provider: str, **client_kwargs: Any) -> GenaiClient:
+    """Build the pair behind both entry points; *client_kwargs* go to ``genai.Client``."""
     try:
-        import httpx
         from google import genai
     except ImportError as exc:
         raise ImportError(
@@ -110,7 +145,7 @@ def build_genai_client(
             httpx_async_client=http,
         ),
     )
-    return client, http
+    return GenaiClient(client, http, genai.types)
 
 
 async def close_genai_client(client: Any, http: httpx.AsyncClient | None) -> None:

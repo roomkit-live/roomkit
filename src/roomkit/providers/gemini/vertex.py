@@ -19,7 +19,7 @@ from pydantic import SecretStr
 
 from roomkit.providers.gemini.ai import GeminiAIProvider
 from roomkit.providers.gemini.config import GeminiConfig
-from roomkit.providers.gemini.sdk import build_genai_client
+from roomkit.providers.gemini.sdk import build_vertex_genai_client
 
 
 class GeminiVertexConfig(GeminiConfig):
@@ -88,22 +88,12 @@ class GeminiVertexProvider(GeminiAIProvider):
     _config: GeminiVertexConfig
 
     def __init__(self, config: GeminiVertexConfig) -> None:
-        try:
-            from google.genai import types as _types
-        except ImportError as exc:
-            raise ImportError(
-                "google-genai is required for GeminiVertexProvider. "
-                "Install it with: pip install roomkit[gemini]"
-            ) from exc
-
         self._config = config
-        self._types = _types
         # The client carries the connect/read split; see ``build_genai_client``
         # for why it cannot go on the request.
-        self._client, self._http = build_genai_client(
+        self._client, self._http, self._types = build_vertex_genai_client(
             config,
             provider="GeminiVertexProvider",
-            vertexai=True,
             project=config.project,
             location=config.location,
             credentials=self._credentials(config),

@@ -232,9 +232,10 @@ class GeminiSTTProvider(STTProvider):
         if self._client is None:
             # The client carries the connect/read split; see ``build_genai_client``
             # for why it cannot go on the request.
-            self._client, self._http = build_genai_client(
+            built = build_genai_client(
                 self._config, provider="GeminiSTTProvider", api_key=self._config.api_key
             )
+            self._client, self._http = built.client, built.http
         return self._client
 
     @staticmethod

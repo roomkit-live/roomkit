@@ -64,19 +64,10 @@ class GeminiAIProvider(AIProvider):
     """AI provider using the Google Gemini API."""
 
     def __init__(self, config: GeminiConfig) -> None:
-        try:
-            from google.genai import types as _types
-        except ImportError as exc:
-            raise ImportError(
-                "google-genai is required for GeminiAIProvider. "
-                "Install it with: pip install roomkit[gemini]"
-            ) from exc
-
         self._config = config
-        self._types = _types
         # The client carries the connect/read split; see ``build_genai_client``
         # for why it cannot go on the request.
-        self._client, self._http = build_genai_client(
+        self._client, self._http, self._types = build_genai_client(
             config, provider="GeminiAIProvider", api_key=config.api_key.get_secret_value()
         )
 
