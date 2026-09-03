@@ -45,6 +45,7 @@ from roomkit.providers.ai.base import (
 )
 from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.realtime.base import EphemeralEvent, EphemeralEventType
+from tests.conftest import make_event
 from tests.test_framework import SimpleChannel
 
 
@@ -715,3 +716,31 @@ async def test_no_tools_path_closes_the_window_when_the_provider_fails() -> None
     assert _thinking_ends(received) == ["HALF-A-BLOCK"]
 
     await kit.close()
+
+
+async def test_no_tools_path_error_still_reaches_the_consumer() -> None:
+    """The close in the finally swallows neither the provider's error nor the count."""
+
+    class _BrokenProvider(_ScriptedStreamProvider):
+        async def generate_structured_stream(self, context: AIContext) -> Any:
+            yield StreamThinkingDelta(thinking="HALF-A-BLOCK")
+            raise ProviderError("upstream stopped", retryable=False, provider="broken")
+
+    ai = AIChannel("ai1", provider=_BrokenProvider([]), thinking_budget=4096)
+    output = await ai.on_event(
+        make_event(room_id="room-1", body="go", channel_id="sms1"),
+        ChannelBinding(
+            channel_id="ai1",
+            room_id="room-1",
+            channel_type=ChannelType.AI,
+            category=ChannelCategory.INTELLIGENCE,
+        ),
+        _context(),
+    )
+    assert output.response_stream is not None
+
+    with pytest.raises(ProviderError, match="upstream stopped"):
+        async for _ in output.response_stream:
+            pass
+
+    assert ai.active_turns == 0

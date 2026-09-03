@@ -15,6 +15,8 @@ import json
 from typing import Any
 from unittest.mock import AsyncMock
 
+import pytest
+
 from roomkit import HookExecution, HookResult, HookTrigger, RoomContext, ToolCallEvent
 from roomkit.channels._ai_coalescers import _ToolCallDeltaCoalescer
 from roomkit.channels.ai import AIChannel
@@ -25,7 +27,7 @@ from roomkit.models.enums import ChannelCategory, ChannelType
 from roomkit.models.event import RoomEvent, TextContent
 from roomkit.models.room import Room
 from roomkit.models.steering import Cancel
-from roomkit.models.streaming import LoopEndMarker
+from roomkit.models.streaming import LoopEndMarker, ThinkingDeltaMarker
 from roomkit.providers.ai.base import (
     AIContext,
     AIResponse,
@@ -40,6 +42,7 @@ from roomkit.providers.ai.base import (
 )
 from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.realtime.base import EphemeralEvent, EphemeralEventType
+from roomkit.realtime.memory import InMemoryRealtime
 from roomkit.tools.external import PolicyExternalToolHandler
 from tests.conftest import make_event
 from tests.test_framework import SimpleChannel
@@ -933,6 +936,176 @@ async def test_a_provider_failure_mid_reasoning_closes_the_thinking_window() -> 
     assert ends[0].data["thinking"] == "half a thought"
 
     await kit.close()
+
+
+async def _start_turn(ai: AIChannel, *, tools: bool) -> Any:
+    """Hand one turn to ``on_event`` directly and return its stream, unconsumed.
+
+    ``process_inbound`` absorbs a stream's error and its cancellation; the
+    tests below need to see both, so they consume the stream themselves.
+    """
+    output = await ai.on_event(
+        make_event(room_id="r1", body="go", channel_id="sms1"),
+        ChannelBinding(
+            channel_id="ai1",
+            room_id="r1",
+            channel_type=ChannelType.AI,
+            category=ChannelCategory.INTELLIGENCE,
+            metadata={"tools": _TOOLS} if tools else {},
+        ),
+        RoomContext(room=Room(id="r1")),
+    )
+    assert output.response_stream is not None
+    return output.response_stream
+
+
+async def test_a_provider_failure_mid_reasoning_still_reaches_the_consumer() -> None:
+    """The close on the way out never swallows the error that got the round there."""
+
+    class _BrokenProvider(MockAIProvider):
+        async def generate_structured_stream(self, context: AIContext) -> Any:
+            yield StreamThinkingDelta(thinking="half a thought")
+            raise ProviderError("upstream stopped", retryable=False, provider="broken")
+
+    async def tool_handler(name: str, args: dict[str, Any]) -> str:
+        return "never reached"
+
+    kit = RoomKit()
+    ai = AIChannel(
+        "ai1",
+        provider=_BrokenProvider(streaming=True),
+        tool_handler=tool_handler,
+        thinking_budget=4096,
+        thinking_coalesce_ms=0,
+    )
+    kit.register_channel(ai)
+    await kit.create_room(room_id="r1")
+    stream = await _start_turn(ai, tools=True)
+
+    with pytest.raises(ProviderError, match="upstream stopped"):
+        async for _ in stream:
+            pass
+
+    assert ai.active_turns == 0
+    await kit.close()
+
+
+async def test_a_consumer_closing_the_stream_mid_reasoning_closes_the_window() -> None:
+    """The third abnormal exit: the consumer drops the stream at a yield.
+
+    A muted binding, a dropped delivery, an ``aclose()``: the generator gets
+    GeneratorExit where it last yielded, with the window open, and the only
+    thing that can close it is the finally.
+    """
+
+    class _ReasoningProvider(MockAIProvider):
+        async def generate_structured_stream(self, context: AIContext) -> Any:
+            for i in range(50):
+                yield StreamThinkingDelta(thinking=f"step {i} ")
+            yield StreamTextDelta(text="never reached")
+            yield StreamDone(finish_reason="stop")
+
+    async def tool_handler(name: str, args: dict[str, Any]) -> str:
+        return "ok"
+
+    kit = RoomKit()
+    ai = AIChannel(
+        "ai1",
+        provider=_ReasoningProvider(streaming=True),
+        tool_handler=tool_handler,
+        thinking_budget=4096,
+        thinking_coalesce_ms=0,
+    )
+    kit.register_channel(ai)
+    await kit.create_room(room_id="r1")
+    received: list[EphemeralEvent] = []
+
+    async def on_event(ev: EphemeralEvent) -> None:
+        received.append(ev)
+
+    await kit.realtime.subscribe_to_room("r1", on_event)
+    stream = await _start_turn(ai, tools=True)
+
+    async for item in stream:
+        if isinstance(item, ThinkingDeltaMarker):
+            break
+    await stream.aclose()
+    await asyncio.sleep(0.05)
+
+    starts = [e for e in received if e.type == EphemeralEventType.THINKING_START]
+    ends = [e for e in received if e.type == EphemeralEventType.THINKING_END]
+    assert len(starts) == 1
+    assert [e.data["thinking"] for e in ends] == ["step 0 "]
+    assert ai.active_turns == 0
+    await kit.close()
+
+
+async def _turn_count_after_a_re_cancelled_consumer(*, tools: bool) -> int:
+    """Cancel a consumer mid-reasoning, then again inside the close's publish.
+
+    The finally's close publishes THINKING_END through the realtime backend,
+    and a backend that does I/O suspends there. A shutdown loop or a
+    TaskGroup unwinding cancels a second time, and that CancelledError comes
+    out of the close itself. Returns ``active_turns`` once the task is gone.
+    """
+    publishing = asyncio.Event()
+
+    class _SuspendingRealtime(InMemoryRealtime):
+        async def publish_to_room(self, room_id: str, event: EphemeralEvent) -> None:
+            if event.type == EphemeralEventType.THINKING_END:
+                publishing.set()
+                await asyncio.Event().wait()
+            await super().publish_to_room(room_id, event)
+
+    class _StuckProvider(MockAIProvider):
+        async def generate_structured_stream(self, context: AIContext) -> Any:
+            yield StreamThinkingDelta(thinking="half a thought")
+            await asyncio.Event().wait()
+
+    async def tool_handler(name: str, args: dict[str, Any]) -> str:
+        return "ok"
+
+    kit = RoomKit(realtime=_SuspendingRealtime())
+    ai = AIChannel(
+        "ai1",
+        provider=_StuckProvider(streaming=True),
+        tool_handler=tool_handler if tools else None,
+        thinking_budget=4096,
+        thinking_coalesce_ms=0,
+    )
+    kit.register_channel(ai)
+    await kit.create_room(room_id="r1")
+    stream = await _start_turn(ai, tools=tools)
+
+    async def consume() -> None:
+        async for _ in stream:
+            pass
+
+    task = asyncio.create_task(consume())
+    await asyncio.sleep(0.05)
+    assert ai.active_turns == 1
+    task.cancel()
+    await asyncio.wait_for(publishing.wait(), 1)
+    task.cancel()
+    await asyncio.gather(task, return_exceptions=True)
+    count = ai.active_turns
+    await kit.close()
+    return count
+
+
+async def test_a_re_cancelled_consumer_never_leaks_the_tool_loop() -> None:
+    """The window close in the finally never holds the loop's cleanup hostage.
+
+    ``active_turns`` is what a caller retiring the channel waits to see at
+    zero; a loop that never leaves ``_active_loops`` turns that wait into a
+    hang.
+    """
+    assert await _turn_count_after_a_re_cancelled_consumer(tools=True) == 0
+
+
+async def test_a_re_cancelled_consumer_never_leaks_the_text_stream() -> None:
+    """The no-tools stream counts itself the same way, and leaves the same way."""
+    assert await _turn_count_after_a_re_cancelled_consumer(tools=False) == 0
 
 
 async def test_composition_coalescer_keys_on_the_slot_not_the_id() -> None:

@@ -321,16 +321,22 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                     coalescer, room_id, thinking_parts, 0, published=thinking_published
                 )
         finally:
-            # A window still open here was left by an abnormal exit — a
-            # provider error, a consumer that closed the stream — and closes
-            # with the block reasoned so far, so THINKING_START never stays
-            # unpaired. Publishing is best-effort: the error that ended the
-            # stream is the one that propagates.
-            if thinking_started and thinking_parts and room_id:
-                await self._close_thinking_window(
-                    coalescer, room_id, thinking_parts, 0, published=thinking_published
-                )
-            self._text_streams -= 1
+            try:
+                # A window still open here was left by an abnormal exit — a
+                # provider error, a consumer that closed the stream — and
+                # closes with the block reasoned so far, so THINKING_START
+                # never stays unpaired. Publishing is best-effort: the error
+                # that ended the stream is the one that propagates.
+                if thinking_started and thinking_parts and room_id:
+                    await self._close_thinking_window(
+                        coalescer, room_id, thinking_parts, 0, published=thinking_published
+                    )
+            finally:
+                # The close publishes, and a publish that suspends can be
+                # cancelled under a consumer already being torn down. The
+                # count comes down whatever happens to it, or a caller
+                # retiring the channel waits for zero forever.
+                self._text_streams -= 1
 
     async def _start_streaming_tool_response(
         self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
@@ -860,46 +866,52 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
             telemetry.end_span(span_id, status="error", error_message=str(exc))
             raise
         finally:
-            # A window still open here was left by an abnormal exit — a
-            # provider error, a consumer that closed the stream — and closes
-            # with the block reasoned so far, the way a cancelled round's
-            # does above. Publishing is best-effort: the error that got the
-            # round here is the one that propagates.
-            if room_id and thinking_started and thinking_parts:
-                await self._close_thinking_window(
-                    coalescer,
-                    room_id,
-                    thinking_parts,
-                    _round_idx,
-                    published=thinking_published,
-                )
-            if not _span_errored:
-                usage_attrs: dict[str, Any] = {}
-                if _total_usage.get("input_tokens") or _total_usage.get("output_tokens"):
-                    usage_attrs[Attr.LLM_INPUT_TOKENS] = _total_usage.get("input_tokens", 0)
-                    usage_attrs[Attr.LLM_OUTPUT_TOKENS] = _total_usage.get("output_tokens", 0)
-                telemetry.end_span(span_id, attributes=usage_attrs)
-
-            if self._after_response_hook and not _span_errored:
-                try:
-                    await self._after_response_hook(
-                        AIResponseEvent(
-                            channel_id=self.channel_id,
-                            response_content="".join(_accumulated_text),
-                            room_id=room_id,
-                            # The zero defaults keep the two counters always
-                            # present, as consumers of this event have read them.
-                            usage={
-                                "input_tokens": 0,
-                                "output_tokens": 0,
-                                **_total_usage,
-                            },
-                            latency_ms=int((time.monotonic() - _t0_stream) * 1000),
-                            streaming=True,
-                        )
+            try:
+                # A window still open here was left by an abnormal exit — a
+                # provider error, a consumer that closed the stream — and
+                # closes with the block reasoned so far, the way a cancelled
+                # round's does above. Publishing is best-effort: the error
+                # that got the round here is the one that propagates.
+                if room_id and thinking_started and thinking_parts:
+                    await self._close_thinking_window(
+                        coalescer,
+                        room_id,
+                        thinking_parts,
+                        _round_idx,
+                        published=thinking_published,
                     )
-                except Exception:
-                    logger.debug("After-response hook failed (streaming)", exc_info=True)
+            finally:
+                # The close publishes, and a publish that suspends can be
+                # cancelled under a consumer already being torn down. The
+                # loop still leaves ``_active_loops`` whatever happens to it,
+                # or a caller retiring the channel waits for zero forever.
+                if not _span_errored:
+                    usage_attrs: dict[str, Any] = {}
+                    if _total_usage.get("input_tokens") or _total_usage.get("output_tokens"):
+                        usage_attrs[Attr.LLM_INPUT_TOKENS] = _total_usage.get("input_tokens", 0)
+                        usage_attrs[Attr.LLM_OUTPUT_TOKENS] = _total_usage.get("output_tokens", 0)
+                    telemetry.end_span(span_id, attributes=usage_attrs)
 
-            self._active_loops.pop(loop_ctx.loop_id, None)
-            _current_loop_ctx.set(None)
+                if self._after_response_hook and not _span_errored:
+                    try:
+                        await self._after_response_hook(
+                            AIResponseEvent(
+                                channel_id=self.channel_id,
+                                response_content="".join(_accumulated_text),
+                                room_id=room_id,
+                                # The zero defaults keep the two counters always
+                                # present, as consumers of this event have read them.
+                                usage={
+                                    "input_tokens": 0,
+                                    "output_tokens": 0,
+                                    **_total_usage,
+                                },
+                                latency_ms=int((time.monotonic() - _t0_stream) * 1000),
+                                streaming=True,
+                            )
+                        )
+                    except Exception:
+                        logger.debug("After-response hook failed (streaming)", exc_info=True)
+
+                self._active_loops.pop(loop_ctx.loop_id, None)
+                _current_loop_ctx.set(None)
