@@ -65,7 +65,6 @@ class GeminiAIProvider(AIProvider):
 
     def __init__(self, config: GeminiConfig) -> None:
         try:
-            from google import genai as _genai
             from google.genai import types as _types
         except ImportError as exc:
             raise ImportError(
@@ -74,7 +73,6 @@ class GeminiAIProvider(AIProvider):
             ) from exc
 
         self._config = config
-        self._genai = _genai
         self._types = _types
         # The client carries the connect/read split; see ``build_genai_client``
         # for why it cannot go on the request.

@@ -98,8 +98,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `files.delete` went through google-genai's classic request path, which
   hands httpx `timeout=None` (no timeout at all) unless `HttpOptions.timeout`
   is set, so a stalled upload of a long recording never returned. Both calls
-  now carry `timeout` per call; that path takes one value in milliseconds
-  and cannot split the connect, so this is the flat read budget.
+  now carry `timeout` per call; that path takes one value in milliseconds,
+  the read budget (the connect it also spreads that value over is capped
+  by the request hook of the entry below).
 - **The Gemini chat, image and Vertex providers are bounded too.**
   `GeminiAIProvider`, `GeminiImageProvider` and `GeminiVertexProvider` built
   their `genai.Client` with no timeout at all, so a host that stopped
@@ -113,15 +114,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the `genai.Client` keywords it needs for Vertex, and `close()` closes the
   httpx client handed to the SDK (the chat provider used to drop the
   reference without closing anything). One more thing that client does:
-  the SDK builds a streamed request (`generate_content_stream`, the chat
-  providers' only call) with `timeout=None`, which httpx reads as no
-  timeout at all rather than the client's default, where its non-streamed
-  calls leave the default in place. A request hook on the client puts the
-  budget back on any request that names none, so the split reaches the
-  streamed path too; a request carrying its own float (the Files API) is
-  left alone. The parametrized test reads the three new constructions back,
-  and one more drives the chat provider through the real SDK to the
-  transport.
+  the SDK's classic request path (streamed generation, `models.list`, the
+  Files API) builds its request with `timeout=None`, which httpx reads as
+  no timeout at all rather than the client's default; only the Interactions
+  API path leaves the default in place. A request hook on the client puts
+  the budget back on any request that names none, and caps the connect of
+  one that names its own flat value (the Files API, whose per-call
+  `timeout` the SDK spreads over the connect too) at `connect_timeout`, so
+  the STT upload no longer connects with its 600 s read budget. The
+  parametrized test reads the three new constructions back, and two more
+  drive the chat provider through the real SDK to the transport, streamed
+  and not.
 
 ## [0.62.0] — 2026-08-29
 

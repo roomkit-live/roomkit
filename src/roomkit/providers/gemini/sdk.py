@@ -17,12 +17,15 @@ in one specific way for the connect/read split to survive the SDK:
   included, goes through that client with its timeout as the default, and
   httpx keeps applying the environment proxies and ``SSL_CERT_FILE`` it
   applies to any client it builds.
-* Even then the SDK builds a streamed request (``generate_content_stream``,
-  the only call the chat providers make) with ``timeout=None``, and httpx
-  reads an explicit ``None`` as "no timeout at all" rather than "the
-  client's default". A request hook on the client puts the budget back on
-  any request that names none; one carrying its own float (the Files API)
-  keeps it.
+* Even then the SDK's classic request path (streamed generation,
+  ``models.list``, the Files API) hands httpx ``timeout=None`` unless
+  ``HttpOptions.timeout`` is set, and httpx reads an explicit ``None`` as
+  "no timeout at all" rather than "the client's default"; only the
+  Interactions API path leaves the default in place. A request hook on the
+  client puts the budget back on any request that names none. One that
+  names its own (the Files API: one flat value the SDK spreads over the
+  connect too) keeps its read budget and takes the client's connect, the
+  part of the budget the SDK cannot split.
 
 The SDK does not close a client it was given, so the caller owns both
 objects and closes them together.
@@ -43,18 +46,27 @@ logger = logging.getLogger("roomkit.providers.gemini.sdk")
 
 
 def _restore_client_timeout(timeout: httpx.Timeout) -> Callable[[httpx.Request], Awaitable[None]]:
-    """A request hook giving a request sent with ``timeout=None`` the client's budget.
+    """A request hook keeping the client's budget on what the SDK sends.
 
-    Only a request that names no budget at all is touched: the SDK's
-    non-streamed calls leave the client default in place, and its Files API
-    calls carry their own flat value, which is kept.
+    A request that names no budget at all (``timeout=None``, the SDK's
+    classic path) gets the client's whole budget. One that names its own
+    keeps its read budget and has its connect capped at the client's: the
+    SDK's per-request value is one float spread over the connect as well,
+    where ``connect_timeout`` is the ceiling by definition. A request already
+    at or under it (the Interactions path, which leaves the client default in
+    place) is not touched.
     """
     budget = timeout.as_dict()
+    ceiling = budget["connect"]
 
     async def restore(request: httpx.Request) -> None:
         current = request.extensions.get("timeout")
         if current is None or all(value is None for value in current.values()):
             request.extensions["timeout"] = dict(budget)
+            return
+        connect = current.get("connect")
+        if ceiling is not None and (connect is None or connect > ceiling):
+            request.extensions["timeout"] = {**current, "connect": ceiling}
 
     return restore
 
@@ -105,13 +117,16 @@ async def close_genai_client(client: Any, http: httpx.AsyncClient | None) -> Non
     """Close a pair from :func:`build_genai_client`; either may be ``None``.
 
     The SDK's own close is best effort (a transport already gone is not worth
-    an exception); the httpx client it was given is closed regardless, since
-    the SDK never closes one it did not build.
+    an exception) and takes two calls, ``aclose`` leaving the sync httpx
+    client the SDK builds regardless to ``close``. The httpx client it was
+    given is closed whatever happens, since the SDK never closes one it did
+    not build.
     """
     try:
         if client is not None:
             await client.aio.aclose()
-    except Exception:  # pragma: no cover - transport already gone
+            client.close()
+    except Exception:
         logger.debug("genai client close failed", exc_info=True)
     finally:
         if http is not None:

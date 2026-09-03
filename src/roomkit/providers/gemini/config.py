@@ -16,8 +16,8 @@ class GeminiConfig(BaseModel):
     """Thinking level for Gemini 3.1 models: minimal, low, medium, high."""
     timeout: float = 60.0
     """Read budget in seconds: how long the first chunk, and each one after
-    it, may take. Every call streams, so a stalled response fails here
-    instead of holding the turn open."""
+    it, may take. Generation streams, so a stalled answer fails here instead
+    of holding the turn open."""
     connect_timeout: float = 5.0
     """TCP connect timeout in seconds, kept apart from ``timeout`` so a host
     that no longer accepts connections is given up on in seconds rather

@@ -244,8 +244,10 @@ class GeminiSTTProvider(STTProvider):
         Those calls go through the SDK's classic request path, which hands
         httpx ``timeout=None`` (no timeout at all) unless ``HttpOptions.timeout``
         is set, so a stalled upload of a long recording never returned. That
-        option is one value in milliseconds and cannot split the connect from
-        the read, so it is a flat budget.
+        option is one value in milliseconds the SDK spreads over the connect
+        as well; the client's request hook caps that connect at
+        ``connect_timeout`` (see ``build_genai_client``), so this is the read
+        budget.
         """
         return {"http_options": {"timeout": int(seconds * 1000)}}
 

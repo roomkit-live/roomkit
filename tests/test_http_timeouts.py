@@ -31,7 +31,7 @@ from roomkit.providers.ai.base import AIContext, AIMessage
 from roomkit.providers.gemini.ai import GeminiAIProvider
 from roomkit.providers.gemini.config import GeminiConfig, GeminiImageConfig
 from roomkit.providers.gemini.image import GeminiImageProvider
-from roomkit.providers.gemini.sdk import close_genai_client
+from roomkit.providers.gemini.sdk import _restore_client_timeout, close_genai_client
 from roomkit.providers.gemini.vertex import GeminiVertexConfig, GeminiVertexProvider
 from roomkit.sources import sse as sse_module
 from roomkit.sources.sse import SSESource
@@ -119,7 +119,14 @@ async def _sse() -> Any:
     return RecordingAsyncClient.calls[-1]["timeout"]
 
 
-async def _gemini_httpx_timeout(provider: Any, client: Any) -> Any:
+async def _gemini_httpx_timeout(
+    provider: GeminiTTSProvider
+    | GeminiSTTProvider
+    | GeminiVisionProvider
+    | GeminiAIProvider
+    | GeminiImageProvider,
+    client: Any,
+) -> Any:
     """The timeout on the httpx client *provider* handed the SDK as *client*."""
     http = provider._http
     try:
@@ -285,10 +292,10 @@ class TestGeminiThroughTheSDK:
         ]
 
     async def test_streamed_request_carries_the_split(self) -> None:
-        """The chat providers only ever stream, and the SDK builds a streamed
-        request with ``timeout=None``, which httpx reads as no timeout at all
-        (the non-streamed path leaves the client default alone). The client's
-        request hook is what puts the budget back; see ``build_genai_client``."""
+        """The SDK's classic path builds its request with ``timeout=None``,
+        which httpx reads as no timeout at all; streamed generation is the
+        chat providers' turn path. The client's request hook is what puts the
+        budget back; see ``build_genai_client``."""
         pytest.importorskip("google.genai")
         _RecordingTransport.seen.clear()
         context = AIContext(messages=[AIMessage(role="user", content="hi")])
@@ -303,7 +310,23 @@ class TestGeminiThroughTheSDK:
             {"connect": CONNECT, "read": TIMEOUT, "write": TIMEOUT, "pool": TIMEOUT}
         ]
 
-    async def test_files_api_upload_goes_through_httpx_with_the_flat_budget(self) -> None:
+    async def test_classic_non_streamed_request_carries_the_split(self) -> None:
+        """Same path without streaming (``models.list``): the SDK still hands
+        httpx ``timeout=None`` here, so the hook is not a streaming-only
+        affair."""
+        pytest.importorskip("google.genai")
+        _RecordingTransport.seen.clear()
+        with patch("httpx.AsyncClient", _RecordingTransport.client_class()):
+            provider = GeminiAIProvider(GeminiConfig(api_key="k", **_TIMEOUTS))
+            models = await provider.list_models()
+            await provider.close()
+
+        assert models == []
+        assert _RecordingTransport.seen == [
+            {"connect": CONNECT, "read": TIMEOUT, "write": TIMEOUT, "pool": TIMEOUT}
+        ]
+
+    async def test_files_api_upload_keeps_its_read_budget_and_the_client_connect(self) -> None:
         pytest.importorskip("google.genai")
         _RecordingTransport.seen.clear()
         config = GeminiSTTConfig(api_key="k", max_inline_bytes=16, **_TIMEOUTS)
@@ -319,11 +342,56 @@ class TestGeminiThroughTheSDK:
                     await provider.transcribe_recording(wav)
                 await provider.close()
 
-        # The SDK's classic path takes one flat value per call (milliseconds),
-        # which is the read budget; it cannot split the connect.
+        # The SDK's classic path takes one flat value per call (milliseconds)
+        # and spreads it over the connect too; the hook caps that connect at
+        # the client's, and the read budget is the call's own.
         assert _RecordingTransport.seen[:1] == [
-            {"connect": TIMEOUT, "read": TIMEOUT, "write": TIMEOUT, "pool": TIMEOUT}
+            {"connect": CONNECT, "read": TIMEOUT, "write": TIMEOUT, "pool": TIMEOUT}
         ]
+
+
+class TestRestoreClientTimeout:
+    """The request hook, on the three shapes a request reaches it in."""
+
+    @staticmethod
+    def _request(timeout: dict[str, float | None]) -> httpx.Request:
+        return httpx.Request("GET", "https://example.test", extensions={"timeout": timeout})
+
+    @staticmethod
+    def _hook() -> Any:
+        return _restore_client_timeout(httpx.Timeout(TIMEOUT, connect=CONNECT))
+
+    async def test_a_request_naming_no_budget_gets_the_clients(self) -> None:
+        request = self._request({"connect": None, "read": None, "write": None, "pool": None})
+
+        await self._hook()(request)
+
+        assert request.extensions["timeout"] == {
+            "connect": CONNECT,
+            "read": TIMEOUT,
+            "write": TIMEOUT,
+            "pool": TIMEOUT,
+        }
+
+    async def test_a_flat_budget_keeps_its_read_and_takes_the_clients_connect(self) -> None:
+        request = self._request({"connect": 600.0, "read": 600.0, "write": 600.0, "pool": 600.0})
+
+        await self._hook()(request)
+
+        assert request.extensions["timeout"] == {
+            "connect": CONNECT,
+            "read": 600.0,
+            "write": 600.0,
+            "pool": 600.0,
+        }
+
+    async def test_a_connect_under_the_ceiling_is_left_alone(self) -> None:
+        own = {"connect": 1.0, "read": 30.0, "write": 30.0, "pool": 30.0}
+        request = self._request(dict(own))
+
+        await self._hook()(request)
+
+        assert request.extensions["timeout"] == own
 
 
 async def test_close_genai_client_closes_httpx_even_when_the_sdk_close_fails() -> None:
