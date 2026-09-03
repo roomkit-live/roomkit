@@ -212,6 +212,9 @@ class PolarGridAIProvider(AIProvider):
 
         kwargs: dict[str, Any] = {
             "api_key": self._config.api_key.get_secret_value(),
+            # The SDK annotates ``timeout`` as a float but only ever forwards it
+            # to ``httpx.AsyncClient(timeout=...)`` (polargrid-sdk 0.10.0), so
+            # the connect/read split reaches httpx intact.
             "timeout": http_timeout(self._config),
             "max_retries": self._config.max_retries,
         }

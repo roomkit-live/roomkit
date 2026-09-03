@@ -134,10 +134,11 @@ async def main() -> None:
         PolarGridConfig(
             **config_kwargs,
             thinking=thinking,
-            # The TCP connect is bounded on its own: an edge that no longer
-            # answers is refused in seconds, while ``timeout`` (the read
-            # budget) stays sized for a slow generation.
-            connect_timeout=5.0,
+            # The TCP connect is bounded on its own (default 5 s): an edge
+            # that no longer answers is refused in seconds, while ``timeout``
+            # (the read budget) stays sized for a slow generation. Tightened
+            # here because every edge is on the same continent.
+            connect_timeout=3.0,
             debug=_DEBUG,
         )
     )

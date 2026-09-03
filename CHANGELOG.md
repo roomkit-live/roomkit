@@ -51,9 +51,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   helper: the four SDKs (OpenAI and its derivatives, Anthropic, Ollama,
   PolarGrid), the image providers, and the SMS, RCS, email, Telegram,
   Messenger and webhook transports. `timeout` keeps its meaning, so no caller
-  changes. A parametrized test reads back the timeout each of the 25 client
-  constructions actually received and fails the day one passes the float
-  again.
+  changes; what changes at runtime is the connect budget, from `timeout` down
+  to 5 s, which also covers the TLS handshake. A link or a TLS-terminating
+  proxy slow enough to need more sets `connect_timeout` on the config. A
+  parametrized test reads back the timeout each client construction actually
+  received and fails the day one passes the float again.
 
 ## [0.62.0] — 2026-08-29
 
