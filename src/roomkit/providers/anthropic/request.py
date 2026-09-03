@@ -14,6 +14,7 @@ from typing import Any, cast
 from roomkit.providers.ai.base import (
     AIContext,
     AIImagePart,
+    AIMessage,
     AITextPart,
     AIThinkingPart,
     AIToolCallPart,
@@ -112,7 +113,7 @@ def _tool_result_content(
     return blocks
 
 
-def build_messages(messages: list[Any]) -> list[dict[str, Any]]:
+def build_messages(messages: list[AIMessage]) -> list[dict[str, Any]]:
     """Build Anthropic-formatted messages, mapping tool roles to user."""
     result: list[dict[str, Any]] = []
     for m in messages:

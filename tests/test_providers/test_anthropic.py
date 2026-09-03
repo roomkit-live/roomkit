@@ -8,7 +8,16 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from roomkit.providers.ai.base import AIContext, AIMessage, AITool, StreamDone, StreamTextDelta
+from roomkit.providers.ai.base import (
+    AIContext,
+    AIImagePart,
+    AIMessage,
+    AITextPart,
+    AITool,
+    AIToolResultPart,
+    StreamDone,
+    StreamTextDelta,
+)
 from roomkit.providers.anthropic.config import AnthropicConfig
 from roomkit.providers.anthropic.request import build_kwargs, format_content
 
@@ -766,8 +775,6 @@ class TestAnthropicToolResultImages:
     def test_tool_result_string_passes_through(self) -> None:
         # A plain string result renders as a text tool_result — unchanged
         # behaviour for every existing (text-only) tool.
-        from roomkit.providers.ai.base import AIToolResultPart
-
         block = format_content(
             [AIToolResultPart(tool_call_id="t1", name="foo", result="hello")],
         )[0]
@@ -780,12 +787,6 @@ class TestAnthropicToolResultImages:
     def test_tool_result_image_renders_content_blocks(self) -> None:
         # A multimodal result (text + base64 image) becomes a content-block
         # list — this is what lets a screenshot tool reach the model.
-        from roomkit.providers.ai.base import (
-            AIImagePart,
-            AITextPart,
-            AIToolResultPart,
-        )
-
         block = format_content(
             [
                 AIToolResultPart(
@@ -817,8 +818,6 @@ class TestAnthropicToolResultImages:
     def test_image_message_part_still_renders_base64(self) -> None:
         # Guard the _image_block refactor: an image in ordinary message content
         # keeps producing the base64 source block.
-        from roomkit.providers.ai.base import AIImagePart
-
         block = format_content([AIImagePart(url="data:image/jpeg;base64,ABC123")])[0]
         assert block == {
             "type": "image",

@@ -2,13 +2,14 @@
 
 Reading what the endpoint sends back — reasoning conventions, tool-call
 fragments, the overflow fact — lives in ``response.py``, shared with the
-other providers speaking this dialect. The request side stays on the class
-on purpose: ``OpenAIAIProvider`` is the base of seven derivatives (Azure,
-DeepSeek, LiteLLM, OpenRouter, Qwen, vLLM, xAI) whose overrides hook into it
-(``_apply_sampling_kwargs``, ``_usage_from``, ``_provider_name``), and
-``_build_messages`` is what they inherit and test. Moving those off the
-class would either relocate the override points or leave delegating stubs,
-so the provider stays above the size signal.
+other providers speaking this dialect. The request side stays on the class:
+``OpenAIAIProvider`` is the base of seven derivatives (Azure, DeepSeek,
+LiteLLM, OpenRouter, Qwen, vLLM, xAI) that override its request hooks
+(``_apply_sampling_kwargs``, ``_usage_from``, ``_provider_name``) and inherit
+``_build_messages`` as a tested part of their surface. That side is not what
+keeps the module above the size signal, though: the two call paths,
+``generate`` and ``generate_structured_stream``, each carry their own request
+assembly, error mapping and result reading for the SDK's two response shapes.
 """
 
 from __future__ import annotations

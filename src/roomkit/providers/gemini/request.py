@@ -63,74 +63,75 @@ def format_messages(types: Any, messages: list[AIMessage]) -> list[Any]:
             isinstance(p, AIToolCallPart) for p in msg.content
         ):
             # Model message with function calls
-            parts = []
-            # The round's signature, so parallel calls Gemini left unsigned
-            # replay signed anyway: the API emits the thought_signature on
-            # the FIRST functionCall part of a parallel group only, but its
-            # validator rejects any history functionCall part without one
-            # ("Function call is missing a thought_signature", observed live
-            # on gemini-3.5-flash with a 2-call round). Reusing the group's
-            # signature satisfies it. Resolved by scanning the whole message
-            # up front rather than carried forward as the loop meets it: the
-            # signature is not guaranteed to reach the part that ends up
-            # first, and a call preceding the signed one would otherwise
-            # replay bare — the very 400 this borrowing exists to prevent.
-            round_sig = _round_signature(msg.content)
-            for p in msg.content:
-                if isinstance(p, AITextPart):
-                    parts.append(types.Part.from_text(text=p.text))
-                elif isinstance(p, AIToolCallPart):
-                    own_sig = _part_signature(p)
-                    sig = own_sig if own_sig is not None else round_sig
-                    if sig is not None:
-                        # No ``thought=True`` here — a signed functionCall
-                        # part is NOT a thought part, and flagging it as
-                        # one desyncs Google's validator from the shape it
-                        # originally streamed.
-                        parts.append(
-                            types.Part(
-                                function_call=types.FunctionCall(
-                                    name=p.name,
-                                    args=p.arguments,
-                                ),
-                                thought_signature=sig,
-                            )
-                        )
-                    else:
-                        parts.append(
-                            types.Part.from_function_call(
-                                name=p.name,
-                                args=p.arguments,
-                            )
-                        )
-            contents.append(types.Content(role="model", parts=parts))
+            contents.append(
+                types.Content(role="model", parts=_model_call_parts(types, msg.content))
+            )
         elif isinstance(msg.content, list) and any(
             isinstance(p, AIToolResultPart) for p in msg.content
         ):
-            # Function responses. A FunctionResponse.response is a JSON
-            # Struct — it can't carry image bytes, so an image tool result
-            # keeps the function response text-only and the image is decoded
-            # onto a following user Content via _image_part (inline bytes the
-            # model can actually see). Text results are unchanged.
-            parts = []
-            image_parts: list[Any] = []
-            for p in msg.content:
-                if isinstance(p, AIToolResultPart):
-                    text, images = p.split_for_message()
-                    parts.append(
-                        types.Part.from_function_response(
-                            name=p.name,
-                            response={"result": text},
-                        )
-                    )
-                    image_parts.extend(_image_part(types, img) for img in images)
-            contents.append(types.Content(role="user", parts=parts))
-            if image_parts:
-                contents.append(types.Content(role="user", parts=image_parts))
+            contents.extend(_tool_result_contents(types, msg.content))
         else:
             role = "model" if msg.role == "assistant" else "user"
             parts = format_content(types, msg.content)
             contents.append(types.Content(role=role, parts=parts))
+    return contents
+
+
+def _model_call_parts(types: Any, content: list[Any]) -> list[Any]:
+    """Parts of a model turn that carries function calls, replayed signed.
+
+    The round's signature is lent to the calls Gemini left unsigned: the API
+    emits the thought_signature on the FIRST functionCall part of a parallel
+    group only, but its validator rejects any history functionCall part
+    without one ("Function call is missing a thought_signature", observed
+    live on gemini-3.5-flash with a 2-call round). Reusing the group's
+    signature satisfies it. Resolved by scanning the whole message up front
+    rather than carried forward as the loop meets it: the signature is not
+    guaranteed to reach the part that ends up first, and a call preceding
+    the signed one would otherwise replay bare — the very 400 this borrowing
+    exists to prevent.
+    """
+    round_sig = _round_signature(content)
+    parts = []
+    for p in content:
+        if isinstance(p, AITextPart):
+            parts.append(types.Part.from_text(text=p.text))
+        elif isinstance(p, AIToolCallPart):
+            own_sig = _part_signature(p)
+            sig = own_sig if own_sig is not None else round_sig
+            if sig is None:
+                parts.append(types.Part.from_function_call(name=p.name, args=p.arguments))
+                continue
+            # No ``thought=True`` here — a signed functionCall part is NOT a
+            # thought part, and flagging it as one desyncs Google's validator
+            # from the shape it originally streamed.
+            parts.append(
+                types.Part(
+                    function_call=types.FunctionCall(name=p.name, args=p.arguments),
+                    thought_signature=sig,
+                )
+            )
+    return parts
+
+
+def _tool_result_contents(types: Any, content: list[Any]) -> list[Any]:
+    """Contents replaying a tool-result turn: the responses, then any images.
+
+    A FunctionResponse.response is a JSON Struct — it can't carry image
+    bytes, so an image tool result keeps the function response text-only and
+    the image is decoded onto a following user Content via ``_image_part``
+    (inline bytes the model can actually see). Text results are unchanged.
+    """
+    parts = []
+    image_parts: list[Any] = []
+    for p in content:
+        if isinstance(p, AIToolResultPart):
+            text, images = p.split_for_message()
+            parts.append(types.Part.from_function_response(name=p.name, response={"result": text}))
+            image_parts.extend(_image_part(types, img) for img in images)
+    contents = [types.Content(role="user", parts=parts)]
+    if image_parts:
+        contents.append(types.Content(role="user", parts=image_parts))
     return contents
 
 
