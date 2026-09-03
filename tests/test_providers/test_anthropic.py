@@ -10,6 +10,7 @@ import pytest
 
 from roomkit.providers.ai.base import AIContext, AIMessage, AITool, StreamDone, StreamTextDelta
 from roomkit.providers.anthropic.config import AnthropicConfig
+from roomkit.providers.anthropic.request import build_kwargs, format_content
 
 
 class _FakeAPIStatusError(Exception):
@@ -326,19 +327,21 @@ class TestAnthropicAIProvider:
             from roomkit.providers.anthropic.ai import AnthropicAIProvider
 
             adaptive = AnthropicAIProvider(_config(use_adaptive_thinking=True))
-            kwargs = adaptive._build_kwargs(_context(thinking_budget=8192, temperature=0.7))
+            kwargs = build_kwargs(
+                adaptive._config, _context(thinking_budget=8192, temperature=0.7)
+            )
             assert kwargs["thinking"] == {"type": "adaptive", "display": "summarized"}
             assert "budget_tokens" not in kwargs["thinking"]
             assert "temperature" not in kwargs
 
             fixed = AnthropicAIProvider(_config(use_adaptive_thinking=False))
-            kwargs = fixed._build_kwargs(_context(thinking_budget=8192))
+            kwargs = build_kwargs(fixed._config, _context(thinking_budget=8192))
             assert kwargs["thinking"] == {"type": "enabled", "budget_tokens": 8192}
 
     @pytest.mark.asyncio
     async def test_thinking_signature_captured_from_stream(self) -> None:
         # The thinking block's signature streams as its own signature_delta;
-        # it must be captured (and round-trip via _format_content), else
+        # it must be captured (and round-trip via format_content), else
         # Anthropic 400s on a replayed thinking block missing its signature.
         with patch.dict("sys.modules", {"anthropic": _mock_anthropic_module()}):
             from roomkit.providers.ai.base import AIMessage, AIThinkingPart
@@ -358,7 +361,7 @@ class TestAnthropicAIProvider:
             assert result.thinking_signature == "sig-abc123"
 
             # And the signature round-trips when the block is echoed back.
-            block = provider._format_content(
+            block = format_content(
                 [AIThinkingPart(thinking="let me think", signature="sig-abc123")]
             )[0]
             assert block == {
@@ -377,7 +380,7 @@ class TestAnthropicAIProvider:
             from roomkit.providers.anthropic.ai import AnthropicAIProvider
 
             provider = AnthropicAIProvider(_config(supports_custom_temperature=False))
-            kwargs = provider._build_kwargs(_context(thinking_budget=0, temperature=0.7))
+            kwargs = build_kwargs(provider._config, _context(thinking_budget=0, temperature=0.7))
             assert "thinking" not in kwargs
             assert "temperature" not in kwargs
 
@@ -763,77 +766,68 @@ class TestAnthropicToolResultImages:
     def test_tool_result_string_passes_through(self) -> None:
         # A plain string result renders as a text tool_result — unchanged
         # behaviour for every existing (text-only) tool.
-        with patch.dict("sys.modules", {"anthropic": _mock_anthropic_module()}):
-            from roomkit.providers.ai.base import AIToolResultPart
-            from roomkit.providers.anthropic.ai import AnthropicAIProvider
+        from roomkit.providers.ai.base import AIToolResultPart
 
-            provider = AnthropicAIProvider(_config())
-            block = provider._format_content(
-                [AIToolResultPart(tool_call_id="t1", name="foo", result="hello")]
-            )[0]
-            assert block == {
-                "type": "tool_result",
-                "tool_use_id": "t1",
-                "content": "hello",
-            }
+        block = format_content(
+            [AIToolResultPart(tool_call_id="t1", name="foo", result="hello")],
+        )[0]
+        assert block == {
+            "type": "tool_result",
+            "tool_use_id": "t1",
+            "content": "hello",
+        }
 
     def test_tool_result_image_renders_content_blocks(self) -> None:
         # A multimodal result (text + base64 image) becomes a content-block
         # list — this is what lets a screenshot tool reach the model.
-        with patch.dict("sys.modules", {"anthropic": _mock_anthropic_module()}):
-            from roomkit.providers.ai.base import (
-                AIImagePart,
-                AITextPart,
-                AIToolResultPart,
-            )
-            from roomkit.providers.anthropic.ai import AnthropicAIProvider
+        from roomkit.providers.ai.base import (
+            AIImagePart,
+            AITextPart,
+            AIToolResultPart,
+        )
 
-            provider = AnthropicAIProvider(_config())
-            block = provider._format_content(
-                [
-                    AIToolResultPart(
-                        tool_call_id="t1",
-                        name="screenshot",
-                        result=[
-                            AITextPart(text="the screen"),
-                            AIImagePart(url="data:image/png;base64,IMGDATA"),
-                        ],
-                    )
-                ]
-            )[0]
-            assert block == {
-                "type": "tool_result",
-                "tool_use_id": "t1",
-                "content": [
-                    {"type": "text", "text": "the screen"},
-                    {
-                        "type": "image",
-                        "source": {
-                            "type": "base64",
-                            "media_type": "image/png",
-                            "data": "IMGDATA",
-                        },
+        block = format_content(
+            [
+                AIToolResultPart(
+                    tool_call_id="t1",
+                    name="screenshot",
+                    result=[
+                        AITextPart(text="the screen"),
+                        AIImagePart(url="data:image/png;base64,IMGDATA"),
+                    ],
+                )
+            ]
+        )[0]
+        assert block == {
+            "type": "tool_result",
+            "tool_use_id": "t1",
+            "content": [
+                {"type": "text", "text": "the screen"},
+                {
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": "image/png",
+                        "data": "IMGDATA",
                     },
-                ],
-            }
+                },
+            ],
+        }
 
     def test_image_message_part_still_renders_base64(self) -> None:
         # Guard the _image_block refactor: an image in ordinary message content
         # keeps producing the base64 source block.
-        with patch.dict("sys.modules", {"anthropic": _mock_anthropic_module()}):
-            from roomkit.providers.ai.base import AIImagePart
-            from roomkit.providers.anthropic.ai import AnthropicAIProvider
+        from roomkit.providers.ai.base import AIImagePart
 
-            provider = AnthropicAIProvider(_config())
-            block = provider._format_content([AIImagePart(url="data:image/jpeg;base64,ABC123")])[0]
-            assert block == {
-                "type": "image",
-                "source": {
-                    "type": "base64",
-                    "media_type": "image/jpeg",
-                    "data": "ABC123",
-                },
-            }
+        block = format_content([AIImagePart(url="data:image/jpeg;base64,ABC123")])[0]
+        assert block == {
+            "type": "image",
+            "source": {
+                "type": "base64",
+                "media_type": "image/jpeg",
+                "data": "ABC123",
+            },
+        }
 
     def test_as_text_flattens_parts(self) -> None:
         # as_text() is the fallback used by non-Anthropic providers: text parts
