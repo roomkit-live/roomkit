@@ -41,6 +41,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **`ON_AI_RESPONSE` reports a readable transcript.** A tool call cuts the
+  model's text into segments, persisted as one MESSAGE each, and
+  `AIResponseEvent.response_content` joined them with nothing in between: an
+  agentic turn reached an audit log or a judge as `Let me orient
+  first.Working tree has 2 modified files.` The segments are now separated by
+  a blank line (`RESPONSE_SEGMENT_SEPARATOR`), only ever between two of them,
+  and the new `segments` field carries them one by one — `segments[-1]` is
+  the answer, for a consumer that wants it without the narration. The
+  streaming, non-streaming and ACP paths report the same transcript; the
+  non-streaming tool loop used to report the last segment alone. A turn
+  without a tool call is unchanged.
 - **`SSESource.timeout` no longer bounds the connect.** It bounds write and
   pool; the new `connect_timeout` (default 5 s) bounds the TCP connect, and
   the read side stays unbounded so the stream survives idle periods. A caller

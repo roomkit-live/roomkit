@@ -9,6 +9,7 @@ from roomkit.models.channel import ChannelBinding
 from roomkit.models.context import RoomContext
 from roomkit.models.enums import ChannelCategory, ChannelType
 from roomkit.models.room import Room
+from roomkit.models.tool_call import AIResponseEvent
 from roomkit.providers.ai.base import (
     AIResponse,
     AITool,
@@ -648,7 +649,6 @@ class TestStreamingTokenAccumulation:
         input/output made a cached prefix indistinguishable from fresh input,
         and the two are billed an order of magnitude apart.
         """
-        from roomkit.models.tool_call import AIResponseEvent
 
         async def tool_handler(name: str, args: dict[str, Any]) -> str:
             return "result"
@@ -701,3 +701,70 @@ class TestStreamingTokenAccumulation:
             "cache_read_input_tokens": 1_800,
             "cache_creation_input_tokens": 1_000,
         }
+
+
+class TestResponseTranscript:
+    """``ON_AI_RESPONSE`` carries the turn's text as a readable transcript.
+
+    A tool call cuts the model's text into segments, one MESSAGE each. Joined
+    with nothing between them, the hook's ``response_content`` read as one
+    run-on sentence (``first.Working``), and the non-streaming loop reported
+    the last segment alone. The three paths now report the same thing.
+    """
+
+    _ROUNDS = [
+        AIResponse(
+            content="Let me look.",
+            finish_reason="tool_calls",
+            tool_calls=[AIToolCall(id="tc1", name="search", arguments={})],
+        ),
+        AIResponse(
+            content="",
+            finish_reason="tool_calls",
+            tool_calls=[AIToolCall(id="tc2", name="search", arguments={})],
+        ),
+        AIResponse(content="Done.", finish_reason="stop"),
+    ]
+
+    @staticmethod
+    async def _report(provider: MockAIProvider) -> AIResponseEvent:
+        async def tool_handler(name: str, args: dict[str, Any]) -> str:
+            return "result"
+
+        captured: list[AIResponseEvent] = []
+
+        async def after_response(event: AIResponseEvent) -> None:
+            captured.append(event)
+
+        ch = AIChannel("ai1", provider=provider, tool_handler=tool_handler)
+        ch._after_response_hook = after_response
+        output = await ch.on_event(make_event(body="go", channel_id="sms1"), _binding(), _ctx())
+        if output.response_stream is not None:
+            async for _ in output.response_stream:
+                pass
+        assert len(captured) == 1
+        return captured[0]
+
+    async def test_streaming_separates_the_segments_at_tool_calls(self) -> None:
+        # The silent round (a call with no text before it) adds no separator.
+        event = await self._report(MockAIProvider(ai_responses=list(self._ROUNDS), streaming=True))
+        assert event.segments == ["Let me look.", "Done."]
+        assert event.response_content == "Let me look.\n\nDone."
+
+    async def test_non_streaming_reports_the_whole_turn_too(self) -> None:
+        event = await self._report(
+            MockAIProvider(ai_responses=list(self._ROUNDS), streaming=False)
+        )
+        assert event.segments == ["Let me look.", "Done."]
+        assert event.response_content == "Let me look.\n\nDone."
+
+    async def test_a_turn_without_a_tool_call_is_unchanged(self) -> None:
+        for streaming in (True, False):
+            event = await self._report(
+                MockAIProvider(
+                    ai_responses=[AIResponse(content="Hello there.", finish_reason="stop")],
+                    streaming=streaming,
+                )
+            )
+            assert event.response_content == "Hello there."
+            assert event.segments == ["Hello there."]

@@ -57,7 +57,10 @@ class ACPEventsMixin:
         turn = self._turns.get(session_id)
         text = getattr(getattr(update, "content", None), "text", None)
         if turn is not None and isinstance(text, str) and text:
-            turn.text.append(text)
+            if turn.segments:
+                turn.segments[-1] += text
+            else:
+                turn.segments.append(text)
             turn.queue.put_nowait(text)
 
     async def _on_thought_chunk(self, session_id: str, update: Any) -> None:
@@ -243,6 +246,10 @@ class ACPEventsMixin:
             return
         tool.started = True
         if turn is not None:
+            # The call cuts the agent's text: whatever follows is the next
+            # segment of the end-of-turn report.
+            if turn.segments and turn.segments[-1]:
+                turn.segments.append("")
             turn.queue.put_nowait(
                 ToolCallStartMarker(
                     tool_name=tool.name,

@@ -58,11 +58,13 @@ class _TurnState:
     thinking_open: bool = False
     runner: asyncio.Task[None] | None = None
     started_at: float = field(default_factory=time.monotonic)
-    text: list[str] = field(default_factory=list)
-    """What the agent said this turn, kept for the end-of-turn report.
+    segments: list[str] = field(default_factory=list)
+    """What the agent said this turn, one entry per stretch between tool calls.
 
     The queue hands each chunk to the consumer and forgets it, so the turn
-    would otherwise end with no idea what it produced.
+    would otherwise end with no idea what it produced. A tool call closes the
+    current stretch — the boundary ``segment_stream`` persists a MESSAGE on —
+    and the chunks after it open the next.
     """
 
     tokens: dict[str, int] = field(default_factory=dict)

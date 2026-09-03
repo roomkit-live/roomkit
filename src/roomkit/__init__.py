@@ -134,6 +134,7 @@ from roomkit.models.session_event import SessionStartedEvent
 from roomkit.models.store_filter import EventFilter, PersistencePolicy
 from roomkit.models.thinking_event import ThinkingEvent
 from roomkit.models.tool_call import (
+    RESPONSE_SEGMENT_SEPARATOR,
     AfterResponseCallback,
     AIGenerationEvent,
     AIResponseEvent,
@@ -381,6 +382,7 @@ __all__ = [
     # Models (core)
     "AIGenerationEvent",
     "AIResponseEvent",
+    "RESPONSE_SEGMENT_SEPARATOR",
     "AfterResponseCallback",
     "BeforeGenerationCallback",
     "ChannelBinding",

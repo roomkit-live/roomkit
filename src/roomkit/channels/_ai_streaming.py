@@ -26,7 +26,7 @@ from roomkit.models.streaming import (
     ToolCallEndMarker,
     ToolCallStartMarker,
 )
-from roomkit.models.tool_call import AIResponseEvent, ToolCallEvent
+from roomkit.models.tool_call import AIResponseEvent, ToolCallEvent, response_transcript
 from roomkit.providers.ai.base import (
     AIContext,
     AIMessage,
@@ -393,7 +393,11 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
         _total_usage: dict[str, int] = {}
         _span_errored = False
         _t0_stream = time.monotonic()
-        _accumulated_text: list[str] = []
+        # The turn's text for the after-response hook, one entry per round —
+        # the round's own ``text_parts`` list, the same object, so the finally
+        # reads a round that ended abnormally as far as it got. A tool call
+        # ends a segment; the next round's text starts the next one.
+        _segments: list[list[str]] = []
         room_id = context.room.room.id if context.room else None
         # The round's reasoning window, declared ahead of the try so the
         # finally can reach it: a provider that dies mid-reasoning raises out
@@ -431,6 +435,7 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                 thinking_published = 0
                 thinking_signature: str | None = None
                 text_parts: list[str] = []
+                _segments.append(text_parts)
                 tool_calls: list[StreamToolCall] = []
                 thinking_started = False
                 round_finish_reason: str | None = None
@@ -508,7 +513,6 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                                 published=thinking_published,
                             )
                         text_parts.append(event.text)
-                        _accumulated_text.append(event.text)
 
                         # --- Dedup: skip text that repeats previous rounds ---
                         if _dedup_active:
@@ -893,11 +897,15 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                     telemetry.end_span(span_id, attributes=usage_attrs)
 
                 if self._after_response_hook and not _span_errored:
+                    segments, transcript = response_transcript(
+                        "".join(parts) for parts in _segments
+                    )
                     try:
                         await self._after_response_hook(
                             AIResponseEvent(
                                 channel_id=self.channel_id,
-                                response_content="".join(_accumulated_text),
+                                response_content=transcript,
+                                segments=segments,
                                 room_id=room_id,
                                 # The zero defaults keep the two counters always
                                 # present, as consumers of this event have read them.

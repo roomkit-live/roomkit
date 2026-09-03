@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
@@ -67,6 +67,28 @@ class ToolCallEvent:
 ToolCallCallback = Callable[[ToolCallEvent], Awaitable[str | list[Any] | None]]
 
 
+RESPONSE_SEGMENT_SEPARATOR = "\n\n"
+"""What separates two segments of a turn in :attr:`AIResponseEvent.response_content`.
+
+A tool call cuts the model's text: what it said before the call and what it
+said after are two segments, persisted as two MESSAGE events. Joined with
+nothing between them they read as one run-on sentence (``first.Working``);
+this is the paragraph break that keeps them apart. It only ever sits between
+two segments — never inside one, never at either end.
+"""
+
+
+def response_transcript(segments: Iterable[str]) -> tuple[list[str], str]:
+    """The turn's text as ``ON_AI_RESPONSE`` reports it.
+
+    Drops the empty stretches (a tool round in which the model said nothing)
+    and returns the segments kept, and their join. The one place the contract
+    lives: the streaming, non-streaming and ACP paths all report through it.
+    """
+    kept = [segment for segment in segments if segment]
+    return kept, RESPONSE_SEGMENT_SEPARATOR.join(kept)
+
+
 @dataclass(frozen=True)
 class AIResponseEvent:
     """Emitted through ON_AI_RESPONSE hooks after AI generation completes.
@@ -79,7 +101,12 @@ class AIResponseEvent:
     """ID of the AI channel that generated the response."""
 
     response_content: str
-    """The generated text response."""
+    """Everything the model said in the turn, as one readable transcript.
+
+    The turn's :attr:`segments` joined with :data:`RESPONSE_SEGMENT_SEPARATOR`
+    — a blank line at every tool-call boundary, nothing inside a segment. A
+    turn without a tool call is its single segment, verbatim.
+    """
 
     room_id: str | None = None
     """Room where the response was generated."""
@@ -104,6 +131,16 @@ class AIResponseEvent:
 
     timestamp: datetime = field(default_factory=_utcnow)
     """When the response was generated."""
+
+    segments: list[str] = field(default_factory=list)
+    """The turn's text, one entry per stretch between tool calls, in order.
+
+    Empty stretches are dropped, so :attr:`response_content` is exactly these
+    joined with :data:`RESPONSE_SEGMENT_SEPARATOR`, and ``segments[-1]`` is
+    the text that followed the last tool call — the answer, for a consumer
+    that wants it without the narration before it. Empty when the turn
+    produced no text.
+    """
 
 
 # Callback type for AI response observation (fire-and-forget).

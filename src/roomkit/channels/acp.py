@@ -57,7 +57,7 @@ from roomkit.models.enums import (
 from roomkit.models.event import RoomEvent
 from roomkit.models.response_metadata import ResponseMetadata
 from roomkit.models.streaming import StreamDelta
-from roomkit.models.tool_call import AfterResponseCallback, AIResponseEvent
+from roomkit.models.tool_call import AfterResponseCallback, AIResponseEvent, response_transcript
 from roomkit.providers.ai.base import ProviderError
 from roomkit.realtime.base import EphemeralEventType
 
@@ -626,11 +626,13 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
         """
         if self._after_response_hook is None:
             return
+        segments, transcript = response_transcript(turn.segments)
         try:
             await self._after_response_hook(
                 AIResponseEvent(
                     channel_id=self.channel_id,
-                    response_content="".join(turn.text),
+                    response_content=transcript,
+                    segments=segments,
                     room_id=turn.room_id,
                     tool_calls_count=len(turn.tools),
                     usage=_usage_report(turn.tokens, turn.context),

@@ -18,7 +18,7 @@ from roomkit.models.channel import ChannelOutput
 from roomkit.models.enums import EventType
 from roomkit.models.event import EventSource, RoomEvent, TextContent, ToolCallContent
 from roomkit.models.streaming import LoopEndReason
-from roomkit.models.tool_call import AIGenerationEvent, AIResponseEvent
+from roomkit.models.tool_call import AIGenerationEvent, AIResponseEvent, response_transcript
 from roomkit.providers.ai.base import (
     AIContext,
     AIMessage,
@@ -285,11 +285,17 @@ class AIGenerationMixin(AIToolLoopRulesMixin):
         )
 
         if self._after_response_hook:
+            # What each tool round said before its calls, then the answer —
+            # the same segments the response events above persist.
+            segments, transcript = response_transcript(
+                [rnd.text_before for rnd in loop_result.rounds] + [response.content or ""]
+            )
             try:
                 await self._after_response_hook(
                     AIResponseEvent(
                         channel_id=self.channel_id,
-                        response_content=response.content or "",
+                        response_content=transcript,
+                        segments=segments,
                         room_id=event.room_id,
                         tool_calls_count=(len(response.tool_calls) if response.tool_calls else 0),
                         usage=response.usage or {},

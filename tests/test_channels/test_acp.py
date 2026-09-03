@@ -1303,7 +1303,9 @@ class TestEndOfTurnReport:
         assert len(reports) == 1
         assert reports[0].channel_id == "acp-agent"
         assert reports[0].room_id == "room-1"
-        assert reports[0].response_content == "Working done"
+        # The tool call between the two chunks is a segment boundary.
+        assert reports[0].response_content == "Working \n\ndone"
+        assert reports[0].segments == ["Working ", "done"]
         assert reports[0].tool_calls_count == 1
         assert reports[0].latency_ms >= 0
         assert reports[0].streaming is True
@@ -1342,7 +1344,7 @@ class TestEndOfTurnReport:
         assert len(seen) == 1
         assert seen[0].channel_id == "acp-agent"
         assert seen[0].room_id == "room-1"
-        assert seen[0].response_content == "Working done"
+        assert seen[0].response_content == "Working \n\ndone"
         assert seen[0].tool_calls_count == 1
         await kit.close()
 
