@@ -208,7 +208,7 @@ async def _part_from_url(
             upload_timeout=upload_timeout,
             get_client=get_client,
         )
-    if parsed.hostname == _FILES_API_HOST:
+    if parsed.scheme == "https" and parsed.hostname == _FILES_API_HOST:
         return ({"type": "audio", "uri": url, "mime_type": "audio/wav"}, None)
 
     raise ValueError(

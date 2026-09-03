@@ -297,6 +297,17 @@ class TestInputPaths:
 
         assert client.interactions.calls[0]["input"][0]["uri"] == uri
 
+    async def test_a_files_api_uri_over_http_is_refused(self) -> None:
+        """The Files API answers on https only: an http URI to its host is not
+        a Files API URI, and forwarding it would only fail at Google's end."""
+        provider, client = _provider()
+        uri = "http://generativelanguage.googleapis.com/v1beta/files/xyz"
+
+        with pytest.raises(ValueError, match="will not fetch"):
+            await provider.transcribe_recording(AudioContent(url=uri, mime_type="audio/wav"))
+
+        assert client.interactions.calls == []
+
     async def test_a_path_string_with_a_file_scheme_is_read_from_disk(
         self, tmp_path: Path
     ) -> None:

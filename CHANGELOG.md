@@ -58,6 +58,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Gemini STT refuses an `http://` Files API URI.** `transcribe_recording`
+  passes a Files API URI through to the model untouched, and matched it on
+  the host alone: an `http://` URI to that host was forwarded and failed at
+  Google's end with a remote error. The Files API answers on https only, so
+  the scheme is part of the match, and the local `ValueError` that refuses
+  an arbitrary URL now names it.
 - **HTTP providers give up on a dead host in seconds, not minutes.** Every
   adapter in `roomkit.providers` handed its client or SDK `config.timeout` as
   a bare float, which httpx applies to the connect as well as the read: a
