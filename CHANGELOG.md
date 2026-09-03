@@ -31,6 +31,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **`SSESource.timeout` no longer bounds the connect.** It bounds write and
+  pool; the new `connect_timeout` (default 5 s) bounds the TCP connect, and
+  the read side stays unbounded so the stream survives idle periods. A caller
+  who raised `timeout` for a slow link sets `connect_timeout` now.
+- **The PolarGrid catalog follows the fleet.** `qwen-3.5-27b` was retired on
+  2026-08-20 (`404 model_not_loaded` on every edge, and the autorouter answers
+  404 for it), so it leaves `available_models()` rather than sit there as a
+  dead id. `qwen-3.6-35b-a3b` is now a customer pilot served from no public
+  edge: it moves to `PILOT_MODELS`, recognised (`supports_vision`, the
+  `list_models` backfill on a pilot edge) but no longer advertised.
+  `qwen-3.8-27b`, the one public LLM, carries its 256K context window and the
+  vendor's list price ($0.20 / $0.75 per million tokens, models page,
+  2026-09-02), which puts PolarGrid under the priced-catalog guard. The
+  region mirror is unchanged (polargrid-sdk 0.10.0 is still the latest on
+  PyPI) but its notes are: `yul-02` left the vendor's published list with the
+  pilot and stays routable, and every other edge answered `/health` on
+  2026-09-02, `yto-01` excepted. `AIProvider._curated_index` is the new hook
+  `_merge_curated` reads from, so a provider can recognise more models than it
+  advertises.
 - **`STTProvider.transcribe` and `transcribe_stream` take a keyword-only
   `language`**, honoured by providers whose new `supports_language_override`
   is true (Deepgram, `MockSTTProvider`). `VoiceChannel` passes it only to

@@ -28,7 +28,7 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from roomkit.providers.gemini.sdk import build_genai_client
+from roomkit.providers.gemini.sdk import build_genai_client, close_genai_client
 from roomkit.providers.gemini.voices import VOICES
 from roomkit.voice.base import AudioChunk
 from roomkit.voice.tts.audio_utils import wrap_wav
@@ -314,12 +314,4 @@ class GeminiTTSProvider(TTSProvider):
         """Close the genai client's connection pool and drop the reference."""
         client, self._client = self._client, None
         http, self._http = self._http, None
-        if client is None:
-            return
-        try:
-            await client.aio.aclose()
-            # The SDK leaves a client it was given open; it is ours to close.
-            if http is not None:
-                await http.aclose()
-        except Exception:  # pragma: no cover - transport already gone
-            logger.debug("GeminiTTS client close failed", exc_info=True)
+        await close_genai_client(client, http)

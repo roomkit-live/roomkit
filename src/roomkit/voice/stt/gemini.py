@@ -38,7 +38,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
-from roomkit.providers.gemini.sdk import build_genai_client
+from roomkit.providers.gemini.sdk import build_genai_client, close_genai_client
 from roomkit.voice.base import TranscriptionResult
 from roomkit.voice.stt.base import STTProvider
 
@@ -79,6 +79,8 @@ _PCM_MIME_TYPE = "audio/l16"
 _FILES_API_HOST = "generativelanguage.googleapis.com"
 
 _MAX_INLINE_BYTES = 15 * 1024 * 1024
+# The Files API delete is cleanup, not the transcript: it gets seconds, not minutes.
+_FILES_DELETE_TIMEOUT = 10.0
 """Above this, a file is uploaded instead of inlined — the request has a size
 limit and a base64 payload is a third larger than the file it carries."""
 
@@ -162,9 +164,9 @@ class GeminiSTTConfig:
             formatting rules, anything the model should know before it listens.
         timeout: Per-request timeout in seconds. Generous by design: a model
             answering on an hour of audio is not answering in milliseconds.
-        connect_timeout: TCP connect timeout in seconds, apart from ``timeout``.
         max_inline_bytes: Recordings larger than this are uploaded through the
             Files API instead of being inlined in the request.
+        connect_timeout: TCP connect timeout in seconds, apart from ``timeout``.
     """
 
     api_key: str = field(repr=False)
@@ -173,8 +175,8 @@ class GeminiSTTConfig:
     diarize: bool = True
     prompt: str | None = None
     timeout: float = 600.0
-    connect_timeout: float = 5.0
     max_inline_bytes: int = _MAX_INLINE_BYTES
+    connect_timeout: float = 5.0
 
     def __post_init__(self) -> None:
         if not self.api_key.strip():
@@ -234,16 +236,17 @@ class GeminiSTTProvider(STTProvider):
             )
         return self._client
 
-    def _files_config(self) -> dict[str, Any]:
-        """Per-call options for the Files API.
+    @staticmethod
+    def _files_config(seconds: float) -> dict[str, Any]:
+        """Per-call options for the Files API, bounded by *seconds*.
 
         Those calls go through the SDK's classic request path, which hands
         httpx ``timeout=None`` (no timeout at all) unless ``HttpOptions.timeout``
         is set, so a stalled upload of a long recording never returned. That
         option is one value in milliseconds and cannot split the connect from
-        the read, so this is the flat ``timeout`` budget.
+        the read, so it is a flat budget.
         """
-        return {"http_options": {"timeout": int(self._config.timeout * 1000)}}
+        return {"http_options": {"timeout": int(seconds * 1000)}}
 
     def _build_prompt(self) -> str:
         lines = [
@@ -349,7 +352,7 @@ class GeminiSTTProvider(STTProvider):
 
         logger.debug("Uploading %s (%d bytes) through the Files API", path.name, size)
         uploaded = await self._get_client().aio.files.upload(
-            file=str(path), config=self._files_config()
+            file=str(path), config=self._files_config(self._config.timeout)
         )
         # The upload guesses its own mime and can answer ``audio/x-wav``, which
         # the interactions endpoint rejects — send the normalised one.
@@ -464,7 +467,11 @@ class GeminiSTTProvider(STTProvider):
         """Remove an uploaded recording. Failing to is not worth an exception —
         the Files API expires uploads on its own."""
         try:
-            await self._get_client().aio.files.delete(name=name, config=self._files_config())
+            # Best-effort cleanup awaited before the transcript is returned: a
+            # stalled DELETE must not hold it for the whole read budget.
+            await self._get_client().aio.files.delete(
+                name=name, config=self._files_config(_FILES_DELETE_TIMEOUT)
+            )
         except Exception:  # pragma: no cover - best effort
             logger.debug("Could not delete uploaded recording %s", name, exc_info=True)
 
@@ -476,12 +483,4 @@ class GeminiSTTProvider(STTProvider):
         """Close the genai client's connection pool and drop the reference."""
         client, self._client = self._client, None
         http, self._http = self._http, None
-        if client is None:
-            return
-        try:
-            await client.aio.aclose()
-            # The SDK leaves a client it was given open; it is ours to close.
-            if http is not None:
-                await http.aclose()
-        except Exception:  # pragma: no cover - transport already gone
-            logger.debug("GeminiSTT client close failed", exc_info=True)
+        await close_genai_client(client, http)

@@ -233,9 +233,12 @@ class TestInputPaths:
         await provider.transcribe_recording(_wav(tmp_path, size=128))
 
         # The SDK's classic path sends no timeout at all unless told per call,
-        # and its option is one flat value in milliseconds (RMK-149).
-        flat = {"http_options": {"timeout": 42000}}
-        assert client.files.configs == [flat, flat]
+        # and its option is one flat value in milliseconds (RMK-149). The
+        # delete is cleanup awaited before the transcript: seconds, not minutes.
+        assert client.files.configs == [
+            {"http_options": {"timeout": 42000}},
+            {"http_options": {"timeout": 10000}},
+        ]
 
     async def test_upload_is_deleted_even_when_the_request_fails(self, tmp_path: Path) -> None:
         provider, client = _provider(max_inline_bytes=64)

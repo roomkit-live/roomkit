@@ -33,14 +33,19 @@ def extract_event_text(event: RoomEvent) -> str:
 
 
 def http_timeout(config: HTTPTimeouts) -> httpx.Timeout:
-    """Build the ``httpx.Timeout`` a provider hands its HTTP client or SDK.
+    """The ``httpx.Timeout`` a provider hands its HTTP client or SDK, from its config."""
+    return http_timeout_from(config.timeout, config.connect_timeout)
 
-    ``config.timeout`` is the read/write/pool budget, sized for the slowest
-    response the provider expects; ``config.connect_timeout`` bounds the TCP
-    connect alone. Handing the client the bare float instead applies the read
-    budget to the connect too, so a host that no longer accepts connections is
-    only given up on once the kernel exhausts its SYN retries (about two
-    minutes), whatever the configured value.
+
+def http_timeout_from(timeout: float, connect_timeout: float) -> httpx.Timeout:
+    """Build the ``httpx.Timeout`` that splits the connect from the read.
+
+    ``timeout`` is the read/write/pool budget, sized for the slowest response
+    the caller expects; ``connect_timeout`` bounds the TCP connect alone.
+    Handing the client the bare float instead applies the read budget to the
+    connect too, so a host that no longer accepts connections is only given up
+    on once the kernel exhausts its SYN retries (about two minutes), whatever
+    the configured value.
 
     httpx is an optional dependency, so it is imported here rather than at
     module level; every caller has already imported it, or an SDK that
@@ -53,4 +58,4 @@ def http_timeout(config: HTTPTimeouts) -> httpx.Timeout:
             "httpx is required to build a provider's HTTP timeout. "
             "Install it with: pip install roomkit[httpx]"
         ) from exc
-    return httpx.Timeout(config.timeout, connect=config.connect_timeout)
+    return httpx.Timeout(timeout, connect=connect_timeout)

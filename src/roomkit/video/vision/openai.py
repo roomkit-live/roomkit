@@ -54,8 +54,8 @@ class OpenAIVisionConfig:
         max_tokens: Max response tokens.
         temperature: Sampling temperature.
         timeout: HTTP timeout in seconds.
-        connect_timeout: TCP connect timeout in seconds, apart from ``timeout``.
         detail: Image detail level (``low``, ``high``, ``auto``).
+        connect_timeout: TCP connect timeout in seconds, apart from ``timeout``.
     """
 
     api_key: str = field(default="ollama", repr=False)
@@ -65,8 +65,8 @@ class OpenAIVisionConfig:
     max_tokens: int = 100
     temperature: float = 0.3
     timeout: float = 30.0
-    connect_timeout: float = 5.0
     detail: Literal["low", "high", "auto"] = "low"
+    connect_timeout: float = 5.0
 
 
 class OpenAIVisionProvider(VisionProvider):

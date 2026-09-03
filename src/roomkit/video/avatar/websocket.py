@@ -31,6 +31,7 @@ import struct
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse, urlunparse
 
+from roomkit.providers.utils import http_timeout_from
 from roomkit.video.avatar.base import AvatarProvider
 
 if TYPE_CHECKING:
@@ -106,18 +107,6 @@ class WebSocketAvatarProvider(AvatarProvider):
     def is_started(self) -> bool:
         return self._started
 
-    def _http_timeout(self) -> httpx.Timeout:
-        """The connect/read split every client here hands httpx.
-
-        A bare float would apply the read budget to the TCP connect too, so
-        a dead avatar server would only be given up on once the kernel ran
-        out of SYN retries. httpx is imported lazily, as in the methods
-        that build the clients.
-        """
-        import httpx
-
-        return httpx.Timeout(self._timeout, connect=self._connect_timeout)
-
     async def start(
         self,
         reference_image: bytes,
@@ -133,7 +122,8 @@ class WebSocketAvatarProvider(AvatarProvider):
 
         payload = self._build_start_payload()
         try:
-            async with httpx.AsyncClient(timeout=self._http_timeout()) as client:
+            timeout = http_timeout_from(self._timeout, self._connect_timeout)
+            async with httpx.AsyncClient(timeout=timeout) as client:
                 resp = await client.post(f"{self._base_url}/start", json=payload)
             resp.raise_for_status()
             self._fps = resp.json().get("fps", self._fps)
@@ -151,7 +141,7 @@ class WebSocketAvatarProvider(AvatarProvider):
             )
 
         # Sync client for thread-pool operations (get_idle_frame, _try_restart)
-        self._http = httpx.Client(timeout=self._http_timeout())
+        self._http = httpx.Client(timeout=http_timeout_from(self._timeout, self._connect_timeout))
         self._started = True
         self._idle_frame_cache = None
         self._idle_error_logged = False
@@ -320,7 +310,8 @@ class WebSocketAvatarProvider(AvatarProvider):
             import httpx as _httpx
 
             with contextlib.suppress(Exception):
-                async with _httpx.AsyncClient(timeout=self._http_timeout()) as client:
+                timeout = http_timeout_from(self._timeout, self._connect_timeout)
+                async with _httpx.AsyncClient(timeout=timeout) as client:
                     await client.post(f"{self._base_url}/stop")
             self._http.close()
             self._http = None

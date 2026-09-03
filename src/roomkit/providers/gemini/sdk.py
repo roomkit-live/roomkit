@@ -24,12 +24,15 @@ objects and closes them together.
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Any
 
 from roomkit.providers.utils import HTTPTimeouts, http_timeout
 
 if TYPE_CHECKING:
     import httpx
+
+logger = logging.getLogger("roomkit.providers.gemini.sdk")
 
 
 def build_genai_client(
@@ -62,3 +65,20 @@ def build_genai_client(
         ),
     )
     return client, http
+
+
+async def close_genai_client(client: Any, http: httpx.AsyncClient | None) -> None:
+    """Close a pair from :func:`build_genai_client`; either may be ``None``.
+
+    The SDK's own close is best effort (a transport already gone is not worth
+    an exception); the httpx client it was given is closed regardless, since
+    the SDK never closes one it did not build.
+    """
+    try:
+        if client is not None:
+            await client.aio.aclose()
+    except Exception:  # pragma: no cover - transport already gone
+        logger.debug("genai client close failed", exc_info=True)
+    finally:
+        if http is not None:
+            await http.aclose()
