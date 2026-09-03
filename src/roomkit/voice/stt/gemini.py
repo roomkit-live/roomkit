@@ -247,6 +247,17 @@ class GeminiSTTProvider(STTProvider):
             )
         return self._client
 
+    def _files_config(self) -> dict[str, Any]:
+        """Per-call options for the Files API.
+
+        Those calls go through the SDK's classic request path, which hands
+        httpx ``timeout=None`` (no timeout at all) unless ``HttpOptions.timeout``
+        is set, so a stalled upload of a long recording never returned. That
+        option is one value in milliseconds and cannot split the connect from
+        the read, so this is the flat ``timeout`` budget.
+        """
+        return {"http_options": {"timeout": int(self._config.timeout * 1000)}}
+
     def _build_prompt(self) -> str:
         lines = [
             "Transcribe the recording verbatim.",
@@ -350,7 +361,9 @@ class GeminiSTTProvider(STTProvider):
             )
 
         logger.debug("Uploading %s (%d bytes) through the Files API", path.name, size)
-        uploaded = await self._get_client().aio.files.upload(file=str(path))
+        uploaded = await self._get_client().aio.files.upload(
+            file=str(path), config=self._files_config()
+        )
         # The upload guesses its own mime and can answer ``audio/x-wav``, which
         # the interactions endpoint rejects — send the normalised one.
         return ({"type": "audio", "uri": uploaded.uri, "mime_type": mime}, uploaded.name)
@@ -464,7 +477,7 @@ class GeminiSTTProvider(STTProvider):
         """Remove an uploaded recording. Failing to is not worth an exception —
         the Files API expires uploads on its own."""
         try:
-            await self._get_client().aio.files.delete(name=name)
+            await self._get_client().aio.files.delete(name=name, config=self._files_config())
         except Exception:  # pragma: no cover - best effort
             logger.debug("Could not delete uploaded recording %s", name, exc_info=True)
 

@@ -67,13 +67,16 @@ class _FakeFiles:
     def __init__(self) -> None:
         self.uploaded: list[str] = []
         self.deleted: list[str] = []
+        self.configs: list[Any] = []
 
-    async def upload(self, *, file: str) -> _FakeFile:
+    async def upload(self, *, file: str, config: Any = None) -> _FakeFile:
         self.uploaded.append(file)
+        self.configs.append(config)
         return _FakeFile()
 
-    async def delete(self, *, name: str) -> None:
+    async def delete(self, *, name: str, config: Any = None) -> None:
         self.deleted.append(name)
+        self.configs.append(config)
 
 
 class _FakeAio:
@@ -223,6 +226,16 @@ class TestInputPaths:
         # The upload guesses audio/x-wav, which the endpoint rejects.
         assert audio["mime_type"] == "audio/wav"
         assert client.files.deleted == ["files/abc123"]
+
+    async def test_files_api_calls_carry_the_flat_timeout(self, tmp_path: Path) -> None:
+        provider, client = _provider(max_inline_bytes=64, timeout=42.0)
+
+        await provider.transcribe_recording(_wav(tmp_path, size=128))
+
+        # The SDK's classic path sends no timeout at all unless told per call,
+        # and its option is one flat value in milliseconds (RMK-149).
+        flat = {"http_options": {"timeout": 42000}}
+        assert client.files.configs == [flat, flat]
 
     async def test_upload_is_deleted_even_when_the_request_fails(self, tmp_path: Path) -> None:
         provider, client = _provider(max_inline_bytes=64)

@@ -70,6 +70,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   request, because google-genai flattens a per-request `httpx.Timeout` to
   its largest value. A parametrized test reads back the timeout each of
   these eight client constructions received.
+- **Gemini STT bounds its Files API calls.** `files.upload` and
+  `files.delete` went through google-genai's classic request path, which
+  hands httpx `timeout=None` (no timeout at all) unless `HttpOptions.timeout`
+  is set, so a stalled upload of a long recording never returned. Both calls
+  now carry `timeout` per call; that path takes one value in milliseconds
+  and cannot split the connect, so this is the flat read budget.
 
 ## [0.62.0] — 2026-08-29
 
