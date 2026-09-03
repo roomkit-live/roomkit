@@ -61,7 +61,7 @@ from roomkit.providers.ai.base import (
     StreamToolCall,
     StreamToolCallDelta,
 )
-from roomkit.providers.openai.ai import (
+from roomkit.providers.openai.response import (
     _extract_think_tags,
     _ThinkTagParser,
     fold_tool_call_fragment,

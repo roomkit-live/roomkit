@@ -19,8 +19,8 @@ from roomkit.providers.ai.base import (
     StreamToolCall,
     StreamToolCallDelta,
 )
-from roomkit.providers.openai.ai import _extract_think_tags, _ThinkTagParser
 from roomkit.providers.openai.config import OpenAIConfig
+from roomkit.providers.openai.response import _extract_think_tags, _ThinkTagParser
 
 
 class _FakeAPIStatusError(Exception):

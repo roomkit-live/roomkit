@@ -29,7 +29,7 @@ from roomkit.providers.ai.base import (
 )
 from roomkit.providers.mistral.config import MistralConfig
 from roomkit.providers.mistral.models import MODELS
-from roomkit.providers.openai.ai import _ThinkTagParser, fold_tool_call_fragment
+from roomkit.providers.openai.response import _ThinkTagParser, fold_tool_call_fragment
 
 
 class MistralAIProvider(AIProvider):

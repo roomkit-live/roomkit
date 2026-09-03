@@ -385,7 +385,7 @@ def test_the_shared_phrase_list_covers_both_packages_wordings() -> None:
 
 
 def test_openai_status_errors_carry_the_typed_fact() -> None:
-    from roomkit.providers.openai.ai import _overflow_fact
+    from roomkit.providers.openai.response import _overflow_fact
 
     class _FakeStatusError(Exception):
         def __init__(self, body: Any) -> None:
