@@ -16,6 +16,7 @@ from roomkit.providers.sms.meta import (
     extract_media_urls,
     extract_text_body,
 )
+from roomkit.providers.utils import http_timeout
 
 if TYPE_CHECKING:
     import httpx
@@ -34,7 +35,7 @@ class SinchSMSProvider(SMSProvider):
             ) from exc
         self._config = config
         self._httpx = _httpx
-        self._client: httpx.AsyncClient = _httpx.AsyncClient(timeout=config.timeout)
+        self._client: httpx.AsyncClient = _httpx.AsyncClient(timeout=http_timeout(config))
 
     @property
     def from_number(self) -> str:

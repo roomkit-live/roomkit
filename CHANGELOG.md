@@ -37,6 +37,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   those, so a provider written against the previous signature keeps working
   unchanged; the RFC (§12.2) states the contract.
 
+### Fixed
+
+- **HTTP providers give up on a dead host in seconds, not minutes.** Every
+  adapter in `roomkit.providers` handed its client or SDK `config.timeout` as
+  a bare float, which httpx applies to the connect as well as the read: a
+  240 s read budget sized for a slow 27B became a 240 s connect budget, and a
+  host that no longer accepts connections was only abandoned once the kernel
+  ran out of SYN retries, about 130 s per attempt, whatever the value. The
+  configs now carry `connect_timeout` (default 5 s, the OpenAI and Anthropic
+  SDKs' own) beside `timeout`, and each adapter passes
+  `httpx.Timeout(timeout, connect=connect_timeout)` through one shared
+  helper: the four SDKs (OpenAI and its derivatives, Anthropic, Ollama,
+  PolarGrid), the image providers, and the SMS, RCS, email, Telegram,
+  Messenger and webhook transports. `timeout` keeps its meaning, so no caller
+  changes. A parametrized test reads back the timeout each of the 25 client
+  constructions actually received and fails the day one passes the float
+  again.
+
 ## [0.62.0] — 2026-08-29
 
 ### Added

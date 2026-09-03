@@ -13,6 +13,8 @@ class VoiceMeUpConfig(BaseModel):
     from_number: str
     environment: str = "production"
     timeout: float = 10.0
+    connect_timeout: float = 5.0
+    """TCP connect timeout in seconds, separate from the request ``timeout``."""
 
     @property
     def base_url(self) -> str:

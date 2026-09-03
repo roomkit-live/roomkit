@@ -27,6 +27,10 @@ class AnthropicConfig(BaseModel):
     temperature: float = 0.7
     timeout: float = 60.0
     """Request timeout in seconds (default 60s)."""
+    connect_timeout: float = 5.0
+    """TCP connect timeout in seconds, kept apart from ``timeout`` so a host
+    that no longer accepts connections is given up on in seconds rather
+    than after the read budget. The SDK's own default."""
     base_url: str | None = None
     """Override the base URL (e.g., for Claude Code sandbox proxy).
 

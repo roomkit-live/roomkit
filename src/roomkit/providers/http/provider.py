@@ -12,6 +12,7 @@ from roomkit.models.event import RoomEvent
 from roomkit.providers.http.base import HTTPProvider
 from roomkit.providers.http.config import HTTPProviderConfig
 from roomkit.providers.utils import extract_event_text as _extract_event_text
+from roomkit.providers.utils import http_timeout
 
 if TYPE_CHECKING:
     import httpx
@@ -31,7 +32,7 @@ class WebhookHTTPProvider(HTTPProvider):
         self._config = config
         self._httpx = _httpx
         self._client: httpx.AsyncClient = _httpx.AsyncClient(
-            timeout=config.timeout,
+            timeout=http_timeout(config),
         )
 
     async def send(self, event: RoomEvent, to: str) -> ProviderResult:

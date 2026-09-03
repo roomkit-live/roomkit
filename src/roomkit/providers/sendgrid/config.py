@@ -13,3 +13,5 @@ class SendGridConfig(BaseModel):
     from_name: str | None = None
     base_url: str = "https://api.sendgrid.com/v3/mail/send"
     timeout: float = 30.0
+    connect_timeout: float = 5.0
+    """TCP connect timeout in seconds, separate from the request ``timeout``."""

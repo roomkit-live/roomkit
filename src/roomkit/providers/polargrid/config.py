@@ -43,6 +43,9 @@ class PolarGridConfig(BaseModel):
             responses are larger and slower, so raise ``timeout`` and
             ``max_tokens`` when enabling it.
         timeout: HTTP request timeout in seconds.
+        connect_timeout: TCP connect timeout in seconds, kept apart from
+            ``timeout`` so a host that no longer accepts connections is given
+            up on in seconds rather than after the read budget.
         max_retries: SDK-level retry count. Default 0 because RoomKit's
             RetryPolicy handles retries at the right layer with proper
             backoff and fallback.
@@ -57,6 +60,7 @@ class PolarGridConfig(BaseModel):
     top_p: float = 0.9
     thinking: bool | None = None
     timeout: float = 30.0
+    connect_timeout: float = 5.0
     max_retries: int = 0
     debug: bool = False
 

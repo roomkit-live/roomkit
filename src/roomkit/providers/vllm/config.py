@@ -23,6 +23,9 @@ class VLLMConfig(BaseModel):
         temperature: Sampling temperature.
         timeout: HTTP request timeout in seconds. Increase for vLLM servers that
             load models lazily on first request.
+        connect_timeout: TCP connect timeout in seconds, kept apart from
+            ``timeout`` so a host that no longer accepts connections is given
+            up on in seconds rather than after the read budget.
         headers: Extra HTTP headers on every request — for a reverse proxy
             that needs custom headers, or a non-Bearer ``Authorization``
             scheme. Maps to ``OpenAIConfig.default_headers``.
@@ -62,6 +65,7 @@ class VLLMConfig(BaseModel):
     max_tokens: int = 1024
     temperature: float = 0.7
     timeout: float = 30.0
+    connect_timeout: float = 5.0
     max_retries: int = 0
     """SDK-level retry count. Default 0 because RoomKit's RetryPolicy
     handles retries at the right layer with proper backoff and fallback."""

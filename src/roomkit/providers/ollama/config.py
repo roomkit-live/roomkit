@@ -34,6 +34,9 @@ class OllamaConfig(BaseModel):
         timeout: HTTP request timeout in seconds. Long default because
             local models cold-start on first request and reasoning
             models can take 30-60s before the first token.
+        connect_timeout: TCP connect timeout in seconds, kept apart from
+            ``timeout`` so a host that no longer accepts connections is given
+            up on in seconds rather than after the read budget.
         max_retries: SDK-level retry count. Default 0 because
             RoomKit's RetryPolicy handles retries at the right layer
             with proper backoff and fallback.
@@ -88,6 +91,7 @@ class OllamaConfig(BaseModel):
     max_tokens: int | None = None
     temperature: float = 0.7
     timeout: float = 120.0
+    connect_timeout: float = 5.0
     max_retries: int = 0
     think: bool | ThinkEffort | None = None
     keep_alive: str | int | None = None

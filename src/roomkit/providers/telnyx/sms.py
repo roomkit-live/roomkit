@@ -13,6 +13,7 @@ from roomkit.providers.sms.meta import (
     extract_text_body,
 )
 from roomkit.providers.telnyx.config import TelnyxConfig
+from roomkit.providers.utils import http_timeout
 
 if TYPE_CHECKING:
     import httpx
@@ -41,7 +42,7 @@ class TelnyxSMSProvider(SMSProvider):
         self._config = config
         self._public_key = public_key
         self._httpx = _httpx
-        self._client: httpx.AsyncClient = _httpx.AsyncClient(timeout=config.timeout)
+        self._client: httpx.AsyncClient = _httpx.AsyncClient(timeout=http_timeout(config))
 
     @property
     def from_number(self) -> str:

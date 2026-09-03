@@ -32,6 +32,10 @@ class OpenAIConfig(BaseModel):
     timeout: float = 30.0
     """HTTP request timeout in seconds. Override for servers that need
     longer (e.g. Ollama cold-starting a model on first request)."""
+    connect_timeout: float = 5.0
+    """TCP connect timeout in seconds, kept apart from ``timeout`` so a host
+    that no longer accepts connections is given up on in seconds rather
+    than after the read budget. The SDK's own default."""
     max_retries: int = 0
     """SDK-level retry count. Default 0 because RoomKit's RetryPolicy
     handles retries at the right layer with proper backoff and fallback."""
@@ -113,6 +117,9 @@ class OpenAIImageConfig(BaseModel):
             reads rather than assuming.
         timeout: HTTP request timeout in seconds. Higher than the chat default
             because a high-quality image routinely takes more than 30s.
+        connect_timeout: TCP connect timeout in seconds, kept apart from
+            ``timeout`` so a host that no longer accepts connections is given
+            up on in seconds rather than after the read budget.
         max_retries: SDK-level retry count. 0 because RoomKit's RetryPolicy
             handles retries at the right layer.
     """
@@ -124,6 +131,7 @@ class OpenAIImageConfig(BaseModel):
     background: str | None = None
     output_format: str | None = None
     timeout: float = 120.0
+    connect_timeout: float = 5.0
     max_retries: int = 0
     default_headers: dict[str, str] | None = None
     """Extra HTTP headers sent on every request, passed to the SDK's

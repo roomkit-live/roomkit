@@ -29,6 +29,7 @@ from roomkit.providers.image.base import (
     sniff_mime_type,
     to_data_uri,
 )
+from roomkit.providers.utils import http_timeout
 from roomkit.providers.xai.config import XAIImageConfig
 from roomkit.providers.xai.image_models import MODELS
 
@@ -85,7 +86,7 @@ class XAIImageProvider(ImageProvider):
         self._client = _openai.AsyncOpenAI(
             api_key=config.api_key.get_secret_value(),
             base_url=config.base_url,
-            timeout=config.timeout,
+            timeout=http_timeout(config),
             max_retries=config.max_retries,
         )
 

@@ -67,6 +67,9 @@ class AzureAIConfig(BaseModel):
         max_tokens: Maximum tokens in the response.
         temperature: Sampling temperature.
         timeout: HTTP request timeout in seconds.
+        connect_timeout: TCP connect timeout in seconds, kept apart from
+            ``timeout`` so a host that no longer accepts connections is given
+            up on in seconds rather than after the read budget.
     """
 
     api_key: SecretStr
@@ -76,6 +79,7 @@ class AzureAIConfig(BaseModel):
     max_tokens: int = 1024
     temperature: float = 0.7
     timeout: float = 30.0
+    connect_timeout: float = 5.0
     max_retries: int = 0
     """SDK-level retry count. Default 0 because RoomKit's RetryPolicy
     handles retries at the right layer with proper backoff and fallback."""
@@ -137,6 +141,9 @@ class AzureImageConfig(BaseModel):
             default. Azure does not offer ``webp`` on this endpoint.
         timeout: HTTP request timeout in seconds. Higher than the chat default
             because a high-quality image routinely takes more than 30s.
+        connect_timeout: TCP connect timeout in seconds, kept apart from
+            ``timeout`` so a host that no longer accepts connections is given
+            up on in seconds rather than after the read budget.
         max_retries: SDK-level retry count. 0 because RoomKit's RetryPolicy
             handles retries at the right layer.
     """
@@ -149,6 +156,7 @@ class AzureImageConfig(BaseModel):
     background: str | None = None
     output_format: str | None = None
     timeout: float = 120.0
+    connect_timeout: float = 5.0
     max_retries: int = 0
 
     @field_validator("azure_endpoint")

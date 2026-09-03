@@ -8,6 +8,7 @@ from roomkit.providers.ai.base import AIContext, ModelInfo
 from roomkit.providers.openai.ai import OpenAIAIProvider
 from roomkit.providers.openrouter.config import OpenRouterConfig
 from roomkit.providers.openrouter.models import MODELS
+from roomkit.providers.utils import http_timeout
 
 
 class OpenRouterAIProvider(OpenAIAIProvider):
@@ -36,7 +37,7 @@ class OpenRouterAIProvider(OpenAIAIProvider):
         self._client = _openai.AsyncOpenAI(
             api_key=config.api_key.get_secret_value(),
             base_url=config.base_url,
-            timeout=config.timeout,
+            timeout=http_timeout(config),
             max_retries=config.max_retries,
             default_headers=self._merged_headers(config),
         )
@@ -135,7 +136,7 @@ class OpenRouterAIProvider(OpenAIAIProvider):
 
         url = f"{self._config.base_url.rstrip('/')}/models"
         headers = {"Authorization": f"Bearer {self._config.api_key.get_secret_value()}"}
-        async with httpx.AsyncClient(timeout=self._config.timeout) as client:
+        async with httpx.AsyncClient(timeout=http_timeout(self._config)) as client:
             response = await client.get(url, headers=headers)
             response.raise_for_status()
             payload = response.json()

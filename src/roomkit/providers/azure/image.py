@@ -5,6 +5,7 @@ from __future__ import annotations
 from roomkit.providers.ai.base import ModelInfo
 from roomkit.providers.azure.config import AzureImageConfig
 from roomkit.providers.openai.image import OpenAIImageProvider
+from roomkit.providers.utils import http_timeout
 
 
 class AzureImageProvider(OpenAIImageProvider):
@@ -35,7 +36,7 @@ class AzureImageProvider(OpenAIImageProvider):
             api_key=config.api_key.get_secret_value(),
             azure_endpoint=config.azure_endpoint,
             api_version=config.api_version,
-            timeout=config.timeout,
+            timeout=http_timeout(config),
             max_retries=config.max_retries,
         )
 

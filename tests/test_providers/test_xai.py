@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 
 from roomkit.providers.ai.base import AIContext, AIMessage, AITool, ModelInfo, ProviderError
@@ -139,7 +140,7 @@ class TestXAIAIProvider:
             mock_mod.AsyncOpenAI.assert_called_once_with(
                 api_key="xai-test-key",
                 base_url="https://api.x.ai/v1",
-                timeout=30.0,
+                timeout=httpx.Timeout(30.0, connect=5.0),
                 max_retries=0,
                 default_headers=None,
             )

@@ -12,6 +12,8 @@ class MessengerConfig(BaseModel):
     app_secret: SecretStr | None = None
     api_version: str = "v21.0"
     timeout: float = 30.0
+    connect_timeout: float = 5.0
+    """TCP connect timeout in seconds, separate from the request ``timeout``."""
 
     @property
     def base_url(self) -> str:

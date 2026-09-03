@@ -8,6 +8,7 @@ from roomkit.models.delivery import ProviderResult
 from roomkit.models.event import RichContent, RoomEvent, TextContent
 from roomkit.providers.email.base import EmailProvider
 from roomkit.providers.sendgrid.config import SendGridConfig
+from roomkit.providers.utils import http_timeout
 
 if TYPE_CHECKING:
     import httpx
@@ -27,7 +28,7 @@ class SendGridProvider(EmailProvider):
         self._config = config
         self._httpx = _httpx
         self._client: httpx.AsyncClient = _httpx.AsyncClient(
-            timeout=config.timeout,
+            timeout=http_timeout(config),
         )
 
     async def send(

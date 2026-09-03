@@ -18,6 +18,7 @@ from roomkit.providers.image.base import (
 )
 from roomkit.providers.openai.config import OpenAIImageConfig
 from roomkit.providers.openai.image_models import MODELS
+from roomkit.providers.utils import http_timeout
 
 _EXTENSIONS = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"}
 
@@ -44,7 +45,7 @@ class OpenAIImageProvider(ImageProvider):
         self._client = _openai.AsyncOpenAI(
             api_key=config.api_key.get_secret_value(),
             base_url=config.base_url,
-            timeout=config.timeout,
+            timeout=http_timeout(config),
             max_retries=config.max_retries,
             default_headers=config.default_headers,
         )

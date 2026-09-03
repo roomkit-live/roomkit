@@ -131,7 +131,15 @@ async def main() -> None:
         else None
     )
     provider = PolarGridAIProvider(
-        PolarGridConfig(**config_kwargs, thinking=thinking, debug=_DEBUG)
+        PolarGridConfig(
+            **config_kwargs,
+            thinking=thinking,
+            # The TCP connect is bounded on its own: an edge that no longer
+            # answers is refused in seconds, while ``timeout`` (the read
+            # budget) stays sized for a slow generation.
+            connect_timeout=5.0,
+            debug=_DEBUG,
+        )
     )
 
     kit = RoomKit()

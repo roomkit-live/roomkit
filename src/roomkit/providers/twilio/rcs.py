@@ -14,6 +14,7 @@ from roomkit.providers.sms.meta import (
     extract_text_body,
 )
 from roomkit.providers.twilio._signature import verify_twilio_signature
+from roomkit.providers.utils import http_timeout
 
 if TYPE_CHECKING:
     import httpx
@@ -26,6 +27,8 @@ class TwilioRCSConfig(BaseModel):
     auth_token: SecretStr
     messaging_service_sid: str  # Required for RCS (must be RCS-enabled)
     timeout: float = 10.0
+    connect_timeout: float = 5.0
+    """TCP connect timeout in seconds, separate from the request ``timeout``."""
 
     @property
     def api_url(self) -> str:
@@ -50,7 +53,7 @@ class TwilioRCSProvider(RCSProvider):
             ) from exc
         self._config = config
         self._httpx = _httpx
-        self._client: httpx.AsyncClient = _httpx.AsyncClient(timeout=config.timeout)
+        self._client: httpx.AsyncClient = _httpx.AsyncClient(timeout=http_timeout(config))
 
     @property
     def sender_id(self) -> str:

@@ -13,6 +13,8 @@ class HTTPProviderConfig(BaseModel):
     webhook_url: str
     secret: SecretStr | None = None
     timeout: float = 30.0
+    connect_timeout: float = 5.0
+    """TCP connect timeout in seconds, separate from the request ``timeout``."""
     headers: dict[str, str] = Field(default_factory=dict)
 
     @field_validator("webhook_url")

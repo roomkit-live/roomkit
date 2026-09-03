@@ -73,6 +73,7 @@ from roomkit.providers.polargrid.models import (
     REGIONS,
     PolarGridRegion,
 )
+from roomkit.providers.utils import http_timeout
 
 logger = logging.getLogger("roomkit.providers.polargrid")
 
@@ -211,7 +212,7 @@ class PolarGridAIProvider(AIProvider):
 
         kwargs: dict[str, Any] = {
             "api_key": self._config.api_key.get_secret_value(),
-            "timeout": self._config.timeout,
+            "timeout": http_timeout(self._config),
             "max_retries": self._config.max_retries,
         }
         if self._config.debug:

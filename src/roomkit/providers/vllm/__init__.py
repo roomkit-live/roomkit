@@ -137,6 +137,7 @@ def create_vllm_provider(config: VLLMConfig) -> OpenAIAIProvider:
         max_tokens=config.max_tokens,
         temperature=config.temperature,
         timeout=config.timeout,
+        connect_timeout=config.connect_timeout,
         max_retries=config.max_retries,
         include_stream_usage=config.include_stream_usage,
         default_headers=config.headers,

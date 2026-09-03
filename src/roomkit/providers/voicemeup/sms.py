@@ -19,6 +19,7 @@ from roomkit.providers.sms.meta import (
     extract_media_urls,
     extract_text_body,
 )
+from roomkit.providers.utils import http_timeout
 from roomkit.providers.voicemeup.config import VoiceMeUpConfig
 
 if TYPE_CHECKING:
@@ -122,7 +123,7 @@ class VoiceMeUpSMSProvider(SMSProvider):
             ) from exc
         self._config = config
         self._httpx = _httpx
-        self._client: httpx.AsyncClient = _httpx.AsyncClient(timeout=config.timeout)
+        self._client: httpx.AsyncClient = _httpx.AsyncClient(timeout=http_timeout(config))
         # Per-instance MMS aggregation state
         self._mms_buffer: dict[str, _PendingMMS] = {}
         self._mms_timeout_seconds: float = 5.0

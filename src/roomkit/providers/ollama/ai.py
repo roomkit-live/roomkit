@@ -41,6 +41,7 @@ from roomkit.providers.ai.base import (
 )
 from roomkit.providers.ollama.config import OllamaConfig
 from roomkit.providers.ollama.models import MODELS
+from roomkit.providers.utils import http_timeout
 
 # Bounded parallelism for the per-model ``/api/show`` fan-out in
 # ``list_models``. Local Ollama serialises heavy work anyway; 8 keeps the
@@ -79,7 +80,7 @@ class OllamaAIProvider(AIProvider):
         self._response_error = _ollama.ResponseError
         self._client = _ollama.AsyncClient(
             host=config.host,
-            timeout=config.timeout,
+            timeout=http_timeout(config),
             headers=self._build_headers(config),
         )
 

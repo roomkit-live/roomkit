@@ -8,6 +8,7 @@ from typing import Any, ClassVar
 from roomkit.providers.ai.base import AIContext, ModelInfo, ModelPricing
 from roomkit.providers.litellm.config import LiteLLMConfig
 from roomkit.providers.openai.ai import OpenAIAIProvider
+from roomkit.providers.utils import http_timeout
 
 
 def _rate_per_million(value: object) -> float | None:
@@ -175,7 +176,7 @@ class LiteLLMAIProvider(OpenAIAIProvider):
 
         url = f"{self._config.base_url.rstrip('/')}/model/info"
         headers = {"Authorization": f"Bearer {self._config.api_key.get_secret_value()}"}
-        async with httpx.AsyncClient(timeout=self._config.timeout) as client:
+        async with httpx.AsyncClient(timeout=http_timeout(self._config)) as client:
             response = await client.get(url, headers=headers)
             response.raise_for_status()
             payload = response.json()

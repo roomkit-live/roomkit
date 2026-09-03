@@ -14,6 +14,8 @@ class ElasticEmailConfig(BaseModel):
     is_transactional: bool = True
     base_url: str = "https://api.elasticemail.com/v2/email/send"
     timeout: float = 30.0
+    connect_timeout: float = 5.0
+    """TCP connect timeout in seconds, separate from the request ``timeout``."""
 
     @field_validator("base_url")
     @classmethod

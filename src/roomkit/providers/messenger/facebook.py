@@ -11,6 +11,7 @@ from roomkit.models.event import RoomEvent
 from roomkit.providers.messenger.base import MessengerProvider
 from roomkit.providers.messenger.config import MessengerConfig
 from roomkit.providers.utils import extract_event_text as _extract_event_text
+from roomkit.providers.utils import http_timeout
 
 if TYPE_CHECKING:
     import httpx
@@ -30,7 +31,7 @@ class FacebookMessengerProvider(MessengerProvider):
         self._config = config
         self._httpx = _httpx
         self._client: httpx.AsyncClient = _httpx.AsyncClient(
-            timeout=config.timeout,
+            timeout=http_timeout(config),
         )
 
     async def send(self, event: RoomEvent, to: str) -> ProviderResult:

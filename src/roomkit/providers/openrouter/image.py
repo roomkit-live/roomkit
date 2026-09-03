@@ -35,6 +35,7 @@ from roomkit.providers.image.base import (
 )
 from roomkit.providers.openrouter.config import OpenRouterImageConfig
 from roomkit.providers.openrouter.image_models import MODELS
+from roomkit.providers.utils import http_timeout
 
 
 class OpenRouterImageProvider(ImageProvider):
@@ -53,7 +54,7 @@ class OpenRouterImageProvider(ImageProvider):
         self._transport_error = _httpx.TransportError
         self._http = _httpx.AsyncClient(
             base_url=config.base_url.rstrip("/"),
-            timeout=config.timeout,
+            timeout=http_timeout(config),
             headers=self._headers(config),
         )
 

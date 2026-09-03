@@ -16,6 +16,8 @@ class SinchConfig(BaseModel):
     region: Literal["us", "eu", "au", "br", "ca"] = "us"
     webhook_secret: SecretStr | None = None
     timeout: float = 10.0
+    connect_timeout: float = 5.0
+    """TCP connect timeout in seconds, separate from the request ``timeout``."""
 
     @property
     def api_url(self) -> str:

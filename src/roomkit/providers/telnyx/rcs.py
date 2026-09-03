@@ -14,6 +14,7 @@ from roomkit.providers.sms.meta import (
     extract_media_urls,
     extract_text_body,
 )
+from roomkit.providers.utils import http_timeout
 
 if TYPE_CHECKING:
     import httpx
@@ -30,12 +31,16 @@ class TelnyxRCSConfig(BaseModel):
         agent_id: RCS agent ID (obtained after agent onboarding/brand approval).
         messaging_profile_id: Optional messaging profile ID for webhooks.
         timeout: HTTP request timeout in seconds.
+        connect_timeout: TCP connect timeout in seconds, kept apart from
+            ``timeout`` so a host that no longer accepts connections is given
+            up on in seconds rather than after the read budget.
     """
 
     api_key: SecretStr
     agent_id: str
     messaging_profile_id: str | None = None
     timeout: float = 10.0
+    connect_timeout: float = 5.0
 
 
 class TelnyxRCSProvider(RCSProvider):
@@ -72,7 +77,7 @@ class TelnyxRCSProvider(RCSProvider):
         self._config = config
         self._public_key = public_key
         self._httpx = _httpx
-        self._client: httpx.AsyncClient = _httpx.AsyncClient(timeout=config.timeout)
+        self._client: httpx.AsyncClient = _httpx.AsyncClient(timeout=http_timeout(config))
 
     @property
     def sender_id(self) -> str:

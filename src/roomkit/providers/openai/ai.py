@@ -31,6 +31,7 @@ from roomkit.providers.ai.base import (
 )
 from roomkit.providers.openai.config import OpenAIConfig
 from roomkit.providers.openai.models import MODELS
+from roomkit.providers.utils import http_timeout
 
 # Fallback only, for ids the catalog does not carry — a snapshot newer than
 # this release, or an OpenAI-compatible server behind ``base_url`` naming its
@@ -184,7 +185,7 @@ class OpenAIAIProvider(AIProvider):
         self._client = _openai.AsyncOpenAI(
             api_key=config.api_key.get_secret_value(),
             base_url=config.base_url,
-            timeout=config.timeout,
+            timeout=http_timeout(config),
             max_retries=config.max_retries,
             default_headers=config.default_headers,
         )

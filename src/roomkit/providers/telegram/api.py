@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from roomkit.models.delivery import ProviderResult
 from roomkit.providers.telegram.config import TelegramConfig
+from roomkit.providers.utils import http_timeout
 from roomkit.telemetry.noop import NoopTelemetryProvider
 
 if TYPE_CHECKING:
@@ -68,7 +69,7 @@ class TelegramBotAPI:
         )
         self._httpx = _httpx
         self._client: httpx.AsyncClient = _httpx.AsyncClient(
-            timeout=config.timeout,
+            timeout=http_timeout(config),
         )
 
     # --- Identity and update source -------------------------------------

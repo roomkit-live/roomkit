@@ -13,6 +13,8 @@ class TwilioConfig(BaseModel):
     from_number: str
     messaging_service_sid: str | None = None
     timeout: float = 10.0
+    connect_timeout: float = 5.0
+    """TCP connect timeout in seconds, separate from the request ``timeout``."""
 
     @property
     def api_url(self) -> str:

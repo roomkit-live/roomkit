@@ -31,6 +31,7 @@ from roomkit.providers.ai.base import (
 )
 from roomkit.providers.anthropic.config import AnthropicConfig
 from roomkit.providers.anthropic.models import MODELS
+from roomkit.providers.utils import http_timeout
 
 logger = logging.getLogger("roomkit.providers.anthropic.ai")
 
@@ -78,7 +79,7 @@ class AnthropicAIProvider(AIProvider):
         """Build an Anthropic client for ``api_key`` with this provider's config."""
         client_kwargs: dict[str, Any] = {
             "api_key": api_key,
-            "timeout": self._config.timeout,
+            "timeout": http_timeout(self._config),
         }
         if self._config.base_url:
             client_kwargs["base_url"] = self._config.base_url
