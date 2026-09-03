@@ -300,7 +300,7 @@ system event (AI-channel source; `metadata`: `from_agent`, `to_agent`,
 | `ON_HANDOFF` | ASYNC | `(event, ctx) -> None` | Agent handoff accepted and executed. |
 | `ON_HANDOFF_REJECTED` | ASYNC | `(event, ctx) -> None` | Agent handoff was rejected (`metadata.accepted=False`). |
 | `ON_PHASE_TRANSITION` | ASYNC | `(event, ctx) -> None` | Fired alongside `ON_HANDOFF` after an accepted handoff, carrying the new phase. |
-| `ON_STATUS_POSTED` | — | — | Reserved — StatusBus posts emit the `status_posted` framework event instead; no hook fires (RFC §9 marks it Implemented). |
+| `ON_STATUS_POSTED` | ASYNC | `(StatusEntry, ctx) -> None` | A `StatusBus` post whose `metadata` carries a `room_id` ran that room's hooks; a post with no room reaches no hook (the bus is global). Every post also emits the `status_posted` framework event. |
 
 ### Delegation (background tasks)
 
