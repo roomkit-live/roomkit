@@ -28,8 +28,8 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from roomkit.providers.gemini.sdk import build_genai_client
 from roomkit.providers.gemini.voices import VOICES
-from roomkit.providers.utils import http_timeout
 from roomkit.voice.base import AudioChunk
 from roomkit.voice.tts.audio_utils import wrap_wav
 from roomkit.voice.tts.base import TTSProvider
@@ -127,6 +127,7 @@ class GeminiTTSProvider(TTSProvider):
     def __init__(self, config: GeminiTTSConfig) -> None:
         self._config = config
         self._client: Any = None
+        self._http: Any = None
 
     @property
     def name(self) -> str:
@@ -147,24 +148,10 @@ class GeminiTTSProvider(TTSProvider):
 
     def _get_client(self) -> Any:
         if self._client is None:
-            try:
-                from google import genai
-            except ImportError as exc:
-                raise ImportError(
-                    "google-genai is required for GeminiTTSProvider. "
-                    "Install it with: pip install roomkit[gemini]"
-                ) from exc
-
-            # The connect/read split lives on the SDK's httpx client: a
-            # per-request ``timeout`` would be flattened by google-genai to
-            # its largest value and hand the read budget to the connect again.
-            timeout = http_timeout(self._config)
-            self._client = genai.Client(
-                api_key=self._config.api_key,
-                http_options=genai.types.HttpOptions(
-                    client_args={"timeout": timeout},
-                    async_client_args={"timeout": timeout},
-                ),
+            # The client carries the connect/read split; see ``build_genai_client``
+            # for why it cannot go on the request.
+            self._client, self._http = build_genai_client(
+                self._config.api_key, self._config, provider="GeminiTTSProvider"
             )
         return self._client
 
@@ -326,9 +313,13 @@ class GeminiTTSProvider(TTSProvider):
     async def close(self) -> None:
         """Close the genai client's connection pool and drop the reference."""
         client, self._client = self._client, None
+        http, self._http = self._http, None
         if client is None:
             return
         try:
             await client.aio.aclose()
+            # The SDK leaves a client it was given open; it is ours to close.
+            if http is not None:
+                await http.aclose()
         except Exception:  # pragma: no cover - transport already gone
             logger.debug("GeminiTTS client close failed", exc_info=True)

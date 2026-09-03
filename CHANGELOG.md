@@ -65,11 +65,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `GeminiTTSConfig` and `GeminiSTTConfig`, a keyword on
   `WebSocketAvatarProvider` and `SSESource`. Two differ from the rest.
   `SSESource.timeout` no longer bounds the connect, only write and pool; its
-  read side stays unbounded so the stream survives idle periods. Gemini sets
-  the split on the SDK's httpx client through `HttpOptions` rather than per
-  request, because google-genai flattens a per-request `httpx.Timeout` to
-  its largest value. A parametrized test reads back the timeout each of
-  these eight client constructions received.
+  read side stays unbounded so the stream survives idle periods. Gemini
+  hands the SDK its own httpx client (`HttpOptions.httpx_async_client`)
+  rather than a per-request timeout, because google-genai flattens a
+  per-request `httpx.Timeout` to its largest value; that client is also
+  what keeps the SDK's Files API on httpx when aiohttp happens to be
+  installed (the `twilio` and `gradium` extras pull it in), where the SDK
+  would otherwise reuse httpx client args as aiohttp request kwargs. A
+  parametrized test reads back the timeout each of these eight client
+  constructions received, and two more drive the real SDK to the transport.
 - **Gemini STT bounds its Files API calls.** `files.upload` and
   `files.delete` went through google-genai's classic request path, which
   hands httpx `timeout=None` (no timeout at all) unless `HttpOptions.timeout`

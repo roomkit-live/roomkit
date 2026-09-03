@@ -9,12 +9,15 @@ actually received, so the test fails the day one passes the float again.
 
 Gemini is read through the real SDK: google-genai flattens a per-request
 ``httpx.Timeout`` to its largest value, so the split only survives on the
-httpx client the SDK builds from ``HttpOptions``, and that is what is read.
+httpx client RoomKit hands the SDK, and that client is what the SDK's
+requests are driven through here.
 """
 
 from __future__ import annotations
 
+import tempfile
 from collections.abc import Awaitable, Callable
+from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -110,8 +113,8 @@ async def _gemini_httpx_timeout(provider: GeminiTTSProvider | GeminiSTTProvider)
     pytest.importorskip("google.genai")
     client = provider._get_client()
     try:
-        # The SDK builds this client from ``HttpOptions.async_client_args``
-        # and hands every interactions request ``USE_CLIENT_DEFAULT``.
+        # The httpx client RoomKit hands the SDK (``HttpOptions.httpx_async_client``);
+        # every request the SDK sends without its own timeout inherits it.
         return client._api_client._async_httpx_client.timeout
     finally:
         await provider.close()
@@ -182,3 +185,69 @@ def test_connect_timeout_defaults_to_five_seconds(
 def test_constructor_keywords_default_to_five_seconds() -> None:
     assert WebSocketAvatarProvider(_AVATAR_URL)._connect_timeout == 5.0
     assert SSESource(_SSE_URL, channel_id="sse")._connect_timeout == 5.0
+
+
+# ---------------------------------------------------------------------------
+# Gemini, driven through the real SDK down to the httpx transport
+# ---------------------------------------------------------------------------
+
+
+class _RecordingTransport:
+    """An ``httpx.AsyncClient`` whose transport records what each request
+    carried, for the client RoomKit builds inside ``build_genai_client``."""
+
+    seen: list[dict[str, Any]] = []
+
+    @classmethod
+    def client_class(cls) -> type[httpx.AsyncClient]:
+        def handler(request: httpx.Request) -> httpx.Response:
+            cls.seen.append(dict(request.extensions["timeout"]))
+            return httpx.Response(200, json={}, headers={"content-type": "application/json"})
+
+        class Client(httpx.AsyncClient):
+            def __init__(self, **kwargs: Any) -> None:
+                super().__init__(transport=httpx.MockTransport(handler), **kwargs)
+
+        return Client
+
+
+class TestGeminiThroughTheSDK:
+    """The SDK flattens a per-request timeout and, with aiohttp importable,
+    reuses ``async_client_args`` as aiohttp request kwargs. Handing it the
+    httpx client is what keeps the split on the interactions path and keeps
+    the Files API on httpx at all; both are asserted at the transport."""
+
+    async def test_interactions_request_carries_the_split(self) -> None:
+        pytest.importorskip("google.genai")
+        _RecordingTransport.seen.clear()
+        provider = GeminiTTSProvider(GeminiTTSConfig(api_key="k", **_TIMEOUTS))
+        with patch("httpx.AsyncClient", _RecordingTransport.client_class()):
+            # An empty interaction has no audio; the request went out regardless.
+            with pytest.raises(RuntimeError):
+                await provider.synthesize("hello")
+            await provider.close()
+
+        assert _RecordingTransport.seen == [
+            {"connect": CONNECT, "read": TIMEOUT, "write": TIMEOUT, "pool": TIMEOUT}
+        ]
+
+    async def test_files_api_upload_goes_through_httpx_with_the_flat_budget(self) -> None:
+        pytest.importorskip("google.genai")
+        _RecordingTransport.seen.clear()
+        config = GeminiSTTConfig(api_key="k", max_inline_bytes=16, **_TIMEOUTS)
+        provider = GeminiSTTProvider(config)
+        with tempfile.TemporaryDirectory() as tmp:
+            wav = Path(tmp) / "meeting.wav"
+            wav.write_bytes(b"RIFF" + b"\x00" * 200)
+            with patch("httpx.AsyncClient", _RecordingTransport.client_class()):
+                # The fake upload answer carries no upload URL; the first
+                # request of the resumable upload is what is asserted.
+                with pytest.raises(Exception, match=r"[Uu]pload"):
+                    await provider.transcribe_recording(wav)
+                await provider.close()
+
+        # The SDK's classic path takes one flat value per call (milliseconds),
+        # which is the read budget; it cannot split the connect.
+        assert _RecordingTransport.seen[:1] == [
+            {"connect": TIMEOUT, "read": TIMEOUT, "write": TIMEOUT, "pool": TIMEOUT}
+        ]
