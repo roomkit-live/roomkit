@@ -112,7 +112,7 @@ class TestGeminiVertexProvider:
             assert provider.supports_vision is True
 
 
-_EMAIL = "luge-agent@example-project.iam.gserviceaccount.com"
+_EMAIL = "vertex-agent@example-project.iam.gserviceaccount.com"
 
 
 def _service_account_key() -> str:

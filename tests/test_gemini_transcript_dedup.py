@@ -215,13 +215,13 @@ async def test_tool_call_flushes_the_user_final_first(provider, session):
     await provider._on_tool_call(
         session,
         state,
-        SimpleNamespace(function_calls=[SimpleNamespace(name="luge_cli", id="fc_1", args=None)]),
+        SimpleNamespace(function_calls=[SimpleNamespace(name="shell_cli", id="fc_1", args=None)]),
     )
 
     assert timeline == [
         ("tx", "Cherche dans Luge", "user", "False"),
         ("tx", "Cherche dans Luge", "user", "True"),
-        ("tool", "luge_cli"),
+        ("tool", "shell_cli"),
     ]
 
 
