@@ -898,6 +898,43 @@ async def test_a_fallback_failure_mid_composition_closes_the_composition() -> No
     await kit.close()
 
 
+async def test_a_provider_failure_mid_reasoning_closes_the_thinking_window() -> None:
+    """THINKING_END survives the error path, as the composition's terminal frame does.
+
+    A thinking delta arms the wrapper's ``emitted`` flag, so a provider that
+    fails after one is never replayed, retryable or not: the error raises
+    straight out of the round, past the end-of-round close, and left
+    THINKING_START unpaired.
+    """
+
+    class _BrokenProvider(MockAIProvider):
+        async def generate_structured_stream(self, context: AIContext) -> Any:
+            yield StreamThinkingDelta(thinking="half a thought")
+            raise ProviderError("upstream stopped", retryable=True, provider="broken")
+
+    async def tool_handler(name: str, args: dict[str, Any]) -> str:
+        return "never reached"
+
+    kit = RoomKit()
+    ai = AIChannel(
+        "ai1",
+        provider=_BrokenProvider(streaming=True),
+        tool_handler=tool_handler,
+        thinking_budget=4096,
+        thinking_coalesce_ms=0,
+    )
+
+    received = await _run_turn(kit, ai)
+    starts = [e for e in received if e.type == EphemeralEventType.THINKING_START]
+    ends = [e for e in received if e.type == EphemeralEventType.THINKING_END]
+
+    assert len(starts) == 1
+    assert len(ends) == 1
+    assert ends[0].data["thinking"] == "half a thought"
+
+    await kit.close()
+
+
 async def test_composition_coalescer_keys_on_the_slot_not_the_id() -> None:
     """An id that arrives late must not split one call across two entries.
 

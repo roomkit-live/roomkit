@@ -269,17 +269,21 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
         # text-only stream is still being produced, and this path has no loop
         # context to register.
         self._text_streams += 1
+        # Declared ahead of the try so the finally can reach them: a provider
+        # that dies mid-reasoning, or a consumer that stops reading, leaves
+        # this stream at a point where the window is still open.
+        # ``thinking_started`` is True exactly while a window is open on the
+        # bus.
+        room_id = ai_context.room.room.id if ai_context.room else None
+        thinking_parts: list[str] = []
+        thinking_published = 0
+        thinking_started = False
+        coalescer = self._new_thinking_coalescer(room_id, round_idx=0)
         try:
             if not self._provider.supports_structured_streaming:
                 async for chunk in self._provider.generate_stream(ai_context):
                     yield chunk
                 return
-
-            room_id = ai_context.room.room.id if ai_context.room else None
-            thinking_parts: list[str] = []
-            thinking_published = 0
-            thinking_started = False
-            coalescer = self._new_thinking_coalescer(room_id, round_idx=0)
 
             # Through the resilience wrapper, like every structured generation:
             # retry, fallback and overflow compaction are the wrapper's to give,
@@ -312,10 +316,20 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
             # Thinking with no following text — close the boundary anyway so
             # subscribers see the reasoning even if the model emitted nothing else.
             if thinking_started and thinking_parts and room_id:
+                thinking_started = False
                 await self._close_thinking_window(
                     coalescer, room_id, thinking_parts, 0, published=thinking_published
                 )
         finally:
+            # A window still open here was left by an abnormal exit — a
+            # provider error, a consumer that closed the stream — and closes
+            # with the block reasoned so far, so THINKING_START never stays
+            # unpaired. Publishing is best-effort: the error that ended the
+            # stream is the one that propagates.
+            if thinking_started and thinking_parts and room_id:
+                await self._close_thinking_window(
+                    coalescer, room_id, thinking_parts, 0, published=thinking_published
+                )
             self._text_streams -= 1
 
     async def _start_streaming_tool_response(
@@ -375,6 +389,17 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
         _t0_stream = time.monotonic()
         _accumulated_text: list[str] = []
         room_id = context.room.room.id if context.room else None
+        # The round's reasoning window, declared ahead of the try so the
+        # finally can reach it: a provider that dies mid-reasoning raises out
+        # of the round before the end-of-round close runs, and a consumer
+        # that stops reading closes this generator at a yield. Every round
+        # rebinds all four at its start; ``thinking_started`` is True exactly
+        # while a window is open on the bus.
+        thinking_started = False
+        thinking_parts: list[str] = []
+        thinking_published = 0
+        coalescer = self._new_thinking_coalescer(room_id, round_idx=0)
+        _round_idx = 0
         try:
             context, should_cancel = self._drain_steering_queue(context, loop_ctx)
             if should_cancel:
@@ -396,7 +421,7 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                 # hammering the same call to the round limit.
                 context = self._prepare_round_context(context, loop_ctx, state, _round_idx)
 
-                thinking_parts: list[str] = []
+                thinking_parts = []
                 thinking_published = 0
                 thinking_signature: str | None = None
                 text_parts: list[str] = []
@@ -646,6 +671,7 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                     _dedup_buffer.clear()
 
                 if thinking_started and thinking_parts and room_id:
+                    thinking_started = False
                     await self._close_thinking_window(
                         coalescer,
                         room_id,
@@ -834,6 +860,19 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
             telemetry.end_span(span_id, status="error", error_message=str(exc))
             raise
         finally:
+            # A window still open here was left by an abnormal exit — a
+            # provider error, a consumer that closed the stream — and closes
+            # with the block reasoned so far, the way a cancelled round's
+            # does above. Publishing is best-effort: the error that got the
+            # round here is the one that propagates.
+            if room_id and thinking_started and thinking_parts:
+                await self._close_thinking_window(
+                    coalescer,
+                    room_id,
+                    thinking_parts,
+                    _round_idx,
+                    published=thinking_published,
+                )
             if not _span_errored:
                 usage_attrs: dict[str, Any] = {}
                 if _total_usage.get("input_tokens") or _total_usage.get("output_tokens"):

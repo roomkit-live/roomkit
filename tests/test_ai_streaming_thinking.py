@@ -35,6 +35,7 @@ from roomkit.providers.ai.base import (
     AIProvider,
     AIResponse,
     AIThinkingPart,
+    ProviderError,
     StreamDone,
     StreamEvent,
     StreamTextDelta,
@@ -691,5 +692,26 @@ async def test_no_tools_path_also_scopes_each_window_to_its_block() -> None:
 
     # The trailing window has no text after it — the end-of-stream close fires.
     assert _thinking_ends(received) == ["FIRST-BLOCK", "SECOND-BLOCK"]
+
+    await kit.close()
+
+
+async def test_no_tools_path_closes_the_window_when_the_provider_fails() -> None:
+    """A provider that dies mid-reasoning still pairs THINKING_START with its END.
+
+    The no-tools stream has no cancel exit, but it has this one, and it left
+    the window open the same way the tool loop's did.
+    """
+
+    class _BrokenProvider(_ScriptedStreamProvider):
+        async def generate_structured_stream(self, context: AIContext) -> Any:
+            yield StreamThinkingDelta(thinking="HALF-A-BLOCK")
+            raise ProviderError("upstream stopped", retryable=False, provider="broken")
+
+    received, kit = await _run_scripted_turn(_BrokenProvider([]), tools=False)
+
+    starts = [e for e in received if e.type == EphemeralEventType.THINKING_START]
+    assert len(starts) == 1
+    assert _thinking_ends(received) == ["HALF-A-BLOCK"]
 
     await kit.close()
