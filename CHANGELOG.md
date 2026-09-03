@@ -44,12 +44,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **A room nobody reads loads no history.** Every inbound message built its
   `RoomContext` with at least 50 recent events — the floor kept for hooks —
   whether or not a hook was registered or a channel read them: on a
-  transport-only room that read was 41 % of a message's worker CPU,
-  deserialised for nobody, and +32 to +50 % of throughput on the benchmark.
-  The floor now applies only while a hook is registered; with none, and no
+  transport-only room that read was a Postgres round trip and fifty pydantic
+  models per message, deserialised for nobody, and in benchmarking the
+  difference between about 930 and about 1350 msg/s on a 16-worker fleet.
+  The floor now applies while a hook is registered — regular or identity,
+  on any trigger, anywhere in the process: one is enough — or while the
+  caller scans the tail itself (`regenerate_response`); with none, and no
   channel declaring a `recent_events_window`, the read is skipped outright.
   A registered hook sees exactly the history it saw before, and a channel
-  that declares its window (AI, ACP) still gets it, hook or not.
+  that declares its window (AI, ACP) still gets it, hook or not. Anything
+  else that reads `RoomContext.recent_events` without declaring a window — a
+  custom channel, a memory provider with a zero window — gets an empty list
+  on a room with no hook.
 - **`ON_AI_RESPONSE` reports a readable transcript.** A tool call cuts the
   model's text into segments, persisted as one MESSAGE each, and
   `AIResponseEvent.response_content` joined them with nothing in between: an
@@ -94,8 +100,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   at module level since the Gemini clients got their timeouts, and the
   package root reaches that module through the video vision providers:
   `import roomkit` failed with `No module named 'httpx'` on an install
-  without the `httpx` extra (the benchmark's `roomkit[redis,postgres]`
-  worker, for one). Unreleased regression. The import is local to the
+  without the `httpx` extra (a worker installed as `roomkit[redis,postgres]`,
+  for one). Unreleased regression. The import is local to the
   client builder now, where google-genai brings httpx along, and a test
   imports the package in a fresh interpreter with httpx masked.
 - **Every AI provider reads an image `data:` URI the same way.** Anthropic,

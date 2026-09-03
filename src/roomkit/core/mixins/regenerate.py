@@ -85,7 +85,9 @@ class RegenerateMixin(HelpersMixin):
         error_source: EventSource | None = None
 
         async with self._lock_manager.locked(room_id):
-            context = await self._build_context(room_id)
+            # The trigger is found by scanning the tail below: this caller
+            # reads the history itself, hook or no hook.
+            context = await self._build_context(room_id, reads_history=True)
 
             transport_ids = {
                 b.channel_id for b in context.bindings if b.category == ChannelCategory.TRANSPORT

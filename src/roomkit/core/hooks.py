@@ -155,8 +155,10 @@ class HookEngine:
         O(1) either way: a set lookup, or the set's emptiness. The framework
         skips the work only a hook would consume when nothing is listening —
         the context built for ``BEFORE_DELIVER``, the room history loaded for
-        the inbound pipeline — so this runs once per message, never per hook.
-        Global and room hooks alike are in the index.
+        the inbound pipeline — so it runs a handful of times per message,
+        never per hook. Global and room hooks alike are in the index; identity
+        hooks live in the framework's own registry, and a caller that needs
+        both asks both.
         """
         if trigger is None:
             return bool(self._trigger_index)

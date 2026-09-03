@@ -19,3 +19,4 @@ def test_roomkit_imports_without_httpx() -> None:
         [sys.executable, "-c", code], capture_output=True, text=True, timeout=120, check=False
     )
     assert proc.returncode == 0, proc.stderr[-1200:]
+    assert proc.stdout.strip(), "the interpreter printed no version"

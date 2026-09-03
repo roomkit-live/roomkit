@@ -334,3 +334,18 @@ async def test_the_delivered_context_carries_the_committed_event() -> None:
             e.content.body for e in context.recent_events if isinstance(e.content, TextContent)
         ]
         assert bodies == [f"msg {n}" for n in range(i + 1)]
+
+
+async def test_a_room_with_no_reader_costs_no_history_read() -> None:
+    """The other side of the counter: no hook, no declaring channel, no read at all."""
+    store = CountingStore()
+    kit = RoomKit(store=store)
+    kit.register_channel(PlainChannel())
+    room = await kit.create_room(room_id="carry")
+    await kit.attach_channel(room.id, "sms")
+    try:
+        await _send(kit, room.id, "sms", 5)
+    finally:
+        await kit.close()
+
+    assert store.history_reads == 0

@@ -14,6 +14,7 @@ from types import SimpleNamespace
 from typing import Any
 
 from roomkit import HookExecution, HookResult, HookTrigger
+from roomkit.channels.ai import AIChannel
 from roomkit.channels.base import Channel
 from roomkit.core.framework import RoomKit
 from roomkit.core.mixins.helpers import (
@@ -21,20 +22,35 @@ from roomkit.core.mixins.helpers import (
     _RECENT_EVENTS_LIMIT,
     HelpersMixin,
 )
+from roomkit.identity.base import IdentityResolver
 from roomkit.memory.base import DEFAULT_RECENT_EVENTS_WINDOW, MemoryProvider
 from roomkit.memory.sliding_window import SlidingWindowMemory
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundMessage
-from roomkit.models.enums import ChannelType, EventType
+from roomkit.models.enums import ChannelCategory, ChannelType, EventType, IdentificationStatus
 from roomkit.models.event import EventSource, RoomEvent, TextContent
+from roomkit.models.identity import IdentityHookResult, IdentityResult
+from roomkit.providers.ai.mock import MockAIProvider
 from tests.test_framework import SimpleChannel
 
 
-def _resolve(channels: dict, channel_ids: list[str], *, hooked: bool = True) -> int:
+def _resolve(
+    channels: dict,
+    channel_ids: list[str],
+    *,
+    hooked: bool = True,
+    identity: bool = False,
+    reads_history: bool = False,
+) -> int:
     bindings = [SimpleNamespace(channel_id=cid) for cid in channel_ids]
     engine = SimpleNamespace(has_hooks=lambda trigger=None: hooked)
-    fake_self = SimpleNamespace(_channels=channels, _hook_engine=engine)
-    return HelpersMixin._resolve_recent_events_limit(fake_self, bindings)
+    identity_hooks = {HookTrigger.ON_IDENTITY_UNKNOWN: [object()]} if identity else {}
+    fake_self = SimpleNamespace(
+        _channels=channels, _hook_engine=engine, _identity_hooks=identity_hooks
+    )
+    return HelpersMixin._resolve_recent_events_limit(
+        fake_self, bindings, reads_history=reads_history
+    )
 
 
 # ── Declared windows ──────────────────────────────────────────────
@@ -83,6 +99,15 @@ def test_transport_only_room_without_a_hook_loads_nothing() -> None:
 def test_a_declared_window_loads_without_a_hook() -> None:
     channels = {"text": SimpleNamespace(recent_events_window=10)}
     assert _resolve(channels, ["text"], hooked=False) == 10
+
+
+def test_an_identity_hook_keeps_the_floor() -> None:
+    # Identity hooks live in the framework's registry, not the engine's index.
+    assert _resolve({}, ["ws"], hooked=False, identity=True) == _RECENT_EVENTS_FLOOR
+
+
+def test_a_caller_that_reads_the_tail_keeps_the_floor() -> None:
+    assert _resolve({}, ["ws"], hooked=False, reads_history=True) == _RECENT_EVENTS_FLOOR
 
 
 def test_room_takes_largest_channel_window() -> None:
@@ -171,8 +196,7 @@ async def test_no_hook_and_no_reader_skips_the_history_read() -> None:
     """A transport-only room with no hook loads no history — and runs no query.
 
     The floor was loaded for every message whether or not anything read it:
-    measured at 41 % of a message's worker CPU on the benchmark, deserialised
-    for nobody (RMK-103).
+    a Postgres round trip and fifty models per message, for nobody (RMK-103).
     """
     kit = RoomKit()
     room = await kit.create_room()
@@ -237,3 +261,64 @@ async def test_a_hook_on_a_real_turn_reads_the_recent_conversation() -> None:
     assert len(seen[0]) >= _RECENT_EVENTS_FLOOR
     bodies = [e.content.body for e in seen[0]]  # type: ignore[union-attr]
     assert f"msg-{_RECENT_EVENTS_FLOOR + 9}" in bodies
+
+
+async def test_an_identity_hook_reads_the_recent_conversation() -> None:
+    """Identity hooks are hooks too, in a registry the engine's index never sees.
+
+    A room whose only hook is an ``@kit.identity_hook`` still loads the floor:
+    "this number said who it was three messages ago" is exactly the glance the
+    floor exists for.
+    """
+
+    class _Unknown(IdentityResolver):
+        async def resolve(self, message: InboundMessage, context: RoomContext) -> IdentityResult:
+            return IdentityResult(status=IdentificationStatus.UNKNOWN)
+
+    kit = RoomKit(identity_resolver=_Unknown())
+    kit.register_channel(SimpleChannel("sms"))
+    room = await kit.create_room()
+    await kit.attach_channel(room.id, "sms")
+
+    def message(body: str) -> InboundMessage:
+        return InboundMessage(channel_id="sms", sender_id="u1", content=TextContent(body=body))
+
+    for i in range(_RECENT_EVENTS_FLOOR + 10):
+        await kit.process_inbound(message(f"msg-{i}"))
+    seen: list[int] = []
+
+    @kit.identity_hook(HookTrigger.ON_IDENTITY_UNKNOWN)
+    async def who(
+        event: RoomEvent, ctx: RoomContext, id_result: IdentityResult
+    ) -> IdentityHookResult:
+        seen.append(len(ctx.recent_events))
+        return IdentityHookResult.reject("not today")
+
+    await kit.process_inbound(message("hello"))
+
+    assert seen == [_RECENT_EVENTS_FLOOR]
+
+
+async def test_regenerate_finds_its_trigger_without_a_hook() -> None:
+    """``regenerate_response`` scans the tail for its trigger: it is a reader.
+
+    An intelligence channel with a zero window and no hook in the process left
+    it an empty tail and a ``None`` where a regenerated turn was due.
+    """
+    kit = RoomKit()
+    kit.register_channel(SimpleChannel("sms"))
+    kit.register_channel(
+        AIChannel(
+            "ai",
+            provider=MockAIProvider(responses=["again"]),
+            memory=SlidingWindowMemory(max_events=0),
+        )
+    )
+    room = await kit.create_room()
+    await kit.attach_channel(room.id, "sms")
+    await kit.attach_channel(room.id, "ai", category=ChannelCategory.INTELLIGENCE)
+    await kit.process_inbound(
+        InboundMessage(channel_id="sms", sender_id="u1", content=TextContent(body="hello"))
+    )
+
+    assert await kit.regenerate_response(room.id) is not None
