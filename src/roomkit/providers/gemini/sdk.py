@@ -35,11 +35,12 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Awaitable, Callable
-from typing import Any, NamedTuple
-
-import httpx
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 from roomkit.providers.utils import HTTPTimeouts, http_timeout
+
+if TYPE_CHECKING:
+    import httpx
 
 logger = logging.getLogger("roomkit.providers.gemini.sdk")
 
@@ -119,7 +120,11 @@ def build_vertex_genai_client(
 
 def _build_client(timeouts: HTTPTimeouts, provider: str, **client_kwargs: Any) -> GenaiClient:
     """Build the pair behind both entry points; *client_kwargs* go to ``genai.Client``."""
+    # Both optional: google-genai brings httpx along, and the package root
+    # reaches this module (through the video vision providers), so neither
+    # may be imported at module level — a base install has to import.
     try:
+        import httpx
         from google import genai
     except ImportError as exc:
         raise ImportError(

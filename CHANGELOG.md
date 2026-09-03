@@ -90,6 +90,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A base install imports again.** The Gemini client helper imported `httpx`
+  at module level since the Gemini clients got their timeouts, and the
+  package root reaches that module through the video vision providers:
+  `import roomkit` failed with `No module named 'httpx'` on an install
+  without the `httpx` extra (the benchmark's `roomkit[redis,postgres]`
+  worker, for one). Unreleased regression. The import is local to the
+  client builder now, where google-genai brings httpx along, and a test
+  imports the package in a fresh interpreter with httpx masked.
 - **Every AI provider reads an image `data:` URI the same way.** Anthropic,
   Gemini and OpenAI (with the seven providers that inherit its request
   builder) each parsed a `data:` URI inline, and each differently: a header
