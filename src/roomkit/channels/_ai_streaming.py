@@ -181,8 +181,17 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
 
         The window closes whenever the model stops reasoning and starts
         producing — a text delta, a tool call's first fragment, or the end of
-        the stream. One place for all five call sites, so a new producer
-        cannot close a window differently from the others.
+        the stream — and on every abnormal exit of a round: a cancelled turn,
+        a provider that died mid-reasoning, a consumer that stopped reading.
+        One place for every call site, so a new exit cannot close a window
+        differently from the others.
+
+        Whatever closed it, ``THINKING_END`` carries the block reasoned so
+        far. The subscriber has been reading that block in deltas, so an
+        empty payload on an abnormal exit would be a second contract to
+        learn for the one case where the block is already at hand; and the
+        deltas the coalescer still holds go out ahead of the close instead
+        of dying with the round.
 
         A round can open several windows (reason, answer, reason again), and
         each ``THINKING_END`` must carry its own block. ``published`` is how
@@ -406,6 +415,20 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                     if loop_ctx.cancel_event.is_set():
                         logger.info("Streaming cancelled mid-generation at round %d", _round_idx)
                         if room_id:
+                            # A cancel ends the round for the bus too: the
+                            # reasoning window closes with the block reasoned
+                            # so far, then the composition closes — or a
+                            # subscriber stays on "thinking" for a turn that
+                            # is over, with the buffered deltas lost.
+                            if thinking_started and thinking_parts:
+                                thinking_started = False
+                                await self._close_thinking_window(
+                                    coalescer,
+                                    room_id,
+                                    thinking_parts,
+                                    _round_idx,
+                                    published=thinking_published,
+                                )
                             await tool_coalescer.close()
                         yield LoopEndMarker(reason="cancelled", rounds=_round_idx)
                         return

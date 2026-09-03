@@ -68,6 +68,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A cancelled turn closes its reasoning window.** Cancelling a streaming
+  tool loop (`Cancel` steering) while the model was reasoning closed the
+  tool-call composition and nothing else: the realtime bus got a
+  `THINKING_START` with no `THINKING_END`, a subscriber stayed on "thinking"
+  for a turn that was over, and the deltas the coalescer still buffered were
+  lost. The cancel exit now closes the window like every other exit does,
+  the `THINKING_END` carrying the block reasoned so far, with the buffered
+  deltas flushed ahead of it.
 - **Gemini STT refuses an `http://` Files API URI.** `transcribe_recording`
   passes a Files API URI through to the model untouched, and matched it on
   the host alone: an `http://` URI to that host was forwarded and failed at

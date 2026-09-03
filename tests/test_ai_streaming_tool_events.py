@@ -34,6 +34,7 @@ from roomkit.providers.ai.base import (
     ProviderError,
     StreamDone,
     StreamTextDelta,
+    StreamThinkingDelta,
     StreamToolCall,
     StreamToolCallDelta,
 )
@@ -612,6 +613,67 @@ async def test_cancelling_mid_composition_names_its_exit() -> None:
 
     assert reasons == ["cancelled"]
     assert provider.pulled == 4
+
+
+async def test_cancelling_mid_reasoning_closes_the_thinking_window() -> None:
+    """A cancelled turn pairs its THINKING_START with a THINKING_END.
+
+    The mid-generation cancel exit closed the tool composition and nothing
+    else: a subscriber stayed on "reasoning" for a turn that was over, and
+    the deltas the coalescer still held never reached the bus. The window
+    now closes on this exit as on every other, carrying the block reasoned
+    so far, with the buffered deltas flushed ahead of it.
+    """
+    holder: dict[str, AIChannel] = {}
+
+    class _ReasoningProvider(MockAIProvider):
+        """Reasons in 50 deltas, cancelling the loop after the third."""
+
+        def __init__(self) -> None:
+            super().__init__(streaming=True)
+            self.pulled = 0
+
+        async def generate_structured_stream(self, context: AIContext) -> Any:
+            for i in range(50):
+                self.pulled += 1
+                yield StreamThinkingDelta(thinking=f"step {i} ")
+                if self.pulled == 3:
+                    holder["ai"].steer(Cancel())
+            yield StreamTextDelta(text="never reached")
+            yield StreamDone(finish_reason="stop")
+
+    async def tool_handler(name: str, args: dict[str, Any]) -> str:
+        return "ok"
+
+    provider = _ReasoningProvider()
+    kit = RoomKit()
+    # A window wide enough that every delta stays buffered until the close.
+    ai = AIChannel(
+        "ai1",
+        provider=provider,
+        tool_handler=tool_handler,
+        thinking_budget=4096,
+        thinking_coalesce_ms=60_000.0,
+        thinking_coalesce_chars=100_000,
+    )
+    holder["ai"] = ai
+
+    received = await _run_turn(kit, ai)
+    starts = [e for e in received if e.type == EphemeralEventType.THINKING_START]
+    deltas = [e for e in received if e.type == EphemeralEventType.THINKING_DELTA]
+    ends = [e for e in received if e.type == EphemeralEventType.THINKING_END]
+
+    # The loop took one more delta, saw the cancel, and returned — with the
+    # window closed behind it.
+    assert provider.pulled == 4
+    assert len(starts) == 1
+    assert len(ends) == 1
+    assert ends[0].data["thinking"] == "step 0 step 1 step 2 "
+    # The deltas the coalescer still held went out ahead of the close.
+    assert [d.data["thinking"] for d in deltas] == ["step 0 step 1 step 2 "]
+    assert received.index(deltas[0]) < received.index(ends[0])
+
+    await kit.close()
 
 
 # --- the coalescer itself --------------------------------------------------
