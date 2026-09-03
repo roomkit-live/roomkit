@@ -48,8 +48,14 @@ from roomkit.providers.gemini import GeminiVertexConfig, GeminiVertexProvider
 
 def parse_labels(raw: str) -> dict[str, str] | None:
     """``tenant=acme,partner=north`` → a labels dict, ``None`` when unset."""
-    pairs = (item.split("=", 1) for item in raw.split(",") if item.strip())
-    labels = {key.strip(): value.strip() for key, value in pairs}
+    labels: dict[str, str] = {}
+    for item in raw.split(","):
+        if not item.strip():
+            continue
+        key, sep, value = item.partition("=")
+        if not sep:
+            raise ValueError(f"GEMINI_VERTEX_LABELS: {item.strip()!r} is not key=value")
+        labels[key.strip()] = value.strip()
     return labels or None
 
 

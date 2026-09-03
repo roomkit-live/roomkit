@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import json
+from collections.abc import AsyncIterator
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import ANY, MagicMock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 import pytest
 from cryptography.hazmat.primitives import serialization
@@ -244,8 +245,9 @@ class TestGeminiVertexLabels:
         assert _vconfig().labels is None
 
     def test_valid_labels_are_kept_as_given(self) -> None:
-        # An empty value and an international character are both allowed.
-        labels = {"luge_tenant": "acme-42", "partner": "", "région": "qc"}
+        # An empty value, an accented letter and a caseless script (CJK) are
+        # all allowed: "international characters allowed" in Google's words.
+        labels = {"cost_center": "acme-42", "partner": "", "région": "qc", "租户": "acme"}
 
         assert _vconfig(labels=labels).labels == labels
 
@@ -257,8 +259,10 @@ class TestGeminiVertexLabels:
             ({"": "acme"}, "1 to 63 characters"),
             ({"t" * 64: "acme"}, "1 to 63 characters"),
             ({"tenant.id": "acme"}, "only lowercase letters, digits"),
+            ({"tʼenant": "acme"}, "only lowercase letters, digits"),
             ({"tenant": "Acme"}, "may only contain lowercase letters"),
             ({"tenant": "acme corp"}, "may only contain lowercase letters"),
+            ({"tenant": "acme²"}, "may only contain lowercase letters"),
             ({"tenant": "a" * 64}, "at most 63"),
             ({f"k{i}": "v" for i in range(65)}, "at most 64 labels"),
         ],
@@ -268,8 +272,10 @@ class TestGeminiVertexLabels:
             "empty-key",
             "64-char-key",
             "dot-in-key",
+            "modifier-letter-in-key",
             "uppercase-value",
             "space-in-value",
+            "superscript-digit-in-value",
             "64-char-value",
             "65-labels",
         ],
@@ -286,13 +292,42 @@ class TestGeminiVertexLabels:
         assert "labels" not in GeminiConfig.model_fields
 
 
-def _genai_recording_gen_config() -> MagicMock:
-    """The module mock with a ``GenerateContentConfig`` that records what it
-    was built with: a plain namespace, so an attribute never set is absent
-    rather than a truthy MagicMock."""
+async def _one_reply(text: str) -> AsyncIterator[SimpleNamespace]:
+    """What ``generate_content_stream`` yields for a one-chunk answer."""
+    yield SimpleNamespace(
+        candidates=[
+            SimpleNamespace(
+                content=SimpleNamespace(parts=[SimpleNamespace(text=text, function_call=None)])
+            )
+        ],
+        usage_metadata=None,
+    )
+    yield SimpleNamespace(
+        candidates=None,
+        usage_metadata=SimpleNamespace(prompt_token_count=1, candidates_token_count=1),
+    )
+
+
+def _genai_answering(text: str = "ok") -> MagicMock:
+    """The module mock with a streaming client that answers *text*, and a
+    ``GenerateContentConfig`` that records what it was built with: a plain
+    namespace, so an attribute never set is absent rather than a truthy
+    MagicMock."""
     mod = _mock_genai_module()
     mod.types.GenerateContentConfig = MagicMock(side_effect=lambda **kw: SimpleNamespace(**kw))
+    mod.types.Content = MagicMock(side_effect=lambda **kw: SimpleNamespace(**kw))
+    mod.types.Part.from_text = MagicMock(side_effect=lambda text: SimpleNamespace(text=text))
+    mod.Client.return_value.aio.models.generate_content_stream = AsyncMock(
+        return_value=_one_reply(text)
+    )
     return mod
+
+
+def _config_sent(mock_genai: MagicMock) -> SimpleNamespace:
+    """The ``config`` the SDK's ``generate_content_stream`` was called with."""
+    stream = mock_genai.Client.return_value.aio.models.generate_content_stream
+    stream.assert_awaited_once()
+    return stream.call_args.kwargs["config"]
 
 
 def _context() -> AIContext:
@@ -300,27 +335,38 @@ def _context() -> AIContext:
 
 
 class TestGeminiVertexLabelsOnTheRequest:
-    def test_configured_labels_ride_the_generation_config(self) -> None:
-        mock_genai = _genai_recording_gen_config()
+    """The labels reach the SDK call, through the public ``generate``.
+
+    Pinned at the SDK boundary rather than on the private seam: reverting
+    the seam would leave a test of ``_build_gen_config`` green while every
+    Vertex request silently lost its billing labels.
+    """
+
+    async def test_configured_labels_reach_the_sdk_call(self) -> None:
+        mock_genai = _genai_answering()
         with patch.dict("sys.modules", _genai_modules(mock_genai)):
             from roomkit.providers.gemini.vertex import GeminiVertexProvider as Provider
 
-            provider = Provider(_vconfig(labels={"luge_tenant": "acme"}))
-            gen_config = provider._build_gen_config(_context())
+            provider = Provider(_vconfig(labels={"cost_center": "acme"}))
+            response = await provider.generate(_context())
 
-        assert gen_config.labels == {"luge_tenant": "acme"}
+        assert response.content == "ok"
+        assert _config_sent(mock_genai).labels == {"cost_center": "acme"}
 
-    def test_without_labels_the_config_is_the_parent_one(self) -> None:
+    async def test_without_labels_the_request_is_the_parent_one(self) -> None:
         """Characterization: the override adds nothing when nothing is set, so
         a Vertex request without labels is byte-for-byte what it was."""
-        mock_genai = _genai_recording_gen_config()
-        with patch.dict("sys.modules", _genai_modules(mock_genai)):
+        parent_genai = _genai_answering()
+        vertex_genai = _genai_answering()
+        with patch.dict("sys.modules", _genai_modules(parent_genai)):
             from roomkit.providers.gemini.ai import GeminiAIProvider as Parent
+
+            await Parent(GeminiConfig(api_key="k")).generate(_context())
+        with patch.dict("sys.modules", _genai_modules(vertex_genai)):
             from roomkit.providers.gemini.vertex import GeminiVertexProvider as Provider
 
-            context = _context()
-            parent = Parent(GeminiConfig(api_key="k"))._build_gen_config(context)
-            vertex = Provider(_vconfig())._build_gen_config(context)
+            await Provider(_vconfig()).generate(_context())
 
-        assert not hasattr(vertex, "labels")
-        assert vars(vertex) == vars(parent)
+        sent = _config_sent(vertex_genai)
+        assert not hasattr(sent, "labels")
+        assert vars(sent) == vars(_config_sent(parent_genai))

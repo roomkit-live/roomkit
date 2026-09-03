@@ -6,13 +6,15 @@ makes it the right backend when data residency matters (e.g. Québec Law 25 /
 PIPEDA): prompts and responses are processed in the chosen region and are not
 retained to train Google's models. The only differences from
 :class:`~roomkit.providers.gemini.ai.GeminiAIProvider` are how the client is
-built (Vertex mode + ADC auth instead of an API key) — everything else
-(generation, streaming, thinking, model catalog) is inherited unchanged.
+built (Vertex mode + ADC auth instead of an API key) and the billing labels
+each request carries — everything else (generation, streaming, thinking,
+model catalog) is inherited unchanged.
 """
 
 from __future__ import annotations
 
 import json
+import unicodedata
 from typing import Any
 
 from pydantic import SecretStr, field_validator
@@ -26,19 +28,27 @@ _MAX_LABELS = 64
 _MAX_LABEL_LENGTH = 63
 
 
+_LETTER_CATEGORIES = frozenset({"Ll", "Lo"})
+"""Lowercase letters and the caseless letters of scripts without case (CJK,
+Arabic, Hebrew): what "lowercase letters, international characters allowed"
+comes to. Uppercase, titlecase and modifier letters are out."""
+
+
+def _label_letter(char: str) -> bool:
+    return unicodedata.category(char) in _LETTER_CATEGORIES
+
+
 def _label_char_ok(char: str) -> bool:
     """One character of a label key or value, by Google's rules: a lowercase
-    letter in any script, a digit, ``_`` or ``-``."""
-    if char in "_-" or char.isdigit():
-        return True
-    return char.isalpha() and char == char.lower()
+    letter in any script, a decimal digit, ``_`` or ``-``."""
+    return char in "_-" or _label_letter(char) or unicodedata.category(char) == "Nd"
 
 
 def _check_label(key: str, value: str) -> None:
     """Refuse a label Google would refuse, naming the key that is wrong."""
     if not 1 <= len(key) <= _MAX_LABEL_LENGTH:
         raise ValueError(f"label key {key!r}: 1 to {_MAX_LABEL_LENGTH} characters, got {len(key)}")
-    if not (key[0].isalpha() and key[0] == key[0].lower()):
+    if not _label_letter(key[0]):
         raise ValueError(f"label key {key!r} must start with a lowercase letter")
     if not all(_label_char_ok(c) for c in key):
         raise ValueError(
@@ -144,9 +154,10 @@ class GeminiVertexConfig(GeminiConfig):
 class GeminiVertexProvider(GeminiAIProvider):
     """Gemini provider backed by Vertex AI in a specific Google Cloud region.
 
-    Subclasses :class:`GeminiAIProvider` — only client construction differs
-    (Vertex mode, and an identity that is not an API key). All generation,
-    streaming, thinking, and model discovery are inherited.
+    Subclasses :class:`GeminiAIProvider` — only client construction (Vertex
+    mode, and an identity that is not an API key) and the billing labels on
+    each request differ. All generation, streaming, thinking, and model
+    discovery are inherited.
     """
 
     _config: GeminiVertexConfig
