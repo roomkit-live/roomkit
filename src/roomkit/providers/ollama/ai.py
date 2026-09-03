@@ -13,6 +13,7 @@ want real-time thinking or explicit control over the reasoning phase.
 from __future__ import annotations
 
 import asyncio
+import base64
 import time
 import uuid
 from collections.abc import AsyncIterator
@@ -39,6 +40,7 @@ from roomkit.providers.ai.base import (
     StreamThinkingDelta,
     StreamToolCall,
 )
+from roomkit.providers.image.base import image_part_payload
 from roomkit.providers.ollama.config import OllamaConfig
 from roomkit.providers.ollama.models import MODELS
 from roomkit.providers.utils import http_timeout
@@ -49,20 +51,22 @@ from roomkit.providers.utils import http_timeout
 _SHOW_CONCURRENCY = 8
 
 
-def _ollama_image_payload(url: str) -> str:
+def _ollama_image_payload(part: AIImagePart) -> str:
     """Reduce an image reference to what Ollama's SDK accepts.
 
     RoomKit carries images as ``data:<media_type>;base64,<data>`` URIs —
     the same convention the Anthropic and OpenAI providers consume.
     Ollama's ``Image`` type only accepts a raw base64 string or a file
     path; handed a full data URI it raises ``ValueError: Invalid image
-    data, expected base64 string or path to image file``. Strip the
-    ``data:...;base64,`` prefix down to the payload; pass a plain base64
-    string or path through unchanged.
+    data, expected base64 string or path to image file``. A data URI is
+    read by the reader every provider shares — payload validated, a
+    malformed one refused before the request leaves — and handed over as
+    canonical base64; a plain base64 string or path passes through.
     """
-    if url.startswith("data:"):
-        return url.partition(",")[2]
-    return url
+    if part.url.startswith("data:"):
+        _, data = image_part_payload(part, provider="ollama")
+        return base64.b64encode(data).decode("ascii")
+    return part.url
 
 
 class OllamaAIProvider(AIProvider):
@@ -205,7 +209,7 @@ class OllamaAIProvider(AIProvider):
                             "tool_name": r.name,
                         }
                     )
-                    pending_images.extend(_ollama_image_payload(img.url) for img in images)
+                    pending_images.extend(_ollama_image_payload(img) for img in images)
                 if pending_images:
                     result.append({"role": "user", "content": "", "images": pending_images})
                 continue
@@ -219,7 +223,7 @@ class OllamaAIProvider(AIProvider):
                 if isinstance(part, AITextPart):
                     text_parts.append(part.text)
                 elif isinstance(part, AIImagePart):
-                    images.append(_ollama_image_payload(part.url))
+                    images.append(_ollama_image_payload(part))
                 elif isinstance(part, AIThinkingPart):
                     thinking_text = part.thinking
                 elif isinstance(part, AIToolCallPart):

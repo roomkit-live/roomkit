@@ -28,6 +28,7 @@ from roomkit.providers.ai.base import (
     StreamToolCall,
 )
 from roomkit.providers.ai.openai_dialect import ThinkTagParser, fold_tool_call_fragment
+from roomkit.providers.image.base import image_part_uri
 from roomkit.providers.mistral.config import MistralConfig
 from roomkit.providers.mistral.models import MODELS
 
@@ -116,7 +117,7 @@ class MistralAIProvider(AIProvider):
                 parts.append(
                     {
                         "type": "image_url",
-                        "image_url": {"url": part.url},
+                        "image_url": {"url": image_part_uri(part, provider="mistral")},
                     }
                 )
             elif isinstance(part, AIThinkingPart):
@@ -185,7 +186,10 @@ class MistralAIProvider(AIProvider):
                         {
                             "role": "user",
                             "content": [
-                                {"type": "image_url", "image_url": {"url": img.url}}
+                                {
+                                    "type": "image_url",
+                                    "image_url": {"url": image_part_uri(img, provider="mistral")},
+                                }
                                 for img in pending_images
                             ],
                         }

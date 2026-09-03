@@ -586,7 +586,7 @@ class TestMistralToolResultImages:
                                 name="screenshot",
                                 result=[
                                     AITextPart(text="the screen"),
-                                    AIImagePart(url="data:image/png;base64,IMGDATA"),
+                                    AIImagePart(url="data:image/png;base64,SU1HREFUQQ=="),
                                 ],
                             )
                         ],
@@ -605,8 +605,21 @@ class TestMistralToolResultImages:
                     "content": [
                         {
                             "type": "image_url",
-                            "image_url": {"url": "data:image/png;base64,IMGDATA"},
+                            "image_url": {"url": "data:image/png;base64,SU1HREFUQQ=="},
                         }
                     ],
                 },
             ]
+
+
+class TestMistralImageDataURIs:
+    def test_a_malformed_payload_is_refused_before_the_request(self) -> None:
+        with patch.dict("sys.modules", _mistral_modules()):
+            from roomkit.providers.ai.base import AIImagePart, ProviderError
+            from roomkit.providers.mistral.ai import MistralAIProvider
+
+            provider = MistralAIProvider(_config())
+            with pytest.raises(ProviderError, match="not valid base64") as excinfo:
+                provider._format_content([AIImagePart(url="data:image/png;base64,not*base64")])
+            assert excinfo.value.retryable is False
+            assert excinfo.value.provider == "mistral"

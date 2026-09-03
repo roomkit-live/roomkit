@@ -634,7 +634,7 @@ class TestOllamaMessageBuilding:
                 AIToolResultPart(
                     tool_call_id="call_1",
                     name="screenshot",
-                    result=[AIImagePart(url="data:image/png;base64,ABC")],
+                    result=[AIImagePart(url="data:image/png;base64,QUJD")],
                 )
             ],
         )
@@ -646,7 +646,7 @@ class TestOllamaMessageBuilding:
             "content": "[see image below]",
             "tool_name": "screenshot",
         }
-        assert sent[-1] == {"role": "user", "content": "", "images": ["ABC"]}
+        assert sent[-1] == {"role": "user", "content": "", "images": ["QUJD"]}
 
 
 class TestOllamaErrors:
@@ -849,3 +849,18 @@ class TestOllamaListModels:
 
         assert models[0].id == "m1"
         assert models[0].capabilities == []
+
+
+class TestOllamaImageDataURIs:
+    @pytest.mark.asyncio
+    async def test_a_malformed_payload_is_refused_before_the_request(self) -> None:
+        provider, mod = _provider()
+        message = AIMessage(
+            role="user",
+            content=[AIImagePart(url="data:image/png;base64,not*base64")],
+        )
+        with pytest.raises(ProviderError, match="not valid base64") as excinfo:
+            await provider.generate(_context(messages=[message]))
+        assert excinfo.value.retryable is False
+        assert excinfo.value.provider == "ollama"
+        mod.AsyncClient.return_value.chat.assert_not_called()

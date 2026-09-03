@@ -66,6 +66,7 @@ from roomkit.providers.ai.openai_dialect import (
     extract_think_tags,
     fold_tool_call_fragment,
 )
+from roomkit.providers.image.base import image_part_uri
 from roomkit.providers.polargrid.config import PolarGridConfig
 from roomkit.providers.polargrid.models import (
     MODELS,
@@ -275,7 +276,14 @@ class PolarGridAIProvider(AIProvider):
                 if isinstance(part, AITextPart):
                     blocks.append({"type": "text", "text": part.text})
                 elif isinstance(part, AIImagePart):
-                    blocks.append({"type": "image_url", "image_url": {"url": part.url}})
+                    blocks.append(
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": image_part_uri(part, provider=self._provider_name)
+                            },
+                        }
+                    )
             return blocks
 
         return "".join(p.text for p in content if isinstance(p, AITextPart))

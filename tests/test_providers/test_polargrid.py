@@ -727,7 +727,7 @@ class TestPolarGridToolMessages:
                             name="screenshot",
                             result=[
                                 AITextPart(text="the screen"),
-                                AIImagePart(url="data:image/png;base64,IMGDATA"),
+                                AIImagePart(url="data:image/png;base64,SU1HREFUQQ=="),
                             ],
                         )
                     ],
@@ -745,7 +745,10 @@ class TestPolarGridToolMessages:
             {
                 "role": "user",
                 "content": [
-                    {"type": "image_url", "image_url": {"url": "data:image/png;base64,IMGDATA"}}
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": "data:image/png;base64,SU1HREFUQQ=="},
+                    }
                 ],
             },
         ]
@@ -760,7 +763,7 @@ class TestPolarGridToolMessages:
                     role="user",
                     content=[
                         AITextPart(text="what is this?"),
-                        AIImagePart(url="data:image/png;base64,IMGDATA"),
+                        AIImagePart(url="data:image/png;base64,SU1HREFUQQ=="),
                     ],
                 )
             ],
@@ -771,7 +774,10 @@ class TestPolarGridToolMessages:
                 "role": "user",
                 "content": [
                     {"type": "text", "text": "what is this?"},
-                    {"type": "image_url", "image_url": {"url": "data:image/png;base64,IMGDATA"}},
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": "data:image/png;base64,SU1HREFUQQ=="},
+                    },
                 ],
             }
         ]
@@ -1034,3 +1040,20 @@ class TestPolarGridLazyImport:
             importlib.reload(mod)
             with pytest.raises(ImportError, match=r"pip install roomkit\[polargrid\]"):
                 mod.PolarGridAIProvider(_config())
+
+
+class TestPolarGridImageDataURIs:
+    def test_a_malformed_payload_is_refused_before_the_request(self) -> None:
+        provider, _ = _provider()
+        with pytest.raises(ProviderError, match="not valid base64") as excinfo:
+            provider._build_messages(
+                [
+                    AIMessage(
+                        role="user",
+                        content=[AIImagePart(url="data:image/png;base64,not*base64")],
+                    )
+                ],
+                None,
+            )
+        assert excinfo.value.retryable is False
+        assert excinfo.value.provider == provider._provider_name
