@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.63.0] — 2026-09-03
+
 ### Added
 
 - **The STT language follows the speaker, per session.** A streaming STT does
@@ -38,6 +40,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   enforced when the config is built, so a bad label fails at startup rather
   than on the first request. Vertex only: the Gemini Developer API refuses
   the field, and `GeminiConfig` does not carry it.
+- **The catalogs know Claude Fable 5.1 and Gemini 3.8 Flash.**
+  `AnthropicAIProvider.available_models()` lists `claude-fable-5-1` (and
+  `claude-mythos-5-1`, its Project Glasswing counterpart): 1M context,
+  $10/$50 per million, the 5-minute cache write at $12.50, and the one rate
+  that breaks the family's pattern — a cache hit bills 0.025x the input
+  price, $0.25 per million, where every other Claude model bills 0.1x.
+  `GeminiAIProvider.available_models()` lists `gemini-3.8-flash` at the same
+  launch-discounted $0.75/$3.75/$0.075 as 3.7 Flash, doubling on 2027-01-01
+  like its two predecessors. Both catalogs are re-verified against the
+  vendors' pricing pages as of 2026-09-03; the Anthropic catalog also stops
+  forecasting the Sonnet 5 increase to $3/$15 scheduled for 2026-09-01 —
+  Anthropic kept $2/$10 as the standard price, and the entry never changed.
 
 ### Changed
 
@@ -64,7 +78,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a blank line (`RESPONSE_SEGMENT_SEPARATOR`), only ever between two of them,
   and the new `segments` field carries them one by one — `segments[-1]` is
   the answer, for a consumer that wants it without the narration. The
-  streaming, non-streaming and ACP paths report the same transcript; the
+  streaming, non-streaming and ACP paths report the same transcript,
+  through one exported function, `response_transcript(segments)`, for a
+  consumer that rebuilds a turn from its persisted segments; the
   non-streaming tool loop used to report the last segment alone. On the
   streaming path the transcript is what the room saw: a prefix the stream
   withheld as a replay of an earlier round stays out of it. A turn without
@@ -101,9 +117,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   package root reaches that module through the video vision providers:
   `import roomkit` failed with `No module named 'httpx'` on an install
   without the `httpx` extra (a worker installed as `roomkit[redis,postgres]`,
-  for one). Unreleased regression. The import is local to the
-  client builder now, where google-genai brings httpx along, and a test
-  imports the package in a fresh interpreter with httpx masked.
+  for one). A regression of this cycle, never released. The import is local
+  to the client builder now, where google-genai brings httpx along, and a
+  test imports the package in a fresh interpreter with httpx masked.
 - **Every AI provider reads an image `data:` URI the same way.** Anthropic,
   Gemini and OpenAI (with the seven providers that inherit its request
   builder) each parsed a `data:` URI inline, and each differently: a header
@@ -6863,7 +6879,8 @@ See entries `0.7.0a1` through `0.7.0a18` below.
 - `STTProvider.transcribe()` returns `TranscriptionResult` (Phase 3.1)
 - Framework event names enriched with payloads (Phase 4)
 
-[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.62.0...HEAD
+[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.63.0...HEAD
+[0.63.0]: https://github.com/roomkit-live/roomkit/compare/v0.62.0...v0.63.0
 [0.62.0]: https://github.com/roomkit-live/roomkit/compare/v0.61.0...v0.62.0
 [0.61.0]: https://github.com/roomkit-live/roomkit/compare/v0.60.0...v0.61.0
 [0.60.0]: https://github.com/roomkit-live/roomkit/compare/v0.59.0...v0.60.0

@@ -7,7 +7,7 @@ about what the Gemini API currently offers. Call
 per model straight from the API.
 
 Sourced from the Gemini API models docs (ai.google.dev/gemini-api/docs/models),
-verified 2026-08-13.
+verified 2026-09-03.
 
 Ids carry no ``models/`` prefix, matching the form ``GeminiConfig.model`` and the
 generate-content calls use. Current text/multimodal models all report a
@@ -20,18 +20,19 @@ Deep Research variants are out of scope for this provider. Google lists
 they are absent rather than flagged, since a retired id is a 404.
 
 Prices are the paid-tier standard rates from Google's pricing page
-(ai.google.dev/gemini-api/docs/pricing), read 2026-08-13. The Pro entries
+(ai.google.dev/gemini-api/docs/pricing), read 2026-09-03. The Pro entries
 represent Google's higher rates beyond 200k input tokens (2x input, 1.5x
 output). Audio input on Flash has a separate rate that this text-token catalog
 does not represent. Batch, Flex and Priority tiers are not represented either:
 roomkit calls the synchronous API, so the standard column is the one that bills.
 
-Two entries carry a launch discount rather than a settled rate. Google prices
-``gemini-3.7-flash`` and ``gemini-3.6-flash`` at half the published figure
-"through December 31, 2026", doubling on January 1, 2027 to $1.50/$7.50/$0.15.
-What a call costs today is what belongs here, so the discounted rates are the
-ones stated — and those two need a re-read in January, when the increase makes
-them silently half of what a consumer is billed.
+Three entries carry a launch discount rather than a settled rate. Google prices
+``gemini-3.8-flash``, ``gemini-3.7-flash`` and ``gemini-3.6-flash`` at half the
+published figure "through December 31, 2026", doubling on January 1, 2027 to
+$1.50/$7.50/$0.15. What a call costs today is what belongs here, so the
+discounted rates are the ones stated — and those three need a re-read in
+January, when the increase makes them silently half of what a consumer is
+billed.
 
 Context caching is billed by *storage time* ($1.00–$4.50 per million tokens per
 hour), not per token written — so ``cache_write`` stays unset here rather than
@@ -45,9 +46,22 @@ from datetime import date
 from roomkit.providers.ai.base import ModelInfo, ModelPricing
 
 _CTX = 1_048_576
-_VERIFIED = date(2026, 8, 13)
+_VERIFIED = date(2026, 9, 3)
 
 MODELS: list[ModelInfo] = [
+    ModelInfo(
+        id="gemini-3.8-flash",
+        display_name="Gemini 3.8 Flash",
+        context_window=_CTX,
+        supports_vision=True,
+        capabilities=["thinking", "audio", "video"],
+        pricing=ModelPricing(
+            input_per_million=0.75,
+            output_per_million=3.75,
+            cache_read_per_million=0.075,
+            verified=_VERIFIED,
+        ),
+    ),
     ModelInfo(
         id="gemini-3.7-flash",
         display_name="Gemini 3.7 Flash",

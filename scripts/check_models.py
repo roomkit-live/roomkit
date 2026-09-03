@@ -212,6 +212,7 @@ DELIBERATE: dict[str, str] = {
     "gpt-5.6-luna": "OpenAI documents 400K; mirror reports the 1.05M Sol/Terra ceiling",
     # Project Glasswing only — never published on a public aggregator.
     "claude-mythos-5": "Project Glasswing access only, absent from public mirrors",
+    "claude-mythos-5-1": "Project Glasswing access only, absent from public mirrors",
     # xAI hosts it, but OpenRouter's Image API routes only the 2.0 and quality
     # ids, so absence from the mirror says nothing (docs.x.ai models page,
     # 2026-08-21).

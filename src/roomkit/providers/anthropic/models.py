@@ -6,7 +6,7 @@ about what Anthropic currently offers. Call
 ``AnthropicAIProvider.list_models()`` for that; it asks the account's API.
 
 Sourced from the Anthropic models overview
-(platform.claude.com/docs/en/about-claude/models), verified 2026-08-05.
+(platform.claude.com/docs/en/about-claude/models), verified 2026-09-03.
 
 All current Claude models accept image input; context windows are 1M for the
 4.6+/Opus 5/Fable/Mythos tier on the Claude API and 200K for the rest. Dated
@@ -14,17 +14,20 @@ snapshot ids and their dateless aliases are both listed so either form
 resolves here.
 
 Prices are the first-party Claude API rates from Anthropic's pricing page
-(platform.claude.com/docs/en/about-claude/pricing), read 2026-08-05.
+(platform.claude.com/docs/en/about-claude/pricing), read 2026-09-03.
 ``cache_write`` is the 5-minute write (1.25x input) because that is the TTL
 ``AnthropicAIProvider`` asks for — its markers are ``{"type": "ephemeral"}``,
-never the 1-hour variant, which costs 2x. Modifiers that are per-request
-rather than per-model are absent by construction: the Batch API's 50%, fast
-mode's 2x, and the 1.1x for ``inference_geo: "us"``.
+never the 1-hour variant, which costs 2x. ``cache_read`` is 0.1x input on
+every model but Claude Fable 5.1 and Claude Mythos 5.1, where a hit bills
+0.025x ($0.25 per million). Modifiers that are per-request rather than
+per-model are absent by construction: the Batch API's 50%, fast mode's 2x,
+and the 1.1x for ``inference_geo: "us"``.
 
-One rate here has an expiry: Claude Sonnet 5 is $2/$10 under introductory
-pricing through 2026-08-31 and $3/$15 from 2026-09-01. The entry states what
-Anthropic charges on ``verified``, not a forecast — which is exactly why the
-date travels with the price.
+One rate here outlived its expiry: Claude Sonnet 5 launched at $2/$10 as
+introductory pricing through 2026-08-31, with $3/$15 scheduled from
+2026-09-01; Anthropic made $2/$10 the standard price instead (pricing page,
+2026-09-03). The entry states what Anthropic charges on ``verified``, not a
+forecast — which is exactly why the date travels with the price.
 
 The retired ids keep the price Anthropic still publishes for them (they
 remain callable on Bedrock and Google Cloud), so a bill from before the
@@ -37,7 +40,7 @@ from datetime import date
 
 from roomkit.providers.ai.base import ModelInfo, ModelPricing
 
-_VERIFIED = date(2026, 8, 5)
+_VERIFIED = date(2026, 9, 3)
 
 MODELS: list[ModelInfo] = [
     ModelInfo(
@@ -55,6 +58,20 @@ MODELS: list[ModelInfo] = [
         ),
     ),
     ModelInfo(
+        id="claude-fable-5-1",
+        display_name="Claude Fable 5.1",
+        context_window=1_000_000,
+        supports_vision=True,
+        capabilities=["thinking"],
+        pricing=ModelPricing(
+            input_per_million=10.0,
+            output_per_million=50.0,
+            cache_read_per_million=0.25,
+            cache_write_per_million=12.5,
+            verified=_VERIFIED,
+        ),
+    ),
+    ModelInfo(
         id="claude-fable-5",
         display_name="Claude Fable 5",
         context_window=1_000_000,
@@ -64,6 +81,20 @@ MODELS: list[ModelInfo] = [
             input_per_million=10.0,
             output_per_million=50.0,
             cache_read_per_million=1.0,
+            cache_write_per_million=12.5,
+            verified=_VERIFIED,
+        ),
+    ),
+    ModelInfo(
+        id="claude-mythos-5-1",
+        display_name="Claude Mythos 5.1",
+        context_window=1_000_000,
+        supports_vision=True,
+        capabilities=["thinking"],
+        pricing=ModelPricing(
+            input_per_million=10.0,
+            output_per_million=50.0,
+            cache_read_per_million=0.25,
             cache_write_per_million=12.5,
             verified=_VERIFIED,
         ),

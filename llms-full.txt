@@ -1143,8 +1143,8 @@ member management API.
 | Trigger | Execution | Signature | Description |
 |---------|-----------|-----------|-------------|
 | `BEFORE_AI_GENERATION` | SYNC | `(AIGenerationEvent, ctx) -> HookResult` | Before the AI provider is invoked. `event.ai_context` (messages, system prompt, tools) may be mutated in place; block skips generation. |
-| `ON_AI_THINKING` | — | — | Reserved — defined in the enum, not fired by any built-in code (RFC §9 marks it Implemented). |
-| `ON_AI_RESPONSE` | ASYNC | `(AIResponseEvent, ctx) -> None` | AI generation completed. Carries response content, usage, latency, tool call count. |
+| `ON_AI_THINKING` | ASYNC | `(ThinkingEvent, ctx) -> None` | A reasoning window opened (`THINKING_START`) on an AIChannel; fires whether or not a realtime backend is configured. The reasoning text itself streams on the ephemeral `THINKING_DELTA` / `THINKING_END` events, so `event.thinking` is empty here. |
+| `ON_AI_RESPONSE` | ASYNC | `(AIResponseEvent, ctx) -> None` | AI generation completed. Carries the turn's text — `response_content`, the segments a tool call cut joined with a blank line, and `segments` one by one — plus usage, latency, tool call count. |
 
 ### Protocol Observability
 
@@ -1163,7 +1163,7 @@ system event (AI-channel source; `metadata`: `from_agent`, `to_agent`,
 | `ON_HANDOFF` | ASYNC | `(event, ctx) -> None` | Agent handoff accepted and executed. |
 | `ON_HANDOFF_REJECTED` | ASYNC | `(event, ctx) -> None` | Agent handoff was rejected (`metadata.accepted=False`). |
 | `ON_PHASE_TRANSITION` | ASYNC | `(event, ctx) -> None` | Fired alongside `ON_HANDOFF` after an accepted handoff, carrying the new phase. |
-| `ON_STATUS_POSTED` | — | — | Reserved — StatusBus posts emit the `status_posted` framework event instead; no hook fires (RFC §9 marks it Implemented). |
+| `ON_STATUS_POSTED` | ASYNC | `(StatusEntry, ctx) -> None` | A `StatusBus` post whose `metadata` carries a `room_id` ran that room's hooks; a post with no room reaches no hook (the bus is global). Every post also emits the `status_posted` framework event. |
 
 ### Delegation (background tasks)
 
@@ -1207,7 +1207,7 @@ bot never triggers them.
 
 | Trigger | Execution | Signature | Description |
 |---------|-----------|-----------|-------------|
-| `ON_PLAN_UPDATED` | — | — | Reserved — not fired by any built-in code. The `plan_tasks` tool (`enable_planning=True`) publishes an ephemeral realtime event `{"type": "plan_updated"}` instead (RFC §9 marks the hook Implemented). |
+| `ON_PLAN_UPDATED` | ASYNC | `(PlanUpdatedEvent, ctx) -> None` | The `plan_tasks` tool (`enable_planning=True`) updated the room's task plan; `event.tasks` carries the new list. The same update also goes out as an ephemeral realtime event `{"type": "plan_updated"}` for live UIs. |
 
 ### Feedback
 
