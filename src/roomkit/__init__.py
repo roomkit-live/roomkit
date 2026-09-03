@@ -141,6 +141,7 @@ from roomkit.models.tool_call import (
     BeforeGenerationCallback,
     ToolCallCallback,
     ToolCallEvent,
+    response_transcript,
 )
 from roomkit.orchestration import (
     HANDOFF_TOOL,
@@ -382,7 +383,6 @@ __all__ = [
     # Models (core)
     "AIGenerationEvent",
     "AIResponseEvent",
-    "RESPONSE_SEGMENT_SEPARATOR",
     "AfterResponseCallback",
     "BeforeGenerationCallback",
     "ChannelBinding",
@@ -405,11 +405,13 @@ __all__ = [
     "Participant",
     "PlanUpdatedEvent",
     "ProviderResult",
+    "RESPONSE_SEGMENT_SEPARATOR",
     "Room",
     "RoomContext",
     "RoomEvent",
     "RoomTimers",
     "SessionStartedEvent",
+    "response_transcript",
     "TextContent",
     "ThinkingEvent",
     "Tool",

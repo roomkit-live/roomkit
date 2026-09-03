@@ -626,7 +626,7 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
         """
         if self._after_response_hook is None:
             return
-        segments, transcript = response_transcript(turn.segments)
+        segments, transcript = response_transcript("".join(chunks) for chunks in turn.segments)
         try:
             await self._after_response_hook(
                 AIResponseEvent(
