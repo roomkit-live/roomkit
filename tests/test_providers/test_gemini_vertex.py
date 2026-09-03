@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import ANY, MagicMock, patch
 
@@ -11,6 +12,8 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from pydantic import SecretStr, ValidationError
 
+from roomkit.providers.ai.base import AIContext, AIMessage
+from roomkit.providers.gemini.config import GeminiConfig
 from roomkit.providers.gemini.vertex import GeminiVertexConfig, GeminiVertexProvider
 
 
@@ -225,3 +228,99 @@ class TestGeminiVertexIdentity:
 
         with pytest.raises(ValueError, match="authorized_user"):
             GeminiVertexProvider._credentials(_vconfig(service_account_json=SecretStr(adc)))
+
+
+class TestGeminiVertexLabels:
+    """Per-request billing labels, validated where they are configured.
+
+    Cloud Billing groups a project's Vertex charges by request label, which is
+    how one project's spend is attributed to the tenants it serves. Google
+    refuses a malformed label on the request, so the same rules are applied
+    when the config is built: a bad label fails when the deployment starts,
+    not on a tenant's first message.
+    """
+
+    def test_absent_by_default(self) -> None:
+        assert _vconfig().labels is None
+
+    def test_valid_labels_are_kept_as_given(self) -> None:
+        # An empty value and an international character are both allowed.
+        labels = {"luge_tenant": "acme-42", "partner": "", "région": "qc"}
+
+        assert _vconfig(labels=labels).labels == labels
+
+    @pytest.mark.parametrize(
+        ("labels", "match"),
+        [
+            ({"Tenant": "acme"}, "start with a lowercase letter"),
+            ({"1tenant": "acme"}, "start with a lowercase letter"),
+            ({"": "acme"}, "1 to 63 characters"),
+            ({"t" * 64: "acme"}, "1 to 63 characters"),
+            ({"tenant.id": "acme"}, "only lowercase letters, digits"),
+            ({"tenant": "Acme"}, "may only contain lowercase letters"),
+            ({"tenant": "acme corp"}, "may only contain lowercase letters"),
+            ({"tenant": "a" * 64}, "at most 63"),
+            ({f"k{i}": "v" for i in range(65)}, "at most 64 labels"),
+        ],
+        ids=[
+            "uppercase-key",
+            "digit-first-key",
+            "empty-key",
+            "64-char-key",
+            "dot-in-key",
+            "uppercase-value",
+            "space-in-value",
+            "64-char-value",
+            "65-labels",
+        ],
+    )
+    def test_a_label_google_would_refuse_fails_at_configuration(
+        self, labels: dict[str, str], match: str
+    ) -> None:
+        with pytest.raises(ValidationError, match=match):
+            _vconfig(labels=labels)
+
+    def test_the_developer_api_config_does_not_carry_the_field(self) -> None:
+        """The SDK refuses ``labels`` in Developer API mode, so the field must
+        not exist where that provider could read it."""
+        assert "labels" not in GeminiConfig.model_fields
+
+
+def _genai_recording_gen_config() -> MagicMock:
+    """The module mock with a ``GenerateContentConfig`` that records what it
+    was built with: a plain namespace, so an attribute never set is absent
+    rather than a truthy MagicMock."""
+    mod = _mock_genai_module()
+    mod.types.GenerateContentConfig = MagicMock(side_effect=lambda **kw: SimpleNamespace(**kw))
+    return mod
+
+
+def _context() -> AIContext:
+    return AIContext(messages=[AIMessage(role="user", content="Hi")], system_prompt="Be brief")
+
+
+class TestGeminiVertexLabelsOnTheRequest:
+    def test_configured_labels_ride_the_generation_config(self) -> None:
+        mock_genai = _genai_recording_gen_config()
+        with patch.dict("sys.modules", _genai_modules(mock_genai)):
+            from roomkit.providers.gemini.vertex import GeminiVertexProvider as Provider
+
+            provider = Provider(_vconfig(labels={"luge_tenant": "acme"}))
+            gen_config = provider._build_gen_config(_context())
+
+        assert gen_config.labels == {"luge_tenant": "acme"}
+
+    def test_without_labels_the_config_is_the_parent_one(self) -> None:
+        """Characterization: the override adds nothing when nothing is set, so
+        a Vertex request without labels is byte-for-byte what it was."""
+        mock_genai = _genai_recording_gen_config()
+        with patch.dict("sys.modules", _genai_modules(mock_genai)):
+            from roomkit.providers.gemini.ai import GeminiAIProvider as Parent
+            from roomkit.providers.gemini.vertex import GeminiVertexProvider as Provider
+
+            context = _context()
+            parent = Parent(GeminiConfig(api_key="k"))._build_gen_config(context)
+            vertex = Provider(_vconfig())._build_gen_config(context)
+
+        assert not hasattr(vertex, "labels")
+        assert vars(vertex) == vars(parent)

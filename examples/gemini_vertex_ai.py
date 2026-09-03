@@ -14,6 +14,9 @@ Environment variables:
     GOOGLE_CLOUD_PROJECT     — Google Cloud project id (required)
     GEMINI_VERTEX_LOCATION   — Vertex region (default: northamerica-northeast1 / Montréal)
     GEMINI_VERTEX_MODEL      — model id (default: gemini-3.1-flash-lite)
+    GEMINI_VERTEX_LABELS     — billing labels as ``key=value,key=value`` (optional,
+                               e.g. ``tenant=acme``); Cloud Billing groups the
+                               project's charges by them, 24 to 48 h later
 
 Run with:
     GOOGLE_CLOUD_PROJECT=my-proj uv run python examples/gemini_vertex_ai.py
@@ -43,8 +46,16 @@ from roomkit.channels.ai import AIChannel
 from roomkit.providers.gemini import GeminiVertexConfig, GeminiVertexProvider
 
 
+def parse_labels(raw: str) -> dict[str, str] | None:
+    """``tenant=acme,partner=north`` → a labels dict, ``None`` when unset."""
+    pairs = (item.split("=", 1) for item in raw.split(",") if item.strip())
+    labels = {key.strip(): value.strip() for key, value in pairs}
+    return labels or None
+
+
 async def main() -> None:
     env = require_env("GOOGLE_CLOUD_PROJECT")
+    labels = parse_labels(os.environ.get("GEMINI_VERTEX_LABELS", ""))
 
     provider = GeminiVertexProvider(
         GeminiVertexConfig(
@@ -52,8 +63,13 @@ async def main() -> None:
             # Pin the region for data residency — defaults to Montréal.
             location=os.environ.get("GEMINI_VERTEX_LOCATION", "northamerica-northeast1"),
             model=os.environ.get("GEMINI_VERTEX_MODEL", "gemini-3.1-flash-lite"),
+            # Billing labels: metadata Cloud Billing groups the charges by.
+            # Validated here, so a bad label fails now rather than on the call.
+            labels=labels,
         )
     )
+    if labels:
+        print(f"Requests carry billing labels: {labels}")
 
     kit = RoomKit()
 

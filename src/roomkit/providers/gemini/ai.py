@@ -144,9 +144,14 @@ class GeminiAIProvider(AIProvider):
         """Wrap an SDK exception into a ProviderError."""
         return wrap_gemini_error(exc)
 
+    def _build_gen_config(self, context: AIContext) -> Any:
+        """The generation config for one turn, overridable by a subclass whose
+        config carries a field this API refuses (Vertex's billing labels)."""
+        return build_gen_config(self._types, self._config, context)
+
     async def generate_structured_stream(self, context: AIContext) -> AsyncIterator[StreamEvent]:
         """Yield structured events from the Gemini streaming API."""
-        gen_config = build_gen_config(self._types, self._config, context)
+        gen_config = self._build_gen_config(context)
         contents = format_messages(self._types, context.messages)
         # Before the try below, whose ``_wrap_error`` is for SDK exceptions and
         # would restate this one as an opaque provider failure.

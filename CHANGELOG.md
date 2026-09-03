@@ -28,6 +28,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   detection). A stream pinned to one language reports nothing rather than
   echoing the request. `TranscriptionEvent` and `PartialTranscriptionEvent`
   carry `language`, so hooks see it.
+- **Vertex requests carry billing labels.** `GeminiVertexConfig.labels`
+  (`{"tenant": "acme"}`) rides every `generateContent` call as
+  `GenerateContentConfig.labels`, so Cloud Billing splits one project's
+  Gemini spend per tenant or partner. Metadata only: no quota, no limit, and
+  the report runs 24 to 48 h behind, so it is never a source of truth for
+  what a caller consumed. Google's label rules (64 labels, 63 characters,
+  lowercase letters, digits, `_`, `-`, a key starts with a letter) are
+  enforced when the config is built, so a bad label fails at startup rather
+  than on the first request. Vertex only: the Gemini Developer API refuses
+  the field, and `GeminiConfig` does not carry it.
 
 ### Changed
 

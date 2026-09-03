@@ -15,11 +15,44 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from pydantic import SecretStr
+from pydantic import SecretStr, field_validator
 
+from roomkit.providers.ai.base import AIContext
 from roomkit.providers.gemini.ai import GeminiAIProvider
 from roomkit.providers.gemini.config import GeminiConfig
 from roomkit.providers.gemini.sdk import build_vertex_genai_client
+
+_MAX_LABELS = 64
+_MAX_LABEL_LENGTH = 63
+
+
+def _label_char_ok(char: str) -> bool:
+    """One character of a label key or value, by Google's rules: a lowercase
+    letter in any script, a digit, ``_`` or ``-``."""
+    if char in "_-" or char.isdigit():
+        return True
+    return char.isalpha() and char == char.lower()
+
+
+def _check_label(key: str, value: str) -> None:
+    """Refuse a label Google would refuse, naming the key that is wrong."""
+    if not 1 <= len(key) <= _MAX_LABEL_LENGTH:
+        raise ValueError(f"label key {key!r}: 1 to {_MAX_LABEL_LENGTH} characters, got {len(key)}")
+    if not (key[0].isalpha() and key[0] == key[0].lower()):
+        raise ValueError(f"label key {key!r} must start with a lowercase letter")
+    if not all(_label_char_ok(c) for c in key):
+        raise ValueError(
+            f"label key {key!r}: only lowercase letters, digits, '_' and '-' are allowed"
+        )
+    if len(value) > _MAX_LABEL_LENGTH:
+        raise ValueError(
+            f"label {key!r}: value is {len(value)} characters, at most {_MAX_LABEL_LENGTH}"
+        )
+    if not all(_label_char_ok(c) for c in value):
+        raise ValueError(
+            f"label {key!r}: value {value!r} may only contain lowercase letters, "
+            "digits, '_' and '-'"
+        )
 
 
 class GeminiVertexConfig(GeminiConfig):
@@ -76,6 +109,37 @@ class GeminiVertexConfig(GeminiConfig):
     Combines with the fields above rather than replacing them: the borrowing
     identity is ``service_account_json`` when set, otherwise ADC."""
 
+    labels: dict[str, str] | None = None
+    """Per-request labels for Google's billing report, e.g. ``{"tenant": "acme"}``.
+
+    Vertex attaches them to every ``generateContent`` call and Cloud Billing
+    groups the charges by them, which is how one project's Gemini spend is
+    attributed to the tenants or partners it serves. Metadata only: no quota,
+    no limit, no effect on the answer. The report runs 24 to 48 hours behind,
+    so it is never a source of truth for what a caller consumed — meter that
+    from the usage each response reports.
+
+    Constant for the life of the provider, like ``project``: a provider serves
+    one channel, a channel one agent, an agent one tenant. Google's label rules
+    are enforced here so a bad label fails at configuration rather than on the
+    first request: at most 64 labels; keys 1 to 63 characters starting with a
+    lowercase letter, values 0 to 63; lowercase letters, digits, ``_`` and
+    ``-`` only (international characters allowed). The Gemini Developer API
+    refuses the field outright, which is why it lives on this config alone."""
+
+    @field_validator("labels")
+    @classmethod
+    def _check_labels(cls, labels: dict[str, str] | None) -> dict[str, str] | None:
+        if labels is None:
+            return None
+        if len(labels) > _MAX_LABELS:
+            raise ValueError(
+                f"labels: at most {_MAX_LABELS} labels per request, got {len(labels)}"
+            )
+        for key, value in labels.items():
+            _check_label(key, value)
+        return labels
+
 
 class GeminiVertexProvider(GeminiAIProvider):
     """Gemini provider backed by Vertex AI in a specific Google Cloud region.
@@ -98,6 +162,18 @@ class GeminiVertexProvider(GeminiAIProvider):
             location=config.location,
             credentials=self._credentials(config),
         )
+
+    def _build_gen_config(self, context: AIContext) -> Any:
+        """The inherited config, plus the billing labels when configured.
+
+        Set here and not in ``build_gen_config``: the Gemini Developer API
+        refuses ``labels`` outright, and this is the only config that carries
+        them.
+        """
+        gen_config = super()._build_gen_config(context)
+        if self._config.labels:
+            gen_config.labels = self._config.labels
+        return gen_config
 
     @staticmethod
     def _credentials(config: GeminiVertexConfig) -> Any | None:
