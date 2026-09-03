@@ -1147,3 +1147,44 @@ class TestOpenAIImageDataURIs:
             assert parts == [
                 {"type": "image_url", "image_url": {"url": "https://example.com/a.png"}}
             ]
+
+    def test_a_tool_result_image_is_rebuilt_too(self) -> None:
+        # The image a tool returned rides a user message after the tool
+        # message; it goes through the same reader as a user's image.
+        with patch.dict("sys.modules", {"openai": _mock_openai_module()}):
+            from roomkit.providers.ai.base import AIImagePart, AIToolResultPart
+            from roomkit.providers.openai.ai import OpenAIAIProvider
+
+            provider = OpenAIAIProvider(_config())
+            messages = provider._build_messages(
+                [
+                    AIMessage(
+                        role="tool",
+                        content=[
+                            AIToolResultPart(
+                                tool_call_id="t1",
+                                name="screenshot",
+                                result=[
+                                    AIImagePart(url="data:;base64,QUJDMTIz", mime_type="image/png")
+                                ],
+                            )
+                        ],
+                    )
+                ]
+            )
+            assert messages[-1]["content"] == [
+                {"type": "image_url", "image_url": {"url": "data:image/png;base64,QUJDMTIz"}}
+            ]
+
+    async def test_a_malformed_image_never_reaches_the_client(self) -> None:
+        with patch.dict("sys.modules", {"openai": _mock_openai_module()}):
+            from roomkit.providers.ai.base import AIImagePart, ProviderError
+            from roomkit.providers.openai.ai import OpenAIAIProvider
+
+            provider = OpenAIAIProvider(_config())
+            message = AIMessage(
+                role="user", content=[AIImagePart(url="data:image/png;base64,not*base64")]
+            )
+            with pytest.raises(ProviderError, match="not valid base64"):
+                await provider.generate(_context(messages=[message]))
+            provider._client.chat.completions.create.assert_not_called()

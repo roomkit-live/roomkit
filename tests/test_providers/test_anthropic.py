@@ -1203,3 +1203,15 @@ class TestAnthropicImageDataURIs:
             "type": "image",
             "source": {"type": "url", "url": "https://example.com/a.png"},
         }
+
+    async def test_a_malformed_image_never_reaches_the_client(self) -> None:
+        with patch.dict("sys.modules", {"anthropic": _mock_anthropic_module()}):
+            from roomkit.providers.anthropic.ai import AnthropicAIProvider
+
+            provider = AnthropicAIProvider(_config())
+            message = AIMessage(
+                role="user", content=[AIImagePart(url="data:image/png;base64,not*base64")]
+            )
+            with pytest.raises(ProviderError, match="not valid base64"):
+                await provider.generate(_context(messages=[message]))
+            provider._client.messages.stream.assert_not_called()

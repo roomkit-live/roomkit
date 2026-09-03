@@ -61,12 +61,12 @@ from roomkit.providers.ai.base import (
     StreamToolCall,
     StreamToolCallDelta,
 )
+from roomkit.providers.ai.image_parts import image_part_uri
 from roomkit.providers.ai.openai_dialect import (
     ThinkTagParser,
     extract_think_tags,
     fold_tool_call_fragment,
 )
-from roomkit.providers.image.base import image_part_uri
 from roomkit.providers.polargrid.config import PolarGridConfig
 from roomkit.providers.polargrid.models import (
     MODELS,
@@ -348,7 +348,12 @@ class PolarGridAIProvider(AIProvider):
                     {
                         "role": "user",
                         "content": [
-                            {"type": "image_url", "image_url": {"url": img.url}}
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": image_part_uri(img, provider=self._provider_name)
+                                },
+                            }
                             for img in pending_images
                         ],
                     }

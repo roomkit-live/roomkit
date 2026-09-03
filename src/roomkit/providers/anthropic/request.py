@@ -9,7 +9,6 @@ included.
 
 from __future__ import annotations
 
-import base64
 from typing import Any, cast
 
 from roomkit.providers.ai.base import (
@@ -21,8 +20,8 @@ from roomkit.providers.ai.base import (
     AIToolCallPart,
     AIToolResultPart,
 )
+from roomkit.providers.ai.image_parts import image_part_base64
 from roomkit.providers.anthropic.config import AnthropicConfig
-from roomkit.providers.image.base import image_part_payload
 
 # Block types that accept a cache_control marker — notably NOT
 # ``thinking`` blocks, which the API rejects as cache targets.
@@ -81,22 +80,16 @@ def format_content(
 def _image_block(part: AIImagePart) -> dict[str, Any]:
     """Anthropic image content block from a data: URI or a plain URL.
 
-    A data URI goes through the reader every provider shares: the media type
-    comes from the header, then from the part, then the default, the payload
-    is validated and sent canonical, and a malformed one is refused here —
-    before the request leaves, naming the cause — rather than as the API's
-    400 on an empty ``media_type`` that named nothing.
+    A data URI goes through the shared reader: media type from the header,
+    then the part, then the default; payload validated and sent canonical; a
+    malformed one refused before the request leaves.
     """
     if not part.url.startswith("data:"):
         return {"type": "image", "source": {"type": "url", "url": part.url}}
-    media_type, data = image_part_payload(part, provider="anthropic")
+    media_type, payload = image_part_base64(part, provider="anthropic")
     return {
         "type": "image",
-        "source": {
-            "type": "base64",
-            "media_type": media_type,
-            "data": base64.b64encode(data).decode("ascii"),
-        },
+        "source": {"type": "base64", "media_type": media_type, "data": payload},
     }
 
 

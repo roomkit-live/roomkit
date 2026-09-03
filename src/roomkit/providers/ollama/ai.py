@@ -13,7 +13,6 @@ want real-time thinking or explicit control over the reasoning phase.
 from __future__ import annotations
 
 import asyncio
-import base64
 import time
 import uuid
 from collections.abc import AsyncIterator
@@ -40,7 +39,7 @@ from roomkit.providers.ai.base import (
     StreamThinkingDelta,
     StreamToolCall,
 )
-from roomkit.providers.image.base import image_part_payload
+from roomkit.providers.ai.image_parts import image_part_base64
 from roomkit.providers.ollama.config import OllamaConfig
 from roomkit.providers.ollama.models import MODELS
 from roomkit.providers.utils import http_timeout
@@ -51,7 +50,7 @@ from roomkit.providers.utils import http_timeout
 _SHOW_CONCURRENCY = 8
 
 
-def _ollama_image_payload(part: AIImagePart) -> str:
+def _ollama_image_payload(part: AIImagePart, *, provider: str) -> str:
     """Reduce an image reference to what Ollama's SDK accepts.
 
     RoomKit carries images as ``data:<media_type>;base64,<data>`` URIs —
@@ -64,8 +63,7 @@ def _ollama_image_payload(part: AIImagePart) -> str:
     canonical base64; a plain base64 string or path passes through.
     """
     if part.url.startswith("data:"):
-        _, data = image_part_payload(part, provider="ollama")
-        return base64.b64encode(data).decode("ascii")
+        return image_part_base64(part, provider=provider)[1]
     return part.url
 
 
@@ -209,7 +207,9 @@ class OllamaAIProvider(AIProvider):
                             "tool_name": r.name,
                         }
                     )
-                    pending_images.extend(_ollama_image_payload(img) for img in images)
+                    pending_images.extend(
+                        _ollama_image_payload(img, provider=self._provider_name) for img in images
+                    )
                 if pending_images:
                     result.append({"role": "user", "content": "", "images": pending_images})
                 continue
@@ -223,7 +223,7 @@ class OllamaAIProvider(AIProvider):
                 if isinstance(part, AITextPart):
                     text_parts.append(part.text)
                 elif isinstance(part, AIImagePart):
-                    images.append(_ollama_image_payload(part))
+                    images.append(_ollama_image_payload(part, provider=self._provider_name))
                 elif isinstance(part, AIThinkingPart):
                     thinking_text = part.thinking
                 elif isinstance(part, AIToolCallPart):

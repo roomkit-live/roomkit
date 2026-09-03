@@ -24,6 +24,11 @@ from roomkit.providers.ai.base import (
     StreamToolCallDelta,
     is_context_overflow_message,
 )
+from roomkit.providers.ai.image_parts import (
+    image_part_base64,
+    image_part_payload,
+    image_part_uri,
+)
 from roomkit.providers.ai.mock import MockAIProvider
 
 __all__ = [
@@ -49,5 +54,8 @@ __all__ = [
     "StreamThinkingDelta",
     "StreamToolCall",
     "StreamToolCallDelta",
+    "image_part_base64",
+    "image_part_payload",
+    "image_part_uri",
     "is_context_overflow_message",
 ]

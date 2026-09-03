@@ -87,13 +87,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with no media type (`data:;base64,…`) reached Anthropic as `media_type: ""`
   and a 400 that named nothing, fell back to `image/jpeg` on Gemini, and
   passed through OpenAI; a corrupt payload went out on the wire everywhere.
-  The three now read it through `parse_data_uri` — media type from the
-  header, then the part's `mime_type`, then `image/png` — and a malformed one
-  is refused before the request leaves, as a non-retryable `ProviderError`
-  that names the cause (`invalid image part: data URI payload is not valid
-  base64`). A remote URL still passes through untouched. Mistral, PolarGrid
-  and Ollama carried their own copies of the same pass-through and read
-  through the same helpers now.
+  They now read it through one reader (`roomkit.providers.ai.image_parts`),
+  on a user's image and on the image a tool returned alike: media type from
+  the header, then the part's `mime_type`, then `image/png`; a payload an
+  encoder wrapped or left unpadded is repaired and sent canonical; a corrupt
+  one is refused before the request leaves, as a non-retryable
+  `ProviderError` that names the cause (`invalid image part: data URI
+  payload is not valid base64`). A remote URL still passes through
+  untouched. Mistral, PolarGrid and Ollama carried their own copies of the
+  same pass-through and read through the same reader now. `parse_data_uri`
+  and `to_data_uri` moved to `roomkit.providers.utils` (still exported from
+  `roomkit.providers.image`), and the image-generation providers gain the
+  same repair on their reference images.
 - **A cancelled turn closes its reasoning window.** Cancelling a streaming
   tool loop (`Cancel` steering) while the model was reasoning closed the
   tool-call composition and nothing else: the realtime bus got a

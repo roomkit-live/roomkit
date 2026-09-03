@@ -39,6 +39,7 @@ from roomkit.providers.ai.base import (
     StreamThinkingDelta,
     StreamToolCall,
 )
+from roomkit.providers.ai.image_parts import image_part_uri
 from roomkit.providers.ai.openai_dialect import (
     ThinkTagParser,
     extract_think_tags,
@@ -47,7 +48,6 @@ from roomkit.providers.ai.openai_dialect import (
     merge_thinking,
     overflow_fact,
 )
-from roomkit.providers.image.base import image_part_uri
 from roomkit.providers.openai.config import OpenAIConfig
 from roomkit.providers.openai.models import MODELS
 from roomkit.providers.utils import http_timeout
@@ -244,7 +244,12 @@ class OpenAIAIProvider(AIProvider):
                         {
                             "role": "user",
                             "content": [
-                                {"type": "image_url", "image_url": {"url": img.url}}
+                                {
+                                    "type": "image_url",
+                                    "image_url": {
+                                        "url": image_part_uri(img, provider=self._provider_name)
+                                    },
+                                }
                                 for img in pending_images
                             ],
                         }

@@ -27,8 +27,8 @@ from roomkit.providers.ai.base import (
     StreamThinkingDelta,
     StreamToolCall,
 )
+from roomkit.providers.ai.image_parts import image_part_uri
 from roomkit.providers.ai.openai_dialect import ThinkTagParser, fold_tool_call_fragment
-from roomkit.providers.image.base import image_part_uri
 from roomkit.providers.mistral.config import MistralConfig
 from roomkit.providers.mistral.models import MODELS
 

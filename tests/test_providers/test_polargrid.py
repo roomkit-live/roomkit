@@ -1057,3 +1057,26 @@ class TestPolarGridImageDataURIs:
             )
         assert excinfo.value.retryable is False
         assert excinfo.value.provider == provider._provider_name
+
+    def test_a_tool_result_image_is_rebuilt_too(self) -> None:
+        provider, _ = _provider()
+        messages = provider._build_messages(
+            [
+                AIMessage(
+                    role="tool",
+                    content=[
+                        AIToolResultPart(
+                            tool_call_id="call_1",
+                            name="screenshot",
+                            result=[
+                                AIImagePart(url="data:;base64,QUJDMTIz", mime_type="image/png")
+                            ],
+                        )
+                    ],
+                )
+            ],
+            None,
+        )
+        assert messages[-1]["content"] == [
+            {"type": "image_url", "image_url": {"url": "data:image/png;base64,QUJDMTIz"}}
+        ]

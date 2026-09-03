@@ -20,6 +20,7 @@ from roomkit.providers.image import (
     ImageProvider,
     ImageResult,
     MockImageProvider,
+    parse_data_uri,
     parse_size,
     sniff_mime_type,
     to_data_uri,
@@ -342,3 +343,48 @@ def test_image_counters_must_be_non_negative_integers() -> None:
 def test_image_rates_reject_negative_values() -> None:
     with pytest.raises(ValidationError):
         _pricing(image_output_per_million=-1.0)
+
+
+# --- parse_data_uri ------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        "QUJDMTIz",  # canonical
+        "QUJD\nMTIz",  # an encoder that wrapped its lines
+        "QUJDMTIz\r\n",  # trailing newline
+        " QUJD MTIz ",  # spaced
+    ],
+)
+def test_parse_data_uri_repairs_whitespace(payload: str) -> None:
+    assert parse_data_uri(f"data:image/png;base64,{payload}") == ("image/png", b"ABC123")
+
+
+def test_parse_data_uri_repairs_missing_padding() -> None:
+    assert parse_data_uri("data:image/png;base64,QUJDMQ") == ("image/png", b"ABC1")
+    assert parse_data_uri("data:image/png;base64,QUJDMQ==") == ("image/png", b"ABC1")
+
+
+def test_parse_data_uri_takes_the_media_type_from_the_header_then_the_fallback() -> None:
+    assert (
+        parse_data_uri("data:image/jpeg;base64,QUJD", fallback_mime="image/png")[0] == "image/jpeg"
+    )
+    assert parse_data_uri("data:;base64,QUJD", fallback_mime="image/webp")[0] == "image/webp"
+    assert parse_data_uri("data:;base64,QUJD")[0] == "image/png"
+
+
+@pytest.mark.parametrize(
+    ("url", "message"),
+    [
+        ("https://example.com/a.png", "expected a data: URI"),
+        ("data:image/png;base64,", "no payload"),
+        ("data:image/png;base64,  \n ", "no payload"),
+        ("data:image/png;base64,not*base64", "not valid base64"),
+        ("data:image/png;base64,QUJDM", "not valid base64"),  # a length no padding completes
+        ("data:image/png;base64,QUJD-_==", "not valid base64"),  # the URL-safe alphabet
+    ],
+)
+def test_parse_data_uri_refuses_what_it_cannot_repair(url: str, message: str) -> None:
+    with pytest.raises(ValueError, match=message):
+        parse_data_uri(url)

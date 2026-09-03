@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
@@ -30,6 +32,52 @@ def extract_event_text(event: RoomEvent) -> str:
     """
     body = getattr(event.content, "body", None)
     return body if isinstance(body, str) else ""
+
+
+def to_data_uri(data: bytes, mime_type: str) -> str:
+    """Encode raw bytes as the ``data:<mime>;base64,<payload>`` URI RoomKit carries images in."""
+    return f"data:{mime_type};base64,{base64.b64encode(data).decode('ascii')}"
+
+
+def parse_data_uri(url: str, *, fallback_mime: str | None = None) -> tuple[str, bytes]:
+    """Split a ``data:`` URI into its media type and its decoded bytes.
+
+    The counterpart of :func:`to_data_uri`, and the one place a payload is
+    validated: every provider that accepts an image has to reject a corrupt
+    one, and each doing it itself is how one of them ends up handing
+    malformed bytes to a vendor and reporting the rejection as a provider
+    failure rather than a caller error.
+
+    Whitespace — an encoder that wrapped its lines — and missing padding are
+    repaired, so the bytes, and anything re-encoded from them, are canonical
+    whatever the caller's URI carried. Anything else is refused: a character
+    outside the alphabet, a length no padding can complete.
+
+    Args:
+        url: The URI to split.
+        fallback_mime: Media type to use when the URI declares none. ``None``
+            falls back to ``image/png``.
+
+    Returns:
+        ``(mime_type, data)``.
+
+    Raises:
+        ValueError: If *url* is not a ``data:`` URI, carries no payload, or
+            its payload is not base64.
+    """
+    if not url.startswith("data:"):
+        raise ValueError(f"expected a data: URI, got a {url.split(':', 1)[0]} URL")
+    header, separator, payload = url.partition(",")
+    compact = "".join(payload.split())
+    if not separator or not compact:
+        raise ValueError("data URI carries no payload")
+    mime_type = header[len("data:") :].split(";", 1)[0] or fallback_mime or "image/png"
+    compact += "=" * (-len(compact) % 4)
+    try:
+        data = base64.b64decode(compact, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise ValueError("data URI payload is not valid base64") from exc
+    return mime_type, data
 
 
 def http_timeout(config: HTTPTimeouts) -> httpx.Timeout:
