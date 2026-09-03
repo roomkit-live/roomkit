@@ -15,6 +15,7 @@ from roomkit.providers.ai.base import (
     AIMessage,
     AITextPart,
     AITool,
+    ProviderError,
     StreamDone,
     StreamTextDelta,
     StreamToolCall,
@@ -884,3 +885,35 @@ class TestGeminiAIProvider:
 
             assert "Stream error" in str(exc_info.value)
             assert exc_info.value.provider == "gemini"
+
+
+class TestGeminiImageDataURIs:
+    """A data: URI is read by the shared reader, and refused before the request."""
+
+    def test_mime_type_falls_back_to_the_part_when_the_header_has_none(self) -> None:
+        mock_genai = _mock_genai_module()
+        with patch.dict("sys.modules", _genai_modules(mock_genai)):
+            from roomkit.providers.gemini.ai import GeminiAIProvider
+
+            provider = GeminiAIProvider(_config())
+            format_content(
+                provider._types,
+                [AIImagePart(url="data:;base64,QUJDMTIz", mime_type="image/png")],
+            )
+            mock_genai.types.Part.from_bytes.assert_called_once_with(
+                data=b"ABC123", mime_type="image/png"
+            )
+
+    def test_a_malformed_payload_is_refused_before_the_request(self) -> None:
+        mock_genai = _mock_genai_module()
+        with patch.dict("sys.modules", _genai_modules(mock_genai)):
+            from roomkit.providers.gemini.ai import GeminiAIProvider
+
+            provider = GeminiAIProvider(_config())
+            with pytest.raises(ProviderError, match="not valid base64") as excinfo:
+                format_content(
+                    provider._types, [AIImagePart(url="data:image/png;base64,not*base64")]
+                )
+            assert excinfo.value.retryable is False
+            assert excinfo.value.provider == "gemini"
+            mock_genai.types.Part.from_bytes.assert_not_called()

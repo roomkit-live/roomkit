@@ -9,6 +9,7 @@ included.
 
 from __future__ import annotations
 
+import base64
 from typing import Any, cast
 
 from roomkit.providers.ai.base import (
@@ -21,6 +22,7 @@ from roomkit.providers.ai.base import (
     AIToolResultPart,
 )
 from roomkit.providers.anthropic.config import AnthropicConfig
+from roomkit.providers.image.base import image_part_payload
 
 # Block types that accept a cache_control marker — notably NOT
 # ``thinking`` blocks, which the API rejects as cache targets.
@@ -45,7 +47,7 @@ def format_content(
         if isinstance(part, AITextPart):
             parts.append({"type": "text", "text": part.text})
         elif isinstance(part, AIImagePart):
-            parts.append(_image_block(part.url))
+            parts.append(_image_block(part))
         elif isinstance(part, AIToolCallPart):
             parts.append(
                 {
@@ -76,21 +78,26 @@ def format_content(
     return parts
 
 
-def _image_block(url: str) -> dict[str, Any]:
-    """Anthropic image content block from a data: URI or a plain URL."""
-    if url.startswith("data:"):
-        # data:<media_type>;base64,<data>
-        header, _, b64data = url.partition(",")
-        media_type = header.split(":", 1)[1].split(";", 1)[0]
-        return {
-            "type": "image",
-            "source": {
-                "type": "base64",
-                "media_type": media_type,
-                "data": b64data,
-            },
-        }
-    return {"type": "image", "source": {"type": "url", "url": url}}
+def _image_block(part: AIImagePart) -> dict[str, Any]:
+    """Anthropic image content block from a data: URI or a plain URL.
+
+    A data URI goes through the reader every provider shares: the media type
+    comes from the header, then from the part, then the default, the payload
+    is validated and sent canonical, and a malformed one is refused here —
+    before the request leaves, naming the cause — rather than as the API's
+    400 on an empty ``media_type`` that named nothing.
+    """
+    if not part.url.startswith("data:"):
+        return {"type": "image", "source": {"type": "url", "url": part.url}}
+    media_type, data = image_part_payload(part, provider="anthropic")
+    return {
+        "type": "image",
+        "source": {
+            "type": "base64",
+            "media_type": media_type,
+            "data": base64.b64encode(data).decode("ascii"),
+        },
+    }
 
 
 def _tool_result_content(
@@ -109,7 +116,7 @@ def _tool_result_content(
         if isinstance(part, AITextPart):
             blocks.append({"type": "text", "text": part.text})
         elif isinstance(part, AIImagePart):
-            blocks.append(_image_block(part.url))
+            blocks.append(_image_block(part))
     return blocks
 
 

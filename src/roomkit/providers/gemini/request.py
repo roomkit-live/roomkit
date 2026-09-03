@@ -29,6 +29,7 @@ from roomkit.providers.ai.base import (
 )
 from roomkit.providers.gemini.config import GeminiConfig
 from roomkit.providers.gemini.schema import clean_gemini_schema
+from roomkit.providers.image.base import image_part_payload
 
 
 def _part_signature(part: AIToolCallPart) -> bytes | None:
@@ -161,17 +162,16 @@ def _image_part(types: Any, item: AIImagePart) -> Any:
     URIs — the convention the Anthropic and OpenAI providers consume.
     Gemini's ``from_uri`` expects a fetchable file URI (``gs://`` or
     ``https://``); handed a data URI it ships a broken reference and
-    the model never sees the image. Decode a data URI to inline bytes
-    via ``from_bytes``; pass a real URI through to ``from_uri``.
+    the model never sees the image. A data URI is read by the reader
+    every provider shares — media type from the header, then the part,
+    then the default; payload validated, a malformed one refused before
+    the request leaves — and handed to ``from_bytes``; a real URI passes
+    through to ``from_uri``.
     """
     url = item.url
     if url.startswith("data:"):
-        header, _, b64data = url.partition(",")
-        media_type = header[len("data:") :].split(";", 1)[0] or (item.mime_type or "image/jpeg")
-        return types.Part.from_bytes(
-            data=base64.b64decode(b64data),
-            mime_type=media_type,
-        )
+        media_type, data = image_part_payload(item, provider="gemini")
+        return types.Part.from_bytes(data=data, mime_type=media_type)
     return types.Part.from_uri(
         file_uri=url,
         mime_type=item.mime_type or "image/jpeg",

@@ -15,6 +15,7 @@ from roomkit.providers.ai.base import (
     AITextPart,
     AITool,
     AIToolResultPart,
+    ProviderError,
     StreamDone,
     StreamTextDelta,
 )
@@ -794,7 +795,7 @@ class TestAnthropicToolResultImages:
                     name="screenshot",
                     result=[
                         AITextPart(text="the screen"),
-                        AIImagePart(url="data:image/png;base64,IMGDATA"),
+                        AIImagePart(url="data:image/png;base64,SU1HREFUQQ=="),
                     ],
                 )
             ]
@@ -809,7 +810,7 @@ class TestAnthropicToolResultImages:
                     "source": {
                         "type": "base64",
                         "media_type": "image/png",
-                        "data": "IMGDATA",
+                        "data": "SU1HREFUQQ==",
                     },
                 },
             ],
@@ -818,13 +819,13 @@ class TestAnthropicToolResultImages:
     def test_image_message_part_still_renders_base64(self) -> None:
         # Guard the _image_block refactor: an image in ordinary message content
         # keeps producing the base64 source block.
-        block = format_content([AIImagePart(url="data:image/jpeg;base64,ABC123")])[0]
+        block = format_content([AIImagePart(url="data:image/jpeg;base64,QUJDMTIz")])[0]
         assert block == {
             "type": "image",
             "source": {
                 "type": "base64",
                 "media_type": "image/jpeg",
-                "data": "ABC123",
+                "data": "QUJDMTIz",
             },
         }
 
@@ -1178,3 +1179,27 @@ class TestBaseUrlNormalization:
         # base_url is set; the validator must not turn None into a string.
         config = AnthropicConfig(api_key="k", model="claude-opus-4-8")
         assert config.base_url is None
+
+
+class TestAnthropicImageDataURIs:
+    """A data: URI is read by the shared reader, and refused before the request."""
+
+    def test_media_type_falls_back_to_the_part_when_the_header_has_none(self) -> None:
+        # ``data:;base64,…`` used to reach the API as ``media_type: ""`` and a 400.
+        block = format_content([AIImagePart(url="data:;base64,QUJDMTIz", mime_type="image/png")])[
+            0
+        ]
+        assert block["source"] == {"type": "base64", "media_type": "image/png", "data": "QUJDMTIz"}
+
+    def test_a_malformed_payload_is_refused_before_the_request(self) -> None:
+        with pytest.raises(ProviderError, match="not valid base64") as excinfo:
+            format_content([AIImagePart(url="data:image/png;base64,not*base64")])
+        assert excinfo.value.retryable is False
+        assert excinfo.value.provider == "anthropic"
+
+    def test_a_remote_url_passes_through(self) -> None:
+        block = format_content([AIImagePart(url="https://example.com/a.png")])[0]
+        assert block == {
+            "type": "image",
+            "source": {"type": "url", "url": "https://example.com/a.png"},
+        }

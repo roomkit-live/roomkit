@@ -22,7 +22,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
-from roomkit.providers.ai.base import AIImagePart, ModelInfo
+from roomkit.providers.ai.base import AIImagePart, ModelInfo, ProviderError
 
 IMAGE_GEN_CAPABILITY = "image_gen"
 """``ModelInfo.capabilities`` tag marking an entry as an image-generating model.
@@ -94,6 +94,38 @@ def parse_data_uri(url: str, *, fallback_mime: str | None = None) -> tuple[str, 
     except (binascii.Error, ValueError) as exc:
         raise ValueError("data URI payload is not valid base64") from exc
     return mime_type, data
+
+
+def image_part_payload(part: AIImagePart, *, provider: str) -> tuple[str, bytes]:
+    """Read a message's image part for an AI request, refusing a malformed one.
+
+    :func:`parse_data_uri` with the part's own ``mime_type`` as the fallback,
+    and its ``ValueError`` surfaced as the non-retryable :class:`ProviderError`
+    an AI provider's caller expects: a caller error, named as such, raised
+    before the request leaves — not a 400 from the vendor that names nothing,
+    and never a retry or a fallback, since the same URI would fail again.
+    Only for a ``data:`` URI; a remote URL is the provider's to forward.
+    """
+    try:
+        return parse_data_uri(part.url, fallback_mime=part.mime_type)
+    except ValueError as exc:
+        raise ProviderError(
+            f"invalid image part: {exc}", retryable=False, provider=provider
+        ) from exc
+
+
+def image_part_uri(part: AIImagePart, *, provider: str) -> str:
+    """The URI an AI request forwards for an image part.
+
+    A remote URL passes through untouched. A ``data:`` URI goes through
+    :func:`image_part_payload` and is rebuilt canonically, so a header
+    without a media type reaches the vendor with the part's, in the one
+    form every OpenAI-shaped API accepts.
+    """
+    if not part.url.startswith("data:"):
+        return part.url
+    mime_type, data = image_part_payload(part, provider=provider)
+    return to_data_uri(data, mime_type)
 
 
 def sniff_mime_type(data: bytes, *, fallback: str = "image/png") -> str:

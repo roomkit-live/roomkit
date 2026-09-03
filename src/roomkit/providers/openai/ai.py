@@ -47,6 +47,7 @@ from roomkit.providers.ai.openai_dialect import (
     merge_thinking,
     overflow_fact,
 )
+from roomkit.providers.image.base import image_part_uri
 from roomkit.providers.openai.config import OpenAIConfig
 from roomkit.providers.openai.models import MODELS
 from roomkit.providers.utils import http_timeout
@@ -169,7 +170,7 @@ class OpenAIAIProvider(AIProvider):
                 parts.append(
                     {
                         "type": "image_url",
-                        "image_url": {"url": part.url},
+                        "image_url": {"url": image_part_uri(part, provider=self._provider_name)},
                     }
                 )
             elif isinstance(part, AIThinkingPart):

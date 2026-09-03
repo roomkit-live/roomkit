@@ -79,6 +79,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Every AI provider reads an image `data:` URI the same way.** Anthropic,
+  Gemini and OpenAI (with the seven providers that inherit its request
+  builder) each parsed a `data:` URI inline, and each differently: a header
+  with no media type (`data:;base64,…`) reached Anthropic as `media_type: ""`
+  and a 400 that named nothing, fell back to `image/jpeg` on Gemini, and
+  passed through OpenAI; a corrupt payload went out on the wire everywhere.
+  The three now read it through `parse_data_uri` — media type from the
+  header, then the part's `mime_type`, then `image/png` — and a malformed one
+  is refused before the request leaves, as a non-retryable `ProviderError`
+  that names the cause (`invalid image part: data URI payload is not valid
+  base64`). A remote URL still passes through untouched.
 - **A cancelled turn closes its reasoning window.** Cancelling a streaming
   tool loop (`Cancel` steering) while the model was reasoning closed the
   tool-call composition and nothing else: the realtime bus got a
