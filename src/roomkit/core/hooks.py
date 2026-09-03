@@ -149,8 +149,17 @@ class HookEngine:
                 return True
         return False
 
-    def has_hooks(self, trigger: HookTrigger) -> bool:
-        """Check if any hooks are registered for a trigger (O(1) lookup)."""
+    def has_hooks(self, trigger: HookTrigger | None = None) -> bool:
+        """Whether a hook is registered — for ``trigger``, or for any trigger at all.
+
+        O(1) either way: a set lookup, or the set's emptiness. The framework
+        skips the work only a hook would consume when nothing is listening —
+        the context built for ``BEFORE_DELIVER``, the room history loaded for
+        the inbound pipeline — so this runs once per message, never per hook.
+        Global and room hooks alike are in the index.
+        """
+        if trigger is None:
+            return bool(self._trigger_index)
         return trigger in self._trigger_index
 
     def _rebuild_trigger_index(self) -> None:

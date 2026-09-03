@@ -517,7 +517,9 @@ class HelpersMixin:
         bound channels — the largest ``recent_events_window`` any of them
         declares, floored for hooks and capped at ``_RECENT_EVENTS_LIMIT``. A
         transport-only room (e.g. realtime voice) whose channels read no history
-        loads just the floor instead of deserialising the whole ceiling per turn.
+        loads just the floor instead of deserialising the whole ceiling per
+        turn, and nothing at all when no hook is registered either: the read is
+        skipped, not merely emptied.
 
         ``carrying`` hands over a context an earlier pass of the same message
         already built, so its history is not deserialised twice — see
@@ -546,9 +548,15 @@ class HelpersMixin:
                     raise RoomNotFoundError(f"Room {room_id} not found")
                 if recent_limit is None:
                     recent_limit = self._resolve_recent_events_limit(bindings)
-                recent = self._carried_history(carrying, room, recent_limit)
-                if recent is None:
-                    recent = await self._store.get_conversation(room_id, limit=recent_limit)
+                if recent_limit <= 0:
+                    # Nothing bound reads history and no hook is registered:
+                    # no query, no deserialisation.
+                    recent: list[RoomEvent] = []
+                else:
+                    carried = self._carried_history(carrying, room, recent_limit)
+                    if carried is None:
+                        carried = await self._store.get_conversation(room_id, limit=recent_limit)
+                    recent = carried
         return RoomContext(
             room=room,
             bindings=bindings,
@@ -596,16 +604,20 @@ class HelpersMixin:
     def _resolve_recent_events_limit(self, bindings: list[ChannelBinding]) -> int:
         """Events to load = the largest window any bound channel needs.
 
-        Floored at ``_RECENT_EVENTS_FLOOR`` (hooks) and capped at
-        ``_RECENT_EVENTS_LIMIT`` (the in-memory ceiling). A missing/unregistered
-        channel contributes 0, so a room with no history-reading channel —
-        or no bindings at all — loads only the floor.
+        Floored at ``_RECENT_EVENTS_FLOOR`` while a hook is registered — the
+        floor exists so a hook that glances at the recent conversation has one
+        to glance at — and capped at ``_RECENT_EVENTS_LIMIT`` (the in-memory
+        ceiling). A missing/unregistered channel contributes 0. With no
+        history-reading channel and no hook, nothing would read the events,
+        so the room loads none: on a transport-only room that read was 41 % of
+        a message's worker CPU, for nobody (RMK-103).
         """
         windows = [
             getattr(self._channels.get(b.channel_id), "recent_events_window", 0) for b in bindings
         ]
         largest = max(windows, default=0)
-        return min(_RECENT_EVENTS_LIMIT, max(_RECENT_EVENTS_FLOOR, largest))
+        floor = _RECENT_EVENTS_FLOOR if self._hook_engine.has_hooks() else 0
+        return min(_RECENT_EVENTS_LIMIT, max(floor, largest))
 
     # -- Protocol trace --
 

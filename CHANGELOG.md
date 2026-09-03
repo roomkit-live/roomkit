@@ -41,6 +41,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **A room nobody reads loads no history.** Every inbound message built its
+  `RoomContext` with at least 50 recent events — the floor kept for hooks —
+  whether or not a hook was registered or a channel read them: on a
+  transport-only room that read was 41 % of a message's worker CPU,
+  deserialised for nobody, and +32 to +50 % of throughput on the benchmark.
+  The floor now applies only while a hook is registered; with none, and no
+  channel declaring a `recent_events_window`, the read is skipped outright.
+  A registered hook sees exactly the history it saw before, and a channel
+  that declares its window (AI, ACP) still gets it, hook or not.
 - **`ON_AI_RESPONSE` reports a readable transcript.** A tool call cuts the
   model's text into segments, persisted as one MESSAGE each, and
   `AIResponseEvent.response_content` joined them with nothing in between: an

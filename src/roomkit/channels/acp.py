@@ -322,9 +322,10 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
 
         The framework sizes ``RoomContext.recent_events`` to the largest window
         any bound channel declares, under a floor it keeps for hooks (50
-        events). So a ``room_history`` under that floor reads a tail that was
-        loaded anyway, and one above it grows the tail to match: declaring the
-        window is what keeps the two in step.
+        events, while one is registered). So a ``room_history`` under that
+        floor reads a tail that was loaded anyway, one above it grows the tail
+        to match, and on a room with no hook the declaration is what loads the
+        tail at all: declaring the window is what keeps the two in step.
         """
         return self._room_history
 

@@ -11,7 +11,9 @@ ceiling.
 from __future__ import annotations
 
 from types import SimpleNamespace
+from typing import Any
 
+from roomkit import HookExecution, HookResult, HookTrigger
 from roomkit.channels.base import Channel
 from roomkit.core.framework import RoomKit
 from roomkit.core.mixins.helpers import (
@@ -21,13 +23,17 @@ from roomkit.core.mixins.helpers import (
 )
 from roomkit.memory.base import DEFAULT_RECENT_EVENTS_WINDOW, MemoryProvider
 from roomkit.memory.sliding_window import SlidingWindowMemory
+from roomkit.models.context import RoomContext
+from roomkit.models.delivery import InboundMessage
 from roomkit.models.enums import ChannelType, EventType
 from roomkit.models.event import EventSource, RoomEvent, TextContent
+from tests.test_framework import SimpleChannel
 
 
-def _resolve(channels: dict, channel_ids: list[str]) -> int:
+def _resolve(channels: dict, channel_ids: list[str], *, hooked: bool = True) -> int:
     bindings = [SimpleNamespace(channel_id=cid) for cid in channel_ids]
-    fake_self = SimpleNamespace(_channels=channels)
+    engine = SimpleNamespace(has_hooks=lambda trigger=None: hooked)
+    fake_self = SimpleNamespace(_channels=channels, _hook_engine=engine)
     return HelpersMixin._resolve_recent_events_limit(fake_self, bindings)
 
 
@@ -64,8 +70,19 @@ def test_channel_base_reads_no_history() -> None:
 
 
 def test_transport_only_room_loads_floor() -> None:
-    # No channel reads history (or none registered) → floor, not the ceiling.
+    # No channel reads history (or none registered) → floor, not the ceiling,
+    # while a hook is registered to read it.
     assert _resolve({}, ["voice", "ws"]) == _RECENT_EVENTS_FLOOR
+
+
+def test_transport_only_room_without_a_hook_loads_nothing() -> None:
+    # The floor exists for hooks; with none registered nothing would read it.
+    assert _resolve({}, ["voice", "ws"], hooked=False) == 0
+
+
+def test_a_declared_window_loads_without_a_hook() -> None:
+    channels = {"text": SimpleNamespace(recent_events_window=10)}
+    assert _resolve(channels, ["text"], hooked=False) == 10
 
 
 def test_room_takes_largest_channel_window() -> None:
@@ -102,6 +119,14 @@ async def _seed(kit: RoomKit, room_id: str, count: int, start: int = 0) -> None:
         )
 
 
+def _hooked(kit: RoomKit) -> None:
+    """Register one no-op hook: the floor is loaded for hooks, and only for them."""
+
+    @kit.hook(HookTrigger.AFTER_BROADCAST, execution=HookExecution.ASYNC)
+    async def observe(event: RoomEvent, ctx: RoomContext) -> None:
+        return None
+
+
 async def test_window_holds_the_rooms_tail() -> None:
     """A room longer than the window is represented by its tail (RMK-99).
 
@@ -110,6 +135,7 @@ async def test_window_holds_the_rooms_tail() -> None:
     misses what was just said is this assertion failing.
     """
     kit = RoomKit()
+    _hooked(kit)
     room = await kit.create_room()
     await _seed(kit, room.id, _RECENT_EVENTS_FLOOR + 10)
 
@@ -126,6 +152,7 @@ async def test_window_holds_the_rooms_tail() -> None:
 async def test_window_advances_with_the_conversation() -> None:
     """Two contexts built either side of a new message differ by that message."""
     kit = RoomKit()
+    _hooked(kit)
     room = await kit.create_room()
     await _seed(kit, room.id, _RECENT_EVENTS_FLOOR + 1)
 
@@ -135,3 +162,78 @@ async def test_window_advances_with_the_conversation() -> None:
 
     assert after.recent_events[-1].index == before.recent_events[-1].index + 1
     assert after.recent_events[0].index == before.recent_events[0].index + 1
+
+
+# ── The floor is for hooks ────────────────────────────────────────
+
+
+async def test_no_hook_and_no_reader_skips_the_history_read() -> None:
+    """A transport-only room with no hook loads no history — and runs no query.
+
+    The floor was loaded for every message whether or not anything read it:
+    measured at 41 % of a message's worker CPU on the benchmark, deserialised
+    for nobody (RMK-103).
+    """
+    kit = RoomKit()
+    room = await kit.create_room()
+    await _seed(kit, room.id, _RECENT_EVENTS_FLOOR + 10)
+    reads: list[int] = []
+    original = kit.store.get_conversation
+
+    async def counting(room_id: str, **kwargs: Any) -> list[RoomEvent]:
+        reads.append(kwargs.get("limit", -1))
+        return await original(room_id, **kwargs)
+
+    kit.store.get_conversation = counting  # type: ignore[method-assign]
+
+    context = await kit._build_context(room.id)
+
+    assert context.recent_events == []
+    assert reads == []
+
+
+async def test_a_registered_hook_still_gets_the_floor() -> None:
+    """One hook, on any trigger, and the floor is back exactly as it was."""
+    kit = RoomKit()
+    room = await kit.create_room()
+    await _seed(kit, room.id, _RECENT_EVENTS_FLOOR + 10)
+    _hooked(kit)
+
+    context = await kit._build_context(room.id)
+
+    assert len(context.recent_events) == _RECENT_EVENTS_FLOOR
+    assert context.recent_events[-1].content.body == f"msg-{_RECENT_EVENTS_FLOOR + 9}"  # type: ignore[union-attr]
+
+
+async def test_a_hook_on_a_real_turn_reads_the_recent_conversation() -> None:
+    """The card's own criterion: a registered hook receives its context.
+
+    A BEFORE_BROADCAST hook on a transport-only room sees the floor's tail
+    on a real inbound message, not the empty list the hook-less path gets.
+    The room is filled through the pipeline too — sixty hook-less turns, each
+    building its context without a history read — so the delivery lanes have
+    seen every event and owe the last turn no gap wait.
+    """
+    kit = RoomKit()
+    kit.register_channel(SimpleChannel("sms"))
+    room = await kit.create_room()
+    await kit.attach_channel(room.id, "sms")
+
+    def message(body: str) -> InboundMessage:
+        return InboundMessage(channel_id="sms", sender_id="u1", content=TextContent(body=body))
+
+    for i in range(_RECENT_EVENTS_FLOOR + 10):
+        await kit.process_inbound(message(f"msg-{i}"))
+    seen: list[list[RoomEvent]] = []
+
+    @kit.hook(HookTrigger.BEFORE_BROADCAST)
+    async def gate(event: RoomEvent, ctx: RoomContext) -> HookResult:
+        seen.append(list(ctx.recent_events))
+        return HookResult.allow()
+
+    await kit.process_inbound(message("hello"))
+
+    assert len(seen) == 1
+    assert len(seen[0]) >= _RECENT_EVENTS_FLOOR
+    bodies = [e.content.body for e in seen[0]]  # type: ignore[union-attr]
+    assert f"msg-{_RECENT_EVENTS_FLOOR + 9}" in bodies
