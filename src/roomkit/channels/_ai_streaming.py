@@ -394,7 +394,7 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
         _span_errored = False
         _t0_stream = time.monotonic()
         # The turn's text for the after-response hook, one entry per round —
-        # the round's own ``text_parts`` list, the same object, so the finally
+        # the round's own ``reported`` list, the same object, so the finally
         # reads a round that ended abnormally as far as it got. A tool call
         # ends a segment; the next round's text starts the next one.
         _segments: list[list[str]] = []
@@ -435,7 +435,12 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                 thinking_published = 0
                 thinking_signature: str | None = None
                 text_parts: list[str] = []
-                _segments.append(text_parts)
+                # What this round's consumer actually received. The dedup
+                # below withholds a replayed prefix from the room, and the
+                # hook's transcript reports what the room saw — not the raw
+                # text ``text_parts`` keeps for the model's own history.
+                reported: list[str] = []
+                _segments.append(reported)
                 tool_calls: list[StreamToolCall] = []
                 thinking_started = False
                 round_finish_reason: str | None = None
@@ -523,27 +528,23 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                                     _dedup_buffer.append(event.text)
                                     continue
                                 _dedup_active = False
-                                for buf in _dedup_buffer:
-                                    yield buf
-                                _dedup_buffer.clear()
-                                yield event.text
+                                to_yield = [*_dedup_buffer, event.text]
                             else:
                                 prefix_tail = _dedup_prefix[_dedup_offset:]
+                                _dedup_active = False
                                 if event.text[: len(prefix_tail)] == prefix_tail:
-                                    _dedup_active = False
-                                    _dedup_buffer.clear()
                                     new_text = event.text[len(prefix_tail) :]
-                                    if new_text:
-                                        yield new_text
+                                    to_yield = [new_text] if new_text else []
                                 else:
-                                    _dedup_active = False
-                                    for buf in _dedup_buffer:
-                                        yield buf
-                                    _dedup_buffer.clear()
-                                    yield event.text
-                            continue
-
-                        yield event.text
+                                    to_yield = [*_dedup_buffer, event.text]
+                            _dedup_buffer.clear()
+                        else:
+                            to_yield = [event.text]
+                        # The one place this round's text leaves for the room,
+                        # so the transcript cannot disagree with the stream.
+                        for text in to_yield:
+                            reported.append(text)
+                            yield text
                     elif isinstance(event, StreamToolCallDelta):
                         # Composing a tool call's arguments ends the reasoning
                         # window exactly as the first text delta does: the model
@@ -677,6 +678,7 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
 
                 if _dedup_buffer:
                     for buf in _dedup_buffer:
+                        reported.append(buf)
                         yield buf
                     _dedup_buffer.clear()
 
@@ -897,10 +899,10 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                     telemetry.end_span(span_id, attributes=usage_attrs)
 
                 if self._after_response_hook and not _span_errored:
-                    segments, transcript = response_transcript(
-                        "".join(parts) for parts in _segments
-                    )
                     try:
+                        segments, transcript = response_transcript(
+                            "".join(round_text) for round_text in _segments
+                        )
                         await self._after_response_hook(
                             AIResponseEvent(
                                 channel_id=self.channel_id,

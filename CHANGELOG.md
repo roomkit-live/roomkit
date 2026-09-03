@@ -50,8 +50,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and the new `segments` field carries them one by one — `segments[-1]` is
   the answer, for a consumer that wants it without the narration. The
   streaming, non-streaming and ACP paths report the same transcript; the
-  non-streaming tool loop used to report the last segment alone. A turn
-  without a tool call is unchanged.
+  non-streaming tool loop used to report the last segment alone. On the
+  streaming path the transcript is what the room saw: a prefix the stream
+  withheld as a replay of an earlier round stays out of it. A turn without
+  a tool call is unchanged.
 - **`SSESource.timeout` no longer bounds the connect.** It bounds write and
   pool; the new `connect_timeout` (default 5 s) bounds the TCP connect, and
   the read side stays unbounded so the stream survives idle periods. A caller
