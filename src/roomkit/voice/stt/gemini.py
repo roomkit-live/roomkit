@@ -41,6 +41,7 @@ from urllib.parse import urlparse
 from roomkit.providers.gemini.sdk import build_genai_client, close_genai_client
 from roomkit.voice.base import TranscriptionResult
 from roomkit.voice.stt.base import STTProvider
+from roomkit.voice.stt.gemini_transcript import Transcript, TranscriptSegment
 
 if TYPE_CHECKING:
     from roomkit.models.event import AudioContent
@@ -48,6 +49,14 @@ if TYPE_CHECKING:
     from roomkit.voice.base import AudioChunk
 
 logger = logging.getLogger(__name__)
+
+__all__ = [
+    "SUPPORTED_MIME_TYPES",
+    "GeminiSTTConfig",
+    "GeminiSTTProvider",
+    "Transcript",
+    "TranscriptSegment",
+]
 
 SUPPORTED_MIME_TYPES: frozenset[str] = frozenset(
     {
@@ -108,39 +117,6 @@ _TRANSCRIPT_SCHEMA: dict[str, Any] = {
     },
     "required": ["language", "segments"],
 }
-
-
-@dataclass(frozen=True)
-class TranscriptSegment:
-    """One speaker turn.
-
-    Timestamps are ``MM:SS`` strings, as the model returns them. They are the
-    model's reading of the recording, not a forced alignment: treat them as
-    navigation, not as sync marks.
-    """
-
-    speaker: str
-    start: str
-    end: str
-    text: str
-
-
-@dataclass(frozen=True)
-class Transcript:
-    """A whole recording, as speaker turns."""
-
-    language: str
-    segments: list[TranscriptSegment]
-
-    @property
-    def text(self) -> str:
-        """The turns joined into a readable transcript, one line per speaker."""
-        return "\n".join(f"{s.speaker}: {s.text}" for s in self.segments)
-
-    @property
-    def plain_text(self) -> str:
-        """The spoken words alone, without speaker labels."""
-        return " ".join(s.text for s in self.segments)
 
 
 @dataclass
