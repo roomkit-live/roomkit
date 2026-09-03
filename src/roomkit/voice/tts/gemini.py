@@ -151,7 +151,7 @@ class GeminiTTSProvider(TTSProvider):
             # The client carries the connect/read split; see ``build_genai_client``
             # for why it cannot go on the request.
             self._client, self._http = build_genai_client(
-                self._config.api_key, self._config, provider="GeminiTTSProvider"
+                self._config, provider="GeminiTTSProvider", api_key=self._config.api_key
             )
         return self._client
 

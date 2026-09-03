@@ -32,6 +32,7 @@ from roomkit.providers.ai.base import (
 from roomkit.providers.gemini.config import GeminiConfig
 from roomkit.providers.gemini.errors import wrap_gemini_error
 from roomkit.providers.gemini.models import MODELS
+from roomkit.providers.gemini.sdk import build_genai_client, close_genai_client
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +76,11 @@ class GeminiAIProvider(AIProvider):
         self._config = config
         self._genai = _genai
         self._types = _types
-        self._client = _genai.Client(api_key=config.api_key.get_secret_value())
+        # The client carries the connect/read split; see ``build_genai_client``
+        # for why it cannot go on the request.
+        self._client, self._http = build_genai_client(
+            config, provider="GeminiAIProvider", api_key=config.api_key.get_secret_value()
+        )
 
     @property
     def model_name(self) -> str:
@@ -569,5 +574,7 @@ class GeminiAIProvider(AIProvider):
                 yield event.text
 
     async def close(self) -> None:
-        """Release the genai client reference."""
-        self._client = None
+        """Close the SDK and the httpx client it was given."""
+        client, self._client = self._client, None
+        http, self._http = self._http, None
+        await close_genai_client(client, http)

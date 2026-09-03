@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 
 import pytest
 from cryptography.hazmat.primitives import serialization
@@ -80,6 +80,8 @@ class TestGeminiVertexProvider:
                 # No key configured: the client falls back to the ADC chain,
                 # which is what a single-project deployment runs on.
                 credentials=None,
+                # The httpx client carrying the connect/read split (RMK-150).
+                http_options=ANY,
             )
 
     def test_no_api_key_passed_to_client(self) -> None:

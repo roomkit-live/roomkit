@@ -100,6 +100,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is set, so a stalled upload of a long recording never returned. Both calls
   now carry `timeout` per call; that path takes one value in milliseconds
   and cannot split the connect, so this is the flat read budget.
+- **The Gemini chat, image and Vertex providers are bounded too.**
+  `GeminiAIProvider`, `GeminiImageProvider` and `GeminiVertexProvider` built
+  their `genai.Client` with no timeout at all, so a host that stopped
+  answering, or a response that stalled, held an AI turn or an image
+  generation open indefinitely: the one gap left after the two passes above.
+  `GeminiConfig` (and `GeminiVertexConfig`, which inherits it) carries
+  `timeout` (60 s, the read budget between chunks: every chat call streams)
+  and `connect_timeout` (5 s); `GeminiImageConfig` the same pair with a 120 s
+  budget, an image being produced whole. The three build their client
+  through the same `build_genai_client` as TTS, STT and vision, now taking
+  the `genai.Client` keywords it needs for Vertex, and `close()` closes the
+  httpx client handed to the SDK (the chat provider used to drop the
+  reference without closing anything). One more thing that client does:
+  the SDK builds a streamed request (`generate_content_stream`, the chat
+  providers' only call) with `timeout=None`, which httpx reads as no
+  timeout at all rather than the client's default, where its non-streamed
+  calls leave the default in place. A request hook on the client puts the
+  budget back on any request that names none, so the split reaches the
+  streamed path too; a request carrying its own float (the Files API) is
+  left alone. The parametrized test reads the three new constructions back,
+  and one more drives the chat provider through the real SDK to the
+  transport.
 
 ## [0.62.0] — 2026-08-29
 

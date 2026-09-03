@@ -19,6 +19,7 @@ from roomkit.providers.ai.base import AIImagePart, ModelInfo, ProviderError
 from roomkit.providers.gemini.config import GeminiImageConfig
 from roomkit.providers.gemini.errors import wrap_gemini_error
 from roomkit.providers.gemini.image_models import MODELS
+from roomkit.providers.gemini.sdk import build_genai_client, close_genai_client
 from roomkit.providers.image.base import (
     ImageProvider,
     ImageResult,
@@ -59,16 +60,12 @@ class GeminiImageProvider(ImageProvider):
     """Image provider using the Gemini Interactions API."""
 
     def __init__(self, config: GeminiImageConfig) -> None:
-        try:
-            from google import genai as _genai
-        except ImportError as exc:
-            raise ImportError(
-                "google-genai is required for GeminiImageProvider. "
-                "Install it with: pip install roomkit[gemini]"
-            ) from exc
-
         self._config = config
-        self._client = _genai.Client(api_key=config.api_key.get_secret_value())
+        # The client carries the connect/read split; see ``build_genai_client``
+        # for why it cannot go on the request.
+        self._client, self._http = build_genai_client(
+            config, provider="GeminiImageProvider", api_key=config.api_key.get_secret_value()
+        )
 
     @property
     def model_name(self) -> str:
@@ -148,7 +145,7 @@ class GeminiImageProvider(ImageProvider):
 
     async def _create(self, request: dict[str, Any]) -> Any:
         try:
-            return await self._client.aio.interactions.create(**request)
+            return await self._client.aio.interactions.create(**request)  # ty: ignore[unresolved-attribute]
         except ProviderError:
             raise
         except Exception as exc:
@@ -259,7 +256,10 @@ class GeminiImageProvider(ImageProvider):
         }
 
     async def close(self) -> None:
-        await self._client.aio.aclose()
+        """Close the SDK and the httpx client it was given."""
+        client, self._client = self._client, None
+        http, self._http = self._http, None
+        await close_genai_client(client, http)
 
 
 def _modality_tokens(breakdown: Any, modality: str) -> int:

@@ -19,6 +19,7 @@ from pydantic import SecretStr
 
 from roomkit.providers.gemini.ai import GeminiAIProvider
 from roomkit.providers.gemini.config import GeminiConfig
+from roomkit.providers.gemini.sdk import build_genai_client
 
 
 class GeminiVertexConfig(GeminiConfig):
@@ -99,7 +100,11 @@ class GeminiVertexProvider(GeminiAIProvider):
         self._config = config
         self._genai = _genai
         self._types = _types
-        self._client = _genai.Client(
+        # The client carries the connect/read split; see ``build_genai_client``
+        # for why it cannot go on the request.
+        self._client, self._http = build_genai_client(
+            config,
+            provider="GeminiVertexProvider",
             vertexai=True,
             project=config.project,
             location=config.location,

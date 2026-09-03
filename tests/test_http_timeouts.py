@@ -11,7 +11,9 @@ passes the float again.
 Gemini is read through the real SDK: google-genai flattens a per-request
 ``httpx.Timeout`` to its largest value, so the split only survives on the
 httpx client RoomKit hands the SDK, and that client is what the SDK's
-requests are driven through here.
+requests are driven through here. The three Gemini providers of
+``roomkit.providers.gemini`` (chat, image, Vertex) sit here with it rather
+than in the providers' file, since they share that client (RMK-150).
 """
 
 from __future__ import annotations
@@ -25,7 +27,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
+from roomkit.providers.ai.base import AIContext, AIMessage
+from roomkit.providers.gemini.ai import GeminiAIProvider
+from roomkit.providers.gemini.config import GeminiConfig, GeminiImageConfig
+from roomkit.providers.gemini.image import GeminiImageProvider
 from roomkit.providers.gemini.sdk import close_genai_client
+from roomkit.providers.gemini.vertex import GeminiVertexConfig, GeminiVertexProvider
 from roomkit.sources import sse as sse_module
 from roomkit.sources.sse import SSESource
 from roomkit.video.avatar.websocket import WebSocketAvatarProvider
@@ -112,11 +119,8 @@ async def _sse() -> Any:
     return RecordingAsyncClient.calls[-1]["timeout"]
 
 
-async def _gemini_httpx_timeout(
-    provider: GeminiTTSProvider | GeminiSTTProvider | GeminiVisionProvider,
-) -> Any:
-    pytest.importorskip("google.genai")
-    client = provider._get_client()
+async def _gemini_httpx_timeout(provider: Any, client: Any) -> Any:
+    """The timeout on the httpx client *provider* handed the SDK as *client*."""
     http = provider._http
     try:
         # The httpx client RoomKit hands the SDK (``HttpOptions.httpx_async_client``);
@@ -127,21 +131,48 @@ async def _gemini_httpx_timeout(
         await provider.close()
         assert http.is_closed
         assert provider._http is None
+        assert provider._client is None
 
 
 async def _gemini_tts() -> Any:
-    config = GeminiTTSConfig(api_key="k", **_TIMEOUTS)
-    return await _gemini_httpx_timeout(GeminiTTSProvider(config))
+    pytest.importorskip("google.genai")
+    provider = GeminiTTSProvider(GeminiTTSConfig(api_key="k", **_TIMEOUTS))
+    return await _gemini_httpx_timeout(provider, provider._get_client())
 
 
 async def _gemini_stt() -> Any:
-    config = GeminiSTTConfig(api_key="k", **_TIMEOUTS)
-    return await _gemini_httpx_timeout(GeminiSTTProvider(config))
+    pytest.importorskip("google.genai")
+    provider = GeminiSTTProvider(GeminiSTTConfig(api_key="k", **_TIMEOUTS))
+    return await _gemini_httpx_timeout(provider, provider._get_client())
 
 
 async def _gemini_vision() -> Any:
-    config = GeminiVisionConfig(api_key="k", **_TIMEOUTS)
-    return await _gemini_httpx_timeout(GeminiVisionProvider(config))
+    pytest.importorskip("google.genai")
+    provider = GeminiVisionProvider(GeminiVisionConfig(api_key="k", **_TIMEOUTS))
+    return await _gemini_httpx_timeout(provider, provider._get_client())
+
+
+# The chat, image and Vertex providers build their client in ``__init__``.
+
+
+async def _gemini_ai() -> Any:
+    pytest.importorskip("google.genai")
+    provider = GeminiAIProvider(GeminiConfig(api_key="k", **_TIMEOUTS))
+    return await _gemini_httpx_timeout(provider, provider._client)
+
+
+async def _gemini_image() -> Any:
+    pytest.importorskip("google.genai")
+    provider = GeminiImageProvider(GeminiImageConfig(api_key="k", **_TIMEOUTS))
+    return await _gemini_httpx_timeout(provider, provider._client)
+
+
+async def _gemini_vertex() -> Any:
+    pytest.importorskip("google.genai")
+    # No credentials: the SDK resolves the ADC chain on the first request, not here.
+    config = GeminiVertexConfig(project="p", location="northamerica-northeast1", **_TIMEOUTS)
+    provider = GeminiVertexProvider(config)
+    return await _gemini_httpx_timeout(provider, provider._client)
 
 
 # (builder, expected read budget): the SSE source leaves its read side
@@ -156,6 +187,9 @@ CASES: dict[str, tuple[Builder, float | None]] = {
     "gemini-tts": (_gemini_tts, TIMEOUT),
     "gemini-stt": (_gemini_stt, TIMEOUT),
     "gemini-vision": (_gemini_vision, TIMEOUT),
+    "gemini-ai": (_gemini_ai, TIMEOUT),
+    "gemini-image": (_gemini_image, TIMEOUT),
+    "gemini-vertex": (_gemini_vertex, TIMEOUT),
 }
 
 
@@ -185,6 +219,9 @@ CONFIGS: list[tuple[type[Any], dict[str, Any]]] = [
     (GeminiTTSConfig, {"api_key": "k"}),
     (GeminiSTTConfig, {"api_key": "k"}),
     (GeminiVisionConfig, {"api_key": "k"}),
+    (GeminiConfig, {"api_key": "k"}),
+    (GeminiImageConfig, {"api_key": "k"}),
+    (GeminiVertexConfig, {"project": "p", "location": "l"}),
 ]
 
 
@@ -243,6 +280,25 @@ class TestGeminiThroughTheSDK:
                 await provider.synthesize("hello")
             await provider.close()
 
+        assert _RecordingTransport.seen == [
+            {"connect": CONNECT, "read": TIMEOUT, "write": TIMEOUT, "pool": TIMEOUT}
+        ]
+
+    async def test_streamed_request_carries_the_split(self) -> None:
+        """The chat providers only ever stream, and the SDK builds a streamed
+        request with ``timeout=None``, which httpx reads as no timeout at all
+        (the non-streamed path leaves the client default alone). The client's
+        request hook is what puts the budget back; see ``build_genai_client``."""
+        pytest.importorskip("google.genai")
+        _RecordingTransport.seen.clear()
+        context = AIContext(messages=[AIMessage(role="user", content="hi")])
+        with patch("httpx.AsyncClient", _RecordingTransport.client_class()):
+            provider = GeminiAIProvider(GeminiConfig(api_key="k", **_TIMEOUTS))
+            # An empty body streams no chunk; the request went out regardless.
+            response = await provider.generate(context)
+            await provider.close()
+
+        assert response.content == ""
         assert _RecordingTransport.seen == [
             {"connect": CONNECT, "read": TIMEOUT, "write": TIMEOUT, "pool": TIMEOUT}
         ]

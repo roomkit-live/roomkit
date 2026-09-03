@@ -17,6 +17,12 @@ in one specific way for the connect/read split to survive the SDK:
   included, goes through that client with its timeout as the default, and
   httpx keeps applying the environment proxies and ``SSL_CERT_FILE`` it
   applies to any client it builds.
+* Even then the SDK builds a streamed request (``generate_content_stream``,
+  the only call the chat providers make) with ``timeout=None``, and httpx
+  reads an explicit ``None`` as "no timeout at all" rather than "the
+  client's default". A request hook on the client puts the budget back on
+  any request that names none; one carrying its own float (the Files API)
+  keeps it.
 
 The SDK does not close a client it was given, so the caller owns both
 objects and closes them together.
@@ -25,6 +31,7 @@ objects and closes them together.
 from __future__ import annotations
 
 import logging
+from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
 from roomkit.providers.utils import HTTPTimeouts, http_timeout
@@ -35,14 +42,34 @@ if TYPE_CHECKING:
 logger = logging.getLogger("roomkit.providers.gemini.sdk")
 
 
+def _restore_client_timeout(timeout: httpx.Timeout) -> Callable[[httpx.Request], Awaitable[None]]:
+    """A request hook giving a request sent with ``timeout=None`` the client's budget.
+
+    Only a request that names no budget at all is touched: the SDK's
+    non-streamed calls leave the client default in place, and its Files API
+    calls carry their own flat value, which is kept.
+    """
+    budget = timeout.as_dict()
+
+    async def restore(request: httpx.Request) -> None:
+        current = request.extensions.get("timeout")
+        if current is None or all(value is None for value in current.values()):
+            request.extensions["timeout"] = dict(budget)
+
+    return restore
+
+
 def build_genai_client(
-    api_key: str, timeouts: HTTPTimeouts, *, provider: str
+    timeouts: HTTPTimeouts, *, provider: str, **client_kwargs: Any
 ) -> tuple[Any, httpx.AsyncClient]:
-    """Return the ``genai.Client`` for *api_key* and the httpx client it runs on.
+    """Return a ``genai.Client`` and the httpx client it runs on.
 
     ``timeouts.timeout`` is the read/write/pool budget, ``connect_timeout``
     bounds the TCP connect. *provider* names the caller in the ImportError
-    raised when google-genai is not installed.
+    raised when google-genai is not installed. *client_kwargs* reach
+    ``genai.Client`` as they are: ``api_key`` for the Developer API;
+    ``vertexai``, ``project``, ``location`` and ``credentials`` for Vertex,
+    where the identity is never a key on the request.
     """
     try:
         import httpx
@@ -58,9 +85,13 @@ def build_genai_client(
     # first because the SDK takes it as an argument; should ``genai.Client``
     # then reject the key, a client that never sent a request holds nothing
     # to release.
-    http = httpx.AsyncClient(timeout=timeout, follow_redirects=True)
+    http = httpx.AsyncClient(
+        timeout=timeout,
+        follow_redirects=True,
+        event_hooks={"request": [_restore_client_timeout(timeout)]},
+    )
     client = genai.Client(
-        api_key=api_key,
+        **client_kwargs,
         http_options=genai.types.HttpOptions(
             # The sync client is built by the SDK regardless; same budget.
             client_args={"timeout": timeout},
