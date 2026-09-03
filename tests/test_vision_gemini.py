@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
 
+import httpx
+
 from roomkit.video.video_frame import VideoFrame
 from roomkit.video.vision.gemini import GeminiVisionConfig, GeminiVisionProvider
 
@@ -94,11 +96,18 @@ class TestGeminiVisionProvider:
 
     async def test_close(self) -> None:
         provider = GeminiVisionProvider(GeminiVisionConfig(api_key="test"))
-        provider._client = MagicMock()
+        client = MagicMock()
+        client.aio.aclose = AsyncMock()
+        http = httpx.AsyncClient()
+        provider._client = client
+        provider._http = http
         provider._types = MagicMock()
 
         await provider.close()
+        client.aio.aclose.assert_awaited_once()
+        assert http.is_closed  # the SDK never closes a client it was given
         assert provider._client is None
+        assert provider._http is None
         assert provider._types is None
 
     async def test_close_no_client(self) -> None:

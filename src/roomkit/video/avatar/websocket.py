@@ -107,6 +107,10 @@ class WebSocketAvatarProvider(AvatarProvider):
     def is_started(self) -> bool:
         return self._started
 
+    def _http_timeout(self) -> httpx.Timeout:
+        """The connect/read split of every client here, from the two knobs."""
+        return http_timeout_from(self._timeout, self._connect_timeout)
+
     async def start(
         self,
         reference_image: bytes,
@@ -122,8 +126,7 @@ class WebSocketAvatarProvider(AvatarProvider):
 
         payload = self._build_start_payload()
         try:
-            timeout = http_timeout_from(self._timeout, self._connect_timeout)
-            async with httpx.AsyncClient(timeout=timeout) as client:
+            async with httpx.AsyncClient(timeout=self._http_timeout()) as client:
                 resp = await client.post(f"{self._base_url}/start", json=payload)
             resp.raise_for_status()
             self._fps = resp.json().get("fps", self._fps)
@@ -141,7 +144,7 @@ class WebSocketAvatarProvider(AvatarProvider):
             )
 
         # Sync client for thread-pool operations (get_idle_frame, _try_restart)
-        self._http = httpx.Client(timeout=http_timeout_from(self._timeout, self._connect_timeout))
+        self._http = httpx.Client(timeout=self._http_timeout())
         self._started = True
         self._idle_frame_cache = None
         self._idle_error_logged = False
@@ -310,8 +313,7 @@ class WebSocketAvatarProvider(AvatarProvider):
             import httpx as _httpx
 
             with contextlib.suppress(Exception):
-                timeout = http_timeout_from(self._timeout, self._connect_timeout)
-                async with _httpx.AsyncClient(timeout=timeout) as client:
+                async with _httpx.AsyncClient(timeout=self._http_timeout()) as client:
                     await client.post(f"{self._base_url}/stop")
             self._http.close()
             self._http = None

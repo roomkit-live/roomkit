@@ -4,9 +4,9 @@ The providers' own clients are covered by
 ``tests/test_providers/test_http_timeouts.py``; this file walks the sites the
 first pass left out (RMK-149): Grok TTS, OpenAI and Gemini vision, the
 WebSocket avatar (three clients), the SSE source and Gemini TTS/STT. Each
-case builds the
-object with distinctive values and reads back the ``timeout`` its client
-actually received, so the test fails the day one passes the float again.
+case builds the object with distinctive values and reads back the
+``timeout`` its client actually received, so the test fails the day one
+passes the float again.
 
 Gemini is read through the real SDK: google-genai flattens a per-request
 ``httpx.Timeout`` to its largest value, so the split only survives on the
@@ -20,11 +20,12 @@ import tempfile
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
 
+from roomkit.providers.gemini.sdk import close_genai_client
 from roomkit.sources import sse as sse_module
 from roomkit.sources.sse import SSESource
 from roomkit.video.avatar.websocket import WebSocketAvatarProvider
@@ -116,12 +117,16 @@ async def _gemini_httpx_timeout(
 ) -> Any:
     pytest.importorskip("google.genai")
     client = provider._get_client()
+    http = provider._http
     try:
         # The httpx client RoomKit hands the SDK (``HttpOptions.httpx_async_client``);
         # every request the SDK sends without its own timeout inherits it.
         return client._api_client._async_httpx_client.timeout
     finally:
+        # The SDK never closes a client it was given; the provider must.
         await provider.close()
+        assert http.is_closed
+        assert provider._http is None
 
 
 async def _gemini_tts() -> Any:
@@ -251,9 +256,10 @@ class TestGeminiThroughTheSDK:
             wav = Path(tmp) / "meeting.wav"
             wav.write_bytes(b"RIFF" + b"\x00" * 200)
             with patch("httpx.AsyncClient", _RecordingTransport.client_class()):
-                # The fake upload answer carries no upload URL; the first
-                # request of the resumable upload is what is asserted.
-                with pytest.raises(Exception, match=r"[Uu]pload"):
+                # The fake upload answer carries no upload URL, so the SDK
+                # rejects it (a KeyError on google-genai 2.18.0; which error is
+                # not the point). The first request of the resumable upload is.
+                with pytest.raises(Exception):  # noqa: B017 - see above
                     await provider.transcribe_recording(wav)
                 await provider.close()
 
@@ -262,3 +268,14 @@ class TestGeminiThroughTheSDK:
         assert _RecordingTransport.seen[:1] == [
             {"connect": TIMEOUT, "read": TIMEOUT, "write": TIMEOUT, "pool": TIMEOUT}
         ]
+
+
+async def test_close_genai_client_closes_httpx_even_when_the_sdk_close_fails() -> None:
+    client = MagicMock()
+    client.aio.aclose = AsyncMock(side_effect=RuntimeError("transport already gone"))
+    http = httpx.AsyncClient()
+
+    await close_genai_client(client, http)
+
+    client.aio.aclose.assert_awaited_once()
+    assert http.is_closed

@@ -54,7 +54,10 @@ def build_genai_client(
         ) from exc
 
     timeout = http_timeout(timeouts)
-    # ``follow_redirects`` matches the client the SDK would build itself.
+    # ``follow_redirects`` matches the client the SDK would build itself. Built
+    # first because the SDK takes it as an argument; should ``genai.Client``
+    # then reject the key, a client that never sent a request holds nothing
+    # to release.
     http = httpx.AsyncClient(timeout=timeout, follow_redirects=True)
     client = genai.Client(
         api_key=api_key,

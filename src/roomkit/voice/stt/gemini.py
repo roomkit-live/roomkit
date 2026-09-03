@@ -79,10 +79,11 @@ _PCM_MIME_TYPE = "audio/l16"
 _FILES_API_HOST = "generativelanguage.googleapis.com"
 
 _MAX_INLINE_BYTES = 15 * 1024 * 1024
-# The Files API delete is cleanup, not the transcript: it gets seconds, not minutes.
-_FILES_DELETE_TIMEOUT = 10.0
 """Above this, a file is uploaded instead of inlined — the request has a size
 limit and a base64 payload is a third larger than the file it carries."""
+
+_FILES_DELETE_TIMEOUT = 10.0
+"""The Files API delete is cleanup, not the transcript: seconds, not minutes."""
 
 _TRANSCRIPT_SCHEMA: dict[str, Any] = {
     "type": "object",
