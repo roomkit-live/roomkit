@@ -280,7 +280,7 @@ member management API.
 | Trigger | Execution | Signature | Description |
 |---------|-----------|-----------|-------------|
 | `BEFORE_AI_GENERATION` | SYNC | `(AIGenerationEvent, ctx) -> HookResult` | Before the AI provider is invoked. `event.ai_context` (messages, system prompt, tools) may be mutated in place; block skips generation. |
-| `ON_AI_THINKING` | — | — | Reserved — defined in the enum, not fired by any built-in code (RFC §9 marks it Implemented). |
+| `ON_AI_THINKING` | ASYNC | `(ThinkingEvent, ctx) -> None` | A reasoning window opened (`THINKING_START`) on an AIChannel; fires whether or not a realtime backend is configured. The reasoning text itself streams on the ephemeral `THINKING_DELTA` / `THINKING_END` events, so `event.thinking` is empty here. |
 | `ON_AI_RESPONSE` | ASYNC | `(AIResponseEvent, ctx) -> None` | AI generation completed. Carries response content, usage, latency, tool call count. |
 
 ### Protocol Observability
@@ -344,7 +344,7 @@ bot never triggers them.
 
 | Trigger | Execution | Signature | Description |
 |---------|-----------|-----------|-------------|
-| `ON_PLAN_UPDATED` | — | — | Reserved — not fired by any built-in code. The `plan_tasks` tool (`enable_planning=True`) publishes an ephemeral realtime event `{"type": "plan_updated"}` instead (RFC §9 marks the hook Implemented). |
+| `ON_PLAN_UPDATED` | ASYNC | `(PlanUpdatedEvent, ctx) -> None` | The `plan_tasks` tool (`enable_planning=True`) updated the room's task plan; `event.tasks` carries the new list. The same update also goes out as an ephemeral realtime event `{"type": "plan_updated"}` for live UIs. |
 
 ### Feedback
 
