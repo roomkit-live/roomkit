@@ -1,13 +1,13 @@
 """OpenAI AI provider — generates responses via the OpenAI Chat Completions API.
 
 Reading what the endpoint sends back — reasoning conventions, tool-call
-fragments, the overflow fact — lives in ``response.py``, shared with the
-other providers speaking this dialect. The request side stays on the class:
-``OpenAIAIProvider`` is the base of seven derivatives (Azure, DeepSeek,
-LiteLLM, OpenRouter, Qwen, vLLM, xAI) that override its request hooks
-(``_apply_sampling_kwargs``, ``_usage_from``, ``_provider_name``) and inherit
-``_build_messages`` as a tested part of their surface. That side is not what
-keeps the module above the size signal, though: the two call paths,
+fragments, the overflow fact — lives in ``providers/ai/openai_dialect.py``,
+shared with the other providers speaking this dialect. The request side stays
+on the class: ``OpenAIAIProvider`` is the base of seven derivatives (Azure,
+DeepSeek, LiteLLM, OpenRouter, Qwen, vLLM, xAI) that override its request
+hooks (``_apply_sampling_kwargs``, ``_usage_from``, ``_provider_name``) and
+inherit ``_build_messages`` as a tested part of their surface. That side is
+not what keeps the module above the size signal, though: the two call paths,
 ``generate`` and ``generate_structured_stream``, each carry their own request
 assembly, error mapping and result reading for the SDK's two response shapes.
 """
@@ -39,16 +39,16 @@ from roomkit.providers.ai.base import (
     StreamThinkingDelta,
     StreamToolCall,
 )
+from roomkit.providers.ai.openai_dialect import (
+    ThinkTagParser,
+    extract_think_tags,
+    field_reasoning,
+    fold_tool_call_fragment,
+    merge_thinking,
+    overflow_fact,
+)
 from roomkit.providers.openai.config import OpenAIConfig
 from roomkit.providers.openai.models import MODELS
-from roomkit.providers.openai.response import (
-    _extract_think_tags,
-    _field_reasoning,
-    _merge_thinking,
-    _overflow_fact,
-    _ThinkTagParser,
-    fold_tool_call_fragment,
-)
 from roomkit.providers.utils import http_timeout
 
 # Fallback only, for ids the catalog does not carry — a snapshot newer than
@@ -378,7 +378,7 @@ class OpenAIAIProvider(AIProvider):
                 retryable=retryable,
                 provider=self._provider_name,
                 status_code=exc.status_code,
-                context_overflow=_overflow_fact(exc),
+                context_overflow=overflow_fact(exc),
             ) from exc
         except Exception as exc:
             raise ProviderError(
@@ -425,8 +425,8 @@ class OpenAIAIProvider(AIProvider):
 
         # Extract <think>...</think> tags from response text.
         raw_text = choice.message.content or ""
-        thinking, content = _extract_think_tags(raw_text)
-        thinking = _merge_thinking(thinking, _field_reasoning(choice.message))
+        thinking, content = extract_think_tags(raw_text)
+        thinking = merge_thinking(thinking, field_reasoning(choice.message))
 
         return AIResponse(
             content=content,
@@ -473,7 +473,7 @@ class OpenAIAIProvider(AIProvider):
 
         t0 = time.monotonic()
         first_token = True
-        parser = _ThinkTagParser()
+        parser = ThinkTagParser()
 
         # Accumulate tool call deltas across chunks
         tool_call_accum: dict[int, dict[str, Any]] = {}
@@ -520,7 +520,7 @@ class OpenAIAIProvider(AIProvider):
                 # OpenAI-compatible reasoning models (DeepSeek-R1, vLLM with a
                 # reasoning parser) stream reasoning in a dedicated field instead
                 # of inline <think> tags. Surface it as thinking when present.
-                reasoning = _field_reasoning(delta)
+                reasoning = field_reasoning(delta)
                 if reasoning:
                     if first_token:
                         self._record_ttfb(t0)
@@ -572,7 +572,7 @@ class OpenAIAIProvider(AIProvider):
                 retryable=exc.status_code in RETRYABLE_STATUS_CODES,
                 provider=self._provider_name,
                 status_code=exc.status_code,
-                context_overflow=_overflow_fact(exc),
+                context_overflow=overflow_fact(exc),
             ) from exc
         except Exception as exc:
             raise ProviderError(
