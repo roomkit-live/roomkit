@@ -27,10 +27,11 @@ responses are larger and slower.
 ``/image ~/Pictures/receipt.jpg what's the total?``. The file is embedded
 as a base64 ``data:`` URI and sent as an ``image_url`` part; with no
 question it defaults to "Analyse this image." Vision needs a vision-capable
-model — run with ``POLARGRID_MODEL=qwen-3.6-35b-a3b POLARGRID_REGION=yul-02``
-(the default ``qwen-3.8-27b`` is text-only: the server refuses image input
-for it; the ``vision=`` flag in the welcome banner reflects the configured
-model).
+model, and PolarGrid serves none on its public edges: ``qwen-3.6-35b-a3b`` is
+a customer pilot, so ``POLARGRID_MODEL=qwen-3.6-35b-a3b`` only works pinned to
+a pilot edge you have access to. The default ``qwen-3.8-27b`` is text-only
+(the server refuses image input for it); the ``vision=`` flag in the welcome
+banner reflects the configured model.
 
 Run with:
     POLARGRID_API_KEY=pg_... uv run python examples/polargrid_ai.py

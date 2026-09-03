@@ -664,16 +664,26 @@ class AIProvider(ABC):
         return self.available_models()
 
     @classmethod
+    def _curated_index(cls) -> dict[str, ModelInfo]:
+        """Curated entries :meth:`_merge_curated` backfills from, by model id.
+
+        The advertised catalog, unless a provider recognises more models than
+        it advertises — PolarGrid's customer-pilot models, served from no
+        public edge but live on the edge a pilot customer is pinned to.
+        """
+        return {m.id: m for m in cls.available_models()}
+
+    @classmethod
     def _merge_curated(cls, live: list[ModelInfo]) -> list[ModelInfo]:
         """Backfill metadata absent from live results using the curated catalog.
 
         A live models endpoint typically returns ids with little metadata.
-        For each live model that also appears in :meth:`available_models`,
-        fill any missing
+        For each live model that also appears in :meth:`_curated_index`
+        (the advertised catalog, by default), fill any missing
         ``display_name``/``context_window``/``supports_vision``/``pricing``
         from the curated entry, keeping whatever the API did report.
         """
-        curated = {m.id: m for m in cls.available_models()}
+        curated = cls._curated_index()
         merged: list[ModelInfo] = []
         for model in live:
             match = curated.get(model.id)

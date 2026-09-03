@@ -787,31 +787,42 @@ class TestPolarGridModels:
         provider, _ = _provider()
         models = provider.available_models()
         by_id = {m.id: m for m in models}
-        assert "qwen-3.5-27b" in by_id
-        assert "qwen-3.6-35b-a3b" in by_id
-        assert "qwen-3.8-27b" in by_id
-        assert by_id["qwen-3.5-27b"].display_name == "Qwen 3.5 27B"
-        assert by_id["qwen-3.8-27b"].display_name == "Qwen 3.8 27B"
-        # 3.6 and 3.8 are the thinking-capable models (validated live on
-        # yul-02 and yto-01 respectively).
-        assert "thinking" in by_id["qwen-3.6-35b-a3b"].capabilities
-        assert "thinking" in by_id["qwen-3.8-27b"].capabilities
-        # Vision landed with polargrid-sdk 0.9.0, but only qwen-3.6-35b-a3b
-        # (yul-02) actually reads the image (verified live); 3.5 is text-only
-        # and 3.8 is refused server-side ("does not support image input").
-        assert by_id["qwen-3.5-27b"].supports_vision is False
-        assert by_id["qwen-3.6-35b-a3b"].supports_vision is True
-        assert by_id["qwen-3.8-27b"].supports_vision is False
+        # The public lineup is one model. qwen-3.5-27b was retired on
+        # 2026-08-20 (404 model_not_loaded everywhere) and qwen-3.6-35b-a3b
+        # is a customer pilot served from no public edge: neither is offered.
+        assert set(by_id) == {"qwen-3.8-27b"}
+        qwen38 = by_id["qwen-3.8-27b"]
+        assert qwen38.display_name == "Qwen 3.8 27B"
+        assert qwen38.context_window == 262_144
+        # Thinking validated live on yto-01; image input refused server-side
+        # ("does not support image input"), so text-only.
+        assert "thinking" in qwen38.capabilities
+        assert qwen38.supports_vision is False
+        # The vendor publishes a list price for it (models page).
+        assert qwen38.pricing is not None
+        assert qwen38.pricing.input_per_million == 0.20
+        assert qwen38.pricing.output_per_million == 0.75
 
     def test_available_models_is_offline_classmethod(self) -> None:
         # Callable on the class without an SDK/instance (no network/key).
         from roomkit.providers.polargrid.ai import PolarGridAIProvider
 
         ids = [m.id for m in PolarGridAIProvider.available_models()]
-        assert ids == ["qwen-3.5-27b", "qwen-3.6-35b-a3b", "qwen-3.8-27b"]
+        assert ids == ["qwen-3.8-27b"]
+
+    def test_pilot_model_is_recognised_but_not_advertised(self) -> None:
+        from roomkit.providers.polargrid.ai import PolarGridAIProvider
+        from roomkit.providers.polargrid.models import MODELS_BY_ID, PILOT_MODELS
+
+        pilot = {m.id for m in PILOT_MODELS}
+        assert pilot == {"qwen-3.6-35b-a3b"}
+        assert MODELS_BY_ID["qwen-3.6-35b-a3b"].supports_vision is True
+        assert "thinking" in MODELS_BY_ID["qwen-3.6-35b-a3b"].capabilities
+        assert not any(m.id in pilot for m in PolarGridAIProvider.available_models())
 
     def test_supports_vision_is_model_driven(self) -> None:
-        # Per-model: only qwen-3.6-35b-a3b reads images; 3.5, 3.8 and any
+        # Per-model: only the pilot qwen-3.6-35b-a3b reads images (verified
+        # live on yul-02 while it was public); 3.8, a retired id and any
         # unknown model are text-only.
         vision, _ = _provider(model="qwen-3.6-35b-a3b")
         assert vision.supports_vision is True
@@ -841,9 +852,12 @@ class TestPolarGridModels:
 
         # Live edge models are all returned (chat + STT/TTS).
         assert set(by_id) == {"qwen-3.6-35b-a3b", "kokoro-82m", "whisper-large-v3-turbo"}
-        # pg_model_type → capabilities; curated backfills the display name.
+        # pg_model_type → capabilities; curated backfills the display name and
+        # the vision flag, for a pilot model (this is a pilot edge) as for a
+        # public one.
         assert by_id["kokoro-82m"].capabilities == ["tts"]
         assert by_id["qwen-3.6-35b-a3b"].display_name == "Qwen 3.6 35B-A3B"
+        assert by_id["qwen-3.6-35b-a3b"].supports_vision is True
         # No pg_model_type and not in catalog → empty capabilities, no crash.
         assert by_id["whisper-large-v3-turbo"].capabilities == []
 
@@ -862,6 +876,8 @@ class TestPolarGridModels:
         regions = provider.available_regions()
         by_id = {r.id: r for r in regions}
         # Every edge the SDK can route, with the Canada/US residency split.
+        # yul-02 left the vendor's published list with the qwen-3.6 pilot but
+        # the SDK still routes it and it still answers, so it stays.
         assert len(regions) == 16
         assert by_id["yul-02"].name == "Montreal 02"
         assert by_id["yul-02"].location == "Canada East"

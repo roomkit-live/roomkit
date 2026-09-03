@@ -132,18 +132,27 @@ class PolarGridAIProvider(AIProvider):
 
     @classmethod
     def available_models(cls) -> list[ModelInfo]:
-        """Curated, offline snapshot of PolarGrid's chat models.
+        """Curated, offline snapshot of the chat models on PolarGrid's public edges.
 
+        A customer-pilot model (``qwen-3.6-35b-a3b``) is recognised but not
+        advertised: see :data:`~roomkit.providers.polargrid.models.PILOT_MODELS`.
         See :meth:`list_models` for the live, edge-specific set (which also
         includes the STT/TTS models).
         """
         return list(MODELS)
 
+    @classmethod
+    def _curated_index(cls) -> dict[str, ModelInfo]:
+        # Public and pilot models alike: a pilot edge lists qwen-3.6-35b-a3b,
+        # and its display name and vision flag should backfill there too.
+        return dict(MODELS_BY_ID)
+
     async def list_models(self) -> list[ModelInfo]:
         """Models loaded on the connected edge, via the SDK's ``list_models``.
 
         Returns whatever the edge reports (chat + STT/TTS), so the result is
-        region-specific — ``qwen-3.6-35b-a3b`` only appears on ``yul-02``.
+        region-specific — ``dfw-02`` carries no STT and no ``kokoro-82m``, a
+        customer-pilot edge lists ``qwen-3.6-35b-a3b``.
         Curated metadata backfills display names / vision where the endpoint
         leaves them blank.
         """

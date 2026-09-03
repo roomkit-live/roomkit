@@ -17,13 +17,13 @@ class PolarGridConfig(BaseModel):
 
     Attributes:
         api_key: PolarGrid API key (``pg_...``), sent as a Bearer token.
-        model: Model identifier. Defaults to ``"qwen-3.8-27b"``, the LLM
-            the Toronto edge (the SDK's default region) serves — verified
-            live 2026-08-19. The fleet is mid-rollout from
-            ``"qwen-3.5-27b"``, which only ``yul-01`` still serves; pin
-            that model explicitly if you are pinned to ``yul-01``. The
-            catalog varies per edge — call ``list_models()`` on the raw
-            SDK client to enumerate what's loaded.
+        model: Model identifier. Defaults to ``"qwen-3.8-27b"``, the one
+            LLM PolarGrid serves fleet-wide (every public edge; verified
+            against the autorouter 2026-09-02). ``"qwen-3.5-27b"`` was
+            retired on 2026-08-20 and answers ``404 model_not_loaded``
+            everywhere; ``"qwen-3.6-35b-a3b"`` is a customer pilot served
+            from no public edge. What an edge actually loads is what
+            ``list_models()`` reports.
         region: Region to pin. One of ``"toronto"``/``"vancouver"``/
             ``"montreal"`` (or the IDs ``"yto-01"``/``"yvr-02"``/
             ``"yul-01"``). ``None`` lets the SDK auto-route to the

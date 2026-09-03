@@ -32,6 +32,7 @@ from roomkit.providers.ollama.config import OllamaConfig
 from roomkit.providers.openai.ai import OpenAIAIProvider
 from roomkit.providers.openai.config import OpenAIConfig
 from roomkit.providers.openrouter.ai import OpenRouterAIProvider
+from roomkit.providers.polargrid.ai import PolarGridAIProvider
 from roomkit.providers.xai.ai import XAIAIProvider
 
 # (provider class, config class) for the providers that ship a curated catalog.
@@ -54,8 +55,9 @@ DEFAULTED_CURATED = [
 
 # Providers whose vendor publishes a per-token list price, so every model in
 # the catalog must carry one. Ollama (open weights pulled onto your own
-# hardware) and PolarGrid (private edges) publish none — demanding a price
-# there would mean inventing it.
+# hardware) publishes none — demanding a price there would only invent one.
+# PolarGrid quotes its public model on its models page; its customer-pilot
+# model is not advertised, so the guard never reaches it.
 PRICED = [
     AnthropicAIProvider,
     OpenAIAIProvider,
@@ -63,6 +65,7 @@ PRICED = [
     MistralAIProvider,
     XAIAIProvider,
     OpenRouterAIProvider,
+    PolarGridAIProvider,
 ]
 
 

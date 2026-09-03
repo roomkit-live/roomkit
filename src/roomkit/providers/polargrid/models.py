@@ -1,34 +1,44 @@
 """Curated catalog of PolarGrid chat models.
 
 Hand-maintained, offline snapshot returned by
-``PolarGridAIProvider.available_models``. Sourced from PolarGrid's model
-availability guide (https://polargrid.mintlify.app/guides/model-availability,
-verified 2026-06-11). Only the chat / LLM models usable through this
-provider's ``generate()`` are listed here; the live
+``PolarGridAIProvider.available_models``. Sources, all read 2026-09-02:
+PolarGrid's model pages (https://polargrid.mintlify.app/models), its
+model-availability guide (``/guides/model-availability``) and its regions
+guide (``/guides/regions``), cross-checked live against the autorouter, which
+answers ``/v1/route?model=<id>`` with 404 when no edge serves the id, and a
+sweep of every edge's ``/health``. Only the chat / LLM models usable through
+this provider's ``generate()`` are listed; the live
 ``PolarGridAIProvider.list_models()`` queries the connected edge and also
 surfaces the STT / TTS models (``whisper-large-v3-turbo``,
 ``cohere-transcribe-03-2026``, ``kokoro-82m``, ``tada-3b-ml``).
 
-Availability is **regional** — the catalog ids are not loaded on every
-edge. Live sweep of the LLM-serving edges on 2026-08-19, mid-rollout of
-qwen 3.8:
+The public LLM lineup is one model:
 
-- ``qwen-3.8-27b`` — yto-01, yvr-02, nyc-02, sfo-01, dfw-02 (it *replaced*
-  ``qwen-3.5-27b`` on each; the two are never co-loaded)
-- ``qwen-3.5-27b`` — **yul-01 only** now; nyc-01 and dfw-01, which also
-  carried it, no longer resolved in DNS at the sweep
-- ``qwen-3.6-35b-a3b`` — **yul-02 only** (unreachable at the 2026-08-19
-  sweep; entry kept from the 2026-07-09 live verification)
+- ``qwen-3.8-27b`` — fleet-wide: every public edge in the vendor's matrix,
+  and the id the autorouter routes.
+- ``qwen-3.5-27b`` — **retired 2026-08-20**. No edge serves it (the vendor's
+  page says so; the autorouter answers 404 for it) and a request fails with
+  ``404 model_not_loaded``. Removed rather than flagged, as the OpenAI
+  catalog does with an id past its shutdown: a dead id here only invites
+  the 404.
+- ``qwen-3.6-35b-a3b`` — **customer pilot**, served from no public edge (its
+  Montreal pilot node, yul-02, left the public fleet; the autorouter answers
+  404 for it). Kept in :data:`PILOT_MODELS` rather than :data:`MODELS`: a
+  pilot customer's ``supports_vision`` still resolves through
+  :data:`MODELS_BY_ID`, and nobody else is offered a model that 404s.
 
-PolarGrid's guide does not publish context windows, so they are left
-unset (``None`` = unknown) rather than guessed.
+Context windows come from the model pages (256K for 3.8; 8192 as *served*
+for 3.6, capped below its native window to bound KV-cache VRAM), the 3.8
+list price from the models page.
 """
 
 from __future__ import annotations
 
+from datetime import date
+
 from pydantic import BaseModel
 
-from roomkit.providers.ai.base import ModelInfo
+from roomkit.providers.ai.base import ModelInfo, ModelPricing
 
 
 class PolarGridRegion(BaseModel):
@@ -53,14 +63,22 @@ class PolarGridRegion(BaseModel):
 
 
 # Offline mirror of the SDK's own ``polargrid.client.POLARGRID_REGIONS``
-# (re-read from polargrid-sdk 0.10.0 on 2026-08-13 — 16 edges and 15 aliases,
+# (re-read from polargrid-sdk 0.10.0 on 2026-09-02 — 16 edges and 15 aliases,
 # matching this table exactly both ways), which is what actually routes
-# a request — the regions guide agrees, but the shipped table is the thing that
-# decides. Mirrored rather than imported because this module must load without
-# the optional SDK installed. An edge missing here is refused by
-# ``resolve_region_id`` even though the SDK could route it, so the floor in
-# pyproject.toml is what keeps the mirror truthful: chi/lax/phx/sea/was landed
-# in 0.9.0, mia-01 in 0.9.1, sfo-03 in 0.9.2. Bump both together.
+# a request — the shipped table is the thing that decides. Mirrored rather
+# than imported because this module must load without the optional SDK
+# installed. An edge missing here is refused by ``resolve_region_id`` even
+# though the SDK could route it, so the floor in pyproject.toml is what keeps
+# the mirror truthful: chi/lax/phx/sea/was landed in 0.9.0, mia-01 in 0.9.1,
+# sfo-03 in 0.9.2. Bump both together.
+#
+# The vendor's regions guide publishes 15 of these: ``yul-02`` (Montreal 02)
+# left the public fleet with the qwen-3.6 customer pilot and is no longer
+# listed, but the SDK still routes it and the edge still answers ``/health``
+# (sweep of 2026-09-02), so a pilot customer pinning it is not refused. That
+# sweep found every other edge healthy — nyc-01 and dfw-01 back in DNS after
+# the 2026-08-19 gap — except yto-01, which resolved but accepted no TCP
+# connection at the time: an outage, not a catalog fact.
 #
 # The Canada/US split is the data-residency signal (Law 25 / PIPEDA).
 REGIONS: list[PolarGridRegion] = [
@@ -86,7 +104,7 @@ _REGION_IDS: frozenset[str] = frozenset(r.id for r in REGIONS if r.id)
 
 # Friendly region aliases → canonical edge id. Mirrors the PolarGrid SDK's
 # own resolution table (``polargrid.client.REGION_ALIASES``, unchanged in
-# polargrid-sdk 0.10.0, re-verified 2026-08-19) so a region roomkit accepts is
+# polargrid-sdk 0.10.0, re-verified 2026-09-02) so a region roomkit accepts is
 # one the SDK can actually route. Deliberately not extended past what the SDK
 # carries: the newer edges have no alias upstream, and inventing one here would
 # make this a table roomkit maintains rather than a mirror it tracks. Their
@@ -132,36 +150,47 @@ def region_choices() -> str:
 
 
 # Vision: PolarGrid rolled out multimodal chat with polargrid-sdk 0.9.0 (the
-# chat endpoint now accepts OpenAI-shaped image_url content), but vision is the
-# deployed model's capability, not the SDK's. Only qwen-3.6-35b-a3b (yul-02)
-# actually reads the image — verified live 2026-07-09; qwen-3.5-27b accepts the
-# request but answers as if no image was sent, so it stays text-only.
-# qwen-3.8-27b is refused server-side ("model 'qwen-3.8-27b' does not support
-# image input", verified live 2026-08-19) — a clean error rather than 3.5's
-# silent ignore, but text-only all the same.
+# chat endpoint accepts OpenAI-shaped image_url content), but vision is the
+# deployed model's capability, not the SDK's. Only qwen-3.6-35b-a3b actually
+# reads the image — verified live on yul-02 on 2026-07-09, while that edge was
+# public. qwen-3.8-27b is refused server-side ("model 'qwen-3.8-27b' does not
+# support image input", verified live 2026-08-19): a clean error, text-only all
+# the same.
+_VERIFIED = date(2026, 9, 2)
+
 MODELS: list[ModelInfo] = [
-    ModelInfo(
-        id="qwen-3.5-27b",
-        display_name="Qwen 3.5 27B",
-        supports_vision=False,
-        capabilities=["completion", "tools"],
-    ),
-    ModelInfo(
-        id="qwen-3.6-35b-a3b",
-        display_name="Qwen 3.6 35B-A3B",
-        supports_vision=True,
-        # enable_thinking + vision validated end-to-end on yul-02.
-        capabilities=["completion", "tools", "thinking", "vision"],
-    ),
     ModelInfo(
         id="qwen-3.8-27b",
         display_name="Qwen 3.8 27B",
+        context_window=262_144,
         supports_vision=False,
         # completion + tools + enable_thinking validated live on yto-01
         # (2026-08-19); image input refused server-side.
         capabilities=["completion", "tools", "thinking"],
+        # The vendor's list price (models page, read 2026-09-02). It publishes
+        # no cache or long-context tier. A private edge bills what its
+        # contract says, which is not this catalog's business.
+        pricing=ModelPricing(input_per_million=0.20, output_per_million=0.75, verified=_VERIFIED),
     ),
 ]
+"""Chat models served on PolarGrid's public edges: what ``available_models``
+advertises, and what the priced-catalog guard covers."""
 
-# Model id → catalog entry, for the model-driven ``supports_vision`` lookup.
-MODELS_BY_ID: dict[str, ModelInfo] = {m.id: m for m in MODELS}
+PILOT_MODELS: list[ModelInfo] = [
+    ModelInfo(
+        id="qwen-3.6-35b-a3b",
+        display_name="Qwen 3.6 35B-A3B",
+        context_window=8192,
+        supports_vision=True,
+        # enable_thinking + vision validated end-to-end on yul-02 (2026-07-09).
+        capabilities=["completion", "tools", "thinking", "vision"],
+    ),
+]
+"""Chat models in limited availability (customer pilot), served from no public
+edge and quoted at no list price. Not advertised, still recognised: a pilot
+customer's ``supports_vision`` and ``list_models`` backfill resolve here."""
+
+# Model id → catalog entry, for the model-driven ``supports_vision`` lookup and
+# the ``list_models`` backfill — public and pilot alike, because both are
+# models the configured edge may serve.
+MODELS_BY_ID: dict[str, ModelInfo] = {m.id: m for m in (*MODELS, *PILOT_MODELS)}
