@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Protocol
 
-from roomkit.models.event import RoomEvent, TextContent
-
 if TYPE_CHECKING:
     import httpx
+
+    from roomkit.models.event import RoomEvent
 
 
 class HTTPTimeouts(Protocol):
@@ -18,13 +18,18 @@ class HTTPTimeouts(Protocol):
 
 
 def extract_event_text(event: RoomEvent) -> str:
-    """Extract text from a RoomEvent, falling back to body attribute or empty string."""
-    content = event.content
-    if isinstance(content, TextContent):
-        return content.body
-    if hasattr(content, "body"):
-        return str(content.body)
-    return ""
+    """The text a transport can send for ``event``: the content's body, or ``""``.
+
+    ``TextContent``, ``RichContent``, ``SystemContent`` and ``TemplateContent``
+    carry a body; media, location and tool-call content carry none and yield
+    the empty string, which the transports answer with ``empty_message``. A
+    template with no body yields the empty string too, never ``"None"``.
+    The memory layer reads events through
+    :func:`roomkit.memory.token_estimator.extract_event_text`, which builds on
+    this one and keeps a rendering for content that has no text.
+    """
+    body = getattr(event.content, "body", None)
+    return body if isinstance(body, str) else ""
 
 
 def http_timeout(config: HTTPTimeouts) -> httpx.Timeout:

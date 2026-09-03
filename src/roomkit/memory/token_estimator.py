@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING
 
+from roomkit.models.event import TextContent
 from roomkit.providers.ai.base import (
     AIContext,
     AIImagePart,
@@ -14,6 +15,7 @@ from roomkit.providers.ai.base import (
     AIToolCallPart,
     AIToolResultPart,
 )
+from roomkit.providers.utils import extract_event_text as _transport_text
 
 if TYPE_CHECKING:
     from roomkit.models.event import RoomEvent
@@ -60,11 +62,16 @@ def estimate_message_tokens(message: AIMessage) -> int:
 
 
 def extract_event_text(event: RoomEvent) -> str:
-    """Extract text body from a RoomEvent, falling back to str() for non-text content."""
-    from roomkit.models.event import TextContent
+    """The text of ``event`` as the memory layer reads it.
 
-    if isinstance(event.content, TextContent):
-        return event.content.body
+    The transports' extraction (:func:`roomkit.providers.utils.extract_event_text`),
+    with one difference: content that carries no text, a media attachment, a
+    location, a tool call, is rendered with ``str()`` rather than dropped,
+    because it still costs tokens and still belongs in a summary.
+    """
+    text = _transport_text(event)
+    if text or isinstance(event.content, TextContent):
+        return text
     return str(event.content)
 
 
