@@ -18,6 +18,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
+from roomkit.providers.gemini.sdk import build_genai_client, close_genai_client
 from roomkit.video.video_frame import VideoFrame
 from roomkit.video.vision.base import DEFAULT_VISION_PROMPT, VisionProvider, VisionResult
 from roomkit.video.vision.encode import frame_to_jpeg
@@ -35,6 +36,9 @@ class GeminiVisionConfig:
         prompt: System prompt for frame analysis.
         max_tokens: Max response tokens.
         temperature: Sampling temperature.
+        extra_config: Extra ``GenerateContentConfig`` fields.
+        timeout: HTTP timeout in seconds, the read budget of one frame analysis.
+        connect_timeout: TCP connect timeout in seconds, apart from ``timeout``.
     """
 
     api_key: str = field(default="", repr=False)
@@ -43,6 +47,8 @@ class GeminiVisionConfig:
     max_tokens: int = 1024
     temperature: float = 0.3
     extra_config: dict[str, Any] = field(default_factory=dict)
+    timeout: float = 30.0
+    connect_timeout: float = 5.0
 
 
 class GeminiVisionProvider(VisionProvider):
@@ -61,6 +67,7 @@ class GeminiVisionProvider(VisionProvider):
     def __init__(self, config: GeminiVisionConfig | None = None) -> None:
         self._config = config or GeminiVisionConfig()
         self._client: Any = None
+        self._http: Any = None
         self._types: Any = None
 
     @property
@@ -70,16 +77,14 @@ class GeminiVisionProvider(VisionProvider):
     def _get_client(self) -> Any:
         """Lazy-init the google-genai client."""
         if self._client is None:
-            try:
-                from google import genai as _genai
-                from google.genai import types as _types
-            except ImportError as exc:
-                raise ImportError(
-                    "google-genai is required for GeminiVisionProvider. "
-                    "Install with: pip install roomkit[gemini]"
-                ) from exc
+            # The client carries the connect/read split; see ``build_genai_client``
+            # for why it cannot go on the request.
+            self._client, self._http = build_genai_client(
+                self._config.api_key, self._config, provider="GeminiVisionProvider"
+            )
+            from google.genai import types as _types
+
             self._types = _types
-            self._client = _genai.Client(api_key=self._config.api_key)
         return self._client
 
     async def analyze_frame(
@@ -159,5 +164,7 @@ class GeminiVisionProvider(VisionProvider):
         )
 
     async def close(self) -> None:
-        self._client = None
+        client, self._client = self._client, None
+        http, self._http = self._http, None
         self._types = None
+        await close_genai_client(client, http)

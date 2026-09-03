@@ -2,8 +2,9 @@
 
 The providers' own clients are covered by
 ``tests/test_providers/test_http_timeouts.py``; this file walks the sites the
-first pass left out (RMK-149): Grok TTS, OpenAI vision, the WebSocket avatar
-(three clients), the SSE source and Gemini TTS/STT. Each case builds the
+first pass left out (RMK-149): Grok TTS, OpenAI and Gemini vision, the
+WebSocket avatar (three clients), the SSE source and Gemini TTS/STT. Each
+case builds the
 object with distinctive values and reads back the ``timeout`` its client
 actually received, so the test fails the day one passes the float again.
 
@@ -27,6 +28,7 @@ import pytest
 from roomkit.sources import sse as sse_module
 from roomkit.sources.sse import SSESource
 from roomkit.video.avatar.websocket import WebSocketAvatarProvider
+from roomkit.video.vision.gemini import GeminiVisionConfig, GeminiVisionProvider
 from roomkit.video.vision.openai import OpenAIVisionConfig, OpenAIVisionProvider
 from roomkit.voice.stt.gemini import GeminiSTTConfig, GeminiSTTProvider
 from roomkit.voice.tts.gemini import GeminiTTSConfig, GeminiTTSProvider
@@ -109,7 +111,9 @@ async def _sse() -> Any:
     return RecordingAsyncClient.calls[-1]["timeout"]
 
 
-async def _gemini_httpx_timeout(provider: GeminiTTSProvider | GeminiSTTProvider) -> Any:
+async def _gemini_httpx_timeout(
+    provider: GeminiTTSProvider | GeminiSTTProvider | GeminiVisionProvider,
+) -> Any:
     pytest.importorskip("google.genai")
     client = provider._get_client()
     try:
@@ -130,6 +134,11 @@ async def _gemini_stt() -> Any:
     return await _gemini_httpx_timeout(GeminiSTTProvider(config))
 
 
+async def _gemini_vision() -> Any:
+    config = GeminiVisionConfig(api_key="k", **_TIMEOUTS)
+    return await _gemini_httpx_timeout(GeminiVisionProvider(config))
+
+
 # (builder, expected read budget): the SSE source leaves its read side
 # unbounded on purpose, so the stream survives idle periods between events.
 CASES: dict[str, tuple[Builder, float | None]] = {
@@ -141,6 +150,7 @@ CASES: dict[str, tuple[Builder, float | None]] = {
     "sse": (_sse, None),
     "gemini-tts": (_gemini_tts, TIMEOUT),
     "gemini-stt": (_gemini_stt, TIMEOUT),
+    "gemini-vision": (_gemini_vision, TIMEOUT),
 }
 
 
@@ -169,6 +179,7 @@ CONFIGS: list[tuple[type[Any], dict[str, Any]]] = [
     (OpenAIVisionConfig, {}),
     (GeminiTTSConfig, {"api_key": "k"}),
     (GeminiSTTConfig, {"api_key": "k"}),
+    (GeminiVisionConfig, {"api_key": "k"}),
 ]
 
 

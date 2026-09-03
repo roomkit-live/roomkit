@@ -79,8 +79,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   too.** Grok TTS, OpenAI vision, the WebSocket avatar, the SSE source and
   Gemini TTS/STT still handed httpx or their SDK `timeout` as a bare float,
   so a dead host held them for the read budget (30 to 600 s) before the
-  kernel gave up. They carry `connect_timeout` (default 5 s) beside
-  `timeout` now: a field on `GrokTTSConfig`, `OpenAIVisionConfig`,
+  kernel gave up; Gemini vision had no timeout at all, on a per-frame path.
+  They carry `connect_timeout` (default 5 s) beside `timeout` now: a field
+  on `GrokTTSConfig`, `OpenAIVisionConfig`, `GeminiVisionConfig`,
   `GeminiTTSConfig` and `GeminiSTTConfig`, a keyword on
   `WebSocketAvatarProvider` and `SSESource`. Two differ from the rest.
   `SSESource.timeout` no longer bounds the connect, only write and pool; its
@@ -91,7 +92,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   what keeps the SDK's Files API on httpx when aiohttp happens to be
   installed (the `twilio` and `gradium` extras pull it in), where the SDK
   would otherwise reuse httpx client args as aiohttp request kwargs. A
-  parametrized test reads back the timeout each of these eight client
+  parametrized test reads back the timeout each of these nine client
   constructions received, and two more drive the real SDK to the transport.
 - **Gemini STT bounds its Files API calls.** `files.upload` and
   `files.delete` went through google-genai's classic request path, which
