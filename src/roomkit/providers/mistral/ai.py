@@ -27,9 +27,9 @@ from roomkit.providers.ai.base import (
     StreamThinkingDelta,
     StreamToolCall,
 )
+from roomkit.providers.ai.openai_dialect import ThinkTagParser, fold_tool_call_fragment
 from roomkit.providers.mistral.config import MistralConfig
 from roomkit.providers.mistral.models import MODELS
-from roomkit.providers.openai.response import _ThinkTagParser, fold_tool_call_fragment
 
 
 class MistralAIProvider(AIProvider):
@@ -292,7 +292,7 @@ class MistralAIProvider(AIProvider):
         kwargs = self._build_kwargs(context)
         t0 = time.monotonic()
         first_token = True
-        parser = _ThinkTagParser()
+        parser = ThinkTagParser()
 
         # Accumulate tool call deltas across chunks
         tool_call_accum: dict[int, dict[str, Any]] = {}

@@ -385,7 +385,7 @@ def test_the_shared_phrase_list_covers_both_packages_wordings() -> None:
 
 
 def test_openai_status_errors_carry_the_typed_fact() -> None:
-    from roomkit.providers.openai.response import _overflow_fact
+    from roomkit.providers.ai.openai_dialect import overflow_fact
 
     class _FakeStatusError(Exception):
         def __init__(self, body: Any) -> None:
@@ -393,9 +393,9 @@ def test_openai_status_errors_carry_the_typed_fact() -> None:
 
     overflow = _FakeStatusError({"error": {"code": "context_length_exceeded"}})
     other = _FakeStatusError({"error": {"code": "invalid_request_error"}})
-    assert _overflow_fact(overflow) is True
+    assert overflow_fact(overflow) is True
     # A miss is "nobody classified", never "no": the compatible vendors put
     # integers or generic strings in ``code`` and their overflows must stay
     # catchable by the phrase fallback.
-    assert _overflow_fact(other) is None
-    assert _overflow_fact(_FakeStatusError(None)) is None
+    assert overflow_fact(other) is None
+    assert overflow_fact(_FakeStatusError(None)) is None

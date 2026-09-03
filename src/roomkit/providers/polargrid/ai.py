@@ -61,9 +61,9 @@ from roomkit.providers.ai.base import (
     StreamToolCall,
     StreamToolCallDelta,
 )
-from roomkit.providers.openai.response import (
-    _extract_think_tags,
-    _ThinkTagParser,
+from roomkit.providers.ai.openai_dialect import (
+    ThinkTagParser,
+    extract_think_tags,
     fold_tool_call_fragment,
 )
 from roomkit.providers.polargrid.config import PolarGridConfig
@@ -463,7 +463,7 @@ class PolarGridAIProvider(AIProvider):
         raw_content = getattr(message, "content", "") or ""
         # qwen surfaces reasoning inline as <think>...</think>; split it out
         # so the answer text is clean and the reasoning rides on .thinking.
-        thinking, content = _extract_think_tags(raw_content)
+        thinking, content = extract_think_tags(raw_content)
         finish_reason = getattr(choice, "finish_reason", None)
         usage = self._extract_usage(response)
         model = getattr(response, "model", self._config.model)
@@ -506,7 +506,7 @@ class PolarGridAIProvider(AIProvider):
         finish_reason: str | None = None
         usage: dict[str, int] = {}
         tool_accum: dict[int, dict[str, str]] = {}
-        parser = _ThinkTagParser()
+        parser = ThinkTagParser()
 
         try:
             stream = client.chat_completion_stream(request)

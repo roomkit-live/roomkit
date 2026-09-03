@@ -19,8 +19,8 @@ from roomkit.providers.ai.base import (
     StreamToolCall,
     StreamToolCallDelta,
 )
+from roomkit.providers.ai.openai_dialect import ThinkTagParser, extract_think_tags
 from roomkit.providers.openai.config import OpenAIConfig
-from roomkit.providers.openai.response import _extract_think_tags, _ThinkTagParser
 
 
 class _FakeAPIStatusError(Exception):
@@ -958,18 +958,18 @@ class TestThinkTagParser:
     """Unit tests for the streaming <think> tag parser."""
 
     def test_no_tags(self) -> None:
-        parser = _ThinkTagParser()
+        parser = ThinkTagParser()
         result = parser.feed("hello world")
         assert result == [("text", "hello world")]
         assert parser.flush() == []
 
     def test_complete_tag_single_chunk(self) -> None:
-        parser = _ThinkTagParser()
+        parser = ThinkTagParser()
         result = parser.feed("<think>reasoning</think>answer")
         assert result == [("thinking", "reasoning"), ("text", "answer")]
 
     def test_tag_split_across_chunks(self) -> None:
-        parser = _ThinkTagParser()
+        parser = ThinkTagParser()
         r1 = parser.feed("<thi")
         r2 = parser.feed("nk>reason")
         r3 = parser.feed("</think>ans")
@@ -981,7 +981,7 @@ class TestThinkTagParser:
         assert text == "ans"
 
     def test_close_tag_split(self) -> None:
-        parser = _ThinkTagParser()
+        parser = ThinkTagParser()
         r1 = parser.feed("<think>ok</th")
         r2 = parser.feed("ink>done")
         r3 = parser.flush()
@@ -992,19 +992,19 @@ class TestThinkTagParser:
         assert text == "done"
 
     def test_empty_think_block(self) -> None:
-        parser = _ThinkTagParser()
+        parser = ThinkTagParser()
         result = parser.feed("<think></think>answer")
         assert result == [("text", "answer")]
 
     def test_only_thinking_no_text(self) -> None:
-        parser = _ThinkTagParser()
+        parser = ThinkTagParser()
         r1 = parser.feed("<think>just thinking")
         r2 = parser.flush()
         thinking = "".join(s for k, s in r1 + r2 if k == "thinking")
         assert thinking == "just thinking"
 
     def test_multiple_small_chunks(self) -> None:
-        parser = _ThinkTagParser()
+        parser = ThinkTagParser()
         all_results = []
         for char in "<think>abc</think>xyz":
             all_results.extend(parser.feed(char))
@@ -1020,27 +1020,27 @@ class TestExtractThinkTags:
     """Unit tests for the non-streaming <think> tag extraction."""
 
     def test_no_tags(self) -> None:
-        thinking, text = _extract_think_tags("plain response")
+        thinking, text = extract_think_tags("plain response")
         assert thinking is None
         assert text == "plain response"
 
     def test_basic_extraction(self) -> None:
-        thinking, text = _extract_think_tags("<think>Let me think</think>The answer is 42.")
+        thinking, text = extract_think_tags("<think>Let me think</think>The answer is 42.")
         assert thinking == "Let me think"
         assert text == "The answer is 42."
 
     def test_multiline_thinking(self) -> None:
-        thinking, text = _extract_think_tags("<think>Step 1: analyze\nStep 2: solve</think>Done.")
+        thinking, text = extract_think_tags("<think>Step 1: analyze\nStep 2: solve</think>Done.")
         assert thinking == "Step 1: analyze\nStep 2: solve"
         assert text == "Done."
 
     def test_empty_think_block(self) -> None:
-        thinking, text = _extract_think_tags("<think></think>answer")
+        thinking, text = extract_think_tags("<think></think>answer")
         assert thinking is None
         assert text == "answer"
 
     def test_whitespace_only_think_block(self) -> None:
-        thinking, text = _extract_think_tags("<think>  \n  </think>answer")
+        thinking, text = extract_think_tags("<think>  \n  </think>answer")
         assert thinking is None
         assert text == "answer"
 

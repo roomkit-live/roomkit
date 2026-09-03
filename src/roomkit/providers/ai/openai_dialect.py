@@ -1,12 +1,12 @@
-"""Read what an OpenAI-dialect server sends back.
+"""The OpenAI Chat Completions dialect, read on the way back.
 
-Shared by every provider speaking OpenAI's Chat Completions dialect —
-``OpenAIAIProvider`` and its derivatives here, Mistral and PolarGrid in
-their own packages: the two reasoning conventions (inline ``<think>`` tags
-and a dedicated field), the way a tool call is fragmented across stream
-chunks, and the structured context-overflow fact off a status error.
-Nothing here shapes a request; ``ai.py`` owns that side, on the class,
-because its derivatives override it.
+Several providers speak it: ``OpenAIAIProvider`` and its derivatives, Mistral
+and PolarGrid in their own packages. What they share is how a response is
+read, not how a request is built: the two reasoning conventions (inline
+``<think>`` tags and a dedicated field), the way a tool call is fragmented
+across stream chunks, and the structured context-overflow fact off a status
+error. It lives with the AI provider ABC rather than under one vendor because
+three vendor packages consume it, and nothing here shapes a request.
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ from roomkit.providers.ai.base import StreamToolCallDelta
 _THINK_RE = re.compile(r"<think>(.*?)</think>", re.DOTALL)
 
 
-def _field_reasoning(carrier: Any) -> str | None:
+def field_reasoning(carrier: Any) -> str | None:
     """Read a reasoning trace carried in its own field rather than inline.
 
     ``<think>`` tags are one of two conventions OpenAI-compatible servers use.
@@ -32,7 +32,7 @@ def _field_reasoning(carrier: Any) -> str | None:
     return value if isinstance(value, str) and value else None
 
 
-def _merge_thinking(inline: str | None, field: str | None) -> str | None:
+def merge_thinking(inline: str | None, field: str | None) -> str | None:
     """Combine the two reasoning conventions into one trace.
 
     A server uses one or the other, so in practice exactly one side is set;
@@ -44,7 +44,7 @@ def _merge_thinking(inline: str | None, field: str | None) -> str | None:
     return f"{inline}{field}" if inline else field
 
 
-class _ThinkTagParser:
+class ThinkTagParser:
     """Stateful parser for ``<think>...</think>`` tags in a text stream.
 
     vLLM / Ollama models (DeepSeek-R1, QwQ, etc.) emit reasoning inside
@@ -112,7 +112,7 @@ class _ThinkTagParser:
         return 0
 
 
-def _overflow_fact(exc: object) -> bool | None:
+def overflow_fact(exc: object) -> bool | None:
     """The structured overflow fact off an OpenAI-style status error, if any.
 
     OpenAI and Azure carry ``error.code == "context_length_exceeded"`` in the
@@ -158,7 +158,7 @@ def fold_tool_call_fragment(
     )
 
 
-def _extract_think_tags(text: str) -> tuple[str | None, str]:
+def extract_think_tags(text: str) -> tuple[str | None, str]:
     """Extract ``<think>...</think>`` content from *text*.
 
     Returns:
