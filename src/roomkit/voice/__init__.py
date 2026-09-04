@@ -110,6 +110,7 @@ from roomkit.voice.pipeline import (
 )
 from roomkit.voice.stt.base import STTProvider
 from roomkit.voice.stt.language import STTLanguageLock
+from roomkit.voice.testing import ScenarioVoiceBackend, VoiceTrace
 from roomkit.voice.tts.base import TTSProvider
 from roomkit.voice.tts.filters import StripBrackets, StripInternalTags, TTSStreamFilter
 
@@ -184,6 +185,9 @@ __all__ = [
     "PythonMixerProvider",
     "TurnDetector",
     "VADProvider",
+    # Test bench
+    "ScenarioVoiceBackend",
+    "VoiceTrace",
     # Data types
     "AGCConfig",
     "BackchannelContext",

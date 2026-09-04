@@ -18,6 +18,7 @@ from roomkit.voice.base import VoiceSessionState
 from roomkit.voice.pipeline import AudioPipelineConfig, MockVADProvider
 from roomkit.voice.pipeline.vad.base import VADEvent, VADEventType
 from roomkit.voice.stt.mock import MockSTTProvider
+from roomkit.voice.testing import VOICE_TRIGGERS, ScenarioVoiceBackend, VoiceTrace, tone
 from roomkit.voice.tts.mock import MockTTSProvider
 
 
@@ -36,13 +37,14 @@ class TestVoicePipelineIntegration:
         """Test: speech -> transcription -> AI response -> TTS -> audio output."""
         stt = MockSTTProvider(transcripts=["Hello, how are you?"])
         tts = MockTTSProvider()
-        backend = MockVoiceBackend()
+        backend = ScenarioVoiceBackend()
         ai = MockAIProvider(responses=["I'm doing great, thanks for asking!"])
 
         vad = MockVADProvider(events=_speech_events())
         pipeline = AudioPipelineConfig(vad=vad)
 
         kit = RoomKit(stt=stt, tts=tts, voice=backend)
+        trace = VoiceTrace(kit)
 
         voice_channel = VoiceChannel(
             "voice-1", stt=stt, tts=tts, backend=backend, pipeline=pipeline
@@ -59,12 +61,10 @@ class TestVoicePipelineIntegration:
         session = await kit.connect_voice(room.id, "user-1", "voice-1")
         assert session.state == VoiceSessionState.ACTIVE
 
-        # Simulate two audio frames -> VAD fires SPEECH_START then SPEECH_END
-        await backend.simulate_audio_received(session, AudioFrame(data=b"frame-10"))
-        await backend.simulate_audio_received(session, AudioFrame(data=b"frame-20"))
-
-        # Give the async pipeline time to process
-        await asyncio.sleep(0.15)
+        # Two frames -> VAD fires SPEECH_START then SPEECH_END. The turn is
+        # over once its TTS has been sent: AFTER_TTS is on the timeline.
+        await backend.play(session, tone(40), realtime=False)
+        await trace.wait_for(HookTrigger.AFTER_TTS)
 
         # Verify STT was called
         assert len(stt.calls) == 1
@@ -85,7 +85,7 @@ class TestVoicePipelineIntegration:
         """Test that voice hooks fire in the correct order."""
         stt = MockSTTProvider(transcripts=["Test message"])
         tts = MockTTSProvider()
-        backend = MockVoiceBackend()
+        backend = ScenarioVoiceBackend()
 
         # Three frames: SPEECH_START, then nothing, then SPEECH_END with audio
         vad = MockVADProvider(
@@ -98,6 +98,7 @@ class TestVoicePipelineIntegration:
         pipeline = AudioPipelineConfig(vad=vad)
 
         kit = RoomKit(stt=stt, tts=tts, voice=backend)
+        trace = VoiceTrace(kit, triggers=(*VOICE_TRIGGERS, HookTrigger.AFTER_BROADCAST))
 
         voice_channel = VoiceChannel(
             "voice-1", stt=stt, tts=tts, backend=backend, pipeline=pipeline
@@ -133,11 +134,10 @@ class TestVoicePipelineIntegration:
 
         session = await kit.connect_voice(room.id, "user-1", "voice-1")
 
-        # Simulate 3 audio frames (matching the 3 VAD events)
-        for i in range(3):
-            await backend.simulate_audio_received(session, AudioFrame(data=f"fr-{i:03d}".encode()))
-
-        await asyncio.sleep(0.15)
+        # Three frames (matching the three VAD events). The transcription's
+        # broadcast is the last hook of the turn: wait for it, not for time.
+        await backend.play(session, tone(60), realtime=False)
+        await trace.wait_for(HookTrigger.AFTER_BROADCAST)
 
         assert "ON_SPEECH_START" in hook_order
         assert "ON_SPEECH_END" in hook_order
@@ -692,7 +692,7 @@ class TestBargeInIntegration:
         caps = VoiceCapability.INTERRUPTION | VoiceCapability.BARGE_IN
         stt = MockSTTProvider(transcripts=["Interrupt!"])
         tts = MockTTSProvider()
-        backend = MockVoiceBackend(capabilities=caps)
+        backend = ScenarioVoiceBackend(capabilities=caps)
 
         # VAD will fire SPEECH_START (which triggers barge-in check)
         vad = MockVADProvider(
@@ -713,6 +713,7 @@ class TestBargeInIntegration:
         )
 
         kit = RoomKit(stt=stt, tts=tts, voice=backend)
+        trace = VoiceTrace(kit)
         kit.register_channel(channel)
 
         room = await kit.create_room()
@@ -724,38 +725,27 @@ class TestBargeInIntegration:
         )
         channel.bind_session(session, room.id, binding)
 
-        barge_in_events: list[object] = []
-        cancelled_events: list[object] = []
-
-        @kit.hook(HookTrigger.ON_BARGE_IN, HookExecution.ASYNC)
-        async def on_barge_in(event, context):
-            barge_in_events.append(event)
-
-        @kit.hook(HookTrigger.ON_TTS_CANCELLED, HookExecution.ASYNC)
-        async def on_cancelled(event, context):
-            cancelled_events.append(event)
-
-        # Simulate TTS playing
+        # Simulate TTS playing, started long enough ago to clear the barge-in
+        # threshold: backdating the playback replaces a sleep that waited it out.
         channel._playing_sessions[session.id] = TTSPlaybackState(
             session_id=session.id,
             text="Hello, how can I help you today?",
+            started_at=datetime.now(UTC) - timedelta(milliseconds=200),
         )
 
-        # Wait for threshold
-        await asyncio.sleep(0.1)
+        # Pipeline fires SPEECH_START -> barge-in, which cancels the TTS.
+        await backend.play(session, tone(20), realtime=False)
+        cancelled = await trace.wait_for(HookTrigger.ON_TTS_CANCELLED)
 
-        # Pipeline fires SPEECH_START -> triggers barge-in
-        await backend.simulate_audio_received(session, AudioFrame(data=b"speech"))
-        await asyncio.sleep(0.1)
+        barge_ins = trace.entries(HookTrigger.ON_BARGE_IN)
+        assert len(barge_ins) == 1
+        assert isinstance(barge_ins[0].payload, BargeInEvent)
+        assert barge_ins[0].payload.interrupted_text == "Hello, how can I help you today?"
+        assert barge_ins[0].payload.audio_position_ms > 0
 
-        assert len(barge_in_events) == 1
-        assert isinstance(barge_in_events[0], BargeInEvent)
-        assert barge_in_events[0].interrupted_text == "Hello, how can I help you today?"
-        assert barge_in_events[0].audio_position_ms > 0
-
-        assert len(cancelled_events) == 1
-        assert isinstance(cancelled_events[0], TTSCancelledEvent)
-        assert cancelled_events[0].reason == "barge_in"
+        assert len(trace.entries(HookTrigger.ON_TTS_CANCELLED)) == 1
+        assert isinstance(cancelled.payload, TTSCancelledEvent)
+        assert cancelled.payload.reason == "barge_in"
 
         await kit.close()
 

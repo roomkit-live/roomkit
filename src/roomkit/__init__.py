@@ -184,6 +184,7 @@ from roomkit.video.pipeline.filter import (
 from roomkit.voice.pipeline.agc.simple import SimpleAGCProvider
 from roomkit.voice.pipeline.denoiser.webrtc import WebRTCNoiseSuppressorProvider
 from roomkit.voice.stt.language import STTLanguageLock
+from roomkit.voice.testing import ScenarioVoiceBackend, VoiceTrace
 
 # Console (optional — requires `rich`)
 with contextlib.suppress(ImportError):
@@ -284,6 +285,8 @@ __all__ = [
     "SimpleAGCProvider",
     "WebRTCNoiseSuppressorProvider",
     "STTLanguageLock",
+    "ScenarioVoiceBackend",
+    "VoiceTrace",
     "WebSocketChannel",
     "WhatsAppChannel",
     "WhatsAppPersonalChannel",

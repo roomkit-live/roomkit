@@ -19,6 +19,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   when a regenerate would do nothing; `RoomClosedError` when the room refuses
   new events, on `send_event`'s reasoning: an accessor that returns an event
   has no way to hand back a refusal. (RMK-161)
+- **A voice test bench: `roomkit.voice.testing`.** `ScenarioVoiceBackend`
+  extends `MockVoiceBackend` into a simulated phone: `play()` cuts a WAV or a
+  `PCMAudio` clip into 20 ms frames delivered at a transport's cadence (or
+  back to back with `realtime=False`), and everything the bot sends is
+  captured per session, readable as a clip or written to a WAV. `VoiceTrace`
+  subscribes to the voice hooks of a kit and records when each fired:
+  `await trace.wait_for(HookTrigger.ON_TRANSCRIPTION)` replaces the
+  `asyncio.sleep` a voice test waited with, and the turn's order and
+  latencies read off the timeline. `read_wav`, `write_wav`, `pcm_frames`,
+  `silence` and `tone` are the stdlib helpers around `PCMAudio`. Three
+  integration tests run on it without a sleep; the scenario runner and the
+  audio-local and live levels follow. Example:
+  `examples/voice_scenario_backend.py`. (RMK-162)
 
 ### Fixed
 
