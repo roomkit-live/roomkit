@@ -2178,7 +2178,13 @@ class TestARosterWriteOutlivingTheChannel:
         than by a fix. This pins what remains — several callbacks in flight cost
         one deadline between them, not one each.
         """
-        budget = 0.1
+        # One second, not a tenth: the property is that three stuck callbacks
+        # cost one budget between them, and it reads the same at any size.
+        # At 0.1 s the leave step that closes the room after them was cancelled
+        # on CI's Python 3.12 runner three times in a row while it passed
+        # everywhere else: a budget a busy event loop can breach measures the
+        # runner, not the shutdown.
+        budget = 1.0
         monkeypatch.setattr(activity_module, "DRAIN_TIMEOUT_S", budget)
         resolving = asyncio.Event()
         gate = asyncio.Event()
