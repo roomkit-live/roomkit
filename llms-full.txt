@@ -4978,6 +4978,39 @@ backend = MockVoiceBackend()
 backend.simulate_audio_received(session, audio_frame)
 ```
 
+## Voice Test Bench
+
+`roomkit.voice.testing` replaces frame-by-frame injection and `asyncio.sleep`
+with a simulated phone and a hook timeline. `ScenarioVoiceBackend` extends
+`MockVoiceBackend`: `play()` cuts a WAV or a `PCMAudio` clip into 20 ms frames
+delivered at a transport's cadence (or back to back with `realtime=False`) and
+captures what the bot sends per session. `VoiceTrace` records when each voice
+hook fired, so a test waits for the hook it needs and reads the turn's order and
+latencies off the timeline.
+
+```python
+from roomkit import HookTrigger, RoomKit, ScenarioVoiceBackend, VoiceTrace
+from roomkit.voice.testing import read_wav, tone, write_wav
+
+backend = ScenarioVoiceBackend()
+kit = RoomKit(stt=stt, tts=tts, voice=backend)
+trace = VoiceTrace(kit)                     # before the first session
+# ... register the VoiceChannel, create the room, join the session ...
+
+await backend.play(session, tone(300), realtime=False)   # or a WAV path
+heard = await trace.wait_for(HookTrigger.ON_TRANSCRIPTION, timeout=2)
+await trace.wait_for(HookTrigger.AFTER_TTS)              # TimeoutError names what did fire
+
+speech_end = trace.first(HookTrigger.ON_SPEECH_END)
+assert speech_end is not None
+trace.elapsed_ms(speech_end, heard)                      # STT latency, ms
+trace.sequence()                                         # the hooks, in order
+backend.write_capture(session, "reports/bot.wav")        # what the bot said
+```
+
+`read_wav`, `write_wav`, `pcm_frames`, `silence` and `tone` are the stdlib WAV
+and PCM helpers around `PCMAudio`. Example: `examples/voice_scenario_backend.py`.
+
 ## Mock Pipeline Providers
 
 Every pipeline stage has a mock that accepts pre-configured event sequences:
@@ -5449,6 +5482,8 @@ kit = RoomKit(
 | Method | Description |
 |--------|-------------|
 | `process_inbound(message, room_id?, defer_delivery=False)` | Process an inbound message; deferred results are backfilled by `DeliveryHandle.wait()` |
+| `regenerate_response(room_id)` | Re-run the intelligence channel on the newest accepted transport message; `InboundResult(blocked=True, reason="room_closed")` on a closed or archived room |
+| `regenerate_target(room_id)` | The event `regenerate_response` would replay, or `None`; raises `RoomClosedError` when the room refuses events |
 
 ### Hooks
 
@@ -5547,6 +5582,7 @@ from roomkit.voice.backends.mock import MockVoiceBackend
 from roomkit.voice.stt.mock import MockSTTProvider
 from roomkit.voice.tts.mock import MockTTSProvider
 from roomkit.voice.realtime.mock import MockRealtimeProvider, MockRealtimeTransport
+from roomkit.voice.testing import ScenarioVoiceBackend, VoiceTrace, PCMAudio, read_wav, write_wav
 ```
 
 ### Pipeline

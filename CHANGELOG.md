@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.64.0] — 2026-09-04
+
 ### Added
 
 - **`regenerate_target(room_id)` names the event a regenerate re-runs.**
@@ -6915,7 +6917,8 @@ See entries `0.7.0a1` through `0.7.0a18` below.
 - `STTProvider.transcribe()` returns `TranscriptionResult` (Phase 3.1)
 - Framework event names enriched with payloads (Phase 4)
 
-[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.63.0...HEAD
+[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.64.0...HEAD
+[0.64.0]: https://github.com/roomkit-live/roomkit/compare/v0.63.0...v0.64.0
 [0.63.0]: https://github.com/roomkit-live/roomkit/compare/v0.62.0...v0.63.0
 [0.62.0]: https://github.com/roomkit-live/roomkit/compare/v0.61.0...v0.62.0
 [0.61.0]: https://github.com/roomkit-live/roomkit/compare/v0.60.0...v0.61.0

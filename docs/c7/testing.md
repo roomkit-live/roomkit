@@ -86,6 +86,39 @@ backend = MockVoiceBackend()
 backend.simulate_audio_received(session, audio_frame)
 ```
 
+## Voice Test Bench
+
+`roomkit.voice.testing` replaces frame-by-frame injection and `asyncio.sleep`
+with a simulated phone and a hook timeline. `ScenarioVoiceBackend` extends
+`MockVoiceBackend`: `play()` cuts a WAV or a `PCMAudio` clip into 20 ms frames
+delivered at a transport's cadence (or back to back with `realtime=False`) and
+captures what the bot sends per session. `VoiceTrace` records when each voice
+hook fired, so a test waits for the hook it needs and reads the turn's order and
+latencies off the timeline.
+
+```python
+from roomkit import HookTrigger, RoomKit, ScenarioVoiceBackend, VoiceTrace
+from roomkit.voice.testing import read_wav, tone, write_wav
+
+backend = ScenarioVoiceBackend()
+kit = RoomKit(stt=stt, tts=tts, voice=backend)
+trace = VoiceTrace(kit)                     # before the first session
+# ... register the VoiceChannel, create the room, join the session ...
+
+await backend.play(session, tone(300), realtime=False)   # or a WAV path
+heard = await trace.wait_for(HookTrigger.ON_TRANSCRIPTION, timeout=2)
+await trace.wait_for(HookTrigger.AFTER_TTS)              # TimeoutError names what did fire
+
+speech_end = trace.first(HookTrigger.ON_SPEECH_END)
+assert speech_end is not None
+trace.elapsed_ms(speech_end, heard)                      # STT latency, ms
+trace.sequence()                                         # the hooks, in order
+backend.write_capture(session, "reports/bot.wav")        # what the bot said
+```
+
+`read_wav`, `write_wav`, `pcm_frames`, `silence` and `tone` are the stdlib WAV
+and PCM helpers around `PCMAudio`. Example: `examples/voice_scenario_backend.py`.
+
 ## Mock Pipeline Providers
 
 Every pipeline stage has a mock that accepts pre-configured event sequences:
