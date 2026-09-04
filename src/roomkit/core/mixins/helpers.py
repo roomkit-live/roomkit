@@ -66,7 +66,7 @@ loaded."""
 # EVERY point where the timeline can grow"), and those paths span mixins.
 _REFUSING_STATUSES = frozenset({RoomStatus.CLOSED, RoomStatus.ARCHIVED})
 
-RefusedOperation = Literal["inbound", "reentry", "regenerate"]
+_RefusedOperation = Literal["inbound", "reentry", "regenerate"]
 """The path a ``room_refused_event`` names in ``data["operation"]`` (RFC §8.2)."""
 
 
@@ -170,7 +170,7 @@ class HelpersMixin:
         room_id: str,
         *,
         status: RoomStatus | None,
-        operation: RefusedOperation,
+        operation: _RefusedOperation,
         event: RoomEvent | None,
     ) -> InboundResult:
         """Refuse a write to a room whose status refuses new events (RFC §5.1).
@@ -188,21 +188,23 @@ class HelpersMixin:
         ``None`` only when the room no longer exists (a reentry whose room was
         deleted while its trigger's delivery set ran).
         """
+        event_id = event.id if event is not None else None
+        event_type = str(event.type) if event is not None else None
         logger.info(
             "Refused %s: room %s is %s",
             operation,
             room_id,
             status if status is not None else "gone",
-            extra={"room_id": room_id, "event_id": event.id if event is not None else None},
+            extra={"room_id": room_id, "event_id": event_id},
         )
         await self._emit_framework_event(
             "room_refused_event",
             room_id=room_id,
-            event_id=event.id if event is not None else None,
+            event_id=event_id,
             data={
                 "status": str(status) if status is not None else None,
                 "operation": operation,
-                "event_type": str(event.type) if event is not None else None,
+                "event_type": event_type,
             },
         )
         return InboundResult(blocked=True, reason="room_closed")

@@ -733,6 +733,8 @@ class LaneExecutionMixin(HelpersMixin):
             # have been closed while the trigger's delivery set was executing:
             # an AI answer that lands after close_room() must not grow a closed
             # room's timeline. Nothing is written, not even a BLOCKED record.
+            # The blocked result the helper returns is for a caller with
+            # someone to answer; a reentry pass has none, so it is dropped.
             room = await self._store.get_room(room_id)
             if _refuses_writes(room):
                 await self._refuse_closed_room(

@@ -67,6 +67,17 @@ class ClosingAIChannel(Channel):
         return ChannelOutput.empty()
 
 
+class DeletingAIChannel(ClosingAIChannel):
+    """Deletes the room while answering: the reentry pass finds no room."""
+
+    async def on_event(
+        self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
+    ) -> ChannelOutput:
+        output = await super().on_event(event, binding, context)
+        await self._kit.store.delete_room(event.room_id)
+        return output
+
+
 def _user_msg() -> InboundMessage:
     return InboundMessage(
         channel_id="sms1",
@@ -105,6 +116,33 @@ class TestReentryMeetsTheStatusGate:
         assert refused[0].event_id == ai.responses[0].id
         assert refused[0].data == {
             "status": str(RoomStatus.CLOSED),
+            "operation": "reentry",
+            "event_type": str(EventType.MESSAGE),
+        }
+
+    async def test_a_room_deleted_meanwhile_refuses_with_a_null_status(self) -> None:
+        """RFC §8.2: ``status`` is null only when the room no longer exists —
+        the one contract value a closed room cannot produce."""
+        kit = RoomKit()
+        ai = DeletingAIChannel("ai1", kit)
+        kit.register_channel(SimpleChannel("sms1"))
+        kit.register_channel(ai)
+        await kit.create_room(room_id="r1")
+        await kit.attach_channel("r1", "sms1")
+        await kit.attach_channel("r1", "ai1")
+        refused: list[FrameworkEvent] = []
+
+        @kit.on("room_refused_event")
+        async def on_refused(fe: FrameworkEvent) -> None:
+            refused.append(fe)
+
+        await kit.process_inbound(_user_msg())
+
+        assert await kit.store.get_room("r1") is None
+        assert len(refused) == 1
+        assert refused[0].event_id == ai.responses[0].id
+        assert refused[0].data == {
+            "status": None,
             "operation": "reentry",
             "event_type": str(EventType.MESSAGE),
         }
