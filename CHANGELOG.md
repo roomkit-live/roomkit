@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`regenerate_response(room_id, trigger_id=...)` refuses a trigger that
+  moved.** A host regenerates in two steps — read `regenerate_target`, delete
+  the answer it replaces, regenerate — and the read is taken outside the room
+  lock, so a message can land in between: the pipeline answers it, and a
+  regenerate that re-selects under the lock answered it a second time, with
+  the earlier answer already gone. Naming the trigger makes the call a
+  compare-and-regenerate: when the selection under the lock is no longer that
+  event (another message moved in, or nothing qualifies any more) it returns
+  `InboundResult(blocked=True, reason="trigger_moved")` before the agent runs
+  and with nothing written. `room_closed` still wins on a closed room; without
+  `trigger_id` nothing changes. (RMK-167)
+
 ### Changed
 
 - **`room_refused_event` has one `data` contract, whichever path refused.**

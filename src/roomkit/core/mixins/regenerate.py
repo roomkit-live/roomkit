@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from roomkit.core.exceptions import RoomClosedError
@@ -17,6 +18,8 @@ if TYPE_CHECKING:
     from roomkit.models.channel import ChannelBinding
     from roomkit.models.context import RoomContext
     from roomkit.store.base import ConversationStore
+
+logger = logging.getLogger("roomkit.framework")
 
 
 @runtime_checkable
@@ -128,7 +131,9 @@ class RegenerateMixin(HelpersMixin):
             return context, None
         return context, (trigger, source_binding)
 
-    async def regenerate_response(self, room_id: str) -> InboundResult | None:
+    async def regenerate_response(
+        self, room_id: str, *, trigger_id: str | None = None
+    ) -> InboundResult | None:
         """Re-run the room's intelligence channel on the last inbound message.
 
         Produces a fresh response to the most recent transport (human) message
@@ -143,6 +148,19 @@ class RegenerateMixin(HelpersMixin):
         this (the method only generates — it does not delete the prior answer).
         :meth:`regenerate_target` names the message this call would re-run on,
         so the caller can key that removal on it.
+
+        ``trigger_id`` makes the call a compare-and-regenerate. The target is
+        read outside the room lock, so a message can land between that read
+        and this call: the pipeline has answered it already, and a regenerate
+        that re-selects under the lock would answer it a second time, with
+        the earlier answer gone. Naming the trigger closes that window: when
+        the selection under the lock is no longer that event — another
+        message moved in, or nothing qualifies any more — the call returns
+        ``InboundResult(blocked=True, reason="trigger_moved")`` without
+        running the agent and without writing anything, and the host re-reads
+        :meth:`regenerate_target`. ``None`` (the default) regenerates whatever
+        the selection is. A closed room is refused first: ``room_closed`` wins
+        over ``trigger_moved``.
 
         Returns the :class:`InboundResult` for the regenerated turn, or ``None``
         when there is no inbound message to regenerate (no transport message, or
@@ -181,6 +199,17 @@ class RegenerateMixin(HelpersMixin):
                     operation="regenerate",
                     event=found[0] if found is not None else None,
                 )
+
+            # The compare half of a compare-and-regenerate: the host prepared
+            # for one trigger, and the selection under the lock is the truth.
+            if trigger_id is not None and (found is None or found[0].id != trigger_id):
+                logger.info(
+                    "Regenerate refused: trigger %s is no longer the selection of room %s",
+                    trigger_id,
+                    room_id,
+                    extra={"room_id": room_id, "event_id": trigger_id},
+                )
+                return InboundResult(blocked=True, reason="trigger_moved")
 
             if found is None:
                 return None

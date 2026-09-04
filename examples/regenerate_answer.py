@@ -4,7 +4,9 @@ A user asks, the agent answers, and the host regenerates: it asks RoomKit which
 message a regenerate would replay (``regenerate_target``), removes the answer
 that follows it, then calls ``regenerate_response``. The user's message keeps
 its id and index, and only the agent reacts: no transport sees it twice. The
-same call on a closed room is refused before the agent runs.
+host names the trigger it prepared for (``trigger_id=``), so a message that
+lands in between is refused rather than answered twice; the same call on a
+closed room is refused before the agent runs.
 
 Everything is mock, so it runs without keys.
 
@@ -46,7 +48,11 @@ async def main() -> None:
         AIChannel(
             "agent",
             provider=MockAIProvider(
-                responses=["We open at nine.", "We open at nine and close at six."]
+                responses=[
+                    "We open at nine.",
+                    "We open at nine and close at six.",
+                    "Saturdays too, until noon.",
+                ]
             ),
         )
     )
@@ -72,11 +78,28 @@ async def main() -> None:
         if event.type == EventType.MESSAGE and event.source.channel_id == "agent":
             await kit.delete_event(room.id, event.id)
 
-    result = await kit.regenerate_response(room.id)
+    result = await kit.regenerate_response(room.id, trigger_id=trigger.id)
     assert result is not None
     assert result.event is not None
     print(f"regenerated on #{result.event.index}, same message: {result.event.id == trigger.id}")
     await show(kit, room.id, "After regenerate:")
+
+    # The target is read outside the room lock: a message that lands between
+    # that read and the regenerate is answered by the pipeline, and naming the
+    # trigger refuses the stale regenerate instead of answering it twice.
+    stale = await kit.regenerate_target(room.id)
+    assert stale is not None
+    await kit.process_inbound(
+        InboundMessage(
+            channel_id="sms",
+            sender_id="+15551234567",
+            content=TextContent(body="And on Saturdays?"),
+        )
+    )
+    moved = await kit.regenerate_response(room.id, trigger_id=stale.id)
+    assert moved is not None
+    print(f"\ntrigger moved: blocked={moved.blocked} reason={moved.reason}")
+    await show(kit, room.id, "After the message that landed in between:")
 
     # A closed room refuses the regenerate before the agent runs (RFC §5.1).
     await kit.close_room(room.id)

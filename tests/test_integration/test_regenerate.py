@@ -224,6 +224,89 @@ class TestRegenerateStatusGuard:
         }
 
 
+class TestRegenerateTriggerId:
+    """``trigger_id`` makes the call a compare-and-regenerate: the host names
+    the message it prepared for, and a selection that moved is refused."""
+
+    async def test_a_message_landing_in_between_refuses_the_regenerate(self) -> None:
+        kit, ai_provider = await _kit_with_turn(streaming=False)
+        prepared = await kit.regenerate_target("r1")
+        assert prepared is not None
+        # Between the host's read and its regenerate a new message lands, and
+        # the pipeline answers it. A regenerate would answer it a second time.
+        await kit.process_inbound(
+            InboundMessage(
+                channel_id="sms1", sender_id="user1", content=TextContent(body="And on Saturdays?")
+            )
+        )
+        calls_before = len(ai_provider.calls)
+        before = await kit.store.list_events("r1")
+
+        result = await kit.regenerate_response("r1", trigger_id=prepared.id)
+
+        assert result is not None
+        assert result.blocked is True
+        assert result.reason == "trigger_moved"
+        assert result.event is None
+        # No generation paid, nothing written.
+        assert len(ai_provider.calls) == calls_before
+        assert await kit.store.list_events("r1") == before
+
+    async def test_the_named_trigger_regenerates_as_usual(self) -> None:
+        kit, ai_provider = await _kit_with_turn(streaming=False)
+        prepared = await kit.regenerate_target("r1")
+        assert prepared is not None
+
+        result = await kit.regenerate_response("r1", trigger_id=prepared.id)
+
+        assert result is not None and result.event is not None
+        assert result.blocked is False
+        assert result.event.id == prepared.id
+        assert len(ai_provider.calls) == 2
+        assert len(_ai_messages(await kit.store.list_events("r1"), "ai1")) == 2
+
+    async def test_a_closed_room_is_refused_before_the_trigger_is_compared(self) -> None:
+        kit, ai_provider = await _kit_with_turn(streaming=False)
+        await kit.close_room("r1")
+
+        result = await kit.regenerate_response("r1", trigger_id="not-the-trigger")
+
+        assert result is not None
+        assert result.blocked is True
+        assert result.reason == "room_closed"
+        assert len(ai_provider.calls) == 1
+
+    async def test_nothing_left_to_replay_is_a_moved_trigger(self) -> None:
+        """The host named a trigger and the selection is now empty (its source
+        can no longer write): the compare fails the same way. The host asked
+        about *that* message, and the answer is that it no longer is the one."""
+        kit, ai_provider = await _kit_with_turn(streaming=False)
+        prepared = await kit.regenerate_target("r1")
+        assert prepared is not None
+        await kit.set_access("r1", "sms1", Access.READ_ONLY)
+
+        result = await kit.regenerate_response("r1", trigger_id=prepared.id)
+
+        assert result is not None
+        assert result.blocked is True
+        assert result.reason == "trigger_moved"
+        assert len(ai_provider.calls) == 1
+
+    async def test_without_a_trigger_id_the_selection_is_whatever_it_is(self) -> None:
+        kit, _ai_provider = await _kit_with_turn(streaming=False)
+        await kit.process_inbound(
+            InboundMessage(
+                channel_id="sms1", sender_id="user1", content=TextContent(body="And on Saturdays?")
+            )
+        )
+
+        result = await kit.regenerate_response("r1")
+
+        assert result is not None and result.event is not None
+        assert result.blocked is False
+        assert result.event.content.body == "And on Saturdays?"
+
+
 class TestRegenerateTarget:
     """``regenerate_target`` answers with the primitive's own selection."""
 
