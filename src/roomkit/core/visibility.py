@@ -72,26 +72,31 @@ def visible_events(context: RoomContext, channel_id: str) -> list[RoomEvent]:
     behalf. Withholding an event at broadcast and returning it a turn later as
     context enforces nothing.
 
-    A channel always keeps its **own** events. Rule 5 skips them at delivery
-    because the channel produced them, not because it may not know them —
-    dropping them here would erase an assistant's own turns from its own prompt
-    whenever it is bound with a narrow visibility (the §7.4 assistant pattern).
+    A channel always keeps its **own** accepted events. Rule 5 skips them at
+    delivery because the channel produced them, not because it may not know
+    them — dropping them here would erase an assistant's own turns from its
+    own prompt whenever it is bound with a narrow visibility (the §7.4
+    assistant pattern).
 
     A channel with no binding in this room sees only what it produced itself.
 
-    An event stored BLOCKED was delivered to nobody — a hook refused it, its
-    source could not write (§10.1 steps 10-11), the chain-depth cap took it
-    (§8.3) — and reaches nobody here either, the channel that produced it
-    included: the room refused that turn, and an agent that reads its own
-    refused answer as history continues from a turn nobody received. The
-    record stays in the timeline for host code and audit; the exception above
-    is about what a channel may *know*, and a refused event is not that.
+    An event stored BLOCKED was delivered to nobody — a hook refused it (§10.1
+    step 10), its source could not write, read-only or muted (step 11, §7.5
+    rule 2), the chain-depth cap or the reentry cap took it (§8.3) — and
+    reaches nobody here either, the channel that produced it included: the
+    room refused that turn, and an agent that reads its own refused answer as
+    history continues from a turn nobody received. A muted agent therefore
+    keeps tracking the room while muted, and loses its own silenced answers
+    from its prompt, on unmute too. The record stays in the timeline for host
+    code and audit; the own-events exception above is about what a channel
+    may *know*, and a refused turn is not that.
 
     Answers the visibility half of §7.5 rule 1 only. Access is enforced where
     events are delivered (:meth:`EventRouter._filter_targets` drops WRITE_ONLY
     and NONE), which is why a channel that may not read never reaches a context
     rebuild in the first place; a caller reconstructing history by itself owes
-    that check. READ_ONLY and muted channels do read, and keep their history.
+    that check. READ_ONLY and muted channels do read, and keep the history they
+    were handed; their own refused turns are the one thing they lose, as above.
     """
     bindings = {b.channel_id: b for b in context.bindings}
     reader = bindings.get(channel_id)

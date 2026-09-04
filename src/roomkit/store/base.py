@@ -473,9 +473,9 @@ class ConversationStore(ABC):
         The conversation is the host's whole one: a message stored
         ``BLOCKED`` (refused by a hook, or by a source that could not write)
         is in it, as the audit record it is. What a *channel* may be handed
-        as history is a per-reader question — :func:`roomkit.core.visibility.
-        visible_events` answers it (RFC §7.5 rule 8), and drops BLOCKED events
-        along with what visibility withholds.
+        as history is a per-reader question, and
+        :func:`~roomkit.core.visibility.visible_events` answers it (RFC §7.5
+        rule 8): it drops BLOCKED events along with what visibility withholds.
 
         Returned events are immutable snapshots (RFC §14.4): treat them
         as frozen. A store may share objects between reads or return

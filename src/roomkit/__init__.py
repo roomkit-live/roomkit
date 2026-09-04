@@ -92,6 +92,7 @@ from roomkit.core.framework import (
     VoiceNotConfiguredError,
 )
 from roomkit.core.locks import InMemoryLockManager, RoomLockManager
+from roomkit.core.visibility import visible_events
 from roomkit.delivery import (
     DeliveryBackend,
     DeliveryItem,
@@ -309,6 +310,7 @@ __all__ = [
     "ConversationRouter",
     "ConversationState",
     "get_conversation_state",
+    "visible_events",
     "set_conversation_state",
     "HANDOFF_TOOL",
     "HandoffHandler",

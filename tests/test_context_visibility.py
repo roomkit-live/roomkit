@@ -19,6 +19,7 @@ from roomkit.models.channel import ChannelBinding
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundMessage
 from roomkit.models.enums import (
+    Access,
     ChannelCategory,
     ChannelType,
     EventStatus,
@@ -209,6 +210,52 @@ class TestRefusedEventsStayRefused:
         assert MARKER in " ".join(str(getattr(e.content, "body", "")) for e in events)
         assert MARKER not in _prompted(provider)
         assert "hello" in _prompted(provider)
+        await kit.close()
+
+    async def test_a_muted_agent_loses_its_own_silenced_answers(self) -> None:
+        """RFC §7.5 rule 2 stores a muted channel's answers BLOCKED
+        (``source_muted``); nobody received them, so they are not history the
+        agent may continue from — the room's other turns still are."""
+        kit, provider = await _room()
+        await kit.mute("r1", "ai1")
+
+        await kit.process_inbound(
+            InboundMessage(channel_id="ws1", sender_id="u1", content=TextContent(body="first"))
+        )
+        await kit.process_inbound(
+            InboundMessage(channel_id="ws1", sender_id="u1", content=TextContent(body="second"))
+        )
+
+        events = await kit.store.list_events("r1")
+        silenced = [e for e in events if e.source.channel_id == "ai1"]
+        assert [e.status for e in silenced] == [EventStatus.BLOCKED] * 2
+        assert {e.blocked_by for e in silenced} == {"source_muted"}
+        # The brain kept tracking: two generations, the second one carrying
+        # the user's first turn and none of the agent's silenced answers.
+        assert len(provider.calls) == 2
+        last = provider.calls[-1].messages
+        assert [m.content for m in last] == ["first", "second"]
+        assert all(m.role == "user" for m in last)
+        await kit.close()
+
+    async def test_a_read_only_source_message_never_reaches_the_model(self) -> None:
+        """RFC §10.1 step 11: a read-only source's message is stored BLOCKED
+        (``source_read_only``) and never broadcast; the next turn does not
+        hand it to the model either."""
+        kit, provider = await _room()
+        await kit.set_access("r1", "ws1", Access.READ_ONLY)
+
+        refused = await kit.process_inbound(
+            InboundMessage(channel_id="ws1", sender_id="u1", content=TextContent(body=MARKER))
+        )
+        await kit.process_inbound(
+            InboundMessage(channel_id="ws2", sender_id="u2", content=TextContent(body="hello"))
+        )
+
+        assert refused.blocked is True
+        assert refused.event is not None and refused.event.blocked_by == "source_read_only"
+        assert "hello" in _prompted(provider)
+        assert MARKER not in _prompted(provider)
         await kit.close()
 
     async def test_hooks_still_see_the_blocked_record(self) -> None:

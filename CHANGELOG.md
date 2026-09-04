@@ -21,18 +21,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and with nothing written. `room_closed` still wins on a closed room; without
   `trigger_id` nothing changes. (RMK-167)
 
-### Fixed
-
-- **A message a hook blocked no longer reaches the agent as history.** A
-  BEFORE_BROADCAST refusal stores the event `BLOCKED` and delivers it to
-  nobody (RFC §10.1 step 10), but `get_conversation` filters on type only, so
-  the next turn's `AIChannel` found it in `recent_events` and handed it to the
-  provider: the agent read what the room had refused. `visible_events` — the
-  per-reader filter the AI channel and the ACP catch-up already apply (RFC
-  §7.5 rule 8) — now drops BLOCKED events too, a channel's own included; hooks
-  and the store keep the whole timeline, and no store changes: the filter
-  applies to `recent_events` whichever backend loaded them. (RMK-168)
-
 ### Changed
 
 - **`room_refused_event` has one `data` contract, whichever path refused.**
@@ -46,6 +34,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   replay); the reentry's `reentry: True` key is replaced by
   `operation: "reentry"`. RFC §5.1 names the event and §8.2 specifies it.
   (RMK-166)
+
+### Fixed
+
+- **An event the room refused no longer reaches any channel as history.** A
+  BEFORE_BROADCAST refusal stores the message `BLOCKED` and delivers it to
+  nobody (RFC §10.1 step 10), but `get_conversation` filters on type only, so
+  the next turn's `AIChannel` found it in `recent_events` and handed it to the
+  provider: the agent read what the room had refused. `visible_events` — the
+  per-reader filter the AI channel and the ACP catch-up already apply (RFC
+  §7.5 rule 8), now exported from `roomkit` — drops every BLOCKED event: a
+  message a hook refused, a read-only source's message, a muted channel's own
+  answers (`source_muted`), a response over the chain-depth or reentry cap. A
+  channel's own refused turns go too: a muted agent keeps tracking the room
+  and loses its silenced answers from its prompt, on unmute as well. Hooks
+  and the store keep the whole timeline, and no store changes: the filter
+  applies to `recent_events` whichever backend loaded them. (RMK-168)
 
 ## [0.64.0] — 2026-09-04
 
