@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 
 import pytest
 
@@ -96,7 +97,7 @@ class TestCapture:
         assert backend.sent_audio == [(session.id, clip.data)]
 
     async def test_raw_bytes_use_the_declared_rate(self) -> None:
-        backend = ScenarioVoiceBackend(sample_rate=8000)
+        backend = ScenarioVoiceBackend(capture_sample_rate=8000)
         session = await _session(backend)
 
         await backend.send_audio(session, b"\x00\x01" * 8)
@@ -141,6 +142,30 @@ class TestCapture:
         with pytest.raises(ValueError, match="16000 Hz"):
             await backend.send_audio(session, _chunks(b"\x00\x00", sample_rate=24000))
 
+    async def test_a_swallowed_format_error_resurfaces_on_read(self, tmp_path) -> None:
+        """A channel logs a failed send and carries on; the bench raises it
+        again where the test reads the capture."""
+        backend = ScenarioVoiceBackend()
+        session = await _session(backend)
+        await backend.send_audio(session, _chunks(b"\x00\x00", sample_rate=16000))
+        with contextlib.suppress(ValueError):
+            await backend.send_audio(session, _chunks(b"\x00\x00", sample_rate=24000))
+
+        with pytest.raises(ValueError, match="24000 Hz"):
+            backend.captured(session)
+        with pytest.raises(ValueError, match="24000 Hz"):
+            backend.write_capture(session, tmp_path / "bot.wav")
+        backend.clear_capture(session)
+        assert backend.captured(session).data == b""
+
+    async def test_write_capture_without_a_capture_writes_an_empty_clip(self, tmp_path) -> None:
+        backend = ScenarioVoiceBackend()
+        session = await _session(backend)
+
+        path = backend.write_capture(session, tmp_path / "empty.wav")
+
+        assert read_wav(path).duration_ms == 0
+
     async def test_is_playing_while_the_bot_sends(self) -> None:
         backend = ScenarioVoiceBackend()
         session = await _session(backend)
@@ -164,6 +189,24 @@ class TestCapture:
         await backend.send_audio(session, b"\x00\x00")
 
         assert backend.is_playing(session) is True
+
+    async def test_overlapping_sends_keep_playing_until_the_last_one_ends(self) -> None:
+        backend = ScenarioVoiceBackend()
+        session = await _session(backend)
+        release = asyncio.Event()
+
+        async def slow():
+            yield AudioChunk(data=b"\x00\x00")
+            await release.wait()
+
+        first = asyncio.ensure_future(backend.send_audio(session, slow()))
+        await asyncio.sleep(0)
+        await backend.send_audio(session, b"\x00\x00")
+
+        assert backend.is_playing(session) is True
+        release.set()
+        await first
+        assert backend.is_playing(session) is False
 
     def test_declares_the_capabilities_it_is_told(self) -> None:
         backend = ScenarioVoiceBackend(

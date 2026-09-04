@@ -39,6 +39,9 @@ class TraceEntry:
     t: float
     """``time.monotonic()`` when the hook ran: the clock the channel's own
     timings (barge-in confirmation, echo windows) read."""
+    seq: int
+    """Position in the timeline, from 0: two hooks can share a clock tick,
+    never a position, so ``after=`` anchors on it."""
     trigger: HookTrigger
     payload: Any
     """What the hook received: a :class:`VoiceSession` (speech start and end),
@@ -46,6 +49,8 @@ class TraceEntry:
     the text (``BEFORE_TTS`` / ``AFTER_TTS``)."""
     room_id: str | None
     session_id: str | None
+    """The voice session the payload names; ``None`` when it names none
+    (``BEFORE_TTS`` / ``AFTER_TTS`` carry the text alone)."""
 
 
 def _session_id(payload: Any) -> str | None:
@@ -67,10 +72,12 @@ class VoiceTrace:
 
     Observers are ``ASYNC`` hooks, which also see the triggers the channel
     runs synchronously (``ON_TRANSCRIPTION``, ``BEFORE_TTS``): the engine
-    fires async observers after the sync chain. They are fire-and-forget, so
-    a ``wait_for`` returns when the entry is recorded, not when the channel is
-    done with the turn. Hooks are global to the kit and cannot be removed;
-    build one trace per kit, in a test that owns the kit.
+    fires the async observers once the sync chain has allowed the payload,
+    so a trigger whose sync chain blocked leaves no entry. The engine awaits
+    its observers (under the hook timeout), which is why they only append to
+    a list: a ``wait_for`` returns when the entry is recorded, not when the
+    channel is done with the turn. The hooks are registered on the kit under
+    names unique to this trace; :meth:`close` removes them.
     """
 
     def __init__(
@@ -79,13 +86,19 @@ class VoiceTrace:
         *,
         triggers: Iterable[HookTrigger] = VOICE_TRIGGERS,
     ) -> None:
+        self._kit = kit
         self._entries: list[TraceEntry] = []
         self._arrived = asyncio.Event()
         self._triggers = tuple(triggers)
-        for trigger in self._triggers:
-            kit.hook(trigger, HookExecution.ASYNC, name=f"voice_trace:{trigger.value}")(
-                self._observer(trigger)
-            )
+        self._hook_names = [f"voice_trace:{id(self):x}:{t.value}" for t in self._triggers]
+        for trigger, name in zip(self._triggers, self._hook_names, strict=True):
+            kit.hook(trigger, HookExecution.ASYNC, name=name)(self._observer(trigger))
+
+    def close(self) -> None:
+        """Remove this trace's hooks from the kit. The entries stay readable."""
+        for name in self._hook_names:
+            self._kit.hook_engine.remove_global_hook(name)
+        self._hook_names = []
 
     @property
     def triggers(self) -> tuple[HookTrigger, ...]:
@@ -103,6 +116,7 @@ class VoiceTrace:
         self._entries.append(
             TraceEntry(
                 t=time.monotonic(),
+                seq=len(self._entries),
                 trigger=trigger,
                 payload=payload,
                 room_id=getattr(room, "id", None),
@@ -128,16 +142,24 @@ class VoiceTrace:
     ) -> list[TraceEntry]:
         """The entries so far, oldest first, filtered by trigger, session and time.
 
-        *after* is a :class:`TraceEntry` or a monotonic time; only entries
-        strictly later are returned.
+        *after* is a :class:`TraceEntry` (entries recorded after it, by
+        position: two hooks can share a clock tick) or a monotonic time
+        (entries strictly later).
         """
-        since = after.t if isinstance(after, TraceEntry) else after
+
+        def later(e: TraceEntry) -> bool:
+            if after is None:
+                return True
+            if isinstance(after, TraceEntry):
+                return e.seq > after.seq
+            return e.t > after
+
         return [
             e
             for e in self._entries
             if (trigger is None or e.trigger is trigger)
             and (session_id is None or e.session_id == session_id)
-            and (since is None or e.t > since)
+            and later(e)
         ]
 
     def sequence(self) -> list[HookTrigger]:
@@ -145,10 +167,12 @@ class VoiceTrace:
         return [e.trigger for e in self._entries]
 
     def first(self, trigger: HookTrigger) -> TraceEntry | None:
+        """The oldest entry for *trigger*, or ``None`` if it never fired."""
         matches = self.entries(trigger)
         return matches[0] if matches else None
 
     def last(self, trigger: HookTrigger) -> TraceEntry | None:
+        """The newest entry for *trigger*, or ``None`` if it never fired."""
         matches = self.entries(trigger)
         return matches[-1] if matches else None
 

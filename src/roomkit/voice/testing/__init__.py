@@ -1,7 +1,6 @@
 """The voice test bench: a simulated phone, WAV helpers and a hook timeline.
 
-Three bricks a voice scenario is written with, at every fidelity level — all
-mock, real audio through local models, or live providers:
+Three bricks a voice scenario is written with:
 
 - :class:`ScenarioVoiceBackend`: a pure-transport backend that plays a WAV
   as cadenced 20 ms frames and captures what the bot sends, per session;

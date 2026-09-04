@@ -2,16 +2,20 @@
 
 from __future__ import annotations
 
+import time
+
 import pytest
 
 from roomkit import HookTrigger, RoomKit, VoiceChannel
 from roomkit.channels.ai import AIChannel
+from roomkit.models.hook import HookResult
 from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.voice.events import TranscriptionEvent
 from roomkit.voice.pipeline import AudioPipelineConfig, MockVADProvider
 from roomkit.voice.pipeline.vad.base import VADEvent, VADEventType
 from roomkit.voice.stt.mock import MockSTTProvider
 from roomkit.voice.testing import VOICE_TRIGGERS, ScenarioVoiceBackend, VoiceTrace, tone
+from roomkit.voice.testing import trace as trace_module
 from roomkit.voice.tts.mock import MockTTSProvider
 
 
@@ -115,6 +119,69 @@ class TestWaitFor:
         assert second.payload.text == "two"
         assert len(trace.entries(HookTrigger.ON_TRANSCRIPTION)) == 2
         assert trace.entries(HookTrigger.ON_TRANSCRIPTION, after=second) == []
+        await kit.close()
+
+    async def test_after_anchors_on_position_not_on_a_coarse_clock(self, monkeypatch) -> None:
+        """Two hooks can share a clock tick (Windows' monotonic clock ticks
+        every 15.6 ms; a mock turn fits inside one), never a position."""
+        tick = 0.015625
+
+        class CoarseTime:
+            @staticmethod
+            def monotonic() -> float:
+                return time.monotonic() // tick * tick
+
+        monkeypatch.setattr(trace_module, "time", CoarseTime)
+        kit, backend, trace, session = await _kit(
+            _turn() + _turn(), transcripts=("one", "two"), with_agent=False
+        )
+        await backend.play(session, tone(80), realtime=False)  # both turns, back to back
+        first = await trace.wait_for(HookTrigger.ON_TRANSCRIPTION)
+
+        second = await trace.wait_for(HookTrigger.ON_TRANSCRIPTION, after=first)
+
+        assert first.payload.text == "one"
+        assert second.payload.text == "two"
+        assert second.seq > first.seq
+        await kit.close()
+
+    async def test_after_a_monotonic_time_filters_on_the_clock(self) -> None:
+        kit, backend, trace, session = await _kit(_turn(), with_agent=False)
+        before = time.monotonic()
+        await backend.play(session, tone(40), realtime=False)
+        entry = await trace.wait_for(HookTrigger.ON_TRANSCRIPTION)
+
+        assert trace.entries(HookTrigger.ON_TRANSCRIPTION, after=before) == [entry]
+        assert trace.entries(HookTrigger.ON_TRANSCRIPTION, after=entry.t) == []
+        await kit.close()
+
+    async def test_a_blocked_sync_chain_leaves_no_entry(self) -> None:
+        """Observers fire once the sync chain has allowed the payload: a
+        transcription a hook blocked never reaches the timeline."""
+        kit, backend, trace, session = await _kit(_turn(), with_agent=False)
+
+        @kit.hook(HookTrigger.ON_TRANSCRIPTION)
+        async def refuse(event, context) -> HookResult:
+            return HookResult.block("not today")
+
+        await backend.play(session, tone(40), realtime=False)
+        await trace.wait_for(HookTrigger.ON_SPEECH_END)
+
+        with pytest.raises(TimeoutError):
+            await trace.wait_for(HookTrigger.ON_TRANSCRIPTION, timeout=0.05)
+        await kit.close()
+
+    async def test_close_removes_the_observers(self) -> None:
+        kit, backend, trace, session = await _kit(_turn() + _turn(), with_agent=False)
+        await backend.play(session, tone(40), realtime=False)
+        first = await trace.wait_for(HookTrigger.ON_TRANSCRIPTION)
+
+        trace.close()
+        await backend.play(session, tone(40), realtime=False)
+
+        with pytest.raises(TimeoutError):
+            await trace.wait_for(HookTrigger.ON_TRANSCRIPTION, after=first, timeout=0.05)
+        assert first in trace.entries()
         await kit.close()
 
     async def test_entries_filter_by_session(self) -> None:

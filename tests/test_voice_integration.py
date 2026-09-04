@@ -725,8 +725,7 @@ class TestBargeInIntegration:
         )
         channel.bind_session(session, room.id, binding)
 
-        # Simulate TTS playing, started long enough ago to clear the barge-in
-        # threshold: backdating the playback replaces a sleep that waited it out.
+        # Simulate TTS playing, backdated past the 50 ms barge-in threshold.
         channel._playing_sessions[session.id] = TTSPlaybackState(
             session_id=session.id,
             text="Hello, how can I help you today?",

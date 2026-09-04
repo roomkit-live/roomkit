@@ -21,6 +21,14 @@ class TestPCMAudio:
         with pytest.raises(ValueError, match="divisible"):
             PCMAudio(data=b"\x00")
 
+    @pytest.mark.parametrize(
+        ("field", "value"),
+        [("sample_rate", 0), ("channels", 3), ("sample_width", 3)],
+    )
+    def test_rejects_an_invalid_format(self, field: str, value: int) -> None:
+        with pytest.raises(ValueError, match=field):
+            PCMAudio(data=bytes(48), **{field: value})
+
     def test_concatenation_keeps_the_format_and_refuses_a_mismatch(self) -> None:
         clip = tone(100) + silence(100)
 
@@ -67,6 +75,14 @@ class TestFrames:
         assert len(frames) == 2
         assert frames[1].data[:320] == clip.data[640:]
         assert frames[1].data[320:] == bytes(320)
+
+    def test_eight_bit_padding_is_unsigned_silence(self) -> None:
+        clip = PCMAudio(data=b"\x80" * 100, sample_rate=8000, sample_width=1)
+
+        frames = pcm_frames(clip)  # 160 bytes per 20 ms frame
+
+        assert len(frames) == 1
+        assert frames[0].data[100:] == b"\x80" * 60
 
     def test_frame_ms_is_honoured(self) -> None:
         assert len(pcm_frames(tone(1000), frame_ms=10)) == 100

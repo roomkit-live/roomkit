@@ -29,8 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `asyncio.sleep` a voice test waited with, and the turn's order and
   latencies read off the timeline. `read_wav`, `write_wav`, `pcm_frames`,
   `silence` and `tone` are the stdlib helpers around `PCMAudio`. Three
-  integration tests run on it without a sleep; the scenario runner and the
-  audio-local and live levels follow. Example:
+  integration tests run on it without a sleep. Example:
   `examples/voice_scenario_backend.py`. (RMK-162)
 
 ### Fixed

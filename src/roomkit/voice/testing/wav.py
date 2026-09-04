@@ -15,6 +15,7 @@ writes a capture with.
 from __future__ import annotations
 
 import math
+import sys
 import wave
 from array import array
 from dataclasses import dataclass
@@ -107,17 +108,19 @@ def write_wav(path: str | Path, audio: PCMAudio) -> Path:
 def pcm_frames(audio: PCMAudio, *, frame_ms: int = 20) -> list[AudioFrame]:
     """Cut *audio* into *frame_ms* frames, timestamped from zero.
 
-    The last frame is padded with silence to a whole frame: a backend always
-    delivers full frames, and so does a real transport.
+    The last frame is padded with silence to a whole frame (``0x80`` for
+    8-bit PCM, which WAV stores unsigned): a backend always delivers full
+    frames, and so does a real transport.
     """
     size = audio.frame_bytes(frame_ms)
     if size <= 0:
         raise ValueError(f"frame_ms must cover at least one sample, got {frame_ms}")
+    quiet = b"\x80" if audio.sample_width == 1 else b"\x00"
     frames: list[AudioFrame] = []
     for i, start in enumerate(range(0, len(audio.data), size)):
         chunk = audio.data[start : start + size]
         if len(chunk) < size:
-            chunk = chunk + bytes(size - len(chunk))
+            chunk = chunk + quiet * (size - len(chunk))
         frames.append(
             AudioFrame(
                 data=chunk,
@@ -153,4 +156,6 @@ def tone(
     peak = amplitude * 32767
     step = 2.0 * math.pi * frequency_hz / sample_rate
     pcm = array("h", (int(peak * math.sin(step * i)) for i in range(samples)))
+    if sys.byteorder == "big":
+        pcm.byteswap()  # PCM in a WAV, and in an AudioFrame, is little-endian
     return PCMAudio(data=pcm.tobytes(), sample_rate=sample_rate)
