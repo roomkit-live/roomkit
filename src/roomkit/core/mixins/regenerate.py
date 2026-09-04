@@ -82,7 +82,9 @@ class RegenerateMixin(HelpersMixin):
         the time a regenerate acts on it — the caveat of any answer taken
         before the lock (RFC §10.1 step 6): the regenerating call re-selects
         under the lock, and a message that lands in between becomes the
-        trigger there.
+        trigger there. A host that must not answer that message twice hands
+        this event's id back as ``regenerate_response(trigger_id=...)``,
+        which refuses a selection that moved instead of regenerating it.
         """
         context, found = await self._regenerate_target(room_id)
         if context.room.status in _REFUSING_STATUSES:
@@ -157,14 +159,18 @@ class RegenerateMixin(HelpersMixin):
         the selection under the lock is no longer that event — another
         message moved in, or nothing qualifies any more — the call returns
         ``InboundResult(blocked=True, reason="trigger_moved")`` without
-        running the agent and without writing anything, and the host re-reads
-        :meth:`regenerate_target`. ``None`` (the default) regenerates whatever
-        the selection is. A closed room is refused first: ``room_closed`` wins
-        over ``trigger_moved``.
+        running the agent and without writing anything. ``None`` (the
+        default) regenerates whatever the selection is. A closed room is
+        refused first: ``room_closed`` wins over ``trigger_moved``. The
+        compare is on the trigger, not on the answers that follow it: two
+        concurrent calls naming the same trigger both pass it, and an answer
+        landing between them does not move a transport selection.
 
         Returns the :class:`InboundResult` for the regenerated turn, or ``None``
         when there is no inbound message to regenerate (no transport message, or
-        its source binding can no longer write). A room whose status refuses
+        its source binding can no longer write) — with ``trigger_id`` set, that
+        same state is a moved trigger and comes back blocked instead of
+        ``None``. A room whose status refuses
         new events (RFC §5.1) is refused *before* the agent runs, with
         ``InboundResult(blocked=True, reason="room_closed")`` and a
         ``room_refused_event`` framework event — exactly as
