@@ -37,11 +37,13 @@ class RoomNotFoundError(RoomKitError):
 class RoomClosedError(RoomKitError):
     """Room's status refuses new events (RFC §5.1).
 
-    Raised by the direct-injection API, which returns the committed
-    ``RoomEvent`` and so has no way to hand back a refusal — returning an
-    event marked DELIVERED for a write that never happened would be worse
-    than raising. The inbound path, whose result type can say so, returns
-    ``InboundResult(blocked=True, reason="room_closed")`` instead.
+    Raised by the APIs whose return value has no place for a refusal: direct
+    injection, which returns the committed ``RoomEvent`` — returning an event
+    marked DELIVERED for a write that never happened would be worse than
+    raising — and ``regenerate_target``, which returns the event a regenerate
+    would replay. The inbound path and ``regenerate_response``, whose result
+    type can say so, return ``InboundResult(blocked=True, reason="room_closed")``
+    instead.
     """
 
 

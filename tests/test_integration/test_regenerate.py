@@ -9,9 +9,17 @@ from roomkit.channels.ai import AIChannel
 from roomkit.core.exceptions import RoomClosedError, RoomNotFoundError
 from roomkit.core.framework import RoomKit
 from roomkit.models.delivery import InboundMessage
-from roomkit.models.enums import ChannelCategory, EventType, RoomStatus
+from roomkit.models.enums import (
+    Access,
+    ChannelCategory,
+    EventStatus,
+    EventType,
+    HookTrigger,
+    RoomStatus,
+)
 from roomkit.models.event import TextContent
 from roomkit.models.framework_event import FrameworkEvent
+from roomkit.models.hook import HookResult
 from roomkit.providers.ai.mock import MockAIProvider
 
 
@@ -202,10 +210,10 @@ class TestRegenerateTarget:
     """``regenerate_target`` answers with the primitive's own selection."""
 
     async def test_target_is_the_event_regenerate_response_replays(self) -> None:
-        # Thirty turns: sixty message events, past the history floor, with the
-        # agent's own answers interleaved. Then lifecycle noise a host writes
-        # on the transport after the trigger — system events, not messages —
-        # which the conversation never holds and the selection must not pick.
+        # Thirty turns: sixty message events with the agent's answers
+        # interleaved. Then lifecycle noise a host writes on the transport
+        # after the trigger — system events, not messages — which the
+        # conversation never holds and the selection must not pick.
         kit, _ai_provider = await _kit_with_turn(streaming=False, turns=30, responses=["ok"])
         for i in range(3):
             await kit.send_event(
@@ -234,6 +242,50 @@ class TestRegenerateTarget:
 
         assert await kit.regenerate_target("r1") is None
         assert await kit.regenerate_response("r1") is None
+
+    async def test_target_is_none_when_the_source_is_read_only(self) -> None:
+        kit, _ai_provider = await _kit_with_turn(streaming=False)
+        await kit.set_access("r1", "sms1", Access.READ_ONLY)
+
+        assert await kit.regenerate_target("r1") is None
+        assert await kit.regenerate_response("r1") is None
+
+    async def test_a_blocked_message_is_never_the_trigger(self) -> None:
+        """A message a hook refused is stored BLOCKED and never broadcast
+        (RFC §10.1 step 10): the room did not answer it, so a regenerate does
+        not answer it either."""
+        kit, ai_provider = await _kit_with_turn(streaming=False)
+
+        @kit.hook(HookTrigger.BEFORE_BROADCAST)
+        async def refuse_spam(event, context) -> HookResult:
+            if "SPAM" in getattr(event.content, "body", ""):
+                return HookResult.block("spam")
+            return HookResult.allow()
+
+        await kit.process_inbound(
+            InboundMessage(channel_id="sms1", sender_id="user1", content=TextContent(body="SPAM"))
+        )
+        events = await kit.store.list_events("r1")
+        assert events[-1].status == EventStatus.BLOCKED
+        accepted = _user_messages(events, "sms1")[0]
+
+        target = await kit.regenerate_target("r1")
+        result = await kit.regenerate_response("r1")
+
+        assert target is not None and target.id == accepted.id
+        assert result is not None and result.event is not None
+        assert result.event.id == accepted.id
+        # The regenerated turn answers the accepted message, not the refused one.
+        assert ai_provider.calls[-1].messages[-1].content == accepted.content.body
+
+    async def test_a_paused_room_still_has_a_target(self) -> None:
+        """PAUSED accepts events (RFC §5.1): the guard stops at CLOSED and ARCHIVED."""
+        kit, _ai_provider = await _kit_with_turn(streaming=False)
+        room = await kit.store.get_room("r1")
+        assert room is not None
+        await kit.store.update_room(room.model_copy(update={"status": RoomStatus.PAUSED}))
+
+        assert await kit.regenerate_target("r1") is not None
 
     async def test_target_is_none_without_a_transport_message(self) -> None:
         kit = RoomKit()

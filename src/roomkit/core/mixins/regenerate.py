@@ -61,7 +61,8 @@ class RegenerateMixin(HelpersMixin):
         """The event :meth:`regenerate_response` would re-run the agent on.
 
         The primitive's own choice, from the primitive's own read: the newest
-        message a transport binding wrote, in the history window the room's
+        message a transport binding wrote and the room accepted (a message a
+        hook blocked is never replayed), in the history window the room's
         channels derive, whose source binding can still write. A host that
         must act on the trigger *before* regenerating — delete the answer the
         new one replaces, refuse a trigger it recognises as a runner's prompt
@@ -77,48 +78,58 @@ class RegenerateMixin(HelpersMixin):
         the same reasoning as :meth:`send_event`. Raises
         :class:`RoomNotFoundError` for an unknown room.
 
-        A read, taken outside the room lock: the answer is a snapshot
-        (RFC §14.4), and the regenerating call re-selects under the lock — a
-        message that lands in between becomes the trigger there.
+        A read, taken outside the room lock, so the answer can be stale by
+        the time a regenerate acts on it — the caveat of any answer taken
+        before the lock (RFC §10.1 step 6): the regenerating call re-selects
+        under the lock, and a message that lands in between becomes the
+        trigger there.
         """
-        context, trigger, _source_binding = await self._regenerate_target(room_id)
+        context, found = await self._regenerate_target(room_id)
         if context.room.status in _REFUSING_STATUSES:
             raise RoomClosedError(f"Room {room_id} does not accept new events")
-        return trigger
+        return found[0] if found is not None else None
 
     async def _regenerate_target(
         self, room_id: str
-    ) -> tuple[RoomContext, RoomEvent | None, ChannelBinding | None]:
-        """The event a regenerate re-runs the agent on, with the context it
-        was found in and the binding that wrote it.
+    ) -> tuple[RoomContext, tuple[RoomEvent, ChannelBinding] | None]:
+        """The event a regenerate re-runs the agent on, with the binding that
+        wrote it, and the context it was found in.
 
         One selection for both readers — :meth:`regenerate_response` under the
         lock and :meth:`regenerate_target` outside it — so a host asking for
         the trigger sees the primitive's own choice, same window and same
-        predicate, rather than a copy that drifts: the newest event of the
-        room's recent history written by a TRANSPORT binding, provided that
-        binding can still write (a muted or read-only source has no turn to
-        regenerate). The window is the one the room's channels derive, floored
-        because this caller scans the tail itself (``reads_history``).
+        predicate, rather than a copy that drifts: the newest message of the
+        room's recent history written by a TRANSPORT binding and accepted by
+        the room, provided that binding can still write (a muted or read-only
+        source has no turn to regenerate). The window is the one the room's
+        channels derive, floored because this caller scans the tail itself
+        (``reads_history``).
 
-        Returns ``(context, None, None)`` when nothing qualifies. The context
-        comes back because the status gate reads it, and because building it
-        is the expensive half of the call.
+        Returns ``(context, None)`` when nothing qualifies. The context comes
+        back because the status gate reads it, and because building it is the
+        expensive half of the call.
         """
         context = await self._build_context(room_id, reads_history=True)
         transports = {
             b.channel_id: b for b in context.bindings if b.category == ChannelCategory.TRANSPORT
         }
+        # A BLOCKED message is stored, never broadcast (RFC §10.1 step 10):
+        # a hook refused it, or its source could not write. The room never
+        # answered it, so a regenerate does not answer it either.
         trigger = next(
-            (e for e in reversed(context.recent_events) if e.source.channel_id in transports),
+            (
+                e
+                for e in reversed(context.recent_events)
+                if e.source.channel_id in transports and e.status != EventStatus.BLOCKED
+            ),
             None,
         )
         if trigger is None:
-            return context, None, None
+            return context, None
         source_binding = transports[trigger.source.channel_id]
         if not source_binding.can_write:
-            return context, None, None
-        return context, trigger, source_binding
+            return context, None
+        return context, (trigger, source_binding)
 
     async def regenerate_response(self, room_id: str) -> InboundResult | None:
         """Re-run the room's intelligence channel on the last inbound message.
@@ -158,7 +169,7 @@ class RegenerateMixin(HelpersMixin):
         error_source: EventSource | None = None
 
         async with self._lock_manager.locked(room_id):
-            context, trigger, source_binding = await self._regenerate_target(room_id)
+            context, found = await self._regenerate_target(room_id)
 
             # RFC §5.1 — the regenerated answer would be refused at commit, so
             # refuse here, before the agent runs: a closed room must not cost
@@ -176,13 +187,14 @@ class RegenerateMixin(HelpersMixin):
                 await self._emit_framework_event(
                     "room_refused_event",
                     room_id=room_id,
-                    event_id=trigger.id if trigger is not None else None,
+                    event_id=found[0].id if found is not None else None,
                     data={"status": str(context.room.status), "operation": "regenerate"},
                 )
                 return InboundResult(blocked=True, reason="room_closed")
 
-            if trigger is None or source_binding is None:
+            if found is None:
                 return None
+            trigger, source_binding = found
 
             # Scope the re-broadcast to intelligence channels: only the agent
             # regenerates, no transport re-delivery of the user's message.

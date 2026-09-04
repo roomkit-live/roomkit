@@ -10,9 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **`regenerate_target(room_id)` names the event a regenerate re-runs.**
-  The primitive's own selection — the newest transport-written message in
-  the history window the room's channels derive, whose binding can still
-  write — so a host that must act on the trigger before regenerating (delete
+  The primitive's own selection — the newest transport-written message the
+  room accepted, in the history window the room's channels derive, whose
+  binding can still write; a message a hook blocked is never replayed — so a
+  host that must act on the trigger before regenerating (delete
   the answer it replaces, refuse a runner's prompt that must not be replayed)
   asks instead of re-implementing the scan off a window of its own. `None`
   when a regenerate would do nothing; `RoomClosedError` when the room refuses
