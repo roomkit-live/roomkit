@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import pytest
+
 from roomkit.channels import SMSChannel
 from roomkit.channels.ai import AIChannel
+from roomkit.core.exceptions import RoomClosedError, RoomNotFoundError
 from roomkit.core.framework import RoomKit
 from roomkit.models.delivery import InboundMessage
-from roomkit.models.enums import ChannelCategory, EventType
+from roomkit.models.enums import ChannelCategory, EventType, RoomStatus
 from roomkit.models.event import TextContent
+from roomkit.models.framework_event import FrameworkEvent
 from roomkit.providers.ai.mock import MockAIProvider
 
 
@@ -21,31 +25,36 @@ def _ai_messages(events: list, ai_id: str) -> list:
     return [e for e in events if e.type == EventType.MESSAGE and e.source.channel_id == ai_id]
 
 
-class TestRegenerate:
-    async def _kit_with_turn(self, *, streaming: bool) -> tuple[RoomKit, MockAIProvider]:
-        kit = RoomKit()
-        ai_provider = MockAIProvider(
-            responses=["First answer", "Second answer"], streaming=streaming
-        )
-        sms = SMSChannel("sms1")
-        ai = AIChannel("ai1", provider=ai_provider)
-        kit.register_channel(sms)
-        kit.register_channel(ai)
-        await kit.create_room(room_id="r1")
-        await kit.attach_channel("r1", "sms1")
-        await kit.attach_channel("r1", "ai1", category=ChannelCategory.INTELLIGENCE)
+async def _kit_with_turn(
+    *, streaming: bool, turns: int = 1, responses: list[str] | None = None
+) -> tuple[RoomKit, MockAIProvider]:
+    """A room with an SMS transport, an AI channel and *turns* completed turns."""
+    kit = RoomKit()
+    ai_provider = MockAIProvider(
+        responses=responses or ["First answer", "Second answer"], streaming=streaming
+    )
+    sms = SMSChannel("sms1")
+    ai = AIChannel("ai1", provider=ai_provider)
+    kit.register_channel(sms)
+    kit.register_channel(ai)
+    await kit.create_room(room_id="r1")
+    await kit.attach_channel("r1", "sms1")
+    await kit.attach_channel("r1", "ai1", category=ChannelCategory.INTELLIGENCE)
 
+    for i in range(turns):
         await kit.process_inbound(
             InboundMessage(
                 channel_id="sms1",
                 sender_id="user1",
-                content=TextContent(body="What is the weather?"),
+                content=TextContent(body=f"What is the weather? ({i})"),
             )
         )
-        return kit, ai_provider
+    return kit, ai_provider
 
+
+class TestRegenerate:
     async def test_regenerate_adds_response_without_duplicating_user_message(self) -> None:
-        kit, ai_provider = await self._kit_with_turn(streaming=False)
+        kit, ai_provider = await _kit_with_turn(streaming=False)
 
         before = await kit.store.list_events("r1")
         users_before = _user_messages(before, "sms1")
@@ -65,7 +74,7 @@ class TestRegenerate:
         assert len(_ai_messages(after, "ai1")) == 2
 
     async def test_regenerate_context_includes_user_message(self) -> None:
-        kit, ai_provider = await self._kit_with_turn(streaming=False)
+        kit, ai_provider = await _kit_with_turn(streaming=False)
 
         await kit.regenerate_response("r1")
 
@@ -79,7 +88,7 @@ class TestRegenerate:
         assert len(weather_turns) == 1
 
     async def test_regenerate_streaming_provider(self) -> None:
-        kit, ai_provider = await self._kit_with_turn(streaming=True)
+        kit, ai_provider = await _kit_with_turn(streaming=True)
 
         assert len(ai_provider.calls) == 1
         result = await kit.regenerate_response("r1")
@@ -130,3 +139,122 @@ class TestRegenerate:
         await kit.attach_channel("r1", "sms1")
 
         assert await kit.regenerate_response("r1") is None
+
+
+class TestRegenerateStatusGuard:
+    """RFC §5.1: a room whose status refuses new events refuses a regenerate
+    before the agent runs — the pipeline's gate never saw a re-broadcast."""
+
+    async def test_a_closed_room_is_refused_before_the_agent_runs(self) -> None:
+        kit, ai_provider = await _kit_with_turn(streaming=False)
+        refused: list[FrameworkEvent] = []
+
+        @kit.on("room_refused_event")
+        async def on_refused(fe: FrameworkEvent) -> None:
+            refused.append(fe)
+
+        await kit.close_room("r1")
+        before = await kit.store.list_events("r1")
+        trigger = _user_messages(before, "sms1")[-1]
+
+        result = await kit.regenerate_response("r1")
+
+        assert result is not None
+        assert result.blocked is True
+        assert result.reason == "room_closed"
+        # The first turn's call only: no generation was paid for the refusal.
+        assert len(ai_provider.calls) == 1
+        # Nothing written, not even an audit record (§5.1).
+        assert await kit.store.list_events("r1") == before
+        assert len(refused) == 1
+        assert refused[0].room_id == "r1"
+        assert refused[0].event_id == trigger.id
+        assert refused[0].data == {"status": str(RoomStatus.CLOSED), "operation": "regenerate"}
+
+    async def test_an_archived_room_is_refused_too(self) -> None:
+        kit, ai_provider = await _kit_with_turn(streaming=True)
+        await kit.archive_room("r1")
+
+        result = await kit.regenerate_response("r1")
+
+        assert result is not None
+        assert result.blocked is True
+        assert result.reason == "room_closed"
+        assert len(ai_provider.calls) == 1
+
+    async def test_a_closed_room_with_nothing_to_regenerate_is_still_refused(self) -> None:
+        """The status is the verdict, not the tail: a closed room says
+        ``room_closed`` whether or not a trigger exists in it."""
+        kit = RoomKit()
+        kit.register_channel(SMSChannel("sms1"))
+        await kit.create_room(room_id="r1")
+        await kit.attach_channel("r1", "sms1")
+        await kit.close_room("r1")
+
+        result = await kit.regenerate_response("r1")
+
+        assert result is not None
+        assert result.blocked is True
+        assert result.reason == "room_closed"
+
+
+class TestRegenerateTarget:
+    """``regenerate_target`` answers with the primitive's own selection."""
+
+    async def test_target_is_the_event_regenerate_response_replays(self) -> None:
+        # Thirty turns: sixty message events, past the history floor, with the
+        # agent's own answers interleaved. Then lifecycle noise a host writes
+        # on the transport after the trigger — system events, not messages —
+        # which the conversation never holds and the selection must not pick.
+        kit, _ai_provider = await _kit_with_turn(streaming=False, turns=30, responses=["ok"])
+        for i in range(3):
+            await kit.send_event(
+                "r1", "sms1", TextContent(body=f"reconnected {i}"), event_type=EventType.SYSTEM
+            )
+        events = await kit.store.list_events("r1", limit=500)
+        assert len(events) > 50
+        last_user = _user_messages(events, "sms1")[-1]
+        assert last_user.content.body == "What is the weather? (29)"
+        assert max(e.index for e in events) > last_user.index
+
+        target = await kit.regenerate_target("r1")
+
+        assert target is not None
+        assert target.id == last_user.id
+
+        result = await kit.regenerate_response("r1")
+
+        assert result is not None
+        assert result.event is not None
+        assert result.event.id == target.id
+
+    async def test_target_is_none_when_the_source_binding_cannot_write(self) -> None:
+        kit, _ai_provider = await _kit_with_turn(streaming=False)
+        await kit.mute("r1", "sms1")
+
+        assert await kit.regenerate_target("r1") is None
+        assert await kit.regenerate_response("r1") is None
+
+    async def test_target_is_none_without_a_transport_message(self) -> None:
+        kit = RoomKit()
+        kit.register_channel(SMSChannel("sms1"))
+        await kit.create_room(room_id="r1")
+        await kit.attach_channel("r1", "sms1")
+
+        assert await kit.regenerate_target("r1") is None
+
+    async def test_target_raises_on_a_room_that_refuses_writes(self) -> None:
+        """An accessor returning an event has no way to hand back a refusal:
+        it raises, on ``send_event``'s reasoning, so a host learns the room
+        is closed before it acts on a trigger."""
+        kit, _ai_provider = await _kit_with_turn(streaming=False)
+        await kit.close_room("r1")
+
+        with pytest.raises(RoomClosedError):
+            await kit.regenerate_target("r1")
+
+    async def test_target_raises_on_an_unknown_room(self) -> None:
+        kit = RoomKit()
+
+        with pytest.raises(RoomNotFoundError):
+            await kit.regenerate_target("nope")

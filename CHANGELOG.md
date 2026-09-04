@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`regenerate_target(room_id)` names the event a regenerate re-runs.**
+  The primitive's own selection — the newest transport-written message in
+  the history window the room's channels derive, whose binding can still
+  write — so a host that must act on the trigger before regenerating (delete
+  the answer it replaces, refuse a runner's prompt that must not be replayed)
+  asks instead of re-implementing the scan off a window of its own. `None`
+  when a regenerate would do nothing; `RoomClosedError` when the room refuses
+  new events, on `send_event`'s reasoning: an accessor that returns an event
+  has no way to hand back a refusal. (RMK-161)
+
+### Fixed
+
+- **`regenerate_response` refuses a closed or archived room before the agent
+  runs.** It re-broadcasts an existing event, so the pipeline's status gate
+  never saw it: the agent ran (tools, tokens) and only the commit of its
+  answer was refused, with nothing in the result saying why. It now returns
+  `InboundResult(blocked=True, reason="room_closed")` under the room lock, as
+  `process_inbound` does, and emits `room_refused_event` with
+  `data={"status": ..., "operation": "regenerate"}` and the trigger it would
+  have replayed as `event_id` (RFC §5.1). (RMK-161)
+
 ## [0.63.0] — 2026-09-03
 
 ### Added
