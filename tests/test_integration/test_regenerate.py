@@ -177,7 +177,11 @@ class TestRegenerateStatusGuard:
         assert len(refused) == 1
         assert refused[0].room_id == "r1"
         assert refused[0].event_id == trigger.id
-        assert refused[0].data == {"status": str(RoomStatus.CLOSED), "operation": "regenerate"}
+        assert refused[0].data == {
+            "status": str(RoomStatus.CLOSED),
+            "operation": "regenerate",
+            "event_type": str(EventType.MESSAGE),
+        }
 
     async def test_an_archived_room_is_refused_too(self) -> None:
         kit, ai_provider = await _kit_with_turn(streaming=True)
@@ -198,12 +202,26 @@ class TestRegenerateStatusGuard:
         await kit.create_room(room_id="r1")
         await kit.attach_channel("r1", "sms1")
         await kit.close_room("r1")
+        refused: list[FrameworkEvent] = []
+
+        @kit.on("room_refused_event")
+        async def on_refused(fe: FrameworkEvent) -> None:
+            refused.append(fe)
 
         result = await kit.regenerate_response("r1")
 
         assert result is not None
         assert result.blocked is True
         assert result.reason == "room_closed"
+        # No trigger to name: event_id and event_type are null, the contract
+        # keeps its keys (RFC §8.2).
+        assert len(refused) == 1
+        assert refused[0].event_id is None
+        assert refused[0].data == {
+            "status": str(RoomStatus.CLOSED),
+            "operation": "regenerate",
+            "event_type": None,
+        }
 
 
 class TestRegenerateTarget:

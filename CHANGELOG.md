@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **`room_refused_event` has one `data` contract, whichever path refused.**
+  Three paths emitted it with three shapes — the inbound gate
+  `{status, event_type}`, the reentry pass `{event_type, reentry}` (no
+  `status`), a regenerate `{status, operation}` — and RFC §8.2 did not list
+  the event, so a handler reading `data["status"]` raised `KeyError` on a
+  refused reentry. The three now go through one helper and emit
+  `{"status": ..., "operation": "inbound" | "reentry" | "regenerate",
+  "event_type": ...}` (`event_type` is `None` when a regenerate had nothing to
+  replay); the reentry's `reentry: True` key is replaced by
+  `operation: "reentry"`. RFC §5.1 names the event and §8.2 specifies it.
+  (RMK-166)
+
 ## [0.64.0] — 2026-09-04
 
 ### Added

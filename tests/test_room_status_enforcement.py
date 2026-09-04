@@ -15,8 +15,9 @@ from roomkit.core.framework import RoomKit
 from roomkit.models.channel import ChannelBinding, ChannelOutput
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundMessage
-from roomkit.models.enums import ChannelType, HookExecution, HookTrigger, RoomStatus
+from roomkit.models.enums import ChannelType, EventType, HookExecution, HookTrigger, RoomStatus
 from roomkit.models.event import EventSource, RoomEvent, TextContent
+from roomkit.models.framework_event import FrameworkEvent
 
 
 class _Transport(Channel):
@@ -112,6 +113,32 @@ class TestClosedRoomRefuses:
 
         after = await kit._store.list_events("r1")
         assert [e.id for e in after] == [e.id for e in before]
+
+    async def test_the_refusal_is_observable_with_the_one_data_contract(self) -> None:
+        """RFC §8.2: ``room_refused_event`` carries ``status``, ``operation``
+        and ``event_type`` whichever path refused; this is the inbound one."""
+        kit, _src = await _kit()
+        refused: list[FrameworkEvent] = []
+
+        @kit.on("room_refused_event")
+        async def on_refused(fe: FrameworkEvent) -> None:
+            refused.append(fe)
+
+        await kit.close_room("r1")
+        result = await kit.process_inbound(
+            InboundMessage(channel_id="ws", sender_id="u1", content=TextContent(body="hi")),
+            room_id="r1",
+        )
+
+        assert result.blocked is True
+        assert len(refused) == 1
+        assert refused[0].room_id == "r1"
+        assert refused[0].event_id is not None
+        assert refused[0].data == {
+            "status": str(RoomStatus.CLOSED),
+            "operation": "inbound",
+            "event_type": str(EventType.MESSAGE),
+        }
 
     async def test_the_closure_itself_stays_observable(self) -> None:
         """The one exception: the transition reports itself, refusal or not."""

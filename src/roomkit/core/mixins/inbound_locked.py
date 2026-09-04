@@ -426,19 +426,9 @@ class InboundLockedMixin(HelpersMixin):
         # Nothing is written, not even a BLOCKED record: appending an audit
         # event to a closed room is the thing the status forbids (§5.1).
         if context.room.status in _REFUSING_STATUSES:
-            logger.info(
-                "Event refused: room %s is %s",
-                room_id,
-                context.room.status,
-                extra={"room_id": room_id, "event_id": event.id},
+            return await self._refuse_closed_room(
+                room_id, status=context.room.status, operation="inbound", event=event
             )
-            await self._emit_framework_event(
-                "room_refused_event",
-                room_id=room_id,
-                event_id=event.id,
-                data={"status": str(context.room.status), "event_type": str(event.type)},
-            )
-            return InboundResult(blocked=True, reason="room_closed")
 
         # Persist deferred participant creation inside the lock (Fix #1)
         if resolved_identity is not None:

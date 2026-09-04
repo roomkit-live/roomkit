@@ -20,8 +20,11 @@ from roomkit.models.enums import (
     ChannelCategory,
     ChannelType,
     EventStatus,
+    EventType,
+    RoomStatus,
 )
 from roomkit.models.event import EventSource, RoomEvent, TextContent
+from roomkit.models.framework_event import FrameworkEvent
 from tests.test_framework import AILikeChannel, SimpleChannel
 
 
@@ -40,6 +43,7 @@ class ClosingAIChannel(Channel):
     def __init__(self, channel_id: str, kit: RoomKit) -> None:
         super().__init__(channel_id)
         self._kit = kit
+        self.responses: list[RoomEvent] = []
 
     async def handle_inbound(self, message: InboundMessage, context: RoomContext) -> RoomEvent:
         raise NotImplementedError
@@ -54,6 +58,7 @@ class ClosingAIChannel(Channel):
             content=TextContent(body="answer after close"),
             chain_depth=event.chain_depth + 1,
         )
+        self.responses.append(resp)
         return ChannelOutput(responded=True, response_events=[resp])
 
     async def deliver(
@@ -75,11 +80,17 @@ class TestReentryMeetsTheStatusGate:
         """RFC §5.1 / §10.1 step 6 — a reentry re-enters the locked section
         and meets the status gate there; nothing is stored."""
         kit = RoomKit()
+        ai = ClosingAIChannel("ai1", kit)
         kit.register_channel(SimpleChannel("sms1"))
-        kit.register_channel(ClosingAIChannel("ai1", kit))
+        kit.register_channel(ai)
         await kit.create_room(room_id="r1")
         await kit.attach_channel("r1", "sms1")
         await kit.attach_channel("r1", "ai1")
+        refused: list[FrameworkEvent] = []
+
+        @kit.on("room_refused_event")
+        async def on_refused(fe: FrameworkEvent) -> None:
+            refused.append(fe)
 
         await kit.process_inbound(_user_msg())
 
@@ -87,6 +98,16 @@ class TestReentryMeetsTheStatusGate:
         assert [e for e in events if e.source.channel_type == ChannelType.AI] == []
         room = await kit.get_room("r1")
         assert room.event_count == len(events)
+        # RFC §8.2: the refusal is observable, with the same data contract as
+        # the inbound gate and a regenerate — ``operation`` names this path.
+        assert len(refused) == 1
+        assert refused[0].room_id == "r1"
+        assert refused[0].event_id == ai.responses[0].id
+        assert refused[0].data == {
+            "status": str(RoomStatus.CLOSED),
+            "operation": "reentry",
+            "event_type": str(EventType.MESSAGE),
+        }
 
 
 class TestNonWritableSourceResponses:

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from roomkit.core.exceptions import RoomClosedError
@@ -18,8 +17,6 @@ if TYPE_CHECKING:
     from roomkit.models.channel import ChannelBinding
     from roomkit.models.context import RoomContext
     from roomkit.store.base import ConversationStore
-
-logger = logging.getLogger("roomkit.framework")
 
 
 @runtime_checkable
@@ -178,19 +175,12 @@ class RegenerateMixin(HelpersMixin):
             # step 6): close_room() takes it, and a status read before it can
             # be stale by the time the turn would commit. Nothing is written.
             if context.room.status in _REFUSING_STATUSES:
-                logger.info(
-                    "Regenerate refused: room %s is %s",
+                return await self._refuse_closed_room(
                     room_id,
-                    context.room.status,
-                    extra={"room_id": room_id},
+                    status=context.room.status,
+                    operation="regenerate",
+                    event=found[0] if found is not None else None,
                 )
-                await self._emit_framework_event(
-                    "room_refused_event",
-                    room_id=room_id,
-                    event_id=found[0].id if found is not None else None,
-                    data={"status": str(context.room.status), "operation": "regenerate"},
-                )
-                return InboundResult(blocked=True, reason="room_closed")
 
             if found is None:
                 return None

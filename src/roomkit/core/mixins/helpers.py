@@ -24,12 +24,13 @@ import asyncio
 import contextlib
 import logging
 from collections.abc import Callable, Coroutine
-from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Literal, Protocol, runtime_checkable
 from uuid import uuid4
 
 from roomkit.core._participant_channels import channels_reached, warn_cross_channel
 from roomkit.core.exceptions import RoomNotFoundError
 from roomkit.models.context import RoomContext
+from roomkit.models.delivery import InboundResult
 from roomkit.models.enums import (
     ChannelCategory,
     ChannelType,
@@ -64,6 +65,16 @@ loaded."""
 # because every path that can grow a timeline must consult it (§5.1: "at
 # EVERY point where the timeline can grow"), and those paths span mixins.
 _REFUSING_STATUSES = frozenset({RoomStatus.CLOSED, RoomStatus.ARCHIVED})
+
+RefusedOperation = Literal["inbound", "reentry", "regenerate"]
+"""The path a ``room_refused_event`` names in ``data["operation"]`` (RFC §8.2)."""
+
+
+def _refuses_writes(room: Room | None) -> bool:
+    """Whether *room* refuses new timeline events (RFC §5.1). A missing room
+    refuses too: nothing can be appended to a room that is not there."""
+    return room is None or room.status in _REFUSING_STATUSES
+
 
 if TYPE_CHECKING:
     from roomkit.channels.base import Channel
@@ -152,8 +163,49 @@ class HelpersMixin:
         the locked pipeline (which reads the status off the context it already
         holds) ask here; a missing room refuses too.
         """
-        room = await self._store.get_room(room_id)
-        return room is None or room.status in _REFUSING_STATUSES
+        return _refuses_writes(await self._store.get_room(room_id))
+
+    async def _refuse_closed_room(
+        self,
+        room_id: str,
+        *,
+        status: RoomStatus | None,
+        operation: RefusedOperation,
+        event: RoomEvent | None,
+    ) -> InboundResult:
+        """Refuse a write to a room whose status refuses new events (RFC §5.1).
+
+        The one place the refusing paths converge — the inbound gate (§10.1
+        step 6), the reentry pass and a regenerate — so a refusal reads the
+        same from each: a log line, the ``room_refused_event`` framework event
+        with the one ``data`` contract §8.2 specifies (``status``,
+        ``operation``, ``event_type``), and the blocked result. Nothing is
+        written, not even a BLOCKED record: appending an audit event to a
+        closed room is the thing the status forbids.
+
+        ``event`` is the refused event — for a regenerate, the message it
+        would have replayed, ``None`` when nothing qualified. ``status`` is
+        ``None`` only when the room no longer exists (a reentry whose room was
+        deleted while its trigger's delivery set ran).
+        """
+        logger.info(
+            "Refused %s: room %s is %s",
+            operation,
+            room_id,
+            status if status is not None else "gone",
+            extra={"room_id": room_id, "event_id": event.id if event is not None else None},
+        )
+        await self._emit_framework_event(
+            "room_refused_event",
+            room_id=room_id,
+            event_id=event.id if event is not None else None,
+            data={
+                "status": str(status) if status is not None else None,
+                "operation": operation,
+                "event_type": str(event.type) if event is not None else None,
+            },
+        )
+        return InboundResult(blocked=True, reason="room_closed")
 
     async def _persist_committed(self, room_id: str, event: RoomEvent) -> RoomEvent | None:
         """Atomically commit an event (index + insert + room counters, RFC

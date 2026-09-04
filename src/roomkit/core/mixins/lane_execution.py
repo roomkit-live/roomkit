@@ -16,7 +16,7 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
-from roomkit.core.mixins.helpers import _RECENT_EVENTS_LIMIT, HelpersMixin
+from roomkit.core.mixins.helpers import _RECENT_EVENTS_LIMIT, HelpersMixin, _refuses_writes
 from roomkit.models.delivery import DeliveryError, DeliveryResult
 from roomkit.models.enums import ChannelCategory, EventStatus, HookTrigger
 from roomkit.models.event import EventSource, RoomEvent
@@ -733,17 +733,13 @@ class LaneExecutionMixin(HelpersMixin):
             # have been closed while the trigger's delivery set was executing:
             # an AI answer that lands after close_room() must not grow a closed
             # room's timeline. Nothing is written, not even a BLOCKED record.
-            if await self._room_refuses_writes(room_id):
-                logger.info(
-                    "Reentry refused: room %s no longer accepts writes",
+            room = await self._store.get_room(room_id)
+            if _refuses_writes(room):
+                await self._refuse_closed_room(
                     room_id,
-                    extra={"room_id": room_id, "event_id": reentry.id},
-                )
-                await self._emit_framework_event(
-                    "room_refused_event",
-                    room_id=room_id,
-                    event_id=reentry.id,
-                    data={"event_type": str(reentry.type), "reentry": True},
+                    status=room.status if room is not None else None,
+                    operation="reentry",
+                    event=reentry,
                 )
                 return
 
