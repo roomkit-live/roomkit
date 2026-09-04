@@ -21,6 +21,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and with nothing written. `room_closed` still wins on a closed room; without
   `trigger_id` nothing changes. (RMK-167)
 
+### Fixed
+
+- **A message a hook blocked no longer reaches the agent as history.** A
+  BEFORE_BROADCAST refusal stores the event `BLOCKED` and delivers it to
+  nobody (RFC §10.1 step 10), but `get_conversation` filters on type only, so
+  the next turn's `AIChannel` found it in `recent_events` and handed it to the
+  provider: the agent read what the room had refused. `visible_events` — the
+  per-reader filter the AI channel and the ACP catch-up already apply (RFC
+  §7.5 rule 8) — now drops BLOCKED events too, a channel's own included; hooks
+  and the store keep the whole timeline, and no store changes: the filter
+  applies to `recent_events` whichever backend loaded them. (RMK-168)
+
 ### Changed
 
 - **`room_refused_event` has one `data` contract, whichever path refused.**

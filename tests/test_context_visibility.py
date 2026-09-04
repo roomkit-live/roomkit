@@ -21,6 +21,7 @@ from roomkit.models.delivery import InboundMessage
 from roomkit.models.enums import (
     ChannelCategory,
     ChannelType,
+    EventStatus,
     HookTrigger,
     Visibility,
 )
@@ -168,18 +169,90 @@ class TestHiddenEventsStayHidden:
         await kit.close()
 
 
+class TestRefusedEventsStayRefused:
+    """A message a hook blocked is stored BLOCKED and delivered to nobody
+    (RFC §10.1 step 10); it does not come back to the model as history one
+    turn later (§7.5 rule 8), on any store, because the filter is per reader."""
+
+    async def _spam_filtered_room(self) -> tuple[RoomKit, MockAIProvider]:
+        kit, provider = await _room()
+
+        @kit.hook(HookTrigger.BEFORE_BROADCAST)
+        async def refuse_spam(event: RoomEvent, ctx: RoomContext) -> HookResult:
+            if MARKER in getattr(event.content, "body", ""):
+                return HookResult.block("spam")
+            return HookResult.allow()
+
+        return kit, provider
+
+    async def test_a_message_a_hook_blocked_never_reaches_the_model(self) -> None:
+        kit, provider = await self._spam_filtered_room()
+        await kit.process_inbound(
+            InboundMessage(channel_id="ws1", sender_id="u1", content=TextContent(body="hello"))
+        )
+        refused = await kit.process_inbound(
+            InboundMessage(channel_id="ws1", sender_id="u1", content=TextContent(body=MARKER))
+        )
+        assert refused.blocked is True
+        events = await kit.store.list_events("r1")
+        assert [e.status for e in events if getattr(e.content, "body", "") == MARKER] == [
+            EventStatus.BLOCKED
+        ]
+
+        await kit.process_inbound(
+            InboundMessage(channel_id="ws1", sender_id="u1", content=TextContent(body="and now?"))
+        )
+        regenerated = await kit.regenerate_response("r1")
+
+        assert regenerated is not None and regenerated.event is not None
+        # The refused message is in the store (audit) and out of every prompt.
+        assert MARKER in " ".join(str(getattr(e.content, "body", "")) for e in events)
+        assert MARKER not in _prompted(provider)
+        assert "hello" in _prompted(provider)
+        await kit.close()
+
+    async def test_hooks_still_see_the_blocked_record(self) -> None:
+        kit, _provider = await self._spam_filtered_room()
+        seen: list[tuple[str, EventStatus]] = []
+
+        @kit.hook(HookTrigger.BEFORE_BROADCAST)
+        async def capture(event: RoomEvent, ctx: RoomContext) -> HookResult:
+            seen.extend(
+                (str(e.content.body), e.status)
+                for e in ctx.recent_events
+                if hasattr(e.content, "body")
+            )
+            return HookResult.allow()
+
+        await kit.process_inbound(
+            InboundMessage(channel_id="ws1", sender_id="u1", content=TextContent(body=MARKER))
+        )
+        await kit.process_inbound(
+            InboundMessage(channel_id="ws2", sender_id="u2", content=TextContent(body="hello"))
+        )
+
+        assert (MARKER, EventStatus.BLOCKED) in seen
+        await kit.close()
+
+
 def _binding(channel_id: str, **kwargs: object) -> ChannelBinding:
     return ChannelBinding(
         channel_id=channel_id, room_id="r1", channel_type=ChannelType.WEBSOCKET, **kwargs
     )
 
 
-def _event(source: str, body: str, visibility: str = Visibility.ALL) -> RoomEvent:
+def _event(
+    source: str,
+    body: str,
+    visibility: str = Visibility.ALL,
+    status: EventStatus = EventStatus.DELIVERED,
+) -> RoomEvent:
     return RoomEvent(
         room_id="r1",
         source=EventSource(channel_id=source, channel_type=ChannelType.WEBSOCKET),
         content=TextContent(body=body),
         visibility=visibility,
+        status=status,
     )
 
 
@@ -225,3 +298,24 @@ class TestVisibleEvents:
     def test_an_unbound_reader_sees_only_what_it_produced(self) -> None:
         ctx = self._context(_event("ws1", "theirs"), _event("ghost", "mine"), ws1="all")
         assert [str(e.content.body) for e in visible_events(ctx, "ghost")] == ["mine"]
+
+    def test_a_blocked_event_reaches_no_reader(self) -> None:
+        ctx = self._context(
+            _event("ws1", "refused", status=EventStatus.BLOCKED),
+            _event("ws1", "accepted"),
+            ws1="all",
+            reader="all",
+        )
+        assert [str(e.content.body) for e in visible_events(ctx, "reader")] == ["accepted"]
+
+    def test_a_channel_does_not_keep_its_own_blocked_event(self) -> None:
+        # The own-events exception is about what a channel may know; a turn
+        # the room refused is not one it may continue from.
+        ctx = self._context(
+            _event("reader", "mine"),
+            _event("reader", "mine, refused", status=EventStatus.BLOCKED),
+            reader="all",
+        )
+        assert [str(e.content.body) for e in visible_events(ctx, "reader")] == ["mine"]
+        ghost = self._context(_event("ghost", "mine, refused", status=EventStatus.BLOCKED))
+        assert visible_events(ghost, "ghost") == []

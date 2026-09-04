@@ -72,9 +72,11 @@ def room_context_block(
 
     What it deliberately leaves out:
 
-    - **Anything visibility withheld.** ``visible_events`` answers this (RFC
-      §7.5 rule 8): catching up is not a second door into the room, and the
-      agent reads exactly what it would have been delivered had it been asked.
+    - **Anything visibility withheld, and anything the room refused.**
+      ``visible_events`` answers both (RFC §7.5 rule 8): catching up is not a
+      second door into the room, and the agent reads exactly what it would
+      have been delivered had it been asked — a BLOCKED event was delivered to
+      nobody.
     - **The triggering event.** It follows the block as the actual request.
     - **The agent's own past events.** Its session already holds what it said,
       and a block headed "messages you did not receive" is the wrong place to

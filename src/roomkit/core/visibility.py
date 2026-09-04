@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from roomkit.models.channel import ChannelBinding
 from roomkit.models.context import RoomContext
-from roomkit.models.enums import ChannelCategory, Visibility
+from roomkit.models.enums import ChannelCategory, EventStatus, Visibility
 from roomkit.models.event import RoomEvent
 
 
@@ -79,6 +79,14 @@ def visible_events(context: RoomContext, channel_id: str) -> list[RoomEvent]:
 
     A channel with no binding in this room sees only what it produced itself.
 
+    An event stored BLOCKED was delivered to nobody — a hook refused it, its
+    source could not write (§10.1 steps 10-11), the chain-depth cap took it
+    (§8.3) — and reaches nobody here either, the channel that produced it
+    included: the room refused that turn, and an agent that reads its own
+    refused answer as history continues from a turn nobody received. The
+    record stays in the timeline for host code and audit; the exception above
+    is about what a channel may *know*, and a refused event is not that.
+
     Answers the visibility half of §7.5 rule 1 only. Access is enforced where
     events are delivered (:meth:`EventRouter._filter_targets` drops WRITE_ONLY
     and NONE), which is why a channel that may not read never reaches a context
@@ -87,11 +95,12 @@ def visible_events(context: RoomContext, channel_id: str) -> list[RoomEvent]:
     """
     bindings = {b.channel_id: b for b in context.bindings}
     reader = bindings.get(channel_id)
+    accepted = [e for e in context.recent_events if e.status != EventStatus.BLOCKED]
     if reader is None:
-        return [e for e in context.recent_events if e.source.channel_id == channel_id]
+        return [e for e in accepted if e.source.channel_id == channel_id]
     return [
         e
-        for e in context.recent_events
+        for e in accepted
         if e.source.channel_id == channel_id
         or visibility_allows(effective_visibility(e, bindings.get(e.source.channel_id)), reader)
     ]
