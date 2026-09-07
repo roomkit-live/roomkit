@@ -18,6 +18,7 @@ import contextlib
 import logging
 import time
 from collections.abc import AsyncIterator, Mapping, Sequence
+from copy import deepcopy
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -31,8 +32,6 @@ from roomkit.channels._acp_client import (
     _model_dump,
     _TurnDone,
     _TurnState,
-    _usage_report,
-    _usage_tokens,
 )
 from roomkit.channels._acp_context import (
     ACPContextContributor,
@@ -42,6 +41,13 @@ from roomkit.channels._acp_context import (
     room_context_block,
 )
 from roomkit.channels._acp_events import ACPEventsMixin
+from roomkit.channels._acp_usage import (
+    _apply_transport_usage,
+    _report_context,
+    _transport_usage,
+    _usage_report,
+    _usage_tokens,
+)
 from roomkit.channels.acp_transport import ACPTransport, StdioACPTransport
 from roomkit.channels.base import Channel
 from roomkit.models.channel import ChannelBinding, ChannelCapabilities, ChannelOutput
@@ -540,7 +546,22 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
         async with self._room_turn_lock(room_id):
             connection = await self._ensure_connection()
             session_id = await self._session_for(room_id, connection)
-            turn = _TurnState(room_id=room_id)
+            prompt_source: dict[str, Any] = {"source": "session/prompt", "scope": "unspecified"}
+            model = self.session_config(room_id).get("model")
+            if isinstance(model, str):
+                prompt_source["model_at_start"] = model
+            turn = _TurnState(
+                room_id=room_id,
+                usage_metadata={
+                    "protocol": "acp",
+                    "transport": self._transport.name,
+                    "session_id": session_id,
+                    "event_id": event_id,
+                    "prompt": prompt_source,
+                },
+            )
+            if self._agent_info is not None:
+                turn.usage_metadata["adapter_info"] = deepcopy(self._agent_info)
             self._turns[session_id] = turn
             catch_up = room_context_block(
                 context,
@@ -637,6 +658,7 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
                     room_id=turn.room_id,
                     tool_calls_count=len(turn.tools),
                     usage=_usage_report(turn.tokens, turn.context),
+                    usage_metadata=turn.usage_metadata,
                     latency_ms=int((time.monotonic() - turn.started_at) * 1000),
                     streaming=True,
                 )
@@ -684,13 +706,29 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
             # the agent did not name stays unwritten rather than being read as
             # either outcome.
             stop_reason = getattr(response, "stop_reason", None)
+            if stop_reason:
+                turn.usage_metadata["prompt"]["stop_reason"] = stop_reason
             if stop_reason and stop_reason != _CLEAN_STOP_REASON:
                 acp_meta["stop_reason"] = stop_reason
             await self._drain_session_updates(session_id)
+            envelope = (
+                _transport_usage(response) if self._transport.provides_usage_metadata else None
+            )
+            if envelope is not None:
+                _apply_transport_usage(turn.usage_metadata, envelope)
+                # The model of a recovered result is not the model we just
+                # asked. Only the transport can supply that historical fact.
+                turn.usage_metadata["prompt"].pop("model_at_start", None)
+                if isinstance(envelope.get("model"), str):
+                    turn.usage_metadata["prompt"]["model"] = envelope["model"]
+                report = turn.usage_metadata.get("usage_report")
+                turn.context = _report_context(report)
         except BaseException as exc:
             # The prompt never returned, so no stop reason exists to record:
             # the turn ended on the way, and that is the fact to carry.
             acp_meta["interrupted"] = True
+            turn.usage_finalized = True
             turn.queue.put_nowait(_TurnDone(error=exc))
         else:
+            turn.usage_finalized = True
             turn.queue.put_nowait(_TurnDone())
