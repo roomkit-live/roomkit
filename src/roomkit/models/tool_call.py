@@ -142,6 +142,14 @@ class AIResponseEvent:
     produced no text.
     """
 
+    usage_metadata: dict[str, Any] = field(default_factory=dict)
+    """Optional provenance and scope of the provider's usage observations.
+
+    ACP includes the native session, prompt source and session usage report.
+    These are observations, not a price or a claim that generation succeeded.
+    Existing providers and consumers can leave this empty.
+    """
+
 
 # Callback type for AI response observation (fire-and-forget).
 AfterResponseCallback = Callable[["AIResponseEvent"], Awaitable[None]]

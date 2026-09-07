@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Awaitable, Callable, Mapping
+from copy import deepcopy
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from roomkit.channels._acp_client import (
@@ -16,6 +17,11 @@ from roomkit.channels._acp_client import (
     _result_text,
     _ToolState,
     _TurnState,
+)
+from roomkit.channels._acp_usage import (
+    _apply_transport_usage,
+    _observe_usage,
+    _transport_usage,
     _usage_context,
 )
 from roomkit.models.streaming import (
@@ -103,12 +109,26 @@ class ACPEventsMixin:
         )
 
     async def _on_usage_update(self, session_id: str, update: Any) -> None:
+        envelope = _transport_usage(update)
+        report = (
+            envelope.get("usage_report")
+            if envelope is not None
+            else _observe_usage(
+                update, _config_values(self._session_options.get(session_id)).get("model")
+            )
+        )
         turn = self._turns.get(session_id)
-        if turn is not None:
+        if turn is not None and (envelope is None or envelope.get("session_id") == session_id):
             # Kept, not only announced: the end-of-turn report is the only
             # place this reaches a host that is not watching the ephemeral
             # stream.
-            turn.context = _usage_context(update)
+            turn.context = _usage_context(
+                report.get("update") if isinstance(report, Mapping) else None
+            )
+            if envelope is not None:
+                _apply_transport_usage(turn.usage_metadata, envelope, terminal=False)
+            else:
+                turn.usage_metadata["usage_report"] = deepcopy(report)
         room_id = self._session_rooms.get(session_id)
         if room_id is None:
             return
@@ -119,6 +139,12 @@ class ACPEventsMixin:
                 "type": "acp_usage",
                 "session_id": session_id,
                 "usage": _model_dump(update),
+                "usage_metadata": envelope
+                if envelope is not None
+                else {
+                    "session_id": session_id,
+                    "usage_report": report,
+                },
             },
         )
 

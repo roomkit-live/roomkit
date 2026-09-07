@@ -75,6 +75,9 @@ class _TurnState:
     context: dict[str, Any] = field(default_factory=dict)
     """Last context-window occupancy and running cost the agent announced."""
 
+    usage_metadata: dict[str, Any] = field(default_factory=dict)
+    """Snapshots of the source identities, independent of room/channel identity."""
+
     completed: bool = False
     """Whether the turn reached its terminal item without an error.
 
@@ -123,75 +126,6 @@ def _model_dump(value: Any) -> Any:
     if isinstance(value, (list, tuple)):
         return [_model_dump(item) for item in value]
     return value
-
-
-_TOKEN_FIELDS = (
-    "total_tokens",
-    "input_tokens",
-    "output_tokens",
-    "thought_tokens",
-    "cached_read_tokens",
-    "cached_write_tokens",
-)
-
-
-def _usage_tokens(usage: Any) -> dict[str, int]:
-    """Read the ``Usage`` an agent returns when a prompt ends.
-
-    Taken off the model by attribute rather than out of :func:`_model_dump`,
-    whose camelCase aliases would not sit beside the counters an in-process
-    provider reports under the same key.
-
-    Relayed exactly as the agent sent it. The ACP schema annotates these
-    fields as running session figures ("total input tokens across all turns")
-    while the reference agent fills them per prompt — measured against it,
-    ``cached_read_tokens`` is the whole prefix re-read on that turn, not a sum
-    over turns. RoomKit cannot tell the two apart from one reading, and
-    guessing wrong corrupts the number in the direction nobody can detect
-    downstream, so it does no arithmetic on them at all.
-    """
-    counters: dict[str, int] = {}
-    for name in _TOKEN_FIELDS:
-        value = getattr(usage, name, None)
-        if isinstance(value, int):
-            counters[name] = value
-    return counters
-
-
-def _usage_context(update: Any) -> dict[str, Any]:
-    """Read a usage notification: how full the context is, what it has cost.
-
-    A different quantity from the token counters above — ``used``/``size``
-    describe the window the session is living in, and ``cost`` is its running
-    total. These really are cumulative, and observably so: they climb turn
-    after turn.
-    """
-    context: dict[str, Any] = {}
-    used = getattr(update, "used", None)
-    if isinstance(used, int):
-        context["context_used"] = used
-    size = getattr(update, "size", None)
-    if isinstance(size, int):
-        context["context_size"] = size
-    cost = getattr(update, "cost", None)
-    amount = getattr(cost, "amount", None)
-    if isinstance(amount, (int, float)):
-        context["cost"] = float(amount)
-    currency = getattr(cost, "currency", None)
-    if isinstance(currency, str) and currency:
-        context["currency"] = currency
-    return context
-
-
-def _usage_report(tokens: dict[str, int], context: dict[str, Any]) -> dict[str, Any]:
-    """The accounting a finished turn carries: what the agent counted, and where.
-
-    Two readings side by side under distinct keys — the token counters from
-    the prompt's own response, and the session's context occupancy and running
-    cost. Both are the agent's figures, unaltered; see :func:`_usage_tokens`
-    for why nothing here is differenced.
-    """
-    return {**tokens, **context}
 
 
 def _config_values(options: Any) -> dict[str, str | bool]:

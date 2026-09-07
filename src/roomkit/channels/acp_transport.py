@@ -60,6 +60,25 @@ class ACPTransport(ABC):
 
     Implement this to reach an agent the channel cannot spawn itself — one
     running on another machine, or behind a relay that carries its stdio.
+
+    Usage provenance is an optional extension of the connection's SDK models:
+    ``PromptResponse._meta["roomkit.live/usage"]`` (``field_meta`` in Python)
+    carries ``session_id``, ``session_epoch``, ``usage_protocol``, ``node_id``,
+    ``agent_id``, ``result_id``, ``turn_id``, ``generation`` and ``replayed``
+    when known. ``model`` is the model of that prompt, if known. Do not infer
+    any of them from the room or current connection during recovery.
+
+    ``usage_report`` is the last session observation, with ``report_id``,
+    ``observed_at_ms``, ``source="session/update"``, ``scope="session"``,
+    optional ``source_result_id``, and the raw ACP ``update``. It stays
+    separate from ``PromptResponse.usage`` token counters. Forward the same
+    envelope on a ``UsageUpdate`` to preserve live report identities too.
+    A terminal envelope replaces live observations, including when it has no
+    report. Replay must preserve the original identities and timestamps.
+
+    The transport owns the authenticated node/adapter identity and must
+    validate the envelope before exposing it. Old connections may omit the
+    extension entirely. No additional abstract methods are required.
     """
 
     @property
