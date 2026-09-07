@@ -78,6 +78,9 @@ class _TurnState:
     usage_metadata: dict[str, Any] = field(default_factory=dict)
     """Snapshots of the source identities, independent of room/channel identity."""
 
+    usage_finalized: bool = False
+    """The runner sealed its observations; later notifications stay ephemeral."""
+
     completed: bool = False
     """Whether the turn reached its terminal item without an error.
 

@@ -18,6 +18,7 @@ import contextlib
 import logging
 import time
 from collections.abc import AsyncIterator, Mapping, Sequence
+from copy import deepcopy
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -42,8 +43,8 @@ from roomkit.channels._acp_context import (
 from roomkit.channels._acp_events import ACPEventsMixin
 from roomkit.channels._acp_usage import (
     _apply_transport_usage,
+    _report_context,
     _transport_usage,
-    _usage_context,
     _usage_report,
     _usage_tokens,
 )
@@ -559,6 +560,8 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
                     "prompt": prompt_source,
                 },
             )
+            if self._agent_info is not None:
+                turn.usage_metadata["adapter_info"] = deepcopy(self._agent_info)
             self._turns[session_id] = turn
             catch_up = room_context_block(
                 context,
@@ -708,7 +711,9 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
             if stop_reason and stop_reason != _CLEAN_STOP_REASON:
                 acp_meta["stop_reason"] = stop_reason
             await self._drain_session_updates(session_id)
-            envelope = _transport_usage(response)
+            envelope = (
+                _transport_usage(response) if self._transport.provides_usage_metadata else None
+            )
             if envelope is not None:
                 _apply_transport_usage(turn.usage_metadata, envelope)
                 # The model of a recovered result is not the model we just
@@ -717,13 +722,13 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
                 if isinstance(envelope.get("model"), str):
                     turn.usage_metadata["prompt"]["model"] = envelope["model"]
                 report = turn.usage_metadata.get("usage_report")
-                turn.context = _usage_context(
-                    report.get("update") if isinstance(report, Mapping) else None
-                )
+                turn.context = _report_context(report)
         except BaseException as exc:
             # The prompt never returned, so no stop reason exists to record:
             # the turn ended on the way, and that is the fact to carry.
             acp_meta["interrupted"] = True
+            turn.usage_finalized = True
             turn.queue.put_nowait(_TurnDone(error=exc))
         else:
+            turn.usage_finalized = True
             turn.queue.put_nowait(_TurnDone())

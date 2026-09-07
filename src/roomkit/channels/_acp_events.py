@@ -21,8 +21,8 @@ from roomkit.channels._acp_client import (
 from roomkit.channels._acp_usage import (
     _apply_transport_usage,
     _observe_usage,
+    _report_context,
     _transport_usage,
-    _usage_context,
 )
 from roomkit.models.streaming import (
     ThinkingDeltaMarker,
@@ -32,6 +32,7 @@ from roomkit.models.streaming import (
 from roomkit.realtime.base import EphemeralEvent, EphemeralEventType
 
 if TYPE_CHECKING:
+    from roomkit.channels.acp_transport import ACPTransport
     from roomkit.realtime.base import RealtimeBackend
     from roomkit.tools.external import ExternalToolHandler
 
@@ -47,6 +48,7 @@ class ACPEventsMixin:
     _turns: dict[str, _TurnState]
     _session_rooms: dict[str, str]
     _session_options: dict[str, list[Any]]
+    _transport: ACPTransport
     _external_tool_handler: ExternalToolHandler | None
     _realtime: RealtimeBackend | None
 
@@ -109,7 +111,7 @@ class ACPEventsMixin:
         )
 
     async def _on_usage_update(self, session_id: str, update: Any) -> None:
-        envelope = _transport_usage(update)
+        envelope = _transport_usage(update) if self._transport.provides_usage_metadata else None
         report = (
             envelope.get("usage_report")
             if envelope is not None
@@ -118,13 +120,15 @@ class ACPEventsMixin:
             )
         )
         turn = self._turns.get(session_id)
-        if turn is not None and (envelope is None or envelope.get("session_id") == session_id):
+        if (
+            turn is not None
+            and not turn.usage_finalized
+            and (envelope is None or envelope.get("session_id") == session_id)
+        ):
             # Kept, not only announced: the end-of-turn report is the only
             # place this reaches a host that is not watching the ephemeral
             # stream.
-            turn.context = _usage_context(
-                report.get("update") if isinstance(report, Mapping) else None
-            )
+            turn.context = _report_context(report)
             if envelope is not None:
                 _apply_transport_usage(turn.usage_metadata, envelope, terminal=False)
             else:

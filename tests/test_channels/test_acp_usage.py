@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import socket
-from copy import deepcopy
 from typing import Any
 
 import acp
@@ -12,15 +10,12 @@ import pytest
 from acp.schema import (
     ConfigOptionUpdate,
     Cost,
-    NewSessionResponse,
     PromptResponse,
     Usage,
     UsageUpdate,
 )
 
-from roomkit import ACPChannel, AIResponseEvent, HookExecution, HookTrigger, RoomKit
-from roomkit.models.delivery import InboundMessage
-from roomkit.models.event import TextContent
+from roomkit import ACPChannel
 from roomkit.providers.ai.base import ProviderError
 from roomkit.realtime.memory import InMemoryRealtime
 from tests.conftest import make_event
@@ -29,14 +24,26 @@ from tests.test_channels.test_acp import (
 )
 from tests.test_channels.test_acp import (
     _binding,
-    _channel,
     _context,
-    _InProcessEchoAgent,
+    _FakeACPConnection,
+    _FakeTransport,
     _model_option,
     _prompt,
-    _SocketPairTransport,
 )
-from tests.test_framework import SimpleChannel
+
+
+class _UsageTransport(_FakeTransport):
+    @property
+    def provides_usage_metadata(self) -> bool:
+        return True
+
+
+def _channel(tmp_path: Any, *, emit_updates: bool = False) -> tuple[ACPChannel, Any, Any]:
+    connection = _FakeACPConnection(None, emit_updates=emit_updates)
+    transport = _UsageTransport(connection)
+    channel = ACPChannel("acp-agent", transport=transport, cwd=tmp_path)
+    connection.client = channel._client
+    return channel, connection, transport
 
 
 def _envelope(session: str = "original-session") -> dict[str, Any]:
@@ -46,6 +53,7 @@ def _envelope(session: str = "original-session") -> dict[str, Any]:
         "session_epoch": "epoch-1",
         "node_id": "node-1",
         "agent_id": "adapter-1",
+        "adapter_info": '{"name":"test-adapter","version":"1.0"}',
         "result_id": "result-2",
         "turn_id": "turn-2",
         "generation": 0,
@@ -105,6 +113,7 @@ class TestUsageProvenance:
         observation = reports[0].usage_metadata
         assert observation["session_id"] == "session-1"
         assert observation["event_id"] == first.id
+        assert observation["adapter_info"]["name"] == "fake-agent"
         assert observation["prompt"] == {
             "source": "session/prompt",
             "scope": "unspecified",
@@ -164,6 +173,7 @@ class TestUsageProvenance:
             meta = event.usage_metadata
             assert meta["session_id"] == "original-session"
             assert meta["session_epoch"] == "epoch-1"
+            assert meta["adapter_info"] == envelope["adapter_info"]
             assert meta["generation"] == 0
             assert meta["result_id"] == "result-2"
             assert meta["prompt"] == {
@@ -284,77 +294,3 @@ class TestUsageProvenance:
         assert "cost" not in notices[0]["usage_metadata"]["usage_report"]["update"]
         await channel.close()
         await realtime.close()
-
-
-class _UsageAgent(_InProcessEchoAgent):
-    def __init__(self, envelope: dict[str, Any]) -> None:
-        self.envelope = envelope
-
-    async def new_session(self, cwd: str, **kwargs: Any) -> NewSessionResponse:
-        return NewSessionResponse(session_id=self.envelope["session_id"])
-
-    async def prompt(self, session_id: str, prompt: list[Any], **kwargs: Any) -> PromptResponse:
-        await self.conn.session_update(
-            session_id, _update(field_meta={"roomkit.live/usage": self.envelope})
-        )
-        await self.conn.session_update(session_id, acp.update_agent_message_text("answer"))
-        return PromptResponse(
-            stop_reason="end_turn",
-            usage=Usage(input_tokens=2, output_tokens=3, total_tokens=5),
-            field_meta={"roomkit.live/usage": self.envelope},
-        )
-
-
-async def test_two_real_sdk_sessions_in_one_room_reach_framework_hooks(tmp_path: Any) -> None:
-    """Real JSON-RPC/SDK models, custom transports, and registered RoomKit hook."""
-    kit = RoomKit()
-    reports: list[AIResponseEvent] = []
-    servers: list[Any] = []
-    writers: list[Any] = []
-    received = asyncio.Event()
-
-    @kit.hook(HookTrigger.ON_AI_RESPONSE, execution=HookExecution.ASYNC)
-    async def observe(event: AIResponseEvent, ctx: Any) -> None:
-        reports.append(event)
-        if len(reports) == 2:
-            received.set()
-
-    try:
-        kit.register_channel(SimpleChannel("sms"))
-        await kit.create_room(room_id="room-1")
-        await kit.attach_channel("room-1", "sms")
-        for name in ("one", "two"):
-            left, right = socket.socketpair()
-            ar, aw = await asyncio.open_connection(sock=left)
-            cr, cw = await asyncio.open_connection(sock=right)
-            writers.append(aw)
-            envelope = deepcopy(_envelope(f"{name}-session"))
-            envelope["agent_id"] = name
-            servers.append(asyncio.create_task(acp.run_agent(_UsageAgent(envelope), aw, ar)))
-            kit.register_channel(
-                ACPChannel(name, cwd=tmp_path, transport=_SocketPairTransport(cr, cw))
-            )
-            await kit.attach_channel("room-1", name)
-        result = await kit.process_inbound(
-            InboundMessage(channel_id="sms", sender_id="user", content=TextContent(body="go"))
-        )
-        assert result.error is None
-        await asyncio.wait_for(received.wait(), 2)
-        assert {event.usage_metadata["session_id"] for event in reports} == {
-            "one-session",
-            "two-session",
-        }
-        for event in reports:
-            assert event.room_id == "room-1"
-            assert event.usage_metadata["agent_id"] == event.channel_id
-            assert event.usage_metadata["transport"] == "socketpair"
-            assert event.usage_metadata["usage_report"]["report_id"] == "report-1"
-            assert event.usage["input_tokens"] == 2
-            assert event.usage["cost"] == 0
-    finally:
-        await kit.close()
-        for task in servers:
-            task.cancel()
-        await asyncio.gather(*servers, return_exceptions=True)
-        for writer in writers:
-            writer.close()

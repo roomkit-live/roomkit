@@ -72,6 +72,11 @@ def _field(value: Any, name: str) -> Any:
     return value.get(name) if isinstance(value, Mapping) else getattr(value, name, None)
 
 
+def _report_context(report: Any) -> dict[str, Any]:
+    """Normalize the context/cost carried by a session observation."""
+    return _usage_context(_field(report, "update"))
+
+
 def _transport_usage(value: Any) -> dict[str, Any] | None:
     """Read the opt-in transport envelope, never arbitrary agent extensions."""
     meta = _field(value, "field_meta") or _field(value, "_meta")
@@ -85,6 +90,7 @@ _SESSION_IDENTITY_FIELDS = (
     "usage_protocol",
     "node_id",
     "agent_id",
+    "adapter_info",
 )
 _USAGE_IDENTITY_FIELDS = (
     *_SESSION_IDENTITY_FIELDS,
