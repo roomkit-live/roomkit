@@ -7,6 +7,7 @@ import logging
 import re
 import time
 from collections import deque
+from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Any, cast
 
@@ -113,6 +114,8 @@ class _GeminiSessionState:
     voice: str | None = None
     tools: list[dict[str, Any]] | None = None
     temperature: float | None = None
+    server_vad: bool = True
+    provider_config: dict[str, Any] = field(default_factory=dict)
 
 
 class _GoAwayError(Exception):
@@ -532,6 +535,8 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
             voice=voice,
             tools=tools,
             temperature=temperature,
+            server_vad=server_vad,
+            provider_config=deepcopy(provider_config or {}),
         )
         self._sessions[session.id] = state
 
@@ -974,12 +979,17 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
         effective_tools = tools if tools is not None else state.tools
         effective_temperature = temperature if temperature is not None else state.temperature
 
+        effective_provider_config = deepcopy(state.provider_config)
+        if provider_config is not None:
+            effective_provider_config.update(deepcopy(provider_config))
+
         new_config = self._build_config(
             system_prompt=effective_prompt,
             voice=effective_voice,
             tools=effective_tools,
             temperature=effective_temperature,
-            provider_config=provider_config,
+            provider_config=effective_provider_config,
+            server_vad=state.server_vad,
         )
 
         # Remember effective values so the next partial reconfigure
@@ -989,6 +999,7 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
         state.tools = effective_tools
         state.temperature = effective_temperature
         state.live_config = new_config
+        state.provider_config = effective_provider_config
         logger.info(
             "Reconfiguring Gemini session %s (voice=%s)",
             session.id,

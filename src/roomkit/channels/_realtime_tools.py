@@ -418,7 +418,7 @@ class RealtimeToolsMixin:
         ``None`` when the tool's schema is unknown (skips argument validation).
         """
         with self._state_lock:
-            tools = self._session_tools.get(session.id) or self._tools or []
+            tools = self._session_tools.get(session.id, self._tools or [])
         for t in tools:
             if isinstance(t, dict) and t.get("name") == name:
                 params = t.get("parameters")
@@ -439,7 +439,7 @@ class RealtimeToolsMixin:
         if self._is_infrastructure_tool(name):
             return True
         with self._state_lock:
-            tools = self._session_tools.get(session.id) or self._tools or []
+            tools = self._session_tools.get(session.id, self._tools or [])
         if not tools:
             return True
         return any(isinstance(tool, dict) and tool.get("name") == name for tool in tools)

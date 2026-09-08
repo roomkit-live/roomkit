@@ -9,6 +9,7 @@ import logging
 import threading
 from collections.abc import Awaitable, Callable
 from concurrent.futures import ThreadPoolExecutor
+from copy import deepcopy
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
@@ -1016,25 +1017,23 @@ class RealtimeVoiceChannel(
         # Under the lock its readers take: a recovered tool call reaches them
         # from a background task.
         with self._state_lock:
-            self._session_tools[session.id] = list(tools) if tools else []
+            self._session_tools[session.id] = deepcopy(tools) if tools else []
 
         # Inject skills: prepend skill tool defs, apply gating, enrich prompt
         if self._skill_support:
             system_prompt = self._skill_support.inject_skills_prompt(system_prompt)
-            skill_defs = self._skill_support.skill_tool_dicts()
-            tools = skill_defs + (tools or [])
-            tools = self._skill_support.get_visible_tools(tools, session.id)
 
         # Inject Tool Search: replace the full catalogue with the search
         # tools + pinned subset, and append the search preamble so the
         # model knows to call find_tools before reaching for the rest.
-        # Order: search tools → skill tools → pinned/exposed catalogue.
+        # Infrastructure tools remain visible alongside the pinned catalogue.
         if self._tool_search_support:
             from roomkit.channels._tool_search_constants import TOOL_SEARCH_PREAMBLE
 
-            self._tool_search_support.init_session(session.id)
-            tools = self._tool_search_support.visible_tools(session.id, tools or [])
+            self._tool_search_support.init_session(session.id, self._session_tools[session.id])
             system_prompt = (system_prompt or "") + "\n\n" + TOOL_SEARCH_PREAMBLE
+
+        tools = self._compose_session_tools(session.id, tools)
 
         # Set up audio pipeline BEFORE accept() so that the PortAudio
         # callback closure captures the pipeline's on_audio_received
@@ -1251,6 +1250,28 @@ class RealtimeVoiceChannel(
 
         logger.info("Realtime session %s ended", session.id)
 
+    def _compose_session_tools(
+        self,
+        session_id: str,
+        tools: list[dict[str, Any]] | None,
+        *,
+        reset_exposure: bool = False,
+    ) -> list[dict[str, Any]] | None:
+        """Compose the same infrastructure and skill gates on connect and handoff."""
+        if tools is None and not self._tool_search_support and not self._skill_support:
+            return None
+        visible = deepcopy(tools or [])
+        if self._tool_search_support:
+            visible = self._tool_search_support.visible_tools(
+                session_id, visible, reset_exposure=reset_exposure
+            )
+        if self._skill_support:
+            skill_defs = self._skill_support.skill_tool_dicts()
+            names = {tool["name"] for tool in skill_defs}
+            visible = skill_defs + [tool for tool in visible if tool.get("name") not in names]
+            visible = self._skill_support.get_visible_tools(visible, session_id)
+        return visible
+
     async def reconfigure_session(
         self,
         session: VoiceSession,
@@ -1278,17 +1299,13 @@ class RealtimeVoiceChannel(
         # Save caller values before skills mutation — self._tools and
         # self._system_prompt must store the *user* values, not the
         # skill-enriched versions, to avoid doubling on the next session.
-        caller_tools = tools
+        caller_tools = deepcopy(tools)
         caller_prompt = system_prompt
 
-        # Inject skills into reconfigured prompt/tools
-        if self._skill_support:
-            if system_prompt is not None:
-                system_prompt = self._skill_support.inject_skills_prompt(system_prompt)
-            if tools is not None:
-                skill_defs = self._skill_support.skill_tool_dicts()
-                tools = skill_defs + tools
-                tools = self._skill_support.get_visible_tools(tools, session.id)
+        if self._skill_support and system_prompt is not None:
+            system_prompt = self._skill_support.inject_skills_prompt(system_prompt)
+        if tools is not None:
+            tools = self._compose_session_tools(session.id, tools, reset_exposure=True)
 
         await self._provider.reconfigure(
             session,
@@ -1306,7 +1323,12 @@ class RealtimeVoiceChannel(
         if voice is not None:
             self._voice = voice
         if caller_tools is not None:
-            self._tools = caller_tools
+            self._tools = deepcopy(caller_tools)
+            with self._state_lock:
+                if session.id in self._sessions:
+                    self._session_tools[session.id] = caller_tools
+                    if self._tool_search_support:
+                        self._tool_search_support.init_session(session.id, caller_tools)
 
         logger.info("Realtime session %s reconfigured", session.id)
 

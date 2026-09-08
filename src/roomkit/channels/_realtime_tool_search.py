@@ -67,6 +67,7 @@ class RealtimeToolSearchSupport:
         self._threshold = threshold
         # session_id -> set of tool names currently exposed by find_tools
         self._exposed: dict[str, set[str]] = {}
+        self._session_catalogues: dict[str, list[dict[str, Any]]] = {}
 
     # -- Tool definitions (channel injects these into the live tool list) --
 
@@ -78,16 +79,20 @@ class RealtimeToolSearchSupport:
 
     # -- Per-session lifecycle --
 
-    def init_session(self, session_id: str) -> None:
+    def init_session(self, session_id: str, catalogue: list[dict[str, Any]] | None = None) -> None:
         self._exposed[session_id] = set()
+        self._session_catalogues[session_id] = list(
+            self._catalogue if catalogue is None else catalogue
+        )
 
     def cleanup_session(self, session_id: str) -> None:
         self._exposed.pop(session_id, None)
+        self._session_catalogues.pop(session_id, None)
 
     # -- Visibility (replaces the channel's full tool list) --
 
     def visible_tools(
-        self, session_id: str, base_tools: list[dict[str, Any]]
+        self, session_id: str, base_tools: list[dict[str, Any]], *, reset_exposure: bool = False
     ) -> list[dict[str, Any]]:
         """Return the slice of the catalogue that should be live right now.
 
@@ -95,7 +100,7 @@ class RealtimeToolSearchSupport:
         ``base_tools`` is the original list the channel was constructed
         with; we use it only to preserve ordering for deterministic output.
         """
-        exposed = self._exposed.get(session_id, set())
+        exposed = set() if reset_exposure else self._exposed.get(session_id, set())
         keep = self._pinned_names | exposed | TOOL_SEARCH_INFRA_TOOL_NAMES
         result: list[dict[str, Any]] = []
         seen: set[str] = set()
@@ -128,7 +133,7 @@ class RealtimeToolSearchSupport:
         if name == TOOL_FIND_TOOLS:
             return self._handle_find_tools(arguments, session_id)
         if name == TOOL_LIST_TOOLS:
-            return self._handle_list_tools(arguments), None
+            return self._handle_list_tools(arguments, session_id), None
         return json.dumps({"error": f"Unknown search tool: {name}"}), None
 
     def _handle_find_tools(
@@ -148,23 +153,24 @@ class RealtimeToolSearchSupport:
 
         max_results = normalize_max_results(arguments.get("max_results"), self._threshold)
         exclude = self._pinned_names | TOOL_SEARCH_INFRA_TOOL_NAMES
-        matches = search_catalogue(self._catalogue, query, max_results, exclude_names=exclude)
+        catalogue = self._session_catalogues.get(session_id, self._catalogue)
+        matches = search_catalogue(catalogue, query, max_results, exclude_names=exclude)
 
         # Swap the exposure window — keep only the new matches plus
         # pinned. Prevents unbounded growth of the visible surface
         # across multiple find_tools calls.
         self._exposed[session_id] = {tool.get("name", "") for tool in matches}
 
-        result_str = render_find_payload(
-            matches, related=related_family_tools(self._catalogue, matches)
-        )
+        result_str = render_find_payload(matches, related=related_family_tools(catalogue, matches))
         if not matches:
             return result_str, None
         # Caller pushes this updated tool list via provider.reconfigure
-        return result_str, self.visible_tools(session_id, base_tools=self._catalogue)
+        return result_str, self.visible_tools(session_id, base_tools=catalogue)
 
-    def _handle_list_tools(self, arguments: dict[str, Any]) -> str:
+    def _handle_list_tools(self, arguments: dict[str, Any], session_id: str) -> str:
         category = str(arguments.get("category", "")).strip()
         return render_list_payload(
-            self._catalogue, category, exclude_names=TOOL_SEARCH_INFRA_TOOL_NAMES
+            self._session_catalogues.get(session_id, self._catalogue),
+            category,
+            exclude_names=TOOL_SEARCH_INFRA_TOOL_NAMES,
         )

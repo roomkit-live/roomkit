@@ -182,13 +182,13 @@ class RealtimeToolRecoveryMixin:
     def _known_tool_names(self, session_id: str) -> set[str]:
         with self._state_lock:
             session_tools = self._session_tools.get(session_id)
-        tools = session_tools or self._tools or []
+        tools = session_tools if session_tools is not None else self._tools or []
         return {t["name"] for t in tools if isinstance(t, dict) and "name" in t}
 
     def _tool_param_names(self, tool_name: str, session_id: str) -> list[str]:
         with self._state_lock:
             session_tools = self._session_tools.get(session_id)
-        tools = session_tools or self._tools or []
+        tools = session_tools if session_tools is not None else self._tools or []
         for t in tools:
             if isinstance(t, dict) and t.get("name") == tool_name:
                 return list(t.get("parameters", {}).get("properties", {}).keys())
@@ -198,7 +198,7 @@ class RealtimeToolRecoveryMixin:
         """Return ``{param_name: json_type}`` for the given tool."""
         with self._state_lock:
             session_tools = self._session_tools.get(session_id)
-        tools = session_tools or self._tools or []
+        tools = session_tools if session_tools is not None else self._tools or []
         for t in tools:
             if isinstance(t, dict) and t.get("name") == tool_name:
                 props = t.get("parameters", {}).get("properties", {})
