@@ -204,3 +204,21 @@ class TestRunWorkerLoop:
             await task
 
         assert task.cancelled()
+
+
+async def test_nack_write_is_retried_without_repeating_delivery() -> None:
+    backend = AsyncMock()
+    item = DeliveryItem(room_id="r1", content="hello")
+    backend.dequeue.side_effect = [[item], asyncio.CancelledError()]
+    backend.nack.side_effect = [ConnectionError("offline"), None]
+    with (
+        patch(
+            "roomkit.delivery.worker.execute_delivery", side_effect=RuntimeError("failed")
+        ) as run,
+        patch("roomkit.delivery.worker.asyncio.sleep", new_callable=AsyncMock),
+        contextlib.suppress(asyncio.CancelledError),
+    ):
+        await run_worker_loop(backend, _mock_kit(), "w1")
+    assert run.await_count == 1
+    assert backend.nack.await_count == 2
+    assert backend.dequeue.await_count == 2

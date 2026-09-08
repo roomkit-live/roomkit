@@ -195,4 +195,14 @@ async def run_worker_loop(
                     item.max_retries,
                     exc,
                 )
-                await backend.nack(item.id, error=str(exc))
+                # A failed queue write must not kill the worker and strand its
+                # batch. Retry the transition without delivering the item again.
+                while True:
+                    try:
+                        await backend.nack(item.id, error=str(exc))
+                        break
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception:
+                        logger.exception("Nack failed for %s, retrying after 1s", item.id)
+                        await asyncio.sleep(1)

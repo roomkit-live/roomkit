@@ -1060,12 +1060,14 @@ class PostgresStore(ConversationStore):
                     "INSERT INTO bindings"
                     " (channel_id, room_id, channel_type, category, direction,"
                     "  access, muted, output_muted, visibility, participant_id,"
-                    "  last_read_index, attached_at, capabilities, metadata)"
-                    " VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)"
+                    "  last_read_index, attached_at, capabilities, metadata,"
+                    "  rate_limit, retry_policy)"
+                    " VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)"
                     " ON CONFLICT (room_id, channel_id) DO UPDATE SET"
                     "  channel_type=$3, category=$4, direction=$5, access=$6,"
                     "  muted=$7, output_muted=$8, visibility=$9, participant_id=$10,"
-                    "  last_read_index=$11, capabilities=$13, metadata=$14",
+                    "  last_read_index=$11, capabilities=$13, metadata=$14,"
+                    "  rate_limit=$15, retry_policy=$16",
                     binding.channel_id,
                     binding.room_id,
                     binding.channel_type.value,
@@ -1080,6 +1082,8 @@ class PostgresStore(ConversationStore):
                     binding.attached_at,
                     binding.capabilities.model_dump(mode="json"),
                     binding.metadata,
+                    binding.rate_limit.model_dump(mode="json") if binding.rate_limit else None,
+                    binding.retry_policy.model_dump(mode="json") if binding.retry_policy else None,
                 )
         return binding
 
@@ -1101,7 +1105,8 @@ class PostgresStore(ConversationStore):
                 await conn.execute(
                     "UPDATE bindings SET channel_type=$3, category=$4, direction=$5,"
                     " access=$6, muted=$7, output_muted=$8, visibility=$9,"
-                    " participant_id=$10, last_read_index=$11, capabilities=$12, metadata=$13"
+                    " participant_id=$10, last_read_index=$11, capabilities=$12, metadata=$13,"
+                    " rate_limit=$14, retry_policy=$15"
                     " WHERE room_id=$1 AND channel_id=$2",
                     binding.room_id,
                     binding.channel_id,
@@ -1116,6 +1121,8 @@ class PostgresStore(ConversationStore):
                     binding.last_read_index,
                     binding.capabilities.model_dump(mode="json"),
                     binding.metadata,
+                    binding.rate_limit.model_dump(mode="json") if binding.rate_limit else None,
+                    binding.retry_policy.model_dump(mode="json") if binding.retry_policy else None,
                 )
         return binding
 

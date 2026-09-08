@@ -241,6 +241,11 @@ CREATE TABLE IF NOT EXISTS bindings (
 );
 CREATE INDEX IF NOT EXISTS idx_bindings_channel_id ON bindings(channel_id);
 
+-- Nullable policies preserve defaults for existing deployments. These additive
+-- migrations are safe to rerun on startup and retain existing binding rows.
+ALTER TABLE bindings ADD COLUMN IF NOT EXISTS rate_limit JSONB;
+ALTER TABLE bindings ADD COLUMN IF NOT EXISTS retry_policy JSONB;
+
 -- participants
 CREATE TABLE IF NOT EXISTS participants (
     id             TEXT NOT NULL,

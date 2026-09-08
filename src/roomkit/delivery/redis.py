@@ -3,7 +3,7 @@
 Uses Redis Streams with consumer groups for persistent, distributed
 delivery across multiple worker processes.
 
-Requires ``redis>=5.0``::
+Requires Redis server 6.2+ and ``redis>=5.0``::
 
     pip install roomkit[redis]
 
@@ -20,9 +20,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
+from contextlib import suppress
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
+from roomkit.delivery._redis_scripts import RENEW, TRANSITION
 from roomkit.delivery.base import DeliveryBackend, DeliveryItem, DeliveryItemStatus
 from roomkit.delivery.worker import run_worker_loop
 
@@ -30,14 +33,6 @@ if TYPE_CHECKING:
     from roomkit.core.framework import RoomKit
 
 logger = logging.getLogger("roomkit.delivery.redis")
-
-
-async def _xdel_safe(client: Any, key: str, entry_id: str) -> None:
-    """Delete a stream entry.  Non-fatal — the entry is already acked."""
-    try:
-        await client.xdel(key, entry_id)
-    except Exception:
-        logger.warning("XDEL %s %s failed (non-fatal)", key, entry_id, exc_info=True)
 
 
 class RedisDeliveryBackend(DeliveryBackend):
@@ -54,6 +49,9 @@ class RedisDeliveryBackend(DeliveryBackend):
             group share the workload.
         max_dead_letter_size: Approximate cap on the dead-letter stream
             (uses ``MAXLEN ~``).
+        claim_idle_seconds: Reclaim abandoned work after this idle interval.
+            Live workers renew their pending entries every third of this interval.
+            Delivery is at-least-once; destinations should handle duplicate IDs.
     """
 
     def __init__(
@@ -64,7 +62,10 @@ class RedisDeliveryBackend(DeliveryBackend):
         stream_prefix: str = "roomkit:delivery",
         group_name: str = "roomkit-workers",
         max_dead_letter_size: int = 10_000,
+        claim_idle_seconds: float = 60.0,
     ) -> None:
+        if not math.isfinite(claim_idle_seconds) or claim_idle_seconds <= 0:
+            raise ValueError("claim_idle_seconds must be finite and positive")
         try:
             import redis.asyncio as _aioredis
         except ImportError as exc:
@@ -73,6 +74,7 @@ class RedisDeliveryBackend(DeliveryBackend):
                 "Install it with: pip install roomkit[redis]"
             ) from exc
 
+        self._client: Any
         if client is not None:
             self._client = client
             self._owns_client = False
@@ -86,6 +88,9 @@ class RedisDeliveryBackend(DeliveryBackend):
         self._max_dl = max_dead_letter_size
         self._worker_id = uuid4().hex[:12]
         self._worker_task: asyncio.Task[None] | None = None
+        self._heartbeat_task: asyncio.Task[None] | None = None
+        self._claim_idle_ms = max(1, math.ceil(claim_idle_seconds * 1000))
+        self._claim_cursor: str | bytes = "0-0"
 
         # Maps DeliveryItem.id → Redis stream entry ID
         self._entry_ids: dict[str, str] = {}
@@ -105,14 +110,27 @@ class RedisDeliveryBackend(DeliveryBackend):
         batch_size: int = 1,
         timeout: float = 5.0,
     ) -> list[DeliveryItem]:
-        block_ms = int(timeout * 1000)
-        resp = await self._client.xreadgroup(
+        # Scan the PEL before reading new work, advancing the cursor even
+        # when this scan finds no sufficiently idle entry.
+        claimed = await self._client.xautoclaim(
+            self._pending_key,
             self._group,
             worker_id,
-            {self._pending_key: ">"},
+            self._claim_idle_ms,
+            start_id=self._claim_cursor,
             count=batch_size,
-            block=block_ms,
         )
+        self._claim_cursor = claimed[0]
+        if claimed[1]:
+            resp = [(self._pending_key, claimed[1])]
+        else:
+            resp = await self._client.xreadgroup(
+                self._group,
+                worker_id,
+                {self._pending_key: ">"},
+                count=batch_size,
+                block=max(1, int(timeout * 1000)) if timeout > 0 else None,
+            )
 
         if not resp:
             return []
@@ -136,74 +154,81 @@ class RedisDeliveryBackend(DeliveryBackend):
                 self._items[item.id] = item
                 items.append(item)
 
+        if items and (self._heartbeat_task is None or self._heartbeat_task.done()):
+            self._heartbeat_task = asyncio.create_task(
+                self._renew_pending(), name="redis-delivery-heartbeat"
+            )
         return items
 
-    async def ack(self, item_id: str) -> None:
-        entry_id = self._entry_ids.pop(item_id, None)
-        self._items.pop(item_id, None)
-        if entry_id is None:
+    async def _renew_pending(self) -> None:
+        while True:
+            await asyncio.sleep(self._claim_idle_ms / 3000)
+            for item_id, entry_id in list(self._entry_ids.items()):
+                item = self._items.get(item_id)
+                if item is None:
+                    continue
+                try:
+                    await self._client.eval(
+                        RENEW, 1, self._pending_key, self._group, entry_id, item.worker_id
+                    )
+                except Exception:
+                    logger.warning("Failed to renew delivery %s", item_id, exc_info=True)
+
+    async def _transition(self, item_id: str, replacement: DeliveryItem | None = None) -> None:
+        entry_id = self._entry_ids.get(item_id)
+        item = self._items.get(item_id)
+        if entry_id is None or item is None:
             return
-        await self._client.xack(self._pending_key, self._group, entry_id)
-        await _xdel_safe(self._client, self._pending_key, entry_id)
-        logger.debug("Acked %s (entry %s)", item_id, entry_id)
+        dead = replacement is not None and replacement.status == DeliveryItemStatus.DEAD_LETTER
+        await self._client.eval(
+            TRANSITION,
+            2,
+            self._pending_key,
+            self._dl_key if dead else self._pending_key,
+            self._group,
+            entry_id,
+            item.worker_id,
+            replacement.model_dump_json() if replacement is not None else "",
+            self._max_dl if dead else 0,
+        )
+        # A network failure leaves these intact so the transition can be retried.
+        # A zero result means it was already completed or another worker owns it.
+        if self._entry_ids.get(item_id) == entry_id:
+            self._entry_ids.pop(item_id, None)
+            self._items.pop(item_id, None)
+
+    async def ack(self, item_id: str) -> None:
+        await self._transition(item_id)
 
     async def nack(self, item_id: str, error: str | None = None) -> None:
-        entry_id = self._entry_ids.pop(item_id, None)
-        item = self._items.pop(item_id, None)
-        if item is None or entry_id is None:
-            return
-
-        item.retry_count += 1
-        item.error = error
-
-        if item.retry_count >= item.max_retries:
-            # Dead-letter: add to DL stream, ack + delete from pending
-            item.status = DeliveryItemStatus.DEAD_LETTER
-            item.error = error or "max retries exceeded"
-            await self._client.xadd(
-                self._dl_key,
-                {"data": item.model_dump_json()},
-                maxlen=self._max_dl,
-                approximate=True,
-            )
-            await self._client.xack(self._pending_key, self._group, entry_id)
-            await _xdel_safe(self._client, self._pending_key, entry_id)
-            logger.warning(
-                "Dead-lettered %s after %d retries: %s",
-                item_id,
-                item.retry_count,
-                error,
-            )
-        else:
-            # Re-enqueue: add new entry, ack + delete old one
-            item.status = DeliveryItemStatus.PENDING
-            await self._client.xadd(self._pending_key, {"data": item.model_dump_json()})
-            await self._client.xack(self._pending_key, self._group, entry_id)
-            await _xdel_safe(self._client, self._pending_key, entry_id)
-            logger.debug(
-                "Re-enqueued %s (attempt %d/%d)",
-                item_id,
-                item.retry_count,
-                item.max_retries,
-            )
-
-    async def dead_letter(self, item_id: str, error: str) -> None:
-        entry_id = self._entry_ids.pop(item_id, None)
-        item = self._items.pop(item_id, None)
+        item = self._items.get(item_id)
         if item is None:
             return
-
-        item.status = DeliveryItemStatus.DEAD_LETTER
-        item.error = error
-        await self._client.xadd(
-            self._dl_key,
-            {"data": item.model_dump_json()},
-            maxlen=self._max_dl,
-            approximate=True,
+        retry_count = item.retry_count + 1
+        dead = retry_count >= item.max_retries
+        replacement = item.model_copy(
+            update={
+                "retry_count": retry_count,
+                "error": (error or "max retries exceeded") if dead else error,
+                "status": DeliveryItemStatus.DEAD_LETTER if dead else DeliveryItemStatus.PENDING,
+                "worker_id": None,
+            }
         )
-        if entry_id is not None:
-            await self._client.xack(self._pending_key, self._group, entry_id)
-            await _xdel_safe(self._client, self._pending_key, entry_id)
+        await self._transition(item_id, replacement)
+
+    async def dead_letter(self, item_id: str, error: str) -> None:
+        item = self._items.get(item_id)
+        if item is not None:
+            await self._transition(
+                item_id,
+                item.model_copy(
+                    update={
+                        "status": DeliveryItemStatus.DEAD_LETTER,
+                        "error": error,
+                        "worker_id": None,
+                    }
+                ),
+            )
 
     async def get_queue_depth(self) -> int:
         result = await self._client.xlen(self._pending_key)
@@ -231,7 +256,9 @@ class RedisDeliveryBackend(DeliveryBackend):
             # before start() are not silently dropped.
             await self._client.xgroup_create(self._pending_key, self._group, id="0", mkstream=True)
             logger.info("Created consumer group %s", self._group)
-        except Exception:
+        except Exception as exc:
+            if "BUSYGROUP" not in str(exc):
+                raise
             # Group already exists — that's fine
             logger.debug("Consumer group %s already exists", self._group)
 
@@ -258,6 +285,11 @@ class RedisDeliveryBackend(DeliveryBackend):
         and will be reclaimed by another consumer or on restart.
         """
         await self._cancel_worker_task()
+        if self._heartbeat_task is not None:
+            self._heartbeat_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await self._heartbeat_task
+            self._heartbeat_task = None
 
         # Clear in-process tracking (items remain in Redis PEL for recovery)
         self._entry_ids.clear()

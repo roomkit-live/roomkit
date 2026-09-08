@@ -928,3 +928,25 @@ class TestThreadQueries:
         await store.add_event(root)
         assert await store.get_thread_summaries("r1", [root.id]) == {}
         assert await store.get_thread_summaries("r1", []) == {}
+
+
+async def test_binding_policy_migration_preserves_old_rows(store) -> None:
+    from roomkit.models.channel import RateLimit, RetryPolicy
+
+    await store.create_room(Room(id="r1"))
+    binding = ChannelBinding(room_id="r1", channel_id="sms", channel_type="sms")
+    await store.add_binding(binding)
+    async with store._pool.acquire() as conn:
+        await conn.execute("ALTER TABLE bindings DROP COLUMN rate_limit, DROP COLUMN retry_policy")
+    # Reinitializing the store upgrades the old schema, including repeated runs.
+    await store.init()
+    await store.init()
+    assert await store.get_binding("r1", "sms") == binding
+    changed = binding.model_copy(
+        update={
+            "rate_limit": RateLimit(max_per_minute=30),
+            "retry_policy": RetryPolicy(max_retries=7),
+        }
+    )
+    await store.update_binding(changed)
+    assert await store.get_binding("r1", "sms") == changed

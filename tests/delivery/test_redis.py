@@ -25,6 +25,8 @@ def _build_mock_client() -> AsyncMock:
     client = AsyncMock()
     client.xadd = AsyncMock(return_value=b"1679001234567-0")
     client.xreadgroup = AsyncMock(return_value=[])
+    client.xautoclaim = AsyncMock(return_value=[b"0-0", [], []])
+    client.eval = AsyncMock(return_value=1)
     client.xack = AsyncMock(return_value=1)
     client.xdel = AsyncMock(return_value=1)
     client.xlen = AsyncMock(return_value=0)
@@ -144,8 +146,16 @@ class TestAck:
         items = await backend.dequeue("w1")
         await backend.ack(items[0].id)
 
-        client.xack.assert_called_once_with("roomkit:delivery:pending", backend._group, "789-0")
-        client.xdel.assert_called_once_with("roomkit:delivery:pending", "789-0")
+        client.eval.assert_awaited_once()
+        assert client.eval.call_args.args[2:] == (
+            "roomkit:delivery:pending",
+            "roomkit:delivery:pending",
+            backend._group,
+            "789-0",
+            "w1",
+            "",
+            0,
+        )
 
     async def test_cleans_up_tracking(self) -> None:
         backend, client = _make_backend()
@@ -174,10 +184,10 @@ class TestNack:
         items = await backend.dequeue("w1")
         await backend.nack(items[0].id, error="transient")
 
-        # Should have xadd (re-enqueue) + xack + xdel (old entry)
-        assert client.xadd.call_count == 1
-        assert client.xack.call_count == 1
-        assert client.xdel.call_count == 1
+        client.eval.assert_awaited_once()
+        replacement = DeliveryItem.model_validate_json(client.eval.call_args.args[7])
+        assert replacement.retry_count == 1
+        assert replacement.status == DeliveryItemStatus.PENDING
 
     async def test_dead_letters_after_max_retries(self) -> None:
         backend, client = _make_backend()
@@ -188,10 +198,10 @@ class TestNack:
         items = await backend.dequeue("w1")
         await backend.nack(items[0].id, error="permanent")
 
-        # Should have xadd to DL stream + xack + xdel on pending
-        xadd_calls = client.xadd.call_args_list
-        assert len(xadd_calls) == 1
-        assert xadd_calls[0][0][0] == "roomkit:delivery:dead_letter"
+        client.eval.assert_awaited_once()
+        assert client.eval.call_args.args[3] == "roomkit:delivery:dead_letter"
+        replacement = DeliveryItem.model_validate_json(client.eval.call_args.args[7])
+        assert replacement.status == DeliveryItemStatus.DEAD_LETTER
 
 
 class TestDeadLetter:
@@ -204,11 +214,9 @@ class TestDeadLetter:
         items = await backend.dequeue("w1")
         await backend.dead_letter(items[0].id, "fatal error")
 
-        client.xadd.assert_called_once()
-        call_args = client.xadd.call_args
-        assert call_args[0][0] == "roomkit:delivery:dead_letter"
-        assert call_args[1]["maxlen"] == 10_000
-        assert call_args[1]["approximate"] is True
+        client.eval.assert_awaited_once()
+        assert client.eval.call_args.args[3] == "roomkit:delivery:dead_letter"
+        assert client.eval.call_args.args[8] == 10_000
 
     async def test_cleans_up_tracking(self) -> None:
         backend, client = _make_backend()
@@ -328,3 +336,45 @@ class TestImportError:
             mod = importlib.import_module("roomkit.delivery.redis")
             importlib.reload(mod)
             mod.RedisDeliveryBackend()
+
+
+@pytest.mark.parametrize("operation", ["ack", "nack", "dead_letter"])
+async def test_transition_failure_preserves_tracking(operation: str) -> None:
+    backend, client = _make_backend()
+    item = _make_item()
+    client.xreadgroup.return_value = [[b"s", [(b"1-0", {b"data": item.model_dump_json()})]]]
+    await backend.dequeue("w1")
+    client.eval.side_effect = ConnectionError("offline")
+    args = (item.id,) if operation == "ack" else (item.id, "error")
+    try:
+        with pytest.raises(ConnectionError):
+            await getattr(backend, operation)(*args)
+        assert item.id in backend._entry_ids
+        assert backend._items[item.id].retry_count == 0
+        client.eval.side_effect = None
+        await getattr(backend, operation)(*args)
+        assert item.id not in backend._entry_ids
+    finally:
+        await backend.close()
+
+
+async def test_dequeue_recovers_pending_before_reading_new() -> None:
+    backend, client = _make_backend()
+    item = _make_item()
+    client.xautoclaim.return_value = [b"2-0", [(b"1-0", {b"data": item.model_dump_json()})], []]
+    try:
+        items = await backend.dequeue("replacement")
+        assert [i.id for i in items] == [item.id]
+        assert items[0].worker_id == "replacement"
+        assert backend._claim_cursor == b"2-0"
+        client.xreadgroup.assert_not_called()
+    finally:
+        await backend.close()
+
+
+async def test_start_does_not_hide_connection_failure() -> None:
+    backend, client = _make_backend()
+    client.xgroup_create.side_effect = ConnectionError("offline")
+    with pytest.raises(ConnectionError):
+        await backend.start(MagicMock())
+    assert backend._worker_task is None

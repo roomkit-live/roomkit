@@ -93,6 +93,12 @@ def _row_to_binding(row: Any) -> ChannelBinding:
     meta = row["metadata"]
     if isinstance(meta, str):
         meta = json.loads(meta)
+    rate_limit = row.get("rate_limit")
+    retry_policy = row.get("retry_policy")
+    if isinstance(rate_limit, str):
+        rate_limit = json.loads(rate_limit)
+    if isinstance(retry_policy, str):
+        retry_policy = json.loads(retry_policy)
     return ChannelBinding(
         channel_id=row["channel_id"],
         room_id=row["room_id"],
@@ -108,6 +114,8 @@ def _row_to_binding(row: Any) -> ChannelBinding:
         attached_at=row["attached_at"],
         capabilities=caps,
         metadata=meta,
+        rate_limit=rate_limit,
+        retry_policy=retry_policy,
     )
 
 
