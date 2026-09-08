@@ -113,3 +113,29 @@ def test_no_warning_for_in_memory_store(caplog: pytest.LogCaptureFixture) -> Non
     with caplog.at_level(logging.WARNING, logger="roomkit.framework"):
         RoomKit()  # default InMemoryStore + InMemoryLockManager
     assert not any("InMemoryLockManager" in r.message for r in caplog.records)
+
+
+async def test_child_reacquires_after_parent_releases() -> None:
+    import asyncio
+
+    conn = _FakeConn()
+    mgr = PostgresAdvisoryLockManager(pool=_FakePool(conn))
+    start = asyncio.Event()
+
+    async def child() -> None:
+        await start.wait()
+        async with mgr.locked("r1"):
+            pass
+
+    async with mgr.locked("r1"):
+        task = asyncio.create_task(child())
+    start.set()
+    await asyncio.wait_for(task, 1)
+    assert sum("pg_advisory_lock(" in sql for sql, _ in conn.calls) == 2
+
+
+async def test_advisory_lock_is_not_bypassed_by_another_manager() -> None:
+    conn = _FakeConn()
+    mgr = PostgresAdvisoryLockManager(pool=_FakePool(conn))
+    async with InMemoryLockManager().locked("r1"), mgr.locked("r1"):
+        assert sum("pg_advisory_lock(" in sql for sql, _ in conn.calls) == 1

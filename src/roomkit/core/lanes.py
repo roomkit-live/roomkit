@@ -34,7 +34,7 @@ from collections import deque
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
-from roomkit.core.locks import _held_rooms
+from roomkit.core.locks import _has_room_lock, _held_rooms
 from roomkit.models.response_metadata import ResponseMetadata
 from roomkit.telemetry.context import restored_span
 
@@ -232,7 +232,7 @@ class DeliveryCascade:
         :class:`~roomkit.models.delivery.DeliveryHandle` awaited from a tool
         handler or a sync hook would otherwise hang on its own turn.
         """
-        return _active_lane_room.get() == self.room_id or self.room_id in _held_rooms.get()
+        return _active_lane_room.get() == self.room_id or _has_room_lock(self.room_id)
 
 
 @dataclass(slots=True)

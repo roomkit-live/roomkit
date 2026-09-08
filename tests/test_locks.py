@@ -129,3 +129,33 @@ class TestInMemoryLockManager:
             await asyncio.gather(child())
 
         assert acquired_in_child
+
+
+async def test_child_must_acquire_after_parent_releases() -> None:
+    mgr = InMemoryLockManager()
+    start = asyncio.Event()
+    entered = asyncio.Event()
+
+    async def child() -> None:
+        await start.wait()
+        async with mgr.locked("r1"):
+            entered.set()
+
+    async with mgr.locked("r1"):
+        task = asyncio.create_task(child())
+    try:
+        async with mgr.locked("r1"):
+            start.set()
+            await asyncio.sleep(0)
+            assert not entered.is_set()
+    finally:
+        await asyncio.wait_for(task, 1)
+    assert entered.is_set()
+
+
+async def test_reentrance_is_scoped_to_manager() -> None:
+    first = InMemoryLockManager()
+    second = InMemoryLockManager()
+    async with first.locked("r1"), second.locked("r1"):
+        assert first._locks["r1"].locked()
+        assert second._locks["r1"].locked()

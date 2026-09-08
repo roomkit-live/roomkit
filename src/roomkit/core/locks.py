@@ -6,8 +6,9 @@ import asyncio
 import contextvars
 from abc import ABC, abstractmethod
 from collections import OrderedDict
-from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from collections.abc import AsyncIterator, Iterator
+from contextlib import asynccontextmanager, contextmanager
+from dataclasses import dataclass
 
 # ContextVar tracking which rooms the current execution context holds locks
 # for.  asyncio.gather() copies the parent context to child tasks, so
@@ -15,6 +16,40 @@ from contextlib import asynccontextmanager
 _held_rooms: contextvars.ContextVar[frozenset[str]] = contextvars.ContextVar(
     "_room_locks_held", default=frozenset()
 )
+
+
+@dataclass
+class _LockLease:
+    manager: RoomLockManager
+    room_id: str
+    active: bool = True
+
+
+_held_leases: contextvars.ContextVar[tuple[_LockLease, ...]] = contextvars.ContextVar(
+    "_room_lock_leases", default=()
+)
+
+
+def _has_room_lock(room_id: str, manager: RoomLockManager | None = None) -> bool:
+    """Inherited context grants reentrancy only while its acquisition is live."""
+    return room_id in _held_rooms.get() and any(
+        lease.active and lease.room_id == room_id and (manager is None or lease.manager is manager)
+        for lease in _held_leases.get()
+    )
+
+
+@contextmanager
+def _mark_room_locked(manager: RoomLockManager, room_id: str) -> Iterator[None]:
+    lease = _LockLease(manager, room_id)
+    rooms_token = _held_rooms.set(_held_rooms.get() | {room_id})
+    leases_token = _held_leases.set((*_held_leases.get(), lease))
+    try:
+        yield
+    finally:
+        # Children keep copies of the context, but share this revocable lease.
+        lease.active = False
+        _held_leases.reset(leases_token)
+        _held_rooms.reset(rooms_token)
 
 
 class RoomLockManager(ABC):
@@ -108,8 +143,7 @@ class InMemoryLockManager(RoomLockManager):
     @asynccontextmanager
     async def locked(self, room_id: str) -> AsyncIterator[None]:
         """Acquire the lock for a room (reentrant via ContextVar)."""
-        held = _held_rooms.get()
-        if room_id in held:
+        if _has_room_lock(room_id, self):
             # Reentrant: this execution context already holds the lock.
             yield
             return
@@ -118,11 +152,8 @@ class InMemoryLockManager(RoomLockManager):
             lock = self._get_lock(room_id)
         try:
             async with lock:
-                token = _held_rooms.set(held | frozenset({room_id}))
-                try:
+                with _mark_room_locked(self, room_id):
                     yield
-                finally:
-                    _held_rooms.reset(token)
         finally:
             async with self._mgr_lock:
                 self._release_ref(room_id)

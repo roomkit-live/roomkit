@@ -14,7 +14,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
 
-from roomkit.core.locks import RoomLockManager, _held_rooms
+from roomkit.core.locks import RoomLockManager, _has_room_lock, _mark_room_locked
 
 
 def _advisory_key(room_id: str) -> int:
@@ -80,8 +80,7 @@ class PostgresAdvisoryLockManager(RoomLockManager):
     @asynccontextmanager
     async def locked(self, room_id: str) -> AsyncIterator[None]:
         """Hold a cross-process exclusive lock for *room_id* (reentrant)."""
-        held = _held_rooms.get()
-        if room_id in held:
+        if _has_room_lock(room_id, self):
             # Reentrant: this execution context already holds the lock.
             yield
             return
@@ -90,9 +89,8 @@ class PostgresAdvisoryLockManager(RoomLockManager):
         key = _advisory_key(room_id)
         async with self._pool.acquire() as conn:
             await conn.execute("SELECT pg_advisory_lock($1)", key)
-            token = _held_rooms.set(held | frozenset({room_id}))
             try:
-                yield
+                with _mark_room_locked(self, room_id):
+                    yield
             finally:
-                _held_rooms.reset(token)
                 await conn.execute("SELECT pg_advisory_unlock($1)", key)

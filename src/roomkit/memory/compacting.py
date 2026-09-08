@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
+from collections import OrderedDict
 
 from roomkit.memory.base import MemoryProvider, MemoryResult
 from roomkit.memory.token_estimator import estimate_tokens
@@ -13,6 +15,8 @@ from roomkit.models.event import RoomEvent, TextContent
 from roomkit.providers.ai.base import AIContext, AIMessage, AIProvider
 
 logger = logging.getLogger("roomkit.memory.compacting")
+
+_MAX_CACHE_ENTRIES = 200
 
 
 class CompactingMemory(MemoryProvider):
@@ -40,7 +44,10 @@ class CompactingMemory(MemoryProvider):
         self._safety_margin_ratio = safety_margin_ratio
         self._min_events = min_events
         self._cache_ttl = summary_cache_ttl_seconds
-        self._summary_cache: dict[str, tuple[float, str]] = {}
+        self._summary_cache: OrderedDict[tuple[str, str | None], tuple[float, str, str]] = (
+            OrderedDict()
+        )
+        self._cache_generation = 0
 
     @property
     def name(self) -> str:
@@ -85,7 +92,7 @@ class CompactingMemory(MemoryProvider):
         kept_events = events[keep_from:]
 
         # Summarize trimmed events
-        summary = await self._get_or_create_summary(room_id, trimmed_events)
+        summary = await self._get_or_create_summary(room_id, trimmed_events, channel_id)
 
         summary_message = AIMessage(
             role="user",
@@ -102,14 +109,9 @@ class CompactingMemory(MemoryProvider):
         text = event.content.body if isinstance(event.content, TextContent) else str(event.content)
         return estimate_tokens(text)
 
-    async def _get_or_create_summary(self, room_id: str, events: list[RoomEvent]) -> str:
-        # Check cache
-        now = asyncio.get_running_loop().time()
-        if room_id in self._summary_cache:
-            cached_ts, cached_summary = self._summary_cache[room_id]
-            if now - cached_ts < self._cache_ttl:
-                return cached_summary
-
+    async def _get_or_create_summary(
+        self, room_id: str, events: list[RoomEvent], channel_id: str | None = None
+    ) -> str:
         # Generate summary
         event_texts: list[str] = []
         for e in events:
@@ -123,6 +125,17 @@ class CompactingMemory(MemoryProvider):
             "Be specific about file names, error messages, and action outcomes.\n\n"
             + "\n".join(event_texts)
         )
+
+        key = (room_id, channel_id)
+        digest = hashlib.sha256(prompt.encode()).hexdigest()
+        now = asyncio.get_running_loop().time()
+        cached = self._summary_cache.get(key)
+        if cached is not None:
+            cached_ts, cached_digest, cached_summary = cached
+            if now - cached_ts < self._cache_ttl and cached_digest == digest:
+                self._summary_cache.move_to_end(key)
+                return cached_summary
+        generation = self._cache_generation
 
         try:
             response = await self._provider.generate(
@@ -138,9 +151,23 @@ class CompactingMemory(MemoryProvider):
             logger.warning("Failed to generate summary: %s", exc)
             summary = f"[Earlier conversation with {len(events)} messages — summary unavailable]"
 
-        self._summary_cache[room_id] = (now, summary)
+        # A clear/close during generation must not resurrect an erased summary.
+        if generation == self._cache_generation:
+            self._summary_cache[key] = (now, digest, summary)
+            self._summary_cache.move_to_end(key)
+            while len(self._summary_cache) > _MAX_CACHE_ENTRIES:
+                self._summary_cache.popitem(last=False)
         return summary
 
+    async def clear(self, room_id: str) -> None:
+        self._cache_generation += 1
+        for key in list(self._summary_cache):
+            if key[0] == room_id:
+                del self._summary_cache[key]
+        await self._inner.clear(room_id)
+
     async def close(self) -> None:
+        self._cache_generation += 1
+        self._summary_cache.clear()
         await self._inner.close()
         await self._provider.close()
