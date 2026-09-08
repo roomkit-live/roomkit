@@ -389,9 +389,10 @@ class TestOpenAIAIProvider:
             with pytest.raises(Exception, match="API rate limit"):
                 await provider.generate(_context())
 
-    def test_config_defaults(self) -> None:
-        cfg = _config()
-        assert cfg.model == "gpt-5.6-sol"
+    @pytest.mark.parametrize("model", ["gpt-5.6-sol", "gpt-6-astra"])
+    def test_config_defaults(self, model: str) -> None:
+        cfg = _config(model=model)
+        assert cfg.model == model
         assert cfg.max_tokens == 1024
         assert cfg.temperature == 0.7
         assert cfg.base_url is None

@@ -38,21 +38,40 @@ from roomkit.providers.ai.base import ModelInfo, ModelPricing
 _CTX_1M = 1_050_000
 _VERIFIED = date(2026, 8, 5)
 
+# Astra and Sol prices rechecked 2026-09-08:
+# https://developers.openai.com/api/docs/models/gpt-6-astra
+# https://developers.openai.com/api/docs/models/gpt-5.6-sol
 MODELS: list[ModelInfo] = [
+    ModelInfo(
+        id="gpt-6-astra",
+        display_name="GPT-6 Astra",
+        context_window=_CTX_1M,
+        supports_vision=True,
+        pricing=ModelPricing(
+            input_per_million=10.0,
+            output_per_million=50.0,
+            cache_read_per_million=1.0,
+            cache_write_per_million=12.5,
+            long_context_threshold_tokens=272_000,
+            long_context_input_multiplier=2.0,
+            long_context_output_multiplier=1.5,
+            verified=date(2026, 9, 8),
+        ),
+    ),
     ModelInfo(
         id="gpt-5.6-sol",
         display_name="GPT-5.6 Sol",
         context_window=_CTX_1M,
         supports_vision=True,
         pricing=ModelPricing(
-            input_per_million=5.0,
-            output_per_million=30.0,
-            cache_read_per_million=0.5,
-            cache_write_per_million=6.25,
+            input_per_million=4.0,
+            output_per_million=20.0,
+            cache_read_per_million=0.4,
+            cache_write_per_million=5.0,
             long_context_threshold_tokens=272_000,
             long_context_input_multiplier=2.0,
             long_context_output_multiplier=1.5,
-            verified=_VERIFIED,
+            verified=date(2026, 9, 8),
         ),
     ),
     ModelInfo(

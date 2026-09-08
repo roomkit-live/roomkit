@@ -6,8 +6,8 @@ from typing import Any
 
 from pydantic import BaseModel, SecretStr
 
-_MAX_COMPLETION_TOKEN_MODEL_PREFIXES = ("gpt-4.1", "gpt-5", "o1", "o3", "o4")
-_FIXED_TEMPERATURE_MODEL_PREFIXES = ("gpt-5", "o1", "o3", "o4")
+_MAX_COMPLETION_TOKEN_MODEL_PREFIXES = ("gpt-4.1", "gpt-5", "gpt-6", "o1", "o3", "o4")
+_FIXED_TEMPERATURE_MODEL_PREFIXES = ("gpt-5", "gpt-6", "o1", "o3", "o4")
 
 
 class OpenAIConfig(BaseModel):

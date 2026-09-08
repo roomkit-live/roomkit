@@ -7,7 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.65.0] — 2026-09-08
+
 ### Added
+
+- **ACP response hooks preserve the origin of usage reports.** Context occupancy
+  and cumulative session cost remain distinct from token counters. Transport
+  provenance is admitted only from an explicitly opted-in transport, and a
+  terminal snapshot stays authoritative when a response is recovered or replayed;
+  an unrelated session's live usage cannot overwrite it. (RMK-171)
+- **The OpenAI catalog includes GPT-6 Astra.** Its 1.05M context and standard
+  token/cache rates come from the official model page. GPT-5.6 Sol uses the
+  promotional $4/$20 input/output rates and $0.40 cached-input rate verified on
+  2026-09-08, with cache writes at $5. Astra receives the modern completion cap
+  and omits custom temperature by default. The mirror's `gpt-6-astra-pro` slug
+  is not advertised as an official model id; pro is a reasoning mode.
 
 - `RealtimeVoiceChannel(owns_transport=False)` releases its sessions and callback
   subscriptions while leaving a shared FastRTC transport available to other
@@ -44,6 +58,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (RMK-166)
 
 ### Fixed
+
+- **Cancelled voice handshakes cannot activate after a call ends.** SIP setup
+  releases media and port reservations, while realtime startup rolls back
+  transport and provider state even during cancellation. Handoffs retain the
+  session's voice, tools, language and audio configuration.
+- **SIP playback state follows the paced audio.** Queued audio, RTP emission and
+  the estimated playout boundary remain visible to interruption and AEC logic.
+  Realtime response-end markers follow their audio through the send queue, so
+  `wait_idle()` cannot finish before that response reaches the transport. SIP
+  playback may continue after `wait_idle()`; check the backend's `is_playing()`
+  before hanging up. Remote speaker playback cannot be observed directly.
+- **Realtime audio survives provider format and reconnect boundaries.** G.711 is
+  translated at the provider boundary, and Gemini reconnection retains recent
+  microphone audio instead of replaying stale queued speech.
+- **Rooms and memory caches stay isolated under concurrency.** Room lock leases
+  cannot be released by a different owner; compacted memory is scoped to its
+  room. Fractional delivery rates accumulate enough credit to send a message.
+- **Store recovery preserves delivery and binding state.** Redis pending
+  deliveries can be reclaimed, PostgreSQL persists binding policies and returns
+  consistent query results, and memory wrappers preserve the underlying store's
+  contracts.
+- **Closing video and pipeline resources affects their owning session.** Video
+  state is isolated between sessions, channel shutdown closes pipeline resources,
+  and FastRTC's shared session handling follows the same cancellation contracts.
 
 - FastRTC realtime sessions declare their capture and playback sample rates.
   Channels resample each direction independently, preserving the playback rate
@@ -6974,7 +7012,8 @@ See entries `0.7.0a1` through `0.7.0a18` below.
 - `STTProvider.transcribe()` returns `TranscriptionResult` (Phase 3.1)
 - Framework event names enriched with payloads (Phase 4)
 
-[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.64.0...HEAD
+[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.65.0...HEAD
+[0.65.0]: https://github.com/roomkit-live/roomkit/compare/v0.64.0...v0.65.0
 [0.64.0]: https://github.com/roomkit-live/roomkit/compare/v0.63.0...v0.64.0
 [0.63.0]: https://github.com/roomkit-live/roomkit/compare/v0.62.0...v0.63.0
 [0.62.0]: https://github.com/roomkit-live/roomkit/compare/v0.61.0...v0.62.0

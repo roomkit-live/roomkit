@@ -183,6 +183,10 @@ _ROUTING_SUFFIXES = ("-fast",)
 # on one tier and not another: `gpt-5.5-pro` and `gpt-5.4-pro` are genuine
 # OpenAI ids, while the 5.6 tier ships no `-pro` id at all.
 MIRROR_ONLY: dict[str, str] = {
+    "openai/gpt-6-astra-pro": (
+        "mirror route, not an official model id: Astra's model page lists gpt-6-astra "
+        "and the model guide points to reasoning.mode=pro (official docs, 2026-09-08)"
+    ),
     "openai/o4-mini-high": (
         "reasoning-effort route; OpenAI's API catalog lists o4-mini and its dated snapshot, "
         "not a separate -high model id (official model page, 2026-08-05)"
