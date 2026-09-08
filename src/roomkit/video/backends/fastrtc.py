@@ -42,7 +42,7 @@ from roomkit.video.base import (
     VideoSessionState,
 )
 from roomkit.video.video_frame import VideoFrame
-from roomkit.voice.auth import AuthCallback, auth_context
+from roomkit.voice.auth import AuthCallback
 from roomkit.voice.backends.fastrtc import FastRTCVoiceBackend
 from roomkit.voice.base import VoiceSession
 
@@ -343,7 +343,7 @@ def mount_fastrtc_av(
     from roomkit.voice.backends._webrtc_auth import register_webrtc_offer_auth
     from roomkit.webrtc import AsyncAudioVideoStreamHandler, Stream
 
-    backend._session_factory = session_factory  # ty: ignore[unresolved-attribute]
+    backend._session_factory = session_factory
 
     class AVPassthroughHandler(AsyncAudioVideoStreamHandler):
         """Passes raw audio + video frames to the backend's callbacks.
@@ -413,55 +413,13 @@ def mount_fastrtc_av(
                     return
 
         async def receive(self, frame: tuple[int, Any]) -> None:
-            """Handle inbound audio frames."""
             from roomkit.webrtc.utils import current_context
 
             if self._rejected:
                 return
-
-            sample_rate, audio_data = frame
-
             ctx = current_context.get()
-            connection_id = ctx.webrtc_id if ctx else None
-            websocket = ctx.websocket if ctx else None
-
-            if not connection_id:
-                return
-
-            # Create session if not exists and we have a factory
-            session = backend._find_session_by_websocket_id(connection_id)
-            if not session and backend._session_factory:  # ty: ignore[unresolved-attribute]
-                # WebRTC auth runs at the HTTP /webrtc/offer layer; pull its
-                # metadata from the backend registry (WebSocket auth already
-                # populated self._auth_meta in start_up).
-                auth_meta = self._auth_meta
-                if auth_meta is None and websocket is None:
-                    auth_meta = backend._webrtc_auth_meta.get(connection_id)
-                try:
-                    token = auth_context.set(auth_meta)
-                    try:
-                        session = await backend._session_factory(connection_id)  # ty: ignore[unresolved-attribute]
-                    finally:
-                        auth_context.reset(token)
-                    if session:
-                        if websocket:
-                            backend._register_websocket(connection_id, session.id, websocket)
-                        else:
-                            backend._register_webrtc(connection_id, session.id)
-                except Exception:
-                    logger.exception("Error creating session")
-
-            if not session:
-                return
-
-            # Register connection if not already registered
-            if session.id not in backend._websockets and "transport" not in session.metadata:
-                if websocket:
-                    backend._register_websocket(connection_id, session.id, websocket)
-                else:
-                    backend._register_webrtc(connection_id, session.id)
-
-            backend._handle_audio_frame(connection_id, audio_data, sample_rate)
+            if ctx and ctx.webrtc_id:
+                await backend._receive_audio(ctx.webrtc_id, ctx.websocket, frame, self._auth_meta)
 
         async def video_receive(self, frame: Any) -> None:
             """Handle inbound video frames from FastRTC.

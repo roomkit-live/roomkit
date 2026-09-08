@@ -157,11 +157,21 @@ jobs:
   # Runs the tests that need real infrastructure — they self-skip in the fast
   # `test` job (no POSTGRES_DSN / no fastapi). This proves the Postgres store,
   # the multi-process index safety (UNIQUE + advisory locks), and the WebRTC
-  # auth path against real dependencies.
+  # auth path against real dependencies. Redis recovery, knowledge metadata,
+  # shared store contracts and native video decoding are also exercised here.
   integration:
     name: Integration (real Postgres + WebRTC)
     runs-on: ubuntu-latest
     services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
       postgres:
         image: postgres:16
         env:
@@ -176,6 +186,7 @@ jobs:
           --health-retries 10
     env:
       POSTGRES_DSN: postgresql://postgres:postgres@localhost:5432/roomkit_test
+      REDIS_URL: redis://localhost:6379
     steps:
       - uses: actions/checkout@v7
 
@@ -186,7 +197,7 @@ jobs:
         run: uv python install 3.12
 
       - name: Install dependencies
-        run: uv sync --extra dev --extra postgres --extra fastrtc
+        run: uv sync --extra dev --extra postgres --extra fastrtc --extra redis
 
       # fastapi is a peer dep (WebRTC signaling). The project's fastrtc stack
       # imports the httpx2 compatibility package explicitly, so both transient
@@ -197,3 +208,8 @@ jobs:
           tests/test_store_postgres.py
           tests/test_postgres_multiprocess.py
           tests/test_webrtc_offer_auth.py
+          tests/test_store_binding_contract.py
+          tests/test_knowledge_postgres.py
+          tests/delivery/test_redis_integration.py
+          tests/test_pyav_decode_native.py
+          tests/test_fastrtc_audio_session.py

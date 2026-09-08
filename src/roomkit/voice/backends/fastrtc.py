@@ -37,7 +37,7 @@ import contextlib
 import logging
 import os
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
 # Suppress gradio/huggingface telemetry that fires on import — set before
@@ -83,6 +83,8 @@ class FastRTCVoiceBackend(VoiceBackend):
 
     #: Default maximum size for per-session audio queues.
     DEFAULT_QUEUE_MAXSIZE: int = 1000
+
+    _session_factory: Callable[[str], Awaitable[VoiceSession | None]] | None = None
 
     def __init__(
         self,
@@ -519,6 +521,43 @@ class FastRTCVoiceBackend(VoiceBackend):
             for cb in self._session_ready_callbacks:
                 cb(session)
 
+    async def _receive_audio(
+        self,
+        connection_id: str,
+        websocket: Any,
+        frame: tuple[int, Any],
+        auth_meta: dict[str, Any] | None,
+    ) -> None:
+        """Resolve and register a connection before forwarding its audio frame."""
+        session = self._find_session_by_websocket_id(connection_id)
+        if session is None and self._session_factory is not None:
+            if auth_meta is None and websocket is None:
+                auth_meta = self._webrtc_auth_meta.get(connection_id)
+            try:
+                token = auth_context.set(auth_meta)
+                try:
+                    session = await self._session_factory(connection_id)
+                finally:
+                    auth_context.reset(token)
+                if session is not None:
+                    self._register_audio_connection(connection_id, session.id, websocket)
+            except Exception:
+                logger.exception("Error creating session")
+        if session is None:
+            return
+        if session.id not in self._websockets and "transport" not in session.metadata:
+            self._register_audio_connection(connection_id, session.id, websocket)
+        sample_rate, audio_data = frame
+        self._handle_audio_frame(connection_id, audio_data, sample_rate)
+
+    def _register_audio_connection(
+        self, connection_id: str, session_id: str, websocket: Any
+    ) -> None:
+        if websocket:
+            self._register_websocket(connection_id, session_id, websocket)
+        else:
+            self._register_webrtc(connection_id, session_id)
+
     def _find_session_by_websocket_id(self, websocket_id: str) -> VoiceSession | None:
         return self._ws_sessions.get(websocket_id)
 
@@ -565,7 +604,7 @@ def mount_fastrtc_voice(
     from roomkit.voice.backends._webrtc_auth import register_webrtc_offer_auth
     from roomkit.webrtc import AsyncStreamHandler, Stream
 
-    backend._session_factory = session_factory  # ty: ignore[unresolved-attribute]
+    backend._session_factory = session_factory
 
     class AudioPassthroughHandler(AsyncStreamHandler):
         """Passes raw audio frames to the backend's on_audio_received callback.
@@ -634,51 +673,9 @@ def mount_fastrtc_voice(
 
             if self._rejected:
                 return
-
-            sample_rate, audio_data = frame
-
             ctx = current_context.get()
-            connection_id = ctx.webrtc_id if ctx else None
-            websocket = ctx.websocket if ctx else None
-
-            if not connection_id:
-                return
-
-            # Create session if not exists and we have a factory
-            session = backend._find_session_by_websocket_id(connection_id)
-            if not session and backend._session_factory:  # ty: ignore[unresolved-attribute]
-                # WebRTC auth runs at the HTTP /webrtc/offer layer, not here, so
-                # pull its metadata from the backend registry (WebSocket auth
-                # already populated self._auth_meta in start_up).
-                auth_meta = self._auth_meta
-                if auth_meta is None and websocket is None:
-                    auth_meta = backend._webrtc_auth_meta.get(connection_id)
-                try:
-                    token = auth_context.set(auth_meta)
-                    try:
-                        session = await backend._session_factory(connection_id)  # ty: ignore[unresolved-attribute]
-                    finally:
-                        auth_context.reset(token)
-                    if session:
-                        if websocket:
-                            backend._register_websocket(connection_id, session.id, websocket)
-                        else:
-                            backend._register_webrtc(connection_id, session.id)
-                except Exception:
-                    logger.exception("Error creating session")
-
-            if not session:
-                return
-
-            # Register connection if not already registered
-            if session.id not in backend._websockets and "transport" not in session.metadata:
-                if websocket:
-                    backend._register_websocket(connection_id, session.id, websocket)
-                else:
-                    backend._register_webrtc(connection_id, session.id)
-
-            # Pass raw audio to pipeline via callback
-            backend._handle_audio_frame(connection_id, audio_data, sample_rate)
+            if ctx and ctx.webrtc_id:
+                await backend._receive_audio(ctx.webrtc_id, ctx.websocket, frame, self._auth_meta)
 
         async def emit(self) -> tuple[int, Any] | None:
             if self._is_webrtc and self._webrtc_id:

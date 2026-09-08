@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from dataclasses import KW_ONLY, dataclass
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from roomkit.core.mixins.helpers import (
@@ -50,6 +51,7 @@ logger = logging.getLogger("roomkit.framework")
 _EDIT_SOURCE_SYSTEM = "system"
 
 
+@dataclass(slots=True, eq=False)
 class _Blocked:
     """Decision returned by ``_run_precommit``: the event is blocked and must
     be persisted BLOCKED (RFC §9.5 / §7.5 rule 2) once the pre-commit timeout
@@ -59,36 +61,17 @@ class _Blocked:
     :meth:`_process_locked`, outside the cancellable unit (§13.6).
     """
 
-    __slots__ = (
-        "blocked_by",
-        "context",
-        "event",
-        "injected_events",
-        "observations",
-        "reason",
-        "tasks",
-    )
-
-    def __init__(
-        self,
-        event: RoomEvent,
-        context: RoomContext,
-        *,
-        reason: str | None,
-        blocked_by: str | None,
-        injected_events: list[InjectedEvent],
-        tasks: list[Task],
-        observations: list[Observation],
-    ) -> None:
-        self.event = event
-        self.context = context
-        self.reason = reason
-        self.blocked_by = blocked_by
-        self.injected_events = injected_events
-        self.tasks = tasks
-        self.observations = observations
+    event: RoomEvent
+    context: RoomContext
+    _: KW_ONLY
+    reason: str | None
+    blocked_by: str | None
+    injected_events: list[InjectedEvent]
+    tasks: list[Task]
+    observations: list[Observation]
 
 
+@dataclass(slots=True, eq=False)
 class _Ready:
     """Decision returned by ``_run_precommit``: every gate passed and the
     event is ready to commit (RFC §10.1 step 12).
@@ -99,23 +82,14 @@ class _Ready:
     blocked (§13.6 MUST NOT).
     """
 
-    __slots__ = ("context", "edit_delete_target", "event", "source_binding", "sync_result")
-
-    def __init__(
-        self,
-        event: RoomEvent,
-        source_binding: Any,
-        sync_result: Any,
-        context: RoomContext,
-        edit_delete_target: RoomEvent | None,
-    ) -> None:
-        self.event = event
-        self.source_binding = source_binding
-        self.sync_result = sync_result
-        self.context = context
-        self.edit_delete_target = edit_delete_target
+    event: RoomEvent
+    source_binding: Any
+    sync_result: Any
+    context: RoomContext
+    edit_delete_target: RoomEvent | None
 
 
+@dataclass(slots=True, eq=False)
 class _Proceed:
     """Marker returned by ``_run_commit`` once the event has committed,
     with its broadcast planned and enqueued on the room's delivery lane
@@ -127,21 +101,11 @@ class _Proceed:
     and fires from the lane executor.
     """
 
-    __slots__ = ("context", "event", "mutation_hook", "source_binding", "sync_result")
-
-    def __init__(
-        self,
-        event: RoomEvent,
-        source_binding: Any,
-        sync_result: Any,
-        context: RoomContext,
-        mutation_hook: tuple[HookTrigger, RoomEvent] | None = None,
-    ) -> None:
-        self.event = event
-        self.source_binding = source_binding
-        self.sync_result = sync_result
-        self.context = context
-        self.mutation_hook = mutation_hook
+    event: RoomEvent
+    source_binding: Any
+    sync_result: Any
+    context: RoomContext
+    mutation_hook: tuple[HookTrigger, RoomEvent] | None = None
 
 
 @runtime_checkable
