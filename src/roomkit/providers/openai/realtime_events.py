@@ -15,6 +15,7 @@ import logging
 from abc import abstractmethod
 from typing import Any
 
+from roomkit.voice._g711 import _G711Codec
 from roomkit.voice.base import VoiceSession
 from roomkit.voice.realtime.provider import RealtimeVoiceProvider
 
@@ -63,6 +64,7 @@ class OpenAIRealtimeEventHandlersMixin(RealtimeVoiceProvider):
     _connections: dict[str, Any]
     _responding: set[str]
     _output_audio: dict[str, _OutputAudioState]
+    _audio_codecs: dict[str, tuple[_G711Codec | None, _G711Codec | None]]
 
     @property
     @abstractmethod
@@ -175,6 +177,11 @@ class OpenAIRealtimeEventHandlersMixin(RealtimeVoiceProvider):
                     )
                     self._output_audio[session.id] = state
                 state.received_bytes += len(audio_bytes)
+            # Keep received_bytes in wire units for truncation accounting;
+            # every RoomKit audio callback receives PCM16 regardless of codec.
+            codec = self._audio_codecs.get(session.id, (None, None))[1]
+            if codec is not None:
+                audio_bytes = codec.decode(audio_bytes)
             await self._fire(self._audio_callbacks, session, audio_bytes, label="audio")
 
     async def _on_transcript_delta(self, session: VoiceSession, event: dict[str, Any]) -> None:

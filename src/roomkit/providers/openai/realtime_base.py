@@ -22,6 +22,7 @@ from roomkit.providers.openai.realtime_events import (
     OpenAIRealtimeEventHandlersMixin,
     _OutputAudioState,
 )
+from roomkit.voice._g711 import _G711Codec, _get_codec
 from roomkit.voice.base import VoiceSession, VoiceSessionState
 
 logger = logging.getLogger("roomkit.providers.openai.realtime_base")
@@ -57,6 +58,7 @@ class OpenAIRealtimeBase(OpenAIRealtimeEventHandlersMixin):
         # the unheard tail in provider context.
         self._output_audio: dict[str, _OutputAudioState] = {}
         self._output_bytes_per_ms: dict[str, float] = {}
+        self._audio_codecs: dict[str, tuple[_G711Codec | None, _G711Codec | None]] = {}
 
     @property
     def model_name(self) -> str:
@@ -175,6 +177,18 @@ class OpenAIRealtimeBase(OpenAIRealtimeEventHandlersMixin):
             pc=pc,
         )
 
+        formats = session_config.get("audio", {})
+        codecs: list[_G711Codec | None] = []
+        for direction in ("input", "output"):
+            audio_type = formats.get(direction, {}).get("format", {}).get("type")
+            if audio_type in {"audio/pcmu", "audio/pcma"}:
+                # Build lookup tables off the event loop, before opening a
+                # socket or receiving the first audio frame.
+                law = "mulaw" if audio_type == "audio/pcmu" else "alaw"
+                codecs.append(await asyncio.to_thread(_get_codec, law))
+            else:
+                codecs.append(None)
+
         ws = await asyncio.wait_for(
             websockets.connect(self._connect_url(), additional_headers=self._auth_headers()),
             timeout=_CONNECT_TIMEOUT,
@@ -183,6 +197,7 @@ class OpenAIRealtimeBase(OpenAIRealtimeEventHandlersMixin):
         self._connections[session.id] = ws
         self._sessions[session.id] = session
         self._provider_configs[session.id] = pc
+        self._audio_codecs[session.id] = (codecs[0], codecs[1])
         # PCM is signed 16-bit mono; G.711 carries one byte per sample.
         # Read the format from the provider-built payload so the shared base
         # stays correct for OpenAI's 8 kHz G.711 and xAI's 8 kHz PCM.
@@ -217,6 +232,11 @@ class OpenAIRealtimeBase(OpenAIRealtimeEventHandlersMixin):
         ws = self._connections.get(session.id)
         if ws is None:
             return
+        codec = self._audio_codecs.get(session.id, (None, None))[0]
+        if codec is not None:
+            if len(audio) % 2:
+                raise ValueError("PCM16 audio must contain complete two-byte samples")
+            audio = codec.encode(audio)
         await ws.send(
             json.dumps(
                 {
@@ -402,6 +422,7 @@ class OpenAIRealtimeBase(OpenAIRealtimeEventHandlersMixin):
         self._responding.discard(session.id)
         self._output_audio.pop(session.id, None)
         self._output_bytes_per_ms.pop(session.id, None)
+        self._audio_codecs.pop(session.id, None)
         was_active = session.state == VoiceSessionState.ACTIVE
         session.state = VoiceSessionState.ENDED
 
@@ -436,6 +457,7 @@ class OpenAIRealtimeBase(OpenAIRealtimeEventHandlersMixin):
         self._responding.discard(session.id)
         self._output_audio.pop(session.id, None)
         self._output_bytes_per_ms.pop(session.id, None)
+        self._audio_codecs.pop(session.id, None)
         if ws is not None:
             with contextlib.suppress(Exception):
                 await asyncio.wait_for(ws.close(), timeout=_CLOSE_TIMEOUT)
