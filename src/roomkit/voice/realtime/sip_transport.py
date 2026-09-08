@@ -21,6 +21,7 @@ from typing import Any
 
 from roomkit.core.task_utils import log_task_exception
 from roomkit.voice.backends.base import (
+    AudioPlayedCallback,
     AudioReceivedCallback,
     TransportDisconnectCallback,
     VoiceBackend,
@@ -37,6 +38,10 @@ class SIPRealtimeTransport(VoiceBackend):
     passes audio through without resampling.  Use
     ``RealtimeVoiceChannel(transport_sample_rate=...)`` for automatic
     sample-rate conversion.
+
+    Playback callbacks report emitted RTP audio and an estimated drain
+    boundary. The estimate accounts for the pacer's lead; the remote
+    telephone's actual jitter buffer and speaker output are not observable.
 
     The ``connection`` argument to :meth:`accept` is the
     :class:`~roomkit.voice.base.VoiceSession` created by the SIP backend
@@ -71,16 +76,44 @@ class SIPRealtimeTransport(VoiceBackend):
         self._voice_to_rt: dict[str, str] = {}
 
         self._audio_callbacks: list[AudioReceivedCallback] = []
+        self._playback_callbacks: list[AudioPlayedCallback] = []
         self._disconnect_callbacks: list[TransportDisconnectCallback] = []
 
         # Wire into the SIP backend's audio and disconnect callbacks
         self._prev_audio_callback = backend.audio_received_callback
         backend.on_audio_received(self._on_sip_audio)
         backend.on_client_disconnected(self._on_sip_disconnect)
+        if self.supports_playback_callback:
+            backend.on_audio_played(self._on_sip_playback)
 
     @property
     def name(self) -> str:
         return "SIPRealtimeTransport"
+
+    @property
+    def supports_playback_callback(self) -> bool:
+        return bool(getattr(self._backend, "supports_playback_callback", False))
+
+    def is_playing(self, session: VoiceSession) -> bool:
+        voice_session = self._voice_sessions.get(session.id)
+        return voice_session is not None and self._backend.is_playing(voice_session)
+
+    def on_audio_played(self, callback: AudioPlayedCallback) -> None:
+        self._playback_callbacks.append(callback)
+
+    def _on_sip_playback(self, voice_session: VoiceSession, frame: Any) -> None:
+        rt_id = self._voice_to_rt.get(voice_session.id)
+        session = self._rt_sessions.get(rt_id) if rt_id is not None else None
+        if session is None:
+            return
+        for callback in self._playback_callbacks:
+            try:
+                result = callback(session, frame)
+                if hasattr(result, "__await__"):
+                    task = asyncio.get_running_loop().create_task(result)
+                    task.add_done_callback(log_task_exception)
+            except Exception:
+                logger.exception("Error in SIP playback callback for session %s", session.id)
 
     async def accept(self, session: VoiceSession, connection: Any) -> None:
         """Accept a SIP call as a realtime session.

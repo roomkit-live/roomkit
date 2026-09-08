@@ -419,14 +419,15 @@ class RealtimeVoiceChannel(
         # order — each event runs in its own task and the partial/final code
         # paths await a different number of hops (see _process_transcription).
         self._transcription_order_locks: dict[str, asyncio.Lock] = {}
-        # Physical playback start used to keep residual onset echo away from
-        # provider-side VAD while the local AEC converges. Populated only by
-        # transports that report actually-played audio.
+        # Playback onset reported by the transport: physical for local audio,
+        # estimated from RTP transmission for SIP.
         self._playback_started_at: dict[str, float] = {}
-        # Actual assistant audio duration delivered by playback callbacks.
-        # Unlike wall time, this excludes underrun/re-priming silence and is
-        # safe to use as OpenAI conversation.item.truncate.audio_end_ms.
+        # Assistant duration reported by playback callbacks, excluding filler
+        # silence. Known transport buffering is subtracted on interruption.
         self._playback_position_ms: dict[str, float] = {}
+        self._playback_buffer: dict[str, tuple[float, float]] = {}
+        self._response_generation: dict[str, int] = {}
+        self._audio_drained: set[str] = set()
         # Throttle audio level hooks to ~10/sec per direction
         self._last_input_level_at: float = 0.0
         self._last_output_level_at: float = 0.0
@@ -503,17 +504,22 @@ class RealtimeVoiceChannel(
         """Wait until all sessions in the room are idle (not speaking).
 
         An idle session has finished its last response and all audio
-        has been forwarded to the transport.
+        has been forwarded to the transport. A queued transport such as SIP
+        may still be playing that audio.
         """
         for session in self.get_room_sessions(room_id):
             event = self._idle_events.get(session.id)
             if event is not None and not event.is_set():
                 await asyncio.wait_for(event.wait(), timeout=timeout)
 
-    async def _set_idle(self, session: VoiceSession) -> None:
-        """Mark provider as idle (called after response end + audio drain)."""
-        self._provider_idle[session.id] = True
-        self._update_idle_event(session.id)
+    async def _set_idle(self, session: VoiceSession, response_generation: int) -> None:
+        """Settle only the response whose audio just reached the transport."""
+        if (
+            session.id in self._sessions
+            and self._response_generation.get(session.id, 0) == response_generation
+        ):
+            self._audio_drained.add(session.id)
+            self._update_idle_event(session.id)
 
     def _update_idle_event(self, session_id: str) -> None:
         """Update the idle event based on combined provider + user state."""
@@ -522,7 +528,8 @@ class RealtimeVoiceChannel(
             return
         provider_done = self._provider_idle.get(session_id, True)
         user_silent = not self._user_speaking.get(session_id, False)
-        if provider_done and user_silent:
+        drained = session_id in self._audio_drained or session_id not in self._response_generation
+        if provider_done and user_silent and drained:
             idle.set()
         else:
             idle.clear()
@@ -950,6 +957,8 @@ class RealtimeVoiceChannel(
             self._user_speaking.pop(session.id, None)
             self._provider_idle.pop(session.id, None)
             self._session_tools.pop(session.id, None)
+            self._response_generation.pop(session.id, None)
+            self._audio_drained.discard(session.id)
             self._has_pipeline_vad.pop(session.id, None)
             span_id = self._session_spans.pop(session.id, None)
         if self._skill_support:
@@ -1188,6 +1197,9 @@ class RealtimeVoiceChannel(
             self._transcription_order_locks.pop(session.id, None)
             self._playback_started_at.pop(session.id, None)
             self._playback_position_ms.pop(session.id, None)
+            self._playback_buffer.pop(session.id, None)
+            self._response_generation.pop(session.id, None)
+            self._audio_drained.discard(session.id)
             self._has_pipeline_vad.pop(session.id, None)
             idle = self._idle_events.pop(session.id, None)
             if idle is not None:

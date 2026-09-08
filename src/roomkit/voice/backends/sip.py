@@ -46,6 +46,7 @@ from roomkit.voice.backends._sip_types import (
     wrap_async,
 )
 from roomkit.voice.backends.base import (
+    AudioPlayedCallback,
     AudioReceivedCallback,
     SessionReadyCallback,
     TransportDisconnectCallback,
@@ -298,6 +299,7 @@ class SIPVoiceBackend(SIPAuthMixin, SIPCallingMixin, SIPAudioMixin, VoiceBackend
         self._close_task: asyncio.Task[None] | None = None
 
         # Callback registrations
+        self._audio_played_callbacks: list[AudioPlayedCallback] = []
         self._audio_received_callback: AudioReceivedCallback | None = None
         self._barge_in_callbacks: list[BargeInCallback] = []
         self._dtmf_callbacks: list[DTMFReceivedCallback] = []
@@ -430,6 +432,14 @@ class SIPVoiceBackend(SIPAuthMixin, SIPCallingMixin, SIPAudioMixin, VoiceBackend
 
     def set_trace_emitter(self, emitter: Callable[..., Any] | None) -> None:
         self._trace_emitter = emitter
+
+    @property
+    def supports_playback_callback(self) -> bool:
+        """Report RTP emission and the estimated remote playback boundary."""
+        return True
+
+    def on_audio_played(self, callback: AudioPlayedCallback) -> None:
+        self._audio_played_callbacks.append(wrap_async(callback))
 
     def on_audio_received(self, callback: AudioReceivedCallback) -> None:
         self._audio_received_callback = callback

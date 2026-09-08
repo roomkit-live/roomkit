@@ -92,6 +92,7 @@ class SIPAudioMixin:
     _disconnect_callbacks: list[Any]
     _trace_emitter: Any
     _outbound_silence_fill: bool
+    _audio_played_callbacks: list[Any]
     _pacer_prebuffer_ms: float
     _pacer_jitter_headroom_ms: float
     _cleanup_session: Any  # see SIPAudioHost — cross-mixin, from SIPCallingMixin
@@ -524,7 +525,9 @@ class SIPAudioMixin:
         state = self._session_states.get(session.id)
         if state is None or state.call_session is None:
             return
-        self._send_pcm_bytes(session, state.call_session, chunk.data)
+        sent = self._send_pcm_bytes(session, state.call_session, chunk.data)
+        if sent:
+            self._notify_sip_playback(session, sent, paced=False)
 
     def _ensure_pacer(self, session: VoiceSession) -> Any:
         """Return the existing pacer for *session*, or create one."""
@@ -534,8 +537,39 @@ class SIPAudioMixin:
 
         call_session = state.call_session
 
+        sent_pcm = b""
+
         async def rtp_send(data: bytes) -> None:
-            self._send_pcm_bytes(session, call_session, data)
+            nonlocal sent_pcm
+            sent_pcm = self._send_pcm_bytes(session, call_session, data)
+
+        def on_audio(data: bytes, silence: bool) -> None:
+            if sent_pcm:
+                if not silence:
+                    state.is_playing = True
+                self._notify_sip_playback(session, sent_pcm, silence=silence)
+
+        async def on_drain() -> None:
+            generation = state.playback_generation
+            try:
+                # Finish a partial packet; padding is not assistant speech.
+                if state.send_buffer and not pacer._interrupt_event.is_set():
+                    valid = len(state.send_buffer)
+                    padding = state.codec_rate // 50 * 2 - valid
+                    final_pcm = self._send_pcm_bytes(session, call_session, b"\x00" * padding)
+                    self._notify_sip_playback(session, final_pcm, played_bytes=valid)
+                while generation == state.playback_generation:
+                    remaining = state.playback_until - time.monotonic()
+                    if remaining <= 0:
+                        return
+                    await asyncio.sleep(min(remaining, 0.02))
+            except Exception:
+                state.send_buffer.clear()
+                raise
+            finally:
+                if generation == state.playback_generation:
+                    state.is_playing = not pacer._queue.empty()
+                    self._notify_sip_playback(session, b"", ended=True)
 
         pacer = OutboundAudioPacer(
             send_fn=rtp_send,
@@ -544,6 +578,7 @@ class SIPAudioMixin:
             jitter_headroom_ms=self._pacer_jitter_headroom_ms,
             fill_with_silence_when_idle=self._outbound_silence_fill,
         )
+        pacer._set_playback_observer(on_audio, on_drain)
         state.pacer = pacer
         task = asyncio.get_running_loop().create_task(
             pacer.start(), name=f"sip_pacer_{session.id}"
@@ -579,11 +614,11 @@ class SIPAudioMixin:
                     state.playback_task = None
                     state.is_playing = False
 
-    def _send_pcm_bytes(self, session: VoiceSession, call_session: Any, pcm_data: bytes) -> None:
-        """Send a PCM-16 LE buffer as RTP packets."""
+    def _send_pcm_bytes(self, session: VoiceSession, call_session: Any, pcm_data: bytes) -> bytes:
+        """Send PCM16 as RTP packets and return the samples actually transmitted."""
         state = self._session_states.get(session.id)
         if state is None:
-            return
+            return b""
 
         codec_rate = state.codec_rate
         clock_rate = state.clock_rate
@@ -611,8 +646,11 @@ class SIPAudioMixin:
                 )
 
         frames_this_call = 0
+        sent: list[bytes] = []
         while len(buf) >= bytes_per_frame:
-            call_session.send_audio_pcm(bytes(buf[:bytes_per_frame]), ts)
+            frame = bytes(buf[:bytes_per_frame])
+            call_session.send_audio_pcm(frame, ts)
+            sent.append(frame)
             del buf[:bytes_per_frame]
             ts += ts_increment
             state.send_frame_count += 1
@@ -632,6 +670,45 @@ class SIPAudioMixin:
             stats.outbound_bytes += frames_this_call * bytes_per_frame
             if frames_this_call > stats.outbound_max_burst:
                 stats.outbound_max_burst = frames_this_call
+
+        return b"".join(sent)
+
+    def _notify_sip_playback(
+        self,
+        session: VoiceSession,
+        pcm: bytes,
+        *,
+        silence: bool = False,
+        ended: bool = False,
+        played_bytes: int | None = None,
+        paced: bool = True,
+    ) -> None:
+        state = self._session_states.get(session.id)
+        if state is None:
+            return
+        now = time.monotonic()
+        if pcm and paced:
+            state.playback_until = max(now, state.playback_until) + len(pcm) / (
+                state.codec_rate * 2
+            )
+        frame = AudioFrame(
+            data=pcm,
+            sample_rate=state.codec_rate,
+            metadata={
+                "played_bytes": 0
+                if silence
+                else (len(pcm) if played_bytes is None else played_bytes),
+                "playback_buffer_ms": max(0.0, (state.playback_until - now) * 1000)
+                if paced
+                else 0.0,
+                "playback_ended": ended,
+            },
+        )
+        for callback in self._audio_played_callbacks:
+            try:
+                callback(session, frame)
+            except Exception:
+                logger.exception("SIP playback callback failed for session %s", session.id)
 
     async def _feed_stream(
         self,
@@ -699,10 +776,13 @@ class SIPAudioMixin:
         if state is None:
             return False
         was_playing = state.is_playing
+        state.playback_generation += 1
+        state.playback_until = 0.0
+        if state.pacer is not None:
+            state.pacer.interrupt()
+        self._notify_sip_playback(session, b"", ended=True)
         if was_playing:
             state.is_playing = False
-            if state.pacer is not None:
-                state.pacer.interrupt()
             if state.playback_task is not None:
                 state.playback_task.cancel()
                 state.playback_task = None

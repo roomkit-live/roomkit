@@ -128,6 +128,9 @@ class SIPSessionState:
     pacer: Any = None
     playback_task: asyncio.Task[None] | None = None
     is_playing: bool = False
+    # Estimated remote playback deadline, based on actual PCM packets sent.
+    playback_until: float = 0.0
+    playback_generation: int = 0
 
 
 def is_usable_rtp_address(addr: tuple[str, int] | None) -> bool:

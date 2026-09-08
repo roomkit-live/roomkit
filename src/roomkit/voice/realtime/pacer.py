@@ -82,6 +82,36 @@ class OutboundAudioPacer:
         self._response_done = asyncio.Event()
         self._response_done.set()  # No response in flight initially
         self._task: asyncio.Task[None] | None = None
+        self._playback_observer: Callable[[bytes, bool], None] | None = None
+        self._drain_observer: Callable[[], Awaitable[None]] | None = None
+
+    def _set_playback_observer(
+        self,
+        on_audio: Callable[[bytes, bool], None],
+        on_drain: Callable[[], Awaitable[None]],
+    ) -> None:
+        """Let a transport report sent packets and finish its playback tail."""
+        self._playback_observer = on_audio
+        self._drain_observer = on_drain
+
+    async def _send_audio(self, data: bytes, *, silence: bool = False) -> None:
+        await self._send_fn(data)
+        if self._playback_observer is not None:
+            try:
+                self._playback_observer(data, silence)
+            except Exception:
+                logger.exception("Error reporting paced playback")
+
+    async def _finish_response(self) -> None:
+        if self._drain_observer is not None:
+            try:
+                await self._drain_observer()
+            except Exception:
+                logger.exception("Error draining transport playback")
+        # A later response may have arrived while the transport drained.
+        # Its push() cleared this event; the previous boundary cannot set it.
+        if self._queue.empty():
+            self._response_done.set()
 
     async def _emit_silence_frame(self) -> None:
         """Send one 20 ms PCM silence frame, swallowing send errors.
@@ -92,13 +122,14 @@ class OutboundAudioPacer:
         the next real audio frame; we don't want to abort the pacer.
         """
         try:
-            await self._send_fn(self._silence_frame)
+            await self._send_audio(self._silence_frame, silence=True)
         except Exception:
             logger.exception("Error sending silence fill frame")
 
     def push(self, audio: bytes) -> None:
         """Enqueue audio (non-blocking). Called from provider callback."""
         if audio:
+            self._response_done.clear()
             self._queue.put_nowait(audio)
 
     def end_of_response(self) -> None:
@@ -187,7 +218,7 @@ class OutboundAudioPacer:
             chunk = data[offset:end]
             offset = end
             try:
-                await self._send_fn(chunk)
+                await self._send_audio(chunk)
             except Exception:
                 logger.exception("Error sending paced audio chunk")
                 continue
@@ -221,7 +252,7 @@ class OutboundAudioPacer:
 
             if item == _RESPONSE_END:
                 # Nothing to flush — channel handles resampler flush
-                self._response_done.set()
+                await self._finish_response()
                 continue
 
             # Clear interrupt flag at the start of each new audio burst
@@ -247,7 +278,7 @@ class OutboundAudioPacer:
                         # Send what we have, then exit
                         if buf:
                             with contextlib.suppress(Exception):
-                                await self._send_fn(bytes(buf))
+                                await self._send_audio(bytes(buf))
                         return
                     if next_item == _RESPONSE_END:
                         break
@@ -267,7 +298,7 @@ class OutboundAudioPacer:
 
             if burst:
                 try:
-                    await self._send_fn(burst)
+                    await self._send_audio(burst)
                 except Exception:
                     logger.exception("Error sending pre-buffered audio")
                     continue
@@ -284,8 +315,8 @@ class OutboundAudioPacer:
             if next_item == _RESPONSE_END:
                 if overflow:
                     with contextlib.suppress(Exception):
-                        await self._send_fn(overflow)
-                self._response_done.set()
+                        await self._send_audio(overflow)
+                await self._finish_response()
                 continue
 
             # Start wall-clock pacing from after the burst
@@ -357,7 +388,7 @@ class OutboundAudioPacer:
                                 underruns,
                                 max_behind_ms,
                             )
-                        self._response_done.set()
+                        await self._finish_response()
                         break  # back to outer loop for next response
                     continue
 
@@ -381,7 +412,7 @@ class OutboundAudioPacer:
                         break
                 else:
                     try:
-                        await self._send_fn(audio)
+                        await self._send_audio(audio)
                     except Exception:
                         logger.exception("Error sending paced audio")
                         continue

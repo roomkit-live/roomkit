@@ -109,6 +109,7 @@ class RealtimeAudioHost(Protocol):
     _barge_in_guard_ms: int
     _playback_started_at: dict[str, float]
     _playback_position_ms: dict[str, float]
+    _playback_buffer: dict[str, tuple[float, float]]
 
     def _track_task(self, loop: Any, coro: Any, *, name: str) -> Any: ...
 
@@ -162,6 +163,7 @@ class RealtimeAudioMixin:
     _barge_in_guard_ms: int
     _playback_started_at: dict[str, float]
     _playback_position_ms: dict[str, float]
+    _playback_buffer: dict[str, tuple[float, float]]
 
     _track_task: Any  # see RealtimeAudioHost — cross-mixin
     _pipeline_submit_inbound: Any  # see VoicePipelineMixin — cross-mixin
@@ -454,43 +456,47 @@ class RealtimeAudioMixin:
         elif vad_event.type == VADEventType.SPEECH_END:
             self._on_pipeline_speech_end(session)
 
+    def _begin_barge_in(self, session: VoiceSession) -> tuple[int | None, bool, int]:
+        """Retire queued audio and snapshot played position for either VAD path."""
+        now = time.monotonic()
+        transport_playing = self._transport.is_playing(session)
+        with self._state_lock:
+            started_at = self._playback_started_at.pop(session.id, None)
+            position = self._playback_position_ms.pop(session.id, 0.0)
+            buffered = self._playback_buffer.pop(session.id, None)
+            responding = not self._provider_idle.get(session.id, True)
+            forwarded = self._audio_forward_count.pop(session.id, 0)
+            is_barge_in = started_at is not None or forwarded > 0 or transport_playing
+            if buffered is not None:
+                lead_ms, measured_at = buffered
+                position = max(0.0, position - max(0.0, lead_ms - (now - measured_at) * 1000))
+            elif position <= 0 and started_at is not None:
+                position = max(0.0, (now - started_at) * 1000)
+            self._user_speaking[session.id] = True
+            self._audio_generation[session.id] = self._audio_generation.get(session.id, 0) + 1
+            if is_barge_in:
+                self._barge_in_active.add(session.id)
+            self._reset_outbound_resampler(self._session_resamplers.get(session.id))
+            queue = self._audio_send_queues.get(session.id)
+            if queue is not None:
+                endings: list[Any] = []
+                while not queue.empty():
+                    item = queue.get_nowait()
+                    if item is None or item[0] == "eor":
+                        endings.append(item)
+                for item in endings:
+                    queue.put_nowait(item)
+        self._update_idle_event(session.id)
+        return (round(position) if is_barge_in else None), responding, forwarded
+
     def _on_pipeline_speech_start(self, session: VoiceSession) -> None:
         """Handle speech start from local pipeline VAD."""
         from datetime import UTC, datetime
 
+        played_ms, provider_was_responding, fwd_count = self._begin_barge_in(session)
+        is_barge_in = played_ms is not None
         with self._state_lock:
-            playback_started_at = self._playback_started_at.get(session.id)
-            playback_position_ms = self._playback_position_ms.pop(session.id, 0.0)
-            provider_was_responding = not self._provider_idle.get(session.id, True)
-            self._user_speaking[session.id] = True
-            self._playback_started_at.pop(session.id, None)
-            # Stamp the start-of-turn so transcription emission can use it
-            # as created_at — keeps user utterances sorted before any
-            # tool_calls the agent fires mid-turn.
             self._user_turn_start_at[session.id] = datetime.now(UTC)
-            self._audio_generation[session.id] = self._audio_generation.get(session.id, 0) + 1
-            resamplers = self._session_resamplers.get(session.id)
-            fwd_count = self._audio_forward_count.get(session.id, 0)
-            is_barge_in = playback_started_at is not None or (
-                not self._transport.supports_playback_callback and fwd_count > 0
-            )
-            if is_barge_in:
-                self._barge_in_active.add(session.id)
-            self._reset_outbound_resampler(resamplers)
-            # Drain queued (now stale) outbound audio so the send worker
-            # never spends resample budget on chunks the interrupt killed.
-            # End-of-response items are kept: transports rely on the marker
-            # to settle their playback state even when the turn is cut.
-            send_queue = self._audio_send_queues.get(session.id)
-            if send_queue is not None:
-                kept: list[Any] = []
-                while not send_queue.empty():
-                    item = send_queue.get_nowait()
-                    if item is not None and item[0] == "eor":
-                        kept.append(item)
-                for item in kept:
-                    send_queue.put_nowait(item)
-        self._update_idle_event(session.id)
 
         logger.info(
             "[BARGE-IN] speech_start → interrupt (session %s, "
@@ -506,16 +512,7 @@ class RealtimeAudioMixin:
         except RuntimeError:
             return
 
-        if is_barge_in:
-            played_ms = (
-                round(playback_position_ms)
-                if playback_position_ms > 0
-                else (
-                    max(0, round((time.monotonic() - playback_started_at) * 1000))
-                    if playback_started_at is not None
-                    else 0
-                )
-            )
+        if played_ms is not None:
             self._track_task(
                 loop,
                 self._interrupt_and_truncate_provider(
@@ -788,7 +785,7 @@ class RealtimeAudioMixin:
             if binding is not None and binding.output_muted:
                 return
             # Counted at acceptance (not after the off-loop resample) so the
-            # count is settled by the time response-end bookkeeping pops it.
+            # count is settled before response-end telemetry snapshots it.
             self._audio_forward_count[session.id] = (
                 self._audio_forward_count.get(session.id, 0) + 1
             )
@@ -865,8 +862,10 @@ class RealtimeAudioMixin:
                         session, audio, resamplers, transport_rate, gen
                     )
                 else:  # "eor" — end-of-response flush + signal
-                    _, resamplers, transport_rate = item
-                    await self._flush_and_signal_end(session, resamplers, transport_rate)
+                    _, resamplers, transport_rate, gen, response_gen = item
+                    await self._flush_and_signal_end(
+                        session, resamplers, transport_rate, gen, response_gen
+                    )
             except Exception:
                 logger.exception("Error sending provider audio for session %s", session.id)
 
@@ -948,7 +947,7 @@ class RealtimeAudioMixin:
             )
 
     def _on_transport_audio_played(self, session: VoiceSession, audio: AudioFrame | bytes) -> None:
-        """Track physical playback and fire its output-level hook."""
+        """Track reported playback and known buffering, then fire its level hook."""
         raw = audio if isinstance(audio, bytes) else audio.data
         playback_ended = not isinstance(audio, bytes) and bool(
             audio.metadata.get("playback_ended")
@@ -958,6 +957,8 @@ class RealtimeAudioMixin:
             if playback_ended:
                 self._playback_started_at.pop(session.id, None)
                 self._playback_position_ms.pop(session.id, None)
+                self._playback_buffer.pop(session.id, None)
+                self._audio_forward_count.pop(session.id, None)
             else:
                 played_bytes = (
                     int(
@@ -970,6 +971,11 @@ class RealtimeAudioMixin:
                     else (len(raw) if any(raw) else 0)
                 )
                 if played_bytes > 0:
+                    if not isinstance(audio, bytes) and "playback_buffer_ms" in audio.metadata:
+                        self._playback_buffer[session.id] = (
+                            float(audio.metadata["playback_buffer_ms"]),
+                            time.monotonic(),
+                        )
                     self._playback_started_at.setdefault(session.id, time.monotonic())
                     if not isinstance(audio, bytes):
                         bytes_per_ms = (

@@ -111,6 +111,7 @@ class RealtimeSpeechMixin:
     _send_client_message: Any  # see RealtimeSpeechHost — cross-mixin
     _update_idle_event: Any  # see RealtimeSpeechHost — cross-mixin
     _rt_span_ctx: Any  # see RealtimeSpeechHost — cross-mixin
+    _begin_barge_in: Any  # see RealtimeAudioMixin
     _reset_outbound_resampler: Any  # see RealtimeSpeechHost — cross-mixin
 
     # -----------------------------------------------------------------
@@ -129,33 +130,8 @@ class RealtimeSpeechMixin:
         """
         if self._has_pipeline_vad.get(session.id, False):
             return
-        with self._state_lock:
-            playback_started_at = self._playback_started_at.get(session.id)
-            playback_position_ms = self._playback_position_ms.pop(session.id, 0.0)
-            self._user_speaking[session.id] = True
-            self._playback_started_at.pop(session.id, None)
-            self._audio_generation[session.id] = self._audio_generation.get(session.id, 0) + 1
-            resamplers = self._session_resamplers.get(session.id)
-            # response.done means generation ended, not that buffered audio
-            # reached the speaker. A physical playback timestamp is therefore
-            # authoritative; the forward count remains the fallback for
-            # transports without playback callbacks.
-            is_barge_in = playback_started_at is not None or (
-                not self._transport.supports_playback_callback
-                and self._audio_forward_count.get(session.id, 0) > 0
-            )
-            if is_barge_in:
-                self._barge_in_active.add(session.id)
-            self._reset_outbound_resampler(resamplers)
-        self._update_idle_event(session.id)
-
-        if is_barge_in:
-            logger.debug(
-                "Barge-in detected for session %s (forwarded %d chunks) — "
-                "keeping AEC filter intact",
-                session.id,
-                self._audio_forward_count.get(session.id, 0),
-            )
+        played_ms, _, _ = self._begin_barge_in(session)
+        is_barge_in = played_ms is not None
 
         self._transport.interrupt(session)
 
@@ -164,16 +140,7 @@ class RealtimeSpeechMixin:
         except RuntimeError:
             return
 
-        if is_barge_in:
-            played_ms = (
-                round(playback_position_ms)
-                if playback_position_ms > 0
-                else (
-                    max(0, round((time.monotonic() - playback_started_at) * 1000))
-                    if playback_started_at is not None
-                    else 0
-                )
-            )
+        if played_ms is not None:
             self._track_task(
                 loop,
                 self._provider.truncate_audio(session, played_ms),

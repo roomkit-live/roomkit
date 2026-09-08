@@ -58,6 +58,9 @@ class RealtimeResponseHost(Protocol):
     _session_transport_rates: dict[str, int]
     _output_sample_rate: int
     _audio_forward_count: dict[str, int]
+    _audio_generation: dict[str, int]
+    _response_generation: dict[str, int]
+    _audio_drained: set[str]
     _turn_spans: dict[str, Any]
     _session_spans: dict[str, Any]
     _provider_idle: dict[str, bool]
@@ -74,7 +77,7 @@ class RealtimeResponseHost(Protocol):
 
     def _update_idle_event(self, session_id: str) -> None: ...
 
-    async def _set_idle(self, session: Any) -> None: ...
+    async def _set_idle(self, session: Any, response_generation: int) -> None: ...
 
     async def end_session(self, session: Any) -> None: ...
 
@@ -95,6 +98,9 @@ class RealtimeResponseMixin:
     _session_transport_rates: dict[str, int]
     _output_sample_rate: int
     _audio_forward_count: dict[str, int]
+    _audio_generation: dict[str, int]
+    _response_generation: dict[str, int]
+    _audio_drained: set[str]
     _turn_spans: dict[str, Any]
     _session_spans: dict[str, Any]
     _provider_idle: dict[str, bool]
@@ -109,6 +115,7 @@ class RealtimeResponseMixin:
     _send_client_message: Any  # see RealtimeResponseHost — cross-mixin
     _update_idle_event: Any  # see RealtimeResponseHost — cross-mixin
     _set_idle: Any  # see RealtimeResponseHost — cross-mixin
+    _send_outbound_audio: Any  # see RealtimeAudioMixin
     end_session: Any  # see RealtimeResponseHost — host lifecycle
     _run_in_resample_executor: Any  # see RealtimeResponseHost — cross-mixin
 
@@ -118,6 +125,11 @@ class RealtimeResponseMixin:
             # AI is responding → user has stopped speaking.  Clear the flag
             # so _on_provider_audio stops dropping outbound audio.
             self._user_speaking[session.id] = False
+            self._audio_forward_count[session.id] = 0
+            self._response_generation[session.id] = (
+                self._response_generation.get(session.id, 0) + 1
+            )
+            self._audio_drained.discard(session.id)
         self._provider_idle[session.id] = False
         self._update_idle_event(session.id)
         # Activate AEC: echo cancellation is bypassed until playback starts
@@ -148,28 +160,31 @@ class RealtimeResponseMixin:
             resamplers = self._session_resamplers.get(session.id)
             transport_rate = self._session_transport_rates.get(session.id)
             send_queue = self._audio_send_queues.get(session.id)
+            generation = self._audio_generation.get(session.id, 0)
+            response_generation = self._response_generation.get(session.id, 0)
+            forwarded = self._audio_forward_count.get(session.id, 0)
+            self._provider_idle[session.id] = True
 
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
             return
         if send_queue is not None:
-            send_queue.put_nowait(("eor", resamplers, transport_rate))
+            send_queue.put_nowait(
+                ("eor", resamplers, transport_rate, generation, response_generation)
+            )
         else:
             self._track_task(
                 loop,
-                self._flush_and_signal_end(session, resamplers, transport_rate),
+                self._flush_and_signal_end(
+                    session, resamplers, transport_rate, generation, response_generation
+                ),
                 name=f"rt_signal_eor:{session.id}",
             )
         self._track_task(
             loop,
-            self._handle_response_indicator(session, is_speaking=False),
+            self._handle_response_indicator(session, is_speaking=False, forwarded=forwarded),
             name=f"rt_response_end:{session.id}",
-        )
-        self._track_task(
-            loop,
-            self._set_idle(session),
-            name=f"rt_idle:{session.id}",
         )
 
     async def _flush_and_signal_end(
@@ -177,6 +192,8 @@ class RealtimeResponseMixin:
         session: VoiceSession,
         resamplers: tuple[Any, Any] | None,
         transport_rate: int | None,
+        generation: int,
+        response_generation: int,
     ) -> None:
         """Flush the outbound resampler's pending frame, then signal end.
 
@@ -187,33 +204,32 @@ class RealtimeResponseMixin:
         resampling is inactive the resampler holds no state and nothing
         hops, matching the chunk path again.
         """
-        if resamplers and transport_rate and transport_rate != self._output_sample_rate:
-            flushed = await self._run_in_resample_executor(
-                resamplers[1].flush, transport_rate, 1, 2, session.id
-            )
-            if flushed and flushed.data:
-                await self._transport.send_audio(session, flushed.data)
-        self._transport.end_of_response(session)
-        # Backends with playback callbacks deactivate on their actual drained
-        # boundary.  For queued transports without that signal, this ordered
-        # marker is the last safe lifecycle point; otherwise AEC remains active
-        # with a stale adaptive filter until the next response (or forever).
+        if self._audio_generation.get(session.id, 0) == generation:
+            if resamplers and transport_rate and transport_rate != self._output_sample_rate:
+                flushed = await self._run_in_resample_executor(
+                    resamplers[1].flush, transport_rate, 1, 2, session.id
+                )
+                if flushed and flushed.data:
+                    await self._send_outbound_audio(session, flushed.data, generation)
+            if self._audio_generation.get(session.id, 0) == generation:
+                self._transport.end_of_response(session)
         pipeline = getattr(self, "_pipeline", None)
         if (
-            pipeline is not None
-            and pipeline._config.aec is not None
-            and not self._transport.supports_playback_callback
+            not self._transport.supports_playback_callback
+            and self._response_generation.get(session.id, 0) == response_generation
         ):
-            pipeline.set_aec_active(session.id, False)
+            self._audio_forward_count.pop(session.id, None)
+            if pipeline is not None and pipeline._config.aec is not None:
+                pipeline.set_aec_active(session.id, False)
+        await self._set_idle(session, response_generation)
 
     async def _handle_response_indicator(
-        self, session: VoiceSession, *, is_speaking: bool
+        self, session: VoiceSession, *, is_speaking: bool, forwarded: int = 0
     ) -> None:
         """Publish ephemeral speaking indicator for the AI."""
         telemetry = self._telemetry_provider
         if not is_speaking:
             with self._state_lock:
-                forwarded = self._audio_forward_count.pop(session.id, 0)
                 turn_span_id = self._turn_spans.pop(session.id, None)
             if forwarded:
                 logger.info(
@@ -231,7 +247,6 @@ class RealtimeResponseMixin:
                 telemetry.end_span(turn_span_id, attributes=turn_attrs)
         elif is_speaking:
             with self._state_lock:
-                self._audio_forward_count[session.id] = 0
                 parent = self._session_spans.get(session.id)
                 room_id = self._session_rooms.get(session.id)
             turn_span_id = telemetry.start_span(
