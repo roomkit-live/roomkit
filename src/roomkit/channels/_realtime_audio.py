@@ -84,6 +84,7 @@ class RealtimeAudioHost(Protocol):
     _session_resamplers: dict[str, Any]
     _resample_executor: ThreadPoolExecutor | None
     _session_transport_rates: dict[str, int]
+    _session_transport_output_rates: dict[str, int]
     _recording_tracks: dict[str, Any]
     _audio_forward_count: dict[str, int]
     _audio_generation: dict[str, int]
@@ -138,6 +139,7 @@ class RealtimeAudioMixin:
     _session_resamplers: dict[str, Any]
     _resample_executor: ThreadPoolExecutor | None
     _session_transport_rates: dict[str, int]
+    _session_transport_output_rates: dict[str, int]
     _recording_tracks: dict[str, Any]
     _audio_forward_count: dict[str, int]
     _audio_generation: dict[str, int]
@@ -779,7 +781,7 @@ class RealtimeAudioMixin:
                 logger.debug("[BARGE-IN] dropping outbound audio (user speaking)")
                 return
             resamplers = self._session_resamplers.get(session.id)
-            transport_rate = self._session_transport_rates.get(session.id)
+            transport_rate = self._session_transport_output_rates.get(session.id)
             gen = self._audio_generation.get(session.id, 0)
             binding = self._session_bindings.get(session.id)
             if binding is not None and binding.output_muted:

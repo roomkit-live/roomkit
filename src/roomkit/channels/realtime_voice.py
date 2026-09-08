@@ -162,8 +162,11 @@ class RealtimeVoiceChannel(
             output_sample_rate: Default output audio sample rate (Hz).
             transport_sample_rate: Sample rate of audio from the transport (Hz).
                 When set and different from provider rates, enables automatic
-                resampling.  When ``None`` (default), no resampling is performed
-                — backwards compatible with WebSocket transports.
+                resampling. Transports can override it in session metadata:
+                ``transport_sample_rate`` for capture and, when different,
+                ``transport_output_sample_rate`` for playback. FastRTC and SIP
+                declare their rates automatically. Without either metadata or
+                a configured rate, audio passes through unchanged.
             emit_transcription_events: If True, emit final transcriptions
                 as RoomEvents so other channels see them.
             tool_handler: Async callable to execute tool calls.
@@ -394,6 +397,7 @@ class RealtimeVoiceChannel(
         self._resample_executor: ThreadPoolExecutor | None = None
         # Per-session transport sample rates (from transport metadata)
         self._session_transport_rates: dict[str, int] = {}
+        self._session_transport_output_rates: dict[str, int] = {}
         # Audio forward counters (for diagnostics)
         self._audio_forward_count: dict[str, int] = {}
         # Per-session generation counter: bumped on interrupt so pending
@@ -767,20 +771,21 @@ class RealtimeVoiceChannel(
         # reaches AudioFrame/resampler arithmetic; the caller's start-session
         # rollback then releases the already accepted transport.
         transport_rate = session.metadata.get("transport_sample_rate", self._transport_sample_rate)
-        if transport_rate is None:
+        output_rate = session.metadata.get("transport_output_sample_rate", transport_rate)
+        if transport_rate is None and output_rate is None:
             return
-        if (
-            not isinstance(transport_rate, int)
-            or isinstance(transport_rate, bool)
-            or not 1 <= transport_rate <= 192_000
+        transport_rate = self._input_sample_rate if transport_rate is None else transport_rate
+        for key, rate in (
+            ("transport_sample_rate", transport_rate),
+            ("transport_output_sample_rate", output_rate),
         ):
-            raise ValueError(
-                "negotiated transport_sample_rate must be an integer between 1 and 192000"
-            )
+            if not isinstance(rate, int) or isinstance(rate, bool) or not 1 <= rate <= 192_000:
+                raise ValueError(f"negotiated {key} must be an integer between 1 and 192000")
 
         self._session_transport_rates[session.id] = transport_rate
+        self._session_transport_output_rates[session.id] = output_rate
         needs_inbound = transport_rate != self._input_sample_rate
-        needs_outbound = transport_rate != self._output_sample_rate
+        needs_outbound = output_rate != self._output_sample_rate
         if not (needs_inbound or needs_outbound):
             return
 
@@ -805,11 +810,12 @@ class RealtimeVoiceChannel(
 
         self._session_resamplers[session.id] = (_Resampler(), _Resampler())
         logger.info(
-            "Realtime resampler for session %s: %s (transport=%d, "
+            "Realtime resampler for session %s: %s (transport_in=%d, transport_out=%d, "
             "provider_in=%d, provider_out=%d)",
             session.id,
             _Resampler.__name__,
             transport_rate,
+            output_rate,
             self._input_sample_rate,
             self._output_sample_rate,
         )
@@ -948,6 +954,7 @@ class RealtimeVoiceChannel(
         with self._state_lock:
             resamplers = self._session_resamplers.pop(session.id, None)
             self._session_transport_rates.pop(session.id, None)
+            self._session_transport_output_rates.pop(session.id, None)
             self._preconnect_audio.pop(session.id, None)
             self._preconnect_audio_bytes.pop(session.id, None)
             self._preconnect_audio_dropped.discard(session.id)
@@ -1190,6 +1197,7 @@ class RealtimeVoiceChannel(
             self._session_tools.pop(session.id, None)
             self._audio_generation.pop(session.id, None)
             self._session_transport_rates.pop(session.id, None)
+            self._session_transport_output_rates.pop(session.id, None)
             self._audio_forward_count.pop(session.id, None)
             self._last_assistant_text.pop(session.id, None)
             self._recording_tracks.pop(session.id, None)

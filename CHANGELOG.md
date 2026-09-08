@@ -37,6 +37,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- FastRTC realtime sessions declare their capture and playback sample rates.
+  Channels resample each direction independently, preserving the playback rate
+  when microphone capture uses a different rate and rejecting invalid negotiated
+  formats before connecting the provider.
+
 - **An event the room refused no longer reaches any channel as history.** A
   BEFORE_BROADCAST refusal stores the message `BLOCKED` and delivers it to
   nobody (RFC §10.1 step 10), but `get_conversation` filters on type only, so

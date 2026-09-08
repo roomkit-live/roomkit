@@ -2080,3 +2080,29 @@ class TestSendWorkerOrdering:
         # Its generation is stale by the time the gate opens, so at most
         # the in-flight chunk reaches the transport.
         assert len(sent) <= 1
+
+
+class TestTransportOutputRateValidation:
+    @pytest.mark.parametrize("rate", [True, 0, "16000", 192001])
+    async def test_invalid_playback_rate_rolls_back_before_provider_connect(self, rate) -> None:
+        from roomkit import RealtimeVoiceChannel
+        from roomkit.voice.realtime.mock import MockRealtimeProvider, MockRealtimeTransport
+
+        provider = MockRealtimeProvider()
+        channel = RealtimeVoiceChannel("rt", provider=provider, transport=MockRealtimeTransport())
+        try:
+            with pytest.raises(ValueError, match="transport_output_sample_rate"):
+                await channel.start_session(
+                    "r",
+                    "user",
+                    "rtc",
+                    metadata={
+                        "transport_sample_rate": 16000,
+                        "transport_output_sample_rate": rate,
+                    },
+                )
+            assert not any(call.method == "connect" for call in provider.calls)
+            assert not channel._session_transport_rates
+            assert not channel._session_transport_output_rates
+        finally:
+            await channel.close()

@@ -257,6 +257,10 @@ class FastRTCRealtimeTransport(VoiceBackend):
             connection: The webrtc_id string identifying the WebRTC connection.
         """
         webrtc_id: str = connection
+        # Capture and playback may use different PCM rates. Declare both
+        # before the channel constructs its per-session resamplers.
+        session.metadata["transport_sample_rate"] = self._input_sample_rate
+        session.metadata["transport_output_sample_rate"] = self._output_sample_rate
         self._sessions[session.id] = session
         self._session_handlers[session.id] = webrtc_id
         self._webrtc_sessions[webrtc_id] = session

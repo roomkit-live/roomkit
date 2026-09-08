@@ -378,3 +378,59 @@ class TestMountConcurrencyLimit:
         mock_stream = self._mount(transport)
         _, kwargs = mock_stream.call_args
         assert kwargs["concurrency_limit"] is None
+
+
+class TestNegotiatedAudioRates:
+    @pytest.mark.parametrize(
+        ("capture_rate", "playback_rate"), [(24000, 24000), (16000, 24000), (48000, 16000)]
+    )
+    async def test_capture_and_playback_are_resampled_independently(
+        self, capture_rate: int, playback_rate: int
+    ) -> None:
+        import asyncio
+        from types import SimpleNamespace
+
+        from roomkit import RealtimeVoiceChannel, RoomKit
+        from roomkit.voice.realtime.fastrtc_transport import FastRTCRealtimeTransport
+        from roomkit.voice.realtime.mock import MockRealtimeProvider
+
+        provider = MockRealtimeProvider()
+        transport = FastRTCRealtimeTransport(
+            input_sample_rate=capture_rate, output_sample_rate=playback_rate
+        )
+        sent: list[bytes] = []
+        transport._handlers["rtc"] = SimpleNamespace(  # type: ignore[assignment]
+            channel=None, send_audio_direct=sent.append, _audio_queue=asyncio.Queue()
+        )
+        channel = RealtimeVoiceChannel(
+            "rt",
+            provider=provider,
+            transport=transport,
+            input_sample_rate=16000,
+            output_sample_rate=24000,
+        )
+        kit = RoomKit()
+        kit.register_channel(channel)
+        await kit.create_room(room_id="r")
+        await kit.attach_channel("r", "rt")
+        try:
+            session = await channel.start_session("r", "user", "rtc")
+            assert session.metadata["transport_sample_rate"] == capture_rate
+            assert session.metadata["transport_output_sample_rate"] == playback_rate
+            # Two 20 ms chunks cover the streaming sinc fallback's lookahead.
+            for _ in range(2):
+                await transport._fire_audio_callbacks(session, b"\x01\x00" * (capture_rate // 50))
+            await asyncio.gather(*list(channel._scheduled_tasks))
+            assert provider.sent_audio
+            assert all(len(audio) == 640 for _, audio in provider.sent_audio)
+
+            await provider.simulate_response_start(session)
+            for _ in range(2):
+                await provider.simulate_audio(session, b"\x01\x00" * 480)
+            await provider.simulate_response_end(session)
+            await channel.wait_idle("r", timeout=2)
+            assert sum(map(len, sent)) == playback_rate * 2 * 40 // 1000
+            await channel.end_session(session)
+            assert not channel._session_transport_output_rates
+        finally:
+            await kit.close()

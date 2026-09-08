@@ -29,7 +29,7 @@ class RealtimeResponseHost(Protocol):
         _session_rooms: Maps session IDs to room IDs.
         _session_resamplers: Per-session (inbound, outbound) resampler pairs.
         _resample_executor: Single-thread executor owning resampler state.
-        _session_transport_rates: Negotiated transport sample rate per session.
+        _session_transport_output_rates: Negotiated transport sample rate per session.
         _output_sample_rate: Provider output sample rate.
         _audio_forward_count: Count of audio chunks forwarded per session.
         _turn_spans: Active telemetry turn span per session.
@@ -55,7 +55,7 @@ class RealtimeResponseHost(Protocol):
     _session_resamplers: dict[str, Any]
     _audio_send_queues: dict[str, asyncio.Queue[Any]]
     _resample_executor: ThreadPoolExecutor | None
-    _session_transport_rates: dict[str, int]
+    _session_transport_output_rates: dict[str, int]
     _output_sample_rate: int
     _audio_forward_count: dict[str, int]
     _audio_generation: dict[str, int]
@@ -95,7 +95,7 @@ class RealtimeResponseMixin:
     _session_resamplers: dict[str, Any]
     _audio_send_queues: dict[str, asyncio.Queue[Any]]
     _resample_executor: ThreadPoolExecutor | None
-    _session_transport_rates: dict[str, int]
+    _session_transport_output_rates: dict[str, int]
     _output_sample_rate: int
     _audio_forward_count: dict[str, int]
     _audio_generation: dict[str, int]
@@ -158,7 +158,7 @@ class RealtimeResponseMixin:
         """
         with self._state_lock:
             resamplers = self._session_resamplers.get(session.id)
-            transport_rate = self._session_transport_rates.get(session.id)
+            transport_rate = self._session_transport_output_rates.get(session.id)
             send_queue = self._audio_send_queues.get(session.id)
             generation = self._audio_generation.get(session.id, 0)
             response_generation = self._response_generation.get(session.id, 0)
