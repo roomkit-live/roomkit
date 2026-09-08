@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from roomkit.video.pipeline.filter.base import FilterContext, VideoFilterProvider
@@ -22,6 +23,13 @@ def _load_ultralytics() -> Any:
             "ultralytics is required for YOLODetectorFilter. Install with: pip install ultralytics"
         ) from exc
     return ultralytics
+
+
+@dataclass
+class _DetectionState:
+    frame_count: int = 0
+    detections: list[dict[str, Any]] = field(default_factory=list)
+    labels: set[str] = field(default_factory=set)
 
 
 class YOLODetectorFilter(VideoFilterProvider):
@@ -65,9 +73,7 @@ class YOLODetectorFilter(VideoFilterProvider):
         self._draw_boxes = draw_boxes
 
         self._model: Any = None
-        self._frame_count = 0
-        self._last_detections: list[dict[str, Any]] = []
-        self._last_labels: set[str] = set()
+        self._sessions: dict[str, _DetectionState] = {}
         self._logged_first = False
 
     @property
@@ -75,10 +81,11 @@ class YOLODetectorFilter(VideoFilterProvider):
         return "yolo"
 
     def filter(self, frame: VideoFrame, context: FilterContext) -> VideoFrame:
-        self._frame_count += 1
+        state = self._sessions.setdefault(context.session_id, _DetectionState())
+        state.frame_count += 1
 
         # Throttle: only run detection every N frames
-        if self._frame_count % self._every_n != 1 and self._every_n > 1:
+        if state.frame_count % self._every_n != 1 and self._every_n > 1:
             self._apply_cached(context)
             return frame
 
@@ -96,8 +103,9 @@ class YOLODetectorFilter(VideoFilterProvider):
         results = self._model(img, conf=self._confidence, verbose=False)
         detections = self._parse_results(results)
 
-        self._last_detections = detections
-        self._last_labels = {d["label"] for d in detections}
+        state = self._sessions.setdefault(context.session_id, _DetectionState())
+        state.detections = detections
+        state.labels = {d["label"] for d in detections}
 
         self._apply_cached(context)
 
@@ -106,7 +114,7 @@ class YOLODetectorFilter(VideoFilterProvider):
                 "YOLO first detection: model=%s, found %d objects: %s",
                 self._model_name,
                 len(detections),
-                self._last_labels,
+                state.labels,
             )
             self._logged_first = True
 
@@ -145,8 +153,9 @@ class YOLODetectorFilter(VideoFilterProvider):
 
     def _apply_cached(self, context: FilterContext) -> None:
         """Apply cached detection results to the filter context."""
-        context.labels_detected = self._last_labels.copy()
-        context.metadata["detections"] = self._last_detections
+        state = self._sessions[context.session_id]
+        context.labels_detected = state.labels.copy()
+        context.metadata["detections"] = state.detections
 
     def _ensure_model(self) -> None:
         """Load the YOLO model on first use."""
@@ -199,10 +208,12 @@ class YOLODetectorFilter(VideoFilterProvider):
         )
 
     def reset(self) -> None:
-        self._frame_count = 0
-        self._last_detections = []
-        self._last_labels = set()
+        self._sessions.clear()
         self._logged_first = False
 
+    def reset_session(self, session_id: str) -> None:
+        self._sessions.pop(session_id, None)
+
     def close(self) -> None:
+        self.reset()
         self._model = None

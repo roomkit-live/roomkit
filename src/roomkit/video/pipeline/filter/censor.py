@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from roomkit.video.pipeline.filter.base import FilterContext, VideoFilterProvider
@@ -11,6 +12,13 @@ if TYPE_CHECKING:
     from roomkit.video.video_frame import VideoFrame
 
 logger = logging.getLogger("roomkit.video.pipeline.filter")
+
+
+@dataclass
+class _CensorState:
+    censoring: bool = False
+    grace_remaining: int = 0
+    logged_start: bool = False
 
 
 class CensorVideoFilter(VideoFilterProvider):
@@ -38,37 +46,37 @@ class CensorVideoFilter(VideoFilterProvider):
         self._blocked_labels = {label.lower() for label in blocked_labels}
         self._replacement = replacement
         self._grace_frames = grace_frames
-        self._grace_remaining = 0
-        self._censoring = False
-        self._logged_censor_start = False
+        self._sessions: dict[str, _CensorState] = {}
 
     @property
     def name(self) -> str:
         return "censor"
 
     def filter(self, frame: VideoFrame, context: FilterContext) -> VideoFrame:
+        state = self._sessions.setdefault(context.session_id, _CensorState())
         # Check if any blocked label is in the latest vision result
         detected = {label.lower() for label in context.labels_detected}
         has_blocked = bool(detected & self._blocked_labels)
 
         if has_blocked:
-            self._censoring = True
-            self._grace_remaining = self._grace_frames
+            state.censoring = True
+            state.grace_remaining = self._grace_frames
             context.censoring = True
-            if not self._logged_censor_start:
+            if not state.logged_start:
                 matched = detected & self._blocked_labels
                 logger.info("Censoring started: detected %s", matched)
-                self._logged_censor_start = True
-        elif self._censoring:
-            if self._grace_remaining > 0:
-                self._grace_remaining -= 1
+                state.logged_start = True
+        elif state.censoring:
+            if state.grace_remaining > 0:
+                state.grace_remaining -= 1
             else:
-                self._censoring = False
+                state.censoring = False
                 context.censoring = False
-                self._logged_censor_start = False
+                state.logged_start = False
                 logger.info("Censoring stopped: blocked labels cleared")
 
-        if not self._censoring:
+        context.censoring = state.censoring
+        if not state.censoring:
             return frame
 
         return self._make_replacement(frame)
@@ -89,7 +97,11 @@ class CensorVideoFilter(VideoFilterProvider):
             sequence=frame.sequence,
         )
 
+    def reset_session(self, session_id: str) -> None:
+        self._sessions.pop(session_id, None)
+
     def reset(self) -> None:
-        self._censoring = False
-        self._grace_remaining = 0
-        self._logged_censor_start = False
+        self._sessions.clear()
+
+    def close(self) -> None:
+        self.reset()

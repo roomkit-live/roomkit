@@ -39,5 +39,19 @@ class VideoDecoderProvider(ABC):
     def reset(self) -> None:  # noqa: B027
         """Reset decoder state (e.g., after seek or packet loss)."""
 
+    def decode_for_session(self, session_id: str, frame: VideoFrame) -> VideoFrame | None:
+        """Decode a session's frame. Stateful multi-session decoders override this.
+
+        The default preserves the existing decode contract for stateless or
+        single-session providers.
+        """
+        return self.decode(frame)
+
+    def reset_session(self, session_id: str) -> None:  # noqa: B027
+        """Release only this session's state, preserving other active sessions.
+
+        Legacy providers receive a global reset when the final session ends.
+        """
+
     def close(self) -> None:  # noqa: B027
         """Release resources."""

@@ -11,12 +11,12 @@ import time
 from typing import TYPE_CHECKING, Any
 
 from roomkit.channels._video_hooks import VideoHooksMixin
+from roomkit.channels._video_resources import _VideoResources
 from roomkit.channels.voice import VoiceChannel
 from roomkit.models.channel import ChannelCapabilities
 from roomkit.models.enums import ChannelMediaType, ChannelType, HookTrigger
 from roomkit.video.backends.base import VideoBackend
 from roomkit.video.bridge import VideoBridge, VideoBridgeConfig
-from roomkit.video.pipeline.engine import VideoPipeline
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -90,15 +90,8 @@ class AudioVideoChannel(VideoHooksMixin, VoiceChannel):
         self._session_ready_pending_video: set[str] = set()
 
         # Video pipeline (decoder, resizer, vision)
-        if video_pipeline is not None and (
-            video_pipeline.decoder
-            or video_pipeline.resizer
-            or video_pipeline.transforms
-            or video_pipeline.filters
-        ):
-            self._video_pipeline: VideoPipeline | None = VideoPipeline(video_pipeline)
-        else:
-            self._video_pipeline = None
+        self._video_resources = _VideoResources(video_pipeline, vision)
+        self._video_pipeline = self._video_resources.pipeline
         self._video_pipeline_config = video_pipeline
 
         # Avatar: lip-synced video generation from TTS audio
@@ -147,6 +140,8 @@ class AudioVideoChannel(VideoHooksMixin, VoiceChannel):
         If a video pipeline is configured, the frame goes through
         decode → resize before reaching taps and vision.
         """
+        if self._video_resources.closed:
+            return
         binding_info = self._session_bindings.get(session.id)
         if binding_info is None:
             logger.debug("Video frame dropped (no binding): session=%s", session.id[:8])
@@ -165,6 +160,15 @@ class AudioVideoChannel(VideoHooksMixin, VoiceChannel):
             if processed is None:
                 return
             frame = processed
+
+        if self._video_pipeline is not None:
+            for fe in self._video_pipeline.drain_events(session.id):
+                if fe.data is not None:
+                    fe.data.session = session
+                    self._schedule(
+                        self._fire_video_detection_hook(session, fe.data, binding_info[0]),
+                        name=f"detection:{session.id}",
+                    )
 
         # Deliver to all video taps
         for tap in self._video_media_taps:
@@ -286,6 +290,8 @@ class AudioVideoChannel(VideoHooksMixin, VoiceChannel):
                     name=f"video_session_ended_hook:{session.id}",
                 )
 
+        if self._video_pipeline is not None:
+            self._video_pipeline.reset(session.id)
         self._last_vision_results.pop(session.id, None)
         self._last_vision_ts.pop(session.id, None)
         super().unbind_session(session)
@@ -299,8 +305,12 @@ class AudioVideoChannel(VideoHooksMixin, VoiceChannel):
             pool.shutdown(wait=False)
         if self._avatar:
             await self._avatar.close()
-        if self._vision:
-            await self._vision.close()
+        for task in list(self._scheduled_tasks):
+            task.cancel()
+        if self._scheduled_tasks:
+            await asyncio.gather(*self._scheduled_tasks, return_exceptions=True)
+        self._scheduled_tasks.clear()
+        await self._video_resources.close()
         self._last_vision_results.clear()
         self._last_vision_ts.clear()
         self._video_media_taps.clear()

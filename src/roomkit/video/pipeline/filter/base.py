@@ -96,5 +96,12 @@ class VideoFilterProvider(ABC):
     def reset(self) -> None:  # noqa: B027
         """Reset internal state."""
 
+    def reset_session(self, session_id: str) -> None:  # noqa: B027
+        """Release state for one session without resetting other sessions.
+
+        Stateless filters need no override. Legacy providers receive a global
+        reset when the pipeline's final session ends.
+        """
+
     def close(self) -> None:  # noqa: B027
         """Release resources."""

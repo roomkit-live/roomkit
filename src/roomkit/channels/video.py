@@ -9,6 +9,7 @@ from collections.abc import Coroutine
 from typing import TYPE_CHECKING, Any
 
 from roomkit.channels._video_hooks import VideoHooksMixin
+from roomkit.channels._video_resources import _VideoResources
 from roomkit.channels.base import Channel, FrameworkAwareChannel
 from roomkit.models.channel import ChannelCapabilities
 from roomkit.models.enums import (
@@ -75,14 +76,9 @@ class VideoChannel(VideoHooksMixin, FrameworkAwareChannel, Channel):
         self._recording = recording
 
         # Create video pipeline engine if config has processing stages
-        from roomkit.video.pipeline.engine import VideoPipeline
 
-        if pipeline is not None and (
-            pipeline.decoder or pipeline.resizer or pipeline.transforms or pipeline.filters
-        ):
-            self._video_pipeline: VideoPipeline | None = VideoPipeline(pipeline)
-        else:
-            self._video_pipeline = None
+        self._video_resources = _VideoResources(pipeline, vision)
+        self._video_pipeline = self._video_resources.pipeline
         self._framework: RoomKit | None = None
 
         # Video bridge for session-to-session forwarding
@@ -250,6 +246,8 @@ class VideoChannel(VideoHooksMixin, FrameworkAwareChannel, Channel):
                 result.duration_seconds,
             )
         binding_info = self._session_bindings.pop(session.id, None)
+        if self._video_pipeline is not None:
+            self._video_pipeline.reset(session.id)
         self._last_vision_results.pop(session.id, None)
         self._last_vision_ts.pop(session.id, None)
         if binding_info and self._framework:
@@ -291,6 +289,8 @@ class VideoChannel(VideoHooksMixin, FrameworkAwareChannel, Channel):
         If a pipeline is configured, the frame goes through decode → resize
         before reaching taps and vision.  Otherwise it's passed as-is.
         """
+        if self._video_resources.closed:
+            return
         binding_info = self._session_bindings.get(session.id)
         if binding_info is None:
             return
@@ -481,14 +481,10 @@ class VideoChannel(VideoHooksMixin, FrameworkAwareChannel, Channel):
             self._recorder.close()
         self._recording_handles.clear()
         # Close video pipeline
-        if self._video_pipeline is not None:
-            self._video_pipeline.close()
+        await self._video_resources.close()
         # Close video bridge
         if self._bridge is not None:
             self._bridge.close()
-        # Close vision provider
-        if self._vision:
-            await self._vision.close()
         # Close backend last
         await self._backend.close()
         self._session_bindings.clear()

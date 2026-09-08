@@ -31,6 +31,9 @@ class VideoPipeline:
     def __init__(self, config: VideoPipelineConfig) -> None:
         self._config = config
         self._filter_contexts: dict[str, FilterContext] = {}
+        self._sessions: set[str] = set()
+        self._closed = False
+        self._vision_closed = False
 
     def process_inbound(self, session_id: str, frame: VideoFrame) -> VideoFrame | None:
         """Process an inbound video frame through the pipeline.
@@ -46,12 +49,15 @@ class VideoPipeline:
             Processed frame, or None if the frame should be dropped
             (e.g., decoder waiting for a keyframe).
         """
+        if self._closed:
+            return None
+        self._sessions.add(session_id)
         current: VideoFrame | None = frame
 
         # Stage 1: Decode encoded frames to raw pixels.
         if self._config.decoder is not None and current is not None and current.is_encoded:
             try:
-                current = self._config.decoder.decode(current)
+                current = self._config.decoder.decode_for_session(session_id, current)
             except Exception:
                 logger.exception("Decoder error for frame seq=%d", frame.sequence)
                 return None
@@ -98,8 +104,9 @@ class VideoPipeline:
         Returns:
             VisionResult from the provider, or None.
         """
-        if self._config.vision is None:
+        if self._closed or self._config.vision is None:
             return None
+        self._sessions.add(session_id)
         try:
             result = await self._config.vision.analyze_frame(frame)
         except Exception:
@@ -107,6 +114,8 @@ class VideoPipeline:
             return None
 
         # Update filter context with latest vision result
+        if self._closed or session_id not in self._sessions:
+            return None
         if result is not None and self._config.filters:
             ctx = self._filter_contexts.setdefault(session_id, FilterContext())
             ctx.last_vision_result = result
@@ -144,8 +153,9 @@ class VideoPipeline:
             session_id: Active session identifier.
             result: The latest vision analysis result.
         """
-        if not self._config.filters:
+        if self._closed or not self._config.filters:
             return
+        self._sessions.add(session_id)
         ctx = self._filter_contexts.setdefault(session_id, FilterContext())
         ctx.last_vision_result = result
         ctx.labels_detected = set(result.labels)
@@ -156,22 +166,51 @@ class VideoPipeline:
         Args:
             session_id: Session whose state should be cleared.
         """
+        self._sessions.discard(session_id)
         if self._config.decoder is not None:
-            self._config.decoder.reset()
-        for txf in self._config.transforms:
-            txf.reset()
+            self._config.decoder.reset_session(session_id)
         for flt in self._config.filters:
-            flt.reset()
+            flt.reset_session(session_id)
+        # Legacy providers expose only a global reset. Calling it while another
+        # session is live would invalidate that session's decoder/filter state.
+        if not self._sessions:
+            if self._config.decoder is not None:
+                self._config.decoder.reset()
+            for txf in self._config.transforms:
+                txf.reset()
+            for flt in self._config.filters:
+                flt.reset()
         self._filter_contexts.pop(session_id, None)
 
     def close(self) -> None:
-        """Release all pipeline resources."""
-        if self._config.decoder is not None:
-            self._config.decoder.close()
-        if self._config.resizer is not None:
-            self._config.resizer.close()
-        for txf in self._config.transforms:
-            txf.close()
-        for flt in self._config.filters:
-            flt.close()
+        """Release synchronous stages. Use aclose() to also close async vision."""
+        if self._closed:
+            return
+        self._closed = True
+        errors: list[Exception] = []
+        seen: set[int] = set()
+        for stage in (
+            self._config.decoder,
+            self._config.resizer,
+            *self._config.transforms,
+            *self._config.filters,
+        ):
+            if stage is not None and id(stage) not in seen:
+                seen.add(id(stage))
+                try:
+                    stage.close()
+                except Exception as exc:
+                    errors.append(exc)
+        self._sessions.clear()
         self._filter_contexts.clear()
+        if errors:
+            raise ExceptionGroup("Video pipeline cleanup failed", errors)
+
+    async def aclose(self) -> None:
+        """Release synchronous stages and the configured vision provider once."""
+        try:
+            self.close()
+        finally:
+            if self._config.vision is not None and not self._vision_closed:
+                self._vision_closed = True
+                await self._config.vision.close()

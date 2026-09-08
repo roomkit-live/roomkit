@@ -428,16 +428,11 @@ class TestYOLOCensorIntegration:
 class TestYOLOLifecycle:
     def test_reset_clears_state(self) -> None:
         filt = YOLODetectorFilter()
-        filt._frame_count = 10
-        filt._last_detections = [{"label": "person"}]
-        filt._last_labels = {"person"}
-        filt._logged_first = True
-
+        filt._model = _make_mock_model([[{"cls_id": 0, "conf": 0.9, "box": (1, 1, 4, 4)}]])
+        filt.filter(_raw_frame(), FilterContext(session_id="a"))
+        assert filt._sessions
         filt.reset()
-
-        assert filt._frame_count == 0
-        assert filt._last_detections == []
-        assert filt._last_labels == set()
+        assert not filt._sessions
         assert filt._logged_first is False
 
     def test_close_clears_model(self) -> None:
@@ -481,3 +476,23 @@ class TestLazyImport:
 class TestYOLOName:
     def test_name(self) -> None:
         assert YOLODetectorFilter().name == "yolo"
+
+
+def test_throttled_detections_are_isolated_between_sessions() -> None:
+    filt = YOLODetectorFilter(every_n_frames=3)
+    filt._model = _make_mock_model(
+        [
+            [{"cls_id": 0, "conf": 0.9, "box": (1, 1, 4, 4)}],
+            [{"cls_id": 1, "conf": 0.9, "box": (1, 1, 4, 4)}],
+        ]
+    )
+    first, second = FilterContext(session_id="a"), FilterContext(session_id="b")
+    filt.filter(_raw_frame(), first)
+    filt.filter(_raw_frame(), second)
+    assert first.labels_detected == {"person"}
+    assert second.labels_detected == {"car"}
+    filt.filter(_raw_frame(), first)
+    assert first.labels_detected == {"person"}
+    filt.reset_session("a")
+    filt.filter(_raw_frame(), second)
+    assert second.labels_detected == {"car"}

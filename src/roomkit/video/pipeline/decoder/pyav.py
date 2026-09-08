@@ -57,6 +57,7 @@ class PyAVVideoDecoder(VideoDecoderProvider):
         self._codecs: dict[str, Any] = {}
         # Track whether we've received a keyframe per codec.
         self._seen_keyframe: dict[str, bool] = {}
+        self._sessions: dict[str, PyAVVideoDecoder] = {}
 
     @property
     def name(self) -> str:
@@ -78,8 +79,19 @@ class PyAVVideoDecoder(VideoDecoderProvider):
         ctx = av.codec.CodecContext.create(codec)
         ctx.open()
         self._codecs[codec_name] = ctx
-        self._seen_keyframe[codec_name] = False
         return ctx
+
+    def decode_for_session(self, session_id: str, frame: VideoFrame) -> VideoFrame | None:
+        decoder = self._sessions.get(session_id)
+        if decoder is None:
+            decoder = PyAVVideoDecoder(self._output_format)
+            self._sessions[session_id] = decoder
+        return decoder.decode(frame)
+
+    def reset_session(self, session_id: str) -> None:
+        decoder = self._sessions.pop(session_id, None)
+        if decoder is not None:
+            decoder.close()
 
     def decode(self, frame: VideoFrame) -> VideoFrame | None:
         """Decode an encoded frame to raw pixels.
@@ -149,6 +161,9 @@ class PyAVVideoDecoder(VideoDecoderProvider):
 
     def reset(self) -> None:
         """Reset all decoder contexts."""
+        for decoder in self._sessions.values():
+            decoder.close()
+        self._sessions.clear()
         for ctx in self._codecs.values():
             ctx.flush_buffers()
         self._codecs.clear()

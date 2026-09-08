@@ -153,6 +153,8 @@ class VideoHooksMixin:
         vision = self._vision_provider
         if vision is None:
             return
+        bindings = getattr(self, "_session_bindings", {})
+        binding = bindings.get(session.id)
         t0 = time.perf_counter()
         try:
             result = await vision.analyze_frame(frame)
@@ -167,7 +169,12 @@ class VideoHooksMixin:
             ts = (
                 frame.timestamp_ms if frame.timestamp_ms is not None else time.monotonic() * 1000.0
             )
-            self._last_vision_ts[session.id] = ts
+            if binding is None or bindings.get(session.id) is binding:
+                self._last_vision_ts[session.id] = ts
+        # An unbind (or a new binding for the same id) invalidates this work.
+        # In-flight vision must not restore state cleared during disconnect.
+        if binding is not None and bindings.get(session.id) is not binding:
+            return
         elapsed_ms = (time.perf_counter() - t0) * 1000
         logger.info(
             "Vision analysis: %.0fms (%s, session %s)",

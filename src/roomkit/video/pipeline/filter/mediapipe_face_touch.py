@@ -571,6 +571,9 @@ class FaceTouchFilter(VideoFilterProvider):
         self._sessions.clear()
         self._logged_first = False
 
+    def reset_session(self, session_id: str) -> None:
+        self._sessions.pop(session_id or "default", None)
+
     def close(self) -> None:
         if self._face_detector is not None:
             self._face_detector.close()
