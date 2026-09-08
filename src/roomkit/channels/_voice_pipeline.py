@@ -91,7 +91,9 @@ class VoicePipelineMixin:
         self._inbound_offload = InboundFrameOffload(threads) if threads else None
 
         # Backend delivers raw AudioFrame → pipeline processes it
-        backend.on_audio_received(self._pipeline_on_audio_received)
+        self._pipeline_unsubscribers = [
+            backend.on_audio_received(self._pipeline_on_audio_received)
+        ]
 
         # Wire speaker output → pipeline AEC for time-aligned reference.
         # Only when the backend doesn't already feed AEC at transport level.
@@ -119,7 +121,7 @@ class VoicePipelineMixin:
                 if frame.metadata.get("playback_ended"):
                     self._pipeline.set_aec_active(session.id, False)
 
-            backend.on_audio_played(_on_audio_played)
+            self._pipeline_unsubscribers.append(backend.on_audio_played(_on_audio_played))
             pipeline.enable_playback_aec_feed()
 
         return pipeline

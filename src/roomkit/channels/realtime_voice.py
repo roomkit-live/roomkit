@@ -125,6 +125,7 @@ class RealtimeVoiceChannel(
         *,
         provider: RealtimeVoiceProvider,
         transport: VoiceBackend,
+        owns_transport: bool = True,
         system_prompt: str | None = None,
         voice: str | None = None,
         tools: list[dict[str, Any] | Any] | None = None,
@@ -152,6 +153,9 @@ class RealtimeVoiceChannel(
             channel_id: Unique channel identifier.
             provider: The realtime voice provider (OpenAI, Gemini, etc.).
             transport: The audio transport (WebSocket, etc.).
+            owns_transport: Close the transport with this channel (default True).
+                Set False for a shared transport with unsubscribe support, such
+                as FastRTC. Only this channel's sessions and callbacks close.
             system_prompt: Default system prompt for the AI.
             voice: Default voice ID for audio output.
             tools: Tool definitions as dicts, or Tool objects with
@@ -253,6 +257,8 @@ class RealtimeVoiceChannel(
             raise ValueError("tool_search_threshold must be a positive integer")
         self._provider: RealtimeVoiceProvider = provider
         self._transport = transport
+        self._owns_transport = owns_transport
+        self._transport_unsubscribers: list[Callable[[], None] | None] = []
         self._recording = recording
         self._system_prompt = system_prompt
         self._voice = voice
@@ -473,10 +479,16 @@ class RealtimeVoiceChannel(
         # When pipeline= is set, _create_pipeline() registers
         # _pipeline_on_audio_received instead (in start_session).
         if self._pipeline_config is None:
-            transport.on_audio_received(self._on_client_audio)
-        transport.on_client_disconnected(self._on_client_disconnected)
+            self._transport_unsubscribers.append(
+                transport.on_audio_received(self._on_client_audio)
+            )
+        self._transport_unsubscribers.append(
+            transport.on_client_disconnected(self._on_client_disconnected)
+        )
         if transport.supports_playback_callback:
-            transport.on_audio_played(self._on_transport_audio_played)
+            self._transport_unsubscribers.append(
+                transport.on_audio_played(self._on_transport_audio_played)
+            )
 
     @property
     def _telemetry_provider(self) -> NoopTelemetryProvider:
@@ -1479,7 +1491,15 @@ class RealtimeVoiceChannel(
         )
 
     async def close(self) -> None:
-        """End all sessions and close provider + transport."""
+        """End owned sessions, unsubscribe callbacks, and close owned resources."""
+        for unsubscribe in self._transport_unsubscribers:
+            if unsubscribe is not None:
+                unsubscribe()
+        self._transport_unsubscribers.clear()
+        for unsubscribe in getattr(self, "_pipeline_unsubscribers", []):
+            if unsubscribe is not None:
+                unsubscribe()
+        self._pipeline_unsubscribers = []
         self._closing = True
         connecting = list(self._connecting_sessions.values())
         current = asyncio.current_task()
@@ -1530,7 +1550,8 @@ class RealtimeVoiceChannel(
         except Exception:
             logger.exception("Error closing provider during channel close")
         try:
-            await self._transport.close()
+            if self._owns_transport:
+                await self._transport.close()
         except Exception:
             logger.exception("Error closing transport during channel close")
 

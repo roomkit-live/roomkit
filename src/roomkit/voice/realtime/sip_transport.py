@@ -16,9 +16,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from typing import Any
 
+from roomkit.core.callbacks import subscribe_callback
 from roomkit.core.task_utils import log_task_exception
 from roomkit.voice.backends.base import (
     AudioPlayedCallback,
@@ -79,12 +80,12 @@ class SIPRealtimeTransport(VoiceBackend):
         self._playback_callbacks: list[AudioPlayedCallback] = []
         self._disconnect_callbacks: list[TransportDisconnectCallback] = []
 
-        # Wire into the SIP backend's audio and disconnect callbacks
-        self._prev_audio_callback = backend.audio_received_callback
-        backend.on_audio_received(self._on_sip_audio)
-        backend.on_client_disconnected(self._on_sip_disconnect)
+        self._unsubscribers = [
+            backend.subscribe_audio_received(self._on_sip_audio),
+            backend.on_client_disconnected(self._on_sip_disconnect),
+        ]
         if self.supports_playback_callback:
-            backend.on_audio_played(self._on_sip_playback)
+            self._unsubscribers.append(backend.on_audio_played(self._on_sip_playback))
 
     @property
     def name(self) -> str:
@@ -98,15 +99,15 @@ class SIPRealtimeTransport(VoiceBackend):
         voice_session = self._voice_sessions.get(session.id)
         return voice_session is not None and self._backend.is_playing(voice_session)
 
-    def on_audio_played(self, callback: AudioPlayedCallback) -> None:
-        self._playback_callbacks.append(callback)
+    def on_audio_played(self, callback: AudioPlayedCallback) -> Callable[[], None]:
+        return subscribe_callback(self._playback_callbacks, callback)
 
     def _on_sip_playback(self, voice_session: VoiceSession, frame: Any) -> None:
         rt_id = self._voice_to_rt.get(voice_session.id)
         session = self._rt_sessions.get(rt_id) if rt_id is not None else None
         if session is None:
             return
-        for callback in self._playback_callbacks:
+        for callback in tuple(self._playback_callbacks):
             try:
                 result = callback(session, frame)
                 if hasattr(result, "__await__"):
@@ -180,11 +181,11 @@ class SIPRealtimeTransport(VoiceBackend):
             self._voice_to_rt.pop(voice_session.id, None)
         logger.info("SIP realtime transport: disconnected session %s", session.id)
 
-    def on_audio_received(self, callback: AudioReceivedCallback) -> None:
-        self._audio_callbacks.append(callback)
+    def on_audio_received(self, callback: AudioReceivedCallback) -> Callable[[], None]:
+        return subscribe_callback(self._audio_callbacks, callback)
 
-    def on_client_disconnected(self, callback: TransportDisconnectCallback) -> None:
-        self._disconnect_callbacks.append(callback)
+    def on_client_disconnected(self, callback: TransportDisconnectCallback) -> Callable[[], None]:
+        return subscribe_callback(self._disconnect_callbacks, callback)
 
     def set_trace_emitter(self, emitter: Any) -> None:
         """Forward trace emitter to the underlying SIP backend."""
@@ -192,7 +193,11 @@ class SIPRealtimeTransport(VoiceBackend):
             self._backend.set_trace_emitter(emitter)
 
     async def close(self) -> None:
-        """Disconnect all sessions."""
+        """Disconnect owned sessions and detach from the shared SIP listener."""
+        for unsubscribe in self._unsubscribers:
+            if unsubscribe is not None:
+                unsubscribe()
+        self._unsubscribers.clear()
         for session_id in list(self._rt_sessions.keys()):
             session = self._rt_sessions.get(session_id)
             if session:
@@ -201,16 +206,7 @@ class SIPRealtimeTransport(VoiceBackend):
     # -- Internal --
 
     def _on_sip_audio(self, voice_session: Any, frame: Any) -> None:
-        """Handle inbound SIP audio: pass through to callbacks.
-
-        Also chains to the previous audio callback (if any) so that
-        VoiceChannel pipelines wired before the realtime transport
-        continue to receive audio.
-        """
-        # Chain to previous callback first (e.g. VoiceChannel pipeline)
-        if self._prev_audio_callback is not None:
-            self._prev_audio_callback(voice_session, frame)
-
+        """Forward audio only for sessions owned by this adapter."""
         rt_session_id = self._voice_to_rt.get(voice_session.id)
         if rt_session_id is None:
             return
@@ -237,7 +233,7 @@ class SIPRealtimeTransport(VoiceBackend):
 
     def _fire_audio_callbacks(self, session: VoiceSession, audio: bytes) -> None:
         """Fire all registered audio callbacks (sync)."""
-        for cb in self._audio_callbacks:
+        for cb in tuple(self._audio_callbacks):
             try:
                 result = cb(session, audio)
                 if hasattr(result, "__await__"):
@@ -253,7 +249,7 @@ class SIPRealtimeTransport(VoiceBackend):
 
     def _fire_disconnect_callbacks(self, session: VoiceSession) -> None:
         """Fire all registered disconnect callbacks."""
-        for cb in self._disconnect_callbacks:
+        for cb in tuple(self._disconnect_callbacks):
             try:
                 result = cb(session)
                 if hasattr(result, "__await__"):

@@ -752,7 +752,7 @@ class SIPCallingMixin:
 
         if session is not None:
             logger.info("SIP call ended (remote BYE): session=%s", session_id)
-            for cb in self._disconnect_callbacks:
+            for cb in tuple(self._disconnect_callbacks):
                 cb(session)
 
     # -------------------------------------------------------------------------

@@ -32,6 +32,7 @@ import contextlib
 from collections.abc import Callable
 from typing import Any
 
+from roomkit.core.callbacks import subscribe_callback
 from roomkit.core.task_utils import log_task_exception
 from roomkit.voice.backends._sip_types import (
     PT_G722,
@@ -301,6 +302,7 @@ class SIPVoiceBackend(SIPAuthMixin, SIPCallingMixin, SIPAudioMixin, VoiceBackend
         # Callback registrations
         self._audio_played_callbacks: list[AudioPlayedCallback] = []
         self._audio_received_callback: AudioReceivedCallback | None = None
+        self._audio_subscribers: list[AudioReceivedCallback] = []
         self._barge_in_callbacks: list[BargeInCallback] = []
         self._dtmf_callbacks: list[DTMFReceivedCallback] = []
         self._session_ready_callbacks: list[SessionReadyCallback] = []
@@ -438,11 +440,19 @@ class SIPVoiceBackend(SIPAuthMixin, SIPCallingMixin, SIPAudioMixin, VoiceBackend
         """Report RTP emission and the estimated remote playback boundary."""
         return True
 
-    def on_audio_played(self, callback: AudioPlayedCallback) -> None:
-        self._audio_played_callbacks.append(wrap_async(callback))
+    def on_audio_played(self, callback: AudioPlayedCallback) -> Callable[[], None]:
+        return subscribe_callback(self._audio_played_callbacks, wrap_async(callback))
 
     def on_audio_received(self, callback: AudioReceivedCallback) -> None:
         self._audio_received_callback = callback
+
+    def subscribe_audio_received(self, callback: AudioReceivedCallback) -> Callable[[], None]:
+        """Subscribe alongside the primary audio handler without replacing it.
+
+        Returns an idempotent unsubscribe function. SIP realtime adapters use
+        this to share a listener without retaining chains of ended calls.
+        """
+        return subscribe_callback(self._audio_subscribers, wrap_async(callback))
 
     def on_session_ready(self, callback: SessionReadyCallback) -> None:
         self._session_ready_callbacks.append(callback)
@@ -483,11 +493,11 @@ class SIPVoiceBackend(SIPAuthMixin, SIPCallingMixin, SIPAudioMixin, VoiceBackend
         self._disconnect_callbacks.append(wrap_async(callback))
         return callback
 
-    def on_client_disconnected(self, callback: TransportDisconnectCallback) -> None:
+    def on_client_disconnected(self, callback: TransportDisconnectCallback) -> Callable[[], None]:
         """Register callback for client disconnection (base-class API).
 
         In SIP, this is equivalent to :meth:`on_call_disconnected` — both
         register into the same callback list.  Fired on remote BYE or
         RTP inactivity timeout.
         """
-        self._disconnect_callbacks.append(wrap_async(callback))
+        return subscribe_callback(self._disconnect_callbacks, wrap_async(callback))

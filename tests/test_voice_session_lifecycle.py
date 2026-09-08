@@ -195,3 +195,36 @@ async def test_close_rejects_new_invites_and_is_shared(
     backend._uas.stop.assert_awaited_once()
     with pytest.raises(RuntimeError, match="closing"):
         await backend.dial("sip:a@test", "sip:b@test", ("10.0.0.1", 5060))
+
+
+async def test_sip_adapters_unsubscribe_without_chaining_or_closing_neighbors(
+    sip: tuple[SIPVoiceBackend, MagicMock],
+) -> None:
+    from roomkit.voice.backends._sip_types import SIPSessionState
+    from roomkit.voice.realtime.sip_transport import SIPRealtimeTransport
+
+    backend, media = sip
+    carrier = VoiceSession(id="carrier", room_id="r", participant_id="p", channel_id="sip")
+    realtime = VoiceSession(id="rt", room_id="r", participant_id="p", channel_id="rt")
+    backend._session_states[carrier.id] = SIPSessionState(session=carrier, call_session=media)
+    primary = MagicMock()
+    backend.on_audio_received(primary)
+    neighbor = SIPRealtimeTransport(backend)
+    received = MagicMock()
+    neighbor.on_audio_received(received)
+    await neighbor.accept(realtime, carrier)
+    for _ in range(100):
+        transient = SIPRealtimeTransport(backend)
+        await transient.close()
+        await transient.close()
+        assert len(backend._audio_subscribers) == 1
+        assert len(backend._disconnect_callbacks) == 1
+        assert len(backend._audio_played_callbacks) == 1
+    backend._make_audio_handler(carrier)(b"\x01\x00" * 160, 0)
+    primary.assert_called_once()
+    received.assert_called_once_with(realtime, b"\x01\x00" * 160)
+    await neighbor.close()
+    assert backend.audio_received_callback is primary
+    assert not backend._audio_subscribers
+    assert not backend._disconnect_callbacks
+    assert not backend._audio_played_callbacks

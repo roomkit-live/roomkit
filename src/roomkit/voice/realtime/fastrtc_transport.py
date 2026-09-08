@@ -36,6 +36,7 @@ import logging
 from collections.abc import AsyncIterator, Callable
 from typing import TYPE_CHECKING, Any
 
+from roomkit.core.callbacks import subscribe_callback
 from roomkit.core.task_utils import log_task_exception
 from roomkit.voice.auth import AuthCallback
 from roomkit.voice.backends.base import (
@@ -237,6 +238,8 @@ class FastRTCRealtimeTransport(VoiceBackend):
         # webrtc_id -> session
         self._webrtc_sessions: dict[str, VoiceSession] = {}
 
+        self._connection_tasks: dict[str, asyncio.Task[Any]] = {}
+
         # Callbacks
         self._audio_callbacks: list[AudioReceivedCallback] = []
         self._disconnect_callbacks: list[TransportDisconnectCallback] = []
@@ -323,21 +326,21 @@ class FastRTCRealtimeTransport(VoiceBackend):
                 handler._audio_queue.put_nowait(None)  # Signal end
         logger.info("Session disconnected: session=%s", session.id)
 
-    def on_audio_received(self, callback: AudioReceivedCallback) -> None:
+    def on_audio_received(self, callback: AudioReceivedCallback) -> Callable[[], None]:
         """Register callback for audio received from the client.
 
         Args:
             callback: Called with (session, audio_bytes).
         """
-        self._audio_callbacks.append(callback)
+        return subscribe_callback(self._audio_callbacks, callback)
 
-    def on_client_disconnected(self, callback: TransportDisconnectCallback) -> None:
+    def on_client_disconnected(self, callback: TransportDisconnectCallback) -> Callable[[], None]:
         """Register callback for client disconnection.
 
         Args:
             callback: Called with (session) when the client disconnects.
         """
-        self._disconnect_callbacks.append(callback)
+        return subscribe_callback(self._disconnect_callbacks, callback)
 
     def on_client_connected(self, callback: Callable[[str], Any]) -> None:
         """Register callback fired when a new WebRTC client connects.
@@ -351,6 +354,14 @@ class FastRTCRealtimeTransport(VoiceBackend):
 
     async def close(self) -> None:
         """Close all connections and release resources."""
+        tasks = list(self._connection_tasks.values())
+        for task in tasks:
+            if task is not asyncio.current_task():
+                task.cancel()
+        await asyncio.gather(
+            *(task for task in tasks if task is not asyncio.current_task()),
+            return_exceptions=True,
+        )
         for session in list(self._sessions.values()):
             await self.disconnect(session)
 
@@ -358,32 +369,43 @@ class FastRTCRealtimeTransport(VoiceBackend):
     # Internal methods called by _PassthroughHandler
     # ------------------------------------------------------------------
 
+    def _start_connection_task(self, webrtc_id: str, coroutine: Any) -> None:
+        if webrtc_id not in self._handlers:
+            coroutine.close()
+            return
+        task = asyncio.create_task(coroutine)
+        self._connection_tasks[webrtc_id] = task
+
+        def finished(done: asyncio.Task[Any]) -> None:
+            if self._connection_tasks.get(webrtc_id) is done:
+                self._connection_tasks.pop(webrtc_id)
+            log_task_exception(done)
+
+        task.add_done_callback(finished)
+
     def _register_handler(self, webrtc_id: str, handler: _PassthroughHandler) -> None:
-        """Register a handler for a WebRTC connection."""
+        """Register a handler and own its asynchronous connection callback."""
         self._handlers[webrtc_id] = handler
         if self._connected_callback is not None:
             try:
                 result = self._connected_callback(webrtc_id)
                 if hasattr(result, "__await__"):
                     try:
-                        loop = asyncio.get_running_loop()
-                        task = loop.create_task(result)
-                        task.add_done_callback(log_task_exception)
+                        asyncio.get_running_loop()
                     except RuntimeError:
-                        # Called from a non-async thread (WebRTC) — schedule safely
                         loop = asyncio.get_event_loop_policy().get_event_loop()
-
-                        def _create(c: Any) -> None:
-                            t = loop.create_task(c)
-                            t.add_done_callback(log_task_exception)
-
-                        loop.call_soon_threadsafe(_create, result)
+                        loop.call_soon_threadsafe(self._start_connection_task, webrtc_id, result)
+                    else:
+                        self._start_connection_task(webrtc_id, result)
             except Exception:
                 logger.exception("Error in connected callback for webrtc_id=%s", webrtc_id)
 
     def _unregister_handler(self, webrtc_id: str) -> None:
         """Unregister a handler and fire disconnect callbacks."""
         self._handlers.pop(webrtc_id, None)
+        task = self._connection_tasks.pop(webrtc_id, None)
+        if task is not None and not task.done():
+            task.get_loop().call_soon_threadsafe(task.cancel)
         session = self._webrtc_sessions.pop(webrtc_id, None)
         if session:
             self._session_handlers.pop(session.id, None)
@@ -410,7 +432,7 @@ class FastRTCRealtimeTransport(VoiceBackend):
 
     async def _fire_audio_callbacks(self, session: VoiceSession, audio: bytes) -> None:
         """Fire all registered audio callbacks."""
-        for cb in self._audio_callbacks:
+        for cb in tuple(self._audio_callbacks):
             try:
                 result = cb(session, audio)
                 if hasattr(result, "__await__"):
@@ -420,7 +442,7 @@ class FastRTCRealtimeTransport(VoiceBackend):
 
     async def _fire_disconnect_callbacks(self, session: VoiceSession) -> None:
         """Fire all registered disconnect callbacks."""
-        for cb in self._disconnect_callbacks:
+        for cb in tuple(self._disconnect_callbacks):
             try:
                 result = cb(session)
                 if hasattr(result, "__await__"):

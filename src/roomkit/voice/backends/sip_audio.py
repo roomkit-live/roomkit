@@ -50,6 +50,7 @@ class SIPAudioHost(Protocol):
     _rtp_establishment_timeout: float
     _session_states: dict[str, SIPSessionState]
     _audio_received_callback: Any
+    _audio_subscribers: list[Any]
     _dtmf_callbacks: list[Any]
     _disconnect_callbacks: list[Any]
     _trace_emitter: Any
@@ -88,6 +89,7 @@ class SIPAudioMixin:
     _rtp_establishment_timeout: float
     _session_states: dict[str, SIPSessionState]
     _audio_received_callback: Any
+    _audio_subscribers: list[Any]
     _dtmf_callbacks: list[Any]
     _disconnect_callbacks: list[Any]
     _trace_emitter: Any
@@ -449,7 +451,7 @@ class SIPAudioMixin:
 
                     self._cleanup_session(sid)
 
-                    for cb in self._disconnect_callbacks:
+                    for cb in tuple(self._disconnect_callbacks):
                         cb(session)
 
         except asyncio.CancelledError:
@@ -478,7 +480,7 @@ class SIPAudioMixin:
             stats.inbound_packets += 1
             stats.inbound_bytes += len(pcm_data)
 
-            if self._audio_received_callback is None:
+            if self._audio_received_callback is None and not self._audio_subscribers:
                 return
             frame = AudioFrame(
                 data=pcm_data,
@@ -486,7 +488,14 @@ class SIPAudioMixin:
                 channels=1,
                 sample_width=2,
             )
-            self._audio_received_callback(session, frame)
+            callbacks = tuple(self._audio_subscribers)
+            if self._audio_received_callback is not None:
+                callbacks = (self._audio_received_callback, *callbacks)
+            for callback in callbacks:
+                try:
+                    callback(session, frame)
+                except Exception:
+                    logger.exception("SIP inbound audio callback failed for %s", session.id)
 
         return _on_audio
 
@@ -704,7 +713,7 @@ class SIPAudioMixin:
                 "playback_ended": ended,
             },
         )
-        for callback in self._audio_played_callbacks:
+        for callback in tuple(self._audio_played_callbacks):
             try:
                 callback(session, frame)
             except Exception:

@@ -434,3 +434,55 @@ class TestNegotiatedAudioRates:
             assert not channel._session_transport_output_rates
         finally:
             await kit.close()
+
+
+async def test_shared_channels_release_callbacks_without_closing_neighbors(transport):
+    from roomkit.channels.realtime_voice import RealtimeVoiceChannel
+    from roomkit.voice.realtime.mock import MockRealtimeProvider
+
+    neighbor_provider = MockRealtimeProvider()
+    neighbor = RealtimeVoiceChannel(
+        "neighbor",
+        provider=neighbor_provider,
+        transport=transport,
+        owns_transport=False,
+    )
+    session = await neighbor.start_session("room", "neighbor", connection="neighbor")
+    baseline = (len(transport._audio_callbacks), len(transport._disconnect_callbacks))
+    for i in range(25):
+        channel = RealtimeVoiceChannel(
+            f"call-{i}",
+            provider=MockRealtimeProvider(),
+            transport=transport,
+            owns_transport=False,
+        )
+        await channel.start_session("room", "caller", connection=f"rtc-{i}")
+        await channel.close()
+        await channel.close()
+        assert (len(transport._audio_callbacks), len(transport._disconnect_callbacks)) == baseline
+        assert transport._sessions[session.id] is session
+    await transport._fire_audio_callbacks(session, b"\x01\x00" * 160)
+    await asyncio.gather(*list(neighbor._scheduled_tasks))
+    assert neighbor_provider.sent_audio
+    await neighbor.close()
+    assert not transport._audio_callbacks
+    assert not transport._disconnect_callbacks
+
+
+async def test_disconnect_before_accept_cancels_connection_callback(transport, handler):
+    entered = asyncio.Event()
+    cancelled = asyncio.Event()
+
+    async def connect(webrtc_id):
+        entered.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            cancelled.set()
+
+    transport.on_client_connected(connect)
+    transport._register_handler("rtc", handler)
+    await entered.wait()
+    transport._unregister_handler("rtc")
+    await asyncio.wait_for(cancelled.wait(), 1)
+    assert not transport._connection_tasks

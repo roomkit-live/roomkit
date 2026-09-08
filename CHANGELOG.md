@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `RealtimeVoiceChannel(owns_transport=False)` releases its sessions and callback
+  subscriptions while leaving a shared FastRTC transport available to other
+  channels. FastRTC and SIP realtime callbacks return unsubscribe functions.
+  SIP adapters subscribe alongside the listener's primary audio callback and
+  detach on close, preventing callback chains from growing after every call.
+- FastRTC owns pending connection callbacks and cancels them on disconnect,
+  including connections still loading context before a session is accepted.
+
 - **`regenerate_response(room_id, trigger_id=...)` refuses a trigger that
   moved.** A host regenerates in two steps — read `regenerate_target`, delete
   the answer it replaces, regenerate — and the read is taken outside the room

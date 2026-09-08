@@ -45,7 +45,7 @@ def _make_sip_backend() -> MagicMock:
     backend._audio_received_callback = None
     backend._disconnect_callbacks: list[Any] = []
     backend._session_states = {}  # real dict so .get() returns state, not MagicMock
-    backend.on_audio_received = MagicMock(
+    backend.subscribe_audio_received = MagicMock(
         side_effect=lambda cb: setattr(backend, "_audio_received_callback", cb)
     )
     backend.on_client_disconnected = MagicMock(
@@ -81,7 +81,7 @@ class TestSIPRealtimeTransportInit:
     def test_wires_audio_and_disconnect_callbacks(self) -> None:
         backend = _make_sip_backend()
         SIPRealtimeTransport(backend)
-        backend.on_audio_received.assert_called_once()
+        backend.subscribe_audio_received.assert_called_once()
         backend.on_client_disconnected.assert_called_once()
 
 

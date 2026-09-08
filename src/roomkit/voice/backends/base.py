@@ -227,8 +227,12 @@ class VoiceBackend(ABC):
         """Return the currently registered audio-received callback, if any."""
         return getattr(self, "_audio_received_callback", None)
 
-    def on_audio_received(self, callback: AudioReceivedCallback) -> None:
+    def on_audio_received(self, callback: AudioReceivedCallback) -> Callable[[], None] | None:
         """Register a callback for raw inbound audio frames.
+
+        Backends supporting shared ownership return an idempotent unsubscribe
+        function. Legacy implementations may return None. The same convention
+        applies to playback and disconnect registrations.
 
         The pipeline or channel calls this to receive every audio frame
         produced by the transport.
@@ -338,7 +342,7 @@ class VoiceBackend(ABC):
 
     def on_client_disconnected(  # noqa: B027
         self, callback: TransportDisconnectCallback
-    ) -> None:
+    ) -> Callable[[], None] | None:
         """Register callback for client disconnection.
 
         Args:
@@ -383,7 +387,7 @@ class VoiceBackend(ABC):
         """
         return False
 
-    def on_audio_played(self, callback: AudioPlayedCallback) -> None:  # noqa: B027
+    def on_audio_played(self, callback: AudioPlayedCallback) -> Callable[[], None] | None:  # noqa: B027
         """Register a callback for audio frames as they are played.
 
         Called with each audio frame at the moment it is output by the
