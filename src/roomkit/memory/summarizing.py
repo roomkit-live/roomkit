@@ -14,6 +14,7 @@ import asyncio
 import hashlib
 import logging
 
+from roomkit.memory._wrapper import _MemoryWrapper
 from roomkit.memory.base import MemoryProvider, MemoryResult
 from roomkit.memory.token_estimator import (
     estimate_event_tokens,
@@ -30,7 +31,7 @@ logger = logging.getLogger("roomkit.memory.summarizing")
 _MAX_CACHE_ENTRIES = 200
 
 
-class SummarizingMemory(MemoryProvider):
+class SummarizingMemory(_MemoryWrapper):
     """Two-tier memory provider that proactively manages context budget.
 
     Wraps an inner ``MemoryProvider`` (typically ``SlidingWindowMemory``)
@@ -66,7 +67,7 @@ class SummarizingMemory(MemoryProvider):
         min_events: int = 5,
         summary_cache_ttl_seconds: float = 1800.0,
     ) -> None:
-        self._inner = inner
+        super().__init__(inner)
         self._provider = provider
         self._max_context_tokens = max_context_tokens
         self._tier1_ratio = tier1_ratio
@@ -286,13 +287,8 @@ class SummarizingMemory(MemoryProvider):
     def _estimate_events_tokens(events: list[RoomEvent]) -> int:
         return sum(estimate_event_tokens(e) for e in events)
 
-    async def ingest(
-        self, room_id: str, event: RoomEvent, *, channel_id: str | None = None
-    ) -> None:
-        await self._inner.ingest(room_id, event, channel_id=channel_id)
-
     async def clear(self, room_id: str) -> None:
-        await self._inner.clear(room_id)
+        await super().clear(room_id)
         # Invalidate cached summaries for this room — cache keys are hashes,
         # so we clear all entries (room_id is baked into the hash input).
         # For targeted invalidation we'd need a secondary index, but the
@@ -300,5 +296,5 @@ class SummarizingMemory(MemoryProvider):
         self._summary_cache.clear()
 
     async def close(self) -> None:
-        await self._inner.close()
+        await super().close()
         await self._provider.close()

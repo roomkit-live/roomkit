@@ -7,6 +7,7 @@ import hashlib
 import logging
 from collections import OrderedDict
 
+from roomkit.memory._wrapper import _MemoryWrapper
 from roomkit.memory.base import MemoryProvider, MemoryResult
 from roomkit.memory.token_estimator import estimate_tokens
 from roomkit.models.context import RoomContext
@@ -19,7 +20,7 @@ logger = logging.getLogger("roomkit.memory.compacting")
 _MAX_CACHE_ENTRIES = 200
 
 
-class CompactingMemory(MemoryProvider):
+class CompactingMemory(_MemoryWrapper):
     """Extends budget-aware trimming with summarization of removed events.
 
     When events exceed the token budget, older events are summarized using
@@ -37,7 +38,7 @@ class CompactingMemory(MemoryProvider):
         min_events: int = 5,
         summary_cache_ttl_seconds: float = 300.0,
     ) -> None:
-        self._inner = inner
+        super().__init__(inner)
         self._provider = provider
         self._max_context_tokens = max_context_tokens
         self._summary_ratio = summary_ratio
@@ -164,10 +165,10 @@ class CompactingMemory(MemoryProvider):
         for key in list(self._summary_cache):
             if key[0] == room_id:
                 del self._summary_cache[key]
-        await self._inner.clear(room_id)
+        await super().clear(room_id)
 
     async def close(self) -> None:
         self._cache_generation += 1
         self._summary_cache.clear()
-        await self._inner.close()
+        await super().close()
         await self._provider.close()

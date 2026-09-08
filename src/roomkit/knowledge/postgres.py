@@ -20,6 +20,7 @@ Usage::
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
 
@@ -43,7 +44,7 @@ CREATE INDEX IF NOT EXISTS idx_knowledge_room ON knowledge_documents(room_id);
 
 _INSERT = """
 INSERT INTO knowledge_documents (id, content, room_id, source, metadata, tsv)
-VALUES ($1, $2, $3, $4, $5::jsonb, to_tsvector('english', $2))
+VALUES ($1, $2, $3, $4, $5::text::jsonb, to_tsvector('english', $2))
 ON CONFLICT (id) DO UPDATE
     SET content = EXCLUDED.content,
         metadata = EXCLUDED.metadata,
@@ -51,7 +52,7 @@ ON CONFLICT (id) DO UPDATE
 """
 
 _SEARCH = """
-SELECT content, source, metadata,
+SELECT content, source, metadata::text AS metadata,
        ts_rank_cd(tsv, query) AS score
 FROM knowledge_documents, plainto_tsquery('english', $1) query
 WHERE tsv @@ query {room_filter}
@@ -134,7 +135,11 @@ class PostgresKnowledgeSource(KnowledgeSource):
                 content=row["content"],
                 score=float(row["score"]),
                 source=row["source"] or self._source_name,
-                metadata=dict(row["metadata"]) if row["metadata"] else {},
+                metadata=(
+                    json.loads(row["metadata"])
+                    if isinstance(row["metadata"], str)
+                    else dict(row["metadata"] or {})
+                ),
             )
             for row in rows
         ]
@@ -145,7 +150,6 @@ class PostgresKnowledgeSource(KnowledgeSource):
         metadata: dict[str, Any] | None = None,
     ) -> None:
         """Index a document for full-text search."""
-        import json
         from uuid import uuid4
 
         meta = metadata or {}

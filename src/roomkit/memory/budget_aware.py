@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 
+from roomkit.memory._wrapper import _MemoryWrapper
 from roomkit.memory.base import MemoryProvider, MemoryResult
 from roomkit.memory.token_estimator import estimate_event_tokens, history_budget
 from roomkit.models.context import RoomContext
@@ -12,7 +13,7 @@ from roomkit.models.event import RoomEvent
 logger = logging.getLogger("roomkit.memory.budget_aware")
 
 
-class BudgetAwareMemory(MemoryProvider):
+class BudgetAwareMemory(_MemoryWrapper):
     """Wraps a MemoryProvider and trims results to fit within a token budget.
 
     The history's budget is what is left of the window once everything else in
@@ -36,7 +37,7 @@ class BudgetAwareMemory(MemoryProvider):
         min_events: int = 3,
         reserved_tokens: int = 0,
     ) -> None:
-        self._inner = inner
+        super().__init__(inner)
         self._max_context_tokens = max_context_tokens
         self._safety_margin_ratio = safety_margin_ratio
         self._min_events = min_events
@@ -96,6 +97,3 @@ class BudgetAwareMemory(MemoryProvider):
             )
 
         return events[keep_from:]
-
-    async def close(self) -> None:
-        await self._inner.close()

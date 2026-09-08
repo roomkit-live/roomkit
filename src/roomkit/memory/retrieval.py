@@ -11,6 +11,7 @@ import asyncio
 import logging
 
 from roomkit.knowledge.base import KnowledgeResult, KnowledgeSource
+from roomkit.memory._wrapper import _MemoryWrapper
 from roomkit.memory.base import MemoryProvider, MemoryResult
 from roomkit.models.context import RoomContext
 from roomkit.models.event import CompositeContent, RoomEvent, TextContent
@@ -19,7 +20,7 @@ from roomkit.providers.ai.base import AIMessage
 logger = logging.getLogger("roomkit.memory.retrieval")
 
 
-class RetrievalMemory(MemoryProvider):
+class RetrievalMemory(_MemoryWrapper):
     """Wraps an inner provider and enriches context with knowledge sources.
 
     On ``retrieve``, queries all configured knowledge sources concurrently,
@@ -45,7 +46,7 @@ class RetrievalMemory(MemoryProvider):
         min_query_length: int = 3,
     ) -> None:
         self._sources = sources
-        self._inner = inner
+        super().__init__(inner)
         self._max_results = max_results
         self._min_query_length = min_query_length
 
@@ -112,7 +113,7 @@ class RetrievalMemory(MemoryProvider):
         *,
         channel_id: str | None = None,
     ) -> None:
-        await self._inner.ingest(room_id, event, channel_id=channel_id)
+        await super().ingest(room_id, event, channel_id=channel_id)
         text = self._extract_query(event)
         if not text:
             return
@@ -131,11 +132,8 @@ class RetrievalMemory(MemoryProvider):
                     result,
                 )
 
-    async def clear(self, room_id: str) -> None:
-        await self._inner.clear(room_id)
-
     async def close(self) -> None:
-        await self._inner.close()
+        await super().close()
         results = await asyncio.gather(
             *[s.close() for s in self._sources],
             return_exceptions=True,

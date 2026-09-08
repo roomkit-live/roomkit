@@ -67,3 +67,34 @@ async def test_binding_round_trip_and_policy_updates(contract_store: Conversatio
         assert await contract_store.get_binding(room.id, "sms") == cleared
     finally:
         await contract_store.delete_room(room.id)
+
+
+@pytest.mark.parametrize("newest_first", [False, True])
+@pytest.mark.parametrize("cursor", ["after", "before", "offset"])
+async def test_pagination_order_contract(
+    contract_store: ConversationStore, newest_first: bool, cursor: str
+) -> None:
+    from tests.conftest import make_event
+
+    room = await contract_store.create_room(Room(id=uuid4().hex))
+    try:
+        for i in range(6):
+            await contract_store.add_event(make_event(room_id=room.id, index=i, body=str(i)))
+        if cursor == "after":
+            page = await contract_store.list_events(
+                room.id, after_index=1, newest_first=newest_first, limit=2, offset=99
+            )
+            expected = [2, 3]
+        elif cursor == "before":
+            page = await contract_store.list_events(
+                room.id, before_index=4, newest_first=newest_first, limit=2, offset=99
+            )
+            expected = [2, 3]
+        else:
+            page = await contract_store.list_events(
+                room.id, newest_first=newest_first, limit=2, offset=1
+            )
+            expected = [3, 4] if newest_first else [1, 2]
+        assert [event.index for event in page] == expected
+    finally:
+        await contract_store.delete_room(room.id)
