@@ -5,9 +5,11 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import time
+from collections.abc import AsyncIterator
+from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
-from roomkit.core.task_utils import log_task_exception
+from roomkit.core.task_utils import _finish_cleanup, log_task_exception
 from roomkit.models.trace import ProtocolTrace
 from roomkit.voice.backends._sip_types import (
     CODEC_INFO,
@@ -35,6 +37,19 @@ _RECENTLY_ENDED_TTL_SECONDS = 60.0
 # we drop expired entries on the next cleanup. The cap is generous
 # because we only carry one float per ended call_id.
 _RECENTLY_ENDED_SOFT_CAP = 1024
+
+
+@dataclass
+class _CallSetup:
+    """Resources owned by an unfinished call, until publication succeeds."""
+
+    rtp_port: int
+    incoming_call: Any = None
+    outgoing_call: Any = None
+    media: Any = None
+    session_id: str | None = None
+    answered: bool = False
+    committed: bool = False
 
 
 @runtime_checkable
@@ -118,6 +133,8 @@ class SIPCallingHost(Protocol):
     _session_ready_callbacks: list[Any]
     _disconnect_callbacks: list[Any]
     _send_silence_on_answer: float
+    _closing: bool
+    _setup_tasks: set[asyncio.Task[Any]]
 
     def _validate_invite_auth(self, call: Any) -> bool: ...
 
@@ -173,6 +190,8 @@ class SIPCallingMixin:
     _session_ready_callbacks: list[Any]
     _disconnect_callbacks: list[Any]
     _send_silence_on_answer: float
+    _closing: bool
+    _setup_tasks: set[asyncio.Task[Any]]
     _validate_invite_auth: Any  # see SIPCallingHost — cross-mixin, from SIPAuthMixin
     has_auth: Any  # see SIPCallingHost — cross-mixin, from SIPAuthMixin
     _invite_filter: Any  # see SIPCallingHost — cross-mixin, from SIPAuthMixin
@@ -183,6 +202,53 @@ class SIPCallingMixin:
     # -------------------------------------------------------------------------
     # Inbound call handling
     # -------------------------------------------------------------------------
+
+    @contextlib.asynccontextmanager
+    async def _call_setup(self, incoming_call: Any = None) -> AsyncIterator[_CallSetup]:
+        """Commit a call or release all of its resources, including on cancellation."""
+        if self._closing:
+            raise RuntimeError("SIP backend is closing")
+        setup = _CallSetup(self._allocate_rtp_port(), incoming_call=incoming_call)
+        task = asyncio.current_task()
+        if task is not None:
+            self._setup_tasks.add(task)
+        try:
+            yield setup
+            if self._closing:
+                setup.committed = False
+                raise asyncio.CancelledError("SIP backend closed during call setup")
+        finally:
+            try:
+                if not setup.committed:
+                    await _finish_cleanup(self._rollback_call_setup(setup))
+            finally:
+                if task is not None:
+                    self._setup_tasks.discard(task)
+
+    async def _rollback_call_setup(self, setup: _CallSetup) -> None:
+        if setup.media is not None:
+            with contextlib.suppress(Exception):
+                await setup.media.close()
+        out_call = setup.outgoing_call
+        if out_call is not None and self._uac is not None:
+            with contextlib.suppress(Exception):
+                # A 200 may have arrived just as wait_answered was cancelled.
+                confirmed = getattr(getattr(out_call, "dialog", None), "state", None)
+                if setup.answered or getattr(confirmed, "value", None) == "confirmed":
+                    out_call.hangup(self._uac)
+                else:
+                    out_call.cancel(self._uac)
+            with contextlib.suppress(Exception):
+                self._uac.remove_call(out_call.call_id)
+            self._call_to_session.pop(out_call.call_id, None)
+            self._pending_reinvite_calls.pop(out_call.call_id, None)
+        elif setup.answered and setup.incoming_call is not None and self._uac is not None:
+            with contextlib.suppress(Exception):
+                call = setup.incoming_call
+                self._uac.send_bye(call.dialog, call.source_addr)
+        if setup.session_id is not None:
+            self._cleanup_session(setup.session_id)
+        self._release_rtp_port(setup.rtp_port)
 
     async def _authorize_invite(self, call: Any) -> bool:
         """Challenge and filter an INVITE before any resource is committed.
@@ -240,9 +306,15 @@ class SIPCallingMixin:
             self._handle_reinvite(call)
             return
 
+        if self._closing:
+            call.reject(503, "Service Unavailable")
+            return
         if not await self._authorize_invite(call):
             return
 
+        if self._closing:
+            call.reject(503, "Service Unavailable")
+            return
         session_id = self._claim_session_id(call)
         if session_id is None:
             return
@@ -309,197 +381,199 @@ class SIPCallingMixin:
             call.reject(488, "Not Acceptable Here")
             return
 
-        rtp_port = self._allocate_rtp_port()
-        bind_ip = self._resolve_local_ip(call.source_addr)
-        sdp_ip = self._advertised_ip or bind_ip
+        async with self._call_setup(call) as setup:
+            rtp_port = setup.rtp_port
+            setup.session_id = session_id
+            bind_ip = self._resolve_local_ip(call.source_addr)
+            sdp_ip = self._advertised_ip or bind_ip
 
-        # Resolve transport address once so SIP Contact headers use a
-        # routable IP instead of 0.0.0.0.  Without this, the remote
-        # party (PBX) cannot route BYE back to us and sessions linger.
-        if (
-            not self._transport_addr_resolved
-            and self._transport is not None
-            and self._transport.local_addr[0] in ("0.0.0.0", "")  # nosec B104
-        ):
-            self._transport.local_addr = (sdp_ip, self._transport.local_addr[1])
-            self._transport_addr_resolved = True
+            # Resolve transport address once so SIP Contact headers use a
+            # routable IP instead of 0.0.0.0.  Without this, the remote
+            # party (PBX) cannot route BYE back to us and sessions linger.
+            if (
+                not self._transport_addr_resolved
+                and self._transport is not None
+                and self._transport.local_addr[0] in ("0.0.0.0", "")  # nosec B104
+            ):
+                self._transport.local_addr = (sdp_ip, self._transport.local_addr[1])
+                self._transport_addr_resolved = True
 
-        try:
-            call_session = self._rtp_bridge.CallSession(
-                local_ip=bind_ip,
-                rtp_port=rtp_port,
-                offer=call.sdp_offer,
-                advertised_ip=self._advertised_ip,
-                supported_codecs=self._supported_codecs,
-                dtmf_payload_type=self._dtmf_payload_type,
-                session_name=self._server_name,
-                jitter_capacity=self._jitter_capacity,
-                jitter_prefetch=self._jitter_prefetch,
-                skip_audio_gaps=self._skip_audio_gaps,
-                plc=self._plc,
-                cn=self._cn,
-                cn_payload_type=self._cn_payload_type,
-                playout=self._playout,
-                playout_max_delay_ms=self._playout_max_delay_ms,
-                duplicate_tx=self._duplicate_tx,
-                symmetric_rtp=self._symmetric_rtp,
+            try:
+                call_session = self._rtp_bridge.CallSession(
+                    local_ip=bind_ip,
+                    rtp_port=rtp_port,
+                    offer=call.sdp_offer,
+                    advertised_ip=self._advertised_ip,
+                    supported_codecs=self._supported_codecs,
+                    dtmf_payload_type=self._dtmf_payload_type,
+                    session_name=self._server_name,
+                    jitter_capacity=self._jitter_capacity,
+                    jitter_prefetch=self._jitter_prefetch,
+                    skip_audio_gaps=self._skip_audio_gaps,
+                    plc=self._plc,
+                    cn=self._cn,
+                    cn_payload_type=self._cn_payload_type,
+                    playout=self._playout,
+                    playout_max_delay_ms=self._playout_max_delay_ms,
+                    duplicate_tx=self._duplicate_tx,
+                    symmetric_rtp=self._symmetric_rtp,
+                )
+            except Exception:
+                logger.exception("SDP negotiation failed for call %s", call.call_id)
+                call.reject(488, "Not Acceptable Here")
+                return
+
+            setup.media = call_session
+            call.ringing()
+            call.accept(call_session.sdp_answer)
+            setup.answered = True
+            try:
+                await call_session.start()
+            except Exception:
+                logger.exception(
+                    "RTP session start failed for call %s — tearing down",
+                    call.call_id,
+                )
+                return
+
+            if self._closing:
+                raise asyncio.CancelledError("SIP backend closed during RTP startup")
+
+            # Store per-session codec info for sample rate awareness
+            codec_rate = call_session.codec_sample_rate  # 16000 for G.722, 8000 for G.711
+            clock_rate = call_session.clock_rate  # 8000 for both (G.722 RFC 3551 quirk)
+
+            # Extract routing metadata from X-headers
+            room_id = call.room_id or call.call_id
+            participant_id = call.session_id or call.caller
+
+            # Extract display name and user from SIP From header
+            from_addr = call.invite.from_addr
+            caller_display_name = from_addr.display_name if from_addr else None
+            caller_user = from_addr.uri.user if from_addr else None
+
+            session = VoiceSession(
+                id=session_id,
+                room_id=room_id,
+                participant_id=participant_id,
+                channel_id="voice",
+                state=VoiceSessionState.ACTIVE,
+                metadata={
+                    "backend": "sip",
+                    "call_id": call.call_id,
+                    "caller": call.caller,
+                    "callee": call.callee,
+                    "caller_display_name": caller_display_name,
+                    "caller_user": caller_user,
+                    "room_id": room_id,
+                    "x_headers": call.x_headers,
+                    "input_sample_rate": codec_rate,
+                    "output_sample_rate": codec_rate,
+                    "codec_sample_rate": codec_rate,
+                },
             )
-        except Exception:
-            logger.exception("SDP negotiation failed for call %s", call.call_id)
-            self._release_rtp_port(rtp_port)
-            call.reject(488, "Not Acceptable Here")
-            return
 
-        call.ringing()
-        call.accept(call_session.sdp_answer)
-        try:
-            await call_session.start()
-        except Exception:
-            logger.exception(
-                "RTP session start failed for call %s — tearing down",
+            # Store consolidated session state
+            state = SIPSessionState(
+                session=session,
+                call_session=call_session,
+                incoming_call=call,
+                codec_rate=codec_rate,
+                clock_rate=clock_rate,
+                rtp_port=rtp_port,
+            )
+            self._session_states[session.id] = state
+            self._call_to_session[call.call_id] = session.id
+
+            # Wire audio callback (after state is stored so handlers can access it)
+            call_session.on_audio = self._make_audio_handler(session)
+            call_session.on_dtmf = self._make_dtmf_handler(session)
+
+            # Apply any re-INVITE that arrived before session state was ready
+            _pending_call = (
+                self._pending_reinvite_calls.pop(session.id, None) or state.pending_reinvite_call
+            )
+            state.pending_reinvite_call = None
+            if _pending_call is not None:
+                _pending_call.accept(call_session.sdp_answer)
+                _pending_sdp = getattr(_pending_call, "sdp_offer", None)
+                if _pending_sdp is None:
+                    _pending_sdp = state.pending_reinvite_sdp
+                if _pending_sdp is not None:
+                    rtp_addr = _pending_sdp.rtp_address
+                    if rtp_addr is not None and rtp_addr != call_session.remote_addr:
+                        if is_usable_rtp_address(rtp_addr):
+                            call_session.update_remote(rtp_addr)
+                        else:
+                            # A re-INVITE parked before the session existed still
+                            # gets its address checked — this path applies it at
+                            # the moment media starts, so an unchecked one would
+                            # redirect the call from its first packet.
+                            logger.warning(
+                                "Queued re-INVITE proposed unusable RTP target %s "
+                                "(session=%s) — ignored",
+                                rtp_addr,
+                                session.id,
+                            )
+                state.pending_reinvite_sdp = None
+
+            logger.info(
+                "SIP call accepted: session=%s, room=%s, call_id=%s",
+                session.id,
+                room_id,
                 call.call_id,
             )
-            with contextlib.suppress(Exception):
-                await call_session.close()
-            self._release_rtp_port(rtp_port)
-            # 200 OK already sent; BYE is the correct teardown mechanism
-            if self._uac is not None:
-                with contextlib.suppress(Exception):
-                    self._uac.send_bye(call.dialog, call.source_addr)
-            return
 
-        # Store per-session codec info for sample rate awareness
-        codec_rate = call_session.codec_sample_rate  # 16000 for G.722, 8000 for G.711
-        clock_rate = call_session.clock_rate  # 8000 for both (G.722 RFC 3551 quirk)
-
-        # Extract routing metadata from X-headers
-        room_id = call.room_id or call.call_id
-        participant_id = call.session_id or call.caller
-
-        # Extract display name and user from SIP From header
-        from_addr = call.invite.from_addr
-        caller_display_name = from_addr.display_name if from_addr else None
-        caller_user = from_addr.uri.user if from_addr else None
-
-        session = VoiceSession(
-            id=session_id,
-            room_id=room_id,
-            participant_id=participant_id,
-            channel_id="voice",
-            state=VoiceSessionState.ACTIVE,
-            metadata={
-                "backend": "sip",
-                "call_id": call.call_id,
-                "caller": call.caller,
-                "callee": call.callee,
-                "caller_display_name": caller_display_name,
-                "caller_user": caller_user,
-                "room_id": room_id,
-                "x_headers": call.x_headers,
-                "input_sample_rate": codec_rate,
-                "output_sample_rate": codec_rate,
-                "codec_sample_rate": codec_rate,
-            },
-        )
-
-        # Store consolidated session state
-        state = SIPSessionState(
-            session=session,
-            call_session=call_session,
-            incoming_call=call,
-            codec_rate=codec_rate,
-            clock_rate=clock_rate,
-            rtp_port=rtp_port,
-        )
-        self._session_states[session.id] = state
-        self._call_to_session[call.call_id] = session.id
-
-        # Wire audio callback (after state is stored so handlers can access it)
-        call_session.on_audio = self._make_audio_handler(session)
-        call_session.on_dtmf = self._make_dtmf_handler(session)
-
-        # Apply any re-INVITE that arrived before session state was ready
-        _pending_call = (
-            self._pending_reinvite_calls.pop(session.id, None) or state.pending_reinvite_call
-        )
-        state.pending_reinvite_call = None
-        if _pending_call is not None:
-            _pending_call.accept(call_session.sdp_answer)
-            _pending_sdp = getattr(_pending_call, "sdp_offer", None)
-            if _pending_sdp is None:
-                _pending_sdp = state.pending_reinvite_sdp
-            if _pending_sdp is not None:
-                rtp_addr = _pending_sdp.rtp_address
-                if rtp_addr is not None and rtp_addr != call_session.remote_addr:
-                    if is_usable_rtp_address(rtp_addr):
-                        call_session.update_remote(rtp_addr)
-                    else:
-                        # A re-INVITE parked before the session existed still
-                        # gets its address checked — this path applies it at
-                        # the moment media starts, so an unchecked one would
-                        # redirect the call from its first packet.
-                        logger.warning(
-                            "Queued re-INVITE proposed unusable RTP target %s "
-                            "(session=%s) — ignored",
-                            rtp_addr,
-                            session.id,
-                        )
-            state.pending_reinvite_sdp = None
-
-        logger.info(
-            "SIP call accepted: session=%s, room=%s, call_id=%s",
-            session.id,
-            room_id,
-            call.call_id,
-        )
-
-        # Emit protocol traces for the INVITE + 200 OK
-        if self._trace_emitter is not None:
-            invite_raw = redact_sip_credentials(
-                call.invite.serialize() if hasattr(call, "invite") else None
-            )
-            self._trace_emitter(
-                ProtocolTrace(
-                    channel_id=session.channel_id,
-                    direction="inbound",
-                    protocol="sip",
-                    summary=f"INVITE from {call.caller} to {call.callee}",
-                    raw=invite_raw,
-                    metadata={
-                        "call_id": call.call_id,
-                        "caller": call.caller,
-                        "callee": call.callee,
-                        "x_headers": call.x_headers,
-                    },
-                    session_id=session.id,
-                    room_id=room_id,
+            # Emit protocol traces for the INVITE + 200 OK
+            if self._trace_emitter is not None:
+                invite_raw = redact_sip_credentials(
+                    call.invite.serialize() if hasattr(call, "invite") else None
                 )
-            )
-            self._trace_emitter(
-                ProtocolTrace(
-                    channel_id=session.channel_id,
-                    direction="outbound",
-                    protocol="sip",
-                    summary=f"200 OK (codec={codec_rate}Hz, rtp_clock={clock_rate}Hz)",
-                    raw=call_session.sdp_answer if hasattr(call_session, "sdp_answer") else None,
-                    metadata={
-                        "call_id": call.call_id,
-                        "codec_sample_rate": codec_rate,
-                        "clock_rate": clock_rate,
-                        "rtp_port": rtp_port,
-                    },
-                    session_id=session.id,
-                    room_id=room_id,
+                self._trace_emitter(
+                    ProtocolTrace(
+                        channel_id=session.channel_id,
+                        direction="inbound",
+                        protocol="sip",
+                        summary=f"INVITE from {call.caller} to {call.callee}",
+                        raw=invite_raw,
+                        metadata={
+                            "call_id": call.call_id,
+                            "caller": call.caller,
+                            "callee": call.callee,
+                            "x_headers": call.x_headers,
+                        },
+                        session_id=session.id,
+                        room_id=room_id,
+                    )
                 )
-            )
+                self._trace_emitter(
+                    ProtocolTrace(
+                        channel_id=session.channel_id,
+                        direction="outbound",
+                        protocol="sip",
+                        summary=f"200 OK (codec={codec_rate}Hz, rtp_clock={clock_rate}Hz)",
+                        raw=call_session.sdp_answer
+                        if hasattr(call_session, "sdp_answer")
+                        else None,
+                        metadata={
+                            "call_id": call.call_id,
+                            "codec_sample_rate": codec_rate,
+                            "clock_rate": clock_rate,
+                            "rtp_port": rtp_port,
+                        },
+                        session_id=session.id,
+                        room_id=room_id,
+                    )
+                )
 
-        # Fire on_call callback so the app can route to a room
-        if self._on_call_callback is not None:
-            self._on_call_callback(session)
+            # Fire on_call callback so the app can route to a room
+            if self._on_call_callback is not None:
+                self._on_call_callback(session)
 
-        # Audio path is live — fire session ready callbacks
-        for cb in self._session_ready_callbacks:
-            cb(session)
+            # Audio path is live — fire session ready callbacks
+            for cb in self._session_ready_callbacks:
+                cb(session)
+            setup.committed = True
 
     def _handle_reinvite(self, call: Any) -> None:
         """Handle a re-INVITE (session timer refresh or media update)."""
@@ -730,66 +804,66 @@ class SIPCallingMixin:
             raise ValueError(f"Unsupported codec payload type: {codec}")
         codec_name, clock_rate, codec_rate = codec_info
 
-        rtp_port = self._allocate_rtp_port()
-        bind_ip = self._resolve_local_ip(proxy_addr)
-        sdp_ip = self._advertised_ip or bind_ip
+        async with self._call_setup() as setup:
+            rtp_port = setup.rtp_port
+            bind_ip = self._resolve_local_ip(proxy_addr)
+            sdp_ip = self._advertised_ip or bind_ip
 
-        if not self._transport_addr_resolved and self._transport.local_addr[0] in ("0.0.0.0", ""):  # nosec B104
-            self._transport.local_addr = (sdp_ip, self._transport.local_addr[1])
-            self._transport_addr_resolved = True
+            if not self._transport_addr_resolved and self._transport.local_addr[0] in (
+                "0.0.0.0",
+                "",
+            ):  # nosec B104
+                self._transport.local_addr = (sdp_ip, self._transport.local_addr[1])
+                self._transport_addr_resolved = True
 
-        from aiosipua import build_sdp
+            from aiosipua import build_sdp
 
-        sdp_offer = build_sdp(
-            local_ip=bind_ip,
-            rtp_port=rtp_port,
-            payload_type=codec,
-            codec_name=codec_name,
-            sample_rate=clock_rate,
-            dtmf_payload_type=self._dtmf_payload_type,
-            advertised_ip=self._advertised_ip,
-        )
-
-        out_call = self._uac.send_invite(
-            from_uri=from_uri,
-            to_uri=to_uri,
-            remote_addr=proxy_addr,
-            sdp_offer=sdp_offer,
-            extra_headers=extra_headers,
-            auth=auth,
-        )
-
-        if self._trace_emitter is not None:
-            self._trace_emitter(
-                ProtocolTrace(
-                    channel_id=channel_id,
-                    direction="outbound",
-                    protocol="sip",
-                    summary=f"INVITE from {from_uri} to {to_uri}",
-                    raw=None,
-                    metadata={
-                        "call_id": out_call.call_id,
-                        "from_uri": from_uri,
-                        "to_uri": to_uri,
-                    },
-                    session_id=None,
-                    room_id=room_id,
-                )
+            sdp_offer = build_sdp(
+                local_ip=bind_ip,
+                rtp_port=rtp_port,
+                payload_type=codec,
+                codec_name=codec_name,
+                sample_rate=clock_rate,
+                dtmf_payload_type=self._dtmf_payload_type,
+                advertised_ip=self._advertised_ip,
             )
 
-        try:
+            out_call = self._uac.send_invite(
+                from_uri=from_uri,
+                to_uri=to_uri,
+                remote_addr=proxy_addr,
+                sdp_offer=sdp_offer,
+                extra_headers=extra_headers,
+                auth=auth,
+            )
+
+            setup.outgoing_call = out_call
+            if self._trace_emitter is not None:
+                self._trace_emitter(
+                    ProtocolTrace(
+                        channel_id=channel_id,
+                        direction="outbound",
+                        protocol="sip",
+                        summary=f"INVITE from {from_uri} to {to_uri}",
+                        raw=None,
+                        metadata={
+                            "call_id": out_call.call_id,
+                            "from_uri": from_uri,
+                            "to_uri": to_uri,
+                        },
+                        session_id=None,
+                        room_id=room_id,
+                    )
+                )
+
             await out_call.wait_answered(timeout=timeout)
-        except (TimeoutError, RuntimeError):
-            self._release_rtp_port(rtp_port)
-            self._uac.remove_call(out_call.call_id)
-            raise
+            setup.answered = True
 
-        # Map call_id early so re-INVITEs arriving during RTP setup are
-        # routed to _handle_reinvite instead of creating a duplicate session.
-        # Overwritten with the canonical session_id after session creation.
-        self._call_to_session[out_call.call_id] = out_call.call_id
+            # Map call_id early so re-INVITEs arriving during RTP setup are
+            # routed to _handle_reinvite instead of creating a duplicate session.
+            # Overwritten with the canonical session_id after session creation.
+            self._call_to_session[out_call.call_id] = out_call.call_id
 
-        try:
             call_session = self._rtp_bridge.CallSession(
                 local_ip=bind_ip,
                 rtp_port=rtp_port,
@@ -809,133 +883,136 @@ class SIPCallingMixin:
                 duplicate_tx=self._duplicate_tx,
                 symmetric_rtp=self._symmetric_rtp,
             )
+            setup.media = call_session
             await call_session.start()
-        except Exception:
-            self._release_rtp_port(rtp_port)
-            self._call_to_session.pop(out_call.call_id, None)
-            raise
 
-        actual_codec_rate = call_session.codec_sample_rate
-        actual_clock_rate = call_session.clock_rate
+            if self._closing:
+                raise asyncio.CancelledError("SIP backend closed during RTP startup")
 
-        session_id = out_call.call_id
-        effective_room_id = room_id or session_id
-        session = VoiceSession(
-            id=session_id,
-            room_id=effective_room_id,
-            participant_id=to_uri,
-            channel_id=channel_id,
-            state=VoiceSessionState.ACTIVE,
-            metadata={
-                "backend": "sip",
-                "call_id": out_call.call_id,
-                "caller": from_uri,
-                "callee": to_uri,
-                "room_id": effective_room_id,
-                "direction": "outbound",
-                "input_sample_rate": actual_codec_rate,
-                "output_sample_rate": actual_codec_rate,
-                "codec_sample_rate": actual_codec_rate,
-            },
-        )
+            actual_codec_rate = call_session.codec_sample_rate
+            actual_clock_rate = call_session.clock_rate
 
-        state = SIPSessionState(
-            session=session,
-            call_session=call_session,
-            outgoing_call=out_call,
-            codec_rate=actual_codec_rate,
-            clock_rate=actual_clock_rate,
-            rtp_port=rtp_port,
-        )
-        self._session_states[session.id] = state
-        self._call_to_session[out_call.call_id] = session.id
-
-        call_session.on_audio = self._make_audio_handler(session)
-        call_session.on_dtmf = self._make_dtmf_handler(session)
-
-        # Apply any re-INVITE that arrived during RTP setup
-        pending_call = (
-            self._pending_reinvite_calls.pop(session.id, None) or state.pending_reinvite_call
-        )
-        state.pending_reinvite_call = None
-        if pending_call is not None:
-            pending_call.accept(call_session.sdp_answer)
-
-        pending_sdp = state.pending_reinvite_sdp
-        state.pending_reinvite_sdp = None
-        if pending_sdp is None and pending_call is not None:
-            pending_sdp = getattr(pending_call, "sdp_offer", None)
-        if pending_sdp is not None:
-            rtp_addr = pending_sdp.rtp_address
-            if rtp_addr is not None and rtp_addr != call_session.remote_addr:
-                if is_usable_rtp_address(rtp_addr):
-                    logger.info(
-                        "Applying queued re-INVITE RTP target: %s → %s (session=%s)",
-                        call_session.remote_addr,
-                        rtp_addr,
-                        session.id,
-                    )
-                    call_session.update_remote(rtp_addr)
-                else:
-                    logger.warning(
-                        "Queued re-INVITE proposed unusable RTP target %s (session=%s) — ignored",
-                        rtp_addr,
-                        session.id,
-                    )
-
-        logger.info(
-            "SIP outbound call established: session=%s, to=%s, call_id=%s, "
-            "local_rtp=%s:%d, remote_rtp=%s:%d, codec=%s(%dHz), clock=%dHz",
-            session.id,
-            to_uri,
-            out_call.call_id,
-            bind_ip,
-            rtp_port,
-            call_session.remote_addr[0],
-            call_session.remote_addr[1],
-            codec_name,
-            actual_codec_rate,
-            actual_clock_rate,
-        )
-
-        if self._trace_emitter is not None:
-            self._trace_emitter(
-                ProtocolTrace(
-                    channel_id=channel_id,
-                    direction="inbound",
-                    protocol="sip",
-                    summary=f"200 OK (codec={actual_codec_rate}Hz, "
-                    f"rtp_clock={actual_clock_rate}Hz)",
-                    raw=None,
-                    metadata={
-                        "call_id": out_call.call_id,
-                        "codec_sample_rate": actual_codec_rate,
-                        "clock_rate": actual_clock_rate,
-                        "rtp_port": rtp_port,
-                    },
-                    session_id=session.id,
-                    room_id=effective_room_id,
-                )
+            session_id = out_call.call_id
+            setup.session_id = session_id
+            effective_room_id = room_id or session_id
+            session = VoiceSession(
+                id=session_id,
+                room_id=effective_room_id,
+                participant_id=to_uri,
+                channel_id=channel_id,
+                state=VoiceSessionState.ACTIVE,
+                metadata={
+                    "backend": "sip",
+                    "call_id": out_call.call_id,
+                    "caller": from_uri,
+                    "callee": to_uri,
+                    "room_id": effective_room_id,
+                    "direction": "outbound",
+                    "input_sample_rate": actual_codec_rate,
+                    "output_sample_rate": actual_codec_rate,
+                    "codec_sample_rate": actual_codec_rate,
+                },
             )
 
-        if self._send_silence_on_answer > 0:
-            n_samples = int(actual_codec_rate * self._send_silence_on_answer)
-            silence_pcm = b"\x00\x00" * n_samples
-            self._send_pcm_bytes(session, call_session, silence_pcm)
+            state = SIPSessionState(
+                session=session,
+                call_session=call_session,
+                outgoing_call=out_call,
+                codec_rate=actual_codec_rate,
+                clock_rate=actual_clock_rate,
+                rtp_port=rtp_port,
+            )
+            self._session_states[session.id] = state
+            self._call_to_session[out_call.call_id] = session.id
+
+            call_session.on_audio = self._make_audio_handler(session)
+            call_session.on_dtmf = self._make_dtmf_handler(session)
+
+            # Apply any re-INVITE that arrived during RTP setup
+            pending_call = (
+                self._pending_reinvite_calls.pop(session.id, None) or state.pending_reinvite_call
+            )
+            state.pending_reinvite_call = None
+            if pending_call is not None:
+                pending_call.accept(call_session.sdp_answer)
+
+            pending_sdp = state.pending_reinvite_sdp
+            state.pending_reinvite_sdp = None
+            if pending_sdp is None and pending_call is not None:
+                pending_sdp = getattr(pending_call, "sdp_offer", None)
+            if pending_sdp is not None:
+                rtp_addr = pending_sdp.rtp_address
+                if rtp_addr is not None and rtp_addr != call_session.remote_addr:
+                    if is_usable_rtp_address(rtp_addr):
+                        logger.info(
+                            "Applying queued re-INVITE RTP target: %s → %s (session=%s)",
+                            call_session.remote_addr,
+                            rtp_addr,
+                            session.id,
+                        )
+                        call_session.update_remote(rtp_addr)
+                    else:
+                        logger.warning(
+                            "Queued re-INVITE proposed unusable RTP target %s "
+                            "(session=%s) — ignored",
+                            rtp_addr,
+                            session.id,
+                        )
+
             logger.info(
-                "Primed outbound RTP with %.0fms of silence (session=%s) to unblock "
-                "PSTN symmetric-RTP learning",
-                self._send_silence_on_answer * 1000,
-                session.id[:8],
+                "SIP outbound call established: session=%s, to=%s, call_id=%s, "
+                "local_rtp=%s:%d, remote_rtp=%s:%d, codec=%s(%dHz), clock=%dHz",
+                session.id,
+                to_uri,
+                out_call.call_id,
+                bind_ip,
+                rtp_port,
+                call_session.remote_addr[0],
+                call_session.remote_addr[1],
+                codec_name,
+                actual_codec_rate,
+                actual_clock_rate,
             )
 
-        if self._on_call_callback is not None:
-            self._on_call_callback(session)
+            if self._trace_emitter is not None:
+                self._trace_emitter(
+                    ProtocolTrace(
+                        channel_id=channel_id,
+                        direction="inbound",
+                        protocol="sip",
+                        summary=f"200 OK (codec={actual_codec_rate}Hz, "
+                        f"rtp_clock={actual_clock_rate}Hz)",
+                        raw=None,
+                        metadata={
+                            "call_id": out_call.call_id,
+                            "codec_sample_rate": actual_codec_rate,
+                            "clock_rate": actual_clock_rate,
+                            "rtp_port": rtp_port,
+                        },
+                        session_id=session.id,
+                        room_id=effective_room_id,
+                    )
+                )
 
-        for cb in self._session_ready_callbacks:
-            cb(session)
+            if self._send_silence_on_answer > 0:
+                n_samples = int(actual_codec_rate * self._send_silence_on_answer)
+                silence_pcm = b"\x00\x00" * n_samples
+                self._send_pcm_bytes(session, call_session, silence_pcm)
+                logger.info(
+                    "Primed outbound RTP with %.0fms of silence (session=%s) to unblock "
+                    "PSTN symmetric-RTP learning",
+                    self._send_silence_on_answer * 1000,
+                    session.id[:8],
+                )
 
-        return session
+            if self._on_call_callback is not None:
+                self._on_call_callback(session)
+
+            for cb in self._session_ready_callbacks:
+                cb(session)
+
+            setup.committed = True
+            return session
 
     # -------------------------------------------------------------------------
     # Session cleanup & port management

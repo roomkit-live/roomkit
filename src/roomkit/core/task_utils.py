@@ -4,9 +4,24 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Coroutine
 from typing import Any
 
 logger = logging.getLogger("roomkit.tasks")
+
+
+async def _finish_cleanup(coro: Coroutine[Any, Any, None]) -> None:
+    """Finish releasing resources before propagating a caller's cancellation."""
+    task = asyncio.create_task(coro, name="resource_cleanup")
+    cancelled = False
+    while not task.done():
+        try:
+            await asyncio.shield(task)
+        except asyncio.CancelledError:
+            cancelled = True
+    task.result()
+    if cancelled:
+        raise asyncio.CancelledError
 
 
 def log_task_exception(task: asyncio.Task[Any]) -> None:

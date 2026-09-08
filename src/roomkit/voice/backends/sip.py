@@ -293,6 +293,9 @@ class SIPVoiceBackend(SIPAuthMixin, SIPCallingMixin, SIPAudioMixin, VoiceBackend
         # Strong references to in-flight INVITE tasks; a bare create_task()
         # result can be garbage-collected mid-flight.
         self._invite_tasks: set[asyncio.Task[None]] = set()
+        self._setup_tasks: set[asyncio.Task[Any]] = set()
+        self._closing = False
+        self._close_task: asyncio.Task[None] | None = None
 
         # Callback registrations
         self._audio_received_callback: AudioReceivedCallback | None = None
@@ -336,6 +339,9 @@ class SIPVoiceBackend(SIPAuthMixin, SIPCallingMixin, SIPAudioMixin, VoiceBackend
         no call_id and nothing in the SIP log, while the caller waited out its
         own timer having received no final response.
         """
+        if self._closing:
+            call.reject(503, "Service Unavailable")
+            return
         task = asyncio.get_running_loop().create_task(
             self._handle_invite(call), name=f"sip_invite:{call.call_id}"
         )
@@ -345,6 +351,8 @@ class SIPVoiceBackend(SIPAuthMixin, SIPCallingMixin, SIPAudioMixin, VoiceBackend
 
     async def start(self) -> None:
         """Start the SIP listener and prepare for incoming calls."""
+        self._closing = False
+        self._close_task = None
         transport_cls = self._aiosipua.UdpSipTransport
         uas_cls = self._aiosipua.SipUAS
         uac_cls = self._aiosipua.SipUAC
@@ -374,6 +382,18 @@ class SIPVoiceBackend(SIPAuthMixin, SIPCallingMixin, SIPAudioMixin, VoiceBackend
 
     async def close(self) -> None:
         """Disconnect all sessions, unregister, and stop UAS/transport."""
+        if self._close_task is None:
+            self._closing = True
+            self._close_task = asyncio.create_task(self._close(), name="sip_close")
+        await asyncio.shield(self._close_task)
+
+    async def _close(self) -> None:
+        pending = self._invite_tasks | self._setup_tasks
+        for task in pending:
+            if not task.done() and not task.cancelling():
+                task.cancel()
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
         # Cancel registration renewal
         if self._registration_task is not None:
             self._registration_task.cancel()

@@ -9,6 +9,7 @@ import logging
 import threading
 from collections.abc import Awaitable, Callable
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
@@ -27,6 +28,7 @@ from roomkit.channels._realtime_transcription import RealtimeTranscriptionMixin
 from roomkit.channels._voice_pipeline import VoicePipelineMixin
 from roomkit.channels.ai import ToolResult
 from roomkit.channels.base import Channel, FrameworkAwareChannel
+from roomkit.core.task_utils import _finish_cleanup
 from roomkit.models.channel import ChannelBinding, ChannelCapabilities, ChannelOutput
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundMessage
@@ -65,6 +67,14 @@ if TYPE_CHECKING:
 ToolHandler = Callable[[str, dict[str, Any]], Awaitable[ToolResult]]
 
 logger = logging.getLogger("roomkit.channels.realtime_voice")
+
+
+@dataclass
+class _ConnectingSession:
+    """Own a handshake separately from the application task awaiting it."""
+
+    task: asyncio.Task[VoiceSession]
+    disconnected: bool = False
 
 
 class RealtimeVoiceChannel(
@@ -362,6 +372,8 @@ class RealtimeVoiceChannel(
 
         # Active sessions: session_id -> (session, room_id, binding)
         self._sessions: dict[str, VoiceSession] = {}
+        self._connecting_sessions: dict[str, _ConnectingSession] = {}
+        self._closing = False
         self._session_rooms: dict[str, str] = {}  # session_id -> room_id
         # Cached bindings for audio gating (access/muted enforcement)
         self._session_bindings: dict[str, ChannelBinding] = {}
@@ -890,17 +902,78 @@ class RealtimeVoiceChannel(
         Returns:
             The created VoiceSession.
         """
-        meta = metadata or {}
-
+        if self._closing:
+            raise RuntimeError("Realtime voice channel is closing")
         session = VoiceSession(
             id=uuid4().hex,
             room_id=room_id,
             participant_id=participant_id,
             channel_id=self.channel_id,
             state=VoiceSessionState.CONNECTING,
-            metadata=meta,
+            metadata=metadata or {},
         )
+        task = asyncio.create_task(
+            self._start_session(session, connection), name=f"rt_connect:{session.id}"
+        )
+        pending = _ConnectingSession(task)
+        self._connecting_sessions[session.id] = pending
+        try:
+            return await task
+        finally:
+            self._connecting_sessions.pop(session.id, None)
 
+    async def _start_session(self, session: VoiceSession, connection: Any) -> VoiceSession:
+        try:
+            return await self._connect_session(session, connection)
+        except (Exception, asyncio.CancelledError):
+            if session.id in self._sessions:
+                await _finish_cleanup(self.end_session(session))
+            else:
+                await _finish_cleanup(self._cleanup_failed_start(session))
+            raise
+
+    async def _cleanup_failed_start(self, session: VoiceSession) -> None:
+        """Roll back every partially initialized handshake through one path."""
+        session.state = VoiceSessionState.ENDED
+        with contextlib.suppress(Exception):
+            self._pipeline_session_ended(session)
+        with self._state_lock:
+            resamplers = self._session_resamplers.pop(session.id, None)
+            self._session_transport_rates.pop(session.id, None)
+            self._preconnect_audio.pop(session.id, None)
+            self._preconnect_audio_bytes.pop(session.id, None)
+            self._preconnect_audio_dropped.discard(session.id)
+            idle = self._idle_events.pop(session.id, None)
+            if idle is not None:
+                idle.set()
+            self._user_speaking.pop(session.id, None)
+            self._provider_idle.pop(session.id, None)
+            self._session_tools.pop(session.id, None)
+            self._has_pipeline_vad.pop(session.id, None)
+            span_id = self._session_spans.pop(session.id, None)
+        if self._skill_support:
+            self._skill_support.cleanup_session(session.id)
+        if self._tool_search_support:
+            self._tool_search_support.cleanup_session(session.id)
+        for owner in (self._provider, self._transport):
+            with contextlib.suppress(Exception):
+                await owner.disconnect(session)
+        if resamplers:
+            for resampler in resamplers:
+                with contextlib.suppress(Exception):
+                    resampler.close()
+        if span_id:
+            self._telemetry_provider.end_span(span_id)
+            self._telemetry_provider.flush()
+
+    def _check_connecting_session(self, session: VoiceSession) -> None:
+        pending = self._connecting_sessions.get(session.id)
+        if self._closing or (pending is not None and pending.disconnected):
+            raise asyncio.CancelledError("Voice transport disconnected during connection")
+
+    async def _connect_session(self, session: VoiceSession, connection: Any) -> VoiceSession:
+        room_id, participant_id = session.room_id, session.participant_id
+        meta = session.metadata
         # Start telemetry session span early so transport/provider connect
         # phases appear as children in Jaeger.
         telemetry = self._telemetry_provider
@@ -994,39 +1067,15 @@ class RealtimeVoiceChannel(
         if self._pipeline is not None:
             self._pipeline_session_active(session)
 
-        # Accept client connection (with telemetry span)
-        try:
-            with telemetry.span(
-                SpanKind.BACKEND_CONNECT,
-                "transport.accept",
-                parent_id=session_span_id,
-                session_id=session.id,
-                attributes={Attr.BACKEND_TYPE: self._transport.name},
-            ):
-                await self._transport.accept(session, connection)
-        except (Exception, asyncio.CancelledError):
-            self._pipeline_session_ended(session)
-            with self._state_lock:
-                self._preconnect_audio.pop(session.id, None)
-                self._preconnect_audio_bytes.pop(session.id, None)
-                self._preconnect_audio_dropped.discard(session.id)
-                self._idle_events.pop(session.id, None)
-                self._user_speaking.pop(session.id, None)
-                self._provider_idle.pop(session.id, None)
-                self._session_tools.pop(session.id, None)
-                self._has_pipeline_vad.pop(session.id, None)
-                span_id = self._session_spans.pop(session.id, None)
-            if self._skill_support:
-                self._skill_support.cleanup_session(session.id)
-            if self._tool_search_support:
-                self._tool_search_support.cleanup_session(session.id)
-            with contextlib.suppress(Exception):
-                await self._transport.disconnect(session)
-            session.state = VoiceSessionState.ENDED
-            if span_id:
-                telemetry.end_span(span_id)
-                telemetry.flush()
-            raise
+        with telemetry.span(
+            SpanKind.BACKEND_CONNECT,
+            "transport.accept",
+            parent_id=session_span_id,
+            session_id=session.id,
+            attributes={Attr.BACKEND_TYPE: self._transport.name},
+        ):
+            await self._transport.accept(session, connection)
+        self._check_connecting_session(session)
 
         # Connect to provider (with telemetry span).
         # If provider.connect fails, clean up the already-accepted transport
@@ -1052,35 +1101,6 @@ class RealtimeVoiceChannel(
                     provider_config=provider_config,
                 )
         except (Exception, asyncio.CancelledError) as exc:
-            self._pipeline_session_ended(session)
-            with self._state_lock:
-                resamplers = self._session_resamplers.pop(session.id, None)
-                self._session_transport_rates.pop(session.id, None)
-                self._preconnect_audio.pop(session.id, None)
-                self._preconnect_audio_bytes.pop(session.id, None)
-                self._preconnect_audio_dropped.discard(session.id)
-                self._idle_events.pop(session.id, None)
-                self._user_speaking.pop(session.id, None)
-                self._provider_idle.pop(session.id, None)
-                self._session_tools.pop(session.id, None)
-                self._has_pipeline_vad.pop(session.id, None)
-                span_id = self._session_spans.pop(session.id, None)
-            if self._skill_support:
-                self._skill_support.cleanup_session(session.id)
-            if self._tool_search_support:
-                self._tool_search_support.cleanup_session(session.id)
-            with contextlib.suppress(Exception):
-                await self._provider.disconnect(session)
-            with contextlib.suppress(Exception):
-                await self._transport.disconnect(session)
-            if resamplers:
-                for resampler in resamplers:
-                    with contextlib.suppress(Exception):
-                        resampler.close()
-            session.state = VoiceSessionState.ENDED
-            if span_id:
-                telemetry.end_span(span_id)
-                telemetry.flush()
             # CancelledError here is the orchestrator deliberately aborting
             # a still-handshaking session (e.g. carrier hung up before the
             # provider WS connected). It's expected control flow, not a
@@ -1098,20 +1118,13 @@ class RealtimeVoiceChannel(
                 )
             raise
 
+        self._check_connecting_session(session)
         session.state = VoiceSessionState.ACTIVE
         with self._state_lock:
             self._sessions[session.id] = session
             self._session_rooms[session.id] = room_id
 
-        try:
-            await self._finish_session_start(session, room_id, participant_id)
-        except (Exception, asyncio.CancelledError):
-            # The provider and transport are already live. Any failure while
-            # publishing the session or flushing handshake audio must roll the
-            # whole session back instead of leaving a hidden active connection.
-            with contextlib.suppress(Exception, asyncio.CancelledError):
-                await self.end_session(session)
-            raise
+        await self._finish_session_start(session, room_id, participant_id)
 
         return session
 
@@ -1425,6 +1438,18 @@ class RealtimeVoiceChannel(
 
     async def close(self) -> None:
         """End all sessions and close provider + transport."""
+        self._closing = True
+        connecting = list(self._connecting_sessions.values())
+        current = asyncio.current_task()
+        tasks = []
+        for pending in connecting:
+            pending.disconnected = True
+            if pending.task is not current and not pending.task.done():
+                if not pending.task.cancelling():
+                    pending.task.cancel()
+                tasks.append(pending.task)
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
         # End all active sessions
         with self._state_lock:
             sessions = list(self._sessions.values())
@@ -1525,6 +1550,12 @@ class RealtimeVoiceChannel(
 
     async def _handle_client_disconnect(self, session: VoiceSession) -> None:
         """Clean up after client disconnects."""
+        pending = self._connecting_sessions.get(session.id)
+        if pending is not None:
+            pending.disconnected = True
+            if not pending.task.done() and not pending.task.cancelling():
+                pending.task.cancel()
+            return
         with self._state_lock:
             active = session.id in self._sessions
         if active:

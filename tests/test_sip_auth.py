@@ -252,6 +252,10 @@ def _make_backend(
     b._uac = uac
     b._uas = uas
 
+    b._closing = False
+    b._close_task = None
+    b._invite_tasks = set()
+    b._setup_tasks = set()
     b._session_states = {}
     b._call_to_session = {}
     b._recently_ended_call_ids = {}
