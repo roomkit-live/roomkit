@@ -344,7 +344,7 @@ class RealtimeAudioMixin:
         """
         if self._buffer_preconnect_audio(session, frame.data, processed=True):
             return
-        if session.state != VoiceSessionState.ACTIVE:
+        if not self._can_forward_client_audio(session):
             return
 
         with self._state_lock:
@@ -371,6 +371,8 @@ class RealtimeAudioMixin:
         rec: Any,
     ) -> None:
         """Resample (off-loop), tap recording, send pipeline audio to provider."""
+        if not self._can_forward_client_audio(session):
+            return
         # Inbound resampling: transport rate -> provider rate (e.g. SIP 8kHz -> 16kHz)
         if resamplers and transport_rate and transport_rate != self._input_sample_rate:
             from roomkit.voice.audio_frame import AudioFrame as _AudioFrame
@@ -381,6 +383,8 @@ class RealtimeAudioMixin:
             )
             audio = f.data
 
+        if not self._can_forward_client_audio(session):
+            return
         # Recording tap: send processed mic audio to room recorder
         if rec is not None and self._framework is not None:
             audio_track, rec_room_id = rec
@@ -688,23 +692,28 @@ class RealtimeAudioMixin:
                 else:
                     await self._forward_client_audio(session, audio, enqueued_at)
 
+    def _can_forward_client_audio(self, session: VoiceSession) -> bool:
+        """Allow a provider to buffer reconnect input, with the same permissions."""
+        if session.state not in (VoiceSessionState.ACTIVE, VoiceSessionState.CONNECTING):
+            return False
+        with self._state_lock:
+            binding = self._session_bindings.get(session.id)
+        return binding is None or (
+            binding.access not in (Access.READ_ONLY, Access.NONE) and not binding.muted
+        )
+
     async def _forward_client_audio(
         self,
         session: VoiceSession,
         audio: bytes,
         enqueued_at: float = 0.0,
     ) -> None:
-        if session.state != VoiceSessionState.ACTIVE:
+        if not self._can_forward_client_audio(session):
             return
         with self._state_lock:
-            binding = self._session_bindings.get(session.id)
             resamplers = self._session_resamplers.get(session.id)
             transport_rate = self._session_transport_rates.get(session.id)
             rec = self._recording_tracks.get(session.id)
-        if binding is not None and (
-            binding.access in (Access.READ_ONLY, Access.NONE) or binding.muted
-        ):
-            return
         try:
             if resamplers and transport_rate and transport_rate != self._input_sample_rate:
                 from roomkit.voice.audio_frame import AudioFrame as _AudioFrame
@@ -724,6 +733,8 @@ class RealtimeAudioMixin:
                 )
                 audio = frame.data
 
+            if not self._can_forward_client_audio(session):
+                return
             # Recording belongs after handshake buffering and resampling so
             # early caller audio is captured exactly once in provider format.
             if rec is not None and self._framework is not None:

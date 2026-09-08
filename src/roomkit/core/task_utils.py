@@ -10,7 +10,7 @@ from typing import Any
 logger = logging.getLogger("roomkit.tasks")
 
 
-async def _finish_cleanup(coro: Coroutine[Any, Any, None]) -> None:
+async def _finish_cleanup(coro: Coroutine[Any, Any, object]) -> None:
     """Finish releasing resources before propagating a caller's cancellation."""
     task = asyncio.create_task(coro, name="resource_cleanup")
     cancelled = False

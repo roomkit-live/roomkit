@@ -13,6 +13,7 @@ from typing import Any, cast
 
 from pydantic import SecretStr
 
+from roomkit.core.task_utils import _finish_cleanup
 from roomkit.providers.ai.base import ModelInfo
 from roomkit.providers.gemini.voices import VOICES as _VOICES
 from roomkit.voice.base import VoiceSession, VoiceSessionState
@@ -85,7 +86,7 @@ class _GeminiSessionState:
     audio_chunk_count: int = 0
     response_started: bool = False
     user_speech_active: bool = False
-    audio_buffer: deque[bytes] = field(default_factory=lambda: deque(maxlen=100))
+    audio_buffer: deque[tuple[float, bytes]] = field(default_factory=lambda: deque(maxlen=100))
     error_suppressed: bool = False
     started_at: float = 0.0
     turn_count: int = 0
@@ -116,6 +117,25 @@ class _GeminiSessionState:
     temperature: float | None = None
     server_vad: bool = True
     provider_config: dict[str, Any] = field(default_factory=dict)
+
+    def buffer_audio(self, audio: bytes) -> None:
+        """Keep at most two seconds of recent mono PCM16 during a reconnect."""
+        now = time.monotonic()
+        limit = self.input_sample_rate * 2 * 2
+        self.audio_buffer.append((now, audio[-limit:]))
+        size = sum(len(chunk) for _, chunk in self.audio_buffer)
+        while self.audio_buffer and (size > limit or now - self.audio_buffer[0][0] > 2.0):
+            _, removed = self.audio_buffer.popleft()
+            size -= len(removed)
+
+    def pop_audio(self) -> bytes | None:
+        """Consume without iterating across network awaits; discard expired speech."""
+        now = time.monotonic()
+        while self.audio_buffer:
+            captured_at, audio = self.audio_buffer.popleft()
+            if now - captured_at <= 2.0:
+                return audio
+        return None
 
 
 class _GoAwayError(Exception):
@@ -556,14 +576,12 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
         if state is None:
             return
 
+        if session.state not in (VoiceSessionState.ACTIVE, VoiceSessionState.CONNECTING):
+            return
         # Buffer audio while reconnecting instead of dropping it
         if state.live_session is None or session.state == VoiceSessionState.CONNECTING:
-            if session.state == VoiceSessionState.CONNECTING:
-                state.audio_buffer.append(audio)
-            return
-
-        # Skip if connection is already closed
-        if session.state != VoiceSessionState.ACTIVE:
+            session.state = VoiceSessionState.CONNECTING
+            state.buffer_audio(audio)
             return
 
         try:
@@ -888,6 +906,9 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
             session.state = VoiceSessionState.ENDED
             return
 
+        session.state = VoiceSessionState.ENDED
+        state.audio_buffer.clear()
+
         # Cancel receive task
         if state.receive_task is not None:
             state.receive_task.cancel()
@@ -1075,6 +1096,7 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
 
             # Handle reconnection if needed
             if state.live_session is None:
+                session.state = VoiceSessionState.CONNECTING
                 reconnect_count += 1
                 if reconnect_count > self._MAX_RECONNECTS:
                     logger.error(
@@ -1103,18 +1125,6 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
                     delay,
                 )
                 await asyncio.sleep(delay)
-
-                # If backoff exceeded buffer duration (~2s), the buffered
-                # audio is too stale to be useful — flush it so the AI
-                # doesn't process outdated speech.
-                if delay > 2.0 and state.audio_buffer:
-                    logger.info(
-                        "Flushing %d stale audio chunks (%.1fs backoff) for session %s",
-                        len(state.audio_buffer),
-                        delay,
-                        session.id,
-                    )
-                    state.audio_buffer.clear()
 
                 try:
                     await self._reconnect(session)
@@ -1196,10 +1206,8 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
         """Reconnect to Gemini Live using the stored config."""
         import contextlib
 
-        from google.genai import types
-
         state = self._sessions.get(session.id)
-        if state is None:
+        if state is None or session.state == VoiceSessionState.ENDED:
             raise RuntimeError("No session state for reconnection")
 
         # Suppress audio sends during reconnection
@@ -1253,30 +1261,32 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
             else:
                 raise
 
+        # Keep ownership local until replay succeeds. A concurrent disconnect
+        # cannot close this context twice or publish a late ACTIVE session.
+        def check_owner() -> None:
+            if (
+                self._sessions.get(session.id) is not state
+                or session.state == VoiceSessionState.ENDED
+            ):
+                raise asyncio.CancelledError("Session ended during reconnection")
+
+        try:
+            check_owner()
+            while (chunk := state.pop_audio()) is not None:
+                await live_session.send_realtime_input(
+                    audio=self._make_audio_blob(chunk, state.input_sample_rate),
+                )
+                check_owner()
+                state.realtime_input_sent = True
+        except BaseException:
+            await _finish_cleanup(ctxmgr.__aexit__(None, None, None))
+            raise
+
+        # No await between observing an empty buffer and activating: new
+        # microphone frames cannot overtake buffered speech.
         state.ctxmgr = ctxmgr
         state.live_session = live_session
         state.response_started = False
-
-        # Replay buffered audio BEFORE marking ACTIVE — new audio arriving
-        # via send_audio() must keep buffering until replay is done,
-        # otherwise it bypasses the buffer and arrives out of order.
-        if state.audio_buffer:
-            logger.info(
-                "Replaying %d buffered audio chunks for session %s",
-                len(state.audio_buffer),
-                session.id,
-            )
-            try:
-                mime = f"audio/pcm;rate={state.input_sample_rate}"
-                for chunk in state.audio_buffer:
-                    await live_session.send_realtime_input(
-                        audio=types.Blob(data=chunk, mime_type=mime),
-                    )
-                state.realtime_input_sent = True
-            finally:
-                state.audio_buffer.clear()
-
-        # Now safe to accept new audio directly
         session.state = VoiceSessionState.ACTIVE
 
         # Re-enable error callbacks for the next reconnection cycle

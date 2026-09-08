@@ -1381,7 +1381,7 @@ class TestAudioBufferingDuringReconnect:
 
         # Audio should be in the buffer, not sent to the live session
         mock_live.send_realtime_input.assert_not_called()
-        assert list(state.audio_buffer) == [
+        assert [chunk for _, chunk in state.audio_buffer] == [
             b"chunk-1",
             b"chunk-2",
             b"chunk-3",
@@ -1403,8 +1403,8 @@ class TestAudioBufferingDuringReconnect:
             await provider.send_audio(session, f"chunk-{i}".encode())
 
         assert len(state.audio_buffer) == 100
-        assert state.audio_buffer[0] == b"chunk-10"  # oldest surviving
-        assert state.audio_buffer[-1] == b"chunk-109"  # newest
+        assert state.audio_buffer[0][1] == b"chunk-10"  # oldest surviving
+        assert state.audio_buffer[-1][1] == b"chunk-109"  # newest
 
     async def test_audio_sent_normally_when_active(self) -> None:
         from roomkit.providers.gemini.realtime import _GeminiSessionState
