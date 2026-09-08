@@ -39,7 +39,8 @@ class TokenBucketRateLimiter:
     def _refill(self, channel_id: str, rate: float) -> float:
         """Refill tokens and return current count."""
         now = time.monotonic()
-        max_tokens = rate * self._burst_seconds
+        # Even a slow channel must accumulate enough credit for one delivery.
+        max_tokens = max(1.0, rate * self._burst_seconds)
         tokens, last_refill = self._buckets.get(channel_id, (max_tokens, now))
         elapsed = now - last_refill
         tokens = min(tokens + elapsed * rate, max_tokens)
