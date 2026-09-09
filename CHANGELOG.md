@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`ON_AI_RESPONSE` says whether the turn finished or was cut off.**
+  `AIResponseEvent.loop_end_reason` carries the name the tool loop already had
+  — `completed`, or `max_rounds`, `timeout`, `cancelled`, `force_stopped`,
+  `truncated`, `empty_response`. Both loops knew it (the streaming one puts it
+  on `LoopEndMarker`, the buffered one on the response MESSAGE event's
+  metadata) and neither handed it to the hook, so a consumer that wanted it had
+  to re-derive it — in practice by reading `tool_calls_count`, which since
+  0.66.0 counts the calls the turn *ran*: a healthy multi-round answer and one
+  guillotined by the round cap both come back positive, and the healthy one
+  reads as friction. `None` means the path that fired the hook reported no
+  reason; it does not mean the turn completed.
+
 ## [0.66.0] — 2026-09-09
 
 ### Added

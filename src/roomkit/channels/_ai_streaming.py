@@ -363,6 +363,9 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                                 thinking="".join(thinking_parts),
                                 latency_ms=int((time.monotonic() - started_at) * 1000),
                                 streaming=True,
+                                # No tool loop ran, and the hook fires only on
+                                # exhaustion: the turn ended on its own terms.
+                                loop_end_reason="completed",
                             )
                         )
                     except Exception:
@@ -423,6 +426,9 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
         _total_usage: dict[str, int] = {}
         _tool_calls_count = 0
         _tool_rounds_count = 0
+        # Every exit below names its reason once, and both the marker it
+        # yields and the after-response hook in the finally read that name.
+        _loop_reason: LoopEndReason = "completed"
         _span_errored = False
         _t0_stream = time.monotonic()
         # The turn's text for the after-response hook, one entry per round —
@@ -445,7 +451,8 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
         try:
             context, should_cancel = self._drain_steering_queue(context, loop_ctx)
             if should_cancel:
-                yield LoopEndMarker(reason="cancelled", rounds=0)
+                _loop_reason = "cancelled"
+                yield LoopEndMarker(reason=_loop_reason, rounds=0)
                 return
             state = self._new_loop_state("Streaming tool loop")
 
@@ -455,7 +462,8 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
             for _round_idx in range(self._max_tool_rounds + 1):
                 if loop_ctx.cancel_event.is_set():
                     logger.info("Streaming tool loop cancelled before round %d", _round_idx)
-                    yield LoopEndMarker(reason="cancelled", rounds=_round_idx)
+                    _loop_reason = "cancelled"
+                    yield LoopEndMarker(reason=_loop_reason, rounds=_round_idx)
                     return
 
                 # Anti-loop ripcord (force_stop): strip tools + nudge once so
@@ -503,7 +511,8 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                                     published=thinking_published,
                                 )
                             await tool_coalescer.close()
-                        yield LoopEndMarker(reason="cancelled", rounds=_round_idx)
+                        _loop_reason = "cancelled"
+                        yield LoopEndMarker(reason=_loop_reason, rounds=_round_idx)
                         return
 
                     if isinstance(event, _StreamRetryBoundary):
@@ -752,7 +761,8 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                         deadline_exceeded=state.deadline_exceeded(),
                         force_stopped=loop_ctx.force_stop,
                     )
-                    yield LoopEndMarker(reason=reason, rounds=_round_idx)
+                    _loop_reason = reason
+                    yield LoopEndMarker(reason=_loop_reason, rounds=_round_idx)
                     return
 
                 _saw_tool_call_any = True
@@ -807,7 +817,8 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                     # The turn's tool work is the provider's, already done, so
                     # this exit is a completion — and it still names itself:
                     # "every exit yields a marker" has no external-tools carve-out.
-                    yield LoopEndMarker(reason="completed", rounds=_round_idx)
+                    _loop_reason = "completed"
+                    yield LoopEndMarker(reason=_loop_reason, rounds=_round_idx)
                     return
 
                 if _round_idx >= self._max_tool_rounds:
@@ -815,7 +826,8 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                         "Streaming tool loop reached max_tool_rounds=%d",
                         self._max_tool_rounds,
                     )
-                    yield LoopEndMarker(reason="max_rounds", rounds=_round_idx)
+                    _loop_reason = "max_rounds"
+                    yield LoopEndMarker(reason=_loop_reason, rounds=_round_idx)
                     return
 
                 if state.deadline_exceeded():
@@ -824,7 +836,8 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                         _round_idx,
                         self._tool_loop_timeout_seconds,
                     )
-                    yield LoopEndMarker(reason="timeout", rounds=_round_idx)
+                    _loop_reason = "timeout"
+                    yield LoopEndMarker(reason=_loop_reason, rounds=_round_idx)
                     return
 
                 state.warn_if_needed(_round_idx)
@@ -894,13 +907,15 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                 context, should_cancel = self._drain_steering_queue(context, loop_ctx)
                 if should_cancel:
                     logger.info("Streaming tool loop cancelled after round %d", _round_idx)
-                    yield LoopEndMarker(reason="cancelled", rounds=_round_idx)
+                    _loop_reason = "cancelled"
+                    yield LoopEndMarker(reason=_loop_reason, rounds=_round_idx)
                     return
 
             # The for loop ran out of indices without returning — only possible
             # when an empty-retry consumed the final one. The budget is spent;
             # name it rather than letting the stream just end.
-            yield LoopEndMarker(reason="max_rounds", rounds=self._max_tool_rounds)
+            _loop_reason = "max_rounds"
+            yield LoopEndMarker(reason=_loop_reason, rounds=self._max_tool_rounds)
         except Exception as exc:
             _span_errored = True
             telemetry.end_span(span_id, status="error", error_message=str(exc))
@@ -945,6 +960,7 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                                 room_id=room_id,
                                 tool_calls_count=_tool_calls_count,
                                 round_count=_tool_rounds_count,
+                                loop_end_reason=_loop_reason,
                                 # The zero defaults keep the two counters always
                                 # present, as consumers of this event have read them.
                                 usage={

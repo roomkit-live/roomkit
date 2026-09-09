@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from roomkit.models.enums import ChannelType
+from roomkit.models.streaming import LoopEndReason
 
 if TYPE_CHECKING:
     from roomkit.providers.ai.base import AIContext
@@ -122,6 +123,24 @@ class AIResponseEvent:
 
     round_count: int = 0
     """Number of tool execution rounds."""
+
+    loop_end_reason: LoopEndReason | None = None
+    """Which of the tool loop's rules ended the turn, or None if unreported.
+
+    The streaming loop already named this on its :class:`LoopEndMarker` and the
+    buffered loop on ``ToolLoopResult.reason``, but neither reached this event:
+    a hook could see *that* a turn ended and how much work it did, never
+    whether it finished or was cut off. Counting tool calls does not answer it
+    — :attr:`tool_calls_count` reports the calls the turn *ran*, so a healthy
+    multi-round answer and one guillotined by the round cap both report a
+    positive count. Read this instead: ``"completed"`` is a turn that ended on
+    its own terms, and ``"max_rounds"``, ``"timeout"``, ``"cancelled"``,
+    ``"force_stopped"``, ``"truncated"`` and ``"empty_response"`` each name the
+    rule that stopped it.
+
+    None means the path that fired the hook reported no reason, not that the
+    turn completed.
+    """
 
     latency_ms: int = 0
     """Total generation time in milliseconds."""

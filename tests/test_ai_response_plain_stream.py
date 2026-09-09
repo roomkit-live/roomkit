@@ -58,6 +58,7 @@ async def test_completed_plain_stream_reports_once(structured: bool, content: st
     assert event.thinking == ("reasoning" if structured else "")
     assert event.usage == (provider._ai_responses[0].usage if structured else {})
     assert event.tool_calls_count == event.round_count == 0
+    assert event.loop_end_reason == "completed", "an exhausted stream ended on its own terms"
 
 
 @pytest.mark.parametrize("close_early", [True, False])

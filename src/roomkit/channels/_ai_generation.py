@@ -300,6 +300,7 @@ class AIGenerationMixin(AIToolLoopRulesMixin):
                         room_id=event.room_id,
                         tool_calls_count=tool_calls_count,
                         round_count=len(loop_result.rounds),
+                        loop_end_reason=loop_result.reason,
                         usage=response.usage or {},
                         thinking=response.thinking or "",
                         latency_ms=int((time.monotonic() - _t0) * 1000),
