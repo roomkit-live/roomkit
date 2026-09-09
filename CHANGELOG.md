@@ -7,6 +7,75 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.66.0] — 2026-09-09
+
+### Added
+
+- **Cerebras is a first-class chat provider.** `CerebrasAIProvider` and
+  `CerebrasConfig` reach Cerebras's OpenAI-compatible Chat Completions API
+  through the shared transport, inheriting its response decoder, error mapping,
+  token accounting, retries and live `/v1/models` discovery. Two things could
+  not be inherited. Cerebras returns reasoning in a `reasoning` field beside
+  `content` instead of tagged inside the text, so assistant history is rebuilt
+  with that sibling — including on tool turns, where the common builder would
+  have embedded it. And `reasoning_effort`, `reasoning_format` and
+  `clear_thinking` are sent on tool turns as well as text turns, so a
+  multi-round answer keeps the reasoning settings it started with. Install with
+  `roomkit[cerebras]`; `model` is required, so upgrading RoomKit never silently
+  selects another one. The offline catalog carries GPT OSS 120B, Qwen 3.8 27B
+  and Gemma 4 31B with context windows and rates verified 2026-09-09.
+  `make check-models` cannot verify them against the OpenRouter mirror — its
+  vendor namespaces do not identify Cerebras's hosted ids, tier limits or rates
+  — so the catalog is documented against Cerebras's own model API and cards,
+  whose Developer rates are used where the public API reports zero prices.
+
+- **A repeatable chat benchmark measures a real model end to end.**
+  `benchmarks/chat/` drives tools, skills, hooks, permissions, concurrent rooms
+  and memory or SQLite persistence through the inbound pipeline, AIChannel and
+  delivery callbacks against a live provider, scores the quality suite with
+  deterministic oracles, and writes JSON, JSONL, CSV and Markdown reports with
+  a run comparison. The test suite could show that the pipeline works; nothing
+  said whether a given model completes the work it is handed, or what that
+  costs in latency and tokens. `--provider mock` runs the offline subset with
+  no credential. The suite lives outside the installed package and is excluded
+  from the sdist.
+
+- **The OpenAI image catalog carries the GPT Image 2.5 pair.**
+  `gpt-image-2.5-sunburst` and `gpt-image-2.5-flare`, announced 2026-09-08,
+  reach `available_models()` with the standard rates read from their model
+  pages on 2026-09-09: $5/1M text input, $1.25 cached, $8/1M image input and
+  $30/1M image output, with no text-output rate, as both emit images only.
+  Neither id had reached the `openai` SDK's `ImageModel` literal by 2.54.0, so
+  the catalog takes them from OpenAI's own pages rather than the SDK.
+
+### Fixed
+
+- **A stream that used no tools now reports its response.** `ON_AI_RESPONSE`
+  fired for buffered generations and for streams that called a tool, but a
+  plain text stream — the ordinary case — ended without telling the hook
+  anything, so evaluation, scoring and accounting integrations silently missed
+  those turns. The hook now fires once the stream is exhausted, carrying the
+  transcript, the provider's usage, the reasoning text and the measured
+  latency. Exhaustion is what qualifies: a provider error mid-stream, or a
+  consumer that stops reading early, still reports nothing rather than a
+  successful turn.
+
+- **Tool-call counters cover the whole loop, not just its last round.**
+  `AIResponseEvent.tool_calls_count` and the `llm.tool_count` span attribute
+  were read from the final response alone, so a turn that took three rounds
+  reported only the third round's calls, and the streaming path reported no
+  count at all. Both paths now sum every round, and streaming spans carry
+  `llm.tool_count` like buffered ones. `round_count` is populated for the first
+  time — the field has existed since 0.10.0 and always read 0.
+
+- **`make check-models` survives a new image model.** The guard names an
+  upstream id newer than everything a catalog knows, and printed that id's
+  context window alongside it — but the images listing publishes no window for
+  any entry, so the first new image model upstream ended the run with a
+  `TypeError` instead of reporting the finding. GPT Image 2.5 did exactly that,
+  and the release gate it feeds went down with it. The window is now printed
+  only where the mirror supplies one.
+
 ## [0.65.0] — 2026-09-08
 
 ### Added
@@ -7012,7 +7081,8 @@ See entries `0.7.0a1` through `0.7.0a18` below.
 - `STTProvider.transcribe()` returns `TranscriptionResult` (Phase 3.1)
 - Framework event names enriched with payloads (Phase 4)
 
-[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.65.0...HEAD
+[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.66.0...HEAD
+[0.66.0]: https://github.com/roomkit-live/roomkit/compare/v0.65.0...v0.66.0
 [0.65.0]: https://github.com/roomkit-live/roomkit/compare/v0.64.0...v0.65.0
 [0.64.0]: https://github.com/roomkit-live/roomkit/compare/v0.63.0...v0.64.0
 [0.63.0]: https://github.com/roomkit-live/roomkit/compare/v0.62.0...v0.63.0

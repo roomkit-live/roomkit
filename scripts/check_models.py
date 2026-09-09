@@ -555,9 +555,12 @@ def check_catalog(catalog: Catalog, upstream: list[dict[str, Any]]) -> Findings:
             found.expected += 1
             continue
         if int(item.get("created") or 0) > newest_known:
+            # The images listing carries no context window, so the suffix is
+            # only meaningful for a text-sourced catalog.
+            window = item.get("context_length")
+            suffix = f" (context {window:,})" if window else ""
             found.missing.append(
-                f"{label}: {item['id']} is newer than the catalogued {item_family} family "
-                f"(context {item.get('context_length'):,})"
+                f"{label}: {item['id']} is newer than the catalogued {item_family} family{suffix}"
             )
     return found
 
