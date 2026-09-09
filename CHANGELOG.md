@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.66.2] — 2026-09-09
+
 ### Fixed
 
 - **ACP accepts host context for events without text.** The context contributor
