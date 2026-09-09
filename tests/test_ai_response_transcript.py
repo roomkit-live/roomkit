@@ -93,6 +93,8 @@ async def test_segments_are_separated_at_tool_calls(streaming: bool) -> None:
     event = await _report(MockAIProvider(ai_responses=list(_ROUNDS), streaming=streaming))
     assert event.segments == ["Let me look.", "Done."]
     assert event.response_content == "Let me look.\n\nDone."
+    assert event.tool_calls_count == 2
+    assert event.round_count == 2
 
 
 @pytest.mark.parametrize("streaming", [True, False], ids=["streaming", "non-streaming"])

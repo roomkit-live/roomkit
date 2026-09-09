@@ -1,5 +1,7 @@
 """RoomKit - Pure async Python library for multi-channel conversations."""
 
+from __future__ import annotations
+
 import contextlib
 
 from roomkit._version import __version__
@@ -166,6 +168,7 @@ from roomkit.orchestration import (
     setup_handoff,
 )
 from roomkit.providers.ai import ModelPricing
+from roomkit.providers.cerebras import CerebrasAIProvider, CerebrasConfig
 from roomkit.providers.image import ImageProvider, ImageResult, MockImageProvider
 from roomkit.sandbox import SandboxExecutor, SandboxResult
 from roomkit.skills import ScriptExecutor, Skill, SkillMetadata, SkillRegistry
@@ -223,6 +226,8 @@ def get_ai_context() -> str:
 
 
 __all__ = [
+    "CerebrasAIProvider",
+    "CerebrasConfig",
     "__version__",
     # Framework
     "RoomKit",

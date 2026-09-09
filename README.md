@@ -110,6 +110,7 @@ RoomKit's core has a single dependency (`pydantic`). Everything else is optional
 pip install roomkit                    # core only
 pip install roomkit[anthropic]         # + Anthropic Claude
 pip install roomkit[openai]            # + OpenAI GPT
+pip install roomkit[cerebras]          # + Cerebras chat, reasoning and tools
 pip install roomkit[gemini]            # + Google Gemini AI and TTS
 
 # Voice & video
@@ -533,6 +534,10 @@ make all                # ruff check + ty + pytest
 ```
 
 All new code needs tests. Aim for >90% coverage.
+
+For repeatable chat E2E measurements with a real model, see the
+[chat benchmark](benchmarks/chat/README.md). It covers tools, skills, hooks,
+permissions, concurrent rooms and memory/SQLite, with JSON/CSV reports.
 
 ## License
 

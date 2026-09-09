@@ -1,4 +1,5 @@
 /tasks/
+/benchmark-results/
 examples/*.jpg
 examples/*.jpeg
 examples/*.png

@@ -156,6 +156,12 @@ CATALOGS: list[Catalog] = [
 # a catalog nobody checks is the one that goes stale, and silence about it
 # reads as coverage. Each entry is a claim that someone looked for a mirror.
 UNMIRRORED_CATALOGS: dict[str, str] = {
+    "cerebras": (
+        "OpenRouter's vendor namespaces do not identify Cerebras's hosted ids, "
+        "tier limits or rates. Verify against https://api.cerebras.ai/public/v1/models "
+        "and Cerebras model cards (checked 2026-09-09); Qwen's public zero prices "
+        "disagree with its card, so the catalog uses the card's Developer rates."
+    ),
     "openai-realtime": (
         "the mirror routes chat completions; the gpt-realtime-* lineup lives on the "
         "Realtime WebSocket API and is absent from it — its gpt-audio/gpt-audio-mini "

@@ -5343,6 +5343,9 @@ buzz = [
     { name = "buzzkit" },
     { name = "soxr" },
 ]
+cerebras = [
+    { name = "openai" },
+]
 console = [
     { name = "prompt-toolkit" },
     { name = "rich" },
@@ -5688,6 +5691,7 @@ requires-dist = [
     { name = "openai", marker = "extra == 'all'", specifier = ">=2.28" },
     { name = "openai", marker = "extra == 'all'", specifier = ">=2.28,<3" },
     { name = "openai", marker = "extra == 'azure'", specifier = ">=2.28,<3" },
+    { name = "openai", marker = "extra == 'cerebras'", specifier = ">=2.28,<3" },
     { name = "openai", marker = "extra == 'deepseek'", specifier = ">=2.28,<3" },
     { name = "openai", marker = "extra == 'dev'", specifier = ">=2.28,<3" },
     { name = "openai", marker = "extra == 'litellm'", specifier = ">=2.28,<3" },
@@ -5760,7 +5764,7 @@ requires-dist = [
     { name = "websockets", marker = "extra == 'sources'", specifier = ">=14.0" },
     { name = "websockets", marker = "extra == 'websocket'", specifier = ">=14.0" },
 ]
-provides-extras = ["acp", "aicoustics", "all", "anam", "anthropic", "azure", "buzz", "console", "deepgram", "deepseek", "dev", "discord", "docs", "elevenlabs", "fastrtc", "gemini", "gradium", "httpx", "litellm", "livekit", "local-audio", "local-video", "mcp", "mediapipe", "mistral", "neutts", "ollama", "openai", "openrouter", "opentelemetry", "phonenumbers", "polargrid", "postgres", "providers", "pynacl", "pyroscope", "qwen-ai", "qwen-asr", "qwen-tts", "realtime-deepgram", "realtime-elevenlabs", "realtime-gemini", "realtime-openai", "redis", "rtp", "screen-capture", "screen-input", "sherpa-onnx", "sip", "smart-turn", "sources", "sse", "teams", "telegram", "twilio", "video", "video-overlay", "vllm", "webrtc-aec", "websocket", "webtransport", "whatsapp-personal", "xai", "yolo"]
+provides-extras = ["acp", "aicoustics", "all", "anam", "anthropic", "azure", "buzz", "cerebras", "console", "deepgram", "deepseek", "dev", "discord", "docs", "elevenlabs", "fastrtc", "gemini", "gradium", "httpx", "litellm", "livekit", "local-audio", "local-video", "mcp", "mediapipe", "mistral", "neutts", "ollama", "openai", "openrouter", "opentelemetry", "phonenumbers", "polargrid", "postgres", "providers", "pynacl", "pyroscope", "qwen-ai", "qwen-asr", "qwen-tts", "realtime-deepgram", "realtime-elevenlabs", "realtime-gemini", "realtime-openai", "redis", "rtp", "screen-capture", "screen-input", "sherpa-onnx", "sip", "smart-turn", "sources", "sse", "teams", "telegram", "twilio", "video", "video-overlay", "vllm", "webrtc-aec", "websocket", "webtransport", "whatsapp-personal", "xai", "yolo"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "setuptools", specifier = "<84" }]

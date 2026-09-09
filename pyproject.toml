@@ -43,6 +43,7 @@ openrouter = ["openai>=2.28,<3"]
 litellm = ["openai>=2.28,<3"]
 xai = ["openai>=2.28,<3"]
 deepseek = ["openai>=2.28,<3"]
+cerebras = ["openai>=2.28,<3"]
 # Named `qwen-ai` rather than `qwen`: the Qwen *voice* extras below install
 # different packages for different subsystems, and an unqualified `qwen` would
 # read like the family's umbrella install rather than the chat provider.
@@ -133,6 +134,7 @@ providers = [
     "roomkit[litellm]",
     "roomkit[xai]",
     "roomkit[deepseek]",
+    "roomkit[cerebras]",
     "roomkit[qwen-ai]",
     "roomkit[ollama]",
     "roomkit[gemini]",
@@ -209,6 +211,7 @@ path = "src/roomkit/_version.py"
 include = [
     "/src",
     "/tests",
+    "/benchmarks",
     "/docs",
     "/AGENTS.md",
     "/llms.txt",

@@ -119,6 +119,7 @@ CONSOLE=1 uv run python examples/<example>.py
 | `quickstart.py` | WebSocket | Two WebSocket users chatting with an AI assistant |
 | `anthropic_ai.py` | Anthropic | AI-powered assistant using Anthropic Claude |
 | `openai_ai.py` | OpenAI | AI-powered assistant using OpenAI GPT |
+| `cerebras_ai.py` | Cerebras | Assistant with Cerebras reasoning and model selection |
 | `mistral_ai.py` | Mistral | AI-powered assistant using Mistral AI |
 | `openrouter_ai.py` | OpenRouter | Interactive CLI for any of 300+ models behind one key |
 | `deepseek_ai.py` | DeepSeek | Interactive CLI with DeepSeek's thinking mode and effort tiers |

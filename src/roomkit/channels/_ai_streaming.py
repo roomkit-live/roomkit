@@ -275,6 +275,10 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
         # ``thinking_started`` is True exactly while a window is open on the
         # bus.
         room_id = ai_context.room.room.id if ai_context.room else None
+        started_at = time.monotonic()
+        text_parts: list[str] = []
+        usage: dict[str, Any] = {}
+        completed = False
         thinking_parts: list[str] = []
         thinking_published = 0
         thinking_started = False
@@ -282,7 +286,9 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
         try:
             if not self._provider.supports_structured_streaming:
                 async for chunk in self._provider.generate_stream(ai_context):
+                    text_parts.append(chunk)
                     yield chunk
+                completed = True
                 return
 
             # Through the resilience wrapper, like every structured generation:
@@ -311,7 +317,10 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                         thinking_published = await self._close_thinking_window(
                             coalescer, room_id, thinking_parts, 0, published=thinking_published
                         )
+                    text_parts.append(ev.text)
                     yield ev.text
+                elif isinstance(ev, StreamDone):
+                    usage.update(ev.usage)
 
             # Thinking with no following text — close the boundary anyway so
             # subscribers see the reasoning even if the model emitted nothing else.
@@ -320,6 +329,7 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                 await self._close_thinking_window(
                     coalescer, room_id, thinking_parts, 0, published=thinking_published
                 )
+            completed = True
         finally:
             try:
                 # A window still open here was left by an abnormal exit — a
@@ -337,6 +347,26 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                 # count comes down whatever happens to it, or a caller
                 # retiring the channel waits for zero forever.
                 self._text_streams -= 1
+                # Exhaustion, not merely entering finally, marks a completed
+                # response. Provider errors and consumers closing early must
+                # not report a successful turn to evaluation/accounting hooks.
+                if completed and self._after_response_hook:
+                    try:
+                        segments, transcript = response_transcript(["".join(text_parts)])
+                        await self._after_response_hook(
+                            AIResponseEvent(
+                                channel_id=self.channel_id,
+                                response_content=transcript,
+                                segments=segments,
+                                room_id=room_id,
+                                usage=usage,
+                                thinking="".join(thinking_parts),
+                                latency_ms=int((time.monotonic() - started_at) * 1000),
+                                streaming=True,
+                            )
+                        )
+                    except Exception:
+                        logger.debug("After-response hook failed (streaming)", exc_info=True)
 
     async def _start_streaming_tool_response(
         self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
@@ -391,6 +421,8 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
             },
         )
         _total_usage: dict[str, int] = {}
+        _tool_calls_count = 0
+        _tool_rounds_count = 0
         _span_errored = False
         _t0_stream = time.monotonic()
         # The turn's text for the after-response hook, one entry per round —
@@ -831,6 +863,8 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                     _round_idx,
                     parent_span_id=span_id,
                 )
+                _tool_calls_count += len(tool_calls)
+                _tool_rounds_count += 1
 
                 # Yield end markers with results (persistence boundary)
                 for tc, rp in zip(tool_calls, result_parts, strict=False):
@@ -892,7 +926,7 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                 # loop still leaves ``_active_loops`` whatever happens to it,
                 # or a caller retiring the channel waits for zero forever.
                 if not _span_errored:
-                    usage_attrs: dict[str, Any] = {}
+                    usage_attrs: dict[str, Any] = {Attr.LLM_TOOL_COUNT: _tool_calls_count}
                     if _total_usage.get("input_tokens") or _total_usage.get("output_tokens"):
                         usage_attrs[Attr.LLM_INPUT_TOKENS] = _total_usage.get("input_tokens", 0)
                         usage_attrs[Attr.LLM_OUTPUT_TOKENS] = _total_usage.get("output_tokens", 0)
@@ -909,6 +943,8 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                                 response_content=transcript,
                                 segments=segments,
                                 room_id=room_id,
+                                tool_calls_count=_tool_calls_count,
+                                round_count=_tool_rounds_count,
                                 # The zero defaults keep the two counters always
                                 # present, as consumers of this event have read them.
                                 usage={

@@ -23,6 +23,7 @@ from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.providers.anthropic.ai import AnthropicAIProvider
 from roomkit.providers.anthropic.config import AnthropicConfig
 from roomkit.providers.azure.ai import AzureAIProvider
+from roomkit.providers.cerebras import CerebrasAIProvider, CerebrasConfig
 from roomkit.providers.gemini.ai import GeminiAIProvider
 from roomkit.providers.gemini.config import GeminiConfig
 from roomkit.providers.mistral.ai import MistralAIProvider
@@ -37,6 +38,7 @@ from roomkit.providers.xai.ai import XAIAIProvider
 
 # (provider class, config class) for the providers that ship a curated catalog.
 CURATED = [
+    (CerebrasAIProvider, CerebrasConfig),
     (AnthropicAIProvider, AnthropicConfig),
     (OpenAIAIProvider, OpenAIConfig),
     (GeminiAIProvider, GeminiConfig),
@@ -59,6 +61,7 @@ DEFAULTED_CURATED = [
 # PolarGrid quotes its public model on its models page; its customer-pilot
 # model is not advertised, so the guard never reaches it.
 PRICED = [
+    CerebrasAIProvider,
     AnthropicAIProvider,
     OpenAIAIProvider,
     GeminiAIProvider,

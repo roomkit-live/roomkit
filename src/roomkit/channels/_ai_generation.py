@@ -264,13 +264,14 @@ class AIGenerationMixin(AIToolLoopRulesMixin):
             raise
 
         response = loop_result.response
+        tool_calls_count = sum(len(rnd.tool_calls) for rnd in loop_result.rounds)
         usage = response.usage or {}
         telemetry.end_span(
             span_id,
             attributes={
                 Attr.LLM_INPUT_TOKENS: usage.get("input_tokens", 0),
                 Attr.LLM_OUTPUT_TOKENS: usage.get("output_tokens", 0),
-                Attr.LLM_TOOL_COUNT: len(response.tool_calls) if response.tool_calls else 0,
+                Attr.LLM_TOOL_COUNT: tool_calls_count,
             },
         )
 
@@ -297,7 +298,8 @@ class AIGenerationMixin(AIToolLoopRulesMixin):
                         response_content=transcript,
                         segments=segments,
                         room_id=event.room_id,
-                        tool_calls_count=(len(response.tool_calls) if response.tool_calls else 0),
+                        tool_calls_count=tool_calls_count,
+                        round_count=len(loop_result.rounds),
                         usage=response.usage or {},
                         thinking=response.thinking or "",
                         latency_ms=int((time.monotonic() - _t0) * 1000),

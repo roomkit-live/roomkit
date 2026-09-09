@@ -34,6 +34,7 @@ import os
 
 from roomkit.providers.ai.base import ModelInfo, ModelPricing
 from roomkit.providers.anthropic.ai import AnthropicAIProvider
+from roomkit.providers.cerebras import CerebrasAIProvider
 from roomkit.providers.gemini.ai import GeminiAIProvider
 from roomkit.providers.mistral.ai import MistralAIProvider
 from roomkit.providers.ollama.ai import OllamaAIProvider
@@ -42,6 +43,7 @@ from roomkit.providers.openrouter.ai import OpenRouterAIProvider
 from roomkit.providers.polargrid.ai import PolarGridAIProvider
 
 CURATED_PROVIDERS = {
+    "Cerebras": CerebrasAIProvider,
     "Anthropic": AnthropicAIProvider,
     "OpenAI": OpenAIAIProvider,
     "OpenRouter": OpenRouterAIProvider,
