@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **ACP accepts host context for events without text.** The context contributor
+  receives solicited events before the empty-prompt check, allowing a host to
+  describe an attachment-only request without changing its stored event. Empty
+  or whitespace-only events with no contributed blocks still produce no turn.
+
 ## [0.66.1] — 2026-09-09
 
 ### Added

@@ -137,7 +137,10 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
             agent cannot go and fetch — member memories, a document corpus, an
             organisation's rules. Awaited once per solicited turn with the
             room's context and the triggering event; the blocks it returns
-            open the prompt, ahead of the catch-up and the request. One that
+            open the prompt, ahead of the catch-up and the request. Non-empty
+            blocks can supply the prompt for an event without text, such as a
+            host-managed attachment. A turn with neither text nor blocks is
+            skipped. One that
             raises is logged and the turn goes without it.
 
             Turn-scoped context only. An ACP session keeps what it was already
@@ -359,8 +362,6 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
             return ChannelOutput.empty()
 
         text = event_text(event)
-        if not text:
-            return ChannelOutput.empty()
 
         room_id = context.room.id if context.room is not None else event.room_id
         # Host-only blocks can be collected now. Catch-up is deliberately
@@ -369,6 +370,8 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
         blocks = await contributed_blocks(
             self._context_contributor, context, event, channel_id=self.channel_id
         )
+        if not text.strip() and not blocks:
+            return ChannelOutput.empty()
         # One live record for the turn, handed to the stream and to the output
         # alike: the stop reason is only known when the prompt returns, and
         # every MESSAGE segment reads this mapping as it stands when it is
