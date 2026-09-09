@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.66.1] — 2026-09-09
+
 ### Added
 
 - **`ON_AI_RESPONSE` says whether the turn finished or was cut off.**
@@ -7095,7 +7097,8 @@ See entries `0.7.0a1` through `0.7.0a18` below.
 - `STTProvider.transcribe()` returns `TranscriptionResult` (Phase 3.1)
 - Framework event names enriched with payloads (Phase 4)
 
-[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.66.0...HEAD
+[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.66.1...HEAD
+[0.66.1]: https://github.com/roomkit-live/roomkit/compare/v0.66.0...v0.66.1
 [0.66.0]: https://github.com/roomkit-live/roomkit/compare/v0.65.0...v0.66.0
 [0.65.0]: https://github.com/roomkit-live/roomkit/compare/v0.64.0...v0.65.0
 [0.64.0]: https://github.com/roomkit-live/roomkit/compare/v0.63.0...v0.64.0
