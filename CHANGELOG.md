@@ -15,6 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   collection excludes unrelated turns and respects broadcast hook edits and
   refusals, so background consumers can attribute an answer to the right call.
 
+### Fixed
+
+- Realtime voice idle detection includes in-flight tool calls and the provider
+  response following their results. `WaitForIdle` deliveries no longer overtake
+  a fast background tool's acknowledgement before its audio starts.
+
 ## [0.68.0] — 2026-09-10
 
 ### Added

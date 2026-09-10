@@ -93,10 +93,14 @@ class RealtimeToolsHost(Protocol):
     _transport: VoiceBackend
     _framework: RoomKit | None
     _transcription_order_locks: dict[str, asyncio.Lock]
+    _pending_tool_calls: dict[str, set[str]]
+    _provider_idle: dict[str, bool]
     channel_id: str
     _telemetry_provider: Any
 
     def _track_task(self, loop: Any, coro: Any, *, name: str) -> Any: ...
+
+    def _update_idle_event(self, session_id: str) -> None: ...
 
 
 class RealtimeToolsMixin:
@@ -122,10 +126,13 @@ class RealtimeToolsMixin:
     _transport: VoiceBackend
     _framework: RoomKit | None
     _transcription_order_locks: dict[str, asyncio.Lock]
+    _pending_tool_calls: dict[str, set[str]]
+    _provider_idle: dict[str, bool]
     channel_id: str
     _telemetry_provider: Any
 
     _track_task: Any  # see RealtimeToolsHost — cross-mixin
+    _update_idle_event: Any
     _compose_session_prompt: Any
     _compose_session_tools: Any
 
@@ -208,6 +215,12 @@ class RealtimeToolsMixin:
         if self._mute_on_tool_call and self._transport is not None:
             self._transport.set_input_muted(session, True)
 
+        # A function call is an active response even before the first audio
+        # chunk. Proactive deliveries must not overtake its result and the
+        # provider's following acknowledgement.
+        self._pending_tool_calls.setdefault(session.id, set()).add(call_id)
+        self._provider_idle[session.id] = False
+        self._update_idle_event(session.id)
         try:
             result_str: str
             if transport_error is not None:
@@ -399,6 +412,10 @@ class RealtimeToolsMixin:
             except Exception:
                 logger.exception("Error submitting fallback tool result")
         finally:
+            pending = self._pending_tool_calls.get(session.id)
+            if pending is not None:
+                pending.discard(call_id)
+            self._update_idle_event(session.id)
             if self._mute_on_tool_call and self._transport is not None:
                 self._transport.set_input_muted(session, False)
             if _rt_tok is not None:
@@ -448,6 +465,11 @@ class RealtimeToolsMixin:
         """Confirm delivery only while the session remains live."""
         if session.state == VoiceSessionState.ENDED:
             return False
+        # A provider may end the function-call response while its handler
+        # runs. Submission starts the wait for the next provider response;
+        # that earlier boundary cannot make the acknowledgement idle.
+        self._provider_idle[session.id] = False
+        self._update_idle_event(session.id)
         await self._provider.submit_tool_result(session, call_id, result)
         return session.state != VoiceSessionState.ENDED
 

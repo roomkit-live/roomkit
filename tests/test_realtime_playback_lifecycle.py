@@ -267,3 +267,47 @@ async def test_sip_failed_final_packet_releases_drain_and_preserves_sender(sip) 
         assert not state.is_playing
     finally:
         await backend.close()
+
+
+async def test_tool_response_waits_for_acknowledgement_before_idle() -> None:
+    provider, transport = MockRealtimeProvider(), MockRealtimeTransport()
+    entered, release, submitted = asyncio.Event(), asyncio.Event(), asyncio.Event()
+
+    async def handler(name, args):
+        entered.set()
+        await release.wait()
+        return {"status": "accepted"}
+
+    original_submit = provider.submit_tool_result
+
+    async def submit(*args):
+        await original_submit(*args)
+        submitted.set()
+
+    provider.submit_tool_result = submit
+    channel = RealtimeVoiceChannel(
+        "rt", provider=provider, transport=transport, tool_handler=handler
+    )
+    session = await channel.start_session("r", "p", object())
+    try:
+        await provider.simulate_tool_call(session, "call-1", "delegate", {})
+        await asyncio.wait_for(entered.wait(), 1)
+        # Tool-only provider responses may end while a tool is still running.
+        await provider.simulate_response_end(session)
+        with pytest.raises(TimeoutError):
+            await channel.wait_idle("r", timeout=0.01)
+        release.set()
+        await asyncio.wait_for(submitted.wait(), 1)
+        with pytest.raises(TimeoutError):
+            await channel.wait_idle("r", timeout=0.01)
+        # The tool result is accepted, but its spoken ACK has yet to finish.
+        await provider.simulate_response_start(session)
+        await provider.simulate_audio(session, b"\x01\x00" * 480)
+        with pytest.raises(TimeoutError):
+            await channel.wait_idle("r", timeout=0.01)
+        await provider.simulate_response_end(session)
+        await channel.wait_idle("r", timeout=1)
+    finally:
+        release.set()
+        await channel.close()
+    assert session.id not in channel._pending_tool_calls

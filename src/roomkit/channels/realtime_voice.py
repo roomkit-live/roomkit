@@ -452,6 +452,7 @@ class RealtimeVoiceChannel(
         self._idle_events: dict[str, asyncio.Event] = {}
         self._user_speaking: dict[str, bool] = {}
         self._provider_idle: dict[str, bool] = {}
+        self._pending_tool_calls: dict[str, set[str]] = {}
         # Wall-clock of the last user-turn start (VAD SPEECH_START). Consumed by
         # _realtime_transcription when emitting the final user turn as a
         # RoomEvent, so tool_calls fired mid-turn sort after the user message.
@@ -520,7 +521,8 @@ class RealtimeVoiceChannel(
     async def wait_idle(self, room_id: str, timeout: float = 15.0) -> None:
         """Wait until all sessions in the room are idle (not speaking).
 
-        An idle session has finished its last response and all audio
+        An idle session has submitted its tool results, finished the provider
+        response that follows them, and all audio
         has been forwarded to the transport. A queued transport such as SIP
         may still be playing that audio.
         """
@@ -546,7 +548,8 @@ class RealtimeVoiceChannel(
         provider_done = self._provider_idle.get(session_id, True)
         user_silent = not self._user_speaking.get(session_id, False)
         drained = session_id in self._audio_drained or session_id not in self._response_generation
-        if provider_done and user_silent and drained:
+        tools_done = not self._pending_tool_calls.get(session_id)
+        if provider_done and user_silent and drained and tools_done:
             idle.set()
         else:
             idle.clear()
@@ -976,6 +979,7 @@ class RealtimeVoiceChannel(
                 idle.set()
             self._user_speaking.pop(session.id, None)
             self._provider_idle.pop(session.id, None)
+            self._pending_tool_calls.pop(session.id, None)
             self._session_tools.pop(session.id, None)
             self._session_config_locks.pop(session.id, None)
             self._response_generation.pop(session.id, None)
@@ -1242,6 +1246,7 @@ class RealtimeVoiceChannel(
             self._user_speaking.pop(session.id, None)
             self._user_turn_start_at.pop(session.id, None)
             self._provider_idle.pop(session.id, None)
+            self._pending_tool_calls.pop(session.id, None)
             turn_span_id = self._turn_spans.pop(session.id, None)
             session_span_id = self._session_spans.pop(session.id, None)
             resamplers = self._session_resamplers.pop(session.id, None)
