@@ -138,6 +138,7 @@ class DeliveryCascade:
         "delivery_results",
         "error",
         "response_metadata",
+        "response_events",
         "room_id",
         "streams",
     )
@@ -158,6 +159,7 @@ class DeliveryCascade:
         # outputs land here when the plan finishes; detached streaming consumers
         # add their records after consuming the streams, before their handle wakes.
         self.response_metadata = ResponseMetadata()
+        self.response_events: list[RoomEvent] = []
         # Reason the cascade was cancelled (close/seal), or None.
         self.cancelled: str | None = None
         # Per-channel outcome of the ROOT pass's delivery set, keyed by channel

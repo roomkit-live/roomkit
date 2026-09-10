@@ -24,6 +24,7 @@ if TYPE_CHECKING:
         delivery_results: dict[str, Any]
         error: Exception | None
         response_metadata: ResponseMetadata
+        response_events: list[RoomEvent]
 
         def waiter_would_deadlock(self) -> bool: ...
 
@@ -148,6 +149,7 @@ class DeliveryHandle:
         await asyncio.wait({self._consumer})
         self._result.delivery_results = self._cascade.delivery_results
         self._result.response_metadata.update(self._cascade.response_metadata)
+        self._result.response_events = list(self._cascade.response_events)
         if self._result.error is None:
             self._result.error = self._cascade.error
         return self._result
@@ -177,6 +179,17 @@ class InboundResult(BaseModel):
     error: Exception | None = None
     response_metadata: ResponseMetadata = Field(default_factory=ResponseMetadata)
     """The turn's response-metadata record; empty when no turn ran."""
+
+    response_events: list[RoomEvent] = Field(default_factory=list)
+    """Persisted, delivered response events belonging to this call's cascade.
+
+    Contains reentry responses and streamed segments, excluding the original
+    inbound, blocked events and unrelated turns in the same room. A consumer
+    reads this collection to attribute an answer to its call; a timeline read
+    after the inbound index can include a later or concurrent call's answer.
+    Deferred callers must await ``delivery.wait()`` for the complete collection.
+    Events retain their stored indices, visibility and post-hook content.
+    """
 
     delivery_results: dict[str, DeliveryResult] = Field(default_factory=dict)
     """Per-channel outcome of this event's delivery set, keyed by channel id

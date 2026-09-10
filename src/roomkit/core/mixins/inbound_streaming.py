@@ -469,6 +469,8 @@ class InboundStreamingMixin(HelpersMixin):
         self,
         pending_streams: list[Any],
         room_id: str,
+        *,
+        response_events: list[RoomEvent] | None = None,
     ) -> tuple[Exception | None, ResponseMetadata]:
         """Handle streaming responses outside the room lock.
 
@@ -499,6 +501,8 @@ class InboundStreamingMixin(HelpersMixin):
         record = ResponseMetadata()
         for sr in pending_streams:
             sr_result = await self._handle_streaming_response(router, sr, room_id, context)
+            if sr_result and response_events is not None:
+                response_events.extend(sr_result.events)
             if sr_result and sr_result.error and first_error is None:
                 first_error = sr_result.error
             # Several streams answer one inbound only when several channels

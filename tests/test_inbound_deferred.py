@@ -257,7 +257,7 @@ async def test_consumer_crash_surfaces_on_result() -> None:
 
     boom = RuntimeError("consumption infrastructure exploded")
 
-    async def raising(streams: Any, room_id: str) -> Exception | None:
+    async def raising(streams: Any, room_id: str, **kwargs: Any) -> Exception | None:
         raise boom
 
     kit._process_streaming_responses = raising  # type: ignore[method-assign]
@@ -420,11 +420,11 @@ async def test_detached_consumer_runs_lock_free_under_the_callers_span() -> None
     kit = RoomKit(telemetry=telemetry)
     seen: dict[str, Any] = {}
 
-    async def observe(streams: Any, room_id: str) -> Exception | None:
+    async def observe(streams: Any, room_id: str, **kwargs: Any) -> tuple[None, dict[str, Any]]:
         seen["held"] = _held_rooms.get()
         seen["lane"] = _active_lane_room.get()
         seen["span"] = get_current_span()
-        return None
+        return None, {}
 
     kit._process_streaming_responses = observe  # type: ignore[method-assign]
     cascade = DeliveryCascade("r1", reentry_budget=1)

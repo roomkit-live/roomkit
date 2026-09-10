@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `InboundResult.response_events` identifies the persisted responses belonging
+  to the caller's delivery cascade, including streamed segments. Deferred
+  callers obtain the complete collection through `delivery.wait()`. The
+  collection excludes unrelated turns and respects broadcast hook edits and
+  refusals, so background consumers can attribute an answer to the right call.
+
 ## [0.68.0] — 2026-09-10
 
 ### Added

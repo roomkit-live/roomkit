@@ -410,7 +410,7 @@ class LaneExecutionMixin(HelpersMixin):
                 # to its caller — record it so a DeliveryHandle surfaces it.
                 try:
                     stream_error, record = await self._process_streaming_responses(
-                        cascade.streams, room_id
+                        cascade.streams, room_id, response_events=cascade.response_events
                     )
                 except Exception as exc:
                     logger.exception("Detached stream consumption failed for room %s", room_id)
@@ -768,9 +768,11 @@ class LaneExecutionMixin(HelpersMixin):
                 # No channel to broadcast to, but the response is still part
                 # of the timeline: commit it DELIVERED so it is indexed and
                 # counted like any other event (RFC §10.1).
-                await self._persist_committed(
+                stored = await self._persist_committed(
                     room_id, reentry.model_copy(update={"status": EventStatus.DELIVERED})
                 )
+                if stored is not None:
+                    cascade.response_events.append(stored)
                 return
 
             # Fresh context: concurrent commits may have landed since the
@@ -831,12 +833,14 @@ class LaneExecutionMixin(HelpersMixin):
             # Commit the response BEFORE delivering any events its hook
             # injected: the response causes the injection, so it takes the
             # lower index (mirrors the main path).
-            await self._commit_to_lane(
+            stored = await self._commit_to_lane(
                 room_id,
                 reentry.model_copy(update={"status": EventStatus.DELIVERED}),
                 cascade,
                 factory,
             )
+            if stored is not None:
+                cascade.response_events.append(stored)
             if reentry_sync.injected_events:
                 await self._lane_injected_events(
                     reentry_sync.injected_events, room_id, reentry_ctx, cascade

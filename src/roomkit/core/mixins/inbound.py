@@ -396,6 +396,7 @@ class InboundMixin(HelpersMixin):
         # Step 18 reports the delivery set the caller waited for.
         result.delivery_results = cascade.delivery_results
         result.response_metadata.update(cascade.response_metadata)
+        result.response_events = list(cascade.response_events)
 
         # Handle streaming responses outside the lane (TTS delivery can take
         # seconds; the lane must not stall behind it). A failure while
@@ -409,7 +410,7 @@ class InboundMixin(HelpersMixin):
             self._consume_streams_when_cascade_completes(cascade, room_id)
         elif cascade.streams:
             stream_error, record = await self._process_streaming_responses(
-                cascade.streams, room_id
+                cascade.streams, room_id, response_events=result.response_events
             )
             if stream_error is not None and result.error is None:
                 result.error = stream_error

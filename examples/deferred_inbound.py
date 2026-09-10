@@ -7,7 +7,8 @@ delivery set and the AI reply run on in the room's delivery lane. A hook
 refusal is still decided under the room lock, so a refused message still
 refuses the call synchronously. ``result.delivery`` is the handle on the
 in-flight turn: ``wait()`` resolves once everything ran (streamed responses
-included) and backfills ``delivery_results`` / ``error`` on the result.
+included) and backfills ``delivery_results``, ``response_events`` and ``error``.
+The response collection stays attached to this request even after another turn.
 
 Uses the mock AI provider, so it runs without any API key:
 
@@ -17,6 +18,7 @@ Uses the mock AI provider, so it runs without any API key:
 from __future__ import annotations
 
 import asyncio
+import logging
 
 from roomkit import (
     AIChannel,
@@ -35,6 +37,8 @@ from roomkit import (
 from roomkit.providers.ai.base import AIContext, AIResponse
 from roomkit.providers.ai.mock import MockAIProvider
 
+logger = logging.getLogger(__name__)
+
 
 class RestChannel(Channel):
     """A minimal transport standing in for an HTTP API surface."""
@@ -51,7 +55,7 @@ class RestChannel(Channel):
     async def deliver(
         self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
     ) -> ChannelOutput:
-        print(f"  -> delivered to {self.channel_id}: {event.content.body!r}")
+        logger.info("Delivered to %s: %s", self.channel_id, event.content.body)
         return ChannelOutput.empty()
 
 
@@ -69,7 +73,7 @@ async def main() -> None:
     kit.register_channel(
         AIChannel(
             "assistant",
-            provider=SlowAIProvider(responses=["Here is the answer you asked for."]),
+            provider=SlowAIProvider(responses=["Here is the first answer.", "A second answer."]),
         )
     )
 
@@ -92,18 +96,31 @@ async def main() -> None:
     )
     assert result.event is not None
     assert result.delivery is not None
-    print(f"200 OK — committed event {result.event.id!r} (agent turn in flight)")
+    logger.info("Committed event %s (agent turn in flight)", result.event.id)
 
     # Later — a tracker, a test, a metrics blip — awaits the rest of the turn.
     await result.delivery.wait()
-    print("turn complete")
-
-    conversation = await kit.store.get_conversation("support")
-    for event in conversation:
-        print(f"  [{event.source.channel_id}] {event.content.body}")
+    # Another request may finish before the tracker reads its answer.
+    await kit.process_inbound(
+        InboundMessage(
+            channel_id="rest",
+            sender_id="customer",
+            content=TextContent(body="A different question."),
+            addressed_to=["assistant"],
+        ),
+        room_id="support",
+    )
+    replies = [
+        event.content.body
+        for event in result.response_events
+        if isinstance(event.content, TextContent)
+    ]
+    assert replies == ["Here is the first answer."]
+    logger.info("First request's response after both turns completed: %s", replies)
 
     await kit.close()
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
     asyncio.run(main())
