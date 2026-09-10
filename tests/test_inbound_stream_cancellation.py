@@ -148,3 +148,28 @@ class TestInterruptedTurn:
 
         assert errors == []
         await kit.close()
+
+
+async def test_deferred_cancellation_retains_persisted_response_events() -> None:
+    provider = _SlowStreamProvider()
+    kit = RoomKit()
+    kit.register_channel(_StreamingTransport("cli"))
+    kit.register_channel(AIChannel("ai", provider=provider))
+    await kit.create_room(room_id="room")
+    await kit.attach_channel("room", "cli")
+    await kit.attach_channel("room", "ai", category=ChannelCategory.INTELLIGENCE)
+    try:
+        result = await kit.process_inbound(
+            InboundMessage(channel_id="cli", sender_id="user", content=TextContent(body="go")),
+            room_id="room",
+            defer_delivery=True,
+        )
+        await asyncio.wait_for(provider.streaming_started.wait(), timeout=5)
+        await kit.close()
+        assert result.delivery is not None
+        result = await result.delivery.wait()
+        assert [e.content.body for e in result.response_events] == ["Voici le début de la réponse"]
+        assert result.response_events[0].metadata["cancelled"] is True
+        assert await kit.store.get_event(result.response_events[0].id) == result.response_events[0]
+    finally:
+        await kit.close()

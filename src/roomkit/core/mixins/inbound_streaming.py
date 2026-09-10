@@ -96,6 +96,8 @@ class InboundStreamingMixin(HelpersMixin):
         sr: StreamingResponse,
         room_id: str,
         context: RoomContext,
+        *,
+        response_events: list[RoomEvent] | None = None,
     ) -> _StreamingResult | None:
         """Consume a streaming response, pipe to streaming channels, store segments."""
         from roomkit.models.event import EventSource, TextContent
@@ -174,6 +176,8 @@ class InboundStreamingMixin(HelpersMixin):
             )
             if stored is not None:
                 persisted_events.append(stored)
+                if response_events is not None:
+                    response_events.append(stored)
 
         async def _persist_text_segment(*, cancelled: bool = False) -> None:
             """Persist the accumulated text as a MESSAGE event.
@@ -500,9 +504,9 @@ class InboundStreamingMixin(HelpersMixin):
         first_error: Exception | None = None
         record = ResponseMetadata()
         for sr in pending_streams:
-            sr_result = await self._handle_streaming_response(router, sr, room_id, context)
-            if sr_result and response_events is not None:
-                response_events.extend(sr_result.events)
+            sr_result = await self._handle_streaming_response(
+                router, sr, room_id, context, response_events=response_events
+            )
             if sr_result and sr_result.error and first_error is None:
                 first_error = sr_result.error
             # Several streams answer one inbound only when several channels

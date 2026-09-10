@@ -764,17 +764,6 @@ class LaneExecutionMixin(HelpersMixin):
                 )
                 return
 
-            if reentry_binding is None:
-                # No channel to broadcast to, but the response is still part
-                # of the timeline: commit it DELIVERED so it is indexed and
-                # counted like any other event (RFC §10.1).
-                stored = await self._persist_committed(
-                    room_id, reentry.model_copy(update={"status": EventStatus.DELIVERED})
-                )
-                if stored is not None:
-                    cascade.response_events.append(stored)
-                return
-
             # Fresh context: concurrent commits may have landed since the
             # trigger's plan was made, and this pass must see them.
             context = await self._build_context(room_id)
@@ -833,12 +822,27 @@ class LaneExecutionMixin(HelpersMixin):
             # Commit the response BEFORE delivering any events its hook
             # injected: the response causes the injection, so it takes the
             # lower index (mirrors the main path).
-            stored = await self._commit_to_lane(
-                room_id,
-                reentry.model_copy(update={"status": EventStatus.DELIVERED}),
-                cascade,
-                factory,
-            )
+            if reentry_binding is None:
+                # A detached source has no delivery plan. Keep its timeline
+                # response, but only after the same filtering and side effects
+                # as a response whose source is still attached.
+                stored = await self._persist_committed(
+                    room_id, reentry.model_copy(update={"status": EventStatus.DELIVERED})
+                )
+                await self._persist_side_effects(
+                    room_id,
+                    reentry_sync.tasks,
+                    reentry_sync.observations,
+                    stored or reentry,
+                    reentry_ctx,
+                )
+            else:
+                stored = await self._commit_to_lane(
+                    room_id,
+                    reentry.model_copy(update={"status": EventStatus.DELIVERED}),
+                    cascade,
+                    factory,
+                )
             if stored is not None:
                 cascade.response_events.append(stored)
             if reentry_sync.injected_events:

@@ -117,3 +117,48 @@ async def test_a_call_without_an_answer_has_no_other_calls_events(streaming: boo
         assert answered.response_events
     finally:
         await kit.close()
+
+
+@pytest.mark.parametrize("blocked", [False, True])
+async def test_detached_response_still_obeys_broadcast_hooks(blocked: bool) -> None:
+    started, release = asyncio.Event(), asyncio.Event()
+
+    class DelayedProvider(MockAIProvider):
+        async def generate(self, context):
+            started.set()
+            await release.wait()
+            return await super().generate(context)
+
+    kit = await _kit(streaming=False)
+    kit.get_channel("assistant")._provider = DelayedProvider(responses=["private answer"])
+    inspected = []
+
+    @kit.hook(HookTrigger.BEFORE_BROADCAST)
+    async def gate(event, context):
+        if event.source.channel_id != "assistant":
+            return HookResult.allow()
+        inspected.append(event.id)
+        if blocked:
+            return HookResult.block("redacted")
+        return HookResult.modify(
+            event.model_copy(update={"content": TextContent(body="safe answer")})
+        )
+
+    try:
+        result = await kit.process_inbound(_message("task"), room_id="room", defer_delivery=True)
+        await asyncio.wait_for(started.wait(), timeout=5)
+        await kit.detach_channel("room", "assistant")
+        release.set()
+        result = await result.delivery.wait()
+        assert len(inspected) == 1
+        assert [e.content.body for e in result.response_events] == (
+            [] if blocked else ["safe answer"]
+        )
+        events = await kit.store.list_events("room")
+        response = next(e for e in events if e.source.channel_id == "assistant")
+        assert response.status == (EventStatus.BLOCKED if blocked else EventStatus.DELIVERED)
+        if not blocked:
+            assert response.content.body == "safe answer"
+    finally:
+        release.set()
+        await kit.close()
