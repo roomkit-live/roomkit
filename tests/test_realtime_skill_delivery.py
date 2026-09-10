@@ -10,6 +10,8 @@ import pytest
 
 from roomkit import RoomKit
 from roomkit.channels.realtime_voice import RealtimeVoiceChannel
+from roomkit.models.enums import HookExecution, HookTrigger
+from roomkit.models.hook import HookResult
 from roomkit.voice.realtime.mock import MockRealtimeProvider, MockRealtimeTransport
 from tests.test_realtime_fixed_tools import FixedProvider, call, tool
 from tests.test_realtime_skills import _make_skill, _registry_with_skill
@@ -177,6 +179,84 @@ async def test_simultaneous_native_activations_keep_both_bodies(tmp_path):
         prompt = provider.reconfigure.call_args.kwargs["system_prompt"]
         assert "First binding instruction." in prompt
         assert "Second binding instruction." in prompt
+
+
+@pytest.mark.parametrize("update", ["search", "handoff"])
+@pytest.mark.parametrize("activation_first", [True, False])
+async def test_activation_and_configuration_preserve_session_rules(
+    tmp_path, update, activation_first
+):
+    body = "Mandatory rule that must survive every configuration update."
+    registry = _registry_with_skill(tmp_path, body=body, allowed_tools="calendar")
+    async with running(
+        registry, provider=MockRealtimeProvider(), tool_search=True, system_prompt="Original role"
+    ) as (channel, provider, session, _):
+        entered, release, second_started = asyncio.Event(), asyncio.Event(), asyncio.Event()
+        applied = []
+
+        async def apply_config(*args, **kwargs):
+            if not applied:
+                entered.set()
+                await release.wait()
+            applied.append(kwargs)
+
+        provider.reconfigure.side_effect = apply_config
+
+        async def operation(activate, *, second=False):
+            if second:
+                second_started.set()
+            if activate:
+                await channel._handle_tool_call(
+                    session, "activation", "activate_skill", {"name": "test-skill"}
+                )
+            elif update == "search":
+                await channel._handle_tool_call(
+                    session, "search", "find_tools", {"query": "calendar"}
+                )
+            else:
+                await channel.reconfigure_session(session, system_prompt="New role")
+
+        first = asyncio.create_task(operation(activation_first))
+        await asyncio.wait_for(entered.wait(), 3)
+        second = asyncio.create_task(operation(not activation_first, second=True))
+        await asyncio.wait_for(second_started.wait(), 3)
+        try:
+            # The second operation must wait for the first provider update and
+            # its local commit, rather than preparing a stale prompt concurrently.
+            assert provider.reconfigure.await_count == 1
+        finally:
+            release.set()
+            await asyncio.wait_for(asyncio.gather(first, second), 3)
+        final_prompt = applied[-1]["system_prompt"]
+        assert final_prompt.count(body) == 1
+        assert "test-skill" in final_prompt
+        assert channel._tool_search_support.preamble in final_prompt
+        assert ("New role" if update == "handoff" else "Original role") in final_prompt
+        assert not channel._skill_support.is_gated("calendar", session.id)
+        if update == "search":
+            assert "calendar" in {tool["name"] for tool in applied[-1]["tools"]}
+        await channel.end_session(session)
+        assert session.id not in channel._session_config_locks
+
+
+async def test_search_observer_can_reconfigure_without_deadlock(tmp_path):
+    registry = _registry_with_skill(tmp_path, body="Persistent skill instructions.")
+    async with running(registry, provider=MockRealtimeProvider(), tool_search=True) as ctx:
+        channel, provider, session, _ = ctx
+        await call(channel, provider, session, "activate_skill", {"name": "test-skill"})
+
+        @channel._framework.hook(HookTrigger.ON_TOOL_CALL, execution=HookExecution.SYNC)
+        async def observer(event, context):
+            if event.name == "find_tools":
+                await channel.reconfigure_session(session, system_prompt="Observer role")
+            return HookResult.allow()
+
+        await asyncio.wait_for(
+            call(channel, provider, session, "find_tools", {"query": "calendar"}), 3
+        )
+        prompt = provider.reconfigure.call_args.kwargs["system_prompt"]
+        assert "Observer role" in prompt
+        assert "Persistent skill instructions." in prompt
 
 
 @pytest.mark.parametrize("args", [{}, {"name": []}, {"name": 42}, {"name": "missing"}])

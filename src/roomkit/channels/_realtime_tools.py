@@ -81,6 +81,7 @@ class RealtimeToolsHost(Protocol):
     _session_spans: dict[str, Any]
     _turn_spans: dict[str, Any]
     _session_tools: dict[str, Any]
+    _session_config_locks: dict[str, asyncio.Lock]
     _tool_handler: Any
     _tools: Any
     _system_prompt: str | None
@@ -109,6 +110,7 @@ class RealtimeToolsMixin:
     _session_spans: dict[str, Any]
     _turn_spans: dict[str, Any]
     _session_tools: dict[str, Any]
+    _session_config_locks: dict[str, asyncio.Lock]
     _tool_handler: Any
     _tools: Any
     _system_prompt: str | None
@@ -124,6 +126,8 @@ class RealtimeToolsMixin:
     _telemetry_provider: Any
 
     _track_task: Any  # see RealtimeToolsHost — cross-mixin
+    _compose_session_prompt: Any
+    _compose_session_tools: Any
 
     def _on_provider_tool_call(
         self,
@@ -409,10 +413,10 @@ class RealtimeToolsMixin:
             result = await support.handle_tool_call(name, arguments, session.id)
             await self._submit_realtime_tool_result(session, call_id, result)
             return result
-        lock = support.activation_locks.get(session.id)
+        lock = self._session_config_locks.get(session.id)
         if lock is None:
             return json.dumps({"error": "Session ended before skill activation"})
-        # Concurrent activations must not replace each other's system rules.
+        # Discovery, handoff and activation must preserve the same session rules.
         async with lock:
             if session.state == VoiceSessionState.ENDED:
                 return json.dumps({"error": "Session ended before skill activation"})
@@ -425,21 +429,14 @@ class RealtimeToolsMixin:
             if not delivered or skill is None:
                 return result
             if self._provider.supports_mid_session_reconfigure:
-                visible = base_tools
-                if self._tool_search_support:
-                    visible = self._tool_search_support.visible_tools(session.id, base_tools)
-                visible = support.get_visible_tools(
-                    support.skill_tool_dicts() + visible, session.id, skill
-                )
+                visible = self._compose_session_tools(session.id, base_tools, pending_skill=skill)
                 addendum = support.activated_skills_prompt(session.id, skill)
                 if addendum or skill.metadata.gated_tool_names:
-                    prompt = support.inject_skills_prompt(
-                        session.metadata.get("system_prompt", self._system_prompt)
+                    prompt = self._compose_session_prompt(
+                        session,
+                        session.metadata.get("system_prompt", self._system_prompt),
+                        pending_skill=skill,
                     )
-                    if self._tool_search_support:
-                        prompt += "\n\n" + self._tool_search_support.preamble
-                    if addendum:
-                        prompt += "\n\n" + addendum
                     await self._provider.reconfigure(session, tools=visible, system_prompt=prompt)
             if session.state != VoiceSessionState.ENDED:
                 support.commit_activation(session.id, skill)
@@ -732,22 +729,34 @@ class RealtimeToolsMixin:
         room_id: str | None,
         tool_span_id: Any,
     ) -> None:
-        """Handle find_tools / list_tools and reconfigure on a successful match.
+        """Serialize discovery with activation and handoff, then notify observers."""
+        lock = self._session_config_locks.get(session.id)
+        if lock is None:
+            return
+        async with lock:
+            if session.state == VoiceSessionState.ENDED:
+                return
+            result_str, updated = await self._tool_search_support.handle_tool_call(
+                name, arguments, session.id
+            )
+            # The pending call belongs to the current connection. Deliver its
+            # result before a provider update can replace that connection.
+            delivered = await self._submit_realtime_tool_result(session, call_id, result_str)
+            if not delivered:
+                return
+            if updated is not None and self._provider.supports_mid_session_reconfigure:
+                with self._state_lock:
+                    base_tools = self._session_tools.get(session.id, self._tools or [])
+                await self._provider.reconfigure(
+                    session,
+                    tools=self._compose_session_tools(session.id, base_tools),
+                    system_prompt=self._compose_session_prompt(
+                        session, session.metadata.get("system_prompt", self._system_prompt)
+                    ),
+                )
 
-        ``find_tools`` returns ``(json_result, updated_tool_list_or_None)`` —
-        when the second element is non-None the matched tools became
-        invocable for this session and we must push them via
-        ``provider.reconfigure(tools=...)``. ``reconfigure`` rebuilds
-        the provider config from scratch, so we also pass the current
-        ``system_prompt`` (with any active skill addendum) to avoid
-        wiping it. The skills layer is composed back on top so its
-        infra tools (activate_skill, …) stay live.
-        """
-        telemetry = self._telemetry_provider
-        result_str, updated = await self._tool_search_support.handle_tool_call(
-            name, arguments, session.id
-        )
-
+        # Observers may request a handoff, so never call them under the
+        # configuration lock. Their result cannot replace infrastructure delivery.
         # Fire ON_TOOL_CALL hook so audit + UI-broadcast hooks see search calls.
         if self._framework and room_id:
             from roomkit.models.tool_call import ToolCallEvent
@@ -778,44 +787,7 @@ class RealtimeToolsMixin:
                     exc_info=True,
                 )
 
-        # Submit the tool result FIRST: the model's pending call is bound
-        # to the live WebSocket. Reconfigure would tear that connection
-        # down and the response would be lost.
-        await self._submit_realtime_tool_result(session, call_id, result_str)
-
-        if updated is not None and self._provider.supports_mid_session_reconfigure:
-            # Recompose: skill tools (if any) sit alongside the search-tool
-            # output, then preserve any active skill bodies in the prompt.
-            full_tools = updated
-            if self._skill_support:
-                skill_defs = self._skill_support.skill_tool_dicts()
-                # Avoid duplicating any skill tool already present in updated.
-                seen = {t.get("name") for t in updated}
-                full_tools = [t for t in skill_defs if t.get("name") not in seen] + updated
-                full_tools = self._skill_support.get_visible_tools(full_tools, session.id)
-
-            new_prompt: str | None = self._system_prompt
-            if self._skill_support:
-                addendum = self._skill_support.activated_skills_prompt(session.id)
-                if addendum and new_prompt:
-                    new_prompt = f"{new_prompt}\n\n{addendum}"
-                elif addendum:
-                    new_prompt = addendum
-
-            await self._provider.reconfigure(
-                session,
-                tools=full_tools,
-                system_prompt=new_prompt,
-            )
-        elif updated is not None:
-            logger.debug(
-                "Tool-search match for %s but provider %s cannot reconfigure "
-                "mid-session — newly matched tools will not be exposed this turn",
-                name,
-                self._provider.name,
-            )
-
-        telemetry.end_span(tool_span_id)
+        self._telemetry_provider.end_span(tool_span_id)
         logger.info(
             "Tool-search %s(%s) handled for session %s (%d tools now visible)",
             name,

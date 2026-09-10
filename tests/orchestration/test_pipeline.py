@@ -23,7 +23,7 @@ from roomkit.orchestration.pipeline import (
 )
 from roomkit.orchestration.router import ConversationRouter
 from roomkit.orchestration.state import ConversationState, set_conversation_state
-from roomkit.voice.base import VoiceSession, VoiceSessionState
+from roomkit.voice.base import VoiceSession
 from tests.conftest import make_event
 
 # -- Helpers ------------------------------------------------------------------
@@ -1127,15 +1127,7 @@ class TestRealtimeInstall:
             voice_channel_id="rtv",
         )
 
-        session = VoiceSession(
-            id="s1",
-            room_id="r1",
-            participant_id="user1",
-            channel_id="rtv",
-        )
-        session.state = VoiceSessionState.ACTIVE
-        rtv._sessions["s1"] = session
-        rtv._session_rooms["s1"] = "r1"
+        session = await rtv.start_session("r1", "user1", object())
 
         # Trigger handoff via tool handler with session set via contextvar
         token = _current_voice_session.set(session)
@@ -1144,12 +1136,13 @@ class TestRealtimeInstall:
                 "handoff_conversation",
                 {"target": "agent-advisor", "reason": "help", "summary": "ctx"},
             )
+            provider = rtv.provider
+            reconfig_calls = [c for c in provider.calls if c.method == "disconnect"]
         finally:
             _current_voice_session.reset(token)
+            await rtv.close()
 
         # Provider should have been reconfigured (disconnect + reconnect)
-        provider = rtv.provider
-        reconfig_calls = [c for c in provider.calls if c.method == "disconnect"]
         assert len(reconfig_calls) >= 1  # reconfigure disconnects the old session
 
     async def test_wire_realtime_greet_on_handoff(self):

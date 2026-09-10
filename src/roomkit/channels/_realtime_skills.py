@@ -68,7 +68,6 @@ class RealtimeSkillSupport:
             raise ValueError(f"Unknown skill delivery mode: {delivery_mode}")
         self._skills = skills
         self._reconfigure_capable = reconfigure_capable
-        self.activation_locks: dict[str, asyncio.Lock] = {}
         self._script_executor = script_executor
         self._delivery_mode: SkillDeliveryMode = delivery_mode
         # session_id -> set of activated skill names
@@ -143,13 +142,11 @@ class RealtimeSkillSupport:
 
     def init_session(self, session_id: str) -> None:
         """Initialize activation state for a new session."""
-        self.activation_locks[session_id] = asyncio.Lock()
         self._activated_skills[session_id] = set()
         self._activated_bodies[session_id] = []
 
     def cleanup_session(self, session_id: str) -> None:
         """Remove activation state when a session ends."""
-        self.activation_locks.pop(session_id, None)
         self._activated_skills.pop(session_id, None)
         self._activated_bodies.pop(session_id, None)
 

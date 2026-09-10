@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.68.0] — 2026-09-10
+
 ### Added
 
 - Fixed-declaration realtime providers can deliver complete skill instructions,
@@ -22,9 +24,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Skill gates open only after successful instruction delivery. Concurrent
-  native activations preserve both bodies; failed, cancelled or ended deliveries
-  cannot record activation. Fixed-provider gates use Tool Search even with a
-  small catalogue, and explicitly disabled incompatible discovery is rejected.
+  activation, discovery and handoff preserve active instructions; failed,
+  cancelled or ended deliveries cannot record activation. Fixed-provider gates
+  use Tool Search even with a small catalogue, and explicitly disabled
+  incompatible discovery is rejected.
 - Skill infrastructure arguments pass the shared schema validation. Gemini
   refuses tool-result submission without a live connection and invalidates
   stale resumption handles when the server marks its context nonresumable.
