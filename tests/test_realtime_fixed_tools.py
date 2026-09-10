@@ -238,8 +238,8 @@ async def test_call_tool_collision_is_rejected_in_session_overrides() -> None:
         ) == {"ok": True}
 
 
-@pytest.mark.parametrize("transported", [True, False])
-async def test_hangup_cancels_only_its_calls_and_refuses_late_execution(transported: bool) -> None:
+@pytest.mark.parametrize("route", ["wrapped", "native", "recovered"])
+async def test_hangup_cancels_only_its_calls_and_refuses_late_execution(route: str) -> None:
     started, cancelled = asyncio.Event(), asyncio.Event()
     executed = []
 
@@ -259,13 +259,28 @@ async def test_hangup_cancels_only_its_calls_and_refuses_late_execution(transpor
         await kit.attach_channel("other-room", "rt")
         other = await channel.start_session("other-room", "other", object())
         name, args = "calendar", {"action": "wait"}
-        if transported:
+        if route == "wrapped":
             name, args = "call_tool", {"name": name, "arguments_json": json.dumps(args)}
-        await provider.simulate_tool_call(session, "waiting", name, args)
+        if route == "recovered":
+            assert channel._try_recover_tool_call_from_text(session, "call:calendar{action:wait}")[
+                0
+            ]
+        else:
+            await provider.simulate_tool_call(session, "waiting", name, args)
         await asyncio.wait_for(started.wait(), 1)
         await channel.end_session(session)
         assert cancelled.is_set()
-        await provider.simulate_tool_call(session, "late", name, args)
+        if route == "recovered":
+            assert not channel._try_recover_tool_call_from_text(
+                session, "call:calendar{action:list}"
+            )[0]
+            await channel._dispatch_recovered_tool_call(
+                session, "calendar", {"action": "list"}, ""
+            )
+            await channel._inject_recovered_result(session, "calendar", "late", "{}")
+            assert not any(c.method == "inject_text" for c in provider.calls)
+        else:
+            await provider.simulate_tool_call(session, "late", name, args)
         await asyncio.gather(*list(channel._scheduled_tasks))
         assert not executed and not provider.tool_results
         assert await call(
@@ -279,3 +294,26 @@ async def test_hangup_cancels_only_its_calls_and_refuses_late_execution(transpor
             },
         ) == {"ok": True}
         assert executed == ["projects"]
+
+
+async def test_recovered_transcription_during_hangup_has_no_side_effect() -> None:
+    disconnecting, release = asyncio.Event(), asyncio.Event()
+
+    async def disconnect(session: Any) -> None:
+        disconnecting.set()
+        await release.wait()
+
+    async with channel_context() as (_, channel, provider, session, handler):
+        provider.disconnect = disconnect
+        ending = asyncio.create_task(channel.end_session(session))
+        try:
+            await asyncio.wait_for(disconnecting.wait(), 1)
+            await provider.simulate_transcription(
+                session, "call:calendar{action:list}", "assistant", True
+            )
+            await asyncio.gather(*list(channel._scheduled_tasks))
+            handler.assert_not_awaited()
+            assert not any(c.method == "inject_text" for c in provider.calls)
+        finally:
+            release.set()
+            await ending

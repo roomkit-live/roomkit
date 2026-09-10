@@ -15,6 +15,7 @@ injected back as silent text context so the model can reference it.
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import json
 import logging
@@ -26,6 +27,7 @@ from uuid import uuid4
 from roomkit.channels._realtime_tools import result_text
 from roomkit.models.enums import ChannelType
 from roomkit.telemetry.base import Attr, SpanKind
+from roomkit.voice.base import VoiceSessionState
 
 if TYPE_CHECKING:
     from roomkit.core.framework import RoomKit
@@ -129,7 +131,7 @@ class RealtimeToolRecoveryMixin:
         - ``(True, None)``  — entire text was a tool call, suppress it.
         - ``(True, "...")``  — tool call found; remaining speech to emit.
         """
-        if not self._tool_recovery_enabled:
+        if not self._tool_recovery_enabled or session.state == VoiceSessionState.ENDED:
             return False, None
 
         match = _TEXT_TOOL_CALL_RE.search(text)
@@ -161,8 +163,6 @@ class RealtimeToolRecoveryMixin:
         )
 
         # Dispatch asynchronously — mirrors _on_provider_tool_call pattern.
-        import asyncio
-
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
@@ -225,6 +225,8 @@ class RealtimeToolRecoveryMixin:
         honours the host's ``tool_result_max_length`` and the model is told the
         result was cut instead of reading a sentence that stops mid-word.
         """
+        if session.state == VoiceSessionState.ENDED:
+            return
         summary = result_str
         if len(summary) > self._tool_result_max_length:
             summary = self._truncate_tool_result(summary, tool_name, call_id, session.id)
@@ -244,6 +246,8 @@ class RealtimeToolRecoveryMixin:
         raw_text: str,
     ) -> None:
         """Execute a recovered tool call and inject the result as context."""
+        if session.state == VoiceSessionState.ENDED:
+            return
         call_id = f"recovered-{uuid4().hex[:12]}"
 
         with self._state_lock:
@@ -269,6 +273,9 @@ class RealtimeToolRecoveryMixin:
             arguments, denial, gate_context = await self._authorize_realtime_tool(
                 tool_name, arguments, call_id, room_id, session
             )
+            if session.state == VoiceSessionState.ENDED:
+                telemetry.end_span(span_id, status="cancelled")
+                return
             if denial is not None:
                 await self._inject_recovered_result(
                     session, tool_name, call_id, denial, denied=True
@@ -334,6 +341,9 @@ class RealtimeToolRecoveryMixin:
                 len(result_str),
             )
 
+        except asyncio.CancelledError:
+            telemetry.end_span(span_id, status="cancelled")
+            raise
         except Exception:
             telemetry.end_span(span_id, status="error", error_message=f"recovery:{tool_name}")
             logger.exception(
