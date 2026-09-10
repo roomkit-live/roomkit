@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.66.3] — 2026-09-10
+
+### Fixed
+
+- **Realtime skills retain unavailable reasons even when none are usable.**
+  A registry containing only unavailable skills still exposes its diagnostics
+  in the session prompt and activation errors, without loading their bodies or
+  acknowledging a successful activation.
+
 ## [0.66.2] — 2026-09-09
 
 ### Fixed
