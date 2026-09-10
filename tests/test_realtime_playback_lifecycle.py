@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from roomkit import HookExecution, HookTrigger, RoomKit
 from roomkit.channels.realtime_voice import RealtimeVoiceChannel
 from roomkit.voice.backends._sip_types import SIPSessionState
 from roomkit.voice.base import VoiceSession
@@ -269,7 +270,9 @@ async def test_sip_failed_final_packet_releases_drain_and_preserves_sender(sip) 
         await backend.close()
 
 
-async def test_tool_response_waits_for_acknowledgement_before_idle() -> None:
+@pytest.mark.parametrize("late_end", [False, True])
+@pytest.mark.parametrize("new_response", [False, True])
+async def test_tool_response_waits_for_acknowledgement_before_idle(late_end, new_response) -> None:
     provider, transport = MockRealtimeProvider(), MockRealtimeTransport()
     entered, release, submitted = asyncio.Event(), asyncio.Event(), asyncio.Event()
 
@@ -292,22 +295,124 @@ async def test_tool_response_waits_for_acknowledgement_before_idle() -> None:
     try:
         await provider.simulate_tool_call(session, "call-1", "delegate", {})
         await asyncio.wait_for(entered.wait(), 1)
-        # Tool-only provider responses may end while a tool is still running.
-        await provider.simulate_response_end(session)
+        # Either order is possible: a tool may finish before its original response.
+        if not late_end:
+            await provider.simulate_response_end(session)
         with pytest.raises(TimeoutError):
             await channel.wait_idle("r", timeout=0.01)
         release.set()
         await asyncio.wait_for(submitted.wait(), 1)
+        if late_end:
+            # A final transcript can summarize narration emitted before the tool.
+            await provider.simulate_transcription(session, "Let me check", "assistant", True)
+            await provider.simulate_response_end(session)
         with pytest.raises(TimeoutError):
             await channel.wait_idle("r", timeout=0.01)
-        # The tool result is accepted, but its spoken ACK has yet to finish.
-        await provider.simulate_response_start(session)
+        # Some providers continue the same response; others start another one.
+        if new_response:
+            await provider.simulate_response_start(session)
         await provider.simulate_audio(session, b"\x01\x00" * 480)
         with pytest.raises(TimeoutError):
             await channel.wait_idle("r", timeout=0.01)
         await provider.simulate_response_end(session)
+        if not new_response:
+            # Audio in an old response cannot identify a new tool continuation.
+            # WaitForIdle's existing timeout is the fallback for providers
+            # that resume without reporting a fresh response boundary.
+            with pytest.raises(TimeoutError):
+                await channel.wait_idle("r", timeout=0.01)
+            await provider.simulate_response_start(session)
+            await provider.simulate_response_end(session)
         await channel.wait_idle("r", timeout=1)
     finally:
         release.set()
         await channel.close()
     assert session.id not in channel._pending_tool_calls
+
+
+@pytest.mark.parametrize("cancel", [False, True])
+async def test_received_tool_is_busy_while_transcription_hook_blocks(cancel) -> None:
+    provider, transport = MockRealtimeProvider(), MockRealtimeTransport()
+    entered, release, handled = asyncio.Event(), asyncio.Event(), asyncio.Event()
+
+    async def handler(name, args):
+        handled.set()
+        return "{}"
+
+    kit = RoomKit()
+    channel = RealtimeVoiceChannel(
+        "rt", provider=provider, transport=transport, tool_handler=handler
+    )
+    kit.register_channel(channel)
+    await kit.create_room(room_id="r")
+    await kit.attach_channel("r", "rt")
+
+    @kit.hook(HookTrigger.ON_TRANSCRIPTION, HookExecution.SYNC)
+    async def blocked(event, context):
+        entered.set()
+        await release.wait()
+
+    session = await channel.start_session("r", "p", object())
+    try:
+        await provider.simulate_transcription(session, "Delegate this", "user", True)
+        await asyncio.wait_for(entered.wait(), 1)
+        await provider.simulate_tool_call(session, "call-1", "delegate", {})
+        with pytest.raises(TimeoutError):
+            await channel.wait_idle("r", timeout=0.01)
+        assert not handled.is_set()
+        if cancel:
+            task = next(t for t in channel._scheduled_tasks if "rt_tool_call:" in t.get_name())
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+            assert not channel._pending_tool_calls.get(session.id)
+        release.set()
+        if not cancel:
+            await asyncio.wait_for(handled.wait(), 1)
+    finally:
+        release.set()
+        await kit.close()
+    assert session.id not in channel._pending_tool_calls
+    assert session.id not in channel._awaiting_tool_response
+
+
+async def test_audio_of_first_tool_ack_does_not_release_second_tool_result() -> None:
+    provider = MockRealtimeProvider()
+    releases = {name: asyncio.Event() for name in ["a", "b"]}
+    submitted = {name: asyncio.Event() for name in ["a", "b"]}
+
+    async def handler(name, args):
+        await releases[name].wait()
+        return "{}"
+
+    original_submit = provider.submit_tool_result
+
+    async def submit(session, call_id, result):
+        await original_submit(session, call_id, result)
+        submitted[call_id].set()
+
+    provider.submit_tool_result = submit
+    channel = RealtimeVoiceChannel(
+        "rt", provider=provider, transport=MockRealtimeTransport(), tool_handler=handler
+    )
+    session = await channel.start_session("r", "p", object())
+    try:
+        for name in ["a", "b"]:
+            await provider.simulate_tool_call(session, name, name, {})
+        releases["a"].set()
+        await asyncio.wait_for(submitted["a"].wait(), 1)
+        await provider.simulate_response_start(session)
+        releases["b"].set()
+        await asyncio.wait_for(submitted["b"].wait(), 1)
+        # This is still A's response, already started before B was submitted.
+        await provider.simulate_audio(session, b"\x01\x00" * 480)
+        await provider.simulate_response_end(session)
+        with pytest.raises(TimeoutError):
+            await channel.wait_idle("r", timeout=0.01)
+        await provider.simulate_response_start(session)
+        await provider.simulate_audio(session, b"\x01\x00" * 480)
+        await provider.simulate_response_end(session)
+        await channel.wait_idle("r", timeout=1)
+    finally:
+        for release in releases.values():
+            release.set()
+        await channel.close()

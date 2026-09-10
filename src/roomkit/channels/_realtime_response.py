@@ -71,6 +71,8 @@ class RealtimeResponseHost(Protocol):
     channel_id: str
     _telemetry_provider: Any
 
+    def _note_provider_output(self, session_id: str) -> None: ...
+
     def _track_task(self, loop: Any, coro: Any, *, name: str) -> Any: ...
 
     async def _send_client_message(self, session: Any, message: dict[str, Any]) -> None: ...
@@ -111,6 +113,7 @@ class RealtimeResponseMixin:
     channel_id: str
     _telemetry_provider: Any
 
+    _note_provider_output: Any
     _track_task: Any  # see RealtimeResponseHost — cross-mixin
     _send_client_message: Any  # see RealtimeResponseHost — cross-mixin
     _update_idle_event: Any  # see RealtimeResponseHost — cross-mixin
@@ -121,6 +124,7 @@ class RealtimeResponseMixin:
 
     def _on_provider_response_start(self, session: VoiceSession) -> Any:
         """Handle AI response start — activate AEC, publish typing indicator."""
+        self._note_provider_output(session.id)
         with self._state_lock:
             # AI is responding → user has stopped speaking.  Clear the flag
             # so _on_provider_audio stops dropping outbound audio.

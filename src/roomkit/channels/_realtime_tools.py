@@ -93,6 +93,7 @@ class RealtimeToolsHost(Protocol):
     _transport: VoiceBackend
     _framework: RoomKit | None
     _transcription_order_locks: dict[str, asyncio.Lock]
+    _awaiting_tool_response: set[str]
     _pending_tool_calls: dict[str, set[str]]
     _provider_idle: dict[str, bool]
     channel_id: str
@@ -126,6 +127,7 @@ class RealtimeToolsMixin:
     _transport: VoiceBackend
     _framework: RoomKit | None
     _transcription_order_locks: dict[str, asyncio.Lock]
+    _awaiting_tool_response: set[str]
     _pending_tool_calls: dict[str, set[str]]
     _provider_idle: dict[str, bool]
     channel_id: str
@@ -148,13 +150,39 @@ class RealtimeToolsMixin:
             loop = asyncio.get_running_loop()
         except RuntimeError:
             return
-        self._track_task(
+        if session.state == VoiceSessionState.ENDED:
+            return
+        self._begin_tool_call(session.id, call_id)
+        task = self._track_task(
             loop,
             self._handle_tool_call(session, call_id, name, arguments),
             name=f"rt_tool_call:{session.id}:{call_id}",
         )
+        task.add_done_callback(lambda _: self._finish_tool_call(session.id, call_id))
+
+    def _begin_tool_call(self, session_id: str, call_id: str) -> None:
+        self._pending_tool_calls.setdefault(session_id, set()).add(call_id)
+        self._provider_idle[session_id] = False
+        self._update_idle_event(session_id)
+
+    def _finish_tool_call(self, session_id: str, call_id: str) -> None:
+        pending = self._pending_tool_calls.get(session_id)
+        if pending is not None:
+            pending.discard(call_id)
+        self._update_idle_event(session_id)
 
     async def _handle_tool_call(
+        self, session: VoiceSession, call_id: str, name: str, arguments: dict[str, Any]
+    ) -> None:
+        if session.state == VoiceSessionState.ENDED:
+            return
+        self._begin_tool_call(session.id, call_id)
+        try:
+            await self._execute_tool_call(session, call_id, name, arguments)
+        finally:
+            self._finish_tool_call(session.id, call_id)
+
+    async def _execute_tool_call(
         self,
         session: VoiceSession,
         call_id: str,
@@ -215,12 +243,6 @@ class RealtimeToolsMixin:
         if self._mute_on_tool_call and self._transport is not None:
             self._transport.set_input_muted(session, True)
 
-        # A function call is an active response even before the first audio
-        # chunk. Proactive deliveries must not overtake its result and the
-        # provider's following acknowledgement.
-        self._pending_tool_calls.setdefault(session.id, set()).add(call_id)
-        self._provider_idle[session.id] = False
-        self._update_idle_event(session.id)
         try:
             result_str: str
             if transport_error is not None:
@@ -412,10 +434,6 @@ class RealtimeToolsMixin:
             except Exception:
                 logger.exception("Error submitting fallback tool result")
         finally:
-            pending = self._pending_tool_calls.get(session.id)
-            if pending is not None:
-                pending.discard(call_id)
-            self._update_idle_event(session.id)
             if self._mute_on_tool_call and self._transport is not None:
                 self._transport.set_input_muted(session, False)
             if _rt_tok is not None:
@@ -465,6 +483,7 @@ class RealtimeToolsMixin:
         """Confirm delivery only while the session remains live."""
         if session.state == VoiceSessionState.ENDED:
             return False
+        self._awaiting_tool_response.add(session.id)
         # A provider may end the function-call response while its handler
         # runs. Submission starts the wait for the next provider response;
         # that earlier boundary cannot make the acknowledgement idle.

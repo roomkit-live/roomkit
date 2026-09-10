@@ -453,6 +453,7 @@ class RealtimeVoiceChannel(
         self._user_speaking: dict[str, bool] = {}
         self._provider_idle: dict[str, bool] = {}
         self._pending_tool_calls: dict[str, set[str]] = {}
+        self._awaiting_tool_response: set[str] = set()
         # Wall-clock of the last user-turn start (VAD SPEECH_START). Consumed by
         # _realtime_transcription when emitting the final user turn as a
         # RoomEvent, so tool_calls fired mid-turn sort after the user message.
@@ -548,11 +549,21 @@ class RealtimeVoiceChannel(
         provider_done = self._provider_idle.get(session_id, True)
         user_silent = not self._user_speaking.get(session_id, False)
         drained = session_id in self._audio_drained or session_id not in self._response_generation
-        tools_done = not self._pending_tool_calls.get(session_id)
+        tools_done = (
+            not self._pending_tool_calls.get(session_id)
+            and session_id not in self._awaiting_tool_response
+        )
         if provider_done and user_silent and drained and tools_done:
             idle.set()
         else:
             idle.clear()
+
+    def _note_provider_output(self, session_id: str) -> None:
+        """A new provider response can continue submitted tool results."""
+        if session_id in self._awaiting_tool_response:
+            self._awaiting_tool_response.discard(session_id)
+            self._provider_idle[session_id] = False
+            self._update_idle_event(session_id)
 
     @property
     def tool_handler(self) -> ToolHandler | None:
@@ -980,6 +991,7 @@ class RealtimeVoiceChannel(
             self._user_speaking.pop(session.id, None)
             self._provider_idle.pop(session.id, None)
             self._pending_tool_calls.pop(session.id, None)
+            self._awaiting_tool_response.discard(session.id)
             self._session_tools.pop(session.id, None)
             self._session_config_locks.pop(session.id, None)
             self._response_generation.pop(session.id, None)
@@ -1247,6 +1259,7 @@ class RealtimeVoiceChannel(
             self._user_turn_start_at.pop(session.id, None)
             self._provider_idle.pop(session.id, None)
             self._pending_tool_calls.pop(session.id, None)
+            self._awaiting_tool_response.discard(session.id)
             turn_span_id = self._turn_spans.pop(session.id, None)
             session_span_id = self._session_spans.pop(session.id, None)
             resamplers = self._session_resamplers.pop(session.id, None)
