@@ -15,6 +15,7 @@ from typing import Any
 
 TOOL_FIND_TOOLS = "find_tools"
 TOOL_LIST_TOOLS = "list_tools"
+TOOL_CALL_TOOL = "call_tool"
 
 TOOL_SEARCH_INFRA_TOOL_NAMES: frozenset[str] = frozenset({TOOL_FIND_TOOLS, TOOL_LIST_TOOLS})
 
@@ -107,5 +108,45 @@ LIST_TOOLS_SCHEMA: dict[str, Any] = {
                 ),
             },
         },
+    },
+}
+
+# Fixed declarations deliver schemas as tool results; execution still uses the
+# channel's ordinary tool handler and pre-execution gates.
+FIXED_TOOL_SEARCH_PREAMBLE = (
+    "Your visible tools are a small subset of your authorized tool catalogue. "
+    "Use find_tools(query) to discover tools for a task. ALWAYS search with "
+    "ENGLISH keywords, even when speaking another language. "
+    "Use list_tools(name=<exact tool name>) to read one tool's COMPLETE "
+    "description and argument schema, then call_tool(name=<exact tool name>, "
+    "arguments_json=<JSON object encoded as a string>) to execute it. "
+    "The name is the TOOL name, not an action: an action such as list belongs "
+    "inside arguments_json when that tool's schema declares it. "
+    'For example, the calendar tool may accept {"action":"list"} as its arguments. '
+    "Tools already declared directly can be called directly. "
+    "list_tools(category=...) gives a compact inventory, not argument schemas. "
+    "Never claim a capability is unavailable before searching for it. "
+    "Search and schema lookup do not execute a business operation; continue "
+    "with call_tool and report its actual result or refusal."
+)
+
+CALL_TOOL_SCHEMA: dict[str, Any] = {
+    "name": TOOL_CALL_TOOL,
+    "description": (
+        "Execute an authorized tool using its exact name and a JSON object "
+        "encoded as a string. Read its schema with list_tools(name=...) first. "
+        "Actions belong inside the arguments, not in the tool name."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string", "description": "Exact tool name."},
+            "arguments_json": {
+                "type": "string",
+                "description": "JSON object matching the tool's argument schema, e.g. {}.",
+            },
+        },
+        "required": ["name", "arguments_json"],
+        "additionalProperties": False,
     },
 }

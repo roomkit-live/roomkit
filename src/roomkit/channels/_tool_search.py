@@ -221,6 +221,7 @@ def render_find_payload(
     *,
     miss_hint: str | None = None,
     related: list[str] | None = None,
+    call_tool: bool = False,
 ) -> str:
     """JSON result for a ``find_tools`` call — compact: name + truncated
     description per match.
@@ -228,8 +229,9 @@ def render_find_payload(
     Deliberately omits the parameter schema and truncates the description: a
     match's only job is to tell the model which tools it can now call. The full
     schema is delivered separately — the text loop re-sends it in the next
-    round's tool list, the realtime channel pushes it via ``provider.reconfigure``
-    — so inlining it here would only risk blowing the tool-result size limit
+    round's tool list; realtime uses ``provider.reconfigure`` or a named
+    ``list_tools`` lookup when declarations are fixed — so inlining it here
+    would only risk blowing the tool-result size limit
     (verbose multi-action tools like ``outlook``/``gmail`` carry huge
     descriptions + schemas; a few of them would overflow the result and get
     evicted, defeating the whole point of the search).
@@ -243,7 +245,11 @@ def render_find_payload(
             for tool in matches
         ],
         "_note": (
-            "These tools are now invocable — their full schemas are in your tool "
+            "Read a match's complete schema with list_tools(name=<exact tool name>), "
+            "then execute it with call_tool(name=..., arguments_json=...). "
+            "The tool name and its action are different: actions belong in arguments_json."
+            if call_tool
+            else "These tools are now invocable — their full schemas are in your tool "
             "list. Call the right one directly. Do not call find_tools again "
             "unless none of these fit."
         ),
@@ -251,7 +257,10 @@ def render_find_payload(
     if matches and related:
         payload["related_tools_same_source"] = related
         payload["_note"] += (
-            " related_tools_same_source lists MORE tools from the same source "
+            " related_tools_same_source lists other tool names from the same source; "
+            "read the desired tool's schema with list_tools(name=...)."
+            if call_tool
+            else " related_tools_same_source lists MORE tools from the same source "
             "(NOT yet invocable) — run find_tools for one of those when the "
             "user's next ask falls in this domain, instead of assuming you "
             "cannot do it."

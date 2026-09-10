@@ -10,10 +10,12 @@ import time
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from roomkit.channels._skill_constants import TOOL_ACTIVATE_SKILL
+from roomkit.channels._tool_search_constants import TOOL_CALL_TOOL
 from roomkit.models.enums import ChannelType, HookTrigger
 from roomkit.providers.ai.base import AIImagePart, AITextPart
 from roomkit.telemetry.base import Attr, SpanKind
 from roomkit.tools.validation import fold_hoisted_arguments, validate_tool_arguments
+from roomkit.voice.base import VoiceSessionState
 
 if TYPE_CHECKING:
     from roomkit.core.framework import RoomKit
@@ -154,6 +156,17 @@ class RealtimeToolsMixin:
         The ``ON_TOOL_CALL`` hook is then fired (handler result, if any,
         is passed as ``event.result`` so the hook can observe or override).
         """
+        if session.state == VoiceSessionState.ENDED:
+            return
+        transport_error = None
+        if (
+            name == TOOL_CALL_TOOL
+            and self._tool_search_support
+            and self._tool_search_support.uses_call_tool
+        ):
+            name, arguments, transport_error = self._tool_search_support.unwrap_call(
+                arguments, session.id
+            )
         # Order barrier: a tool call must not overtake the transcriptions the
         # provider emitted before it. The user final that closes the current
         # utterance travels the serialised transcription queue, while tool
@@ -165,6 +178,8 @@ class RealtimeToolsMixin:
             order_lock = self._transcription_order_locks.setdefault(session.id, asyncio.Lock())
         async with order_lock:
             pass
+        if session.state == VoiceSessionState.ENDED:
+            return
 
         with self._state_lock:
             room_id = self._session_rooms.get(session.id)
@@ -180,7 +195,7 @@ class RealtimeToolsMixin:
             SpanKind.REALTIME_TOOL_CALL,
             f"realtime_tool:{name}",
             parent_id=parent,
-            attributes={Attr.REALTIME_TOOL_NAME: name},
+            attributes={Attr.REALTIME_TOOL_NAME: name, "tool_call_id": call_id},
             room_id=room_id,
             session_id=session.id,
             channel_id=self.channel_id,
@@ -191,6 +206,12 @@ class RealtimeToolsMixin:
 
         try:
             result_str: str
+            if transport_error is not None:
+                await self._submit_realtime_tool_result(
+                    session, call_id, json.dumps({"error": transport_error})
+                )
+                telemetry.end_span(tool_span_id)
+                return
 
             # Pre-execution gate (parity with the classic AI path): validate
             # arguments and run BEFORE_TOOL_USE BEFORE the call is routed, so a
@@ -201,8 +222,11 @@ class RealtimeToolsMixin:
             arguments, denial, gate_context = await self._authorize_realtime_tool(
                 name, arguments, call_id, room_id, session
             )
+            if session.state == VoiceSessionState.ENDED:
+                telemetry.end_span(tool_span_id, status="cancelled")
+                return
             if denial is not None:
-                await self._provider.submit_tool_result(session, call_id, denial)
+                await self._submit_realtime_tool_result(session, call_id, denial)
                 telemetry.end_span(tool_span_id)
                 logger.info(
                     "Realtime tool %s(%s) denied before execution for session %s",
@@ -263,7 +287,7 @@ class RealtimeToolsMixin:
                 # replaces it with a fresh ``live_session`` that has no
                 # record of ``call_id``, so the tool response would be
                 # lost and the model would hang forever waiting on it.
-                await self._provider.submit_tool_result(session, call_id, result_str)
+                await self._submit_realtime_tool_result(session, call_id, result_str)
 
                 if name == TOOL_ACTIVATE_SKILL and self._provider.supports_mid_session_reconfigure:
                     # On providers that can safely reconfigure mid-session
@@ -385,7 +409,7 @@ class RealtimeToolsMixin:
             if len(result_str) > self._tool_result_max_length:
                 result_str = self._truncate_tool_result(result_str, name, call_id, session.id)
 
-            await self._provider.submit_tool_result(session, call_id, result_str)
+            await self._submit_realtime_tool_result(session, call_id, result_str)
 
             telemetry.end_span(tool_span_id)
             logger.info(
@@ -395,14 +419,26 @@ class RealtimeToolsMixin:
                 session.id,
             )
 
+        except asyncio.CancelledError:
+            telemetry.end_span(tool_span_id, status="cancelled")
+            raise
         except Exception:
             telemetry.end_span(tool_span_id, status="error", error_message=f"tool {name} failed")
             logger.exception("Error handling tool call %s for session %s", call_id, session.id)
             try:
-                await self._provider.submit_tool_result(
+                await self._submit_realtime_tool_result(
                     session,
                     call_id,
-                    json.dumps({"error": "Internal error handling tool call"}),
+                    json.dumps(
+                        {
+                            "error": "Internal error handling tool call",
+                            "tool": name,
+                            "hint": (
+                                "Execution failed. Check the tool's integration before "
+                                "retrying; do not report success."
+                            ),
+                        }
+                    ),
                 )
             except Exception:
                 logger.exception("Error submitting fallback tool result")
@@ -412,11 +448,23 @@ class RealtimeToolsMixin:
             if _rt_tok is not None:
                 reset_span(_rt_tok)
 
+    async def _submit_realtime_tool_result(
+        self, session: VoiceSession, call_id: str, result: str
+    ) -> None:
+        """Keep every dispatch branch from answering an ended session."""
+        if session.state != VoiceSessionState.ENDED:
+            await self._provider.submit_tool_result(session, call_id, result)
+
     def _tool_parameters(self, name: str, session: VoiceSession) -> dict[str, Any] | None:
         """Return the declared ``parameters`` schema for realtime tool *name*.
 
         ``None`` when the tool's schema is unknown (skips argument validation).
         """
+        if self._tool_search_support and self._tool_search_support.is_search_tool(name):
+            for tool in self._tool_search_support.search_tool_dicts():
+                if tool["name"] == name:
+                    params = tool.get("parameters")
+                    return params if isinstance(params, dict) else None
         with self._state_lock:
             tools = self._session_tools.get(session.id, self._tools or [])
         for t in tools:
@@ -729,7 +777,7 @@ class RealtimeToolsMixin:
         # Submit the tool result FIRST: the model's pending call is bound
         # to the live WebSocket. Reconfigure would tear that connection
         # down and the response would be lost.
-        await self._provider.submit_tool_result(session, call_id, result_str)
+        await self._submit_realtime_tool_result(session, call_id, result_str)
 
         if updated is not None and self._provider.supports_mid_session_reconfigure:
             # Recompose: skill tools (if any) sit alongside the search-tool

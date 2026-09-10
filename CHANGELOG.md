@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.67.0] — 2026-09-10
+
+### Added
+
+- **Realtime Tool Search works with fixed tool declarations.** Providers such
+  as Gemini Live 3.1 discover the authorized session catalogue with `find_tools`,
+  retrieve complete schemas with `list_tools(name=...)`, and execute through
+  `call_tool` without reconnecting or reconfiguring. Calls retain the native
+  argument validation, skill and policy gates, hooks, telemetry, and call IDs.
+- A bounded live example exercises two fictional tool domains in a catalogue
+  of 112 tools, retaining a voice trace and captured speech.
+
+### Fixed
+
+- Ending a realtime session cancels its in-flight tool calls and prevents late
+  execution or result submission, without cancelling other sessions' calls.
+
 ## [0.66.3] — 2026-09-10
 
 ### Fixed
@@ -7115,7 +7132,10 @@ See entries `0.7.0a1` through `0.7.0a18` below.
 - `STTProvider.transcribe()` returns `TranscriptionResult` (Phase 3.1)
 - Framework event names enriched with payloads (Phase 4)
 
-[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.66.1...HEAD
+[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.67.0...HEAD
+[0.67.0]: https://github.com/roomkit-live/roomkit/compare/v0.66.3...v0.67.0
+[0.66.3]: https://github.com/roomkit-live/roomkit/compare/v0.66.2...v0.66.3
+[0.66.2]: https://github.com/roomkit-live/roomkit/compare/v0.66.1...v0.66.2
 [0.66.1]: https://github.com/roomkit-live/roomkit/compare/v0.66.0...v0.66.1
 [0.66.0]: https://github.com/roomkit-live/roomkit/compare/v0.65.0...v0.66.0
 [0.65.0]: https://github.com/roomkit-live/roomkit/compare/v0.64.0...v0.65.0

@@ -347,27 +347,14 @@ class RealtimeVoiceChannel(
         # default; ``tool_search=True/False`` forces. Composed into the
         # tool list at session start the same way skills are.
         #
-        # Tool Search depends on ``provider.reconfigure`` to push newly
-        # matched tools into the session — that's the whole mechanic.
-        # Providers that cannot reconfigure mid-session (Gemini 3.x)
-        # cannot benefit from it; the ``supports_mid_session_reconfigure``
-        # guard below would silently swallow the reconfigure, and worse
-        # the model would still see a ``find_tools`` tool whose effect is
-        # invisible. Force-disable in that case with a clear log line.
+        # Reconfigurable providers receive native declarations on discovery.
+        # Fixed-declaration providers receive schemas through list_tools and
+        # carry execution through call_tool into the same channel dispatch.
         self._tool_search_support: RealtimeToolSearchSupport | None = None
         catalogue_size = len(tool_defs or [])
         should_enable = tool_search is True or (
             tool_search is None and catalogue_size > tool_search_threshold
         )
-        if should_enable and not provider.supports_mid_session_reconfigure:
-            logger.info(
-                "Tool Search disabled: provider %s cannot reconfigure mid-session. "
-                "Catalogue size %d exposed verbatim; consider curating "
-                "tools per agent or using skills to gate access.",
-                getattr(provider, "name", type(provider).__name__),
-                catalogue_size,
-            )
-            should_enable = False
         if should_enable and tool_defs:
             from roomkit.channels._realtime_tool_search import RealtimeToolSearchSupport
 
@@ -375,6 +362,7 @@ class RealtimeVoiceChannel(
                 tool_defs,
                 pinned=tool_search_pinned,
                 threshold=tool_search_threshold,
+                reconfigure_capable=provider.supports_mid_session_reconfigure,
             )
 
         # Lock for shared state accessed from both asyncio and audio threads
@@ -1056,10 +1044,8 @@ class RealtimeVoiceChannel(
         # model knows to call find_tools before reaching for the rest.
         # Infrastructure tools remain visible alongside the pinned catalogue.
         if self._tool_search_support:
-            from roomkit.channels._tool_search_constants import TOOL_SEARCH_PREAMBLE
-
             self._tool_search_support.init_session(session.id, self._session_tools[session.id])
-            system_prompt = (system_prompt or "") + "\n\n" + TOOL_SEARCH_PREAMBLE
+            system_prompt = (system_prompt or "") + "\n\n" + self._tool_search_support.preamble
 
         tools = self._compose_session_tools(session.id, tools)
 
@@ -1163,6 +1149,26 @@ class RealtimeVoiceChannel(
         Args:
             session: The session to end.
         """
+        # Stop admitting calls before the first asynchronous cleanup step.
+        # A session hangup must also stop its in-flight tools without touching
+        # calls owned by other sessions sharing this channel.
+        session.state = VoiceSessionState.ENDED
+        current = asyncio.current_task()
+        prefixes = (f"rt_tool_call:{session.id}:", f"rt_tool_recovery:{session.id}:")
+        tool_tasks = [
+            task
+            for task in self._scheduled_tasks
+            if task is not current and task.get_name().startswith(prefixes)
+        ]
+        for task in tool_tasks:
+            task.cancel()
+        if tool_tasks:
+            _, pending = await asyncio.wait(tool_tasks, timeout=5.0)
+            if pending:
+                logger.warning(
+                    "Timed out cancelling %d tools for session %s", len(pending), session.id
+                )
+
         with self._state_lock:
             room_id = self._session_rooms.get(session.id, session.room_id)
 
@@ -1189,8 +1195,6 @@ class RealtimeVoiceChannel(
             await self._transport.disconnect(session)
         except Exception:
             logger.exception("Error disconnecting transport for session %s", session.id)
-
-        session.state = VoiceSessionState.ENDED
 
         # Notify pipeline of session end
         self._pipeline_session_ended(session)
