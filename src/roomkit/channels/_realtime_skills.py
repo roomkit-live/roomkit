@@ -6,6 +6,7 @@ tracking, and tool gating for realtime voice sessions.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from typing import TYPE_CHECKING, Any
@@ -24,6 +25,7 @@ from roomkit.channels._skill_constants import (
 )
 from roomkit.channels._skill_handlers import (
     activation_ack,
+    activation_content,
     handle_read_reference,
     handle_run_script,
     missing_skill_error,
@@ -34,50 +36,24 @@ from roomkit.tools.policy import matches_any_pattern
 
 if TYPE_CHECKING:
     from roomkit.skills.executor import ScriptExecutor
+    from roomkit.skills.models import Skill
 
 logger = logging.getLogger("roomkit.channels.realtime_voice")
 
 
 SkillDeliveryMode = str
-"""Skill delivery mode for realtime channels.
+"""``inline_full`` preloads bodies; ``on_demand`` loads only activated skills.
 
-- ``"on_demand"`` (default for providers that support mid-session
-  reconfigure): only skill *metadata* is in the initial system_instruction.
-  The model calls ``activate_skill`` to load a specific skill's body,
-  which is then folded into ``system_instruction`` via
-  ``provider.reconfigure``.
-
-- ``"inline_full"`` (default for providers that cannot reconfigure mid
-  session, e.g. ``gemini-3.x``-flash-live): every available skill's full
-  body is baked into the initial ``system_instruction`` at session start.
-  ``activate_skill`` becomes a declarative ACK — the body is already in
-  the model's context, no reconfigure is needed.
+On reconfigurable providers, bodies enter system instructions. Fixed providers
+receive the full body in the activation result and must preserve that context.
 """
 
 
 class RealtimeSkillSupport:
-    """Skill infrastructure for RealtimeVoiceChannel.
+    """Skill delivery and gates scoped to one live conversation.
 
-    Unlike AIChannel (which rebuilds the tool list per request), realtime
-    channels set tools once at ``provider.connect()`` and must call
-    ``provider.reconfigure()`` to push newly-visible tools after a skill
-    activation reveals gated tools.
-
-    Activation state is tracked per session since each session has its own
-    AI conversation.
-
-    Skill body delivery on realtime channels has two modes — see
-    :data:`SkillDeliveryMode`. The legacy ``"on_demand"`` mode relies on
-    ``provider.reconfigure`` to push the body into ``system_instruction``
-    after activation. The ``"inline_full"`` mode pre-loads every body at
-    session start so providers that cannot reconfigure mid-session
-    (Gemini 3.x) still get the binding rules in attention.
-
-    Returning multi-KB skill bodies through ``submit_tool_result`` was
-    the original failure mode: it tipped Gemini Live (and large returns
-    on OpenAI Realtime) into "narrate the script" mode, where the model
-    treated the long return as conversational data and stopped emitting
-    function calls.
+    Preparing an activation never opens tools. The channel commits it only
+    after the provider has accepted its instructions and configuration.
     """
 
     def __init__(
@@ -86,8 +62,13 @@ class RealtimeSkillSupport:
         script_executor: ScriptExecutor | None = None,
         *,
         delivery_mode: SkillDeliveryMode = "on_demand",
+        reconfigure_capable: bool = True,
     ) -> None:
+        if delivery_mode not in {"inline_full", "on_demand"}:
+            raise ValueError(f"Unknown skill delivery mode: {delivery_mode}")
         self._skills = skills
+        self._reconfigure_capable = reconfigure_capable
+        self.activation_locks: dict[str, asyncio.Lock] = {}
         self._script_executor = script_executor
         self._delivery_mode: SkillDeliveryMode = delivery_mode
         # session_id -> set of activated skill names
@@ -121,7 +102,7 @@ class RealtimeSkillSupport:
         included verbatim so the model has the binding rules in
         attention from the first token. In ``on_demand`` mode only
         skill metadata is included; bodies arrive later via
-        ``provider.reconfigure`` after the model calls
+        ``provider.reconfigure`` or its tool result after the model calls
         ``activate_skill``.
         """
         if self._delivery_mode == "inline_full":
@@ -162,15 +143,17 @@ class RealtimeSkillSupport:
 
     def init_session(self, session_id: str) -> None:
         """Initialize activation state for a new session."""
+        self.activation_locks[session_id] = asyncio.Lock()
         self._activated_skills[session_id] = set()
         self._activated_bodies[session_id] = []
 
     def cleanup_session(self, session_id: str) -> None:
         """Remove activation state when a session ends."""
+        self.activation_locks.pop(session_id, None)
         self._activated_skills.pop(session_id, None)
         self._activated_bodies.pop(session_id, None)
 
-    def activated_skills_prompt(self, session_id: str) -> str | None:
+    def activated_skills_prompt(self, session_id: str, pending: Skill | None = None) -> str | None:
         """Return concatenated bodies of skills activated in this session.
 
         Used by the channel's tool dispatcher: after activate_skill
@@ -182,7 +165,13 @@ class RealtimeSkillSupport:
         Returns ``None`` when no skills have been activated yet so the
         caller can decide whether a reconfigure is even needed.
         """
-        bodies = self._activated_bodies.get(session_id) or []
+        bodies = list(self._activated_bodies.get(session_id) or [])
+        if (
+            pending
+            and self._delivery_mode == "on_demand"
+            and pending.name not in self._activated_skills.get(session_id, set())
+        ):
+            bodies.append((pending.name, pending.instructions))
         if not bodies:
             return None
         sections = [
@@ -210,12 +199,12 @@ class RealtimeSkillSupport:
 
     # -- Tool gating --
 
-    def _gated_tool_names(self, session_id: str) -> set[str]:
+    def _gated_tool_names(self, session_id: str, pending: Skill | None = None) -> set[str]:
         """Collect tool names gated by skills not yet activated in this session."""
         activated = self._activated_skills.get(session_id, set())
         gated: set[str] = set()
         for meta in self._skills.all_metadata():
-            if meta.name in activated:
+            if meta.name in activated or (pending is not None and meta.name == pending.name):
                 continue
             gated.update(meta.gated_tool_names)
         return gated
@@ -243,10 +232,10 @@ class RealtimeSkillSupport:
         return bool(gated) and matches_any_pattern(name, gated)
 
     def get_visible_tools(
-        self, all_tools: list[dict[str, Any]], session_id: str
+        self, all_tools: list[dict[str, Any]], session_id: str, pending: Skill | None = None
     ) -> list[dict[str, Any]]:
         """Filter tool list, removing gated tools but keeping infra tools."""
-        gated = self._gated_tool_names(session_id)
+        gated = self._gated_tool_names(session_id, pending)
         if not gated:
             return all_tools
         return [
@@ -268,47 +257,71 @@ class RealtimeSkillSupport:
 
     # -- Internal handlers --
 
-    async def _handle_activate_skill(self, arguments: dict[str, Any], session_id: str) -> str:
-        """Acknowledge skill activation.
+    @property
+    def uses_tool_result(self) -> bool:
+        """Whether the provider must retain dynamically delivered bodies."""
+        return self._delivery_mode == "on_demand" and not self._reconfigure_capable
 
-        In ``on_demand`` mode, the body is buffered on
-        ``self._activated_bodies[session_id]`` so the channel's tool
-        dispatcher can fold it into ``system_instruction`` via
-        ``provider.reconfigure``. In ``inline_full`` mode the body is
-        already in the initial ``system_instruction`` — we only record
-        the activation so gated-tool resolution can include it.
-        """
+    def commit_activation(self, session_id: str, skill: Skill) -> None:
+        """Open gates only after delivery, never resurrecting a closed session."""
+        activated = self._activated_skills.get(session_id)
+        if activated is not None and skill.name not in activated:
+            activated.add(skill.name)
+            if self._delivery_mode == "on_demand":
+                self._activated_bodies[session_id].append((skill.name, skill.instructions))
+
+    async def prepare_activation(
+        self, arguments: dict[str, Any], session_id: str, tools: list[dict[str, Any]]
+    ) -> tuple[str, Skill | None]:
+        """Build an immutable delivery candidate from the authorized catalogue."""
         skill_name = arguments.get("name", "")
-        skill = self._skills.get_skill(skill_name)
+        skill = await asyncio.to_thread(self._skills.get_skill, skill_name)
         if skill is None:
             return json.dumps(
                 {
                     "error": missing_skill_error(self._skills, skill_name),
                     "available_skills": self._skills.skill_names,
                 }
-            )
+            ), None
+        catalogue = {tool["name"]: tool for tool in tools}
+        missing = [name for name in skill.metadata.required_tool_names if name not in catalogue]
+        if missing:
+            return json.dumps(
+                {"error": f"Required tools not available: {', '.join(missing)}"}
+            ), None
 
-        activated = self._activated_skills.get(session_id)
-        if activated is not None and skill_name not in activated:
-            activated.add(skill_name)
-            if self._delivery_mode == "on_demand":
-                bodies = self._activated_bodies.setdefault(session_id, [])
-                bodies.append((skill.name, skill.instructions))
-
-        if self._delivery_mode == "inline_full":
-            note = (
-                "Activation recorded. The skill's instructions are already "
-                "loaded in your system rules — follow them. Use other tools "
-                "to act; do NOT narrate tool calls without invoking them."
+        if self.uses_tool_result:
+            result = await asyncio.to_thread(activation_content, skill)
+            payload = json.loads(result)
+            payload["ok"] = True
+            payload["_note"] = (
+                "Follow these complete skill instructions for this session. "
+                "Use the required tool schemas below; tool names and actions are distinct."
             )
-        else:
-            note = (
-                "Skill instructions are now active in your system rules. "
-                "Follow them. Use other tools to act — do NOT narrate "
-                "tool calls without invoking them."
-            )
+            payload["required_tools"] = [
+                catalogue[name] for name in skill.metadata.required_tool_names
+            ]
+            if skill_name in self._activated_skills.get(session_id, set()):
+                payload["already_active"] = True
+            return json.dumps(payload), skill
 
-        return activation_ack(skill, note)
+        note = (
+            "The skill instructions are already loaded in your system rules. Follow them."
+            if self._delivery_mode == "inline_full"
+            else "Loading the skill instructions into your system rules before continuing."
+        )
+        result = await asyncio.to_thread(
+            activation_ack,
+            skill,
+            note,
+            already_active=skill_name in self._activated_skills.get(session_id, set()),
+        )
+        return result, skill
+
+    async def _handle_activate_skill(self, arguments: dict[str, Any], session_id: str) -> str:
+        """Prepare a result; the channel owns delivery and activation commit."""
+        result, _ = await self.prepare_activation(arguments, session_id, [])
+        return result
 
     async def _handle_read_reference(self, arguments: dict[str, Any]) -> str:
         """Read a reference file from a skill."""

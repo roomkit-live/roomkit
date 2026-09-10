@@ -18,6 +18,16 @@ _SCRIPTS_DIR = "scripts"
 _REFERENCES_DIR = "references"
 
 
+def parse_skill_requires(value: object) -> list[str]:
+    """Normalize exact tool names from CSV, YAML lists or stringified lists."""
+    if isinstance(value, list | tuple):
+        return [str(t).strip() for t in value if str(t).strip()]
+    if not isinstance(value, str):
+        return []
+    cleaned = value.strip().strip("[]")
+    return [t.strip().strip("'\"") for t in cleaned.split(",") if t.strip().strip("'\"")]
+
+
 @dataclass
 class SkillMetadata:
     """Lightweight metadata parsed from SKILL.md frontmatter."""
@@ -35,6 +45,15 @@ class SkillMetadata:
     """
 
     extra_metadata: dict[str, str] = field(default_factory=dict)
+
+    @property
+    def required_tool_names(self) -> list[str]:
+        """Exact prerequisite names from the optional ``requires`` metadata.
+
+        These describe dependencies, not grants. Applications resolve skill
+        availability against their authorized catalogue before using it.
+        """
+        return parse_skill_requires(self.extra_metadata.get("requires"))
 
     @property
     def gated_tool_names(self) -> list[str]:

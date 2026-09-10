@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Fixed-declaration realtime providers can deliver complete skill instructions,
+  reference inventories and authorized prerequisite schemas through activation
+  results. Gemini Live supports this with bounded sessions that preserve context:
+  no sliding-window compression and an explicit stop before reconnection.
+- `RealtimeVoiceProvider.supports_context_preservation` describes support for
+  `provider_config={"preserve_context": True}`. Unsupported fixed providers
+  reject on-demand skill delivery; existing delivery defaults remain unchanged.
+- A runnable Gemini skill example uses the canonical code-review skill and
+  captures its tool trace and spoken response.
+
+### Fixed
+
+- Skill gates open only after successful instruction delivery. Concurrent
+  native activations preserve both bodies; failed, cancelled or ended deliveries
+  cannot record activation. Fixed-provider gates use Tool Search even with a
+  small catalogue, and explicitly disabled incompatible discovery is rejected.
+- Skill infrastructure arguments pass the shared schema validation. Gemini
+  refuses tool-result submission without a live connection and invalidates
+  stale resumption handles when the server marks its context nonresumable.
+
 ## [0.67.0] — 2026-09-10
 
 ### Added

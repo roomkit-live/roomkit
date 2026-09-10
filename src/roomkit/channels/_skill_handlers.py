@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from typing import TYPE_CHECKING, Any
@@ -59,7 +60,7 @@ async def handle_activate_skill(
         activation in their own state store.
     """
     skill_name = arguments.get("name", "")
-    skill = skills.get_skill(skill_name)
+    skill = await asyncio.to_thread(skills.get_skill, skill_name)
     if skill is None:
         error_json = json.dumps(
             {
@@ -69,6 +70,11 @@ async def handle_activate_skill(
         )
         return error_json, skill_name
 
+    return await asyncio.to_thread(activation_content, skill), skill_name
+
+
+def activation_content(skill: Skill) -> str:
+    """Serialize full instructions and the file inventory without truncation."""
     payload: dict[str, Any] = {
         "name": skill.name,
         "description": skill.description,
@@ -80,7 +86,7 @@ async def handle_activate_skill(
     refs = skill.list_references()
     if refs:
         payload["references"] = refs
-    return json.dumps(payload), skill_name
+    return json.dumps(payload)
 
 
 async def handle_read_reference(
@@ -90,12 +96,12 @@ async def handle_read_reference(
     """Read a reference file from a skill."""
     skill_name = arguments.get("skill_name", "")
     filename = arguments.get("filename", "")
-    skill = skills.get_skill(skill_name)
+    skill = await asyncio.to_thread(skills.get_skill, skill_name)
     if skill is None:
         return json.dumps({"error": missing_skill_error(skills, skill_name)})
 
     try:
-        content = skill.read_reference(filename)
+        content = await asyncio.to_thread(skill.read_reference, filename)
         return json.dumps({"filename": filename, "content": content})
     except (ValueError, FileNotFoundError) as exc:
         return json.dumps({"error": str(exc)})

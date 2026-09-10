@@ -25,6 +25,10 @@ class FixedProvider(MockRealtimeProvider):
     def supports_mid_session_reconfigure(self) -> bool:
         return False
 
+    @property
+    def supports_context_preservation(self) -> bool:
+        return True
+
 
 def tool(name: str, description: str = "") -> dict[str, Any]:
     return {
@@ -219,7 +223,8 @@ async def test_integration_failure_is_returned_without_a_success() -> None:
         )
         assert result["error"] == "Internal error handling tool call"
         assert result["tool"] == "calendar"
-        assert "before retrying" in result["hint"]
+        assert "do not infer an integration outage" in result["hint"].lower()
+        assert "repeat a write automatically" in result["hint"]
         handler.assert_awaited_once()
 
 

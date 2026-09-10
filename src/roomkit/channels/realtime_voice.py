@@ -339,7 +339,10 @@ class RealtimeVoiceChannel(
                 skills,
                 script_executor,
                 delivery_mode=resolved_mode,
+                reconfigure_capable=provider.supports_mid_session_reconfigure,
             )
+            if self._skill_support.uses_tool_result and not provider.supports_context_preservation:
+                raise ValueError("on_demand skills require provider context preservation")
 
         # Tool Search support — only activates when the catalogue is large
         # enough to overflow the realtime model's reliable tool-selection
@@ -352,14 +355,22 @@ class RealtimeVoiceChannel(
         # carry execution through call_tool into the same channel dispatch.
         self._tool_search_support: RealtimeToolSearchSupport | None = None
         catalogue_size = len(tool_defs or [])
-        should_enable = tool_search is True or (
-            tool_search is None and catalogue_size > tool_search_threshold
+        fixed_skill_gates = bool(
+            self._skill_support
+            and skills is not None
+            and not provider.supports_mid_session_reconfigure
+            and any(meta.gated_tool_names for meta in skills.all_metadata())
         )
-        if should_enable and tool_defs:
+        if fixed_skill_gates and tool_search is False:
+            raise ValueError("Fixed-provider skill gates require Tool Search; tool_search=False")
+        should_enable = tool_search is True or (
+            tool_search is None and (catalogue_size > tool_search_threshold or fixed_skill_gates)
+        )
+        if should_enable and (tool_defs or fixed_skill_gates):
             from roomkit.channels._realtime_tool_search import RealtimeToolSearchSupport
 
             self._tool_search_support = RealtimeToolSearchSupport(
-                tool_defs,
+                tool_defs or [],
                 pinned=tool_search_pinned,
                 threshold=tool_search_threshold,
                 reconfigure_capable=provider.supports_mid_session_reconfigure,
@@ -1027,6 +1038,8 @@ class RealtimeVoiceChannel(
         tools = meta.get("tools", self._tools)
         temperature = meta.get("temperature", self._temperature)
         provider_config = meta.get("provider_config")
+        if self._skill_support and self._skill_support.uses_tool_result:
+            provider_config = {**(provider_config or {}), "preserve_context": True}
 
         # Cache the resolved base tool list (channel defaults + metadata
         # overrides) so skill activation can reconfigure without losing them.

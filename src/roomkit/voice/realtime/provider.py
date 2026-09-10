@@ -145,6 +145,18 @@ class RealtimeVoiceProvider(ABC):
         """
         return True
 
+    @property
+    def supports_context_preservation(self) -> bool:
+        """Whether ``provider_config={"preserve_context": True}`` is supported.
+
+        In this mode the provider must retain tool-delivered instructions
+        verbatim for the session: no compression, eviction, or reconnection
+        with uncertain history. It must end the session and emit an error
+        before continuing without that context. Provider duration limits
+        still apply; this does not promise an indefinitely long session.
+        """
+        return False
+
     @classmethod
     def available_voices(cls) -> list[VoiceInfo]:
         """Curated, offline catalog of voices this provider offers.

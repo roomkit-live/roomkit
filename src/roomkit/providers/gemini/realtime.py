@@ -381,10 +381,11 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
             config["tools"] = genai_tools
 
         # --- Session resilience ---
-        config["session_resumption"] = types.SessionResumptionConfig(handle=None)
-        config["context_window_compression"] = types.ContextWindowCompressionConfig(
-            sliding_window=types.SlidingWindow(),
-        )
+        if not pc.get("preserve_context"):
+            config["session_resumption"] = types.SessionResumptionConfig(handle=None)
+            config["context_window_compression"] = types.ContextWindowCompressionConfig(
+                sliding_window=types.SlidingWindow(),
+            )
 
         # Debug dump of what we're handing to Gemini Live. Gated on
         # ``ROOMKIT_GEMINI_DEBUG=1`` so prod logs stay clean. Useful
@@ -477,10 +478,12 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
                     voice_name = getattr(pre, "voice_name", "") or ""
         logger.info(
             "ROOMKIT_GEMINI_DEBUG: voice=%r temperature=%s response_modalities=%s "
-            "session_resumption=on context_window_compression=sliding",
+            "session_resumption=%s context_window_compression=%s",
             voice_name,
             config.get("temperature"),
             config.get("response_modalities"),
+            bool(config.get("session_resumption")),
+            bool(config.get("context_window_compression")),
         )
 
         # ── First tool's full cleaned schema (for paranoid review) ──
@@ -803,7 +806,7 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
         from google.genai import types
 
         if (state := self._get_active_state(session)) is None:
-            return
+            raise RuntimeError("Cannot deliver tool result without an active Gemini connection")
 
         # Track tool result bytes for debugging
         state.tool_result_bytes += len(result)
@@ -986,6 +989,9 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
         if state is None:
             return
 
+        if state.provider_config.get("preserve_context"):
+            raise ValueError("Reconfiguration is unavailable while preserving Gemini context")
+
         # Discard stale queued injections from the old configuration
         state.queued_text_injections.clear()
         state.queued_injections.clear()
@@ -1077,6 +1083,28 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
     #   1011 — internal error, used by Gemini for quota/billing exhaustion
     _NON_RETRYABLE_CLOSE_CODES = frozenset({1007, 1008, 1011})
 
+    @property
+    def supports_context_preservation(self) -> bool:
+        """Strict sessions disable compression and stop before reconnection."""
+        return True
+
+    async def _end_preserved_context(
+        self, session: VoiceSession, state: _GeminiSessionState
+    ) -> None:
+        state.audio_buffer.clear()
+        state.queued_text_injections.clear()
+        state.queued_injections.clear()
+        session.state = VoiceSessionState.ENDED
+        await self._fire(
+            self._error_callbacks,
+            session,
+            "context_preservation_ended",
+            "Voice session ended because its full instruction context could not be "
+            "preserved across a connection change. Start a new session; pending "
+            "operations have not been replayed.",
+            label="error",
+        )
+
     async def _receive_loop(self, session: VoiceSession) -> None:
         """Process server events from Gemini Live API.
 
@@ -1096,6 +1124,9 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
 
             # Handle reconnection if needed
             if state.live_session is None:
+                if state.provider_config.get("preserve_context"):
+                    await self._end_preserved_context(session, state)
+                    return
                 session.state = VoiceSessionState.CONNECTING
                 reconnect_count += 1
                 if reconnect_count > self._MAX_RECONNECTS:
@@ -1209,6 +1240,9 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
         state = self._sessions.get(session.id)
         if state is None or session.state == VoiceSessionState.ENDED:
             raise RuntimeError("No session state for reconnection")
+        if state.provider_config.get("preserve_context"):
+            await self._end_preserved_context(session, state)
+            raise RuntimeError("Cannot resume Gemini with uncertain context")
 
         # Suppress audio sends during reconnection
         session.state = VoiceSessionState.CONNECTING
@@ -1360,7 +1394,9 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
     async def _on_session_resumption(
         self, session: VoiceSession, state: _GeminiSessionState, update: Any
     ) -> None:
-        if update.resumable and update.new_handle:
+        if not update.resumable or state.provider_config.get("preserve_context"):
+            state.resumption_handle = None
+        elif update.new_handle:
             state.resumption_handle = update.new_handle
             logger.debug(
                 "Session resumption handle updated for %s (resumable=%s)",

@@ -9,6 +9,8 @@ import sys
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
 from roomkit.voice.base import VoiceSession, VoiceSessionState
 
 
@@ -839,7 +841,8 @@ class TestGeminiLiveProvider:
         mod = _load_provider()
         provider = mod.GeminiLiveProvider(api_key="test-key")
         session = _make_session()
-        await provider.submit_tool_result(session, "call-1", "result")
+        with pytest.raises(RuntimeError, match="active Gemini connection"):
+            await provider.submit_tool_result(session, "call-1", "result")
 
     # ── interrupt() ─────────────────────────────────────────────
 

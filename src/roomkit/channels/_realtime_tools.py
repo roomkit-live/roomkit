@@ -245,9 +245,7 @@ class RealtimeToolsMixin:
 
             # Skill infrastructure tools — handle internally
             if self._skill_support and self._skill_support.is_skill_tool(name):
-                result_str = await self._skill_support.handle_tool_call(
-                    name, arguments, session.id
-                )
+                result_str = await self._deliver_skill_call(session, call_id, name, arguments)
 
                 # Fire ON_TOOL_CALL hook observationally — the skill tool
                 # has already executed, but audit + UI-broadcast hooks
@@ -279,52 +277,6 @@ class RealtimeToolsMixin:
                             "ON_TOOL_CALL observation failed for skill tool %s",
                             name,
                             exc_info=True,
-                        )
-
-                # Submit the tool result FIRST — the model's pending
-                # function call is bound to the live WebSocket. A
-                # subsequent reconfigure tears that connection down and
-                # replaces it with a fresh ``live_session`` that has no
-                # record of ``call_id``, so the tool response would be
-                # lost and the model would hang forever waiting on it.
-                await self._submit_realtime_tool_result(session, call_id, result_str)
-
-                if name == TOOL_ACTIVATE_SKILL and self._provider.supports_mid_session_reconfigure:
-                    # On providers that can safely reconfigure mid-session
-                    # (e.g. Gemini 2.5, OpenAI Realtime), push the activated
-                    # skill's body into ``system_instruction`` so it lives as
-                    # binding rules. Skip when the provider cannot reconfigure
-                    # — the body must reach the model some other way (e.g. the
-                    # ``inline_full`` skill_delivery_mode that bakes every
-                    # skill into the initial system_instruction).
-                    #
-                    # CRITICAL: ``reconfigure`` rebuilds the provider's
-                    # session config from scratch — passing ``tools=None``
-                    # erases the tool surface. Always pass the current
-                    # visible tool list, even when it is unchanged.
-                    with self._state_lock:
-                        base_tools = self._session_tools.get(session.id, self._tools or [])
-                    all_tools = self._skill_support.skill_tool_dicts() + base_tools
-                    current_visible = self._skill_support.get_visible_tools(all_tools, session.id)
-                    addendum = self._skill_support.activated_skills_prompt(session.id)
-                    if addendum and self._system_prompt:
-                        new_prompt: str | None = f"{self._system_prompt}\n\n{addendum}"
-                    elif addendum:
-                        new_prompt = addendum
-                    else:
-                        new_prompt = None
-
-                    if (
-                        addendum is not None
-                        or self._skill_support.newly_visible_after_activation(
-                            all_tools, session.id, arguments.get("name", "")
-                        )
-                        is not None
-                    ):
-                        await self._provider.reconfigure(
-                            session,
-                            tools=current_visible,
-                            system_prompt=new_prompt,
                         )
 
                 telemetry.end_span(tool_span_id)
@@ -434,8 +386,8 @@ class RealtimeToolsMixin:
                             "error": "Internal error handling tool call",
                             "tool": name,
                             "hint": (
-                                "Execution failed. Check the tool's integration before "
-                                "retrying; do not report success."
+                                "The call did not complete successfully. Do not infer an "
+                                "integration outage or repeat a write automatically."
                             ),
                         }
                     ),
@@ -448,12 +400,59 @@ class RealtimeToolsMixin:
             if _rt_tok is not None:
                 reset_span(_rt_tok)
 
+    async def _deliver_skill_call(
+        self, session: VoiceSession, call_id: str, name: str, arguments: dict[str, Any]
+    ) -> str:
+        """Deliver a skill before committing activation or opening its gates."""
+        support = self._skill_support
+        if name != TOOL_ACTIVATE_SKILL:
+            result = await support.handle_tool_call(name, arguments, session.id)
+            await self._submit_realtime_tool_result(session, call_id, result)
+            return result
+        lock = support.activation_locks.get(session.id)
+        if lock is None:
+            return json.dumps({"error": "Session ended before skill activation"})
+        # Concurrent activations must not replace each other's system rules.
+        async with lock:
+            if session.state == VoiceSessionState.ENDED:
+                return json.dumps({"error": "Session ended before skill activation"})
+            with self._state_lock:
+                base_tools = self._session_tools.get(session.id, self._tools or [])
+            result, skill = await support.prepare_activation(arguments, session.id, base_tools)
+            # The call ID belongs to the current connection. Submit before
+            # native reconfiguration can replace that connection.
+            delivered = await self._submit_realtime_tool_result(session, call_id, result)
+            if not delivered or skill is None:
+                return result
+            if self._provider.supports_mid_session_reconfigure:
+                visible = base_tools
+                if self._tool_search_support:
+                    visible = self._tool_search_support.visible_tools(session.id, base_tools)
+                visible = support.get_visible_tools(
+                    support.skill_tool_dicts() + visible, session.id, skill
+                )
+                addendum = support.activated_skills_prompt(session.id, skill)
+                if addendum or skill.metadata.gated_tool_names:
+                    prompt = support.inject_skills_prompt(
+                        session.metadata.get("system_prompt", self._system_prompt)
+                    )
+                    if self._tool_search_support:
+                        prompt += "\n\n" + self._tool_search_support.preamble
+                    if addendum:
+                        prompt += "\n\n" + addendum
+                    await self._provider.reconfigure(session, tools=visible, system_prompt=prompt)
+            if session.state != VoiceSessionState.ENDED:
+                support.commit_activation(session.id, skill)
+            return result
+
     async def _submit_realtime_tool_result(
         self, session: VoiceSession, call_id: str, result: str
-    ) -> None:
-        """Keep every dispatch branch from answering an ended session."""
-        if session.state != VoiceSessionState.ENDED:
-            await self._provider.submit_tool_result(session, call_id, result)
+    ) -> bool:
+        """Confirm delivery only while the session remains live."""
+        if session.state == VoiceSessionState.ENDED:
+            return False
+        await self._provider.submit_tool_result(session, call_id, result)
+        return session.state != VoiceSessionState.ENDED
 
     def _tool_parameters(self, name: str, session: VoiceSession) -> dict[str, Any] | None:
         """Return the declared ``parameters`` schema for realtime tool *name*.
@@ -462,6 +461,11 @@ class RealtimeToolsMixin:
         """
         if self._tool_search_support and self._tool_search_support.is_search_tool(name):
             for tool in self._tool_search_support.search_tool_dicts():
+                if tool["name"] == name:
+                    params = tool.get("parameters")
+                    return params if isinstance(params, dict) else None
+        if self._skill_support and self._skill_support.is_skill_tool(name):
+            for tool in self._skill_support.skill_tool_dicts():
                 if tool["name"] == name:
                     params = tool.get("parameters")
                     return params if isinstance(params, dict) else None
