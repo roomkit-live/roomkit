@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.69.0] — 2026-09-10
+
 ### Added
 
 - `InboundResult.response_events` identifies the persisted responses belonging
