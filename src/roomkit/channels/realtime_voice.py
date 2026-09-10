@@ -325,7 +325,7 @@ class RealtimeVoiceChannel(
         # initial system_instruction. Others default to ``on_demand`` so
         # the prompt stays short until a skill is activated.
         self._skill_support: RealtimeSkillSupport | None = None
-        if skills and skills.skill_count > 0:
+        if skills and (skills.skill_count > 0 or skills.unavailable_skills):
             from roomkit.channels._realtime_skills import RealtimeSkillSupport
 
             if skill_delivery_mode is None:

@@ -68,6 +68,46 @@ def transport() -> MockRealtimeTransport:
 
 
 class TestSkillsPromptInjection:
+    @pytest.mark.parametrize("delivery_mode", ["inline_full", "on_demand"])
+    async def test_unavailable_only_registry_explains_activation_refusal(
+        self,
+        tmp_path: Path,
+        provider: MockRealtimeProvider,
+        transport: MockRealtimeTransport,
+        delivery_mode: str,
+    ) -> None:
+        registry = _registry_with_skill(tmp_path, body="Instructions requiring access.")
+        provider.reconfigure = AsyncMock()  # type: ignore[method-assign]
+        reason = "requires tool(s) not available in this context: calendar"
+        registry.mark_unavailable("test-skill", reason)
+        channel = RealtimeVoiceChannel(
+            "rt-unavailable",
+            provider=provider,
+            transport=transport,
+            skills=registry,
+            skill_delivery_mode=delivery_mode,
+        )
+        kit = RoomKit()
+        kit.register_channel(channel)
+        room = await kit.create_room()
+        await kit.attach_channel(room.id, channel.channel_id)
+        try:
+            session = await channel.start_session(room.id, "user-1", "fake-ws")
+            connect = next(call for call in provider.calls if call.method == "connect")
+            assert reason in connect.args["system_prompt"]
+            assert "Instructions requiring access." not in connect.args["system_prompt"]
+            assert "activate_skill" in {tool["name"] for tool in connect.args["tools"]}
+            await provider.simulate_tool_call(
+                session, "activation", "activate_skill", {"name": "test-skill"}
+            )
+            await asyncio.wait_for(asyncio.gather(*list(channel._scheduled_tasks)), 5)
+            result = json.loads(provider.tool_results[-1][2])
+            assert reason in result["error"]
+            assert not result.get("ok")
+            provider.reconfigure.assert_not_awaited()
+        finally:
+            await kit.close()
+
     async def test_system_prompt_includes_skills_preamble(
         self,
         tmp_path: Path,
