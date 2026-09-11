@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Cancelling an awaited `process_inbound()` now cancels and drains its own
+  delivery cascade, including running tools and streams, before returning.
+  Shared rooms and providers remain usable, and the next turn can resume
+  after cleanup. Deferred callers can use `await result.delivery.cancel()`;
+  `cancellation_reason` records the terminal outcome. Cleanup timeouts report
+  incomplete drainage instead of allowing premature resource disposal (RMK-172).
+
 ## [0.70.0] — 2026-09-11
 
 ### Added

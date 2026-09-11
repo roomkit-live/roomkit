@@ -173,3 +173,33 @@ async def test_deferred_cancellation_retains_persisted_response_events() -> None
         assert await kit.store.get_event(result.response_events[0].id) == result.response_events[0]
     finally:
         await kit.close()
+
+
+async def test_transport_failure_closes_stream_before_returning() -> None:
+    class FailingTransport(_StreamingTransport):
+        async def deliver_stream(
+            self,
+            text_stream: AsyncIterator[Any],
+            event: RoomEvent,
+            binding: ChannelBinding,
+            context: RoomContext,
+        ) -> ChannelOutput:
+            await anext(text_stream)
+            raise RuntimeError("rendering failed")
+
+    kit = RoomKit()
+    ai = AIChannel("ai", provider=_SlowStreamProvider())
+    kit.register_channel(FailingTransport("cli"))
+    kit.register_channel(ai)
+    await kit.create_room(room_id="room")
+    await kit.attach_channel("room", "cli")
+    await kit.attach_channel("room", "ai", category=ChannelCategory.INTELLIGENCE)
+    try:
+        result = await kit.process_inbound(
+            InboundMessage(channel_id="cli", sender_id="user", content=TextContent(body="go")),
+            room_id="room",
+        )
+        assert str(result.error) == "rendering failed"
+        assert ai.active_turns == 0
+    finally:
+        await kit.close()

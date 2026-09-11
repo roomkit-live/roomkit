@@ -30,7 +30,9 @@ import asyncio
 import contextlib
 import contextvars
 import logging
+import math
 from collections import deque
+from collections.abc import Coroutine
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
@@ -141,6 +143,8 @@ class DeliveryCascade:
         "response_events",
         "room_id",
         "streams",
+        "_tasks",
+        "_cleanup_task",
     )
 
     def __init__(self, room_id: str, *, reentry_budget: int) -> None:
@@ -167,6 +171,83 @@ class DeliveryCascade:
         # whose deliveries belong to its own result, and merging them here
         # would collide on any channel both passes reached.
         self.delivery_results: dict[str, Any] = {}
+        self._tasks: set[asyncio.Task[Any]] = set()
+        self._cleanup_task: asyncio.Task[None] | None = None
+
+    @property
+    def drained(self) -> bool:
+        """No owned execution or stream consumer is still unwinding."""
+        return all(task.done() for task in self._tasks) and (
+            self._cleanup_task is None or self._cleanup_task.done()
+        )
+
+    def track(self, task: asyncio.Task[Any]) -> None:
+        """Own a task before it can start; cancellation is sent only once."""
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
+        if self.cancelled is not None:
+            task.cancel()
+
+    async def run[T](self, work: Coroutine[Any, Any, T]) -> T:
+        """Execute owned work without giving its waiter cancellation ownership."""
+        if self.cancelled is not None:
+            work.close()
+            raise asyncio.CancelledError
+        task = asyncio.create_task(work)
+        self.track(task)
+        try:
+            return await asyncio.shield(task)
+        except asyncio.CancelledError:
+            # The lane itself can also be stopped by framework shutdown.
+            # Leave its child no more cancellation-resistant than before.
+            if not task.done() and not task.cancelling():
+                task.cancel()
+            raise
+
+    async def wait_drained(self) -> None:
+        """Join running work, including its asynchronous finalizers."""
+        while pending := {task for task in self._tasks if not task.done()}:
+            await asyncio.wait(pending)
+        if self._cleanup_task is not None:
+            await asyncio.shield(self._cleanup_task)
+
+    async def _cleanup(self) -> None:
+        while pending := {task for task in self._tasks if not task.done()}:
+            await asyncio.wait(pending)
+        # Also close streams whose consumer was cancelled before its first
+        # step. No generator is closed concurrently with its running task.
+        for response in self.streams:
+            close = getattr(response.stream, "aclose", None)
+            if close is not None:
+                await close()
+
+    async def cancel_and_wait(self, reason: str, timeout: float = 5.0) -> None:
+        """Request cancellation once and join cleanup within one fixed budget.
+
+        Repeated cancellation of the waiting task never interrupts the owned
+        finalizers. An expiry reports incomplete cleanup; it does not release
+        resources or claim that the turn is safe to dispose.
+        """
+        if not math.isfinite(timeout) or timeout < 0:
+            raise ValueError("timeout must be finite and non-negative")
+        if self.waiter_would_deadlock():
+            raise RuntimeError("Cannot drain delivery from its lane or room lock")
+        self.cancel(reason)
+        deadline = asyncio.get_running_loop().time() + timeout
+        interrupted = False
+        assert self._cleanup_task is not None
+        while not self._cleanup_task.done():
+            remaining = max(0.0, deadline - asyncio.get_running_loop().time())
+            try:
+                _, pending = await asyncio.wait({self._cleanup_task}, timeout=remaining)
+            except asyncio.CancelledError:
+                interrupted = True
+                continue
+            if pending:
+                raise TimeoutError(f"Delivery cleanup incomplete for room {self.room_id}")
+        self._cleanup_task.result()
+        if interrupted:
+            raise asyncio.CancelledError
 
     def retain(self) -> None:
         """Account one pending unit. Call before any await can fail."""
@@ -196,8 +277,18 @@ class DeliveryCascade:
 
     def cancel(self, reason: str) -> None:
         """Abort the cascade: wake every waiter, keep the reason."""
+        if self.cancelled is not None:
+            return
         self.cancelled = reason
+        for task in self._tasks:
+            if not task.done() and not task.cancelling():
+                task.cancel()
         self._done.set()
+        self._cleanup_task = asyncio.create_task(
+            self._cleanup(),
+            context=contextvars.Context(),
+            name=f"roomkit-delivery-cleanup-{self.room_id}",
+        )
 
     async def wait(self) -> bool:
         """Wait for the cascade to complete.
@@ -621,7 +712,13 @@ class RoomDeliveryLane:
         """
         run = _Executed(entry)
         executed.append(run)
-        run.result = await self._execute(entry)
+        try:
+            run.result = await entry.cascade.run(self._execute(entry))
+        except asyncio.CancelledError:
+            if entry.cascade.cancelled is None:
+                raise
+            # Still consume the committed index; cancellation must not leave
+            # a cursor hole or stop another cascade in the same lane.
 
     async def _execute(self, entry: ExecEntry) -> Any:
         """Run one plan's delivery set; a failure is recorded, never raised.
@@ -652,16 +749,12 @@ class RoomDeliveryLane:
         parent — would be trace roots instead of children of the inbound or
         send_event span that started the turn.
         """
-        plan = entry.plan
         try:
-            if result is not None:
-                with restored_span(plan.parent_span_id, telemetry_ctx=plan.parent_span_ctx):
-                    await self._host._post_plan_effects(plan, result, entry.cascade)
-                    await self._host._reentry_commit_pass(
-                        self.room_id, plan, result, entry.cascade
-                    )
+            if result is not None and entry.cascade.cancelled is None:
+                await entry.cascade.run(self._finish_effects(entry, result))
         except asyncio.CancelledError:
-            raise
+            if entry.cascade.cancelled is None:
+                raise
         except Exception as exc:
             # Post-plan effects include a real write (side-effect persistence):
             # the failure must reach the caller, not just the log.
@@ -669,6 +762,13 @@ class RoomDeliveryLane:
             entry.cascade.record_error(exc)
         finally:
             entry.cascade.release()
+
+    async def _finish_effects(self, entry: ExecEntry, result: Any) -> None:
+        plan = entry.plan
+        with restored_span(plan.parent_span_id, telemetry_ctx=plan.parent_span_ctx):
+            await self._host._post_plan_effects(plan, result, entry.cascade)
+            if entry.cascade.cancelled is None:
+                await self._host._reentry_commit_pass(self.room_id, plan, result, entry.cascade)
 
 
 class RoomLaneRegistry:

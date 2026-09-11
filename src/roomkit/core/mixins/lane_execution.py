@@ -410,7 +410,10 @@ class LaneExecutionMixin(HelpersMixin):
                 # to its caller — record it so a DeliveryHandle surfaces it.
                 try:
                     stream_error, record = await self._process_streaming_responses(
-                        cascade.streams, room_id, response_events=cascade.response_events
+                        cascade.streams,
+                        room_id,
+                        response_events=cascade.response_events,
+                        cascade=cascade,
                     )
                 except Exception as exc:
                     logger.exception("Detached stream consumption failed for room %s", room_id)
@@ -453,6 +456,7 @@ class LaneExecutionMixin(HelpersMixin):
             name=f"roomkit-detached-streams-{room_id}",
             context=contextvars.Context(),
         )
+        cascade.track(task)
         task.add_done_callback(_end_tail)
         task.add_done_callback(self._pending_hook_tasks.discard)
         self._pending_hook_tasks.add(task)

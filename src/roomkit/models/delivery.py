@@ -25,6 +25,14 @@ if TYPE_CHECKING:
         error: Exception | None
         response_metadata: ResponseMetadata
         response_events: list[RoomEvent]
+        cancelled: str | None
+
+        @property
+        def drained(self) -> bool: ...
+
+        async def cancel_and_wait(self, reason: str, timeout: float = 5.0) -> None: ...
+
+        async def wait_drained(self) -> None: ...
 
         def waiter_would_deadlock(self) -> bool: ...
 
@@ -126,14 +134,33 @@ class DeliveryHandle:
         "nothing more will happen", not "everything ran". ``wait()``'s
         backfill is where the two read differently.
         """
-        return self._consumer.done()
+        return self._consumer.done() and self._cascade.drained
+
+    async def cancel(
+        self, *, reason: str = "caller_cancelled", timeout: float = 5.0
+    ) -> InboundResult:
+        """Cancel this turn and drain its tools, generation and streams.
+
+        Returns the original result with ``cancellation_reason`` set. Already
+        committed events remain stored. Other turns and shared providers are
+        unaffected. Repeated calls are safe and preserve the first reason.
+
+        ``TimeoutError`` means cleanup is STILL running: retain the resources
+        it uses and await this handle before disposing them. Cancellation of
+        this call is propagated only after cleanup (or its timeout). Calling
+        from the room's lane or under its lock raises ``RuntimeError``.
+        A completed handle is returned unchanged.
+        """
+        if not self.done:
+            await self._cascade.cancel_and_wait(reason, timeout)
+        return await self.wait()
 
     async def wait(self) -> InboundResult:
         """Wait for the deferred delivery to complete, then report it.
 
         Backfills ``delivery_results``, ``error`` and ``response_metadata`` on
         the result this handle belongs to — after this the result reads exactly
-        like a non-deferred call's — and returns that result. Never raises: a
+        like a non-deferred call's — and returns that result. A
         consumer cancelled by ``close()`` resolves the wait too, with whatever
         the cascade recorded by then.
 
@@ -147,11 +174,14 @@ class DeliveryHandle:
         if not self._consumer.done() and self._cascade.waiter_would_deadlock():
             return self._result
         await asyncio.wait({self._consumer})
+        if self._cascade.cancelled is not None:
+            await self._cascade.wait_drained()
         self._result.delivery_results = self._cascade.delivery_results
         self._result.response_metadata.update(self._cascade.response_metadata)
         self._result.response_events = list(self._cascade.response_events)
         if self._result.error is None:
             self._result.error = self._cascade.error
+        self._result.cancellation_reason = self._cascade.cancelled
         return self._result
 
 
@@ -177,6 +207,12 @@ class InboundResult(BaseModel):
     blocked: bool = False
     reason: str | None = None
     error: Exception | None = None
+    cancellation_reason: str | None = None
+    """Terminal delivery cancellation reason; never changes the committed event.
+
+    Backfilled by a deferred handle's ``wait()`` or ``cancel()`` after cleanup.
+    An awaited ``process_inbound`` propagates ``CancelledError`` after draining.
+    """
     response_metadata: ResponseMetadata = Field(default_factory=ResponseMetadata)
     """The turn's response-metadata record; empty when no turn ran."""
 
