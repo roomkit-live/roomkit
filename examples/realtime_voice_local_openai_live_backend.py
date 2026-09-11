@@ -30,6 +30,8 @@ Environment variables:
     OPENAI_LIVE_VOICE   Voice (default: cedar). Others: quartz, ripple, vesper,
                         willow, stone, gleam, meridian, delta, cinder, beacon,
                         bossa, tempo (fixed for the session)
+    SYSTEM_PROMPT       Custom instructions for the live model (write them in the
+                        user's language to pin the spoken language)
     SPOKEN_PROGRESS     1 (default) to voice the backend's intermediate steps
     AEC                 webrtc (default) | speex | 0 to disable
     DENOISE             webrtc (default) | rnnoise | sherpa | 0 to disable
@@ -76,6 +78,7 @@ logger = setup_logging("realtime_voice_local_openai_live_backend")
 FRONTEND_INSTRUCTIONS = """You are a friendly, concise voice assistant. Speak warmly and
 naturally, at an unhurried pace, one or two sentences at a time, and let the
 user finish before responding. Be clear and direct, not overly cheerful.
+Speak the language the user speaks, and keep to it.
 
 Answer simple conversational questions directly. Delegate anything about the
 user's flights or bookings — checking one, changing one, finding another. The
@@ -88,7 +91,8 @@ Stop speaking when the user interrupts and listen to the new request."""
 BACKEND_INSTRUCTIONS = """You are the backend of a voice assistant. Each message you receive
 is the recent voice conversation between the user and the assistant, as a
 transcript. Work out what is being asked and do it. The transcript may contain
-transcription errors; use the most likely intent.
+transcription errors; use the most likely intent. Answer in the language the
+user speaks.
 
 Rebooking runs in steps: check the flight, find what else flies that route,
 then book a seat on the earliest one that has them. Each step needs the one
@@ -213,7 +217,7 @@ async def main() -> None:
         "voice",
         provider=provider,
         transport=transport,
-        system_prompt=FRONTEND_INSTRUCTIONS,
+        system_prompt=os.environ.get("SYSTEM_PROMPT", FRONTEND_INSTRUCTIONS),
         voice=os.environ.get("OPENAI_LIVE_VOICE", "cedar"),
         tools=TOOLS,
         tool_handler=handle_tool,
