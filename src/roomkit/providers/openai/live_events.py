@@ -192,17 +192,22 @@ def history_items(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """
     items: list[dict[str, Any]] = []
     for message in history:
-        role = message.get("role")
+        shape = _HISTORY_ROLES.get(str(message.get("role")))
         text = message.get("text") or message.get("content")
-        if not isinstance(text, str) or not text.strip():
+        if shape is None or not isinstance(text, str) or not text.strip():
             continue
-        if role in ("system", "developer"):
-            items.append(_input_item("developer", "input_text", text))
-        elif role == "user":
-            items.append(_input_item("user", "input_text", text))
-        elif role == "assistant":
-            items.append(_input_item("assistant", "output_text", text))
+        wire_role, content_type = shape
+        items.append(_input_item(wire_role, content_type, text))
     return items[-MAX_INPUT_ITEMS:]
+
+
+# Message role → (wire role, content type) for the startup history.
+_HISTORY_ROLES: dict[str, tuple[str, str]] = {
+    "system": ("developer", "input_text"),
+    "developer": ("developer", "input_text"),
+    "user": ("user", "input_text"),
+    "assistant": ("assistant", "output_text"),
+}
 
 
 def _input_item(role: str, content_type: str, text: str) -> dict[str, Any]:

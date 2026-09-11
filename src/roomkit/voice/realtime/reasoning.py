@@ -25,9 +25,11 @@ from typing import TYPE_CHECKING, Any, Literal
 from roomkit.providers.ai.base import (
     AIContext,
     AIMessage,
+    AIResponse,
     AITextPart,
     AIThinkingPart,
     AITool,
+    AIToolCall,
     AIToolCallPart,
     AIToolResultPart,
 )
@@ -210,51 +212,60 @@ class AIProviderReasoningBackend(ReasoningBackend):
             if isinstance(t, dict) and t.get("name")
         ]
 
-        for round_idx in range(self._max_tool_rounds + 1):
-            context = AIContext(
-                messages=list(history),
-                system_prompt=self._system_prompt,
-                tools=tools,
+        response = await self._generate(history, tools)
+        for _ in range(self._max_tool_rounds):
+            if not response.tool_calls:
+                break
+            progress = self._record_tool_round(history, response)
+            if progress:
+                yield ReasoningOutput(text=progress, spoken=self._spoken_progress, is_final=False)
+            await self._run_tools(request, history, response.tool_calls)
+            response = await self._generate(history, tools)
+
+        if response.tool_calls:
+            logger.warning(
+                "Reasoning backend hit the %d-round tool cap for delegation %s",
+                self._max_tool_rounds,
+                request.delegation_id,
             )
-            if self._temperature is not None:
-                context.temperature = self._temperature
-            response = await self._provider.generate(context)
-            text = (response.content or "").strip()
+        text = (response.content or "").strip()
+        history.append(AIMessage(role="assistant", content=text or "(no answer)"))
+        if text:
+            yield ReasoningOutput(text=text, spoken=True, is_final=True)
 
-            if not response.tool_calls or round_idx == self._max_tool_rounds:
-                if response.tool_calls:
-                    logger.warning(
-                        "Reasoning backend hit the %d-round tool cap for delegation %s",
-                        self._max_tool_rounds,
-                        request.delegation_id,
-                    )
-                history.append(AIMessage(role="assistant", content=text or "(no answer)"))
-                if text:
-                    yield ReasoningOutput(text=text, spoken=True, is_final=True)
-                return
+    async def _generate(self, history: list[AIMessage], tools: list[AITool]) -> AIResponse:
+        context = AIContext(messages=list(history), system_prompt=self._system_prompt, tools=tools)
+        if self._temperature is not None:
+            context.temperature = self._temperature
+        return await self._provider.generate(context)
 
-            parts: list[Any] = []
-            if response.thinking:
-                parts.append(
-                    AIThinkingPart(
-                        thinking=response.thinking, signature=response.thinking_signature
-                    )
-                )
-            if text:
-                parts.append(AITextPart(text=text))
-            parts.extend(
-                AIToolCallPart(id=tc.id, name=tc.name, arguments=tc.arguments)
-                for tc in response.tool_calls
+    @staticmethod
+    def _record_tool_round(history: list[AIMessage], response: AIResponse) -> str:
+        """Append the assistant's tool-calling turn to the history; return its text."""
+        text = (response.content or "").strip()
+        parts: list[Any] = []
+        if response.thinking:
+            parts.append(
+                AIThinkingPart(thinking=response.thinking, signature=response.thinking_signature)
             )
-            history.append(AIMessage(role="assistant", content=parts))
-            if text:
-                yield ReasoningOutput(text=text, spoken=self._spoken_progress, is_final=False)
+        if text:
+            parts.append(AITextPart(text=text))
+        parts.extend(
+            AIToolCallPart(id=tc.id, name=tc.name, arguments=tc.arguments)
+            for tc in response.tool_calls
+        )
+        history.append(AIMessage(role="assistant", content=parts))
+        return text
 
-            results: list[Any] = []
-            for tc in response.tool_calls:
-                result = await self._execute(request, tc.name, tc.arguments)
-                results.append(AIToolResultPart(tool_call_id=tc.id, name=tc.name, result=result))
-            history.append(AIMessage(role="tool", content=results))
+    async def _run_tools(
+        self, request: ReasoningRequest, history: list[AIMessage], calls: list[AIToolCall]
+    ) -> None:
+        """Execute one round of tool calls through the channel gate; record the results."""
+        results: list[Any] = []
+        for tc in calls:
+            result = await self._execute(request, tc.name, tc.arguments)
+            results.append(AIToolResultPart(tool_call_id=tc.id, name=tc.name, result=result))
+        history.append(AIMessage(role="tool", content=results))
 
     async def _execute(
         self, request: ReasoningRequest, name: str, arguments: dict[str, Any]

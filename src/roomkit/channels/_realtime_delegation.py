@@ -20,10 +20,7 @@ import threading
 from typing import TYPE_CHECKING, Any, Literal, Protocol
 from uuid import uuid4
 
-from roomkit.channels._realtime_context import _current_voice_session
-from roomkit.channels._realtime_tools import result_text
-from roomkit.models.enums import ChannelType, HookTrigger
-from roomkit.models.tool_call import ToolCallEvent
+from roomkit.models.enums import HookTrigger
 from roomkit.telemetry.base import Attr, SpanKind
 from roomkit.telemetry.context import reset_span
 from roomkit.voice.base import VoiceSession, VoiceSessionState
@@ -59,13 +56,11 @@ class RealtimeDelegationHost(Protocol):
             previous delegation.
         _delegated_before: Sessions that already served a delegation.
         _pending_delegations: Delegation ids still running, per session.
-        _tool_handler: The channel's tool handler, or None.
-        _tool_result_max_length: Cap on a tool result's length.
         channel_id: The channel identifier.
 
     Cross-mixin methods (implemented elsewhere in the MRO):
         _track_task, _rt_span_ctx, _update_idle_event, _telemetry_provider,
-        _authorize_realtime_tool, _fire_tool_hook, _truncate_tool_result.
+        _authorize_realtime_tool, _serve_gated_tool_call.
     """
 
     _state_lock: threading.Lock
@@ -79,8 +74,6 @@ class RealtimeDelegationHost(Protocol):
     _transcript_ledger: dict[str, list[list[str]]]
     _delegated_before: set[str]
     _pending_delegations: dict[str, set[str]]
-    _tool_handler: Any
-    _tool_result_max_length: int
     channel_id: str
 
     def _track_task(self, loop: Any, coro: Any, *, name: str) -> Any: ...
@@ -107,8 +100,6 @@ class RealtimeDelegationMixin:
     _transcript_ledger: dict[str, list[list[str]]]
     _delegated_before: set[str]
     _pending_delegations: dict[str, set[str]]
-    _tool_handler: Any
-    _tool_result_max_length: int
     channel_id: str
 
     _track_task: Any  # see RealtimeDelegationHost — cross-mixin
@@ -116,8 +107,7 @@ class RealtimeDelegationMixin:
     _update_idle_event: Any  # see RealtimeDelegationHost — cross-mixin
     _telemetry_provider: Any  # see RealtimeDelegationHost — cross-mixin
     _authorize_realtime_tool: Any  # see RealtimeToolsMixin
-    _fire_tool_hook: Any  # see RealtimeToolsMixin
-    _truncate_tool_result: Any  # see RealtimeToolsMixin
+    _serve_gated_tool_call: Any  # see RealtimeToolsMixin
 
     # -----------------------------------------------------------------
     # Transcript ledger
@@ -342,9 +332,9 @@ class RealtimeDelegationMixin:
         """Run a backend's tool call as the framework runs any realtime tool call.
 
         Same gate (declared catalogue, argument schema, skill gating,
-        ``BEFORE_TOOL_USE``), same handler, same ``ON_TOOL_CALL`` observation
-        and truncation; the one difference is where the result goes — back to
-        the backend model, not to the provider (RFC §12.4.1).
+        ``BEFORE_TOOL_USE``), then the same serving path as any realtime tool
+        call; the one difference is where the result goes — back to the
+        backend model, not to the provider (RFC §12.4.1).
         """
         if session.state == VoiceSessionState.ENDED:
             return json.dumps({"error": "The session has ended."})
@@ -380,36 +370,9 @@ class RealtimeDelegationMixin:
                 telemetry.end_span(span_id)
                 return denial
 
-            handler_result: str | None = None
-            if self._tool_handler is not None:
-                token = _current_voice_session.set(session)
-                try:
-                    raw = await self._tool_handler(name, arguments)
-                finally:
-                    _current_voice_session.reset(token)
-                handler_result = result_text(raw)
-
-            if self._framework is not None and room_id:
-                tool_event = ToolCallEvent(
-                    channel_id=self.channel_id,
-                    channel_type=ChannelType.REALTIME_VOICE,
-                    tool_call_id=call_id,
-                    name=name,
-                    arguments=arguments,
-                    result=handler_result,
-                    room_id=room_id,
-                    session=session,
-                )
-                result_str: str = await self._fire_tool_hook(
-                    tool_event, room_id, handler_result, name, call_id, session, gate_context
-                )
-            elif handler_result is not None:
-                result_str = handler_result
-            else:
-                result_str = json.dumps({"error": f"No handler for tool {name}"})
-
-            if len(result_str) > self._tool_result_max_length:
-                result_str = self._truncate_tool_result(result_str, name, call_id, session.id)
+            result_str = await self._serve_gated_tool_call(
+                session, call_id, name, arguments, room_id, gate_context
+            )
             telemetry.end_span(span_id)
             logger.info(
                 "Backend tool %s handled (delegation %s, session %s)",

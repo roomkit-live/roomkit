@@ -327,79 +327,9 @@ class RealtimeToolsMixin:
                 )
                 return
 
-            # Run tool_handler (if exists).
-            handler_result: str | None = None
-            if self._tool_handler is not None:
-                logger.info(
-                    "Executing tool %s(%s) via handler for session %s",
-                    name,
-                    call_id,
-                    session.id,
-                )
-                from roomkit.channels._realtime_context import _current_voice_session
-
-                t_seg = time.perf_counter()
-                token = _current_voice_session.set(session)
-                try:
-                    raw = await self._tool_handler(name, arguments)
-                finally:
-                    _current_voice_session.reset(token)
-                logger.debug(
-                    "tool %s handler segment: %.0fms wall",
-                    name,
-                    (time.perf_counter() - t_seg) * 1000,
-                )
-
-                t_seg = time.perf_counter()
-                handler_result = result_text(raw)
-                ser_s = time.perf_counter() - t_seg
-                if ser_s > _LOOP_SEGMENT_BUDGET_S:
-                    # Pure sync CPU (wall == loop hold), and it runs on the
-                    # FULL result before truncation caps it.
-                    logger.warning(
-                        "Tool %s result serialization held the event loop for "
-                        "%.0fms (%d chars, budget ~%.0fms) — concurrent "
-                        "realtime audio may underrun; return a string or a "
-                        "compact reference instead of a large object",
-                        name,
-                        ser_s * 1000,
-                        len(handler_result),
-                        _LOOP_SEGMENT_BUDGET_S * 1000,
-                    )
-                # Yield so realtime pacing gets a slot between the handler
-                # segment and hook dispatch — sync hooks run inline next and
-                # would otherwise fuse with this segment into one loop step.
-                await asyncio.sleep(0)
-
-            # Run ON_TOOL_CALL hook (if framework + room).
-            from roomkit.models.tool_call import ToolCallEvent
-
-            tool_event = ToolCallEvent(
-                channel_id=self.channel_id,
-                channel_type=ChannelType.REALTIME_VOICE,
-                tool_call_id=call_id,
-                name=name,
-                arguments=arguments,
-                result=handler_result,
-                room_id=room_id,
-                session=session,
+            result_str = await self._serve_gated_tool_call(
+                session, call_id, name, arguments, room_id, gate_context
             )
-
-            if self._framework and room_id:
-                result_str = await self._fire_tool_hook(
-                    tool_event, room_id, handler_result, name, call_id, session, gate_context
-                )
-                # Same reason as the post-handler yield: don't fuse hook
-                # dispatch with submission into one loop step.
-                await asyncio.sleep(0)
-            elif handler_result is not None:
-                result_str = handler_result
-            else:
-                result_str = json.dumps({"error": f"No handler for tool {name}"})
-
-            if len(result_str) > self._tool_result_max_length:
-                result_str = self._truncate_tool_result(result_str, name, call_id, session.id)
-
             await self._submit_realtime_tool_result(session, call_id, result_str)
 
             telemetry.end_span(tool_span_id)
@@ -438,6 +368,96 @@ class RealtimeToolsMixin:
                 self._transport.set_input_muted(session, False)
             if _rt_tok is not None:
                 reset_span(_rt_tok)
+
+    async def _serve_gated_tool_call(
+        self,
+        session: VoiceSession,
+        call_id: str,
+        name: str,
+        arguments: dict[str, Any],
+        room_id: str | None,
+        gate_context: RoomContext | None,
+    ) -> str:
+        """Serve a tool call that already passed the pre-execution gate.
+
+        Runs the channel's ``tool_handler`` if there is one, fires
+        ``ON_TOOL_CALL`` (which may observe or override the result), and caps
+        the result length. Shared by the provider's own tool calls and by a
+        reasoning backend's (RFC §12.4.1), which differ only in where the
+        result then goes.
+        """
+        handler_result: str | None = None
+        if self._tool_handler is not None:
+            logger.info(
+                "Executing tool %s(%s) via handler for session %s",
+                name,
+                call_id,
+                session.id,
+            )
+            from roomkit.channels._realtime_context import _current_voice_session
+
+            t_seg = time.perf_counter()
+            token = _current_voice_session.set(session)
+            try:
+                raw = await self._tool_handler(name, arguments)
+            finally:
+                _current_voice_session.reset(token)
+            logger.debug(
+                "tool %s handler segment: %.0fms wall",
+                name,
+                (time.perf_counter() - t_seg) * 1000,
+            )
+
+            t_seg = time.perf_counter()
+            handler_result = result_text(raw)
+            ser_s = time.perf_counter() - t_seg
+            if ser_s > _LOOP_SEGMENT_BUDGET_S:
+                # Pure sync CPU (wall == loop hold), and it runs on the
+                # FULL result before truncation caps it.
+                logger.warning(
+                    "Tool %s result serialization held the event loop for "
+                    "%.0fms (%d chars, budget ~%.0fms) — concurrent "
+                    "realtime audio may underrun; return a string or a "
+                    "compact reference instead of a large object",
+                    name,
+                    ser_s * 1000,
+                    len(handler_result),
+                    _LOOP_SEGMENT_BUDGET_S * 1000,
+                )
+            # Yield so realtime pacing gets a slot between the handler
+            # segment and hook dispatch — sync hooks run inline next and
+            # would otherwise fuse with this segment into one loop step.
+            await asyncio.sleep(0)
+
+        # Run ON_TOOL_CALL hook (if framework + room).
+        from roomkit.models.tool_call import ToolCallEvent
+
+        tool_event = ToolCallEvent(
+            channel_id=self.channel_id,
+            channel_type=ChannelType.REALTIME_VOICE,
+            tool_call_id=call_id,
+            name=name,
+            arguments=arguments,
+            result=handler_result,
+            room_id=room_id,
+            session=session,
+        )
+
+        if self._framework and room_id:
+            result_str = await self._fire_tool_hook(
+                tool_event, room_id, handler_result, name, call_id, session, gate_context
+            )
+            # Same reason as the post-handler yield: don't fuse hook
+            # dispatch with submission into one loop step.
+            await asyncio.sleep(0)
+        elif handler_result is not None:
+            result_str = handler_result
+        else:
+            result_str = json.dumps({"error": f"No handler for tool {name}"})
+
+        if len(result_str) > self._tool_result_max_length:
+            result_str = self._truncate_tool_result(result_str, name, call_id, session.id)
+        return result_str
 
     async def _deliver_skill_call(
         self, session: VoiceSession, call_id: str, name: str, arguments: dict[str, Any]
