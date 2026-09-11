@@ -71,9 +71,28 @@ _CONNECT_TIMEOUT = 30.0
 _CLOSE_TIMEOUT = 2.0
 _LOG_TAG = "GPT-Live"
 
+# From OpenAI's Live API docs (developers.openai.com, checked 2026-09-11). The
+# voice is fixed for the session: changing it means a new session. Pace and
+# tone are steered through the instructions, not through a parameter.
 _VOICES: list[VoiceInfo] = [
-    VoiceInfo(id="marin", name="Marin", description="Default GPT-Live voice"),
-    VoiceInfo(id="cedar", name="Cedar"),
+    VoiceInfo(id="marin", name="Marin", language="en", description="Default GPT-Live voice"),
+    VoiceInfo(id="cedar", name="Cedar", language="en"),
+    VoiceInfo(id="quartz", name="Quartz", language="en-AU", gender="female"),
+    VoiceInfo(id="ripple", name="Ripple", language="en-AU", gender="male"),
+    VoiceInfo(id="vesper", name="Vesper", language="en-GB", gender="male"),
+    VoiceInfo(id="willow", name="Willow", language="en-IE", gender="female"),
+    VoiceInfo(id="stone", name="Stone", language="en-IE", gender="male"),
+    VoiceInfo(id="gleam", name="Gleam", language="en-US", gender="female"),
+    VoiceInfo(id="meridian", name="Meridian", language="en-US", gender="male"),
+    VoiceInfo(
+        id="delta", name="Delta", language="en-US", gender="female", description="Southern US"
+    ),
+    VoiceInfo(
+        id="cinder", name="Cinder", language="en-US", gender="male", description="Southern US"
+    ),
+    VoiceInfo(id="beacon", name="Beacon", language="en-PH", gender="male"),
+    VoiceInfo(id="bossa", name="Bossa", language="pt-BR", gender="female"),
+    VoiceInfo(id="tempo", name="Tempo", language="pt-BR", gender="male"),
 ]
 
 

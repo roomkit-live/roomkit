@@ -21,7 +21,9 @@ Run with:
 Environment variables:
     OPENAI_API_KEY      (required) OpenAI API key
     OPENAI_LIVE_MODEL   Live model (default: the provider's own default)
-    OPENAI_LIVE_VOICE   Voice (default: marin)
+    OPENAI_LIVE_VOICE   Voice (default: marin). Others: quartz, ripple, vesper,
+                        willow, stone, gleam, meridian, delta, cinder, beacon,
+                        bossa, tempo (fixed for the session)
     BACKEND_MODEL       Hosted backend model (default: gpt-5.6-terra)
     SYSTEM_PROMPT       Custom instructions for the live model
     AEC                 webrtc (default) | speex | 0 to disable
@@ -62,8 +64,9 @@ logger = setup_logging("realtime_voice_local_openai_live")
 
 # The live model only needs to know how to converse and when to delegate.
 # Task knowledge, tools and business rules belong to the backend prompt.
-FRONTEND_INSTRUCTIONS = """You are a friendly, concise voice assistant. Speak naturally,
-one or two sentences at a time, and let the user finish before responding.
+FRONTEND_INSTRUCTIONS = """You are a friendly, concise voice assistant. Speak warmly and
+naturally, at an unhurried pace, one or two sentences at a time, and let the
+user finish before responding. Be clear and direct, not overly cheerful.
 
 Answer simple conversational questions directly. Delegate when the user asks
 for current information, such as the weather or a restaurant recommendation.

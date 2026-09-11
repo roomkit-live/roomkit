@@ -27,7 +27,9 @@ Environment variables:
     OPENAI_API_KEY      (required) OpenAI API key for GPT-Live
     ANTHROPIC_API_KEY   (required) Anthropic API key for the backend
     ANTHROPIC_MODEL     Backend model (default: claude-sonnet-5)
-    OPENAI_LIVE_VOICE   Voice (default: cedar)
+    OPENAI_LIVE_VOICE   Voice (default: cedar). Others: quartz, ripple, vesper,
+                        willow, stone, gleam, meridian, delta, cinder, beacon,
+                        bossa, tempo (fixed for the session)
     SPOKEN_PROGRESS     1 (default) to voice the backend's intermediate steps
     AEC                 webrtc (default) | speex | 0 to disable
     DENOISE             webrtc (default) | rnnoise | sherpa | 0 to disable
@@ -71,8 +73,9 @@ from roomkit.voice.backends.local import LocalAudioBackend
 
 logger = setup_logging("realtime_voice_local_openai_live_backend")
 
-FRONTEND_INSTRUCTIONS = """You are a friendly, concise voice assistant. Speak naturally,
-one or two sentences at a time, and let the user finish before responding.
+FRONTEND_INSTRUCTIONS = """You are a friendly, concise voice assistant. Speak warmly and
+naturally, at an unhurried pace, one or two sentences at a time, and let the
+user finish before responding. Be clear and direct, not overly cheerful.
 
 Answer simple conversational questions directly. Delegate anything about the
 user's flights or bookings — checking one, changing one, finding another. The

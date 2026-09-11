@@ -165,7 +165,9 @@ class TestIdentity:
         assert provider.supports_mid_session_reconfigure is False
         assert isinstance(provider.delegation, IntegratorReasoning)
         assert "gpt-live-1" in {m.id for m in OpenAILiveProvider.available_models()}
-        assert {v.id for v in OpenAILiveProvider.available_voices()} == {"marin", "cedar"}
+        voices = {v.id for v in OpenAILiveProvider.available_voices()}
+        assert {"marin", "cedar", "vesper", "bossa"} <= voices
+        assert len(voices) == len(OpenAILiveProvider.available_voices())  # unique ids
 
     def test_rejects_bad_timing(self) -> None:
         with pytest.raises(ValueError, match="turn_gap_ms"):
