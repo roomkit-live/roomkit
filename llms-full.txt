@@ -861,6 +861,26 @@ A participant is one shared record per `(room_id, participant_id)`, even when
 record, not per-channel presence. When two channel memberships have independent
 connect/disconnect lifecycles, give them distinct participant ids and correlate
 them through `identity_id`.
+
+## Cancelling a turn
+
+Cancelling a task awaiting `kit.process_inbound()` cancels and drains that
+call's tools, generation and stream consumers before propagating
+`asyncio.CancelledError`. Other rooms and shared providers remain usable.
+Committed events and already streamed text remain in the timeline.
+
+With `defer_delivery=True`, explicitly call
+`await result.delivery.cancel(reason="hangup", timeout=5.0)` to stop that turn.
+The returned result's `cancellation_reason` names its terminal cancellation;
+`await result.delivery.wait()` joins the same cleanup. Cancelling a `wait()`
+alone leaves deferred work running. A completed handle is unchanged by cancel.
+
+The default cleanup budget is five seconds on both paths. `TimeoutError`
+means cleanup is incomplete: keep resources still in use, and for a deferred
+call await its handle later. Repeated cancellation does not interrupt
+finalizers. A handle cannot drain its own room lock or lane (`RuntimeError`).
+External effects already committed and tasks detached by application handlers
+are outside this cancellation contract. See `examples/cancel_delivery.py`.
 ---
 
 Hooks intercept events at specific points in the processing pipeline. They can block messages, modify content, trigger side effects, or observe the conversation.
