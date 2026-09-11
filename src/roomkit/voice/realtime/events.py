@@ -85,6 +85,29 @@ class RealtimeSpeechEvent:
 
 
 @dataclass(frozen=True)
+class RealtimeDelegationEvent:
+    """A full-duplex model handed reasoning or tool use to a backend.
+
+    Fired through ON_REALTIME_DELEGATION hooks (RFC §12.4.1) for both
+    delegation targets. It names the delegation and where it went; it carries
+    no task text, because the wire carries none either.
+    """
+
+    session: VoiceSession
+    """The realtime session whose model delegated."""
+
+    delegation_id: str
+    """Provider-assigned identifier, opaque; correlates the outputs returned."""
+
+    target: Literal["hosted", "integrator"]
+    """``"hosted"``: the provider's service runs the backend.
+    ``"integrator"``: the channel's ReasoningBackend does."""
+
+    timestamp: datetime = field(default_factory=_utcnow)
+    """When the delegation was announced."""
+
+
+@dataclass(frozen=True)
 class RealtimeErrorEvent:
     """Error from the realtime provider."""
 

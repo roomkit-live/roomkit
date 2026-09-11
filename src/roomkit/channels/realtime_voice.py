@@ -21,6 +21,7 @@ from roomkit.channels._realtime_context import (
 from roomkit.channels._realtime_context import (
     get_current_voice_session as get_current_voice_session,
 )
+from roomkit.channels._realtime_delegation import RealtimeDelegationMixin
 from roomkit.channels._realtime_response import RealtimeResponseMixin
 from roomkit.channels._realtime_speech import RealtimeSpeechMixin
 from roomkit.channels._realtime_tool_recovery import RealtimeToolRecoveryMixin
@@ -82,6 +83,7 @@ class _ConnectingSession:
 class RealtimeVoiceChannel(
     RealtimeToolRecoveryMixin,
     RealtimeToolsMixin,
+    RealtimeDelegationMixin,
     RealtimeTranscriptionMixin,
     RealtimeSpeechMixin,
     RealtimeAudioMixin,
@@ -189,7 +191,10 @@ class RealtimeVoiceChannel(
                 processing (AEC, VAD, denoiser, etc.).  When set, mic
                 audio is processed through the pipeline before being
                 forwarded to the provider, and pipeline VAD drives
-                speech detection instead of server-side VAD.
+                speech detection instead of server-side VAD. With a
+                full-duplex provider the VAD is observation only: its
+                events reach hooks and metrics but never interrupt the
+                model (RFC §12.4.1).
             recording: Optional ``ChannelRecordingConfig`` to enable
                 room-level audio recording from this channel. Records
                 both input (mic) and output (AI) audio tracks.
@@ -474,6 +479,7 @@ class RealtimeVoiceChannel(
         provider.on_speech_start(self._on_provider_speech_start)
         provider.on_speech_end(self._on_provider_speech_end)
         provider.on_tool_call(self._on_provider_tool_call)
+        provider.on_delegation(self._on_provider_delegation)
         provider.on_response_start(self._on_provider_response_start)
         provider.on_response_end(self._on_provider_response_end)
         provider.on_error(self._on_provider_error)
@@ -1088,6 +1094,14 @@ class RealtimeVoiceChannel(
                     "timeout to control pause sensitivity instead.",
                 )
             has_pipeline_vad = self._pipeline_config.vad is not None
+            if has_pipeline_vad and self._provider.full_duplex:
+                logger.info(
+                    "Pipeline VAD runs in observation role for session %s: provider %s "
+                    "is full-duplex, so its speech events feed hooks and metrics but "
+                    "never interrupt the model (RFC §12.4.1)",
+                    session.id,
+                    self._provider.name,
+                )
             # Set BEFORE creating pipeline so that provider callbacks
             # arriving early see the correct flag and don't double-fire.
             with self._state_lock:
@@ -1136,7 +1150,7 @@ class RealtimeVoiceChannel(
                     temperature=temperature,
                     input_sample_rate=self._input_sample_rate,
                     output_sample_rate=self._output_sample_rate,
-                    server_vad=not has_pipeline_vad,
+                    server_vad=self._provider.full_duplex or not has_pipeline_vad,
                     provider_config=provider_config,
                 )
         except (Exception, asyncio.CancelledError) as exc:

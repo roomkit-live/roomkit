@@ -30,6 +30,8 @@ RealtimeResponseStartCallback = Callable[[VoiceSession], Any]
 RealtimeResponseEndCallback = Callable[[VoiceSession], Any]
 RealtimeErrorCallback = Callable[[VoiceSession, str, str], Any]
 """(session, code, message)"""
+RealtimeDelegationCallback = Callable[[VoiceSession, str, str], Any]
+"""(session, delegation_id, target) — ``target`` is ``"hosted"`` or ``"integrator"``"""
 
 
 class VoiceInfo(BaseModel):
@@ -92,6 +94,7 @@ class RealtimeVoiceProvider(ABC):
         self._response_start_callbacks: list[RealtimeResponseStartCallback] = []
         self._response_end_callbacks: list[RealtimeResponseEndCallback] = []
         self._error_callbacks: list[RealtimeErrorCallback] = []
+        self._delegation_callbacks: list[RealtimeDelegationCallback] = []
 
     @property
     @abstractmethod
@@ -154,6 +157,22 @@ class RealtimeVoiceProvider(ABC):
         with uncertain history. It must end the session and emit an error
         before continuing without that context. Provider duration limits
         still apply; this does not promise an indefinitely long session.
+        """
+        return False
+
+    @property
+    def full_duplex(self) -> bool:
+        """Whether the model listens and speaks at the same time (RFC §12.4.1).
+
+        A full-duplex provider (OpenAI GPT-Live) handles being talked over by
+        itself and exposes no response or speech boundaries on its wire: it
+        synthesizes ``on_response_start``/``on_response_end`` from its own
+        output, and its ``interrupt()`` and ``truncate_audio()`` are no-ops.
+        The channel reads this flag to leave interruption to the model — no
+        playback flush, no gating of provider audio on user speech, and a
+        pipeline VAD kept to the observation role. Such a provider also holds
+        no tools of its own: reasoning and tool use are delegated to a backend
+        model, announced through :meth:`on_delegation`.
         """
         return False
 
@@ -321,6 +340,33 @@ class RealtimeVoiceProvider(ABC):
             result: JSON-serialized result string.
         """
         ...
+
+    async def submit_delegation_output(
+        self,
+        session: VoiceSession,
+        delegation_id: str,
+        text: str,
+        *,
+        spoken: bool,
+    ) -> None:
+        """Return a reasoning backend's output to the model (RFC §12.4.1).
+
+        Answers a delegation the provider announced through
+        :meth:`on_delegation` with ``target="integrator"``. ``spoken=True``
+        asks the model to relay the text to the user in its own words;
+        ``spoken=False`` adds it as silent context the model may draw on.
+        A provider that bounds one append splits the text rather than refuse
+        it. Only full-duplex providers implement this; the default raises,
+        since a provider without delegation has nothing to answer.
+
+        Args:
+            session: The active session.
+            delegation_id: Identifier from the ``on_delegation`` callback,
+                returned unchanged.
+            text: The backend's output.
+            spoken: Whether the model should voice it.
+        """
+        raise NotImplementedError(f"{type(self).__name__} does not support reasoning delegation")
 
     @abstractmethod
     async def interrupt(self, session: VoiceSession) -> None:
@@ -490,6 +536,19 @@ class RealtimeVoiceProvider(ABC):
     def on_tool_call(self, callback: RealtimeToolCallCallback) -> None:
         """Register callback for tool/function calls from the AI."""
         self._tool_call_callbacks.append(callback)
+
+    def on_delegation(self, callback: RealtimeDelegationCallback) -> None:
+        """Register callback for reasoning delegations (RFC §12.4.1).
+
+        Called as ``(session, delegation_id, target)`` when a full-duplex
+        model hands reasoning or tool use to a backend. ``target`` is
+        ``"hosted"`` when the provider's service runs the backend — its
+        function calls then arrive through :meth:`on_tool_call` — and
+        ``"integrator"`` when the application must answer through
+        :meth:`submit_delegation_output`. The request carries no task text:
+        the backend works out what was asked from the conversation.
+        """
+        self._delegation_callbacks.append(callback)
 
     def on_response_start(self, callback: RealtimeResponseStartCallback) -> None:
         """Register callback for when the AI starts generating a response."""

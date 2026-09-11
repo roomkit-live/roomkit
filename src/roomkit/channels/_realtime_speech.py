@@ -130,6 +130,20 @@ class RealtimeSpeechMixin:
         """
         if self._has_pipeline_vad.get(session.id, False):
             return
+        if self._provider.full_duplex:
+            # RFC §12.4.1: interruption belongs to the model. Its speech
+            # events are observation only — hooks and the client indicator —
+            # never the entry to the barge-in path below.
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                return
+            self._track_task(
+                loop,
+                self._handle_speech_event(session, "start"),
+                name=f"rt_speech_start:{session.id}",
+            )
+            return
         played_ms, _, _ = self._begin_barge_in(session)
         is_barge_in = played_ms is not None
 

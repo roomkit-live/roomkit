@@ -19,6 +19,7 @@ from roomkit.voice.base import (
 from roomkit.voice.realtime.provider import (
     RealtimeAudioCallback,
     RealtimeAudioVideoProvider,
+    RealtimeDelegationCallback,
     RealtimeErrorCallback,
     RealtimeResponseEndCallback,
     RealtimeResponseStartCallback,
@@ -58,7 +59,7 @@ class MockRealtimeProvider(RealtimeVoiceProvider):
         await provider.simulate_tool_call(session, "call-1", "get_weather", {"city": "NYC"})
     """
 
-    def __init__(self, model: str | None = None) -> None:
+    def __init__(self, model: str | None = None, *, full_duplex: bool = False) -> None:
         # Left None by default so a test sees what a provider that names no
         # model reports — the case ElevenLabs and PersonaPlex are really in.
         # Pass one to stand in for a provider that does name its model.
@@ -67,6 +68,9 @@ class MockRealtimeProvider(RealtimeVoiceProvider):
         self.sent_audio: list[tuple[str, bytes]] = []
         self.injected_texts: list[tuple[str, str, str]] = []  # (session_id, text, role)
         self.tool_results: list[tuple[str, str, str]] = []  # (session_id, call_id, result)
+        # (session_id, delegation_id, text, spoken)
+        self.delegation_outputs: list[tuple[str, str, str, bool]] = []
+        self._full_duplex = full_duplex
         self._sessions: dict[str, VoiceSession] = {}
         # Callbacks
         self._audio_callbacks: list[RealtimeAudioCallback] = []
@@ -77,6 +81,7 @@ class MockRealtimeProvider(RealtimeVoiceProvider):
         self._response_start_callbacks: list[RealtimeResponseStartCallback] = []
         self._response_end_callbacks: list[RealtimeResponseEndCallback] = []
         self._error_callbacks: list[RealtimeErrorCallback] = []
+        self._delegation_callbacks: list[RealtimeDelegationCallback] = []
 
     @property
     def name(self) -> str:
@@ -85,6 +90,10 @@ class MockRealtimeProvider(RealtimeVoiceProvider):
     @property
     def model_name(self) -> str:
         return self._model or super().model_name
+
+    @property
+    def full_duplex(self) -> bool:
+        return self._full_duplex
 
     async def connect(
         self,
@@ -144,6 +153,22 @@ class MockRealtimeProvider(RealtimeVoiceProvider):
             )
         )
 
+    async def submit_delegation_output(
+        self, session: VoiceSession, delegation_id: str, text: str, *, spoken: bool
+    ) -> None:
+        self.delegation_outputs.append((session.id, delegation_id, text, spoken))
+        self.calls.append(
+            MockCall(
+                method="submit_delegation_output",
+                args={
+                    "session_id": session.id,
+                    "delegation_id": delegation_id,
+                    "text": text,
+                    "spoken": spoken,
+                },
+            )
+        )
+
     async def interrupt(self, session: VoiceSession) -> None:
         self.calls.append(MockCall(method="interrupt", args={"session_id": session.id}))
 
@@ -186,6 +211,9 @@ class MockRealtimeProvider(RealtimeVoiceProvider):
 
     def on_tool_call(self, callback: RealtimeToolCallCallback) -> None:
         self._tool_call_callbacks.append(callback)
+
+    def on_delegation(self, callback: RealtimeDelegationCallback) -> None:
+        self._delegation_callbacks.append(callback)
 
     def on_response_start(self, callback: RealtimeResponseStartCallback) -> None:
         self._response_start_callbacks.append(callback)
@@ -243,6 +271,15 @@ class MockRealtimeProvider(RealtimeVoiceProvider):
         args = arguments or {}
         for cb in self._tool_call_callbacks:
             result = cb(session, call_id, name, args)
+            if hasattr(result, "__await__"):
+                await result
+
+    async def simulate_delegation(
+        self, session: VoiceSession, delegation_id: str, target: str = "integrator"
+    ) -> None:
+        """Simulate the model handing reasoning to a backend (RFC §12.4.1)."""
+        for cb in self._delegation_callbacks:
+            result = cb(session, delegation_id, target)
             if hasattr(result, "__await__"):
                 await result
 

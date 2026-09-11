@@ -495,10 +495,25 @@ class RealtimeAudioMixin:
         """Handle speech start from local pipeline VAD."""
         from datetime import UTC, datetime
 
-        played_ms, provider_was_responding, fwd_count = self._begin_barge_in(session)
-        is_barge_in = played_ms is not None
         with self._state_lock:
             self._user_turn_start_at[session.id] = datetime.now(UTC)
+        if self._provider.full_duplex:
+            # RFC §12.4.1: on a full-duplex session the pipeline VAD is
+            # observation only — speech hooks and the client indicator, no
+            # barge-in, no playback flush, no activity signal. The model hears
+            # the overlap itself and decides what to do with it.
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                return
+            self._track_task(
+                loop,
+                self._handle_speech_event(session, "start"),
+                name=f"rt_speech_start:{session.id}",
+            )
+            return
+        played_ms, provider_was_responding, fwd_count = self._begin_barge_in(session)
+        is_barge_in = played_ms is not None
 
         logger.info(
             "[BARGE-IN] speech_start → interrupt (session %s, "
@@ -581,6 +596,8 @@ class RealtimeAudioMixin:
             name=f"rt_speech_end:{session.id}",
         )
 
+        if self._provider.full_duplex:
+            return
         self._track_task(
             loop,
             self._provider.send_activity_end(session),

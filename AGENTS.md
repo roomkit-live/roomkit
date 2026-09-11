@@ -845,7 +845,7 @@ Voice Pipeline:      ON_VAD_SILENCE, ON_VAD_AUDIO_LEVEL, ON_SPEAKER_CHANGE, ON_B
 Audio Levels:        ON_INPUT_AUDIO_LEVEL, ON_OUTPUT_AUDIO_LEVEL
 Tool Execution:      BEFORE_TOOL_USE, ON_TOOL_CALL (unified — fires from AIChannel and RealtimeVoiceChannel),
                      ON_USER_INPUT_REQUIRED
-Realtime Voice:      ON_REALTIME_TEXT_INJECTED
+Realtime Voice:      ON_REALTIME_TEXT_INJECTED, ON_REALTIME_DELEGATION
 ```
 
 Common triggers grouped for quick reference; RFC §9.2 lists the complete,

@@ -2,6 +2,7 @@
 
 from roomkit.voice.realtime.bridge import RealtimeAVBridge
 from roomkit.voice.realtime.events import (
+    RealtimeDelegationEvent,
     RealtimeErrorEvent,
     RealtimeSpeechEvent,
     RealtimeToolCallEvent,
@@ -28,6 +29,7 @@ __all__ = [
     "RealtimeVoiceProvider",
     "VoiceInfo",
     # Events
+    "RealtimeDelegationEvent",
     "RealtimeErrorEvent",
     "RealtimeSpeechEvent",
     "RealtimeToolCallEvent",

@@ -258,6 +258,7 @@ class HookTrigger(StrEnum):
     BEFORE_TOOL_USE = "before_tool_use"
     ON_TOOL_CALL = "on_tool_call"
     ON_REALTIME_TEXT_INJECTED = "on_realtime_text_injected"
+    ON_REALTIME_DELEGATION = "on_realtime_delegation"
     # Human-in-the-loop (tool paused, waiting for user input)
     ON_USER_INPUT_REQUIRED = "on_user_input_required"
     # Audio bridging
