@@ -3150,6 +3150,7 @@ await kit.attach_channel("voice-room", "realtime-voice", category=ChannelCategor
 |----------|-------|-------|-------------|
 | Google Gemini Live | `GeminiLiveProvider` | `roomkit[realtime-gemini]` | Gemini 2.0 speech-to-speech |
 | OpenAI Realtime | `OpenAIRealtimeProvider` | `roomkit[realtime-openai]` | GPT Realtime audio (reasoning-capable) |
+| OpenAI GPT-Live | `OpenAILiveProvider` | `roomkit[realtime-openai]` | Full-duplex speech-to-speech; reasoning and tools delegated to a backend model, hosted or integrator-side |
 | xAI Grok | `XAIRealtimeProvider` | — | Grok speech-to-speech |
 | Deepgram Voice Agent | `DeepgramAgentProvider` | `roomkit[realtime-deepgram]` | Nova listen + LLM think + Aura speak, each chosen separately |
 | Mock | `MockRealtimeProvider` | built-in | Testing |
@@ -3160,6 +3161,16 @@ from roomkit.voice import get_openai_realtime_provider
 
 OpenAIRealtime = get_openai_realtime_provider()
 provider = OpenAIRealtime(api_key="sk-...")  # defaults to gpt-realtime-2.1
+
+# OpenAI GPT-Live (full-duplex; the model listens and speaks at once)
+from roomkit.providers.openai.live import HostedReasoning, OpenAILiveProvider
+
+provider = OpenAILiveProvider(
+    api_key="sk-...",  # defaults to gpt-live-1
+    delegation=HostedReasoning(model="gpt-5.6-terra"),  # backend runs at OpenAI
+)
+# IntegratorReasoning() (the default) serves delegations through
+# RealtimeVoiceChannel(reasoning_backend=AIProviderReasoningBackend(...))
 
 # xAI Grok
 from roomkit.voice import get_xai_realtime_provider, get_xai_realtime_config

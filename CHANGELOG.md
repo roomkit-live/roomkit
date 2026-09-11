@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.70.0] — 2026-09-11
+
 ### Added
 
 - `OpenAILiveProvider` — OpenAI GPT-Live (`gpt-live-1`), the full-duplex
@@ -7203,7 +7205,10 @@ See entries `0.7.0a1` through `0.7.0a18` below.
 - `STTProvider.transcribe()` returns `TranscriptionResult` (Phase 3.1)
 - Framework event names enriched with payloads (Phase 4)
 
-[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.67.0...HEAD
+[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.70.0...HEAD
+[0.70.0]: https://github.com/roomkit-live/roomkit/compare/v0.69.0...v0.70.0
+[0.69.0]: https://github.com/roomkit-live/roomkit/compare/v0.68.0...v0.69.0
+[0.68.0]: https://github.com/roomkit-live/roomkit/compare/v0.67.0...v0.68.0
 [0.67.0]: https://github.com/roomkit-live/roomkit/compare/v0.66.3...v0.67.0
 [0.66.3]: https://github.com/roomkit-live/roomkit/compare/v0.66.2...v0.66.3
 [0.66.2]: https://github.com/roomkit-live/roomkit/compare/v0.66.1...v0.66.2
