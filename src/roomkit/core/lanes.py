@@ -38,6 +38,7 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from roomkit.core.locks import _has_room_lock, _held_rooms
 from roomkit.models.response_metadata import ResponseMetadata
+from roomkit.providers.utils import _aclose_stream
 from roomkit.telemetry.context import restored_span
 
 if TYPE_CHECKING:
@@ -198,8 +199,7 @@ class DeliveryCascade:
         try:
             return await asyncio.shield(task)
         except asyncio.CancelledError:
-            # The lane itself can also be stopped by framework shutdown.
-            # Leave its child no more cancellation-resistant than before.
+            # Framework shutdown also stops the lane's running child.
             if not task.done() and not task.cancelling():
                 task.cancel()
             raise
@@ -217,9 +217,7 @@ class DeliveryCascade:
         # Also close streams whose consumer was cancelled before its first
         # step. No generator is closed concurrently with its running task.
         for response in self.streams:
-            close = getattr(response.stream, "aclose", None)
-            if close is not None:
-                await close()
+            await _aclose_stream(response.stream)
 
     async def cancel_and_wait(self, reason: str, timeout: float = 5.0) -> None:
         """Request cancellation once and join cleanup within one fixed budget.

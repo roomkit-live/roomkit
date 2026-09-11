@@ -24,6 +24,7 @@ from roomkit.models.event import RoomEvent, ToolCallContent
 from roomkit.models.response_metadata import ResponseMetadata
 from roomkit.models.streaming import ThinkingDeltaMarker, ToolCallEndMarker, ToolCallStartMarker
 from roomkit.providers.ai.base import ProviderError
+from roomkit.providers.utils import _aclose_stream
 
 if TYPE_CHECKING:
     from roomkit.channels.base import Channel
@@ -522,8 +523,6 @@ class InboundStreamingMixin(HelpersMixin):
             # rendering one). Async-for alone does not close its generator;
             # finalizers must run before the delivery handle reports cleanup.
             for sr in pending_streams:
-                close = getattr(sr.stream, "aclose", None)
-                if close is not None:
-                    await close()
+                await _aclose_stream(sr.stream)
 
         return first_error, record

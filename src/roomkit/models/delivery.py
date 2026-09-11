@@ -171,7 +171,7 @@ class DeliveryHandle:
         the same short-circuit the waiting path's step 18 applies, with
         delivery following in lane order.
         """
-        if not self._consumer.done() and self._cascade.waiter_would_deadlock():
+        if not self.done and self._cascade.waiter_would_deadlock():
             return self._result
         await asyncio.wait({self._consumer})
         if self._cascade.cancelled is not None:

@@ -289,6 +289,10 @@ async def test_cancel_timeout_reports_incomplete_cleanup_and_can_be_joined() -> 
         assert not handle.done
         assert not tool.finished.is_set()
         assert ai.active_turns == 1
+        async with kit._lock_manager.locked("owned"):
+            async with asyncio.timeout(0.1):
+                assert await handle.wait() is result
+            assert not handle.done
         tool.cleanup.set()
         await asyncio.wait_for(handle.wait(), 2)
         assert handle.done
