@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `OpenAILiveProvider` — OpenAI GPT-Live (`gpt-live-1`), the full-duplex
+  speech-to-speech model that listens and speaks at once, handles being talked
+  over itself, and delegates reasoning and tool use to a backend model while
+  the conversation continues (RFC §12.4.1). Both delegation modes:
+  `HostedReasoning` runs the backend at OpenAI with the channel's tools served
+  through the usual `tool_handler` / `ON_TOOL_CALL` path; `IntegratorReasoning`
+  (default) serves delegations through a `ReasoningBackend` configured on the
+  channel. One shared audio format (PCM 16/24 kHz or G.711 8 kHz), response and
+  speech boundaries synthesized from transcript deltas, graceful
+  `session.close`, usage kept in seconds. See
+  `examples/realtime_voice_local_openai_live.py` and
+  `examples/realtime_voice_local_openai_live_backend.py`.
+- `RealtimeVoiceProvider.full_duplex`, `on_delegation` and
+  `submit_delegation_output`. On a full-duplex provider `RealtimeVoiceChannel`
+  leaves interruption to the model — no playback flush, no `interrupt()` or
+  `truncate_audio()`, no gating of provider audio on user speech, pipeline VAD
+  in the observation role — while `ON_SPEECH_START` / `ON_SPEECH_END` keep
+  firing.
+- `ReasoningBackend` (`roomkit.voice.realtime.reasoning`) with
+  `ReasoningRequest`, `ReasoningOutput`, `TranscriptLine` and the default
+  `AIProviderReasoningBackend`: any `AIProvider` run through a tool loop whose
+  tool calls pass the channel's pre-execution gate. `RealtimeVoiceChannel`
+  takes `reasoning_backend=` and `reasoning_timeout_s=`; a backend that fails,
+  stalls or says nothing is answered with one spoken fallback so the model
+  does not wait for nothing.
+- `ON_REALTIME_DELEGATION` hook (`RealtimeDelegationEvent`): a full-duplex
+  model handed reasoning or tool use to a backend, hosted or integrator-side.
+
 ## [0.69.0] — 2026-09-10
 
 ### Added
