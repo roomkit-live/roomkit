@@ -21,6 +21,7 @@ from roomkit.models.enums import (
 if TYPE_CHECKING:
     from roomkit.channels.base import Channel
     from roomkit.core.inbound_router import InboundRoomRouter
+    from roomkit.core.lanes import DeliveryCascade
     from roomkit.core.locks import RoomLockManager
     from roomkit.identity.base import IdentityResolver
     from roomkit.models.context import RoomContext
@@ -122,6 +123,14 @@ class InboundMixin(HelpersMixin):
                 event while the agent's turn runs on (an HTTP route returning
                 200, say); ``delivery_results`` is backfilled by
                 ``delivery.wait()``.
+
+        Cancelling an awaited call cancels only its delivery cascade and
+        drains owned generation, tools and streams before propagating
+        ``CancelledError``. Cleanup has a five-second budget; ``TimeoutError``
+        reports that work is still unwinding and its resources must be kept.
+        Deferred callers explicitly use ``result.delivery.cancel()``;
+        cancelling a handle's ``wait()`` cancels only that wait. Committed
+        timeline events are retained in either case.
         """
         from roomkit.telemetry.base import SpanKind
         from roomkit.telemetry.context import get_current_span, reset_span, set_current_span
@@ -343,13 +352,49 @@ class InboundMixin(HelpersMixin):
         (§13.6): a room whose lock is held by a stuck event would otherwise
         queue every later message with nothing to stop it, which is the pile-up
         the setting exists for. Past the lock, ``_process_locked`` spends what
-        remains on the pre-commit gates and stops there — the commit and the
-        delivery set it hands to the lane are not cancellable, or a committed
-        event would come back reported as blocked.
+        remains on the pre-commit gates and stops there. That timeout never
+        invalidates a committed event. Explicit caller cancellation instead
+        stops the delivery tail, retaining the committed timeline record.
         """
         from roomkit.core.lanes import DeliveryCascade
 
         cascade = DeliveryCascade(room_id, reentry_budget=self._max_chain_depth * 10)
+        try:
+            return await self._complete_inbound_delivery(
+                event,
+                context,
+                resolved_identity,
+                pending_id_result,
+                message,
+                channel,
+                room_id,
+                deadline,
+                cascade,
+                defer_delivery=defer_delivery,
+            )
+        except BaseException:
+            # The caller owns this cascade even if setup failed after commit,
+            # before it could receive a deferred handle. Drain off the lock.
+            if cascade.waiter_would_deadlock():
+                cascade.cancel("caller_cancelled")
+            else:
+                await cascade.cancel_and_wait("caller_cancelled")
+            raise
+
+    async def _complete_inbound_delivery(
+        self,
+        event: Any,
+        context: RoomContext,
+        resolved_identity: Identity | None,
+        pending_id_result: IdentityResult | None,
+        message: InboundMessage,
+        channel: Channel,
+        room_id: str,
+        deadline: float,
+        cascade: DeliveryCascade,
+        *,
+        defer_delivery: bool,
+    ) -> InboundResult:
         async with AsyncExitStack() as stack:
             try:
                 async with asyncio.timeout_at(deadline):
@@ -391,6 +436,9 @@ class InboundMixin(HelpersMixin):
         # mutation and ON_ERROR hooks fire from the lane executor, off this
         # room's lock.
         completed = await cascade.wait()
+        if cascade.cancelled is not None:
+            await cascade.wait_drained()
+        result.cancellation_reason = cascade.cancelled
         if cascade.error is not None and result.error is None:
             result.error = cascade.error
         # Step 18 reports the delivery set the caller waited for.
@@ -408,9 +456,14 @@ class InboundMixin(HelpersMixin):
         # reply is only generated when its stream is consumed.
         if not completed:
             self._consume_streams_when_cascade_completes(cascade, room_id)
-        elif cascade.streams:
-            stream_error, record = await self._process_streaming_responses(
-                cascade.streams, room_id, response_events=result.response_events
+        elif cascade.streams and cascade.cancelled is None:
+            stream_error, record = await cascade.run(
+                self._process_streaming_responses(
+                    cascade.streams,
+                    room_id,
+                    response_events=result.response_events,
+                    cascade=cascade,
+                )
             )
             if stream_error is not None and result.error is None:
                 result.error = stream_error

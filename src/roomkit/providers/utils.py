@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import base64
 import binascii
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 if TYPE_CHECKING:
     import httpx
@@ -17,6 +17,13 @@ class HTTPTimeouts(Protocol):
 
     timeout: float
     connect_timeout: float
+
+
+async def _aclose_stream(stream: Any) -> None:
+    """Join an iterator's finalizer when its contract supports explicit close."""
+    close = getattr(stream, "aclose", None)
+    if close is not None:
+        await close()
 
 
 def extract_event_text(event: RoomEvent) -> str:

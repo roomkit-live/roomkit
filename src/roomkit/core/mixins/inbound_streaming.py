@@ -24,6 +24,7 @@ from roomkit.models.event import RoomEvent, ToolCallContent
 from roomkit.models.response_metadata import ResponseMetadata
 from roomkit.models.streaming import ThinkingDeltaMarker, ToolCallEndMarker, ToolCallStartMarker
 from roomkit.providers.ai.base import ProviderError
+from roomkit.providers.utils import _aclose_stream
 
 if TYPE_CHECKING:
     from roomkit.channels.base import Channel
@@ -98,6 +99,7 @@ class InboundStreamingMixin(HelpersMixin):
         context: RoomContext,
         *,
         response_events: list[RoomEvent] | None = None,
+        cascade: DeliveryCascade | None = None,
     ) -> _StreamingResult | None:
         """Consume a streaming response, pipe to streaming channels, store segments."""
         from roomkit.models.event import EventSource, TextContent
@@ -118,7 +120,8 @@ class InboundStreamingMixin(HelpersMixin):
         # enqueued without waiting (blocking the generator on an SMS round
         # trip would stall the stream), and the run is awaited once, after
         # the stream, by the caller.
-        cascade = DeliveryCascade(room_id, reentry_budget=self._max_chain_depth * 10)
+        if cascade is None:
+            cascade = DeliveryCascade(room_id, reentry_budget=self._max_chain_depth * 10)
         # The channel a text segment is reaching *as it is produced* — the
         # stream itself is its delivery, so the lane must not send it again.
         # Only the first target streams (V1, below); any other streaming-capable
@@ -475,6 +478,7 @@ class InboundStreamingMixin(HelpersMixin):
         room_id: str,
         *,
         response_events: list[RoomEvent] | None = None,
+        cascade: DeliveryCascade | None = None,
     ) -> tuple[Exception | None, ResponseMetadata]:
         """Handle streaming responses outside the room lock.
 
@@ -503,15 +507,22 @@ class InboundStreamingMixin(HelpersMixin):
 
         first_error: Exception | None = None
         record = ResponseMetadata()
-        for sr in pending_streams:
-            sr_result = await self._handle_streaming_response(
-                router, sr, room_id, context, response_events=response_events
-            )
-            if sr_result and sr_result.error and first_error is None:
-                first_error = sr_result.error
-            # Several streams answer one inbound only when several channels
-            # replied; each writes under its own key, so merging keeps them
-            # all rather than letting the last one win.
-            record.update(sr.response_metadata or {})
+        try:
+            for sr in pending_streams:
+                sr_result = await self._handle_streaming_response(
+                    router, sr, room_id, context, response_events=response_events, cascade=cascade
+                )
+                if sr_result and sr_result.error and first_error is None:
+                    first_error = sr_result.error
+                # Several streams answer one inbound only when several channels
+                # replied; each writes under its own key, so merging keeps them
+                # all rather than letting the last one win.
+                record.update(sr.response_metadata or {})
+        finally:
+            # A transport can stop reading between two yields (or fail while
+            # rendering one). Async-for alone does not close its generator;
+            # finalizers must run before the delivery handle reports cleanup.
+            for sr in pending_streams:
+                await _aclose_stream(sr.stream)
 
         return first_error, record

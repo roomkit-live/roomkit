@@ -37,6 +37,7 @@ from roomkit.providers.ai.base import (
     StreamToolCall,
     StreamToolCallDelta,
 )
+from roomkit.providers.utils import _aclose_stream
 from roomkit.realtime.base import EphemeralEventType
 from roomkit.telemetry.base import Attr, SpanKind
 from roomkit.telemetry.context import get_current_span
@@ -47,6 +48,7 @@ if TYPE_CHECKING:
     from roomkit.models.context import RoomContext
     from roomkit.providers.ai.base import StreamEvent
     from roomkit.telemetry.noop import NoopTelemetryProvider
+
 
 logger = logging.getLogger("roomkit.channels.ai")
 
@@ -283,9 +285,11 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
         thinking_published = 0
         thinking_started = False
         coalescer = self._new_thinking_coalescer(room_id, round_idx=0)
+        stream: Any = None
         try:
             if not self._provider.supports_structured_streaming:
-                async for chunk in self._provider.generate_stream(ai_context):
+                stream = self._provider.generate_stream(ai_context)
+                async for chunk in stream:
                     text_parts.append(chunk)
                     yield chunk
                 completed = True
@@ -294,7 +298,8 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
             # Through the resilience wrapper, like every structured generation:
             # retry, fallback and overflow compaction are the wrapper's to give,
             # never a per-path courtesy.
-            async for ev in self._generate_stream_with_retry(ai_context):
+            stream = self._generate_stream_with_retry(ai_context)
+            async for ev in stream:
                 if isinstance(ev, _StreamRetryBoundary):
                     continue
                 if isinstance(ev, StreamThinkingDelta):
@@ -332,6 +337,7 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
             completed = True
         finally:
             try:
+                await _aclose_stream(stream)
                 # A window still open here was left by an abnormal exit — a
                 # provider error, a consumer that closed the stream — and
                 # closes with the block reasoned so far, so THINKING_START
@@ -448,6 +454,7 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
         thinking_published = 0
         coalescer = self._new_thinking_coalescer(room_id, round_idx=0)
         _round_idx = 0
+        stream: Any = None
         try:
             context, should_cancel = self._drain_steering_queue(context, loop_ctx)
             if should_cancel:
@@ -490,7 +497,8 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                 _dedup_offset = 0
                 _dedup_buffer: list[str] = []
 
-                async for event in self._generate_stream_with_retry(context):
+                stream = self._generate_stream_with_retry(context)
+                async for event in stream:
                     # Check cancel between every stream event — allows immediate
                     # cancellation instead of waiting for the full stream to finish.
                     if loop_ctx.cancel_event.is_set():
@@ -922,6 +930,7 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
             raise
         finally:
             try:
+                await _aclose_stream(stream)
                 # A window still open here was left by an abnormal exit — a
                 # provider error, a consumer that closed the stream — and
                 # closes with the block reasoned so far, the way a cancelled

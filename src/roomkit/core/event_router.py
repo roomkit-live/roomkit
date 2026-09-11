@@ -40,6 +40,7 @@ from roomkit.models.event import (
 )
 from roomkit.models.task import Observation, Task
 from roomkit.providers.ai.base import ProviderError
+from roomkit.providers.utils import _aclose_stream
 
 logger = logging.getLogger("roomkit.event_router")
 
@@ -57,19 +58,6 @@ def _log_target_failure(what: str, channel_id: str, exc: Exception, extra: dict[
         logger.warning("%s %s failed: %s", what, channel_id, exc, extra=extra)
     else:
         logger.exception("%s %s failed", what, channel_id, extra=extra)
-
-
-async def _aclose_stream(stream: Any) -> None:
-    """Close an un-consumed response stream without generating its reply.
-
-    A muted channel's streamed voice is dropped: the async generator is never
-    iterated, so no provider round-trip runs. Closing it releases the object
-    cleanly (and silences the ``async generator was never awaited`` warning).
-    A stream without ``aclose`` is left to be garbage-collected.
-    """
-    aclose = getattr(stream, "aclose", None)
-    if aclose is not None:
-        await aclose()
 
 
 def _solicits(

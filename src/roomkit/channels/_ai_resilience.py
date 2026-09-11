@@ -20,9 +20,11 @@ from roomkit.providers.ai.base import (
     StreamToolCallDelta,
     is_context_overflow_message,
 )
+from roomkit.providers.utils import _aclose_stream
 
 if TYPE_CHECKING:
     from roomkit.channels._tool_eviction import ToolEviction
+
 
 logger = logging.getLogger("roomkit.channels.ai")
 
@@ -156,8 +158,9 @@ class AIResilienceMixin:
         while attempt <= policy.max_retries:
             emitted = False
             projected_composition = False
+            stream = self._provider.generate_structured_stream(context)
             try:
-                async for event in self._provider.generate_structured_stream(context):
+                async for event in stream:
                     # A composition delta is a projection: it is neither
                     # delivered as text nor persisted, so a stream that has
                     # only produced those can still be replayed without
@@ -207,13 +210,16 @@ class AIResilienceMixin:
                 if projected_composition:
                     yield _StreamRetryBoundary()
                 raise
+            finally:
+                await _aclose_stream(stream)
 
         # Fallback — only reachable when nothing was emitted.
         if self._fallback_provider and last_error:
             logger.warning("Trying fallback provider for stream.")
             projected_composition = False
+            stream = self._fallback_provider.generate_structured_stream(context)
             try:
-                async for event in self._fallback_provider.generate_structured_stream(context):
+                async for event in stream:
                     if isinstance(event, StreamToolCallDelta):
                         projected_composition = True
                     yield event
@@ -221,6 +227,8 @@ class AIResilienceMixin:
                 if projected_composition:
                     yield _StreamRetryBoundary()
                 raise
+            finally:
+                await _aclose_stream(stream)
             return
 
         if last_error:
