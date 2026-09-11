@@ -25,6 +25,7 @@ from roomkit.providers.deepgram.realtime import DeepgramAgentProvider
 from roomkit.providers.elevenlabs.config import ElevenLabsRealtimeConfig
 from roomkit.providers.elevenlabs.realtime import ElevenLabsRealtimeProvider
 from roomkit.providers.gemini.realtime import GeminiLiveProvider
+from roomkit.providers.openai.live import OpenAILiveProvider
 from roomkit.providers.openai.realtime import OpenAIRealtimeProvider
 from roomkit.providers.personaplex.realtime import PersonaPlexRealtimeProvider
 from roomkit.providers.xai.config import XAIRealtimeConfig
@@ -32,7 +33,7 @@ from roomkit.providers.xai.realtime import XAIRealtimeProvider
 from roomkit.voice.realtime.mock import MockRealtimeAudioVideoProvider, MockRealtimeProvider
 from roomkit.voice.realtime.provider import RealtimeVoiceProvider
 
-CATALOGED = [OpenAIRealtimeProvider, GeminiLiveProvider, XAIRealtimeProvider]
+CATALOGED = [OpenAIRealtimeProvider, OpenAILiveProvider, GeminiLiveProvider, XAIRealtimeProvider]
 
 
 # --- base ABC ------------------------------------------------------------------
@@ -68,6 +69,11 @@ def test_openai_default_model_is_in_its_catalog() -> None:
     assert default in {m.id for m in OpenAIRealtimeProvider.available_models()}
 
 
+def test_openai_live_default_model_is_in_its_catalog() -> None:
+    default = inspect.signature(OpenAILiveProvider.__init__).parameters["model"].default
+    assert default in {m.id for m in OpenAILiveProvider.available_models()}
+
+
 def test_gemini_default_model_is_in_its_catalog() -> None:
     default = inspect.signature(GeminiLiveProvider.__init__).parameters["model"].default
     assert default in {m.id for m in GeminiLiveProvider.available_models()}
@@ -85,6 +91,7 @@ def test_vision_follows_the_documented_cut() -> None:
     assert by_id["gpt-realtime-1.5"].supports_vision is False
 
     assert all(m.supports_vision for m in GeminiLiveProvider.available_models())
+    assert all(not m.supports_vision for m in OpenAILiveProvider.available_models())
     assert all(not m.supports_vision for m in XAIRealtimeProvider.available_models())
 
 
@@ -107,7 +114,7 @@ def test_the_check_script_names_every_realtime_catalog() -> None:
     sys.modules["check_models_rt"] = module
     spec.loader.exec_module(module)
 
-    assert {"openai-realtime", "gemini-realtime", "xai-realtime"} <= set(
+    assert {"openai-realtime", "openai-live", "gemini-realtime", "xai-realtime"} <= set(
         module.UNMIRRORED_CATALOGS
     )
 

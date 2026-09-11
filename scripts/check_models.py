@@ -168,6 +168,12 @@ UNMIRRORED_CATALOGS: dict[str, str] = {
         "are the chat-completions audio models, not these (checked 2026-08-07). Ids "
         "come from OpenAI's Realtime API docs."
     ),
+    "openai-live": (
+        "the gpt-live-* lineup lives on the Live API (/v1/live/sessions), which no "
+        "aggregator mirrors; the live model bills session seconds, a unit the mirror's "
+        "token rates cannot express (checked 2026-09-11). Ids come from OpenAI's Live "
+        "API docs."
+    ),
     "gemini-realtime": (
         "no public aggregator mirrors the Live API lineup (checked 2026-08-07). Ids "
         "come from Google's Live API docs and are the ones this repo's examples run."
