@@ -187,6 +187,13 @@ from roomkit.video.pipeline.filter import (
 )
 from roomkit.voice.pipeline.agc.simple import SimpleAGCProvider
 from roomkit.voice.pipeline.denoiser.webrtc import WebRTCNoiseSuppressorProvider
+from roomkit.voice.realtime.reasoning import (
+    AIProviderReasoningBackend,
+    ReasoningBackend,
+    ReasoningOutput,
+    ReasoningRequest,
+    TranscriptLine,
+)
 from roomkit.voice.stt.language import STTLanguageLock
 from roomkit.voice.testing import PCMAudio, ScenarioVoiceBackend, TraceEntry, VoiceTrace
 
@@ -281,6 +288,12 @@ __all__ = [
     "ResponseMetadata",
     "RealtimeAudioVideoChannel",
     "RealtimeVoiceChannel",
+    # Reasoning delegation (RFC §12.4.1)
+    "AIProviderReasoningBackend",
+    "ReasoningBackend",
+    "ReasoningOutput",
+    "ReasoningRequest",
+    "TranscriptLine",
     "SMSChannel",
     "StdioACPTransport",
     "TeamsChannel",

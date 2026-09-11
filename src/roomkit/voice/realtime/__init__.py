@@ -20,6 +20,13 @@ from roomkit.voice.realtime.provider import (
     RealtimeVoiceProvider,
     VoiceInfo,
 )
+from roomkit.voice.realtime.reasoning import (
+    AIProviderReasoningBackend,
+    ReasoningBackend,
+    ReasoningOutput,
+    ReasoningRequest,
+    TranscriptLine,
+)
 
 __all__ = [
     # ABCs
@@ -28,6 +35,12 @@ __all__ = [
     "RealtimeVideoCallback",
     "RealtimeVoiceProvider",
     "VoiceInfo",
+    # Reasoning delegation (RFC §12.4.1)
+    "AIProviderReasoningBackend",
+    "ReasoningBackend",
+    "ReasoningOutput",
+    "ReasoningRequest",
+    "TranscriptLine",
     # Events
     "RealtimeDelegationEvent",
     "RealtimeErrorEvent",

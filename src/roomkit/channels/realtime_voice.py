@@ -62,6 +62,7 @@ if TYPE_CHECKING:
     from roomkit.voice.pipeline.config import AudioPipelineConfig
     from roomkit.voice.pipeline.engine import AudioPipeline
     from roomkit.voice.realtime.provider import RealtimeVoiceProvider
+    from roomkit.voice.realtime.reasoning import ReasoningBackend
 
 # Tool handler: async callable (name, arguments) -> result. Same contract as
 # roomkit.channels.ai.ToolHandler — a handler shared with an AIChannel may
@@ -149,6 +150,8 @@ class RealtimeVoiceChannel(
         tool_search: bool | None = None,
         tool_search_pinned: list[str] | None = None,
         tool_search_threshold: int = 20,
+        reasoning_backend: ReasoningBackend | None = None,
+        reasoning_timeout_s: float = 120.0,
     ) -> None:
         """Initialize realtime voice channel.
 
@@ -235,6 +238,17 @@ class RealtimeVoiceChannel(
             tool_search_threshold: Auto-activation threshold and the
                 cap on how many tools may be live at once. Defaults
                 to 20 to match Google's published recommendation.
+            reasoning_backend: Serves the integrator-side reasoning
+                delegations of a full-duplex provider (RFC §12.4.1): when
+                the model hands work over, the backend receives the
+                transcript recorded since the previous delegation and its
+                outputs return to the model as spoken or silent context.
+                Its tool calls pass the same pre-execution gate as any
+                realtime tool call. Only a full-duplex provider delegates;
+                on any other provider the backend never runs.
+            reasoning_timeout_s: Bound on one delegation's run. A backend
+                that exceeds it is abandoned and the model is told so.
+                Defaults to 120 seconds.
         """
         super().__init__(channel_id)
         for name, rate in (
@@ -261,6 +275,12 @@ class RealtimeVoiceChannel(
             or tool_search_threshold <= 0
         ):
             raise ValueError("tool_search_threshold must be a positive integer")
+        if (
+            isinstance(reasoning_timeout_s, bool)
+            or not isinstance(reasoning_timeout_s, int | float)
+            or reasoning_timeout_s <= 0
+        ):
+            raise ValueError("reasoning_timeout_s must be a positive number")
         self._provider: RealtimeVoiceProvider = provider
         self._transport = transport
         self._owns_transport = owns_transport
@@ -274,6 +294,22 @@ class RealtimeVoiceChannel(
         self._transport_sample_rate = transport_sample_rate
         self._emit_transcription_events = emit_transcription_events
         self._tool_recovery_enabled = tool_recovery
+
+        # Reasoning delegation (RFC §12.4.1): the integrator-side backend a
+        # full-duplex model's delegations are served through, the transcript
+        # ledger it reads, and the delegations still running per session.
+        self._reasoning_backend = reasoning_backend
+        self._reasoning_timeout_s = float(reasoning_timeout_s)
+        self._transcript_ledger: dict[str, list[list[str]]] = {}
+        self._delegated_before: set[str] = set()
+        self._pending_delegations: dict[str, set[str]] = {}
+        if reasoning_backend is not None and not provider.full_duplex:
+            logger.warning(
+                "reasoning_backend configured on channel %s but provider %s is not "
+                "full-duplex: it delegates nothing, so the backend will never run",
+                channel_id,
+                provider.name,
+            )
 
         # Extract Tool objects: split into definition dicts + composed handler
         from roomkit.tools.base import Tool as _ToolProto
@@ -476,6 +512,7 @@ class RealtimeVoiceChannel(
         # Wire internal callbacks
         provider.on_audio(self._on_provider_audio)
         provider.on_transcription(self._on_provider_transcription)
+        provider.on_transcription(self._on_transcript_fragment)
         provider.on_speech_start(self._on_provider_speech_start)
         provider.on_speech_end(self._on_provider_speech_end)
         provider.on_tool_call(self._on_provider_tool_call)
@@ -559,7 +596,8 @@ class RealtimeVoiceChannel(
             not self._pending_tool_calls.get(session_id)
             and session_id not in self._awaiting_tool_response
         )
-        if provider_done and user_silent and drained and tools_done:
+        delegations_done = not self._pending_delegations.get(session_id)
+        if provider_done and user_silent and drained and tools_done and delegations_done:
             idle.set()
         else:
             idle.clear()
@@ -1194,7 +1232,11 @@ class RealtimeVoiceChannel(
         # calls owned by other sessions sharing this channel.
         session.state = VoiceSessionState.ENDED
         current = asyncio.current_task()
-        prefixes = (f"rt_tool_call:{session.id}:", f"rt_tool_recovery:{session.id}:")
+        prefixes = (
+            f"rt_tool_call:{session.id}:",
+            f"rt_tool_recovery:{session.id}:",
+            f"rt_delegation:{session.id}:",
+        )
         tool_tasks = [
             task
             for task in self._scheduled_tasks
@@ -1274,6 +1316,9 @@ class RealtimeVoiceChannel(
             self._provider_idle.pop(session.id, None)
             self._pending_tool_calls.pop(session.id, None)
             self._awaiting_tool_response.discard(session.id)
+            self._transcript_ledger.pop(session.id, None)
+            self._delegated_before.discard(session.id)
+            self._pending_delegations.pop(session.id, None)
             turn_span_id = self._turn_spans.pop(session.id, None)
             session_span_id = self._session_spans.pop(session.id, None)
             resamplers = self._session_resamplers.pop(session.id, None)
@@ -1283,6 +1328,14 @@ class RealtimeVoiceChannel(
             self._preconnect_audio.pop(session.id, None)
             self._preconnect_audio_bytes.pop(session.id, None)
             self._preconnect_audio_dropped.discard(session.id)
+
+        if self._reasoning_backend is not None:
+            try:
+                await self._reasoning_backend.session_ended(session.id)
+            except Exception:
+                logger.exception(
+                    "Error releasing reasoning backend state for session %s", session.id
+                )
 
         # Release the send worker — it exits on the sentinel; anything still
         # queued belongs to the closed session and is dropped with it.
@@ -1619,6 +1672,11 @@ class RealtimeVoiceChannel(
         if self._inbound_offload is not None:
             await asyncio.to_thread(self._pipeline_offload_shutdown)
 
+        if self._reasoning_backend is not None:
+            try:
+                await self._reasoning_backend.close()
+            except Exception:
+                logger.exception("Error closing reasoning backend during channel close")
         try:
             await self._provider.close()
         except Exception:
