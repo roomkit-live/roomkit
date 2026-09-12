@@ -39,6 +39,10 @@ input rates in the eight days to 2026-08-13, so its entry carries the
 first-party DeepSeek endpoint instead of that spot price, and
 ``scripts/check_models.py`` records the divergence rather than chasing it.
 
+Slugs move too. OpenRouter retired ``qwen/qwen3.8-max`` for the dated
+``qwen/qwen3.8-max-0902`` between 2026-09-09 and 2026-09-11, with the same
+window and rates; the entry follows the slug the endpoint serves.
+
 One field needs normalization. OpenRouter reports only the five-minute storage
 premium in ``input_cache_write`` for explicit Gemini caching, while billing a
 write as ordinary input plus that premium. RoomKit's canonical cache-write
@@ -222,7 +226,7 @@ MODELS: list[ModelInfo] = [
         ),
     ),
     ModelInfo(
-        id="qwen/qwen3.8-max",
+        id="qwen/qwen3.8-max-0902",
         display_name="Qwen3.8 Max",
         context_window=1_000_000,
         supports_vision=True,

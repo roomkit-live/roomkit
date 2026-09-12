@@ -18,6 +18,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   to sit; it sits there now, and so does a test's `MockTransport`, instead
   of behind the network.
 
+### Fixed
+
+- **The OpenRouter catalog names Qwen3.8 Max by its current slug.** OpenRouter
+  retired `qwen/qwen3.8-max` in favour of the dated `qwen/qwen3.8-max-0902` —
+  same 1M window, same $2/$6 rates — so `available_models()` handed out an id
+  the endpoint no longer served, and `make check-models` warned about it. The
+  entry now carries the dated slug.
+
 ## [0.71.0] — 2026-09-11
 
 ### Fixed
