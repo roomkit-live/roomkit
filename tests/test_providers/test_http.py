@@ -50,6 +50,26 @@ class TestWebhookHTTPProvider:
         assert body["content"]["type"] == "text"
         assert body["content"]["body"] == "hello"
 
+    async def test_send_goes_through_the_transport_handed_in(self) -> None:
+        """The caller's transport carries the POST: the seam for an outbound policy."""
+        seen: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen.append(request)
+            return httpx.Response(200, json={"message_id": "msg-002"})
+
+        config = HTTPProviderConfig(webhook_url="https://example.com/hook")
+        provider = WebhookHTTPProvider(config, transport=httpx.MockTransport(handler))
+        try:
+            result = await provider.send(_make_event(), to="user-123")
+        finally:
+            await provider.close()
+
+        assert result.success is True
+        assert result.provider_message_id == "msg-002"
+        assert [str(request.url) for request in seen] == ["https://example.com/hook"]
+        assert json.loads(seen[0].content)["content"]["body"] == "hello"
+
     async def test_send_with_headers(self) -> None:
         config = HTTPProviderConfig(
             webhook_url="https://example.com/hook",

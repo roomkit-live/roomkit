@@ -19,9 +19,23 @@ if TYPE_CHECKING:
 
 
 class WebhookHTTPProvider(HTTPProvider):
-    """HTTP provider that POSTs JSON payloads to a webhook URL."""
+    """HTTP provider that POSTs JSON payloads to a webhook URL.
 
-    def __init__(self, config: HTTPProviderConfig) -> None:
+    ``transport`` is handed to the provider's ``httpx.AsyncClient`` as it is.
+    The config validates ``webhook_url`` once, when it is built, and the client
+    resolves the name again at every send; a caller whose outbound policy must
+    judge the address actually dialled (pin-on-connect, see
+    :mod:`roomkit.providers.url_safety`) puts that policy here, and a test puts
+    a ``MockTransport`` here instead of behind the network. ``None`` leaves
+    httpx to build its default transport.
+    """
+
+    def __init__(
+        self,
+        config: HTTPProviderConfig,
+        *,
+        transport: httpx.AsyncBaseTransport | None = None,
+    ) -> None:
         try:
             import httpx as _httpx
         except ImportError as exc:
@@ -33,6 +47,7 @@ class WebhookHTTPProvider(HTTPProvider):
         self._httpx = _httpx
         self._client: httpx.AsyncClient = _httpx.AsyncClient(
             timeout=http_timeout(config),
+            transport=transport,
         )
 
     async def send(self, event: RoomEvent, to: str) -> ProviderResult:

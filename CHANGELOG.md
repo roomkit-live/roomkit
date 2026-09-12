@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `WebhookHTTPProvider(config, transport=...)` hands the provider's
+  `httpx.AsyncClient` a caller-supplied transport. The config judges
+  `webhook_url` once, when it is built, and the client resolved the name
+  again at every send, so an outbound policy that must judge the address
+  actually dialled (pin-on-connect, the DNS-rebinding case
+  `roomkit.providers.url_safety` documents as out of its scope) had nowhere
+  to sit; it sits there now, and so does a test's `MockTransport`, instead
+  of behind the network.
+
 ## [0.71.0] — 2026-09-11
 
 ### Fixed
