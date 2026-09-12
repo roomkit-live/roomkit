@@ -4392,7 +4392,7 @@ from roomkit.providers.http.provider import WebhookHTTPProvider
 from roomkit.providers.http.config import HTTPProviderConfig
 
 http = HTTPChannel("webhook", provider=WebhookHTTPProvider(HTTPProviderConfig(
-    url="https://api.example.com/messages",
+    webhook_url="https://api.example.com/messages",
     headers={"Authorization": "Bearer ..."},
 )))
 ```
