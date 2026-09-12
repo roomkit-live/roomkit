@@ -31,7 +31,8 @@ class HTTPProviderConfig(BaseModel):
 
         Note: DNS rebinding between validation and HTTP request is not
         defended against here — see :mod:`roomkit.providers.url_safety`
-        for the rationale.
+        for the rationale; ``WebhookHTTPProvider(config, transport=...)``
+        is where a caller puts a transport that pins on connect.
         """
         try:
             return validate_public_url(v)

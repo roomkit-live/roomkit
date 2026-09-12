@@ -19,8 +19,9 @@ A note on DNS rebinding: this validator resolves at validation time and
 checks every resolved address. It does NOT pin DNS at connect time, so a
 TOCTOU attacker who controls both DNS and timing can still rebind between
 validation and the actual HTTP request. Pin-on-connect is out of scope
-for a config-time helper; callers needing that should wire a custom
-``httpx.AsyncHTTPTransport`` with a resolved-IP host header.
+for a config-time helper; a caller that needs it hands its own transport
+(one that resolves, judges and dials the address it verified) to
+``WebhookHTTPProvider(config, transport=...)``.
 """
 
 from __future__ import annotations

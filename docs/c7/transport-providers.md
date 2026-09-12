@@ -327,6 +327,16 @@ http = HTTPChannel("webhook", provider=WebhookHTTPProvider(HTTPProviderConfig(
 )))
 ```
 
+`HTTPProviderConfig` refuses a `webhook_url` on a private, loopback, link-local,
+reserved or multicast address when it is built. The client resolves the name
+again at every send; a caller whose policy must judge the address actually
+dialled (pin-on-connect), or a test that wants the POST to land in a
+`MockTransport`, hands the provider its transport:
+
+```python
+provider = WebhookHTTPProvider(config, transport=my_transport)
+```
+
 ## WebSocket
 
 WebSocket channels don't use a provider — they handle connections directly:
