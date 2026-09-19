@@ -371,5 +371,5 @@ precision = 0
 
 [dependency-groups]
 dev = [
-    "setuptools<84",
+    "setuptools<85",
 ]
