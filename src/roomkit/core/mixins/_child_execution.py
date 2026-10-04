@@ -445,7 +445,12 @@ async def _collect_answer(
     # Non-streaming: response_events already include the tool-call events —
     # persist them all (not just the final text) so the trace survives.
     for output in result.outputs.values():
-        if not output.responded or output.response_stream is not None:
+        if output.response_stream is not None:
+            continue
+        if not output.responded:
+            # Its error still fails the turn, as on the room path
+            # (_responder_failure): no answer, and why.
+            failure = failure or output.error
             continue
         final_text = await _persist_response_events(kit, child_room_id, output.response_events)
         if output.error is not None:

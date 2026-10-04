@@ -201,3 +201,31 @@ async def test_the_buffered_failure_is_the_error_a_caller_reads_on_every_door(do
     await kit.close()
 
     assert repr(result.error) == "RuntimeError('buffered boom')"
+
+
+class _NoAnswerFails(_BufferedFails):
+    """A buffered reply that did not respond and carries why (a runner's shape)."""
+
+    async def on_event(
+        self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
+    ) -> ChannelOutput:
+        return ChannelOutput(responded=False, error=RuntimeError("producer failed"))
+
+
+@pytest.mark.parametrize("shared", [False, True], ids=["trace", "shared"])
+async def test_a_delegated_reply_that_did_not_respond_fails_the_task_with_its_error(
+    shared: bool,
+) -> None:
+    kit = RoomKit()
+    kit.register_channel(SimpleChannel("sms"))
+    kit.register_channel(_NoAnswerFails("worker"))
+    await kit.create_room(room_id="r")
+    await kit.attach_channel("r", "sms")
+
+    task = await kit.delegate(
+        "r", "worker", "Go.", wait=True, share_channels=["sms"] if shared else None
+    )
+    await kit.close()
+
+    assert task.result is not None
+    assert (str(task.result.status), task.result.error) == ("failed", "producer failed")
