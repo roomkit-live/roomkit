@@ -158,19 +158,19 @@ async def _persist_child_stream(
     13s), then propagates. Returns the last segment's text: the worker's
     answer, as a non-streaming worker's last message is.
     """
+    correlation_id = uuid4().hex
     writer = SegmentWriter(
         kit,
         sr,
         _TraceSink(kit, child_room_id),
         room_id=child_room_id,
         chain_depth=chain_depth,
-        correlation_id=uuid4().hex,
+        correlation_id=correlation_id,
     )
     try:
         answer = await _drain_turn(writer, sr)
     except Exception as exc:
-        source = EventSource(channel_id=sr.source_channel_id, channel_type=sr.source_channel_type)
-        await _report_turn_failure(kit, child_room_id, source, exc, "streaming")
+        await _report_turn_failure(kit, child_room_id, sr, exc, correlation_id)
         end = _turn_end(stream_record(sr), writer.persisted)
         raise _turn_failure(exc, _last_text(writer.persisted), end)  # noqa: B904
     if (cut := _cut_short(answer, _turn_end(stream_record(sr), writer.persisted))) is not None:
@@ -179,22 +179,15 @@ async def _persist_child_stream(
 
 
 async def _report_turn_failure(
-    kit: RoomKit, room_id: str, source: EventSource, exc: Exception, category: str
+    kit: RoomKit, room_id: str, sr: Any, exc: Exception, correlation_id: str
 ) -> None:
     """Fire ON_ERROR, once, for a delegated turn whose stream failed on the
-    trace path, as a room's reader fires it for a turn of its own (RFC §23.3
-    step 6)."""
+    trace path, by the hook a room's reader fires for a turn of its own, with
+    the turn's scope (RFC §23.3 step 6)."""
     context = await kit._hook_context(room_id, HookTrigger.ON_ERROR)
     if context is None:
         return
-    await kit._fire_error_hook(
-        room_id,
-        context,
-        source,
-        error=str(exc),
-        error_type=type(exc).__name__,
-        error_category=category,
-    )
+    await kit._fire_stream_error_hook(exc, room_id, context, sr, correlation_id)
 
 
 async def _drain_turn(writer: SegmentWriter, sr: Any) -> str:
