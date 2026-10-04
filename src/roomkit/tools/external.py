@@ -33,6 +33,7 @@ Usage::
 
 from __future__ import annotations
 
+import inspect
 import logging
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
@@ -104,19 +105,34 @@ class BeforeToolDecision:
         return self.allowed
 
 
-def ran_despite_refusal(refused_but_ran: bool) -> dict[str, Any]:
-    """The ``refused_but_ran`` keyword a door hands
-    :meth:`ExternalToolHandler.on_tool_result`: only when the call ran
-    although RoomKit refused it, so an override written before it still
-    hears every other result."""
-    return {"refused_but_ran": True} if refused_but_ran else {}
+def takes_keyword(method: Callable[..., Any], name: str) -> bool:
+    """Whether *method* accepts the keyword *name* (named, or ``**kwargs``):
+    a handler override written before a keyword was added does not, and is
+    never handed it (RFC §9.3)."""
+    try:
+        parameters = inspect.signature(method).parameters
+    except (TypeError, ValueError):
+        return False
+    return name in parameters or any(
+        p.kind is inspect.Parameter.VAR_KEYWORD for p in parameters.values()
+    )
 
 
-def refusal_detail(detail: str | None) -> dict[str, str]:
-    """The ``detail`` keyword a door hands :meth:`ExternalToolHandler.on_tool_refused`:
-    only when there is one, so an override written before it still hears
-    every other refusal."""
-    return {"detail": detail} if detail is not None else {}
+def refusal_detail(handler: ExternalToolHandler, detail: str | None) -> dict[str, Any]:
+    """The ``detail`` keyword a door hands *handler*'s
+    :meth:`~ExternalToolHandler.on_tool_refused`: only when there is one and
+    the override takes it. One that does not still reports the refusal,
+    without what failed, and the log says so."""
+    if detail is None:
+        return {}
+    if takes_keyword(handler.on_tool_refused, "detail"):
+        return {"detail": detail}
+    logger.warning(
+        "%s.on_tool_refused takes no 'detail': what failed is left out of the refusal's "
+        "report; accept **kwargs and hand them to super().on_tool_refused",
+        type(handler).__name__,
+    )
+    return {}
 
 
 # Callback type injected by the framework.

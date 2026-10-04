@@ -466,3 +466,59 @@ async def test_an_acp_call_refused_then_run_is_reported_served_with_the_refusal_
     assert (event.is_error, event.refused, event.refused_but_ran) == (False, False, True)
     [row] = rows
     assert (row.outcome, row.refused_but_ran) == ("served", True)
+
+
+class _NarrowDenying(PolicyExternalToolHandler):
+    """A handler whose overrides predate the optional keywords."""
+
+    async def process_tool_call(self, tool_name: str, tool_input: Any, **kw: Any) -> ToolDecision:
+        return ToolDecision(approved=False, reason="denied", detail="gate: approval db down")
+
+    async def on_tool_result(
+        self,
+        tool_name: str,
+        tool_input: Any,
+        result: str,
+        *,
+        is_error: bool = False,
+        tool_call_id: str = "",
+        room_id: str | None = None,
+    ) -> None:
+        await self._fire_on_tool_hook(
+            tool_name,
+            tool_input,
+            result,
+            is_error=is_error,
+            tool_call_id=tool_call_id,
+            room_id=room_id,
+        )
+
+    async def on_tool_refused(
+        self,
+        tool_name: str,
+        tool_input: Any,
+        reason: str,
+        *,
+        tool_call_id: str = "",
+        room_id: str | None = None,
+    ) -> None:
+        await super().on_tool_refused(
+            tool_name, tool_input, reason, tool_call_id=tool_call_id, room_id=room_id
+        )
+
+
+async def test_an_override_without_the_marker_still_has_the_call_reported_with_it() -> None:
+    """The report of a call the agent ran past its refusal is never lost to
+    an override that cannot take ``refused_but_ran``: the channel makes it."""
+    heard, _ = await _acp_ran_anyway(_NarrowDenying())
+
+    [event] = heard.observed
+    assert (event.refused, event.refused_but_ran) == (False, True)
+
+
+@pytest.mark.parametrize("door", ["ai", "acp"])
+async def test_an_override_without_detail_still_reports_the_refusal(door: str) -> None:
+    heard = await _door(door, _NarrowDenying())
+
+    [event] = heard.observed
+    assert (event.is_error, event.refused, event.error_detail) == (True, True, None)

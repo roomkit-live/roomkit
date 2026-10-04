@@ -222,7 +222,7 @@ class _ExternalStreamTools:
                 decided.result,
                 tool_call_id=call.id,
                 room_id=self.room_id,
-                **refusal_detail(decided.detail),
+                **refusal_detail(handler, decided.detail),
             )
         elif handler is not None:
             await handler.on_tool_result(

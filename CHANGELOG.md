@@ -860,14 +860,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   from a failure (a `BEFORE_TOOL_USE` hook that failed closed) carries what
   failed (`error_detail`) on the external handler's doors too, through
   `ToolDecision.detail` and `ExternalToolHandler.on_tool_refused(detail=...)`
-  (passed only then); a reasoning backend's call is reported under
+  (passed only then, and only to an override that takes it: one that does
+  not still reports the refusal, without the detail, and the log says so); a
+  reasoning backend's call is reported under
   `<delegation>:<the model's id>` on every path, where a call through the gate
   or refused by it got a minted id (`model_call_id()`); a call the turn cuts
   while it runs is closed with the arguments it ran with, as its report is,
   where its END row kept the model's; and an ACP call RoomKit refused that the
   agent ran anyway and closed completed is reported served with
   `refused_but_ran` on its report, its END row and its `tool_call` framework
-  event (`on_tool_result(refused_but_ran=True)`, passed only then).
+  event (`on_tool_result(refused_but_ran=True)`, passed only then; an
+  override that cannot take it leaves that call's report to the channel,
+  never a report without the marker, nor none).
 
 - A turn ends the same on every door that runs one (RMK-497, RFC §6.4,
   §12.4.1, §23.3): a turn cancelled from outside (`handle.cancel()`, a
