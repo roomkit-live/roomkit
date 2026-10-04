@@ -72,7 +72,23 @@ RefusalReporter = Callable[..., Awaitable[None]]
 """``(name, arguments, body, *, cancelled=False, refused=True, detail=None)`` —
 reports a call the backend's loop ended before the channel's gate to its
 ON_TOOL_CALL observers, with its outcome: refused, cancelled, or failed
-(``refused=False``), and what failed (*detail*)."""
+(``refused=False``), and what failed (*detail*). The id the model gave the
+call is read where it is reported (:func:`model_call_id`)."""
+
+_MODEL_CALL_ID: ContextVar[str | None] = ContextVar("_model_call_id", default=None)
+
+
+def model_call_id() -> str | None:
+    """The id the backend's model gave the call being run or reported, for
+    the channel to report it under (RFC §12.4.1): the call its tool loop runs
+    (``current_tool_call()``), or one its loop refused before the gate.
+    ``None`` for a backend that runs no tool loop of the framework's."""
+    refused = _MODEL_CALL_ID.get()
+    if refused is not None:
+        return refused
+    call = current_tool_call()
+    return call.tool_call_id if call is not None and call.tool_call_id else None
+
 
 CallReporter = Callable[..., Awaitable[None]]
 """``(name, arguments, result, *, is_error=False, detail=None,
@@ -123,7 +139,8 @@ class ReasoningRequest:
             result text. A backend MUST route its tool calls through it.
         execute_tool_call: The same call, returning a :class:`ToolCallResult`
             that also says whether it failed, so the backend's model reads a
-            refused or failed call as one. A backend SHOULD prefer it.
+            refused or failed call as one. A backend SHOULD prefer it. A call
+            is reported under the id its model gave it (:func:`model_call_id`).
         report_refusal: Reports a call the backend's own loop ended before
             the gate (its arguments did not read, a stop cut it) to the
             channel's ON_TOOL_CALL observers, as ``(name, arguments, body,
@@ -400,9 +417,13 @@ class AgentReasoningBackend(ReasoningBackend):
             outcome["refused"] = False
         if event.error_detail is not None:
             outcome["detail"] = event.error_detail
-        await request.report_refusal(
-            event.name, dict(event.arguments), str(event.result or ""), **outcome
-        )
+        token = _MODEL_CALL_ID.set(event.tool_call_id or None)
+        try:
+            await request.report_refusal(
+                event.name, dict(event.arguments), str(event.result or ""), **outcome
+            )
+        finally:
+            _MODEL_CALL_ID.reset(token)
 
     async def _report_provider_call(self, event: ToolCallEvent) -> None:
         """Report a call the agent's provider served (``AIToolCall.served``)

@@ -45,6 +45,7 @@ from roomkit.voice.realtime.reasoning import (
     ReasoningRequest,
     ToolCallResult,
     TranscriptLine,
+    model_call_id,
 )
 
 if TYPE_CHECKING:
@@ -455,7 +456,10 @@ class RealtimeDelegationMixin:
         bound; the one difference is where the outcome goes — back to the
         backend model, with whether it failed, not to the provider (RFC §12.4.1).
         """
-        call = RealtimeToolCall(session, f"{delegation_id}:{uuid4().hex[:8]}", name, arguments)
+        # Under the id the backend's model gave it, as its other reports are
+        # (RFC §9.3).
+        call_id = _backend_call_id(delegation_id, model_call_id())
+        call = RealtimeToolCall(session, call_id, name, arguments)
         # The delegation's task serves the call: a call that ends its own
         # session is then not taken for one the session's end interrupted.
         call.task = asyncio.current_task()
@@ -507,8 +511,9 @@ class RealtimeDelegationMixin:
     ) -> RealtimeToolCall:
         """A call a backend reports outside the gate, under an id of its
         delegation, in the session's room."""
-        call_id = f"{delegation_id}:{tool_call_id or uuid4().hex[:8]}"
-        call = RealtimeToolCall(session, call_id, name, arguments)
+        call = RealtimeToolCall(
+            session, _backend_call_id(delegation_id, tool_call_id), name, arguments
+        )
         call.room_id = self._session_rooms.get(session.id) or session.room_id
         return call
 
@@ -526,8 +531,9 @@ class RealtimeDelegationMixin:
     ) -> None:
         """Report a call the backend's own loop ended before the gate (its
         arguments did not read, a stop cut it), as the gate reports one, with
-        its outcome: cancelled, refused, or failed, and what failed."""
-        call = self._backend_call(session, delegation_id, name, arguments)
+        its outcome: cancelled, refused, or failed, and what failed; under
+        the id its model gave it."""
+        call = self._backend_call(session, delegation_id, name, arguments, model_call_id())
         if cancelled:
             kind = OutcomeKind.CANCELLED
         else:
@@ -553,6 +559,12 @@ class RealtimeDelegationMixin:
         await report_served_elsewhere(
             cast("ToolCallHost", self), call, result, is_error=is_error, detail=detail
         )
+
+
+def _backend_call_id(delegation_id: str, tool_call_id: str | None) -> str:
+    """The id a backend's call is reported under: its model's within the
+    delegation's, or one minted for a backend that gives none."""
+    return f"{delegation_id}:{tool_call_id or uuid4().hex[:8]}"
 
 
 @dataclass(frozen=True)

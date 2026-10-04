@@ -24,11 +24,15 @@ from roomkit import (
     RoomKit,
     TextContent,
 )
+from roomkit.channels.agent import Agent
 from roomkit.channels.ai import AIChannel
+from roomkit.channels.realtime_voice import RealtimeVoiceChannel
 from roomkit.models.event import ToolCallContent
 from roomkit.models.tool_call import ToolCallEvent
-from roomkit.providers.ai.base import AIResponse, AITool, AIToolCall
+from roomkit.providers.ai.base import AIResponse, AITool, AIToolCall, ServedCall
 from roomkit.providers.ai.mock import MockAIProvider
+from roomkit.voice.realtime.mock import MockRealtimeProvider, MockRealtimeTransport
+from roomkit.voice.realtime.reasoning import AgentReasoningBackend
 from tests.test_framework import SimpleChannel
 
 SCHEMA = {"type": "object", "properties": {"q": {"type": "string"}}}
@@ -113,3 +117,68 @@ async def test_a_call_the_turn_cuts_is_closed_with_the_arguments_it_ran_with(
 
     assert [report.arguments for report in reports] == [REAL]
     assert rows == [("cancelled", REAL)]
+
+
+async def _found(name: str, arguments: dict[str, Any]) -> str:
+    return "found"
+
+
+async def _blocks(event: Any, context: Any) -> HookResult:
+    return HookResult.block("no")
+
+
+_BACKEND_CASES = {
+    "served": (AIToolCall(id="c1", name="lookup", arguments={"q": "x"}), None),
+    "gate-refused": (AIToolCall(id="c1", name="lookup", arguments={"q": "x"}), _blocks),
+    "loop-refused": (AIToolCall(id="c1", name="nope", arguments={}), None),
+    "provider-served": (
+        AIToolCall(
+            id="c1", name="web_search", arguments={"q": "x"}, served=ServedCall(result="3 hits")
+        ),
+        None,
+    ),
+}
+
+
+@pytest.mark.parametrize("case", list(_BACKEND_CASES))
+async def test_a_reasoning_backend_s_call_is_reported_under_its_model_s_id(case: str) -> None:
+    """Served through the gate, refused by it, refused by the backend's own
+    loop or served by its provider: one report, under ``<delegation>:<id>``."""
+    call, before = _BACKEND_CASES[case]
+    model = MockAIProvider(
+        ai_responses=[
+            AIResponse(content="", finish_reason="tool_calls", tool_calls=[call]),
+            AIResponse(content="done"),
+        ]
+    )
+    provider = MockRealtimeProvider(full_duplex=True)
+    channel = RealtimeVoiceChannel(
+        "rt",
+        provider=provider,
+        transport=MockRealtimeTransport(),
+        tool_handler=_found,
+        tools=[{"name": "lookup", "description": "Look up", "parameters": SCHEMA}],
+        reasoning_backend=AgentReasoningBackend(Agent("reasoner", provider=model)),
+    )
+    kit = RoomKit()
+    kit.register_channel(channel)
+    await kit.create_room(room_id="r")
+    await kit.attach_channel("r", "rt")
+    reports: list[ToolCallEvent] = []
+
+    @kit.hook(HookTrigger.ON_TOOL_CALL, execution=HookExecution.ASYNC, name="audit")
+    async def audit(event: ToolCallEvent, context: Any) -> None:
+        reports.append(event)
+
+    if before is not None:
+        kit.hook(HookTrigger.BEFORE_TOOL_USE, name="gate")(before)
+    session = await channel.start_session("r", "u", "ws")
+    await provider.simulate_delegation(session, "d1", "integrator")
+    for _ in range(300):
+        if len(model.calls) > 1 and reports:
+            break
+        await asyncio.sleep(0.01)
+    await asyncio.sleep(0.05)
+    await kit.close()
+
+    assert [report.tool_call_id for report in reports] == ["d1:c1"]
