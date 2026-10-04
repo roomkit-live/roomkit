@@ -105,7 +105,7 @@ class ResponseReader:
                 ToolCallEndMarker(
                     tool_name=start.tool_name,
                     tool_id=start.tool_id,
-                    arguments=start.arguments,
+                    arguments=start.ran_with if start.ran_with is not None else start.arguments,
                     status="failed",
                     error=error,
                     outcome="cancelled",

@@ -240,6 +240,9 @@ class _ToolLoopContext:
     # stopped reading), is reported cancelled when the loop ends (RFC §9.3).
     announced_calls: dict[str, Any] = field(default_factory=dict)
     reported_calls: set[str] = field(default_factory=set)
+    # Each announced call's start marker, by its id: the arguments the call
+    # runs with ride it, so a call the turn cuts is closed with them.
+    start_markers: dict[str, Any] = field(default_factory=dict)
     # The announced calls the channel's external handler decides: one cut
     # before its report is reported through that handler (RFC §9.3).
     external_calls: set[str] = field(default_factory=set)

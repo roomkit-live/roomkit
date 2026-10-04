@@ -484,9 +484,11 @@ class AIToolsMixin(_AIChannelContract):
         executed."""
         if scope.executed_arguments is not None:
             scope.executed_arguments[tc.id] = dict(arguments)
-        announced = self._get_loop_ctx().announced_calls
-        if tc.id in announced:
-            announced[tc.id] = tc.model_copy(update={"arguments": dict(arguments)})
+        loop_ctx = self._get_loop_ctx()
+        if tc.id in loop_ctx.announced_calls:
+            loop_ctx.announced_calls[tc.id] = tc.model_copy(update={"arguments": dict(arguments)})
+        if (marker := loop_ctx.start_markers.get(tc.id)) is not None:
+            marker.ran_with = dict(arguments)
 
     async def _gate_call(
         self, tc: Any, scope: _CallRound

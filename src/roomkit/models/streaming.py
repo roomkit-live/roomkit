@@ -29,6 +29,10 @@ class ToolCallStartMarker:
     tool_name: str
     tool_id: str
     arguments: dict[str, Any] = field(default_factory=dict)
+    ran_with: dict[str, Any] | None = None
+    """The arguments the call runs with once its gate fixed them (a
+    ``BEFORE_TOOL_USE`` rewrite), set while it runs: a call the turn cuts is
+    closed with them, as its report is (RFC §9.3)."""
 
 
 @dataclass(slots=True)

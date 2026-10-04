@@ -423,9 +423,11 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
         # from here on, the turn's end reports each call no report claimed.
         turn.loop_ctx.announced_calls.update((call.id, call) for call in calls)
         for call in calls:
-            yield ToolCallStartMarker(
+            marker = ToolCallStartMarker(
                 tool_name=call.name, tool_id=call.id, arguments=call.arguments
             )
+            turn.loop_ctx.start_markers.setdefault(call.id, marker)
+            yield marker
         # A stop that came while the calls were announced: none of them runs,
         # and the loop ends cancelled at its next check (RFC §21.3).
         ends = (
