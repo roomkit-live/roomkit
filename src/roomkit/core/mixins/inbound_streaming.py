@@ -197,6 +197,8 @@ class InboundStreamingMixin(HelpersMixin):
                 reader,
                 context,
                 correlation_id=correlation_id,
+                # A delegation logs its turn's failure itself, rendered or not.
+                caller_logs=cascade.caller_logs_streamed and not sr.chained,
             )
         else:
             # No streaming targets (e.g. a PII-locked / edge agent whose stream
@@ -261,6 +263,7 @@ class InboundStreamingMixin(HelpersMixin):
         context: RoomContext,
         *,
         correlation_id: str,
+        caller_logs: bool,
     ) -> Exception | None:
         """Hand the response to the channel that streams it; the failure it ended on, if any.
 
@@ -295,6 +298,7 @@ class InboundStreamingMixin(HelpersMixin):
                 sr,
                 context,
                 correlation_id=correlation_id,
+                caller_logs=caller_logs,
             )
         return failure
 

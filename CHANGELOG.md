@@ -860,9 +860,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   delegated turn whose stream fails on the trace path fires `ON_ERROR` in the
   turn's scope (depth, correlation, thread), where it fired at depth 0 with
   no correlation; `regenerate_response()` reports the buffered failure first,
-  as `process_inbound()` does, where it reported the stream's; a failed
-  stream a transport streams is logged once, by its caller, where the
-  framework logged it a second time; a delegated reply that did not respond
+  as `process_inbound()` does, where it reported the stream's; a delegated
+  turn whose stream a shared transport rendered is logged once, by its task,
+  where the framework logged it a second time (a room turn streamed to a live
+  target keeps its one line); a delegated reply that did not respond
   and carries an error fails the task with that error on the trace path,
   where the task failed with none; `kit.delegate()` refuses to start on a
   closing kit, as a strategy's background run does; and a reasoning

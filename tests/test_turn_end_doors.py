@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -355,3 +356,45 @@ async def test_a_backend_turn_its_cap_cut_is_answered_but_not_reported_as_an_err
         "The delegated work could not be completed."
     ]
     assert errors == []
+
+
+class _Streams(SimpleChannel):
+    """A transport that streams what it is handed."""
+
+    @property
+    def supports_streaming_delivery(self) -> bool:
+        return True
+
+    async def deliver_stream(
+        self,
+        text_stream: AsyncIterator[Any],
+        event: RoomEvent,
+        binding: ChannelBinding,
+        context: RoomContext,
+    ) -> ChannelOutput:
+        async for _ in text_stream:
+            pass
+        return ChannelOutput.empty()
+
+
+@pytest.mark.parametrize("shared", [False, True], ids=["trace", "streamed-shared"])
+async def test_a_delegated_turn_s_failure_is_logged_once(
+    shared: bool, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The task logs its turn's failure; a shared transport that streamed the
+    turn adds no line of its own (RFC §15.2). A room turn streamed to a live
+    target keeps its one line (RMK-403)."""
+    kit = RoomKit()
+    kit.register_channel(_Streams("tx"))
+    kit.register_channel(_failing_worker())
+    await kit.create_room(room_id="r")
+    await kit.attach_channel("r", "tx")
+
+    with caplog.at_level(logging.WARNING, logger="roomkit"):
+        await kit.delegate(
+            "r", "worker", "Go.", wait=True, share_channels=["tx"] if shared else None
+        )
+    await kit.close()
+
+    lines = [r for r in caplog.records if r.name.startswith("roomkit")]
+    assert [r.name for r in lines] == ["roomkit.tasks"]

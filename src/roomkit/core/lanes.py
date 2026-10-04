@@ -134,6 +134,7 @@ class DeliveryCascade:
         "_pending",
         "_reentry_budget",
         "caller_logs",
+        "caller_logs_streamed",
         "cancelled",
         "delivery_results",
         "unavailable_targets",
@@ -163,6 +164,9 @@ class DeliveryCascade:
         # InboundResult.error, or raised) and logs it: a stream with no
         # streaming target then logs it at DEBUG only. Set by _finish_cascade.
         self.caller_logs = False
+        # The caller logs a stream a streaming target rendered too (a
+        # delegation): that target's line drops to DEBUG as well.
+        self.caller_logs_streamed = False
         # Final response metadata produced by the root delivery set. Non-streaming
         # outputs land here when the plan finishes; detached streaming consumers
         # add their records after consuming the streams, before their handle wakes.
