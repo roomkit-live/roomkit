@@ -31,6 +31,7 @@ from roomkit.channels._realtime_tool_executor import (
 )
 from roomkit.core._failure_log import log_failure
 from roomkit.core._fallback import FALLBACK_FAILED
+from roomkit.core.exceptions import TurnCutShortError
 from roomkit.core.task_utils import shielded
 from roomkit.models.enums import HookTrigger
 from roomkit.telemetry.base import SpanKind
@@ -125,6 +126,7 @@ class RealtimeDelegationMixin:
 
     _track_task: Any  # see RealtimeDelegationHost — cross-mixin
     _rt_span_ctx: Any  # see RealtimeDelegationHost — cross-mixin
+    _fire_session_error_hook: Any  # see RealtimeResponseMixin
     _expect_provider_output: Any
     _update_idle_event: Any  # see RealtimeDelegationHost — cross-mixin
     _access_cause: Any  # see RealtimeToolsMixin
@@ -321,6 +323,13 @@ class RealtimeDelegationMixin:
             raise
         except Exception as exc:
             log_failure(logger, exc, f"Delegation {delegation_id} (session {session.id})")
+            # A failed turn is an error a host renders, as a room turn's is
+            # (RFC §12.4.1): ON_ERROR once, beside the spoken fallback. A turn
+            # its cap, deadline or budget cut is an expected end, not one.
+            if not isinstance(exc, TurnCutShortError):
+                await self._fire_session_error_hook(
+                    session, str(exc), type(exc).__name__, "reasoning", type(backend).__name__
+                )
             await self._fallback(session, delegation_id, FALLBACK_FAILED)
         else:
             if not answered:

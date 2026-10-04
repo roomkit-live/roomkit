@@ -19,6 +19,7 @@ import pytest
 from roomkit import HookExecution, HookTrigger, RoomKit
 from roomkit.channels.agent import Agent
 from roomkit.channels.base import Channel
+from roomkit.channels.realtime_voice import RealtimeVoiceChannel
 from roomkit.core.exceptions import RoomKitError
 from roomkit.models.channel import ChannelBinding, ChannelOutput
 from roomkit.models.context import RoomContext
@@ -36,6 +37,14 @@ from roomkit.providers.ai.base import (
     StreamTextDelta,
 )
 from roomkit.providers.ai.mock import MockAIProvider
+from roomkit.voice.realtime.mock import MockRealtimeProvider, MockRealtimeTransport
+from roomkit.voice.realtime.reasoning import (
+    AgentReasoningBackend,
+    ReasoningBackend,
+    ReasoningCutShortError,
+    ReasoningOutput,
+    ReasoningRequest,
+)
 from tests.test_framework import SimpleChannel
 
 
@@ -258,3 +267,91 @@ async def test_nothing_starts_a_worker_s_turn_on_a_closing_kit(door: Any) -> Non
         await door(kit)
     kit._closed = False
     await kit.close()
+
+
+async def _backend_turn(kit: RoomKit) -> None:
+    provider = MockRealtimeProvider(full_duplex=True)
+    backend = AgentReasoningBackend(Agent("reasoner", provider=_FailsAfterARound(streaming=True)))
+    channel = RealtimeVoiceChannel(
+        "rt",
+        provider=provider,
+        transport=MockRealtimeTransport(),
+        tools=[{"name": "lookup", "description": "Look up", "parameters": {"type": "object"}}],
+        tool_handler=_found,
+        reasoning_backend=backend,
+        reasoning_timeout_s=5.0,
+    )
+    kit.register_channel(channel)
+    await kit.attach_channel("r", "rt")
+    session = await channel.start_session("r", "u", "ws")
+    await provider.simulate_delegation(session, "d1", "integrator")
+
+
+async def _room_turn(kit: RoomKit) -> None:
+    kit.register_channel(_failing_worker())
+    await kit.attach_channel("r", "worker", category=ChannelCategory.INTELLIGENCE)
+    message = InboundMessage(channel_id="sms", sender_id="u", content=TextContent(body="Go."))
+    await kit.process_inbound(message)
+
+
+@pytest.mark.parametrize("door", [_backend_turn, _room_turn], ids=["reasoning-backend", "room"])
+async def test_a_failed_turn_fires_on_error_once_on_every_door(door: Any) -> None:
+    """A reasoning backend's failed turn is answered by its spoken fallback
+    and, as a room turn's, reported to ON_ERROR (RFC §12.4.1)."""
+    kit = RoomKit()
+    kit.register_channel(SimpleChannel("sms"))
+    await kit.create_room(room_id="r")
+    await kit.attach_channel("r", "sms")
+    errors: list[Any] = []
+
+    @kit.hook(HookTrigger.ON_ERROR, execution=HookExecution.ASYNC)
+    async def on_error(event: Any, context: Any) -> None:
+        errors.append(event.metadata["error_type"])
+
+    await door(kit)
+    for _ in range(100):
+        if errors:
+            break
+        await asyncio.sleep(0.01)
+    await asyncio.sleep(0.05)
+    await kit.close()
+
+    assert errors == ["ProviderError"]
+
+
+class _CutShort(ReasoningBackend):
+    """A backend whose turn its round cap cut: an expected end, no error."""
+
+    async def run(self, request: ReasoningRequest) -> AsyncIterator[ReasoningOutput]:
+        raise ReasoningCutShortError(request.delegation_id, "max_rounds")
+        yield  # pragma: no cover
+
+
+async def test_a_backend_turn_its_cap_cut_is_answered_but_not_reported_as_an_error() -> None:
+    provider = MockRealtimeProvider(full_duplex=True)
+    channel = RealtimeVoiceChannel(
+        "rt", provider=provider, transport=MockRealtimeTransport(), reasoning_backend=_CutShort()
+    )
+    kit = RoomKit()
+    kit.register_channel(channel)
+    await kit.create_room(room_id="r")
+    await kit.attach_channel("r", "rt")
+    errors: list[Any] = []
+
+    @kit.hook(HookTrigger.ON_ERROR, execution=HookExecution.ASYNC)
+    async def on_error(event: Any, context: Any) -> None:
+        errors.append(event)
+
+    session = await channel.start_session("r", "u", "ws")
+    await provider.simulate_delegation(session, "d1", "integrator")
+    for _ in range(100):
+        if provider.delegation_outputs:
+            break
+        await asyncio.sleep(0.01)
+    await asyncio.sleep(0.05)
+    await kit.close()
+
+    assert [text for _, _, text, _ in provider.delegation_outputs] == [
+        "The delegated work could not be completed."
+    ]
+    assert errors == []

@@ -335,13 +335,17 @@ class RealtimeResponseMixin:
             return
         self._track_task(
             loop,
-            self._fire_provider_error_hook(session, code, message),
+            self._fire_session_error_hook(
+                session, message, code, "realtime_provider", self._provider.name
+            ),
             name=f"rt_provider_error:{session.id}",
         )
 
-    async def _fire_provider_error_hook(
-        self, session: VoiceSession, code: str, message: str
+    async def _fire_session_error_hook(
+        self, session: VoiceSession, error: str, error_type: str, category: str, provider: str
     ) -> None:
+        """Fire ON_ERROR for a failure of *session*'s, as its channel: the
+        provider's, or the reasoning backend's turn (RFC §12.4.1)."""
         from roomkit.models.event import EventSource
 
         framework = self._framework
@@ -356,11 +360,11 @@ class RealtimeResponseMixin:
                     channel_id=self.channel_id,
                     channel_type=self.channel_type,
                     participant_id=session.participant_id,
-                    provider=self._provider.name,
+                    provider=provider,
                 ),
-                error=message,
-                error_type=code,
-                error_category="realtime_provider",
+                error=error,
+                error_type=error_type,
+                error_category=category,
             )
         except Exception:
             logger.warning("ON_ERROR could not be fired for session %s", session.id, exc_info=True)
