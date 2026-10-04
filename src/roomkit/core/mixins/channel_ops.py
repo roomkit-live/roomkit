@@ -266,7 +266,7 @@ class ChannelOpsMixin(HelpersMixin):
         self,
         room_id: str,
         channel_id: str,
-        category: ChannelCategory = ChannelCategory.TRANSPORT,
+        category: ChannelCategory | None = None,
         access: Access = Access.READ_WRITE,
         visibility: str = Visibility.ALL,
         organization_id: str | None = None,
@@ -274,8 +274,11 @@ class ChannelOpsMixin(HelpersMixin):
     ) -> ChannelBinding:
         """Attach a registered channel to a room.
 
-        *organization_id* scopes the operation to one tenant (RFC §17.2); a
-        room belonging to another organization is reported as not found.
+        *category* is the channel's own (``channel.category``) unless given:
+        an agent attached without one takes part as an intelligence channel,
+        a transport as a transport. *organization_id* scopes the operation to
+        one tenant (RFC §17.2); a room belonging to another organization is
+        reported as not found.
         """
         async with self._lock_manager.locked(room_id):
             room = await self.get_room(room_id, organization_id=organization_id)
@@ -321,7 +324,7 @@ class ChannelOpsMixin(HelpersMixin):
                 channel_id=channel_id,
                 room_id=room_id,
                 channel_type=channel.channel_type,
-                category=category,
+                category=category if category is not None else channel.category,
                 access=access,
                 visibility=visibility,
                 capabilities=channel.capabilities(),

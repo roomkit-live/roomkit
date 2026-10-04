@@ -14,7 +14,7 @@ from roomkit import (
 )
 from roomkit.channels import SMSChannel
 from roomkit.models.delivery import InboundMessage
-from roomkit.models.enums import EventType
+from roomkit.models.enums import ChannelCategory, EventType
 from roomkit.models.event import TextContent
 from roomkit.models.session_event import SessionStartedEvent
 from roomkit.providers.ai.mock import MockAIProvider
@@ -990,8 +990,11 @@ class TestGreetingGate:
         @kit.hook(HookTrigger.ON_ROOM_CREATED, HookExecution.ASYNC)
         async def attach_agents(event: object, context: object) -> None:
             room_id = event.room_id  # type: ignore[attr-defined]
-            await kit.attach_channel(room_id, "agent-1")
-            await kit.attach_channel(room_id, "agent-2")
+            # As transports, the shape this gate test was written on: two
+            # auto-greeting agents attached as intelligence channels stall the
+            # first inbound (RMK-503).
+            await kit.attach_channel(room_id, "agent-1", category=ChannelCategory.TRANSPORT)
+            await kit.attach_channel(room_id, "agent-2", category=ChannelCategory.TRANSPORT)
 
         msg = InboundMessage(
             channel_id="sms-1",

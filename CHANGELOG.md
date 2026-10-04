@@ -365,6 +365,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `attach_channel()` takes the channel's own category when none is given
+  (RMK-501, RFC §5.7): an agent attached without `category=` takes part as an
+  intelligence channel, where it was attached as a transport, never answered
+  the room's messages and could make `deliver()` recurse. Passing `category=`
+  keeps its meaning.
+
 - A realtime pipeline refuses, at its install, an agent that carries a
   human-input handler, planning, a sandbox or an external tool handler, as it
   already refused one carrying skills (RMK-482, RFC §19.5): a realtime session
