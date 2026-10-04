@@ -49,6 +49,9 @@ class _ToolState:
     """RoomKit refused the agent's permission request for the call."""
     refusal: str | None = None
     """What the refusal said, as the external tool handler gave it."""
+    refusal_detail: str | None = None
+    """What failed, when that refusal came from a failure (a hook that failed
+    closed), for the observers only."""
     failure: str | None = None
     """What failed when the external tool handler raised deciding the
     permission: the call is reported failed, by the channel, with it."""

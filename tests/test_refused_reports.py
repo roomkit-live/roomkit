@@ -35,7 +35,7 @@ from roomkit.core.exceptions import ToolRefusedError
 from roomkit.models.tool_call import ToolCallEvent
 from roomkit.providers.ai.base import AIResponse, AITool, AIToolCall
 from roomkit.providers.ai.mock import MockAIProvider
-from roomkit.tools.external import PolicyExternalToolHandler, ToolDecision
+from roomkit.tools.external import BeforeToolDecision, PolicyExternalToolHandler, ToolDecision
 from roomkit.tools.result import cancelled_tool_error
 from roomkit.voice.realtime.mock import MockRealtimeProvider, MockRealtimeTransport
 from tests.test_channels.test_acp import _channel
@@ -392,3 +392,42 @@ async def test_a_handler_can_report_what_failed() -> None:
 
     [event] = [*heard.sync, *heard.observed][-1:]
     assert event.error_detail == "disk full"
+
+
+class _FailedClosed(PolicyExternalToolHandler):
+    """A refusal that came from a failure: a gate that could not decide."""
+
+    async def process_tool_call(self, tool_name: str, tool_input: Any, **kw: Any) -> ToolDecision:
+        return ToolDecision(approved=False, reason="denied", detail="gate: approval db down")
+
+
+async def _door(door: str, handler: Any) -> _Heard:
+    if door == "ai":
+        return await _external_door(handler, BASH)
+    return await _acp_permission(handler)
+
+
+@pytest.mark.parametrize("door", ["ai", "acp"])
+async def test_a_refusal_from_a_failure_carries_what_failed_on_the_external_doors(
+    door: str,
+) -> None:
+    """The observers read what failed (``error_detail``) as on the channel's
+    own doors; the agent reads the refusal only (RMK-498, RFC §9.3)."""
+    heard = await _door(door, _FailedClosed())
+
+    [event] = heard.observed
+    assert (event.is_error, event.refused) == (True, True)
+    assert event.error_detail == "gate: approval db down"
+    assert "approval db down" not in str(event.result)
+
+
+async def test_the_policy_handler_hands_on_what_a_failed_closed_hook_said() -> None:
+    handler = PolicyExternalToolHandler()
+
+    async def failed_closed(event: ToolCallEvent) -> BeforeToolDecision:
+        return BeforeToolDecision(allowed=False, detail="gate: approval db down")
+
+    handler._before_tool_hook = failed_closed
+    decision = await handler.process_tool_call("Bash", {"cmd": "ls"}, tool_call_id="p1")
+
+    assert (decision.approved, decision.detail) == (False, "gate: approval db down")

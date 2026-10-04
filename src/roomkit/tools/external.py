@@ -66,6 +66,11 @@ class ToolDecision:
     reason: str = ""
     """Human-readable reason for the decision (used in deny messages)."""
 
+    detail: str | None = None
+    """What failed when a refusal comes from a failure (a ``BEFORE_TOOL_USE``
+    hook that failed closed): for the observers (``ToolCallEvent.error_detail``)
+    and the log, never for the agent (RFC §9.3)."""
+
 
 @dataclass(frozen=True)
 class BeforeToolDecision:
@@ -97,6 +102,13 @@ class BeforeToolDecision:
 
     def __bool__(self) -> bool:
         return self.allowed
+
+
+def refusal_detail(detail: str | None) -> dict[str, str]:
+    """The ``detail`` keyword a door hands :meth:`ExternalToolHandler.on_tool_refused`:
+    only when there is one, so an override written before it still hears
+    every other refusal."""
+    return {"detail": detail} if detail is not None else {}
 
 
 # Callback type injected by the framework.
@@ -254,6 +266,7 @@ class ExternalToolHandler(ABC):
         tool_call_id: str = "",
         job_id: str | None = None,
         room_id: str | None = None,
+        detail: str | None = None,
     ) -> None:
         """Called when this handler refused a call: :meth:`process_tool_call`
         denied it, or an ACP permission it decided was rejected.
@@ -271,6 +284,9 @@ class ExternalToolHandler(ABC):
             tool_call_id: Provider-assigned ID for this tool call.
             job_id: Job identifier.
             room_id: RoomKit room ID.
+            detail: What failed, when the refusal came from a failure
+                (:attr:`ToolDecision.detail`); passed only then, so an
+                override should take ``**kwargs``.
         """
         await self._fire_on_tool_hook(
             tool_name,
@@ -278,6 +294,7 @@ class ExternalToolHandler(ABC):
             reason,
             is_error=True,
             refused=True,
+            error_detail=detail,
             tool_call_id=tool_call_id,
             room_id=room_id,
         )
@@ -416,10 +433,13 @@ class PolicyExternalToolHandler(ExternalToolHandler):
         )
         if not decision:
             if decision.detail is not None:
-                # A hook that failed closed: its error for the log, never the agent.
+                # A hook that failed closed: its error for the log and the
+                # observers, never the agent.
                 logger.warning("BEFORE_TOOL_USE refused %s: %s", tool_name, decision.detail)
             return ToolDecision(
-                approved=False, reason=pre_execution_denial(tool_name, decision.reason)
+                approved=False,
+                reason=pre_execution_denial(tool_name, decision.reason),
+                detail=decision.detail,
             )
 
         return ToolDecision(approved=True, modified_input=decision.arguments)

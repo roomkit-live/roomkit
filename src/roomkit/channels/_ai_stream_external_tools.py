@@ -22,7 +22,7 @@ from roomkit.providers.ai.tool_calls import partial_call_error
 from roomkit.realtime.base import EphemeralEventType
 from roomkit.tools._outcome import OutcomeKind, ToolOutcome
 from roomkit.tools.context import _ToolLoopContext
-from roomkit.tools.external import ExternalToolHandler
+from roomkit.tools.external import ExternalToolHandler, refusal_detail
 from roomkit.tools.result import as_tool_result, failure_detail, tool_failure
 
 logger = logging.getLogger("roomkit.channels.ai")
@@ -175,7 +175,7 @@ class _ExternalStreamTools:
             return _Decided(arguments, failure, OutcomeKind.FAILED, by_channel=True, detail=detail)
         if not decision.approved:
             reason = json.dumps({"error": decision.reason or f"Tool '{call.name}' was denied"})
-            return _Decided(arguments, reason, OutcomeKind.REFUSED)
+            return _Decided(arguments, reason, OutcomeKind.REFUSED, detail=decision.detail)
         if decision.modified_input is not None:
             arguments = decision.modified_input
         if decision.result is not None:
@@ -222,6 +222,7 @@ class _ExternalStreamTools:
                 decided.result,
                 tool_call_id=call.id,
                 room_id=self.room_id,
+                **refusal_detail(decided.detail),
             )
         elif handler is not None:
             await handler.on_tool_result(

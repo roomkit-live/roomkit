@@ -35,6 +35,7 @@ from roomkit.models.streaming import (
 )
 from roomkit.models.tool_call import ToolCallEvent
 from roomkit.realtime.base import EphemeralEvent, EphemeralEventType
+from roomkit.tools.external import refusal_detail
 from roomkit.tools.result import cancelled_tool_error, failure_detail, tool_failure
 
 if TYPE_CHECKING:
@@ -102,6 +103,8 @@ class _PermissionDecision:
     """That failure as a model reads it."""
     channel_refused: bool = False
     refusal: str | None = None
+    refusal_detail: str | None = None
+    """What failed, when the handler's refusal came from a failure."""
 
 
 def _record_decision(tool: _ToolState, decision: _PermissionDecision) -> None:
@@ -114,6 +117,7 @@ def _record_decision(tool: _ToolState, decision: _PermissionDecision) -> None:
     tool.failure_error = decision.failure_error
     tool.refused = not decision.approved and decision.failure is None
     tool.refusal = decision.refusal if tool.refused else None
+    tool.refusal_detail = decision.refusal_detail if tool.refused else None
     tool.channel_refused = decision.channel_refused
 
 
@@ -599,7 +603,7 @@ class ACPEventsMixin:
             is_error=end.status == "failed",
             cancelled=end.outcome == "cancelled",
             refused=end.outcome == "refused",
-            error_detail=tool.failure,
+            error_detail=tool.failure or tool.refusal_detail,
         )
         try:
             await report(event)
@@ -626,6 +630,7 @@ class ACPEventsMixin:
                     _reported_body(tool, end),
                     tool_call_id=tool.tool_id,
                     room_id=room_id,
+                    **refusal_detail(tool.refusal_detail),
                 )
                 return
             await handler.on_tool_result(
@@ -700,7 +705,9 @@ class ACPEventsMixin:
                 tool_id,
             )
             return _PermissionDecision(channel_refused=True, refusal=_UNAPPLIABLE)
-        return _PermissionDecision(approved=decision.approved, refusal=decision.reason)
+        return _PermissionDecision(
+            approved=decision.approved, refusal=decision.reason, refusal_detail=decision.detail
+        )
 
     async def _publish(
         self,
