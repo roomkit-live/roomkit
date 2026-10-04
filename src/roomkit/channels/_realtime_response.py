@@ -13,6 +13,7 @@ from roomkit.voice.base import VoiceSessionState
 
 if TYPE_CHECKING:
     from roomkit.core.framework import RoomKit
+    from roomkit.models.enums import ChannelType
     from roomkit.voice.backends.base import VoiceBackend
     from roomkit.voice.base import VoiceSession
     from roomkit.voice.realtime.provider import RealtimeVoiceProvider
@@ -69,6 +70,7 @@ class RealtimeResponseHost(Protocol):
     _transport: VoiceBackend
     _framework: RoomKit | None
     channel_id: str
+    channel_type: ChannelType
     _telemetry_provider: Any
 
     def _note_provider_output(self, session_id: str) -> None: ...
@@ -111,6 +113,7 @@ class RealtimeResponseMixin:
     _transport: VoiceBackend
     _framework: RoomKit | None
     channel_id: str
+    channel_type: ChannelType
     _telemetry_provider: Any
 
     _note_provider_output: Any
@@ -339,7 +342,6 @@ class RealtimeResponseMixin:
     async def _fire_provider_error_hook(
         self, session: VoiceSession, code: str, message: str
     ) -> None:
-        from roomkit.models.enums import ChannelType
         from roomkit.models.event import EventSource
 
         framework = self._framework
@@ -352,7 +354,7 @@ class RealtimeResponseMixin:
                 context,
                 EventSource(
                     channel_id=self.channel_id,
-                    channel_type=ChannelType.REALTIME_VOICE,
+                    channel_type=self.channel_type,
                     participant_id=session.participant_id,
                     provider=self._provider.name,
                 ),

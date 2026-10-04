@@ -1128,7 +1128,7 @@ class RealtimeVoiceChannel(
                 ready_event = SessionStartedEvent(
                     room_id=room_id,
                     channel_id=self.channel_id,
-                    channel_type=ChannelType.REALTIME_VOICE,
+                    channel_type=self.channel_type,
                     participant_id=session.participant_id,
                     session=session,
                 )

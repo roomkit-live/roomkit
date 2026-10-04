@@ -19,7 +19,6 @@ from typing import TYPE_CHECKING, Any
 from roomkit.channels._ai_policy import policy_admits
 from roomkit.channels._served_tools import CollisionLog, declared_once, dict_tool_name
 from roomkit.channels._tool_registry import ChannelRegistry, ToolSource, tool_dict
-from roomkit.models.enums import ChannelType
 from roomkit.models.tool_call import ToolCallEvent
 from roomkit.tools.policy import policy_refusal
 from roomkit.tools.result import (
@@ -37,6 +36,7 @@ from roomkit.tools.validation import (
 if TYPE_CHECKING:
     from roomkit.core.framework import RoomKit
     from roomkit.models.context import RoomContext
+    from roomkit.models.enums import ChannelType
     from roomkit.tools._human_input_channel import ChannelHumanInput
     from roomkit.tools.policy import ToolPolicy
     from roomkit.voice.base import VoiceSession
@@ -65,6 +65,7 @@ class RealtimeToolGateMixin:
     _provider: RealtimeVoiceProvider
     _framework: RoomKit | None
     channel_id: str
+    channel_type: ChannelType
 
     def _session_base_tools(self, session_id: str) -> list[dict[str, Any]]:
         """The session's authorized catalogue, read under the state lock."""
@@ -462,7 +463,7 @@ class RealtimeToolGateMixin:
             return arguments, None, None
         pre_event = ToolCallEvent(
             channel_id=self.channel_id,
-            channel_type=ChannelType.REALTIME_VOICE,
+            channel_type=self.channel_type,
             tool_call_id=call_id,
             name=name,
             arguments=arguments,

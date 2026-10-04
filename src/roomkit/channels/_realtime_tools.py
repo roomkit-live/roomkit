@@ -41,7 +41,6 @@ from roomkit.channels._skill_constants import TOOL_ACTIVATE_SKILL
 from roomkit.channels._tool_registry import ChannelRegistry, schema_tool
 from roomkit.channels._tool_search_constants import TOOL_CALL_TOOL, TOOL_LIST_TOOLS
 from roomkit.core.exceptions import ToolRefusedError, UnservedToolCallError
-from roomkit.models.enums import ChannelType
 from roomkit.models.tool_call import (
     ToolCallEvent,
 )
@@ -61,6 +60,7 @@ from roomkit.voice.base import VoiceSessionState
 if TYPE_CHECKING:
     from roomkit.core.framework import RoomKit
     from roomkit.models.context import RoomContext
+    from roomkit.models.enums import ChannelType
     from roomkit.tools._human_input_channel import ChannelHumanInput
     from roomkit.tools.context import _ToolLoopContext
     from roomkit.voice.backends.base import VoiceBackend
@@ -127,6 +127,7 @@ class RealtimeToolsHost(Protocol):
     _tool_calls: ToolCallBook
     _tool_reports: set[asyncio.Task[Any]]
     channel_id: str
+    channel_type: ChannelType
     _telemetry_provider: Any
 
     def _track_task(self, loop: Any, coro: Any, *, name: str) -> Any: ...
@@ -227,6 +228,7 @@ class RealtimeToolsMixin:
     _tool_calls: ToolCallBook
     _tool_reports: set[asyncio.Task[Any]]
     channel_id: str
+    channel_type: ChannelType
     _telemetry_provider: Any
 
     _track_task: Any  # see RealtimeToolsHost — cross-mixin
@@ -532,7 +534,7 @@ class RealtimeToolsMixin:
         """The ON_TOOL_CALL event of one call on this session."""
         return ToolCallEvent(
             channel_id=self.channel_id,
-            channel_type=ChannelType.REALTIME_VOICE,
+            channel_type=self.channel_type,
             tool_call_id=call.call_id,
             name=call.name,
             arguments=call.arguments,

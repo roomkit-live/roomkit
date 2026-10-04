@@ -852,6 +852,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The session start, `BEFORE_TOOL_USE`, `ON_TOOL_CALL` and provider `ON_ERROR`
+  events of a `RealtimeAudioVideoChannel` name its own channel type
+  (RMK-501): they said `REALTIME_VOICE`, so a hook filtered on
+  `REALTIME_AUDIO_VIDEO` never saw them.
+
 - The chat wires read a response the same through `generate()` and the
   stream (RMK-500, RFC §6.4): `OpenAIAIProvider` behind a `base_url` lets the
   server decide whether its model reads images, where it guessed from OpenAI's
