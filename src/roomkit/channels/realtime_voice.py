@@ -27,6 +27,7 @@ from roomkit.channels._realtime_context import (
 from roomkit.channels._realtime_delegation import RealtimeDelegationMixin
 from roomkit.channels._realtime_response import RealtimeResponseMixin
 from roomkit.channels._realtime_speech import RealtimeSpeechMixin
+from roomkit.channels._realtime_text_injected import fire_text_injected
 from roomkit.channels._realtime_tool_calls import ToolCallBook
 from roomkit.channels._realtime_tool_executor import SESSION_ENDED, report_interrupted_calls
 from roomkit.channels._realtime_tool_gate import RealtimeToolGateMixin
@@ -75,6 +76,7 @@ from roomkit.models.enums import (
 )
 from roomkit.models.event import EventSource, RoomEvent
 from roomkit.telemetry.base import Attr, SpanKind
+from roomkit.telemetry.context import reset_span
 from roomkit.telemetry.noop import NoopTelemetryProvider
 from roomkit.tools._human_input_channel import ChannelHumanInput, warn_plain_handler
 from roomkit.tools.human_input import HumanInputToolHandler
@@ -966,45 +968,18 @@ class RealtimeVoiceChannel(
         return result
 
     async def _fire_text_injected(self, session: VoiceSession, text: str, *, role: str) -> None:
-        """Announce a text injection to ON_REALTIME_TEXT_INJECTED (RFC §12.5).
-
-        Fired wherever text enters the provider's conversation context, not
-        only where an inbound event drove it. The hook is how an integrator
-        audits what reached the model, and a caller reaching for
-        ``inject_text`` directly is exactly the case that audit exists for —
-        the broadcast path it already covered is the one the timeline records
-        anyway.
-        """
-        if self._framework is None or not session.room_id:
-            return
-        from roomkit.models.event import TextContent
-        from roomkit.telemetry.context import reset_span
-
-        event = RoomEvent(
-            room_id=session.room_id,
-            source=EventSource(
-                channel_id=self.channel_id,
-                channel_type=self.channel_type,
-                participant_id=session.participant_id,
-                provider=self.provider_name,
-            ),
-            content=TextContent(body=text),
-            metadata={"injected_role": role, "session_id": session.id},
+        """Announce a text injection to ON_REALTIME_TEXT_INJECTED (RFC §12.5),
+        under the session's span. A caller reaching for ``inject_text``
+        directly is exactly the case that audit exists for."""
+        source = EventSource(
+            channel_id=self.channel_id,
+            channel_type=self.channel_type,
+            participant_id=session.participant_id,
+            provider=self.provider_name,
         )
         _, _tok = self._rt_span_ctx(session.id)
         try:
-            context = await self._framework._build_context(session.room_id)  # noqa: SLF001
-            await self._framework.hook_engine.run_async_hooks(
-                session.room_id,
-                HookTrigger.ON_REALTIME_TEXT_INJECTED,
-                event,
-                context,
-                skip_event_filter=True,
-            )
-        except Exception:
-            logger.warning(
-                "ON_REALTIME_TEXT_INJECTED failed for session %s", session.id, exc_info=True
-            )
+            await fire_text_injected(self._framework, source, session, text, role=role)
         finally:
             if _tok is not None:
                 reset_span(_tok)
@@ -2070,8 +2045,6 @@ class RealtimeVoiceChannel(
 
                 # Fire ON_REALTIME_TEXT_INJECTED hook (async)
                 if self._framework:
-                    from roomkit.telemetry.context import reset_span
-
                     _, _tok = self._rt_span_ctx(session.id)
                     try:
                         await self._framework.hook_engine.run_async_hooks(

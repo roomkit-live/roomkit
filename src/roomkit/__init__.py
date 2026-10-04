@@ -35,7 +35,12 @@ from roomkit.channels.acp_transport import (
 from roomkit.channels.agent import Agent
 from roomkit.channels.ai import AIChannel, EmptyEventDescriber
 from roomkit.channels.av import AudioVideoChannel
-from roomkit.channels.base import Channel, FrameworkAwareChannel
+from roomkit.channels.base import (
+    Channel,
+    FrameworkAwareChannel,
+    RealtimeModelHost,
+    hosts_realtime_model,
+)
 from roomkit.channels.cli import CLIChannel
 from roomkit.channels.conference import (
     CONFERENCE_ADDRESS_KEYS,
@@ -350,6 +355,8 @@ __all__ = [
     "DiscordChannel",
     "EmailChannel",
     "FrameworkAwareChannel",
+    "RealtimeModelHost",
+    "hosts_realtime_model",
     "HTTPChannel",
     "MessengerChannel",
     "RCSChannel",

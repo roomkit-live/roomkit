@@ -8,6 +8,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any
 
+from roomkit.channels.base import hosts_realtime_model
+from roomkit.channels.voice import VoiceChannel
 from roomkit.core._delivery_targets import (
     deliver_to_channel as _deliver_to_channel,
 )
@@ -45,18 +47,28 @@ class DeliveryContext:
     _wait_for_turn: bool = field(default=True, repr=False)
 
     async def find_transport_channel_id(self) -> str | None:
-        """Prefer voice, then the first other transport bound to the room."""
+        """Prefer voice, then the first other transport bound to the room.
+
+        An intelligence channel attached as a transport is not one: an
+        instruction delivered through it would re-enter the channel it is for.
+        """
         bindings = await self.kit.store.list_bindings(self.room_id)
         voice_id: str | None = None
         text_id: str | None = None
         for binding in bindings:
-            if binding.category != ChannelCategory.TRANSPORT:
+            if binding.category != ChannelCategory.TRANSPORT or self._is_intelligence(
+                binding.channel_id
+            ):
                 continue
             if binding.channel_type in _VOICE_TYPES:
                 voice_id = binding.channel_id
             elif text_id is None:
                 text_id = binding.channel_id
         return voice_id or text_id
+
+    def _is_intelligence(self, channel_id: str) -> bool:
+        channel = self.kit.get_channel(channel_id)
+        return channel is not None and channel.category == ChannelCategory.INTELLIGENCE
 
     async def resolve_channel_id(self) -> str | None:
         """Resolve an explicit destination or auto-detect its transport."""
@@ -97,7 +109,7 @@ class WaitForIdle(DeliveryStrategy):
             return refusal
         assert channel_id is not None
         channel = ctx.kit.get_channel(channel_id)
-        if channel is not None and channel.channel_type in _VOICE_TYPES:
+        if channel is not None:
             try:
                 await _wait_for_voice_idle(
                     channel, ctx.room_id, self.playback_timeout, self.buffer, ctx._voice_sessions
@@ -176,7 +188,7 @@ class Queued(DeliveryStrategy):
                 continue
             channel = first.context.kit.get_channel(first.channel_id)
             try:
-                if channel is not None and channel.channel_type in _VOICE_TYPES:
+                if channel is not None:
                     await _wait_for_voice_idle(
                         channel,
                         first.context.room_id,
@@ -249,17 +261,15 @@ async def _wait_for_voice_idle(
     buffer: float,
     sessions: list[Any] | None = None,
 ) -> None:
-    """Wait for voice playback or provider idle, followed by a buffer."""
-    from roomkit.channels.realtime_voice import RealtimeVoiceChannel
-    from roomkit.channels.voice import VoiceChannel
+    """Wait for voice playback or the realtime model's idle, then a buffer.
 
+    A channel that is neither returns at once, with no buffer.
+    """
     if isinstance(channel, VoiceChannel):
         await channel.wait_playback_done(room_id, timeout=timeout)
-    elif isinstance(channel, RealtimeVoiceChannel):
-        if sessions is None:
-            await channel.wait_idle(room_id, timeout=timeout)
-        else:
-            await channel.wait_idle(room_id, timeout=timeout, session_ids=[s.id for s in sessions])
+    elif hosts_realtime_model(channel):
+        session_ids = None if sessions is None else [s.id for s in sessions]
+        await channel.wait_idle(room_id, timeout=timeout, session_ids=session_ids)
     else:
         return
     if buffer > 0:

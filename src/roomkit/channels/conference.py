@@ -748,7 +748,7 @@ class ConferenceChannel(
         }
 
     @property
-    def hosts_realtime_model(self) -> bool:
+    def realtime_model_plugged(self) -> bool:
         """Whether a realtime model is plugged in, whose room sessions take
         the text a proactive instruction injects (RFC §23.3 step 8)."""
         return self._realtime_config is not None
@@ -776,6 +776,16 @@ class ConferenceChannel(
         return await self._realtime.inject_text(
             session, text, role=role, silent=silent, chain_depth=chain_depth
         )
+
+    async def wait_idle(
+        self, room_id: str, timeout: float = 15.0, *, session_ids: list[str] | None = None
+    ) -> None:
+        """Wait until the realtime model's room session is idle: its answer
+        has ended and reached the bot track, and its VAD hears nobody speak."""
+        session = self._realtime.session_for(room_id)
+        if session is None or (session_ids is not None and session.id not in session_ids):
+            return
+        await self._realtime.wait_idle(room_id, timeout)
 
     def set_framework(self, framework: RoomKit) -> None:
         """Wire the channel to the framework.

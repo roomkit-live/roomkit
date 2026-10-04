@@ -8,6 +8,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from roomkit.channels.base import RealtimeModelHost
+from roomkit.channels.conference import ConferenceChannel
+from roomkit.channels.realtime_voice import RealtimeVoiceChannel
 from roomkit.core._delivery_targets import deliver_to_realtime_voice as _deliver_to_realtime_voice
 from roomkit.core.delivery import (
     DeliveryContext,
@@ -66,7 +68,7 @@ def _channel_mock(
     ch = MagicMock(spec=RealtimeModelHost) if hosts else MagicMock()
     ch.channel_type = channel_type
     ch.category = category
-    ch.hosts_realtime_model = hosts
+    ch.realtime_model_plugged = hosts
     return ch
 
 
@@ -516,17 +518,18 @@ class TestWaitForVoiceIdle:
             await _wait_for_voice_idle(ch, "room-1", timeout=5.0, buffer=0)
             ch.wait_playback_done.assert_called_once_with("room-1", timeout=5.0)
 
-    async def test_realtime_voice_channel_wait(self) -> None:
-        from roomkit.channels.realtime_voice import (
-            RealtimeVoiceChannel as _RtVC,
-        )
+    @pytest.mark.parametrize("host", [RealtimeVoiceChannel, ConferenceChannel])
+    async def test_realtime_model_host_wait(self, host: type) -> None:
+        """Every channel hosting a realtime model is waited on through the
+        same contract (RMK-501)."""
         from roomkit.core.delivery import _wait_for_voice_idle
 
-        ch = MagicMock(spec=_RtVC)
+        ch = MagicMock(spec=host)
+        ch.realtime_model_plugged = True
         ch.wait_idle = AsyncMock()
 
         await _wait_for_voice_idle(ch, "room-1", timeout=5.0, buffer=0)
-        ch.wait_idle.assert_called_once_with("room-1", timeout=5.0)
+        ch.wait_idle.assert_called_once_with("room-1", timeout=5.0, session_ids=None)
 
     async def test_non_voice_channel_returns_immediately(self) -> None:
         from roomkit.core.delivery import _wait_for_voice_idle

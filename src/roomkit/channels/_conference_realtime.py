@@ -42,6 +42,7 @@ from roomkit.channels._conference_tools import (
     declared_tools,
     warn_unused_role_overrides,
 )
+from roomkit.channels._realtime_text_injected import fire_text_injected
 from roomkit.channels._realtime_tool_calls import RealtimeToolCall, ToolCallBook
 from roomkit.channels._realtime_tool_executor import (
     ABANDONED_BY_PROVIDER,
@@ -59,7 +60,7 @@ from roomkit.channels._tool_registry import schema_tool
 from roomkit.core.exceptions import UnservedToolCallError
 from roomkit.core.task_utils import log_task_exception
 from roomkit.models.enums import ChannelType
-from roomkit.models.event import TextContent
+from roomkit.models.event import EventSource, TextContent
 from roomkit.models.tool_call import ToolCallEvent
 from roomkit.tools._human_input_channel import ChannelHumanInput
 from roomkit.tools._outcome import ToolOutcome
@@ -118,6 +119,12 @@ class _Utterance:
         self.queue.put_nowait(None)
 
 
+def _idle_event() -> asyncio.Event:
+    event = asyncio.Event()
+    event.set()
+    return event
+
+
 @dataclass
 class _RoomRealtime:
     """One room's share of the provider: its session, and the response in flight."""
@@ -129,6 +136,20 @@ class _RoomRealtime:
     tasks: set[asyncio.Task[None]] = field(default_factory=set)
     answer_depth: AnswerDepth = field(default_factory=AnswerDepth)
     """What the room's model heard last, which its answer's depth follows."""
+    speaking: int = 0
+    """Responses still on their way through the floor to the bot track."""
+    hearing: bool = False
+    """The provider's own VAD hears the room's people speak."""
+    idle: asyncio.Event = field(default_factory=_idle_event)
+    """Set while nothing is in flight in the room (RFC §22.2)."""
+
+    def settle(self) -> None:
+        """Idle when no response is open or still published and nobody is heard."""
+        open_response = self.utterance is not None and not self.utterance.discarded
+        if open_response or self.speaking or self.hearing:
+            self.idle.clear()
+        else:
+            self.idle.set()
 
     def spawn(self, coro: Awaitable[None]) -> asyncio.Task[None]:
         task = asyncio.ensure_future(coro)
@@ -226,6 +247,8 @@ class ConferenceRealtime:
             provider.on_transcription(self._on_transcription)
             provider.on_response_start(self._on_response_start)
             provider.on_response_end(self._on_response_end)
+            provider.on_speech_start(partial(self._on_hearing, hearing=True))
+            provider.on_speech_end(partial(self._on_hearing, hearing=False))
             provider.on_tool_call(self._on_tool_call)
             provider.on_tool_call_cancelled(self._on_tool_call_cancelled)
         warn_unused_role_overrides(config, self._channel_id)
@@ -403,9 +426,18 @@ class ConferenceRealtime:
             ConferenceResource.REALTIME, what=f"text injection for room {session.room_id}"
         ):
             result = await config.provider.inject_text(session, text, role=role, silent=silent)
+        if result is None or result.status != "sent":
+            return result
         room = self._rooms.get(session.room_id)
-        if room is not None and not silent and result is not None and result.status == "sent":
+        if room is not None and not silent:
             room.answer_depth.injected(chain_depth)
+        source = EventSource(
+            channel_id=self._channel_id,
+            channel_type=ChannelType.CONFERENCE,
+            participant_id=session.participant_id,
+            provider=config.provider.name,
+        )
+        await fire_text_injected(self._framework, source, session, text, role=role)
         return result
 
     # -------------------------------------------------------------------------
@@ -430,6 +462,7 @@ class ConferenceRealtime:
         if utterance is not None and not utterance.discarded:
             utterance.discarded = True
             utterance.finish()
+            room.settle()
         session = room.session
         if session is None:
             return
@@ -472,10 +505,12 @@ class ConferenceRealtime:
             previous.finish()
         utterance = _Utterance()
         room.utterance = utterance
-        room.spawn(self._speak(room_id, utterance))
+        room.speaking += 1
+        room.settle()
+        room.spawn(self._speak(room, room_id, utterance))
         return utterance
 
-    async def _speak(self, room_id: str, utterance: _Utterance) -> None:
+    async def _speak(self, room: _RoomRealtime, room_id: str, utterance: _Utterance) -> None:
         """Run one response through the voice's floor, start to terminal chunk."""
 
         def attach(playback: ConferencePlayback) -> None:
@@ -489,6 +524,9 @@ class ConferenceRealtime:
                 self._channel_id,
                 room_id,
             )
+        finally:
+            room.speaking -= 1
+            room.settle()
 
     async def _chunks(self, utterance: _Utterance) -> AsyncIterator[AudioChunk]:
         while True:
@@ -522,6 +560,23 @@ class ConferenceRealtime:
         room.utterance = None
         if not utterance.discarded:
             utterance.finish()
+        room.settle()
+
+    async def _on_hearing(self, session: VoiceSession, *, hearing: bool) -> None:
+        """The provider's VAD heard the room's people start or stop speaking."""
+        room = self._guarded(session)
+        if room is None:
+            return
+        room.hearing = hearing
+        room.settle()
+
+    async def wait_idle(self, room_id: str, timeout: float = 15.0) -> None:
+        """Wait until nothing is in flight in the room (RFC §22.2): the model's
+        last answer has ended and reached the bot track, or a barge-in cut it,
+        and its VAD hears nobody speak. A room with no session is idle."""
+        room = self._rooms.get(room_id)
+        if room is not None and not room.idle.is_set():
+            await asyncio.wait_for(room.idle.wait(), timeout=timeout)
 
     async def _on_transcription(
         self, session: VoiceSession, text: str, role: str, is_final: bool
@@ -778,6 +833,9 @@ class ConferenceRealtime:
             utterance.finish()
         for task in list(room.tasks):
             task.cancel()
+        # A room off the books has nothing in flight: a delivery waiting on it
+        # goes on to find its session gone.
+        room.idle.set()
         session, room.session = room.session, None
         if session is not None:
             self._report_detached_calls(session)

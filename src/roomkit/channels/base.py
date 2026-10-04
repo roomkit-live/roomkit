@@ -58,7 +58,7 @@ class RealtimeModelHost(ABC):
     """
 
     @property
-    def hosts_realtime_model(self) -> bool:
+    def realtime_model_plugged(self) -> bool:
         """Whether a realtime model is plugged in now, so its sessions take text."""
         return True
 
@@ -79,10 +79,18 @@ class RealtimeModelHost(ABC):
     ) -> VoiceInjectionResult | None:
         """Inject *text* into *session* with the intent *role* (RFC §12.4)."""
 
+    @abstractmethod
+    async def wait_idle(
+        self, room_id: str, timeout: float = 15.0, *, session_ids: list[str] | None = None
+    ) -> None:
+        """Wait until the model's sessions in *room_id* are idle (RFC §22.2):
+        no answer in flight and nobody heard speaking. ``session_ids``
+        restricts the wait to those sessions; raises ``TimeoutError``."""
+
 
 def hosts_realtime_model(channel: object) -> bool:
     """Whether *channel* hosts a realtime model whose sessions take text now."""
-    return isinstance(channel, RealtimeModelHost) and channel.hosts_realtime_model
+    return isinstance(channel, RealtimeModelHost) and channel.realtime_model_plugged
 
 
 class FrameworkAwareChannel(ABC):

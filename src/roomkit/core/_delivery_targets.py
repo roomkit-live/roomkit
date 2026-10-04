@@ -32,6 +32,18 @@ def unavailable(reason: str, targets: list[str] | None = None) -> DeliveryOutcom
     )
 
 
+def _rides_the_model(ctx: DeliveryContext, channel: object) -> bool:
+    """Whether the delivery is injected into the channel's realtime model.
+
+    Once sessions are pinned it stays so even if the model was unplugged
+    since: the pinned sessions then refuse it, rather than the text being
+    published to the room as the channel's own words.
+    """
+    if ctx.addressed_to is not None:
+        return False
+    return ctx._voice_sessions is not None or hosts_realtime_model(channel)
+
+
 async def prepare_delivery(
     ctx: DeliveryContext,
     channel_id: str | None = None,
@@ -49,14 +61,13 @@ async def prepare_delivery(
     if channel is None or binding is None:
         return None, unavailable("channel_unavailable", [channel_id])
     if channel.category == ChannelCategory.INTELLIGENCE:
+        # The room's transport carries it; never an intelligence channel, so
+        # the instruction cannot re-enter the channel it is for.
         transport_id = await ctx.find_transport_channel_id()
-        transport = ctx.kit.get_channel(transport_id) if transport_id is not None else None
-        # A transport that is itself an intelligence channel (one attached as
-        # a transport) cannot carry the instruction: refused, never re-entered.
-        if transport is None or transport.category == ChannelCategory.INTELLIGENCE:
+        if transport_id is None:
             return None, unavailable("no_transport")
         return await prepare_delivery(ctx, transport_id)
-    if not hosts_realtime_model(channel) or ctx.addressed_to is not None:
+    if not _rides_the_model(ctx, channel):
         if ctx.session_id is not None:
             return None, DeliveryOutcome(status="blocked", reason="session_requires_realtime")
         return channel_id, None
@@ -92,7 +103,7 @@ async def deliver_to_channel(ctx: DeliveryContext, channel_id: str) -> DeliveryO
     channel = ctx.kit.get_channel(channel_id)
     if channel is None:
         return unavailable("channel_unavailable", [channel_id])
-    if hosts_realtime_model(channel) and ctx.addressed_to is None:
+    if _rides_the_model(ctx, channel):
         return await deliver_to_realtime_voice(channel, ctx)
     result = await ctx.kit.process_inbound(
         InboundMessage(

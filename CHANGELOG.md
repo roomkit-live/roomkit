@@ -366,10 +366,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - `attach_channel()` takes the channel's own category when none is given
-  (RMK-501, RFC §5.7): an agent attached without `category=` takes part as an
-  intelligence channel, where it was attached as a transport, never answered
-  the room's messages and could make `deliver()` recurse. Passing `category=`
-  keeps its meaning.
+  (RMK-501, RFC §5.7): an agent attached without `category=` was bound as a
+  transport. It answered the room's messages, but an instruction addressed to
+  it (a background result handed back) was refused (`no_transport`) and
+  `deliver(channel_id=<agent>)` could recurse. It now takes part as an
+  intelligence channel. Passing `category=` keeps its meaning.
 
 - A realtime pipeline refuses, at its install, an agent that carries a
   human-input handler, planning, a sandbox or an external tool handler, as it
@@ -892,8 +893,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   plugged in published it as their own words to the room's other channels,
   the outcome saying `sent`, and the model that delegated heard nothing. It is
   injected with the `system` intent into the model's session, as on a
-  `RealtimeVoiceChannel`; a conference now exposes `get_room_sessions()` and
-  `inject_text()` on its room session. `deliver()` to an intelligence channel
+  `RealtimeVoiceChannel`. `RealtimeModelHost`, exported with its predicate
+  `hosts_realtime_model()`, is the contract such a channel inherits
+  (`get_room_sessions()`, `inject_text()`, `wait_idle()`), and the delivery
+  paths read only it. For a conference this changes
+  `deliver(channel_id=<conference>)`: with a realtime model plugged in, the
+  text is injected into the model's room session (`user` intent, `system`
+  with `instruction=True`) instead of published through the room, and is
+  `unavailable` (`voice_session_unavailable`) before that session connects. `WaitForIdle`
+  and `Queued` wait on a conference's model as on a realtime voice channel
+  (its answer ended and published, nobody heard speaking), and the injection
+  fires ON_REALTIME_TEXT_INJECTED. A delivery whose sessions were pinned is
+  refused (`voice_session_replaced`) when the model is unplugged before it
+  goes out, where it was published to the room as the channel's own words.
+  With no channel named, an agent attached as a transport is no longer
+  picked as the room's transport, and `deliver()` to an intelligence channel
   whose only transport is itself an intelligence channel is refused
   (`no_transport`), where it recursed until a `RecursionError`.
 
