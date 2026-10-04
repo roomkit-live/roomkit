@@ -30,11 +30,14 @@ Usage::
 from __future__ import annotations
 
 import logging
-import re
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-from roomkit.providers.ai.openai_dialect import choice_refusal, json_schema_format
+from roomkit.providers.ai.openai_dialect import (
+    choice_refusal,
+    extract_think_tags,
+    json_schema_format,
+)
 from roomkit.providers.ai.response_schema import check_schema_answer, check_schema_request
 from roomkit.providers.utils import http_timeout
 from roomkit.video.video_frame import VideoFrame
@@ -176,9 +179,9 @@ class OpenAIVisionProvider(VisionProvider):
 
         choice = response.choices[0]
         description = choice.message.content or ""
-        # Strip thinking blocks that leak through (Qwen3, DeepSeek-R1)
-        description = re.sub(r"<think>.*?</think>", "", description, flags=re.DOTALL)
-        description = description.strip()
+        # Thinking blocks that leak through (Qwen3, DeepSeek-R1) are no part of
+        # the description, one the output cap cut before its close included.
+        description = extract_think_tags(description)[1].strip()
         if response_schema is not None:
             check_schema_answer(
                 description,

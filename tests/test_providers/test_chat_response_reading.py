@@ -19,8 +19,12 @@ import pytest
 
 from roomkit.providers.ai.base import AIContext, AIMessage, AITool, StreamDone, StreamToolCall
 from roomkit.providers.ai.openai_dialect import message_tool_calls
+from roomkit.providers.ollama.ai import OllamaAIProvider
+from roomkit.providers.ollama.config import OllamaConfig
 from roomkit.providers.openai.ai import OpenAIAIProvider
 from roomkit.providers.openai.config import OpenAIConfig
+from roomkit.providers.polargrid.ai import PolarGridAIProvider
+from roomkit.providers.polargrid.config import PolarGridConfig
 
 LOOKUP = AITool(name="lookup", description="d", parameters={"type": "object", "properties": {}})
 USAGE = {"prompt_tokens": 11, "completion_tokens": 0, "total_tokens": 11}
@@ -141,3 +145,28 @@ def test_the_shared_reader_reads_any_sdk_s_message() -> None:
     [call] = message_tool_calls(message, "tool_calls")
 
     assert (call.id, call.name, call.arguments, call.partial) == ("c1", "", {"q": 1}, False)
+
+
+def test_polargrid_reports_the_usage_of_a_response_with_no_choice() -> None:
+    provider = PolarGridAIProvider(PolarGridConfig(api_key="k", model="m"))
+    response = SimpleNamespace(
+        choices=[], usage=SimpleNamespace(prompt_tokens=11, completion_tokens=0), model="m"
+    )
+    context = AIContext(messages=[AIMessage(role="user", content="go")])
+
+    answer = provider._response_of(response, context)
+
+    assert answer.tool_calls == []
+    assert dict(answer.usage) == {"input_tokens": 11, "output_tokens": 0}
+
+
+def test_ollama_keeps_a_call_whose_name_was_lost_nameless() -> None:
+    """Ollama reads its own wire; a lost name is still an empty one, not "None"."""
+    provider = OllamaAIProvider(OllamaConfig(model="m"))
+    message = SimpleNamespace(
+        tool_calls=[SimpleNamespace(function=SimpleNamespace(name=None, arguments={}))]
+    )
+
+    [call] = provider._extract_tool_calls(message)
+
+    assert (call.name, call.arguments) == ("", {})

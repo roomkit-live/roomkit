@@ -527,7 +527,9 @@ class OllamaAIProvider(AIProvider):
             func = self._get_attr(tc, "function", None)
             if not func:
                 continue
-            name = str(self._get_attr(func, "name", ""))
+            # A call whose name was lost keeps an empty one, for the loop to
+            # refuse, as on every wire.
+            name = str(self._get_attr(func, "name", None) or "")
             result.append(
                 AIToolCall(
                     id=ids(self._get_attr(tc, "id", None), name),

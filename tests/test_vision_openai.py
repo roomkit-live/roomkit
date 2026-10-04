@@ -83,6 +83,32 @@ class TestOpenAIVisionProvider:
         assert content[1]["type"] == "image_url"
         assert content[1]["image_url"]["url"].startswith("data:image/jpeg;base64,")
 
+    @pytest.mark.parametrize(
+        ("content", "description"),
+        [
+            ("<think>a desk, maybe</think>A person at a desk", "A person at a desk"),
+            ("<think>still weighing whether it is a desk", ""),
+        ],
+        ids=["closed", "cut-before-its-close"],
+    )
+    async def test_a_think_block_is_no_part_of_the_description(
+        self, content: str, description: str
+    ) -> None:
+        """Reasoning that leaks into the answer is taken out, a block the output
+        cap cut before its close included, as on the chat providers (RMK-484)."""
+        provider = OpenAIVisionProvider()
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock()]
+        mock_response.choices[0].message.content = content
+        mock_client = AsyncMock()
+        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
+        provider._client = mock_client
+        frame = VideoFrame(data=b"\x00" * (64 * 48 * 3), codec="raw_rgb24", width=64, height=48)
+
+        result = await provider.analyze_frame(frame)
+
+        assert result.description == description
+
     async def test_analyze_frame_empty_response(self) -> None:
         provider = OpenAIVisionProvider()
 

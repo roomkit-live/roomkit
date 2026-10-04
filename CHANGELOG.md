@@ -866,7 +866,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   loop with an empty one, which the loop refuses, where OpenAI's wire raised
   a raw `ValidationError`; a response with no choice reports its usage, which
   OpenAI's wire and PolarGrid dropped. One reader,
-  `openai_dialect.message_tool_calls`, reads a response's calls for both.
+  `openai_dialect.message_tool_calls`, reads a response's calls for both;
+  Ollama, which reads its own wire, keeps a lost name empty too, where it read
+  a tool named `None`.
 
 - A provider that holds no tool unseen receives each tool result as its text
   (RMK-484, RFC §6.4): the references a Tool Search result carries, which only
@@ -876,17 +878,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - A `<think>` block the output cap cut before its close is reasoning, never
   answer, through `generate()` as on the stream (RMK-484, RFC §6.4): OpenAI's
-  wire and PolarGrid handed it over as the answer's text. `extract_think_tags`
-  now reads a whole response with the stream's `ThinkTagParser`.
+  wire and PolarGrid handed it over as the answer's text, and the OpenAI vision
+  provider left it in its description. `extract_think_tags` now reads a whole
+  response with the stream's `ThinkTagParser`.
 
 - A vendor's official URL written out as `base_url` is the vendor's own
   endpoint (RMK-484, RFC §6.7): `https://api.openai.com/v1` for OpenAI's text
   provider, `https://api.anthropic.com` for Anthropic's, the official URL with
   a trailing slash for OpenAI Realtime and GPT-Live, `https://api.deepseek.com`
-  as well as its `/v1` for DeepSeek. Each read such a configuration as a
-  server behind a proxy, and dropped the vendor's tool-name rule, the
+  as well as its `/v1` for DeepSeek, `https://api.mistral.ai` for Mistral, its
+  scheme's default port written out included. Each read such a configuration
+  as a server behind a proxy, and dropped the vendor's tool-name rule, the
   catalogue's tool-turn reasoning profile and a modern model's defaults
-  (Anthropic's adaptive thinking, its deferred tools). One helper,
+  (Anthropic's adaptive thinking, its deferred tools, OpenAI's response schema
+  beside tools). One helper,
   `roomkit.providers.vendor_endpoint.is_vendor_endpoint`, decides it everywhere.
 
 - Arguments a `BEFORE_TOOL_USE` hook edited in place so they no longer fit

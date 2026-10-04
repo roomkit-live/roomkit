@@ -18,6 +18,8 @@ from roomkit.providers.anthropic.config import AnthropicConfig
 from roomkit.providers.anthropic.request import build_kwargs
 from roomkit.providers.deepseek.ai import DeepSeekAIProvider
 from roomkit.providers.deepseek.config import DeepSeekConfig
+from roomkit.providers.mistral.ai import MistralAIProvider
+from roomkit.providers.mistral.config import MistralConfig
 from roomkit.providers.openai.ai import OpenAIAIProvider
 from roomkit.providers.openai.config import OpenAIConfig
 from roomkit.providers.openai.live import OpenAILiveProvider
@@ -26,6 +28,7 @@ from roomkit.providers.openai.realtime import OpenAIRealtimeProvider
 from roomkit.providers.vendor_endpoint import is_vendor_endpoint
 
 DOTTED = AITool(name="files.read", description="d")
+COLON = AITool(name="files:read", description="d")
 PROXY = "https://gateway.example.test/v1"
 
 
@@ -50,6 +53,16 @@ def _live(base_url: str | None) -> OpenAILiveProvider:
 def _deepseek(base_url: str) -> DeepSeekAIProvider:
     config = DeepSeekConfig(api_key="k", model="deepseek-chat", base_url=base_url)
     return DeepSeekAIProvider(config)
+
+
+def _mistral_names_checked(server_url: str | None) -> bool:
+    config = MistralConfig(api_key="k", model="mistral-large-latest", server_url=server_url)
+    context = AIContext(messages=[AIMessage(role="user", content="go")], tools=[COLON])
+    try:
+        MistralAIProvider(config)._build_kwargs(context)
+    except ProviderError:
+        return True
+    return False
 
 
 def _anthropic_names_checked(base_url: str | None) -> bool:
@@ -90,6 +103,10 @@ OWN = {
         lambda url: _live(url)._tool_name_rule is not None,
         [None, "wss://api.openai.com/v1/live/sessions"],
     ),
+    "mistral": (
+        _mistral_names_checked,
+        [None, "https://api.mistral.ai", "https://api.mistral.ai:443/"],
+    ),
     "deepseek": (
         lambda url: _deepseek(url)._tool_name_rule is not None,
         ["https://api.deepseek.com/v1", "https://api.deepseek.com"],
@@ -120,3 +137,7 @@ def test_the_url_is_compared_on_its_scheme_host_and_path() -> None:
     assert is_vendor_endpoint(" HTTPS://Api.OpenAI.com/v1/ ", "https://api.openai.com/v1")
     assert not is_vendor_endpoint("https://api.openai.com/v2", "https://api.openai.com/v1")
     assert not is_vendor_endpoint("http://api.openai.com/v1", "https://api.openai.com/v1")
+    assert is_vendor_endpoint("https://api.openai.com:443/v1", "https://api.openai.com/v1")
+    assert not is_vendor_endpoint("https://api.openai.com:8443/v1", "https://api.openai.com/v1")
+    assert not is_vendor_endpoint("https://u:p@api.openai.com/v1", "https://api.openai.com/v1")
+    assert not is_vendor_endpoint("https://api.openai.com:x/v1", "https://api.openai.com/v1")

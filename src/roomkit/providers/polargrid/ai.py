@@ -424,9 +424,13 @@ class PolarGridAIProvider(AIProvider):
             raise self._wrap_error(exc) from exc
 
         self._record_ttfb(t0)
+        return self._response_of(response, context)
 
-        # What the request cost, read before anything else: a response with
-        # no choice still billed its input.
+    def _response_of(self, response: Any, context: AIContext) -> AIResponse:
+        """What the loop reads of a response that is not streamed: its usage,
+        read first (a response with no choice still billed its input), its
+        reasoning apart from its answer, its calls, and the constrained answer
+        checked when it called no tool."""
         usage = self._extract_usage(response)
         choices = getattr(response, "choices", None) or []
         if not choices:
@@ -434,22 +438,19 @@ class PolarGridAIProvider(AIProvider):
             return AIResponse(content="", usage=usage)
         choice = choices[0]
         message = getattr(choice, "message", None)
-        raw_content = getattr(message, "content", "") or ""
         # qwen surfaces reasoning inline as <think>...</think>; split it out
         # so the answer text is clean and the reasoning rides on .thinking.
-        thinking, content = extract_think_tags(raw_content)
+        thinking, content = extract_think_tags(getattr(message, "content", "") or "")
         finish_reason = getattr(choice, "finish_reason", None)
-        model = getattr(response, "model", self._config.model)
         tool_calls = message_tool_calls(message, finish_reason)
         if not tool_calls:
             self._check_schema_answer(context, content, finish_reason)
-
         return AIResponse(
             content=content,
             thinking=thinking,
             finish_reason=finish_reason,
             usage=usage,
-            metadata={"model": model},
+            metadata={"model": getattr(response, "model", self._config.model)},
             tool_calls=tool_calls,
         )
 

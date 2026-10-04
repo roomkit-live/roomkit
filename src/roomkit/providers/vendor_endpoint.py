@@ -21,17 +21,31 @@ ANTHROPIC_BASE_URL = "https://api.anthropic.com"
 DEEPSEEK_BASE_URLS = ("https://api.deepseek.com/v1", "https://api.deepseek.com")
 """DeepSeek's endpoint, under the two bases its documentation gives."""
 
+MISTRAL_BASE_URL = "https://api.mistral.ai"
+"""Mistral's API, the SDK's default server."""
+
+_DEFAULT_PORTS = {"http": 80, "https": 443, "ws": 80, "wss": 443}
+
 
 def is_vendor_endpoint(base_url: str | None, *official: str) -> bool:
     """Whether *base_url* is the vendor's own endpoint: none given (the SDK's
     default), or one of its *official* URLs, whatever its case of scheme and
-    host and its trailing slash."""
+    host, its scheme's default port written out, and its trailing slash."""
     if base_url is None:
         return True
     return _comparable(base_url) in {_comparable(url) for url in official}
 
 
-def _comparable(url: str) -> tuple[str, str, str]:
-    """*url* reduced to what names an endpoint: scheme, host and path."""
+def _comparable(url: str) -> tuple[str, str, int | None, str]:
+    """*url* reduced to what names an endpoint: scheme, host, port (none for
+    the scheme's default) and path. Credentials in it make it another
+    endpoint: the vendor's takes none there."""
     parts = urlsplit(url.strip())
-    return parts.scheme.lower(), parts.netloc.lower(), parts.path.rstrip("/")
+    scheme = parts.scheme.lower()
+    try:
+        port = parts.port
+    except ValueError:  # a port that is no number: no vendor's endpoint
+        return scheme, parts.netloc.lower(), -1, parts.path
+    port = port if port != _DEFAULT_PORTS.get(scheme) else None
+    host = parts.netloc.lower() if parts.username or parts.password else parts.hostname
+    return scheme, host or "", port, parts.path.rstrip("/")

@@ -34,6 +34,7 @@ from roomkit.providers.ai.tool_declaration import ToolNameRule, chat_tool_declar
 from roomkit.providers.mistral.config import MistralConfig
 from roomkit.providers.mistral.models import MODELS
 from roomkit.providers.utils import _aclose_stream
+from roomkit.providers.vendor_endpoint import MISTRAL_BASE_URL, is_vendor_endpoint
 
 MISTRAL_CHAT = ChatDialect(names_tool_results=True)
 """Mistral renders a conversation as OpenAI does, each tool message naming its
@@ -141,8 +142,8 @@ class MistralAIProvider(AIProvider):
         if effort is not None:
             kwargs["reasoning_effort"] = effort
         if context.tools:
-            if self._config.server_url is None:
-                # Behind a server_url the server decides its names (RFC §6.7).
+            if is_vendor_endpoint(self._config.server_url, MISTRAL_BASE_URL):
+                # Behind another server_url the server decides its names (RFC §6.7).
                 MISTRAL_TOOL_NAMES.check(t.name for t in context.tools)
             kwargs["tools"] = chat_tool_declarations(context.tools)
         if context.response_schema is not None:
