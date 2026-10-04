@@ -19,14 +19,32 @@ and serves nothing):
 
 from __future__ import annotations
 
+import logging
+from collections.abc import Container
 from typing import TYPE_CHECKING, Any
 
+from roomkit.channels._served_tools import refuse_given_twice, refuse_served_names
 from roomkit.core.exceptions import UnservedToolCallError
+from roomkit.tools.human_input import HumanInputToolHandler
 
 if TYPE_CHECKING:
     from roomkit.models.enums import ChannelType
     from roomkit.providers.ai.base import AITool
-    from roomkit.tools.human_input import HumanInputToolHandler, OnInputRequiredCallback
+    from roomkit.tools.human_input import OnInputRequiredCallback
+
+logger = logging.getLogger("roomkit.tools.human_input")
+
+
+def warn_plain_handler(tool_handler: object, channel_id: str) -> None:
+    """Say so when a channel is given a ``HumanInputToolHandler`` as its plain
+    ``tool_handler``: served as any host handler, it keeps none of its rules."""
+    if isinstance(tool_handler, HumanInputToolHandler):
+        logger.warning(
+            "Channel %s serves a HumanInputToolHandler as its tool_handler: pass it as "
+            "human_input_handler= so its own timeout, ON_USER_INPUT_REQUIRED and the "
+            "channel's close apply to it",
+            channel_id,
+        )
 
 
 class ChannelHumanInput:
@@ -40,6 +58,9 @@ class ChannelHumanInput:
         # requests, handed back on close: a channel displaced under the same
         # id and torn down later closes nothing its replacement holds.
         self._registration: int | None = None
+        # Names already reported as served but never declared: a wiring
+        # diagnostic, said once, not a per-turn event.
+        self._warned_unoffered: set[str] = set()
 
     @property
     def given(self) -> bool:
@@ -61,6 +82,31 @@ class ChannelHumanInput:
     def declared_names(self) -> frozenset[str]:
         """The names its definitions carry: no other tool may take one."""
         return frozenset(tool.name for tool in self.definitions)
+
+    def refuse_collisions(self, served: Container[str], channel_id: str) -> None:
+        """Refuse a definition given twice, or under a name the channel serves
+        itself (*served*), as a host tool under it is refused (RFC §21.1)."""
+        names = [tool.name for tool in self.definitions]
+        refuse_given_twice(names, channel_id)
+        refuse_served_names(names, served, channel_id)
+
+    def warn_unoffered(self, offered: Container[str], channel_id: str) -> None:
+        """Say so, once per name, when a name it serves is in nothing the
+        model is offered (*offered*): no definition of its own, and none among
+        the host's tools. The model is never told the tool exists, so no
+        person is ever asked, and nothing else says so."""
+        missing = {name for name in self.names if name not in offered}
+        missing -= self._warned_unoffered
+        if not missing:
+            return
+        self._warned_unoffered |= missing
+        logger.warning(
+            "Channel %s intercepts human-input tool(s) %s but never offers them to the "
+            "model: declare them via HumanInputToolHandler(tool_definitions=...) or the "
+            "channel's tools, or no human will ever be asked.",
+            channel_id,
+            sorted(missing),
+        )
 
     def serves(self, name: str) -> bool:
         """Whether a call to *name* asks a person."""

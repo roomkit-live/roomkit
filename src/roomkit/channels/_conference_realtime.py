@@ -38,6 +38,7 @@ from roomkit.channels._conference_operations import ConferenceResource
 from roomkit.channels._conference_tools import (
     ConferenceToolGate,
     bound_result,
+    catalogue,
     declared_tools,
     warn_unused_role_overrides,
 )
@@ -310,6 +311,8 @@ class ConferenceRealtime:
                     ConferenceResource.REALTIME,
                     what=f"connecting the realtime provider for room {room_id}",
                 ):
+                    offered = {dict_tool_name(tool) for tool in catalogue(config) or []}
+                    self._human_input.warn_unoffered(offered, self._channel_id)
                     await config.provider.connect(
                         session,
                         system_prompt=config.system_prompt,

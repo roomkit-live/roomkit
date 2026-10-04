@@ -134,36 +134,6 @@ class AIContextMixin(_AIChannelContract):
     _tool_policy: ToolPolicy | None
     channel_id: str
 
-    _warned_unoffered_human_tools: set[str]
-
-    def _warn_unoffered_human_input_tools(self, offered: set[str]) -> None:
-        """Say so when a human-input tool name is absent from the turn's toolset.
-
-        ``tool_names`` gates which calls the handler intercepts; what puts the
-        tool in front of the model is ``tool_definitions`` on the handler, or
-        the channel's own ``tools`` / binding metadata. A name offered by
-        neither is a tool the model is never told exists, so it never calls it
-        — and a provider naming it anyway is failed closed at dispatch. Either
-        way no human is asked, and nothing else says so.
-
-        Once per channel per name: the wiring does not change between turns,
-        and a line per turn would bury the one that matters.
-        """
-        human = self._human_input
-        if human is None:
-            return
-        missing = human.names - offered - self._warned_unoffered_human_tools
-        if not missing:
-            return
-        self._warned_unoffered_human_tools |= missing
-        logger.warning(
-            "Channel %s intercepts human-input tool(s) %s but never offers them to the "
-            "model: declare them via HumanInputToolHandler(tool_definitions=...) or the "
-            "channel's tools, or no human will ever be asked.",
-            self.channel_id,
-            sorted(missing),
-        )
-
     async def _build_context(
         self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
     ) -> AIContext:
@@ -216,7 +186,7 @@ class AIContextMixin(_AIChannelContract):
         # failed closed at dispatch. ``tool_names`` gates interception; what
         # offers the tool is ``tool_definitions`` on the handler, or the
         # channel's own ``tools`` / binding metadata. Warn once per channel.
-        self._warn_unoffered_human_input_tools({t.name for t in tools})
+        self._human_input.warn_unoffered({t.name for t in tools}, self.channel_id)
 
         # Tool policy + skill gating. Tool Search's collapse is applied to what
         # BEFORE_AI_GENERATION leaves, so the hook sees the whole catalogue it
@@ -574,10 +544,11 @@ class AIContextMixin(_AIChannelContract):
 
     def _never_hidden(self, room_id: str | None) -> set[str]:
         """What Tool Search never hides in *room_id*: what orchestration
-        injected and the channel's own tools. It stays declared, outside the
-        catalogue whose size decides the collapse (RFC §21.1)."""
+        injected, the channel's own tools and the person's, as a realtime
+        session declares them. It stays declared, outside the catalogue whose
+        size decides the collapse (RFC §9.3, §21.1)."""
         own = self._registry.names(room_id, lambda traits: not traits.deferrable)
-        return self._orchestration_tool_names(room_id) | own
+        return self._orchestration_tool_names(room_id) | own | self._human_input.declared_names
 
     def _collapse_behind_tool_search(
         self,

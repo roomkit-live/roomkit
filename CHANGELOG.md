@@ -851,6 +851,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A tool a realtime session is given (its metadata, `reconfigure_session`)
+  under a name orchestration serves is not declared, as a turn's is not on a
+  text door (RMK-499, RFC §21.1): a pipeline's handoff or agent tool given
+  again with another schema was declared with it, the gate checked that
+  schema and the pipeline served the call. A call to such a name is checked
+  against its server's schema though the session declares none of its own.
+  The person's tools are never hidden by Tool Search on a text turn, as on a
+  realtime session; a human-input definition given twice, or under a name the
+  channel serves itself, is refused on every door; a `HumanInputToolHandler`
+  given as a text channel's `tool_handler`, and a human-input name nothing
+  declares on a realtime session or a conference, are warned about as on the
+  other doors.
+
 - A background result handed back to a channel that hosts a realtime model
   reaches that model on every such channel (RMK-501, RFC §23.3 step 8): a
   `RealtimeAudioVideoChannel` and a `ConferenceChannel` with a realtime model

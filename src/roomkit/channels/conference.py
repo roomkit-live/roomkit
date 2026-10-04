@@ -450,6 +450,9 @@ class ConferenceChannel(
         refuse_unnamable(names, self.channel_id)
         refuse_given_twice(names, self.channel_id)
         refuse_served_names(names, person.declared_names, self.channel_id)
+        # A conference serves no tool of its own: only a person's definition
+        # given twice is refused (RFC §21.1).
+        person.refuse_collisions(frozenset(), self.channel_id)
 
     @property
     def _realtime_config(self) -> ConferenceRealtimeConfig | None:

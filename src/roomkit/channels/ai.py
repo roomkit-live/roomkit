@@ -81,7 +81,7 @@ from roomkit.providers.ai.base import (
 )
 from roomkit.providers.ai.json_schema import check_portable_schema
 from roomkit.realtime.base import RealtimeBackend
-from roomkit.tools._human_input_channel import ChannelHumanInput
+from roomkit.tools._human_input_channel import ChannelHumanInput, warn_plain_handler
 from roomkit.tools.compose import compose_tool_handlers, extract_tools
 from roomkit.tools.context import _current_loop_ctx, _ToolLoopContext
 from roomkit.tools.policy import ToolPolicy
@@ -335,9 +335,7 @@ class AIChannel(
         # The person's tools, which the channel serves itself, before the
         # host's handler, under their own timeout (RFC §9.3, §21.6).
         self._human_input = ChannelHumanInput(human_input_handler, self.channel_type)
-        # Names already reported as intercepted-but-never-offered; the
-        # warning is a wiring diagnostic, not a per-turn event.
-        self._warned_unoffered_human_tools: set[str] = set()
+        warn_plain_handler(tool_handler, self.channel_id)
         extracted_defs, effective_handler = self._compose_host_tools(tool_handler, tools)
 
         # The host's handler, kept apart: all dispatch goes through
@@ -359,6 +357,7 @@ class AIChannel(
         served = self._channel_tool_names()
         refuse_served_names((tool.name for tool in self._user_tools), served, self.channel_id)
         refuse_given_twice((tool.name for tool in self._user_tools), self.channel_id)
+        self._human_input.refuse_collisions(self._channel_own_names(), self.channel_id)
 
     def _compose_host_tools(
         self, tool_handler: ToolHandler | None, tools: list[AITool | Tool] | None

@@ -899,10 +899,13 @@ class AIToolsMixin(_AIChannelContract):
         a host tool under one of these names would be declared with the
         host's schema and served by the channel (RFC §21.1).
         """
+        return self._channel_own_names() | self._human_input.declared_names
+
+    def _channel_own_names(self) -> set[str]:
+        """The tools the channel's own features serve: its dispatch's and its
+        sandbox's commands."""
         names = {e.name for e in self._registry.entries(None, source=ToolSource.CHANNEL)}
-        names |= self._sandbox_tool_names()
-        names |= self._human_input.declared_names
-        return names
+        return names | self._sandbox_tool_names()
 
     def _served_tool_names(self, room_id: str | None) -> set[str]:
         """The tools the channel and orchestration serve in *room_id*, before

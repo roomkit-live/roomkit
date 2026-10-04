@@ -76,7 +76,7 @@ from roomkit.models.enums import (
 from roomkit.models.event import EventSource, RoomEvent
 from roomkit.telemetry.base import Attr, SpanKind
 from roomkit.telemetry.noop import NoopTelemetryProvider
-from roomkit.tools._human_input_channel import ChannelHumanInput
+from roomkit.tools._human_input_channel import ChannelHumanInput, warn_plain_handler
 from roomkit.tools.human_input import HumanInputToolHandler
 from roomkit.tools.timeout import ToolTimeouts
 from roomkit.voice.backends.base import VoiceBackend
@@ -565,15 +565,7 @@ class RealtimeVoiceChannel(
         self._human_input = ChannelHumanInput(human_input_handler, self.channel_type)
         definitions = self._human_input.definitions
         warn_tools_uncallable(definitions, "human-input tool(s)", self._provider, self.channel_id)
-        if isinstance(tool_handler, HumanInputToolHandler):
-            # Served as any host handler: under the channel's call bound, its
-            # requests never announced nor settled with the channel.
-            logger.warning(
-                "Channel %s serves a HumanInputToolHandler as its tool_handler: pass it as "
-                "human_input_handler= so its own timeout, ON_USER_INPUT_REQUIRED and the "
-                "channel's close apply to it",
-                self.channel_id,
-            )
+        warn_plain_handler(tool_handler, self.channel_id)
 
     def _init_host_tools(
         self, tools: list[dict[str, Any] | Any] | None, tool_handler: ToolHandler | None
@@ -651,6 +643,7 @@ class RealtimeVoiceChannel(
             self._channel_tool_names() | self._human_input_names(),
             self.channel_id,
         )
+        self._human_input.refuse_collisions(self._channel_tool_names(), self.channel_id)
 
     def _skill_support_for(
         self,
@@ -1409,6 +1402,8 @@ class RealtimeVoiceChannel(
         # from a background task.
         with self._state_lock:
             self._session_tools[session.id] = self._declared_once(deepcopy(tools or []), room_id)
+        offered = {dict_tool_name(tool) for tool in self._session_declared_tools(session.id)}
+        self._human_input.warn_unoffered(offered, self.channel_id)
 
         if self._tool_search_support:
             self._tool_search_support.init_session(session.id, self._session_tools[session.id])
