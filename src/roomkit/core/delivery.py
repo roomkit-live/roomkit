@@ -21,7 +21,9 @@ if TYPE_CHECKING:
     from roomkit.core.framework import RoomKit
 
 logger = logging.getLogger("roomkit.delivery")
-_VOICE_TYPES = frozenset({ChannelType.VOICE, ChannelType.REALTIME_VOICE})
+_VOICE_TYPES = frozenset(
+    {ChannelType.VOICE, ChannelType.REALTIME_VOICE, ChannelType.REALTIME_AUDIO_VIDEO}
+)
 
 
 @dataclass

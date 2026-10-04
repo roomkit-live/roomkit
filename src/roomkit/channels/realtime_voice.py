@@ -56,7 +56,12 @@ from roomkit.channels._tool_registry import (
 from roomkit.channels._voice_pipeline import VoicePipelineMixin
 from roomkit.channels._voice_recording_hooks import VoiceRecordingHooksMixin
 from roomkit.channels.ai import ToolResult
-from roomkit.channels.base import Channel, FrameworkAwareChannel, _check_room_scope
+from roomkit.channels.base import (
+    Channel,
+    FrameworkAwareChannel,
+    RealtimeModelHost,
+    _check_room_scope,
+)
 from roomkit.core.task_utils import _finish_cleanup
 from roomkit.models.channel import ChannelBinding, ChannelCapabilities, ChannelOutput
 from roomkit.models.context import RoomContext
@@ -144,6 +149,7 @@ class RealtimeVoiceChannel(
     RealtimeResponseMixin,
     VoiceRecordingHooksMixin,
     VoicePipelineMixin,
+    RealtimeModelHost,
     FrameworkAwareChannel,
     Channel,
 ):

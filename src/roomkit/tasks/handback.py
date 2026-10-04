@@ -12,7 +12,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-from roomkit.models.enums import ChannelCategory, ChannelType
+from roomkit.channels.base import hosts_realtime_model
+from roomkit.models.enums import ChannelCategory
 from roomkit.tools.fence import fence
 
 if TYPE_CHECKING:
@@ -100,11 +101,12 @@ def not_handed_back(outcome: DeliveryOutcome | None) -> str | None:
 
 def _target(kit: RoomKit, notify: str, session_id: str | None) -> dict[str, Any]:
     """The ``deliver()`` arguments that reach *notify*, in *session_id* on a
-    realtime voice channel."""
+    channel that hosts a realtime model (a realtime voice or audio-video
+    channel, a conference with a realtime model)."""
     channel = kit.get_channel(notify)
     if channel is not None and channel.category == ChannelCategory.INTELLIGENCE:
         return {"addressed_to": [notify], "instruction": True}
-    if channel is not None and channel.channel_type == ChannelType.REALTIME_VOICE:
+    if hosts_realtime_model(channel):
         session = {"session_id": session_id} if session_id is not None else {}
         return {"channel_id": notify, "instruction": True, **session}
     return {"channel_id": notify}

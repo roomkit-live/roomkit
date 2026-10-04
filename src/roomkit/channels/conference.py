@@ -67,7 +67,7 @@ from roomkit.channels._served_tools import (
     refuse_served_names,
     refuse_unnamable,
 )
-from roomkit.channels.base import Channel, FrameworkAwareChannel
+from roomkit.channels.base import Channel, FrameworkAwareChannel, RealtimeModelHost
 from roomkit.conference.base import ConferenceBackend
 from roomkit.conference.models import (
     ConferenceAccess,
@@ -101,6 +101,8 @@ if TYPE_CHECKING:
     from roomkit.core.framework import RoomKit
     from roomkit.models.identity import IdentityResult
     from roomkit.recorder.base import MediaRecorder
+    from roomkit.voice.base import VoiceSession
+    from roomkit.voice.realtime.injection import VoiceInjectionResult
     from roomkit.voice.stt.base import STTProvider
     from roomkit.voice.tts.base import TTSProvider
 
@@ -128,6 +130,7 @@ class ConferenceChannel(
     ConferenceSubscriptionMixin,
     ConferencePlugMixin,
     ConferenceLanesMixin,
+    RealtimeModelHost,
     FrameworkAwareChannel,
     Channel,
 ):
@@ -740,6 +743,36 @@ class ConferenceChannel(
             # rather than a silence to interpret.
             "bot_track_unterminated": self._voice.unterminated(room_id),
         }
+
+    @property
+    def hosts_realtime_model(self) -> bool:
+        """Whether a realtime model is plugged in, whose room sessions take
+        the text a proactive instruction injects (RFC §23.3 step 8)."""
+        return self._realtime_config is not None
+
+    def get_room_sessions(self, room_id: str) -> list[VoiceSession]:
+        """The realtime model's session in *room_id*, once it is connected."""
+        session = self._realtime.session_for(room_id)
+        return [session] if session is not None else []
+
+    async def inject_text(
+        self,
+        session: VoiceSession,
+        text: str,
+        *,
+        role: str = "user",
+        silent: bool = False,
+        start_audio_stream: bool = False,
+        chain_depth: int = 0,
+    ) -> VoiceInjectionResult | None:
+        """Inject *text* into the realtime model's room session *session*.
+
+        *start_audio_stream* has no use here: the mix feeds the session from
+        the moment it connects.
+        """
+        return await self._realtime.inject_text(
+            session, text, role=role, silent=silent, chain_depth=chain_depth
+        )
 
     def set_framework(self, framework: RoomKit) -> None:
         """Wire the channel to the framework.

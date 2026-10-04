@@ -26,6 +26,8 @@ from roomkit.models.event import RoomEvent, TextContent
 if TYPE_CHECKING:
     from roomkit.core.framework import RoomKit
     from roomkit.models.trace import ProtocolTrace
+    from roomkit.voice.base import VoiceSession
+    from roomkit.voice.realtime.injection import VoiceInjectionResult
 
 # Callback type for protocol trace observers
 TraceCallback = Callable[["ProtocolTrace"], Any]
@@ -43,6 +45,44 @@ def _safe_invoke(cb: TraceCallback, trace: ProtocolTrace) -> None:
                 task.add_done_callback(log_task_exception)
     except Exception:
         _trace_logger.exception("Trace callback error")
+
+
+class RealtimeModelHost(ABC):
+    """A channel whose realtime model's sessions take text injected into them.
+
+    A proactive instruction meant for the model, a background result handed
+    back included, is injected into one of its sessions with the ``system``
+    intent (RFC §23.3 step 8), never published as the channel's own words.
+    A realtime voice channel (audio-video included) and a conference with a
+    realtime model plugged in are such channels; inheriting is the opt-in.
+    """
+
+    @property
+    def hosts_realtime_model(self) -> bool:
+        """Whether a realtime model is plugged in now, so its sessions take text."""
+        return True
+
+    @abstractmethod
+    def get_room_sessions(self, room_id: str) -> list[VoiceSession]:
+        """The model's sessions in *room_id*."""
+
+    @abstractmethod
+    async def inject_text(
+        self,
+        session: VoiceSession,
+        text: str,
+        *,
+        role: str = "user",
+        silent: bool = False,
+        start_audio_stream: bool = False,
+        chain_depth: int = 0,
+    ) -> VoiceInjectionResult | None:
+        """Inject *text* into *session* with the intent *role* (RFC §12.4)."""
+
+
+def hosts_realtime_model(channel: object) -> bool:
+    """Whether *channel* hosts a realtime model whose sessions take text now."""
+    return isinstance(channel, RealtimeModelHost) and channel.hosts_realtime_model
 
 
 class FrameworkAwareChannel(ABC):

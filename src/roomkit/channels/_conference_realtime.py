@@ -66,6 +66,7 @@ from roomkit.tools.result import GateRefusal, declined_answer, result_text
 from roomkit.tools.timeout import answer_within
 from roomkit.voice.base import AudioChunk, VoiceSession
 from roomkit.voice.realtime._answer_depth import AnswerDepth
+from roomkit.voice.realtime.injection import VoiceInjectionResult
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -363,20 +364,13 @@ class ConferenceRealtime:
         must not fail the broadcast that carried it. The model's answer to
         it is one deeper than the event (RFC §12.10.12).
         """
-        config = self._config
-        if config is None:
+        if self._config is None:
             return
         session = await self.ensure_session(room_id)
         if session is None:
             return
         try:
-            with self._operations.use(
-                ConferenceResource.REALTIME, what=f"text injection for room {room_id}"
-            ):
-                result = await config.provider.inject_text(session, text, role=role)
-            room = self._rooms.get(room_id)
-            if room is not None and result is not None and result.status == "sent":
-                room.answer_depth.injected(chain_depth)
+            await self.inject_text(session, text, role=role, chain_depth=chain_depth)
         except Exception:
             logger.warning(
                 "Conference channel %r could not inject a text event into the realtime "
@@ -385,6 +379,31 @@ class ConferenceRealtime:
                 room_id,
                 exc_info=True,
             )
+
+    async def inject_text(
+        self,
+        session: VoiceSession,
+        text: str,
+        *,
+        role: str,
+        silent: bool = False,
+        chain_depth: int = 0,
+    ) -> VoiceInjectionResult | None:
+        """Inject *text* into the room session *session*, as a realtime voice
+        channel injects into its own (RFC §12.4): the model's answer is one
+        deeper than *chain_depth* unless *silent*. Not sent when the session
+        is no longer the room's (an unplug, a detach, a reconnect)."""
+        config = self._config
+        if config is None or self._guarded(session) is None:
+            return VoiceInjectionResult(status="not_sent", reason="realtime_session_gone")
+        with self._operations.use(
+            ConferenceResource.REALTIME, what=f"text injection for room {session.room_id}"
+        ):
+            result = await config.provider.inject_text(session, text, role=role, silent=silent)
+        room = self._rooms.get(session.room_id)
+        if room is not None and not silent and result is not None and result.status == "sent":
+            room.answer_depth.injected(chain_depth)
+        return result
 
     # -------------------------------------------------------------------------
     # Barge-in — the latch's upstream half

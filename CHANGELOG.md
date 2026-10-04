@@ -845,6 +845,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A background result handed back to a channel that hosts a realtime model
+  reaches that model on every such channel (RMK-501, RFC §23.3 step 8): a
+  `RealtimeAudioVideoChannel` and a `ConferenceChannel` with a realtime model
+  plugged in published it as their own words to the room's other channels,
+  the outcome saying `sent`, and the model that delegated heard nothing. It is
+  injected with the `system` intent into the model's session, as on a
+  `RealtimeVoiceChannel`; a conference now exposes `get_room_sessions()` and
+  `inject_text()` on its room session. `deliver()` to an intelligence channel
+  whose only transport is itself an intelligence channel is refused
+  (`no_transport`), where it recursed until a `RecursionError`.
+
 - A `system` message in the history (a memory provider's summary, an
   instruction) goes to Anthropic as a user turn, as to Gemini (RMK-484, RFC
   §6.7): it went as a message role the Messages API does not take.

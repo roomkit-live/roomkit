@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from roomkit.channels.base import RealtimeModelHost
 from roomkit.core._delivery_targets import deliver_to_realtime_voice as _deliver_to_realtime_voice
 from roomkit.core.delivery import (
     DeliveryContext,
@@ -59,9 +60,13 @@ def _channel_mock(
     channel_type: ChannelType,
     category: ChannelCategory = ChannelCategory.TRANSPORT,
 ) -> MagicMock:
-    ch = MagicMock()
+    # A realtime channel is a host of a realtime model (RMK-501); any other
+    # kind is a plain channel.
+    hosts = channel_type in (ChannelType.REALTIME_VOICE, ChannelType.REALTIME_AUDIO_VIDEO)
+    ch = MagicMock(spec=RealtimeModelHost) if hosts else MagicMock()
     ch.channel_type = channel_type
     ch.category = category
+    ch.hosts_realtime_model = hosts
     return ch
 
 

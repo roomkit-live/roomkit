@@ -5,13 +5,13 @@ from __future__ import annotations
 import asyncio
 from typing import TYPE_CHECKING
 
+from roomkit.channels.base import hosts_realtime_model
 from roomkit.core._voice_delivery import active_sessions as _active_sessions
 from roomkit.core._voice_delivery import deliver_to_realtime_voice, replay_explicit_session
 from roomkit.models.delivery import DeliveryError, DeliveryOutcome, InboundMessage, InboundResult
 from roomkit.models.enums import (
     Access,
     ChannelCategory,
-    ChannelType,
     EventStatus,
     EventType,
     RoomStatus,
@@ -50,10 +50,13 @@ async def prepare_delivery(
         return None, unavailable("channel_unavailable", [channel_id])
     if channel.category == ChannelCategory.INTELLIGENCE:
         transport_id = await ctx.find_transport_channel_id()
-        if transport_id is None:
+        transport = ctx.kit.get_channel(transport_id) if transport_id is not None else None
+        # A transport that is itself an intelligence channel (one attached as
+        # a transport) cannot carry the instruction: refused, never re-entered.
+        if transport is None or transport.category == ChannelCategory.INTELLIGENCE:
             return None, unavailable("no_transport")
         return await prepare_delivery(ctx, transport_id)
-    if channel.channel_type != ChannelType.REALTIME_VOICE or ctx.addressed_to is not None:
+    if not hosts_realtime_model(channel) or ctx.addressed_to is not None:
         if ctx.session_id is not None:
             return None, DeliveryOutcome(status="blocked", reason="session_requires_realtime")
         return channel_id, None
@@ -89,7 +92,7 @@ async def deliver_to_channel(ctx: DeliveryContext, channel_id: str) -> DeliveryO
     channel = ctx.kit.get_channel(channel_id)
     if channel is None:
         return unavailable("channel_unavailable", [channel_id])
-    if channel.channel_type == ChannelType.REALTIME_VOICE and ctx.addressed_to is None:
+    if hosts_realtime_model(channel) and ctx.addressed_to is None:
         return await deliver_to_realtime_voice(channel, ctx)
     result = await ctx.kit.process_inbound(
         InboundMessage(
