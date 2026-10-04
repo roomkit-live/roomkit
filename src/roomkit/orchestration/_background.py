@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Any
 from roomkit.channels._realtime_context import get_current_voice_session
 from roomkit.core._fallback import FALLBACK_FAILED
 from roomkit.core.exceptions import RoomKitError
-from roomkit.core.task_utils import log_task_exception
+from roomkit.core.task_utils import check_open, log_task_exception
 from roomkit.orchestration.status_bus import StatusLevel
 from roomkit.tasks.handback import hand_back, not_handed_back
 from roomkit.tools.context import _current_turn_chain_depth, current_tool_call
@@ -67,17 +67,6 @@ class BackgroundRun[T]:
     ended: Callable[[T], tuple[StatusLevel, str]]
     post: Callable[[StatusLevel, str], None]
     release: Callable[[bool], None]
-
-
-def check_open(kit: RoomKit) -> None:
-    """Refuse a background run on a closing *kit*: started now, it would
-    outlive it (RFC §19.7.3).
-
-    Raises:
-        RoomKitError: *kit* is closing.
-    """
-    if kit._closed:
-        raise RoomKitError("The framework is closing: no background run starts")
 
 
 def start_background_run(kit: RoomKit, run: Coroutine[Any, Any, None]) -> None:

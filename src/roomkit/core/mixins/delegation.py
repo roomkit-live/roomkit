@@ -23,7 +23,7 @@ from roomkit.core.mixins._child_execution import (
     run_agent_in_child_room,
 )
 from roomkit.core.mixins.helpers import HelpersMixin
-from roomkit.core.task_utils import shielded
+from roomkit.core.task_utils import check_open, shielded
 from roomkit.models.enums import (
     ChannelCategory,
     ChannelType,
@@ -293,7 +293,8 @@ class DelegationMixin(HelpersMixin):
         from roomkit.telemetry.context import get_current_span
         from roomkit.telemetry.noop import NoopTelemetryProvider
 
-        # Validate
+        # Validate: nothing starts on a closing kit (RFC §19.7.3).
+        check_open(self, "delegation")
         parent_room = await self.get_room(room_id)
         if agent_id not in self._channels:
             raise ChannelNotRegisteredError(f"Agent channel '{agent_id}' not registered")

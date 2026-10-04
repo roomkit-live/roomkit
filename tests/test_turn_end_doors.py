@@ -19,11 +19,13 @@ import pytest
 from roomkit import HookExecution, HookTrigger, RoomKit
 from roomkit.channels.agent import Agent
 from roomkit.channels.base import Channel
+from roomkit.core.exceptions import RoomKitError
 from roomkit.models.channel import ChannelBinding, ChannelOutput
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundMessage
 from roomkit.models.enums import ChannelCategory, ChannelType, EventType
 from roomkit.models.event import RoomEvent, TextContent
+from roomkit.orchestration._background import start_background_run
 from roomkit.providers.ai.base import (
     AIContext,
     AIResponse,
@@ -229,3 +231,30 @@ async def test_a_delegated_reply_that_did_not_respond_fails_the_task_with_its_er
 
     assert task.result is not None
     assert (str(task.result.status), task.result.error) == ("failed", "producer failed")
+
+
+async def _never() -> None:
+    return None
+
+
+@pytest.mark.parametrize(
+    "door",
+    [
+        lambda kit: kit.delegate("r", "worker", "Go."),
+        lambda kit: kit.delegate("r", "worker", "Go.", wait=True),
+        lambda kit: asyncio.sleep(0, start_background_run(kit, _never())),
+    ],
+    ids=["delegate", "delegate-inline", "strategy-run"],
+)
+async def test_nothing_starts_a_worker_s_turn_on_a_closing_kit(door: Any) -> None:
+    kit = RoomKit()
+    kit.register_channel(SimpleChannel("sms"))
+    kit.register_channel(Agent("worker", provider=MockAIProvider(responses=["done"])))
+    await kit.create_room(room_id="r")
+    await kit.attach_channel("r", "sms")
+    kit._closed = True  # the window close() opens before it seals the store
+
+    with pytest.raises(RoomKitError, match="The framework is closing"):
+        await door(kit)
+    kit._closed = False
+    await kit.close()

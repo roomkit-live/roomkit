@@ -5,9 +5,27 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Coroutine
-from typing import Any
+from typing import Any, Protocol
+
+from roomkit.core.exceptions import RoomKitError
 
 logger = logging.getLogger("roomkit.tasks")
+
+
+class _Closable(Protocol):
+    _closed: bool
+
+
+def check_open(kit: _Closable, what: str = "background run") -> None:
+    """Refuse to start *what* on a closing *kit*: started now, it would
+    outlive it (RFC §19.7.3). Every door that starts a worker's turn on its
+    own asks it: a strategy's background run, a delegation.
+
+    Raises:
+        RoomKitError: *kit* is closing.
+    """
+    if kit._closed:  # noqa: SLF001
+        raise RoomKitError(f"The framework is closing: no {what} starts")
 
 
 async def _finish_cleanup(coro: Coroutine[Any, Any, object]) -> None:
