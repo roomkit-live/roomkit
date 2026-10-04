@@ -247,10 +247,12 @@ class MistralAIProvider(AIProvider):
         finish_reason: str | None = None
         usage: dict[str, int] = {}
 
+        model: str | None = None
         try:
             response = await self._client.chat.stream_async(**kwargs)
             async for event in response:
                 data = event.data
+                model = getattr(data, "model", None) or model
                 if not data.choices:
                     continue
                 delta = data.choices[0].delta
@@ -315,7 +317,7 @@ class MistralAIProvider(AIProvider):
             yield StreamDone(
                 finish_reason=finish_reason,
                 usage=usage,
-                metadata={"model": self._config.model},
+                metadata={"model": model or self._config.model},
             )
 
         except Exception as exc:

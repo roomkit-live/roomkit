@@ -203,6 +203,10 @@ class ToolCallSlots:
         fragment = _argument_text(fragment)
         key = index if index is not None else 0
         position = self._by_index.get(key)
+        if position is None and not name and not fragment:
+            # An entry with no function (a custom tool's call) opens no call,
+            # as a response's reader skips it (message_tool_calls).
+            return None
         if position is not None and self._starts_another_call(position, call_id, name, fragment):
             held = self._slots[position]
             if not name and call_id in (None, "", held["id"]):

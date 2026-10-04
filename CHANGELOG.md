@@ -851,6 +851,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The chat wires read a response the same through `generate()` and the
+  stream (RMK-500, RFC §6.4): `OpenAIAIProvider` behind a `base_url` lets the
+  server decide whether its model reads images, where it guessed from OpenAI's
+  model names and dropped the images of a local vision model; `generate()`
+  records time to first token under the provider's name as its stream does,
+  and vLLM names itself `vllm` in its errors; a choice whose message is null
+  reads as an empty answer, where OpenAI's `generate()` raised a bare
+  `AttributeError` that skipped the retries and the fallback provider; a
+  `tool_calls` entry without a function (a custom tool's call) is no call on
+  the stream either; the model that answered rides the stream's end on
+  OpenAI's wire, PolarGrid, Ollama and Mistral, as it rides `generate()`; and
+  PolarGrid's stream times its first token on text or reasoning, not on a
+  call's fragment.
+
+- A turn that switches reasoning off (`enable_thinking=False`,
+  `thinking_budget=0`) sends `reasoning_effort: "none"` to a model OpenAI's
+  catalogue says reasons, and `minimal` to Meta's Muse, which cannot stop
+  (RMK-500, RFC §6.7): both sent nothing, where `reasoning_effort="none"`
+  already worked. A model that does not reason, one behind a `base_url`, an
+  Azure deployment, xAI and Cerebras keep sending nothing: their wire has no
+  off value to send.
+
 - A tool a realtime session is given (its metadata, `reconfigure_session`)
   under a name orchestration serves is not declared, as a turn's is not on a
   text door (RMK-499, RFC §21.1): a pipeline's handoff or agent tool given

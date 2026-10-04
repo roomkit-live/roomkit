@@ -332,6 +332,16 @@ _SWITCHES_OFF: dict[str, tuple[Any, Callable[[Any, AIContext], bool]]] = {
             not in build_kwargs(AnthropicConfig(api_key="k", model="claude-opus-4-8"), c)
         ),
     ),
+    # A model OpenAI's catalogue says reasons takes ``none``, its off value.
+    "openai": (
+        _provider(OpenAIAIProvider, OpenAIConfig(api_key="k", model="gpt-6-luna")),
+        lambda p, c: _sampled(p, c)["reasoning_effort"] == "none",
+    ),
+    # Muse cannot stop reasoning: off asks for the least of it.
+    "meta": (
+        _provider(MetaAIProvider, MetaConfig(api_key="k", reasoning_effort="high")),
+        lambda p, c: _sampled(p, c)["reasoning_effort"] == "minimal",
+    ),
 }
 
 
@@ -371,3 +381,17 @@ def test_anthropic_turns_adaptive_thinking_on_from_enable_thinking() -> None:
     assert "thinking" not in build_kwargs(budgeted, _context(enable_thinking=True))
     budget = build_kwargs(budgeted, _context(enable_thinking=True, thinking_budget=2048))
     assert budget["thinking"] == {"type": "enabled", "budget_tokens": 2048}
+
+
+@pytest.mark.parametrize("off", [{"thinking_budget": 0}, {"enable_thinking": False}])
+def test_a_model_that_does_not_reason_is_sent_no_off_value(off: dict[str, Any]) -> None:
+    """``reasoning_effort`` is refused by a model that does not reason
+    (gpt-4.1), and one behind a base_url is no model the catalogue knows."""
+    plain = _provider(OpenAIAIProvider, OpenAIConfig(api_key="k", model="gpt-4.1"))
+    proxied = _provider(
+        OpenAIAIProvider,
+        OpenAIConfig(api_key="k", model="gpt-6-luna", base_url="http://local.test/v1"),
+    )
+
+    assert "reasoning_effort" not in _sampled(plain, _context(**off))
+    assert "reasoning_effort" not in _sampled(proxied, _context(**off))

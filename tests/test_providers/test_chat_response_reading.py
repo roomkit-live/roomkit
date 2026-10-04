@@ -79,6 +79,39 @@ ANSWERS = {
         ],
     ),
     "no-choice": (_completion([]), [_chunk([], usage=USAGE)]),
+    # A custom tool's call carries no function: no call, on both modes (RMK-500).
+    "function-less": (
+        _completion(
+            [
+                {
+                    "index": 0,
+                    "finish_reason": "tool_calls",
+                    "message": {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [{"id": "c1", "type": "custom", "custom": {"name": "x"}}],
+                    },
+                }
+            ]
+        ),
+        [
+            _chunk(
+                [
+                    {
+                        "index": 0,
+                        "delta": {"tool_calls": [{"index": 0, "id": "c1", "type": "custom"}]},
+                        "finish_reason": None,
+                    }
+                ]
+            ),
+            _chunk([{"index": 0, "delta": {}, "finish_reason": "tool_calls"}]),
+        ],
+    ),
+    # A filtered answer whose message the server left null (RMK-500).
+    "null-message": (
+        _completion([{"index": 0, "finish_reason": "content_filter", "message": None}]),
+        [_chunk([{"index": 0, "delta": {}, "finish_reason": "content_filter"}])],
+    ),
 }
 
 
@@ -170,3 +203,41 @@ def test_ollama_keeps_a_call_whose_name_was_lost_nameless() -> None:
     [call] = provider._extract_tool_calls(message)
 
     assert (call.name, call.arguments) == ("", {})
+
+
+@pytest.mark.parametrize("mode", ["generate", "stream"])
+async def test_an_entry_without_a_function_is_no_call(mode: str) -> None:
+    calls, _ = await _read("function-less", mode)
+
+    assert calls == []
+
+
+async def test_a_null_message_reads_as_an_empty_one() -> None:
+    provider = _provider(*ANSWERS["null-message"])
+    context = AIContext(messages=[AIMessage(role="user", content="go")])
+
+    response = await provider.generate(context)
+
+    assert (response.content, response.finish_reason, response.tool_calls) == (
+        "",
+        "content_filter",
+        [],
+    )
+
+
+@pytest.mark.parametrize(
+    ("base_url", "model", "vision"),
+    [
+        (None, "gpt-3.5-turbo-0125", False),
+        ("http://local.test/v1", "qwen2.5-vl-7b-instruct", True),
+    ],
+    ids=["openai-endpoint", "behind-base-url"],
+)
+def test_a_server_behind_a_base_url_decides_what_its_model_reads(
+    base_url: str | None, model: str, vision: bool
+) -> None:
+    """OpenAI's model names say nothing of a local model: images are passed
+    through and the server answers (RMK-500)."""
+    provider = OpenAIAIProvider(OpenAIConfig(api_key="k", model=model, base_url=base_url))
+
+    assert provider.supports_vision is vision

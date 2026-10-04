@@ -518,10 +518,12 @@ class PolarGridAIProvider(AIProvider):
         usage: dict[str, int] = {}
         tool_call_slots = ToolCallSlots()
         parser = ThinkTagParser()
+        model: str | None = None
 
         stream = sdk_patch.chat_completion_stream(self._sdk, client, request)
         try:
             async for chunk in stream:
+                model = getattr(chunk, "model", None) or model
                 # The usage comes last, as a chunk with no choices.
                 chunk_usage = self._extract_usage(chunk)
                 if chunk_usage:
@@ -538,9 +540,6 @@ class PolarGridAIProvider(AIProvider):
 
                 tool_deltas = getattr(delta, "tool_calls", None)
                 if tool_deltas:
-                    if first_token:
-                        self._record_ttfb(t0)
-                        first_token = False
                     for composed in self._accumulate_tool_deltas(tool_call_slots, tool_deltas):
                         yield composed
 
@@ -565,7 +564,8 @@ class PolarGridAIProvider(AIProvider):
             for event in tool_call_slots.calls(finish_reason):
                 yield event
 
-            yield StreamDone(finish_reason=finish_reason, usage=usage)
+            metadata = {"model": model} if model else {}
+            yield StreamDone(finish_reason=finish_reason, usage=usage, metadata=metadata)
         except ProviderError:
             raise
         except Exception as exc:

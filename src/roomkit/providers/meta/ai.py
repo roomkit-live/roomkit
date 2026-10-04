@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, ClassVar
 
 from roomkit.providers.ai.base import AIContext, ModelInfo
-from roomkit.providers.ai.reasoning import turn_setting
+from roomkit.providers.ai.reasoning import thinking_switch, turn_setting
 from roomkit.providers.meta.config import MetaConfig
 from roomkit.providers.meta.models import MODELS
 from roomkit.providers.openai.ai import OpenAIAIProvider
@@ -72,5 +72,7 @@ class MetaAIProvider(OpenAIAIProvider):
         if context.temperature is not None and self._config.supports_custom_temperature:
             kwargs["temperature"] = context.temperature
         effort = turn_setting(context.reasoning_effort, self._config.reasoning_effort)
+        if thinking_switch(context) is False:
+            effort = "none"  # a turn that switches reasoning off asks for the least of it
         if effort is not None:
             kwargs["reasoning_effort"] = "minimal" if effort == "none" else effort

@@ -448,10 +448,12 @@ class OllamaAIProvider(AIProvider):
         usage: dict[str, int] = {}
         accumulated_tool_calls: list[StreamToolCall] = []
         ids = CallIds()
+        model: str | None = None
 
         try:
             stream = await sdk_patch.chat(self._sdk, self._client, **kwargs)
             async for chunk in stream:
+                model = self._get_attr(chunk, "model", None) or model
                 message = self._get_message(chunk)
                 thinking_delta = self._get_attr(message, "thinking", None)
                 if thinking_delta:
@@ -483,7 +485,8 @@ class OllamaAIProvider(AIProvider):
             for tc_event in accumulated_tool_calls:
                 yield tc_event
 
-            yield StreamDone(finish_reason=finish_reason, usage=usage)
+            metadata = {"model": model} if model else {}
+            yield StreamDone(finish_reason=finish_reason, usage=usage, metadata=metadata)
         except ProviderError:
             raise
         except Exception as exc:

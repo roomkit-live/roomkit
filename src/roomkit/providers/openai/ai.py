@@ -44,7 +44,7 @@ from roomkit.providers.ai.openai_dialect import (
     message_tool_calls,
     overflow_fact,
 )
-from roomkit.providers.ai.reasoning import turn_setting
+from roomkit.providers.ai.reasoning import thinking_switch, turn_setting
 from roomkit.providers.ai.response_schema import (
     check_schema_answer,
     checked_stream,
@@ -196,6 +196,10 @@ class OpenAIAIProvider(AIProvider):
         entry = self.catalog_entry()
         if entry is not None and entry.supports_vision is not None:
             return entry.supports_vision
+        if self._provider_name == "openai" and not self._is_openai_endpoint:
+            # A server behind base_url decides what its model reads: OpenAI's
+            # model names say nothing of a local one (RFC §6.7).
+            return True
         return self._config.model.startswith(_VISION_PREFIXES)
 
     @property
@@ -279,11 +283,30 @@ class OpenAIAIProvider(AIProvider):
         """
         if context.temperature is not None and self._config.supports_custom_temperature:
             kwargs["temperature"] = context.temperature
-        effort = turn_setting(context.reasoning_effort, self._config.reasoning_effort)
+        effort = self._turn_effort(context)
         if context.tools:
             effort = self._tool_turn_effort(effort)
         if effort is not None:
             kwargs["reasoning_effort"] = effort
+
+    def _turn_effort(self, context: AIContext) -> str | None:
+        """The turn's effort over the configured one; ``none`` when the turn
+        switches reasoning off (``thinking_budget`` 0, ``enable_thinking``
+        false) on a model OpenAI's catalogue says reasons, its one off value
+        (RFC §6.7). A model that does not reason, or one behind a ``base_url``,
+        takes no ``none``: the switch has nothing to turn off there."""
+        if thinking_switch(context) is False and self._catalogued_reasoner():
+            return "none"
+        return turn_setting(context.reasoning_effort, self._config.reasoning_effort)
+
+    def _catalogued_reasoner(self) -> bool:
+        """Whether OpenAI's own endpoint serves the model as a reasoning one,
+        as its catalogue tags it."""
+        if not self._is_openai_endpoint:
+            return False
+        info = self.catalog_entry()
+        capabilities = set(info.capabilities) if info is not None else set()
+        return bool(capabilities & {"tools_reasoning_none", "tools_reasoning_effort"})
 
     def _check_model_serves(self, context: AIContext) -> None:
         """Refuse, before the request, a turn OpenAI's endpoint refuses its
@@ -446,16 +469,7 @@ class OpenAIAIProvider(AIProvider):
                 status_code=None,
             ) from exc
 
-        ttfb_ms = (time.monotonic() - t0) * 1000
-        from roomkit.telemetry.noop import NoopTelemetryProvider
-
-        telemetry = getattr(self, "_telemetry", None) or NoopTelemetryProvider()
-        telemetry.record_metric(
-            "roomkit.llm.ttfb_ms",
-            ttfb_ms,
-            unit="ms",
-            attributes={"provider": self._provider_name, "model": self._config.model},
-        )
+        self._record_ttfb(t0)
 
         # What the request cost, read before anything else: a response with
         # no choice still billed its input.
@@ -465,12 +479,13 @@ class OpenAIAIProvider(AIProvider):
             return AIResponse(content="", usage=usage)
 
         choice = response.choices[0]
-        tool_calls = message_tool_calls(choice.message, choice.finish_reason)
+        # A message the server sent null reads as an empty one, as on the stream.
+        message = getattr(choice, "message", None)
+        tool_calls = message_tool_calls(message, choice.finish_reason)
 
         # Extract <think>...</think> tags from response text.
-        raw_text = choice.message.content or ""
-        thinking, content = extract_think_tags(raw_text)
-        thinking = merge_thinking(thinking, field_reasoning(choice.message))
+        thinking, content = extract_think_tags(getattr(message, "content", None) or "")
+        thinking = merge_thinking(thinking, field_reasoning(message))
         self._check_schema_answer(context, choice, content)
 
         return AIResponse(
@@ -532,10 +547,12 @@ class OpenAIAIProvider(AIProvider):
         finish_reason: str | None = None
         usage: dict[str, int] = {}
         refusal_parts: list[str] = []
+        model: str | None = None
 
         try:
             response = await self._client.chat.completions.create(**kwargs)
             async for chunk in response:
+                model = getattr(chunk, "model", None) or model
                 # With include_usage, the final chunk has usage but empty choices
                 if hasattr(chunk, "usage") and chunk.usage:
                     usage = self._usage_from(chunk.usage)
@@ -599,11 +616,7 @@ class OpenAIAIProvider(AIProvider):
             for call in tool_call_slots.calls(finish_reason):
                 yield call
 
-            yield StreamDone(
-                finish_reason=finish_reason,
-                usage=usage,
-                metadata={"refusal": "".join(refusal_parts)} if refusal_parts else {},
-            )
+            yield _done(finish_reason, usage, model, "".join(refusal_parts))
 
         except self._api_connection_error as exc:
             raise ProviderError(
@@ -635,3 +648,14 @@ class OpenAIAIProvider(AIProvider):
     async def close(self) -> None:
         """Close the underlying HTTP client."""
         await self._client.close()
+
+
+def _done(
+    finish_reason: str | None, usage: dict[str, int], model: str | None, refusal: str
+) -> StreamDone:
+    """A stream's end: its stop reason, its usage, and, as a response reads
+    them, the model that answered and any refusal."""
+    metadata: dict[str, str] = {"model": model} if model else {}
+    if refusal:
+        metadata["refusal"] = refusal
+    return StreamDone(finish_reason=finish_reason, usage=usage, metadata=metadata)

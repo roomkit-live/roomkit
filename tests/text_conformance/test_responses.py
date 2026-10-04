@@ -3,9 +3,11 @@ runnable, its reasoning and its usage (RFC §6.4)."""
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 
-from roomkit.providers.ai.base import AITool
+from roomkit.providers.ai.base import AITool, StreamDone
 from roomkit.providers.ai.tool_calls import is_malformed_call, is_truncation
 from tests.text_conformance.driver import (
     ARGUMENT_TEXT,
@@ -373,3 +375,52 @@ class TestUsage:
 
         assert answer.usage["output_tokens"] == 7
         assert answer.usage.get("reasoning_tokens") == 3
+
+
+class _Recorder:
+    """Telemetry that keeps the time-to-first-token metric's labels."""
+
+    def __init__(self) -> None:
+        self.labels: list[str] = []
+
+    def record_metric(self, name: str, value: float, **kw: Any) -> None:
+        if name == "roomkit.llm.ttfb_ms":
+            self.labels.append(dict(kw.get("attributes") or {}).get("provider", "?"))
+
+
+class TestModesAgree:
+    """What a response tells the loop beside its content, the same through
+    ``generate()`` and the stream (RMK-500)."""
+
+    async def test_the_model_that_answered_is_read_on_both_modes(self, driver: Driver) -> None:
+        context = tool_context(LOOKUP)
+        response = await driver.provider(Script(text="ok")).generate(context)
+        stream = driver.provider(Script(text="ok")).generate_structured_stream(context)
+        done = [e async for e in stream if isinstance(e, StreamDone)][-1]
+
+        assert done.metadata.get("model") == response.metadata.get("model")
+
+    async def test_time_to_first_token_is_labelled_alike_on_both_modes(
+        self, driver: Driver
+    ) -> None:
+        context = tool_context(LOOKUP)
+        generated, streamed = _Recorder(), _Recorder()
+        provider = driver.provider(Script(text="ok"))
+        provider._telemetry = generated  # type: ignore[attr-defined]
+        await provider.generate(context)
+        provider = driver.provider(Script(text="ok"))
+        provider._telemetry = streamed  # type: ignore[attr-defined]
+        async for _ in provider.generate_structured_stream(context):
+            pass
+
+        assert generated.labels == streamed.labels != []
+
+    async def test_a_stream_of_calls_alone_records_no_first_token(self, driver: Driver) -> None:
+        script = Script(calls=(Call("lookup", '{"q": "a"}', id="c1", index=0),), finish="tool")
+        recorder = _Recorder()
+        provider = driver.provider(script)
+        provider._telemetry = recorder  # type: ignore[attr-defined]
+        async for _ in provider.generate_structured_stream(tool_context(LOOKUP)):
+            pass
+
+        assert recorder.labels == []

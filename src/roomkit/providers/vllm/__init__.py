@@ -34,6 +34,11 @@ class _VLLMProvider(OpenAIAIProvider):
     def name(self) -> str:
         return "vllm"
 
+    @property
+    def _provider_name(self) -> str:
+        """Its own name in its errors, not the OpenAI parent's."""
+        return "vllm"
+
     @classmethod
     def available_models(cls) -> list[ModelInfo]:
         """Empty: a local server's models are not knowable offline.
