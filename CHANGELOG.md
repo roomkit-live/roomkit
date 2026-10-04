@@ -852,6 +852,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A tool call's report and its rows say the same thing on every door
+  (RMK-498, RFC §9.3, §12.4): two calls under one id in a text round are two
+  calls, the second refused as a realtime session refuses it ("has not had its
+  result yet") and reported as its own, where both ran, one report was made
+  and the first's END row carried the second's arguments; a refusal that came
+  from a failure (a `BEFORE_TOOL_USE` hook that failed closed) carries what
+  failed (`error_detail`) on the external handler's doors too, through
+  `ToolDecision.detail` and `ExternalToolHandler.on_tool_refused(detail=...)`
+  (passed only then); a reasoning backend's call is reported under
+  `<delegation>:<the model's id>` on every path, where a call through the gate
+  or refused by it got a minted id (`model_call_id()`); a call the turn cuts
+  while it runs is closed with the arguments it ran with, as its report is,
+  where its END row kept the model's; and an ACP call RoomKit refused that the
+  agent ran anyway and closed completed is reported served with
+  `refused_but_ran` on its report, its END row and its `tool_call` framework
+  event (`on_tool_result(refused_but_ran=True)`, passed only then).
+
 - A turn ends the same on every door that runs one (RMK-497, RFC §6.4,
   §12.4.1, §23.3): a turn cancelled from outside (`handle.cancel()`, a
   cancelled `delegate(wait=True)`, `task_runner.cancel()`) records

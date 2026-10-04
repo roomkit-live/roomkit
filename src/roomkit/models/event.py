@@ -189,6 +189,9 @@ class ToolCallContent(BaseModel):
     # completed/failed, stated (RFC §6.4). ``None`` on a row written without
     # it, which a reader takes by its ``status``.
     outcome: ToolCallOutcome | None = None
+    # A call that ran although RoomKit refused it (an ACP agent past a
+    # rejected permission): its end row says so, as its report does (RFC §9.3).
+    refused_but_ran: bool = False
 
 
 EventContent = Annotated[

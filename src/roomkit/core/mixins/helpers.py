@@ -1106,6 +1106,8 @@ class HelpersMixin:
             data["cancelled"] = True
         if event.refused:
             data["refused"] = True
+        if event.refused_but_ran:
+            data["refused_but_ran"] = True
         await self._emit_framework_event(
             "tool_call", room_id=event.room_id, channel_id=channel_id, data=data
         )

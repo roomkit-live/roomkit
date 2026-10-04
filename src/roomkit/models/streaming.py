@@ -54,6 +54,8 @@ class ToolCallEndMarker:
     structured_content: dict[str, Any] | None = None
     # How the call ended (see ToolCallContent.outcome).
     outcome: ToolCallOutcome | None = None
+    # It ran although RoomKit refused it (see ToolCallContent.refused_but_ran).
+    refused_but_ran: bool = False
 
 
 @dataclass(slots=True)

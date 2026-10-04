@@ -431,3 +431,38 @@ async def test_the_policy_handler_hands_on_what_a_failed_closed_hook_said() -> N
     decision = await handler.process_tool_call("Bash", {"cmd": "ls"}, tool_call_id="p1")
 
     assert (decision.approved, decision.detail) == (False, "gate: approval db down")
+
+
+async def _acp_ran_anyway(handler: Any) -> tuple[_Heard, list[Any]]:
+    """An ACP agent whose permission RoomKit refused runs the call anyway and
+    closes it completed."""
+    with tempfile.TemporaryDirectory() as tmp:
+        kit = RoomKit()
+        channel, connection, _ = _channel(Path(tmp), handler=handler)
+        connection.tool_status = "completed"
+        connection.tool_raw_output = {"content": "written"}
+        kit.register_channel(channel)
+        heard = _Heard(kit)
+        await _room(kit, "acp-agent")
+        await _ask(kit)
+        rows = [
+            event.content
+            for event in await kit.store.list_events("room-1")
+            if event.type.value == "tool_call_end"
+        ]
+        await kit.close()
+        return heard, rows
+
+
+@pytest.mark.parametrize("handler", [None, _Denying()], ids=["no-handler", "denying-handler"])
+async def test_an_acp_call_refused_then_run_is_reported_served_with_the_refusal_marked(
+    handler: Any,
+) -> None:
+    """Reported as it ended, served, its flags unchanged; ``refused_but_ran``
+    on its report and its END row tells an audit what it went past (RMK-498)."""
+    heard, rows = await _acp_ran_anyway(handler)
+
+    [event] = heard.observed
+    assert (event.is_error, event.refused, event.refused_but_ran) == (False, False, True)
+    [row] = rows
+    assert (row.outcome, row.refused_but_ran) == ("served", True)

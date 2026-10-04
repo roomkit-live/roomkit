@@ -104,6 +104,14 @@ class BeforeToolDecision:
         return self.allowed
 
 
+def ran_despite_refusal(refused_but_ran: bool) -> dict[str, Any]:
+    """The ``refused_but_ran`` keyword a door hands
+    :meth:`ExternalToolHandler.on_tool_result`: only when the call ran
+    although RoomKit refused it, so an override written before it still
+    hears every other result."""
+    return {"refused_but_ran": True} if refused_but_ran else {}
+
+
 def refusal_detail(detail: str | None) -> dict[str, str]:
     """The ``detail`` keyword a door hands :meth:`ExternalToolHandler.on_tool_refused`:
     only when there is one, so an override written before it still hears
@@ -194,6 +202,7 @@ class ExternalToolHandler(ABC):
         tool_call_id: str = "",
         job_id: str | None = None,
         room_id: str | None = None,
+        refused_but_ran: bool = False,
     ) -> None:
         """Called AFTER the external provider executed a tool.
 
@@ -213,6 +222,10 @@ class ExternalToolHandler(ABC):
             tool_call_id: Provider-assigned ID for this tool call.
             job_id: Job identifier.
             room_id: RoomKit room ID.
+            refused_but_ran: The call ran although RoomKit refused it (an
+                ACP agent past a rejected permission); passed only then, so
+                an override should take ``**kwargs`` and hand it on to
+                ``_fire_on_tool_hook``.
         """
 
     async def on_tool_cancelled(
@@ -364,6 +377,7 @@ class ExternalToolHandler(ABC):
         error_detail: str | None = None,
         tool_call_id: str = "",
         room_id: str | None = None,
+        refused_but_ran: bool = False,
     ) -> None:
         """Fire ON_TOOL_CALL hooks for observation.
 
@@ -391,6 +405,7 @@ class ExternalToolHandler(ABC):
             cancelled=cancelled,
             refused=refused,
             error_detail=error_detail,
+            refused_but_ran=refused_but_ran,
         )
         await self._on_tool_hook(event)
 
@@ -454,6 +469,7 @@ class PolicyExternalToolHandler(ExternalToolHandler):
         tool_call_id: str = "",
         job_id: str | None = None,
         room_id: str | None = None,
+        refused_but_ran: bool = False,
     ) -> None:
         await self._fire_on_tool_hook(
             tool_name,
@@ -462,4 +478,5 @@ class PolicyExternalToolHandler(ExternalToolHandler):
             is_error=is_error,
             tool_call_id=tool_call_id,
             room_id=room_id,
+            refused_but_ran=refused_but_ran,
         )

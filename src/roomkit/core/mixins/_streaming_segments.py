@@ -405,6 +405,7 @@ class SegmentWriter:
                 error=marker.error,
                 structured_content=structured,
                 outcome=marker.outcome,
+                refused_but_ran=marker.refused_but_ran,
             ),
         )
 

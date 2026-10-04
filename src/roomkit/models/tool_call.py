@@ -142,6 +142,12 @@ class ToolCallEvent:
     observers only, on every door: a SYNC hook could serve the call, and a
     refused call is not to be served.
     """
+    refused_but_ran: bool = False
+    """Whether the call ran although RoomKit refused it: an ACP agent that
+    executed a call whose permission was rejected and closed it completed.
+    Reported as it ended, served (:attr:`refused` and :attr:`is_error`
+    false), and marked so an audit sees the refusal the agent went past
+    (RFC §9.3)."""
 
 
 @dataclass(frozen=True)

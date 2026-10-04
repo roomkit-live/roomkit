@@ -35,7 +35,7 @@ from roomkit.models.streaming import (
 )
 from roomkit.models.tool_call import ToolCallEvent
 from roomkit.realtime.base import EphemeralEvent, EphemeralEventType
-from roomkit.tools.external import refusal_detail
+from roomkit.tools.external import ran_despite_refusal, refusal_detail
 from roomkit.tools.result import cancelled_tool_error, failure_detail, tool_failure
 
 if TYPE_CHECKING:
@@ -173,7 +173,14 @@ def _end_marker(tool: _ToolState, end: _ToolEnd) -> ToolCallEndMarker:
         error=end.error,
         structured_content=structured,
         outcome=end.outcome,
+        refused_but_ran=_ran_despite_refusal(tool, end),
     )
+
+
+def _ran_despite_refusal(tool: _ToolState, end: _ToolEnd) -> bool:
+    """Whether the agent ran a call RoomKit refused and closed it completed:
+    reported served, as it ran, and marked (RFC §9.3)."""
+    return tool.refused and end.outcome == "served"
 
 
 def _channel_decided(tool: _ToolState, end: _ToolEnd) -> bool:
@@ -604,6 +611,7 @@ class ACPEventsMixin:
             cancelled=end.outcome == "cancelled",
             refused=end.outcome == "refused",
             error_detail=tool.failure or tool.refusal_detail,
+            refused_but_ran=_ran_despite_refusal(tool, end),
         )
         try:
             await report(event)
@@ -640,6 +648,7 @@ class ACPEventsMixin:
                 is_error=end.status == "failed",
                 tool_call_id=tool.tool_id,
                 room_id=room_id,
+                **ran_despite_refusal(_ran_despite_refusal(tool, end)),
             )
         except Exception:
             logger.exception("ACP external tool-result handler failed")
