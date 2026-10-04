@@ -186,7 +186,7 @@ class AIContextMixin(_AIChannelContract):
         # failed closed at dispatch. ``tool_names`` gates interception; what
         # offers the tool is ``tool_definitions`` on the handler, or the
         # channel's own ``tools`` / binding metadata. Warn once per channel.
-        self._human_input.warn_unoffered({t.name for t in tools}, self.channel_id)
+        self._human_input.warn_unoffered(tools, self.channel_id)
 
         # Tool policy + skill gating. Tool Search's collapse is applied to what
         # BEFORE_AI_GENERATION leaves, so the hook sees the whole catalogue it

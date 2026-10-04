@@ -63,9 +63,7 @@ from roomkit.channels._conference_subscription import ConferenceSubscriptionMixi
 from roomkit.channels._conference_voice import ConferenceVoice
 from roomkit.channels._served_tools import (
     dict_tool_name,
-    refuse_given_twice,
-    refuse_served_names,
-    refuse_unnamable,
+    refuse_host_tools,
 )
 from roomkit.channels.base import Channel, FrameworkAwareChannel, RealtimeModelHost
 from roomkit.conference.base import ConferenceBackend
@@ -447,9 +445,7 @@ class ConferenceChannel(
         # A name is served by one tool (RFC §21.1): declared once and served by
         # another, the model would call one schema on the other's server. And
         # no vendor's name is refused here as at an AITool's definition (§6.7).
-        refuse_unnamable(names, self.channel_id)
-        refuse_given_twice(names, self.channel_id)
-        refuse_served_names(names, person.declared_names, self.channel_id)
+        refuse_host_tools(names, person.declared_names, self.channel_id)
         # A conference serves no tool of its own: only a person's definition
         # given twice is refused (RFC §21.1).
         person.refuse_collisions(frozenset(), self.channel_id)

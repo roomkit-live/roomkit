@@ -252,9 +252,9 @@ class AIToolsMixin(_AIChannelContract):
         Once the turn's toolset is resolved, a call must name a tool the round
         declared, an empty declaration included, or one Tool Search recovers
         from the turn's catalogue (RFC §6.4); the channel's own tools that
-        Tool Search never hides answer for themselves. Its sandbox commands
-        and human-input tools it can hide, so they are recovered and validated
-        as a host tool is; one the policy or a skill keeps from the turn is
+        Tool Search never hides answer for themselves, the person's tools
+        included. Its sandbox commands it can hide, so they are recovered and
+        validated as a host tool is; one the policy or a skill keeps from the turn is
         left to the gate, which refuses it in its own words. A loop built
         without context (``all_context_tools`` is ``None``) has no
         declaration to hold the call to.

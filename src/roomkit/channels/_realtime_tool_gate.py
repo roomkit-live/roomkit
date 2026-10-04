@@ -233,7 +233,7 @@ class RealtimeToolGateMixin:
             return True
         if entry.declares(tool.get("description") or "", tool.get("parameters") or {}):
             return True
-        self._collisions.served(str(name))
+        self._collisions.orchestrated(str(name))
         return False
 
     def _tool_reachable(self, name: str, session_id: str) -> bool:

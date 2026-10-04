@@ -26,6 +26,18 @@ if TYPE_CHECKING:
 logger = logging.getLogger("roomkit.channels.tools")
 
 
+def refuse_host_tools(
+    names: Iterable[str | None], served: Container[str], channel_id: str
+) -> None:
+    """Refuse the host tools a door is given, as every door does (RFC §6.7,
+    §21.1): a name no vendor accepts, one given twice, or one the channel or
+    the person's tools serve (*served*)."""
+    names = list(names)
+    refuse_unnamable(names, channel_id)
+    refuse_given_twice(names, channel_id)
+    refuse_served_names(names, served, channel_id)
+
+
 def refuse_served_names(
     names: Iterable[str | None], served: Container[str], channel_id: str
 ) -> None:
@@ -93,6 +105,13 @@ class CollisionLog:
     def served(self, name: str) -> None:
         self._once(
             name, "served", "Channel %s does not declare the host's %r: it serves it itself"
+        )
+
+    def orchestrated(self, name: str) -> None:
+        self._once(
+            name,
+            "orchestrated",
+            "Channel %s does not declare another tool under %r: orchestration serves that name",
         )
 
     def duplicate(self, name: str) -> None:

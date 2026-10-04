@@ -37,8 +37,7 @@ from roomkit.channels._realtime_transcription import RealtimeTranscriptionMixin
 from roomkit.channels._served_tools import (
     CollisionLog,
     dict_tool_name,
-    refuse_given_twice,
-    refuse_served_names,
+    refuse_host_tools,
     refuse_unnamable,
     warn_tools_uncallable,
 )
@@ -597,11 +596,9 @@ class RealtimeVoiceChannel(
                 tool_defs = tools
 
         # Host tools that collide with the channel's own (RFC §21.1), each
-        # reported once; a name given twice, or one no vendor accepts, is refused.
+        # reported once; the ones it refuses are refused once its own tools
+        # are known (_init_channel_tools).
         self._collisions = CollisionLog(self.channel_id)
-        names = [dict_tool_name(tool) for tool in tool_defs or []]
-        refuse_unnamable(names, self.channel_id)
-        refuse_given_twice(names, self.channel_id)
         self._tools = tool_defs
         warn_tools_uncallable(tool_defs, "tool(s)", self._provider, self.channel_id)
         # What the channel serves itself and what orchestration sets up on it,
@@ -640,7 +637,7 @@ class RealtimeVoiceChannel(
             pinned=tool_search_pinned,
         )
         self._register_channel_tools()
-        refuse_served_names(
+        refuse_host_tools(
             (dict_tool_name(tool) for tool in self._tools or []),
             self._channel_tool_names() | self._human_input_names(),
             self.channel_id,
@@ -894,10 +891,8 @@ class RealtimeVoiceChannel(
         """
         if tools is not None:
             names = [dict_tool_name(tool) for tool in tools]
-            refuse_unnamable(names, self.channel_id)
             served = self._channel_tool_names() | self._human_input_names()
-            refuse_served_names(names, served, self.channel_id)
-            refuse_given_twice(names, self.channel_id)
+            refuse_host_tools(names, served, self.channel_id)
             self._registry.refuse_host_names(names)
         if system_prompt is not None:
             self._system_prompt = system_prompt
@@ -1377,8 +1372,7 @@ class RealtimeVoiceChannel(
         # from a background task.
         with self._state_lock:
             self._session_tools[session.id] = self._declared_once(deepcopy(tools or []), room_id)
-        offered = {dict_tool_name(tool) for tool in self._session_declared_tools(session.id)}
-        self._human_input.warn_unoffered(offered, self.channel_id)
+        self._human_input.warn_unoffered(self._session_declared_tools(session.id), self.channel_id)
 
         if self._tool_search_support:
             self._tool_search_support.init_session(session.id, self._session_tools[session.id])

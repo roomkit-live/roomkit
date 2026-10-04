@@ -20,10 +20,14 @@ and serves nothing):
 from __future__ import annotations
 
 import logging
-from collections.abc import Container
+from collections.abc import Container, Iterable
 from typing import TYPE_CHECKING, Any
 
-from roomkit.channels._served_tools import refuse_given_twice, refuse_served_names
+from roomkit.channels._served_tools import (
+    dict_tool_name,
+    refuse_given_twice,
+    refuse_served_names,
+)
 from roomkit.core.exceptions import UnservedToolCallError
 from roomkit.tools.human_input import HumanInputToolHandler
 
@@ -90,12 +94,14 @@ class ChannelHumanInput:
         refuse_given_twice(names, channel_id)
         refuse_served_names(names, served, channel_id)
 
-    def warn_unoffered(self, offered: Container[str], channel_id: str) -> None:
-        """Say so, once per name, when a name it serves is in nothing the
-        model is offered (*offered*): no definition of its own, and none among
-        the host's tools. The model is never told the tool exists, so no
-        person is ever asked, and nothing else says so."""
-        missing = {name for name in self.names if name not in offered}
+    def warn_unoffered(self, offered: Iterable[AITool | dict[str, Any]], channel_id: str) -> None:
+        """Say so, once per name, when a name it serves is in none of the
+        tools the model is offered (*offered*, definitions or a realtime
+        session's dicts): no definition of its own, and none among the host's
+        tools. The model is never told the tool exists, so no person is ever
+        asked, and nothing else says so."""
+        names = {dict_tool_name(t) if isinstance(t, dict) else t.name for t in offered}
+        missing = {name for name in self.names if name not in names}
         missing -= self._warned_unoffered
         if not missing:
             return

@@ -35,8 +35,7 @@ from roomkit.channels._ai_streaming import AIStreamingMixin
 from roomkit.channels._ai_tools import AIToolsMixin
 from roomkit.channels._served_tools import (
     CollisionLog,
-    refuse_given_twice,
-    refuse_served_names,
+    refuse_host_tools,
 )
 from roomkit.channels._skill_activation import SkillActivationMemory
 from roomkit.channels._task_planner import TaskPlanner
@@ -354,9 +353,8 @@ class AIChannel(
         # Host tools that collide with the channel's own (RFC §21.1), each
         # reported once.
         self._collisions = CollisionLog(self.channel_id)
-        served = self._channel_tool_names()
-        refuse_served_names((tool.name for tool in self._user_tools), served, self.channel_id)
-        refuse_given_twice((tool.name for tool in self._user_tools), self.channel_id)
+        names = (tool.name for tool in self._user_tools)
+        refuse_host_tools(names, self._channel_tool_names(), self.channel_id)
         self._human_input.refuse_collisions(self._channel_own_names(), self.channel_id)
 
     def _compose_host_tools(
