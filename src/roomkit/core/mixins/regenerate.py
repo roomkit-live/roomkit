@@ -299,6 +299,10 @@ class RegenerateMixin(HelpersMixin):
         # (the streaming path fires its own while its stream is read), so the
         # host renders an error card per failed agent on either path.
         await self._report_intelligence_errors(trigger, context, broadcast_result)
+        # The buffered failure is the cascade's first, as on the inbound path
+        # (RFC §10.1 step 18): a stream's failure is the caller's only after it.
+        if broadcast_error is not None:
+            cascade.record_error(broadcast_error)
         # Each buffered reply's record read as the inbound path reads it: its
         # end under ``turns``, a ``turns`` key its hooks wrote left out (RFC §6.4).
         for channel_id, output in broadcast_result.outputs.items():
@@ -306,7 +310,9 @@ class RegenerateMixin(HelpersMixin):
                 record_buffered_reply(cascade, channel_id, output, root=True)
         stream_error, stream_meta = await self._finish_cascade(cascade, room_id, caller_logs=True)
 
-        result = InboundResult(event=trigger, error=stream_error or broadcast_error)
+        result = InboundResult(event=trigger)
         result.report_cascade(cascade)
+        if stream_error is not None and result.error is None:
+            result.error = stream_error
         merge_caller_record(result.response_metadata, stream_meta)
         return result

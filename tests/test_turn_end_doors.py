@@ -18,9 +18,12 @@ import pytest
 
 from roomkit import HookExecution, HookTrigger, RoomKit
 from roomkit.channels.agent import Agent
+from roomkit.channels.base import Channel
+from roomkit.models.channel import ChannelBinding, ChannelOutput
+from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundMessage
-from roomkit.models.enums import ChannelCategory, EventType
-from roomkit.models.event import TextContent
+from roomkit.models.enums import ChannelCategory, ChannelType, EventType
+from roomkit.models.event import RoomEvent, TextContent
 from roomkit.providers.ai.base import (
     AIContext,
     AIResponse,
@@ -157,3 +160,44 @@ async def test_a_delegated_turn_s_failure_is_reported_in_the_turn_s_scope(shared
     [error] = errors
     assert (error.metadata["error_category"], error.chain_depth) == ("streaming", 1)
     assert error.correlation_id is not None
+
+
+class _BufferedFails(Channel):
+    """An intelligence channel whose buffered reply carries an error."""
+
+    channel_type = ChannelType.AI
+    category = ChannelCategory.INTELLIGENCE
+
+    async def handle_inbound(self, message: Any, context: RoomContext) -> RoomEvent:
+        raise NotImplementedError
+
+    async def deliver(
+        self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
+    ) -> ChannelOutput:
+        return ChannelOutput.empty()
+
+    async def on_event(
+        self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
+    ) -> ChannelOutput:
+        return ChannelOutput(responded=True, error=RuntimeError("buffered boom"))
+
+
+@pytest.mark.parametrize("door", ["inbound", "regenerate"])
+async def test_the_buffered_failure_is_the_error_a_caller_reads_on_every_door(door: str) -> None:
+    """A buffered agent and a streamed one fail together: the caller reads
+    the buffered failure, the cascade's first (RFC §10.1 step 18)."""
+    kit = RoomKit()
+    kit.register_channel(SimpleChannel("sms"))
+    kit.register_channel(_BufferedFails("buffered"))
+    kit.register_channel(_failing_worker())
+    await kit.create_room(room_id="r")
+    for channel_id in ("sms", "buffered", "worker"):
+        category = ChannelCategory.TRANSPORT if channel_id == "sms" else None
+        await kit.attach_channel("r", channel_id, category=category)
+    message = InboundMessage(channel_id="sms", sender_id="u", content=TextContent(body="Go."))
+    result = await kit.process_inbound(message)
+    if door == "regenerate":
+        result = await kit.regenerate_response("r")
+    await kit.close()
+
+    assert repr(result.error) == "RuntimeError('buffered boom')"
