@@ -138,10 +138,22 @@ class ToolEntry:
 
     source: ToolSource
     traits: ToolTraits = field(default_factory=ToolTraits)
+    declared_as: tuple[AITool, ...] = ()
+    """The other declarations its server answers under its name (a
+    pipeline agent's handoff, its targets its own): a session may declare
+    them, never another tool under the name."""
 
     @property
     def name(self) -> str:
         return self.definition.name
+
+    def declares(self, description: str, parameters: dict[str, Any]) -> bool:
+        """Whether a declaration of *description* and *parameters* is one of
+        this entry's own."""
+        return any(
+            (definition.description, definition.parameters) == (description, parameters)
+            for definition in (self.definition, *self.declared_as)
+        )
 
 
 def schema_tool(schema: dict[str, Any]) -> AITool:
@@ -169,10 +181,20 @@ def channel_tool(definition: AITool, serve: ToolServe | None) -> ToolEntry:
     return ToolEntry(definition, serve, ToolSource.CHANNEL, traits)
 
 
-def orchestration_tool(definition: AITool, serve: ToolServe, **traits: bool) -> ToolEntry:
+def orchestration_tool(
+    definition: AITool,
+    serve: ToolServe,
+    *,
+    declared_as: Iterable[AITool] = (),
+    **traits: bool,
+) -> ToolEntry:
     """A tool orchestration sets up: declared always, never deferred."""
     return ToolEntry(
-        definition, serve, ToolSource.ORCHESTRATION, replace(ORCHESTRATION_TRAITS, **traits)
+        definition,
+        serve,
+        ToolSource.ORCHESTRATION,
+        replace(ORCHESTRATION_TRAITS, **traits),
+        tuple(declared_as),
     )
 
 

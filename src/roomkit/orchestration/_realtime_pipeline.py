@@ -83,7 +83,12 @@ class RealtimePipeline:
         registry = self._rtv._registry
         # Declared by each agent's configuration, with its own targets: never
         # hidden by Tool Search, served by the handoff handler.
-        handoff = orchestration_tool(HANDOFF_TOOL, self.serve_handoff, always_declared=False)
+        handoff = orchestration_tool(
+            HANDOFF_TOOL,
+            self.serve_handoff,
+            declared_as=[config["handoff"] for config in self.agent_configs.values()],
+            always_declared=False,
+        )
         served = self._agent_tools()
         self._served = frozenset(served)
         agent_tools = [

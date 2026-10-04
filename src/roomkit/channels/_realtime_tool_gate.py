@@ -121,7 +121,18 @@ class RealtimeToolGateMixin:
             if isinstance(t, dict) and t.get("name") == name:
                 params = t.get("parameters")
                 return params if isinstance(params, dict) else None
+        # A tool orchestration serves is checked against its server's schema
+        # though the session declares none of its own, as on a text turn
+        # (RFC §21.1): the catalogue holds no other tool under its name.
+        entry = self._registry.lookup(name, self._session_room_id(session.id))
+        if entry is not None and entry.source is ToolSource.ORCHESTRATION:
+            return entry.definition.parameters
         return None
+
+    def _session_room_id(self, session_id: str) -> str | None:
+        """The room *session_id* belongs to, read under the state lock."""
+        with self._state_lock:
+            return self._session_rooms.get(session_id)
 
     def _is_declared_realtime_tool(
         self, name: str, session: VoiceSession, served: Container[str] | None = None
@@ -198,13 +209,31 @@ class RealtimeToolGateMixin:
     ) -> list[dict[str, Any]]:
         """A session's host tools in *room_id*: none under a name the channel or
         orchestration declares itself there, each name once (RFC §21.1,
-        :func:`declared_once`). Those are composed in afterwards."""
+        :func:`declared_once`). Those are composed in afterwards. A tool
+        orchestration serves without declaring it always (a pipeline agent's,
+        its handoff) comes through the session's catalogue: only its own
+        declaration does, never another tool given under its name."""
         served = (
             self._channel_tool_names()
             | self._human_input_names()
             | self._registry.names(room_id, lambda traits: traits.always_declared)
         )
-        return declared_once(tools, dict_tool_name, served, self._collisions)
+        own = [tool for tool in tools if self._declares_its_server(tool, room_id)]
+        return declared_once(own, dict_tool_name, served, self._collisions)
+
+    def _declares_its_server(self, tool: dict[str, Any], room_id: str | None) -> bool:
+        """Whether *tool* may be declared under its name in *room_id*: no
+        orchestration entry serves the name there, or *tool* is that entry's
+        own declaration. Another tool under the name is dropped, and said once
+        (RFC §21.1): the gate would check one schema, the entry serve another."""
+        name = dict_tool_name(tool)
+        entry = self._registry.lookup(name, room_id) if name else None
+        if entry is None or entry.source is not ToolSource.ORCHESTRATION:
+            return True
+        if entry.declares(tool.get("description") or "", tool.get("parameters") or {}):
+            return True
+        self._collisions.served(str(name))
+        return False
 
     def _tool_reachable(self, name: str, session_id: str) -> bool:
         """Whether the session may call *name*: its tool policy and skill gating.
