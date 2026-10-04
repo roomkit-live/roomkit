@@ -30,14 +30,16 @@ from roomkit.providers.ai.base import (
     AIToolCall,
     AIToolCallPart,
     AIToolResultPart,
+    FirstToken,
     ModelInfo,
     ProviderError,
-    StreamDone,
     StreamEvent,
     StreamTextDelta,
     StreamThinkingDelta,
     StreamToolCall,
+    answered_by,
     stream_call_of,
+    stream_done,
 )
 from roomkit.providers.ai.image_parts import image_part_base64
 from roomkit.providers.ai.reasoning import nearest_level, thinking_switch
@@ -398,7 +400,7 @@ class OllamaAIProvider(AIProvider):
             thinking=thinking or None,
             finish_reason=finish_reason,
             usage=usage,
-            metadata={"model": self._get_attr(response, "model", self._config.model)},
+            metadata=answered_by(self._get_attr(response, "model", None), self._config.model),
             tool_calls=tool_calls,
         )
 
@@ -442,8 +444,7 @@ class OllamaAIProvider(AIProvider):
             provider=self._provider_name,
         )
         kwargs = self._build_kwargs(context, stream=True)
-        t0 = time.monotonic()
-        first_token = True
+        first_token = FirstToken(self)
         finish_reason: str | None = None
         usage: dict[str, int] = {}
         accumulated_tool_calls: list[StreamToolCall] = []
@@ -457,16 +458,12 @@ class OllamaAIProvider(AIProvider):
                 message = self._get_message(chunk)
                 thinking_delta = self._get_attr(message, "thinking", None)
                 if thinking_delta:
-                    if first_token:
-                        self._record_ttfb(t0)
-                        first_token = False
+                    first_token.seen()
                     yield StreamThinkingDelta(thinking=thinking_delta)
 
                 text_delta = self._get_attr(message, "content", None)
                 if text_delta:
-                    if first_token:
-                        self._record_ttfb(t0)
-                        first_token = False
+                    first_token.seen()
                     yield StreamTextDelta(text=text_delta)
 
                 # Tool calls arrive whole (Ollama doesn't fragment
@@ -485,8 +482,7 @@ class OllamaAIProvider(AIProvider):
             for tc_event in accumulated_tool_calls:
                 yield tc_event
 
-            metadata = {"model": model} if model else {}
-            yield StreamDone(finish_reason=finish_reason, usage=usage, metadata=metadata)
+            yield stream_done(finish_reason, usage, model, self._config.model)
         except ProviderError:
             raise
         except Exception as exc:

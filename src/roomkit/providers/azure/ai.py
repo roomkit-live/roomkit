@@ -51,6 +51,17 @@ class AzureAIProvider(OpenAIAIProvider):
         """Provider identifier used in error messages and telemetry."""
         return "azure"
 
+    @property
+    def supports_vision(self) -> bool:
+        """True: the configured model is a deployment name its operator chose.
+
+        The parent's fallback prefixes, OpenAI's own model names, say nothing
+        of it and reported a deployment named ``vision-prod`` as text-only,
+        dropping images before they reached the wire. Passed through, a
+        text-only deployment answers with an error (RFC §6.7).
+        """
+        return True
+
     @classmethod
     def available_models(cls) -> list[ModelInfo]:
         """Azure exposes user-named deployments, not a fixed model catalog.

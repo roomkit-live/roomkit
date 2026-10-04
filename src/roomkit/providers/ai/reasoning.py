@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from roomkit.providers.ai.base import AIContext
+    from roomkit.providers.ai.base import AIContext, ModelInfo
 
 # The efforts a turn may ask for, least to most; ``none`` is off, not a level.
 _EFFORTS = ("minimal", "low", "medium", "high", "xhigh")
@@ -54,3 +54,32 @@ def nearest_level(effort: str | None, levels: Sequence[str]) -> str | None:
     return min(
         levels, key=lambda level: (abs(_EFFORTS.index(level) - rank), _EFFORTS.index(level))
     )
+
+
+# The catalogue tag naming the least ``reasoning_effort`` a model takes on a
+# Chat Completions wire (``reasoning_floor_none``, ``reasoning_floor_minimal``,
+# ``reasoning_floor_low``), each one checked on the wire before it is set.
+_FLOOR_TAG = "reasoning_floor_"
+
+
+def reasoning_floor(info: ModelInfo | None) -> str | None:
+    """The least ``reasoning_effort`` the model takes, as its catalogue entry
+    declares it: ``none`` where reasoning can be switched off, else its lowest
+    level. ``None`` where the entry declares none, or there is no entry."""
+    for tag in info.capabilities if info is not None else []:
+        if tag.startswith(_FLOOR_TAG):
+            return tag.removeprefix(_FLOOR_TAG)
+    return None
+
+
+def floored_effort(context: AIContext, configured: str | None, floor: str | None) -> str | None:
+    """The ``reasoning_effort`` a turn sends a model whose least effort is
+    *floor*: the turn's over the configured one, and *floor* where the turn
+    states off (``thinking_budget`` 0, ``enable_thinking`` false, or ``none``),
+    the model's off value or, on one that cannot stop reasoning, its lowest
+    level (RFC §6.7). Without a *floor* the provider cannot know what the model
+    takes, and the effort goes as the turn and the configuration state it."""
+    effort = turn_setting(context.reasoning_effort, configured)
+    if floor is not None and (thinking_switch(context) is False or effort == "none"):
+        return floor
+    return effort

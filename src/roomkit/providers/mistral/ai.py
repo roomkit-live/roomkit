@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import time
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -13,6 +12,7 @@ from roomkit.providers.ai.base import (
     AIProvider,
     AIResponse,
     AIToolCall,
+    FirstToken,
     ModelInfo,
     ProviderError,
     StreamDone,
@@ -20,6 +20,7 @@ from roomkit.providers.ai.base import (
     StreamTextDelta,
     StreamThinkingDelta,
     StreamToolCall,
+    stream_done,
     tool_call_of,
 )
 from roomkit.providers.ai.chat_request import ChatDialect, chat_messages
@@ -238,8 +239,7 @@ class MistralAIProvider(AIProvider):
     async def _events(self, context: AIContext) -> AsyncIterator[StreamEvent]:
         """The streamed call itself, shared by :meth:`generate`."""
         kwargs = self._build_kwargs(context)
-        t0 = time.monotonic()
-        first_token = True
+        first_token = FirstToken(self)
         parser = ThinkTagParser()
 
         # Accumulate tool call deltas across chunks
@@ -292,9 +292,7 @@ class MistralAIProvider(AIProvider):
                 else:
                     segments = []
                 for kind, segment in segments:
-                    if first_token:
-                        self._record_ttfb(t0)
-                        first_token = False
+                    first_token.seen()
                     if kind == "thinking":
                         yield StreamThinkingDelta(thinking=segment)
                     else:
@@ -302,9 +300,7 @@ class MistralAIProvider(AIProvider):
 
             # Flush any remaining buffered text
             for kind, segment in parser.flush():
-                if first_token:
-                    self._record_ttfb(t0)
-                    first_token = False
+                first_token.seen()
                 if kind == "thinking":
                     yield StreamThinkingDelta(thinking=segment)
                 else:
@@ -314,11 +310,7 @@ class MistralAIProvider(AIProvider):
             for call in tool_call_slots.calls(finish_reason):
                 yield call
 
-            yield StreamDone(
-                finish_reason=finish_reason,
-                usage=usage,
-                metadata={"model": model or self._config.model},
-            )
+            yield stream_done(finish_reason, usage, model, self._config.model)
 
         except Exception as exc:
             raise self._wrap_error(exc) from exc

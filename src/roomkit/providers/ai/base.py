@@ -559,6 +559,28 @@ StreamEvent = (
 )
 
 
+def answered_by(answered: str | None, asked: str) -> dict[str, str]:
+    """A response's ``metadata`` naming its model (RFC §6.7): the one that
+    answered, as the response names it, else the one asked for. One rule for
+    a response and for the end of a stream, so both modes report the same."""
+    return {"model": answered or asked}
+
+
+def stream_done(
+    finish_reason: str | None,
+    usage: dict[str, int],
+    answered: str | None,
+    asked: str,
+    refusal: str = "",
+) -> StreamDone:
+    """A stream's end: its stop reason, its usage, its model as
+    :func:`answered_by` names it, and any refusal the stream carried."""
+    metadata = answered_by(answered, asked)
+    if refusal:
+        metadata["refusal"] = refusal
+    return StreamDone(finish_reason=finish_reason, usage=usage, metadata=metadata)
+
+
 def thinking_parts_of(response: AIResponse) -> list[AIThinkingPart]:
     """A response's reasoning blocks: its ``thinking_parts``, or for a
     provider that reports one block its ``thinking`` with its signature."""
@@ -1056,3 +1078,19 @@ class AIProvider(ABC):
 
     async def close(self) -> None:  # noqa: B027
         """Release resources. Override in subclasses that hold connections."""
+
+
+class FirstToken:
+    """A stream's time to first token, recorded once: at its first text or
+    reasoning, never at a call fragment (the ``roomkit.llm.ttfb_ms`` metric).
+    Started when it is made, just before the request."""
+
+    def __init__(self, provider: AIProvider) -> None:
+        self._provider = provider
+        self._t0: float | None = _time.monotonic()
+
+    def seen(self) -> None:
+        """Mark output reaching the stream; the first call records it."""
+        if self._t0 is not None:
+            self._provider._record_ttfb(self._t0)  # noqa: SLF001
+            self._t0 = None

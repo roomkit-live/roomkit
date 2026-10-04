@@ -46,6 +46,7 @@ from roomkit.providers.ai.base import (
     AIProvider,
     AIResponse,
     AITool,
+    FirstToken,
     ModelInfo,
     ProviderError,
     StreamDone,
@@ -53,6 +54,8 @@ from roomkit.providers.ai.base import (
     StreamTextDelta,
     StreamThinkingDelta,
     StreamToolCallDelta,
+    answered_by,
+    stream_done,
 )
 from roomkit.providers.ai.chat_request import ChatDialect, chat_messages
 from roomkit.providers.ai.openai_dialect import (
@@ -450,7 +453,7 @@ class PolarGridAIProvider(AIProvider):
             thinking=thinking,
             finish_reason=finish_reason,
             usage=usage,
-            metadata={"model": getattr(response, "model", self._config.model)},
+            metadata=answered_by(getattr(response, "model", None), self._config.model),
             tool_calls=tool_calls,
         )
 
@@ -512,8 +515,7 @@ class PolarGridAIProvider(AIProvider):
         client = await self._ensure_client()
         request = self._build_request(context, stream=True)
 
-        t0 = time.monotonic()
-        first_token = True
+        first_token = FirstToken(self)
         finish_reason: str | None = None
         usage: dict[str, int] = {}
         tool_call_slots = ToolCallSlots()
@@ -546,9 +548,7 @@ class PolarGridAIProvider(AIProvider):
                 text = getattr(delta, "content", None)
                 if text:
                     for kind, segment in parser.feed(text):
-                        if first_token:
-                            self._record_ttfb(t0)
-                            first_token = False
+                        first_token.seen()
                         if kind == "thinking":
                             yield StreamThinkingDelta(thinking=segment)
                         else:
@@ -556,6 +556,7 @@ class PolarGridAIProvider(AIProvider):
 
             # Flush any buffered text held back for a partial tag.
             for kind, segment in parser.flush():
+                first_token.seen()
                 if kind == "thinking":
                     yield StreamThinkingDelta(thinking=segment)
                 else:
@@ -564,8 +565,7 @@ class PolarGridAIProvider(AIProvider):
             for event in tool_call_slots.calls(finish_reason):
                 yield event
 
-            metadata = {"model": model} if model else {}
-            yield StreamDone(finish_reason=finish_reason, usage=usage, metadata=metadata)
+            yield stream_done(finish_reason, usage, model, self._config.model)
         except ProviderError:
             raise
         except Exception as exc:

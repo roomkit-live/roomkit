@@ -398,7 +398,7 @@ class TestModesAgree:
         stream = driver.provider(Script(text="ok")).generate_structured_stream(context)
         done = [e async for e in stream if isinstance(e, StreamDone)][-1]
 
-        assert done.metadata.get("model") == response.metadata.get("model")
+        assert done.metadata.get("model") == response.metadata.get("model") is not None
 
     async def test_time_to_first_token_is_labelled_alike_on_both_modes(
         self, driver: Driver
@@ -424,3 +424,14 @@ class TestModesAgree:
             pass
 
         assert recorder.labels == []
+
+    async def test_text_held_back_to_the_end_records_its_first_token(self, driver: Driver) -> None:
+        """A ``<`` may open a think tag: a parser holds it until the stream
+        ends, and its flush is the stream's first output (RMK-500)."""
+        recorder = _Recorder()
+        provider = driver.provider(Script(text="<"))
+        provider._telemetry = recorder  # type: ignore[attr-defined]
+        async for _ in provider.generate_structured_stream(tool_context(LOOKUP)):
+            pass
+
+        assert len(recorder.labels) == 1

@@ -203,10 +203,6 @@ class ToolCallSlots:
         fragment = _argument_text(fragment)
         key = index if index is not None else 0
         position = self._by_index.get(key)
-        if position is None and not name and not fragment:
-            # An entry with no function (a custom tool's call) opens no call,
-            # as a response's reader skips it (message_tool_calls).
-            return None
         if position is not None and self._starts_another_call(position, call_id, name, fragment):
             held = self._slots[position]
             if not name and call_id in (None, "", held["id"]):
@@ -268,8 +264,15 @@ class ToolCallSlots:
     def calls(self, finish_reason: str | None) -> list[StreamToolCall]:
         """The complete calls, each with its own id and its arguments as a
         mapping; one whose arguments do not read is partial, and cut when the
-        response was cut short over them, which only the last call can be."""
-        final = len(self._slots) - 1
+        response was cut short over them, which only the last call can be.
+
+        A slot that never got a name or an argument is no call: an entry with
+        no function (a custom tool's call), as a response's reader skips it
+        (:func:`message_tool_calls`). Opening the slot still keeps the
+        server's id for a call whose function arrives on a later fragment.
+        """
+        slots = [slot for slot in self._slots if slot["name"] or slot["arguments"]]
+        final = len(slots) - 1
         return [
             StreamToolCall(
                 id=slot["id"],
@@ -278,7 +281,7 @@ class ToolCallSlots:
                 partial=call_partial(slot["arguments"], finish_reason, last=n == final),
                 garbled=call_garbled(slot["arguments"], finish_reason, last=n == final),
             )
-            for n, slot in enumerate(self._slots)
+            for n, slot in enumerate(slots)
         ]
 
 

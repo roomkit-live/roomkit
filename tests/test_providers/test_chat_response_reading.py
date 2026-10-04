@@ -18,11 +18,15 @@ import openai
 import pytest
 
 from roomkit.providers.ai.base import AIContext, AIMessage, AITool, StreamDone, StreamToolCall
-from roomkit.providers.ai.openai_dialect import message_tool_calls
+from roomkit.providers.ai.openai_dialect import ToolCallSlots, message_tool_calls
+from roomkit.providers.azure.ai import AzureAIProvider
+from roomkit.providers.azure.config import AzureAIConfig
 from roomkit.providers.ollama.ai import OllamaAIProvider
 from roomkit.providers.ollama.config import OllamaConfig
 from roomkit.providers.openai.ai import OpenAIAIProvider
 from roomkit.providers.openai.config import OpenAIConfig
+from roomkit.providers.openrouter.ai import OpenRouterAIProvider
+from roomkit.providers.openrouter.config import OpenRouterConfig
 from roomkit.providers.polargrid.ai import PolarGridAIProvider
 from roomkit.providers.polargrid.config import PolarGridConfig
 
@@ -212,6 +216,33 @@ async def test_an_entry_without_a_function_is_no_call(mode: str) -> None:
     assert calls == []
 
 
+@pytest.mark.parametrize("index", [0, None], ids=["indexed", "index-less"])
+def test_a_call_whose_id_comes_before_its_function_keeps_the_server_id(
+    index: int | None,
+) -> None:
+    """One fold serves OpenAI's wire, Mistral and PolarGrid (RFC §6.4)."""
+    slots = ToolCallSlots()
+    slots.fold(index, "call_srv", None, None)
+    slots.fold(index, None, "lookup", '{"q": 1}')
+
+    [call] = slots.calls("tool_calls")
+
+    assert (call.id, call.name, call.arguments) == ("call_srv", "lookup", {"q": 1})
+
+
+def test_polargrid_streams_no_call_for_an_entry_without_a_function() -> None:
+    provider = PolarGridAIProvider(PolarGridConfig(api_key="k", model="m"))
+    slots = ToolCallSlots()
+    deltas = [
+        SimpleNamespace(index=0, id="ct_1", function=None),
+        SimpleNamespace(index=1, id="c2", function={"name": "lookup", "arguments": "{}"}),
+    ]
+
+    provider._accumulate_tool_deltas(slots, deltas)
+
+    assert [(c.id, c.name) for c in slots.calls("tool_calls")] == [("c2", "lookup")]
+
+
 async def test_a_null_message_reads_as_an_empty_one() -> None:
     provider = _provider(*ANSWERS["null-message"])
     context = AIContext(messages=[AIMessage(role="user", content="go")])
@@ -241,3 +272,24 @@ def test_a_server_behind_a_base_url_decides_what_its_model_reads(
     provider = OpenAIAIProvider(OpenAIConfig(api_key="k", model=model, base_url=base_url))
 
     assert provider.supports_vision is vision
+
+
+@pytest.mark.parametrize(
+    "provider",
+    [
+        OpenRouterAIProvider(OpenRouterConfig(api_key="k", model="anthropic/claude-opus-4")),
+        AzureAIProvider(
+            AzureAIConfig(
+                api_key="k",
+                azure_endpoint="https://r.openai.azure.com",
+                api_version="2024-10-21",
+                model="vision-prod",
+            )
+        ),
+    ],
+    ids=["openrouter", "azure"],
+)
+def test_a_router_or_a_deployment_decides_what_its_model_reads(provider: Any) -> None:
+    """A ``vendor/model`` id or a deployment name is no OpenAI model name:
+    images are passed through and the server answers (RMK-500)."""
+    assert provider.supports_vision is True

@@ -8,7 +8,6 @@ request lives in ``request.py``.
 from __future__ import annotations
 
 import logging
-import time
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -18,6 +17,7 @@ from roomkit.providers.ai.base import (
     AIProvider,
     AIResponse,
     AIToolCall,
+    FirstToken,
     ModelInfo,
     ProviderError,
     StreamDone,
@@ -272,8 +272,7 @@ class AnthropicAIProvider(AIProvider):
         # The one place the turn's credential is chosen. ``generate`` and
         # ``generate_stream`` both consume this stream, so they inherit it.
         client, leased_api_key = await self._client_for(context)
-        t0 = time.monotonic()
-        first_token = True
+        first_token = FirstToken(self)
 
         try:
             blocks = ToolUseBlocks()
@@ -281,9 +280,8 @@ class AnthropicAIProvider(AIProvider):
             async with client.messages.stream(**kwargs) as stream:
                 async for event in stream:
                     for out in stream_events(event, blocks):
-                        if first_token and is_first_output(out):
-                            self._record_ttfb(t0)
-                            first_token = False
+                        if is_first_output(out):
+                            first_token.seen()
                         yield out
                 final = await stream.get_final_message()
 

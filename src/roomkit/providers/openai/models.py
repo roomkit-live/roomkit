@@ -44,8 +44,17 @@ _CTX_1M = 1_050_000
 # first group takes ``low`` with tools, the second takes ``none`` (gpt-5.4-mini
 # answers 400 to ``low``; gpt-6-sol and gpt-6-luna answer 400 when the effort
 # is left out). An untagged entry gets no effort on such a turn.
-_TOOLS_REASONING_EFFORT = ["tools_reasoning_effort"]
-_TOOLS_REASONING_NONE = ["tools_reasoning_none"]
+#
+# What a turn that switches reasoning off sends (``reasoning_floor_<level>``,
+# read by ``roomkit.providers.ai.reasoning.reasoning_floor``): ``none`` where
+# the model takes it, else its lowest level. Checked on the wire 2026-10-04:
+# GPT-5.1 and later take ``none``; GPT-5 and its mini and nano answer 400 to
+# it and take ``minimal``; o3 and o4-mini take neither and start at ``low``,
+# with function tools as without. An entry without the tag is sent nothing.
+_TOOLS_REASONING_EFFORT_OFF = ["tools_reasoning_effort", "reasoning_floor_none"]
+_TOOLS_REASONING_EFFORT_MINIMAL = ["tools_reasoning_effort", "reasoning_floor_minimal"]
+_TOOLS_REASONING_EFFORT_LOW = ["tools_reasoning_effort", "reasoning_floor_low"]
+_TOOLS_REASONING_NONE = ["tools_reasoning_none", "reasoning_floor_none"]
 # What Chat Completions refuses a model (RFC §6.7), read by
 # ``OpenAIAIProvider._check_model_serves`` before the request. GPT-6 Astra and
 # GPT-6.1 Sol refuse function tools there whatever the effort (400, checked on
@@ -262,7 +271,7 @@ MODELS: list[ModelInfo] = [
     ModelInfo(
         id="gpt-5.1",
         display_name="GPT-5.1",
-        capabilities=_TOOLS_REASONING_EFFORT,
+        capabilities=_TOOLS_REASONING_EFFORT_OFF,
         context_window=400_000,
         supports_vision=True,
         pricing=ModelPricing(
@@ -324,7 +333,7 @@ MODELS: list[ModelInfo] = [
     ModelInfo(
         id="gpt-5",
         display_name="GPT-5",
-        capabilities=_TOOLS_REASONING_EFFORT,
+        capabilities=_TOOLS_REASONING_EFFORT_MINIMAL,
         context_window=400_000,
         supports_vision=True,
         deprecated=True,
@@ -338,7 +347,7 @@ MODELS: list[ModelInfo] = [
     ModelInfo(
         id="gpt-5-mini",
         display_name="GPT-5 mini",
-        capabilities=_TOOLS_REASONING_EFFORT,
+        capabilities=_TOOLS_REASONING_EFFORT_MINIMAL,
         context_window=400_000,
         supports_vision=True,
         deprecated=True,
@@ -352,7 +361,7 @@ MODELS: list[ModelInfo] = [
     ModelInfo(
         id="gpt-5-nano",
         display_name="GPT-5 nano",
-        capabilities=_TOOLS_REASONING_EFFORT,
+        capabilities=_TOOLS_REASONING_EFFORT_MINIMAL,
         context_window=400_000,
         supports_vision=True,
         deprecated=True,
@@ -366,7 +375,7 @@ MODELS: list[ModelInfo] = [
     ModelInfo(
         id="gpt-5.2",
         display_name="GPT-5.2",
-        capabilities=_TOOLS_REASONING_EFFORT,
+        capabilities=_TOOLS_REASONING_EFFORT_OFF,
         context_window=400_000,
         supports_vision=True,
         deprecated=True,
@@ -380,7 +389,7 @@ MODELS: list[ModelInfo] = [
     ModelInfo(
         id="o3",
         display_name="o3",
-        capabilities=_TOOLS_REASONING_EFFORT,
+        capabilities=_TOOLS_REASONING_EFFORT_LOW,
         context_window=200_000,
         supports_vision=True,
         deprecated=True,
@@ -407,7 +416,7 @@ MODELS: list[ModelInfo] = [
     ModelInfo(
         id="o4-mini",
         display_name="o4-mini",
-        capabilities=_TOOLS_REASONING_EFFORT,
+        capabilities=_TOOLS_REASONING_EFFORT_LOW,
         context_window=200_000,
         supports_vision=True,
         deprecated=True,

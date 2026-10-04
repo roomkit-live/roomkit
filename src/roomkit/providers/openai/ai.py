@@ -25,12 +25,15 @@ from roomkit.providers.ai.base import (
     AIProvider,
     AIResponse,
     AITool,
+    FirstToken,
     ModelInfo,
     ProviderError,
     StreamDone,
     StreamEvent,
     StreamTextDelta,
     StreamThinkingDelta,
+    answered_by,
+    stream_done,
 )
 from roomkit.providers.ai.chat_request import OPENAI_CHAT, ChatDialect, chat_messages
 from roomkit.providers.ai.openai_dialect import (
@@ -44,7 +47,7 @@ from roomkit.providers.ai.openai_dialect import (
     message_tool_calls,
     overflow_fact,
 )
-from roomkit.providers.ai.reasoning import thinking_switch, turn_setting
+from roomkit.providers.ai.reasoning import floored_effort, reasoning_floor
 from roomkit.providers.ai.response_schema import (
     check_schema_answer,
     checked_stream,
@@ -62,9 +65,10 @@ if TYPE_CHECKING:
 OPENAI_TOOL_NAMES = ToolNameRule("openai", r"[A-Za-z0-9_-]{1,128}")
 """The tool names OpenAI's endpoint accepts (measured 2026-10-02)."""
 
-# Fallback only, for ids the catalog does not carry — a snapshot newer than
-# this release, or an OpenAI-compatible server behind ``base_url`` naming its
-# own model. A model that is in the catalog is answered from there instead.
+# Fallback only, for ids the catalog does not carry on OpenAI's endpoint (a
+# snapshot newer than this release), and for subclasses that keep OpenAI's
+# names. A model in the catalog is answered from there, and a server behind
+# ``base_url`` decides what its own model reads.
 _VISION_PREFIXES = (
     "gpt-5",
     "gpt-4o",
@@ -290,23 +294,12 @@ class OpenAIAIProvider(AIProvider):
             kwargs["reasoning_effort"] = effort
 
     def _turn_effort(self, context: AIContext) -> str | None:
-        """The turn's effort over the configured one; ``none`` when the turn
-        switches reasoning off (``thinking_budget`` 0, ``enable_thinking``
-        false) on a model OpenAI's catalogue says reasons, its one off value
-        (RFC §6.7). A model that does not reason, or one behind a ``base_url``,
-        takes no ``none``: the switch has nothing to turn off there."""
-        if thinking_switch(context) is False and self._catalogued_reasoner():
-            return "none"
-        return turn_setting(context.reasoning_effort, self._config.reasoning_effort)
-
-    def _catalogued_reasoner(self) -> bool:
-        """Whether OpenAI's own endpoint serves the model as a reasoning one,
-        as its catalogue tags it."""
-        if not self._is_openai_endpoint:
-            return False
-        info = self.catalog_entry()
-        capabilities = set(info.capabilities) if info is not None else set()
-        return bool(capabilities & {"tools_reasoning_none", "tools_reasoning_effort"})
+        """The turn's effort over the configured one; where the turn states
+        off, the least effort OpenAI's catalogue says the model takes: ``none``
+        from GPT-5.1, ``minimal`` on GPT-5, ``low`` on o3 (RFC §6.7). A model
+        that does not reason, or one behind a ``base_url``, has no floor."""
+        floor = reasoning_floor(self.catalog_entry()) if self._is_openai_endpoint else None
+        return floored_effort(context, self._config.reasoning_effort, floor)
 
     def _check_model_serves(self, context: AIContext) -> None:
         """Refuse, before the request, a turn OpenAI's endpoint refuses its
@@ -493,7 +486,7 @@ class OpenAIAIProvider(AIProvider):
             thinking=thinking,
             finish_reason=choice.finish_reason,
             usage=usage,
-            metadata={"model": response.model},
+            metadata=answered_by(response.model, self._config.model),
             tool_calls=tool_calls,
         )
 
@@ -538,8 +531,7 @@ class OpenAIAIProvider(AIProvider):
         if context.tools:
             kwargs["tools"] = self._declare_tools(context.tools)
 
-        t0 = time.monotonic()
-        first_token = True
+        first_token = FirstToken(self)
         parser = ThinkTagParser()
 
         # Accumulate tool call deltas across chunks
@@ -585,18 +577,14 @@ class OpenAIAIProvider(AIProvider):
                 # of inline <think> tags. Surface it as thinking when present.
                 reasoning = field_reasoning(delta)
                 if reasoning:
-                    if first_token:
-                        self._record_ttfb(t0)
-                        first_token = False
+                    first_token.seen()
                     yield StreamThinkingDelta(thinking=reasoning)
 
                 # Process text content through the think-tag parser
                 text = delta.content if hasattr(delta, "content") else None
                 if text:
                     for kind, segment in parser.feed(text):
-                        if first_token:
-                            self._record_ttfb(t0)
-                            first_token = False
+                        first_token.seen()
                         if kind == "thinking":
                             yield StreamThinkingDelta(thinking=segment)
                         else:
@@ -604,9 +592,7 @@ class OpenAIAIProvider(AIProvider):
 
             # Flush any remaining buffered text from the parser
             for kind, segment in parser.flush():
-                if first_token:
-                    self._record_ttfb(t0)
-                    first_token = False
+                first_token.seen()
                 if kind == "thinking":
                     yield StreamThinkingDelta(thinking=segment)
                 else:
@@ -616,7 +602,9 @@ class OpenAIAIProvider(AIProvider):
             for call in tool_call_slots.calls(finish_reason):
                 yield call
 
-            yield _done(finish_reason, usage, model, "".join(refusal_parts))
+            yield stream_done(
+                finish_reason, usage, model, self._config.model, "".join(refusal_parts)
+            )
 
         except self._api_connection_error as exc:
             raise ProviderError(
@@ -648,14 +636,3 @@ class OpenAIAIProvider(AIProvider):
     async def close(self) -> None:
         """Close the underlying HTTP client."""
         await self._client.close()
-
-
-def _done(
-    finish_reason: str | None, usage: dict[str, int], model: str | None, refusal: str
-) -> StreamDone:
-    """A stream's end: its stop reason, its usage, and, as a response reads
-    them, the model that answered and any refusal."""
-    metadata: dict[str, str] = {"model": model} if model else {}
-    if refusal:
-        metadata["refusal"] = refusal
-    return StreamDone(finish_reason=finish_reason, usage=usage, metadata=metadata)

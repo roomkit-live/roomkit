@@ -332,9 +332,16 @@ _SWITCHES_OFF: dict[str, tuple[Any, Callable[[Any, AIContext], bool]]] = {
             not in build_kwargs(AnthropicConfig(api_key="k", model="claude-opus-4-8"), c)
         ),
     ),
-    # A model OpenAI's catalogue says reasons takes ``none``, its off value.
+    # A model OpenAI's catalogue says takes ``none`` is sent it, its off value.
     "openai": (
         _provider(OpenAIAIProvider, OpenAIConfig(api_key="k", model="gpt-6-luna")),
+        lambda p, c: _sampled(p, c)["reasoning_effort"] == "none",
+    ),
+    "cerebras": (
+        _provider(
+            CerebrasAIProvider,
+            CerebrasConfig(api_key="k", model="qwen-3.8-27b", reasoning_effort="high"),
+        ),
         lambda p, c: _sampled(p, c)["reasoning_effort"] == "none",
     ),
     # Muse cannot stop reasoning: off asks for the least of it.
@@ -381,6 +388,39 @@ def test_anthropic_turns_adaptive_thinking_on_from_enable_thinking() -> None:
     assert "thinking" not in build_kwargs(budgeted, _context(enable_thinking=True))
     budget = build_kwargs(budgeted, _context(enable_thinking=True, thinking_budget=2048))
     assert budget["thinking"] == {"type": "enabled", "budget_tokens": 2048}
+
+
+# The least effort each model takes, as its catalogue declares it and the wire
+# answered on 2026-10-04: a model that cannot stop reasoning is sent its lowest
+# level where the turn states off, never a ``none`` it answers 400 to.
+_FLOORS = [
+    (OpenAIAIProvider, OpenAIConfig(api_key="k", model="gpt-5.1"), "none"),
+    (OpenAIAIProvider, OpenAIConfig(api_key="k", model="gpt-5.2"), "none"),
+    (OpenAIAIProvider, OpenAIConfig(api_key="k", model="gpt-5"), "minimal"),
+    (OpenAIAIProvider, OpenAIConfig(api_key="k", model="gpt-5-nano"), "minimal"),
+    (OpenAIAIProvider, OpenAIConfig(api_key="k", model="o3"), "low"),
+    (OpenAIAIProvider, OpenAIConfig(api_key="k", model="o4-mini"), "low"),
+    (CerebrasAIProvider, CerebrasConfig(api_key="k", model="gpt-oss-120b"), "low"),
+    (CerebrasAIProvider, CerebrasConfig(api_key="k", model="qwen-3.8-27b"), "none"),
+    (MetaAIProvider, MetaConfig(api_key="k"), "minimal"),
+]
+
+
+@pytest.mark.parametrize("tools", [False, True], ids=["text", "tools"])
+@pytest.mark.parametrize(
+    "off",
+    [{"thinking_budget": 0}, {"enable_thinking": False}, {"reasoning_effort": "none"}],
+    ids=["budget_0", "enable_thinking_false", "effort_none"],
+)
+@pytest.mark.parametrize(
+    ("cls", "config", "floor"), _FLOORS, ids=lambda v: getattr(v, "model", None)
+)
+def test_off_sends_the_model_s_floor(
+    cls: type, config: Any, floor: str, off: dict[str, Any], tools: bool
+) -> None:
+    context = _context(**off, tools=[AITool(name="t", description="d")] if tools else [])
+
+    assert _sampled(_provider(cls, config), context)["reasoning_effort"] == floor
 
 
 @pytest.mark.parametrize("off", [{"thinking_budget": 0}, {"enable_thinking": False}])

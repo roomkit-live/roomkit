@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, ClassVar
 
 from roomkit.providers.ai.base import AIContext, ModelInfo
-from roomkit.providers.ai.reasoning import thinking_switch, turn_setting
+from roomkit.providers.ai.reasoning import floored_effort
 from roomkit.providers.meta.config import MetaConfig
 from roomkit.providers.meta.models import MODELS
 from roomkit.providers.openai.ai import OpenAIAIProvider
@@ -65,14 +65,13 @@ class MetaAIProvider(OpenAIAIProvider):
         """Add temperature and Meta's ``reasoning_effort`` to a request.
 
         The turn's own effort outranks the configured one. It is sent on tool
-        turns too (the OpenAI parent's rule is its own catalogue's), and
-        ``"none"`` becomes ``"minimal"``: the service cannot turn reasoning off
-        and answers ``"none"`` with a 400.
+        turns too (the OpenAI parent's rule is its own catalogue's), and a turn
+        that states off is sent ``"minimal"``, the floor of every Muse Spark
+        model: the service cannot turn reasoning off and answers ``"none"``
+        with a 400.
         """
         if context.temperature is not None and self._config.supports_custom_temperature:
             kwargs["temperature"] = context.temperature
-        effort = turn_setting(context.reasoning_effort, self._config.reasoning_effort)
-        if thinking_switch(context) is False:
-            effort = "none"  # a turn that switches reasoning off asks for the least of it
+        effort = floored_effort(context, self._config.reasoning_effort, "minimal")
         if effort is not None:
-            kwargs["reasoning_effort"] = "minimal" if effort == "none" else effort
+            kwargs["reasoning_effort"] = effort

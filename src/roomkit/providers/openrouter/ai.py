@@ -83,6 +83,18 @@ class OpenRouterAIProvider(OpenAIAIProvider):
         """Provider identifier used in error messages and telemetry."""
         return "openrouter"
 
+    @property
+    def supports_vision(self) -> bool:
+        """True: whether a routed model reads images is OpenRouter's call.
+
+        Its ids (``vendor/model``) never match the parent's fallback prefixes,
+        OpenAI's own model names, which reported every model as text-only and
+        dropped images before they reached the wire. Passed through, a
+        text-only route answers with an error, the bargain LiteLLM and vLLM
+        make (RFC §6.7).
+        """
+        return True
+
     def _apply_sampling_kwargs(self, kwargs: dict[str, Any], context: AIContext) -> None:
         """Add temperature and OpenRouter's unified ``reasoning`` parameter.
 

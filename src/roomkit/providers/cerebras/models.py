@@ -20,6 +20,10 @@ from datetime import date
 from roomkit.providers.ai.base import ModelInfo, ModelPricing
 
 _VERIFIED = date(2026, 9, 9)
+# What a turn that switches reasoning off sends (``reasoning_floor_<level>``,
+# RFC §6.7), checked on the wire 2026-10-04: Qwen takes ``none`` (no reasoning
+# returned), GPT OSS refuses it and starts at ``low``, with tools as without.
+# Gemma, served on dedicated endpoints, was not reachable to check.
 
 MODELS: list[ModelInfo] = [
     ModelInfo(
@@ -27,7 +31,7 @@ MODELS: list[ModelInfo] = [
         display_name="GPT OSS 120B",
         context_window=131_072,
         supports_vision=False,
-        capabilities=["tools", "thinking"],
+        capabilities=["tools", "thinking", "reasoning_floor_low"],
         pricing=ModelPricing(
             input_per_million=0.35,
             output_per_million=0.75,
@@ -40,7 +44,7 @@ MODELS: list[ModelInfo] = [
         display_name="Qwen 3.8 27B",
         context_window=65_536,
         supports_vision=True,
-        capabilities=["tools", "thinking"],
+        capabilities=["tools", "thinking", "reasoning_floor_none"],
         pricing=ModelPricing(
             input_per_million=0.99,
             output_per_million=1.49,

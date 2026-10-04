@@ -858,26 +858,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `REALTIME_AUDIO_VIDEO` never saw them.
 
 - The chat wires read a response the same through `generate()` and the
-  stream (RMK-500, RFC §6.4): `OpenAIAIProvider` behind a `base_url` lets the
-  server decide whether its model reads images, where it guessed from OpenAI's
-  model names and dropped the images of a local vision model; `generate()`
-  records time to first token under the provider's name as its stream does,
-  and vLLM names itself `vllm` in its errors; a choice whose message is null
-  reads as an empty answer, where OpenAI's `generate()` raised a bare
-  `AttributeError` that skipped the retries and the fallback provider; a
-  `tool_calls` entry without a function (a custom tool's call) is no call on
-  the stream either; the model that answered rides the stream's end on
-  OpenAI's wire, PolarGrid, Ollama and Mistral, as it rides `generate()`; and
-  PolarGrid's stream times its first token on text or reasoning, not on a
-  call's fragment.
+  stream (RMK-500, RFC §6.4): `OpenAIAIProvider` behind a `base_url`,
+  `OpenRouterAIProvider` and `AzureAIProvider` let the server decide whether
+  their model reads images, where they guessed from OpenAI's model names and
+  dropped the images of a local vision model, of every OpenRouter model
+  (`vendor/model` ids never matched) and of an Azure deployment not named
+  after an OpenAI model. `generate()` records time to first token under the
+  provider's name as its stream does: the metric's `provider` label on
+  `generate()` changes from `openai` to `OpenAIAIProvider` (likewise
+  `AzureAIProvider`, `DeepSeekAIProvider`, `LiteLLMAIProvider`,
+  `MetaAIProvider`, `OpenRouterAIProvider`, `QwenAIProvider`,
+  `XAIAIProvider`), and vLLM names itself `vllm` in its errors. A choice whose
+  message is null reads as an empty answer, where OpenAI's `generate()` raised
+  a bare `AttributeError` that skipped the retries and the fallback provider.
+  A `tool_calls` entry without a function (a custom tool's call) is no call on
+  the stream either, and a call whose id arrives before its function keeps
+  the server's id. The model rides the stream's end on OpenAI's wire,
+  PolarGrid, Ollama and Mistral as it rides `generate()`, under one rule on
+  both modes: the model that answered, else the one asked for. A stream
+  records its first token on text or reasoning only, never on a call's
+  fragment, including text a think-tag parser held back to the end (it was
+  not recorded on PolarGrid).
 
-- A turn that switches reasoning off (`enable_thinking=False`,
-  `thinking_budget=0`) sends `reasoning_effort: "none"` to a model OpenAI's
-  catalogue says reasons, and `minimal` to Meta's Muse, which cannot stop
-  (RMK-500, RFC §6.7): both sent nothing, where `reasoning_effort="none"`
-  already worked. A model that does not reason, one behind a `base_url`, an
-  Azure deployment, xAI and Cerebras keep sending nothing: their wire has no
-  off value to send.
+- A turn that states reasoning off (`enable_thinking=False`,
+  `thinking_budget=0`, `reasoning_effort="none"`) sends the least effort the
+  model takes, as its catalogue declares it and the wire answered (RMK-500,
+  RFC §6.7): `none` to OpenAI's GPT-5.1 and later and to Cerebras's Qwen,
+  `minimal` to GPT-5 and its mini and nano and to Meta's Muse, `low` to o3,
+  o4-mini and Cerebras's GPT OSS. The switch sent nothing on OpenAI, Meta and
+  Cerebras, and `reasoning_effort="none"` answered 400 on the models that
+  cannot stop reasoning. A model the catalogue declares no floor for (one
+  that does not reason, one behind a `base_url`, an Azure deployment, whose
+  name hides the model) keeps what it was sent; xAI is left as it was.
 
 - A tool a realtime session is given (its metadata, `reconfigure_session`)
   under a name orchestration serves is not declared, as a turn's is not on a

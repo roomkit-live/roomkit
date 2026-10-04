@@ -9,7 +9,6 @@ from __future__ import annotations
 import base64
 import json
 import logging
-import time
 from collections.abc import AsyncIterator
 from typing import Any
 from uuid import uuid4
@@ -19,6 +18,7 @@ from roomkit.providers.ai.base import (
     AIProvider,
     AIResponse,
     AIToolCall,
+    FirstToken,
     ModelInfo,
     ProviderError,
     StreamDone,
@@ -312,8 +312,7 @@ class GeminiAIProvider(AIProvider):
         # would restate this one as an opaque provider failure.
         reject_model_turn_tail(contents)
 
-        t0 = time.monotonic()
-        first_token = True
+        first_token = FirstToken(self)
         # Gemini can stream the same function call across several chunks — the
         # first carries its thought_signature, a later one re-emits the call
         # without it. Naively appending one tool call per part produced a
@@ -373,9 +372,7 @@ class GeminiAIProvider(AIProvider):
                 in_chunk: dict[str, int] = {}
                 for part in parts:
                     if hasattr(part, "text") and part.text:
-                        if first_token:
-                            self._record_ttfb(t0)
-                            first_token = False
+                        first_token.seen()
                         # Thought-summary parts are flagged thought=True.
                         if getattr(part, "thought", False):
                             yield StreamThinkingDelta(thinking=part.text)

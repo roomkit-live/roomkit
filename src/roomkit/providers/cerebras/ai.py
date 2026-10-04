@@ -14,7 +14,7 @@ from roomkit.providers.ai.base import (
     StreamToolCall,
 )
 from roomkit.providers.ai.chat_request import ChatDialect
-from roomkit.providers.ai.reasoning import turn_setting
+from roomkit.providers.ai.reasoning import floored_effort, reasoning_floor
 from roomkit.providers.cerebras.config import CerebrasConfig
 from roomkit.providers.cerebras.models import MODELS
 from roomkit.providers.openai.ai import OpenAIAIProvider
@@ -127,10 +127,12 @@ class CerebrasAIProvider(OpenAIAIProvider):
         return bool(entry and entry.supports_vision)
 
     def _apply_sampling_kwargs(self, kwargs: dict[str, Any], context: AIContext) -> None:
-        """Keep reasoning controls active during tool calls as well as text turns."""
+        """Keep reasoning controls active during tool calls as well as text
+        turns; a turn that states off is sent the model's floor (RFC §6.7)."""
         if context.temperature is not None and self._config.supports_custom_temperature:
             kwargs["temperature"] = context.temperature
-        effort = turn_setting(context.reasoning_effort, self._config.reasoning_effort)
+        floor = reasoning_floor(self.catalog_entry())
+        effort = floored_effort(context, self._config.reasoning_effort, floor)
         if effort is not None:
             kwargs["reasoning_effort"] = effort
         for key in ("reasoning_format", "clear_thinking"):
