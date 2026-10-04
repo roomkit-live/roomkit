@@ -91,24 +91,27 @@ class RealtimePipeline:
         )
         served = self._agent_tools()
         self._served = frozenset(served)
+        # Two agents may give one name two definitions: each agent's session
+        # declares its own, and every one of them is the entry's.
         agent_tools = [
             orchestration_tool(
-                definition,
+                first,
                 functools.partial(self.serve_agent_tool, name),
+                declared_as=others,
                 always_declared=False,
                 deferrable=True,
             )
-            for name, definition in served.items()
+            for name, (first, *others) in served.items()
         ]
         registry.register_all([handoff, *agent_tools], owner=self)
         registry.set_session_source(self.session_config, owner=self)
 
-    def _agent_tools(self) -> dict[str, AITool]:
-        """The agents' own tools the pipeline serves: a name the channel's host
-        tools carry is the channel's, declared and served as the channel's
-        (RFC §19.5, §21.1)."""
+    def _agent_tools(self) -> dict[str, list[AITool]]:
+        """The agents' own tools the pipeline serves, each name with every
+        agent's definition of it: a name the channel's host tools carry is the
+        channel's, declared and served as the channel's (RFC §19.5, §21.1)."""
         host = _channel_tool_names(self._rtv)
-        tools: dict[str, AITool] = {}
+        tools: dict[str, list[AITool]] = {}
         for agent in self._agent_map.values():
             for tool in agent._user_tools:
                 if tool.name in host:
@@ -120,7 +123,7 @@ class RealtimePipeline:
                         self._rtv.channel_id,
                     )
                 elif tool.name != HANDOFF_TOOL_NAME:
-                    tools.setdefault(tool.name, tool)
+                    tools.setdefault(tool.name, []).append(tool)
         return tools
 
     async def session_config(self, room_id: str) -> SessionConfig | None:

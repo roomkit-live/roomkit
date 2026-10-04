@@ -895,8 +895,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   under a name orchestration serves is not declared, as a turn's is not on a
   text door (RMK-499, RFC §21.1): a pipeline's handoff or agent tool given
   again with another schema was declared with it, the gate checked that
-  schema and the pipeline served the call. A call to such a name is checked
-  against its server's schema though the session declares none of its own.
+  schema and the pipeline served the call. Every agent's own definition of a
+  name stays its own: two agents giving `lookup` two schemas each declare
+  theirs. A call to such a name is checked against its server's schema though
+  the session declares none of its own.
   The person's tools are never hidden by Tool Search on a text turn, as on a
   realtime session; a human-input definition given twice, or under a name the
   channel serves itself, is refused on every door; a `HumanInputToolHandler`

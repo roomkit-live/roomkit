@@ -59,15 +59,40 @@ def _stranger() -> dict[str, Any]:
     return {"name": "handoff_conversation", "description": "a stranger", "parameters": STRANGER}
 
 
-async def test_a_session_tool_under_an_orchestration_name_is_not_declared() -> None:
-    stranger = _stranger()
-    kit, _, provider, _ = await _pipeline_session([stranger])
+def _own_handoff(channel: Any) -> dict[str, Any]:
+    """The pipeline's own handoff declaration for agent-a, as a session dict."""
+    entry = channel._registry.lookup("handoff_conversation", "r1")
+    return entry.declared_as[0].model_dump()
 
-    connect = next(call for call in provider.calls if call.method == "connect")
+
+async def _declared(path: str, tools: list[dict[str, Any]]) -> dict[str, Any]:
+    """What a session given *tools* at its connection or by
+    ``reconfigure_session`` declares, by name."""
+    kit, channel, provider, session = await _pipeline_session(tools if path == "connect" else [])
+    if path == "reconfigure":
+        await channel.reconfigure_session(session, tools=tools)
+    connect = [call for call in provider.calls if call.method == "connect"][-1]
+    await kit.close()
+    return {tool.get("name"): tool for tool in connect.args["tools"] or []}
+
+
+@pytest.mark.parametrize("path", ["connect", "reconfigure"])
+async def test_a_session_tool_under_an_orchestration_name_is_not_declared(path: str) -> None:
+    declared = await _declared(path, [_stranger()])
+
+    assert declared.get("handoff_conversation", {}).get("description") != "a stranger"
+
+
+async def test_the_pipeline_s_own_handoff_given_with_the_session_is_declared() -> None:
+    """The declaration the pipeline gives a session is its own, and declared."""
+    kit, channel, provider, session = await _pipeline_session([])
+    own = _own_handoff(channel)
+    await channel.reconfigure_session(session, tools=[own])
+    connect = [call for call in provider.calls if call.method == "connect"][-1]
     declared = {tool.get("name"): tool for tool in connect.args["tools"] or []}
     await kit.close()
 
-    assert declared.get("handoff_conversation", {}).get("description") != "a stranger"
+    assert declared["handoff_conversation"]["description"] == own["description"]
 
 
 async def test_a_call_to_an_orchestration_tool_is_checked_against_its_server() -> None:
@@ -82,6 +107,72 @@ async def test_a_call_to_an_orchestration_tool_is_checked_against_its_server() -
     await kit.close()
 
     assert "missing required argument 'target'" in provider.tool_results[0][2]
+
+
+ORDER = AITool(
+    name="lookup",
+    description="Look up an order",
+    parameters={"type": "object", "properties": {"order_id": {}}, "required": ["order_id"]},
+)
+CUSTOMER = AITool(
+    name="lookup",
+    description="Look up a customer",
+    parameters={"type": "object", "properties": {"customer_id": {}}, "required": ["customer_id"]},
+)
+
+
+def _served_by(who: str) -> Any:
+    async def handler(name: str, arguments: dict[str, Any]) -> str:
+        return f"{who} served {name}"
+
+    return handler
+
+
+async def _result(provider: MockRealtimeProvider, count: int) -> str:
+    for _ in range(300):
+        if len(provider.tool_results) >= count:
+            break
+        await asyncio.sleep(0.01)
+    return provider.tool_results[count - 1][2]
+
+
+async def test_two_agents_may_give_one_tool_name_their_own_definitions() -> None:
+    """After a handoff, the agent that took over declares its own ``lookup``,
+    the call is checked against its schema and served by its handler."""
+    provider = MockRealtimeProvider()
+    channel = RealtimeVoiceChannel(
+        "rtv", provider=provider, transport=MockRealtimeTransport(), tool_search=False
+    )
+    kit = RoomKit()
+    kit.register_channel(channel)
+    agents = [
+        Agent("agent-a", provider=MockAIProvider(), tools=[ORDER], tool_handler=_served_by("a")),
+        Agent(
+            "agent-b", provider=MockAIProvider(), tools=[CUSTOMER], tool_handler=_served_by("b")
+        ),
+    ]
+    for agent in agents:
+        kit.register_channel(agent)
+    stages = [
+        PipelineStage(phase="intake", agent_id="agent-a", next="b"),
+        PipelineStage(phase="b", agent_id="agent-b"),
+    ]
+    ConversationPipeline(stages=stages).install(kit, agents, voice_channel_id="rtv")
+    await kit.create_room(room_id="r1")
+    await kit.attach_channel("r1", "rtv")
+    session = await channel.start_session("r1", "u1", "ws")
+
+    handoff = {"target": "agent-b", "reason": "customer", "summary": "asks about an account"}
+    await provider.simulate_tool_call(session, "h1", "handoff_conversation", handoff)
+    await _result(provider, 1)
+    connect = [call for call in provider.calls if call.method == "connect"][-1]
+    declared = {tool.get("name"): tool.get("description") for tool in connect.args["tools"]}
+    await provider.simulate_tool_call(session, "c1", "lookup", {"customer_id": "7"})
+    served = await _result(provider, 2)
+    await kit.close()
+
+    assert declared.get("lookup") == "Look up a customer"
+    assert served == "b served lookup"
 
 
 def _many(count: int) -> list[AITool]:
