@@ -281,12 +281,14 @@ class SegmentWriter:
             raise
 
     async def end_cancelled(self, reader: ResponseReader) -> None:
-        """Write what a cancelled turn leaves: open calls closed, text kept as cancelled.
+        """Write what a cancelled turn leaves: open calls closed, text kept as
+        cancelled, and its record ``cancelled``, as a turn its reader stopped.
 
         A running tool is aborted and its call closed ``failed``, so no start
         row stays pending (RFC §12.2 step 13s).
         """
         await self.close_calls(await reader.abandon())
+        self.end_stopped()
         await self.flush_text(cancelled=True)
 
     async def end_failed(self, reader: ResponseReader) -> None:

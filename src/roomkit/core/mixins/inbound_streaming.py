@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import MutableMapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 from uuid import uuid4
@@ -510,9 +511,21 @@ class InboundStreamingMixin(HelpersMixin):
                 if sr.chained and not await self._admit_chained_stream(sr, cascade, room_id):
                     continue
                 context = await self._build_context(room_id)
-                sr_result = await self._handle_streaming_response(
-                    router, sr, room_id, context, cascade=cascade, response_events=response_events
-                )
+                try:
+                    sr_result = await self._handle_streaming_response(
+                        router,
+                        sr,
+                        room_id,
+                        context,
+                        cascade=cascade,
+                        response_events=response_events,
+                    )
+                except asyncio.CancelledError:
+                    # A turn cancelled from outside still tells its caller how
+                    # it ended, as one its reader stopped does (RFC §6.4).
+                    if not sr.chained:
+                        _add_turn(cascade.response_metadata, sr)
+                    raise
                 if sr.chained:
                     continue
                 if sr_result and sr_result.error and first_error is None:
@@ -522,7 +535,7 @@ class InboundStreamingMixin(HelpersMixin):
                 # all rather than letting the last one win, and its end goes
                 # under its channel in ``turns`` (RFC §6.4).
                 merge_channel_record(record, sr.response_metadata or {})
-                add_turn_entry(record, sr.source_channel_id, turn_summary(stream_record(sr)))
+                _add_turn(record, sr)
         finally:
             # A transport can stop reading between two yields (or fail while
             # rendering one). Async-for alone does not close its generator;
@@ -548,3 +561,8 @@ class InboundStreamingMixin(HelpersMixin):
             room_id, unanswered(sr.trigger_event, sr.source_channel_id, sr.source_channel_type)
         )
         return False
+
+
+def _add_turn(record: MutableMapping[str, Any], sr: StreamingResponse) -> None:
+    """Put how *sr*'s turn ended under its channel in *record*'s ``turns``."""
+    add_turn_entry(record, sr.source_channel_id, turn_summary(stream_record(sr)))
