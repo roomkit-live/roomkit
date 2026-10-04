@@ -67,10 +67,11 @@ from roomkit.skills.models import missing_required_tools, missing_tools_error
 from roomkit.telemetry.base import SpanKind, TelemetryProvider
 from roomkit.telemetry.redaction import redact
 from roomkit.tools._outcome import OutcomeKind, ToolOutcome, kept_in_tool_memory, read_outcome
-from roomkit.tools.context import ToolCallContext, _current_tool_call
+from roomkit.tools.context import ToolCallContext, _current_tool_call, held_id_call
 from roomkit.tools.result import (
     GateRefusal,
     as_tool_result,
+    call_id_in_flight_error,
     cancelled_tool_error,
     declined_answer,
     failure_detail,
@@ -125,7 +126,6 @@ class _CallRound:
     room_id: str | None
     declared_tools: list[AITool] | None
     parent_span_id: str | None
-    executed_arguments: dict[str, dict[str, Any]] | None
 
 
 def _refused_with(
@@ -352,7 +352,7 @@ class AIToolsMixin(_AIChannelContract):
         its way to the model.
         """
         loop_ctx = self._get_loop_ctx()
-        if self._tool_observer_hook is None or tc.id in loop_ctx.reported_calls:
+        if self._tool_observer_hook is None or loop_ctx.was_reported(tc.id):
             return
         event = ToolCallEvent(
             channel_id=self.channel_id,
@@ -402,7 +402,6 @@ class AIToolsMixin(_AIChannelContract):
         *,
         declared_tools: list[AITool] | None = None,
         parent_span_id: str | None = None,
-        executed_arguments: dict[str, dict[str, Any]] | None = None,
     ) -> list[AIToolResultPart]:
         """Execute tool calls concurrently and return result parts.
 
@@ -419,9 +418,13 @@ class AIToolsMixin(_AIChannelContract):
             room_id=self._get_loop_ctx().room_id,
             declared_tools=declared_tools,
             parent_span_id=parent_span_id,
-            executed_arguments=executed_arguments,
         )
-        tasks = [asyncio.create_task(self._run_call(tc, scope)) for tc in tool_calls]
+        tasks = [
+            asyncio.create_task(
+                self._refuse_id_in_flight(tc, scope) if held else self._run_call(tc, scope)
+            )
+            for tc, held in zip(tool_calls, _ids_held(tool_calls), strict=True)
+        ]
         try:
             results = await asyncio.gather(*tasks)
         except BaseException:
@@ -451,6 +454,15 @@ class AIToolsMixin(_AIChannelContract):
             return gated
         call_arguments, arguments = gated
         return await self._serve_gated_call(tc, call_arguments, arguments, scope)
+
+    async def _refuse_id_in_flight(self, tc: Any, scope: _CallRound) -> AIToolResultPart:
+        """The part of a call made under an id an earlier call of its round
+        holds: refused before any gate, as a realtime session refuses it,
+        and reported as a call of its own (RFC §9.3, §12.4)."""
+        body = call_id_in_flight_error(tc.id)
+        with held_id_call():
+            await self._fire_tool_refusal(tc, tc.arguments, body, scope.room_id, refused=True)
+        return ToolOutcome(OutcomeKind.REFUSED, body).as_part(tc.id, tc.name)
 
     async def _reject_call(
         self, tc: Any, scope: _CallRound, stopped: GateRefusal
@@ -482,8 +494,6 @@ class AIToolsMixin(_AIChannelContract):
         every report of a call carries those (RFC §9.3). Snapshot before user
         code sees them, so persistence tells the model's request from what
         executed."""
-        if scope.executed_arguments is not None:
-            scope.executed_arguments[tc.id] = dict(arguments)
         loop_ctx = self._get_loop_ctx()
         if tc.id in loop_ctx.announced_calls:
             loop_ctx.announced_calls[tc.id] = tc.model_copy(update={"arguments": dict(arguments)})
@@ -1353,3 +1363,14 @@ def _preview(value: Any) -> str:
     if len(text) <= _PREVIEW_CHARS:
         return text
     return f"{text[:_PREVIEW_CHARS]}… ({len(text)} chars)"
+
+
+def _ids_held(calls: list[Any]) -> list[bool]:
+    """Whether each call of a round reuses an id an earlier call of the round
+    holds: the earlier keeps it (RFC §12.4)."""
+    seen: set[str] = set()
+    held: list[bool] = []
+    for tc in calls:
+        held.append(tc.id in seen)
+        seen.add(tc.id)
+    return held

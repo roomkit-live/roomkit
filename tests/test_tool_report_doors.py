@@ -182,3 +182,81 @@ async def test_a_reasoning_backend_s_call_is_reported_under_its_model_s_id(case:
     await kit.close()
 
     assert [report.tool_call_id for report in reports] == ["d1:c1"]
+
+
+async def _two_calls_text(streaming: bool) -> tuple[list[ToolCallEvent], list[dict[str, Any]]]:
+    ran: list[dict[str, Any]] = []
+
+    async def serves(name: str, arguments: dict[str, Any]) -> str:
+        ran.append(dict(arguments))
+        await asyncio.sleep(0.05)
+        return f"fine {arguments['q']}"
+
+    calls = [
+        AIToolCall(id="c1", name="lookup", arguments={"q": "first"}),
+        AIToolCall(id="c1", name="lookup", arguments={"q": "second"}),
+    ]
+    channel = AIChannel(
+        "ai", provider=_provider(calls, streaming=streaming), tools=[LOOKUP], tool_handler=serves
+    )
+    kit = RoomKit()
+    reports = await _room(kit, channel)
+    message = InboundMessage(channel_id="sms", sender_id="u", content=TextContent(body="Go."))
+    await kit.process_inbound(message)
+    rows = await _end_rows(kit)
+    await kit.close()
+    assert rows == [("served", {"q": "first"}), ("refused", {"q": "second"})]
+    return reports, ran
+
+
+async def _two_calls_realtime() -> tuple[list[ToolCallEvent], list[dict[str, Any]]]:
+    ran: list[dict[str, Any]] = []
+
+    async def serves(name: str, arguments: dict[str, Any]) -> str:
+        ran.append(dict(arguments))
+        await asyncio.sleep(0.2)
+        return f"fine {arguments['q']}"
+
+    provider = MockRealtimeProvider()
+    channel = RealtimeVoiceChannel(
+        "rt",
+        provider=provider,
+        transport=MockRealtimeTransport(),
+        tool_handler=serves,
+        tools=[{"name": "lookup", "description": "Look up", "parameters": SCHEMA}],
+    )
+    kit = RoomKit()
+    kit.register_channel(channel)
+    await kit.create_room(room_id="r")
+    await kit.attach_channel("r", "rt")
+    reports: list[ToolCallEvent] = []
+
+    @kit.hook(HookTrigger.ON_TOOL_CALL, execution=HookExecution.ASYNC, name="audit")
+    async def audit(event: ToolCallEvent, context: Any) -> None:
+        reports.append(event)
+
+    session = await channel.start_session("r", "u", "ws")
+    await provider.simulate_tool_call(session, "c1", "lookup", {"q": "first"})
+    await provider.simulate_tool_call(session, "c1", "lookup", {"q": "second"})
+    for _ in range(300):
+        if len(reports) == 2:
+            break
+        await asyncio.sleep(0.01)
+    await kit.close()
+    return reports, ran
+
+
+@pytest.mark.parametrize("door", ["text-stream", "text-generate", "realtime"])
+async def test_two_calls_under_one_id_are_two_calls_the_second_refused(door: str) -> None:
+    """The first keeps the id and runs; the second is refused as a call whose
+    id is still in flight, and reported as a call of its own (RFC §12.4)."""
+    if door == "realtime":
+        reports, ran = await _two_calls_realtime()
+    else:
+        reports, ran = await _two_calls_text(door == "text-stream")
+
+    assert ran == [{"q": "first"}]
+    outcomes = sorted((r.arguments["q"], r.refused, r.is_error) for r in reports)
+    assert outcomes == [("first", False, False), ("second", True, True)]
+    [refused] = [r for r in reports if r.refused]
+    assert "has not had its result yet" in str(refused.result)

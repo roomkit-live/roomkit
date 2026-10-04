@@ -419,21 +419,23 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                 content=state.transcript.parts([*state.provider_calls, *calls]),
             )
         )
+        markers = [
+            ToolCallStartMarker(tool_name=call.name, tool_id=call.id, arguments=call.arguments)
+            for call in calls
+        ]
         # Announced before the first start goes out: whatever cuts the round
         # from here on, the turn's end reports each call no report claimed.
-        turn.loop_ctx.announced_calls.update((call.id, call) for call in calls)
-        for call in calls:
-            marker = ToolCallStartMarker(
-                tool_name=call.name, tool_id=call.id, arguments=call.arguments
-            )
-            turn.loop_ctx.start_markers.setdefault(call.id, marker)
+        _announce(turn.loop_ctx, calls, markers)
+        for marker in markers:
             yield marker
         # A stop that came while the calls were announced: none of them runs,
         # and the loop ends cancelled at its next check (RFC §21.3).
         ends = (
             _unrun_call_ends(calls)
             if turn.loop_ctx.cancel_event.is_set()
-            else self._run_announced_calls(context, calls, turn, index, state.provider_results)
+            else self._run_announced_calls(
+                context, calls, markers, turn, index, state.provider_results
+            )
         )
         async with aclosing(ends) as deltas:
             async for delta in deltas:
@@ -443,14 +445,16 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
         self,
         context: AIContext,
         calls: list[Any],
+        markers: list[ToolCallStartMarker],
         turn: _StreamTurnState,
         index: int,
         answered: list[AIToolResultPart],
     ) -> AsyncGenerator[StreamDelta, None]:
         """Execute a round's announced calls, yield one end marker per call,
-        then hand the round to AFTER_TOOL_ROUND; *answered* are the round's
-        calls the provider served, read beside them."""
-        results, duration_ms, executed_arguments = await self._execute_round_tools(
+        each with the arguments it ran with (its start marker's), then hand
+        the round to AFTER_TOOL_ROUND; *answered* are the round's calls the
+        provider served, read beside them."""
+        results, duration_ms = await self._execute_round_tools(
             context,
             calls,
             turn.telemetry,
@@ -460,13 +464,13 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
             answered=answered,
         )
         turn.count_round(calls)
-        for call, result in zip(calls, results, strict=False):
+        for call, marker, result in zip(calls, markers, results, strict=False):
             value = result.result
             is_error = result.is_error
             yield ToolCallEndMarker(
                 tool_name=call.name,
                 tool_id=call.id,
-                arguments=executed_arguments.get(call.id, call.arguments),
+                arguments=marker.ran_with if marker.ran_with is not None else call.arguments,
                 result=value,
                 status="failed" if is_error else "completed",
                 duration_ms=duration_ms,
@@ -686,3 +690,21 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
         if known is not None and name in {tool.name for tool in known}:
             return True
         return name in self._served_tool_names(loop_ctx.room_id)
+
+
+def _announce(
+    loop_ctx: _ToolLoopContext, calls: list[Any], markers: list[ToolCallStartMarker]
+) -> None:
+    """Announce a round's calls and their start markers to the turn, by id.
+
+    Two calls under one id in the round are two calls: the first keeps the
+    id, the second is refused at its gate (RFC §12.4), so it records nothing
+    the first's record could be taken for.
+    """
+    announced: dict[str, Any] = {}
+    started: dict[str, ToolCallStartMarker] = {}
+    for call, marker in zip(calls, markers, strict=True):
+        announced.setdefault(call.id, call)
+        started.setdefault(call.id, marker)
+    loop_ctx.announced_calls.update(announced)
+    loop_ctx.start_markers.update(started)

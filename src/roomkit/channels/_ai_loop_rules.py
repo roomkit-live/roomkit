@@ -482,7 +482,7 @@ class AIToolLoopRulesMixin(_AIChannelContract):
         *,
         parent_span_id: str | None = None,
         answered: Sequence[AIToolResultPart] = (),
-    ) -> tuple[list[AIToolResultPart], int, dict[str, dict[str, Any]]]:
+    ) -> tuple[list[AIToolResultPart], int]:
         """Publish TOOL_CALL_START, execute the calls, append the tool message,
         the results of the round's calls the provider served (*answered*) first.
 
@@ -497,14 +497,12 @@ class AIToolLoopRulesMixin(_AIChannelContract):
                 round_idx,
             )
         t0 = time.monotonic()
-        executed_arguments: dict[str, dict[str, Any]] = {}
         try:
             result_parts = await self._execute_tools_parallel(
                 tool_calls,
                 telemetry,
                 declared_tools=context.tools,
                 parent_span_id=parent_span_id,
-                executed_arguments=executed_arguments,
             )
         except BaseException:
             # Aborted mid-round (a turn cancelled while a tool ran): the START
@@ -519,4 +517,4 @@ class AIToolLoopRulesMixin(_AIChannelContract):
             raise
         duration_ms = int((time.monotonic() - t0) * 1000)
         context.messages.append(AIMessage(role="tool", content=[*answered, *result_parts]))
-        return result_parts, duration_ms, executed_arguments
+        return result_parts, duration_ms

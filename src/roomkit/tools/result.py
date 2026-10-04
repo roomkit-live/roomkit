@@ -260,6 +260,12 @@ def unknown_tool_error(name: str, *, searching: bool) -> dict[str, str]:
     }
 
 
+def call_id_in_flight_error(call_id: str) -> str:
+    """What the model reads of a call made under an id another call in flight
+    still holds, on every door (RFC §12.4): refused, the earlier keeps it."""
+    return json.dumps({"error": f"Tool call '{call_id}' has not had its result yet"})
+
+
 def unserved_tool_error(name: str) -> str:
     """The failure a call reports when no handler and no hook served it."""
     return json.dumps({"error": f"No handler for tool {name}"})

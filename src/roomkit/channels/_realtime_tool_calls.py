@@ -23,6 +23,7 @@ from roomkit.providers.ai.tool_calls import (
     tool_arguments,
     unreadable_call_error,
 )
+from roomkit.tools.result import call_id_in_flight_error
 
 if TYPE_CHECKING:
     from roomkit.tools._outcome import ToolOutcome
@@ -144,9 +145,7 @@ class ToolCallBook:
         calls = self._calls.setdefault(call.session.id, {})
         held = calls.get(call.call_id, [])
         if any(earlier.holds_id for earlier in held):
-            call.unanswerable = json.dumps(
-                {"error": f"Tool call '{call.call_id}' has not had its result yet"}
-            )
+            call.unanswerable = call_id_in_flight_error(call.call_id)
             return False
         calls[call.call_id] = [*held, call]
         return True

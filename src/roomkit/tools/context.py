@@ -279,11 +279,23 @@ class _ToolLoopContext:
         self.withdrawn_tools = self.withdrawn_tools | gone
 
     def claim_report(self, call_id: str) -> bool:
-        """Claim the one report of call *call_id*: ``False`` when it was made."""
+        """Claim the one report of call *call_id*: ``False`` when it was made.
+
+        A call made under an id another call of the turn holds
+        (:func:`held_id_call`) is a call of its own: its report is made and
+        claims nothing of the other's.
+        """
+        if _held_id.get():
+            return True
         if call_id in self.reported_calls:
             return False
         self.reported_calls.add(call_id)
         return True
+
+    def was_reported(self, call_id: str) -> bool:
+        """Whether call *call_id*'s one report was made (never, for a call
+        made under an id another holds)."""
+        return not _held_id.get() and call_id in self.reported_calls
 
     def unreported_calls(self) -> list[Any]:
         """The announced calls no report claimed yet, in announcement order."""
@@ -353,6 +365,21 @@ class _ToolLoopContext:
 _current_loop_ctx: contextvars.ContextVar[_ToolLoopContext | None] = contextvars.ContextVar(
     "_current_loop_ctx", default=None
 )
+
+# Set while a call made under an id another call of the turn holds is
+# refused and reported (RFC §12.4): its report claims nothing of the other's.
+_held_id: contextvars.ContextVar[bool] = contextvars.ContextVar("_held_id", default=False)
+
+
+@contextmanager
+def held_id_call() -> Iterator[None]:
+    """Run the enclosed code for a call made under an id another call of the
+    turn holds: its report is its own, and claims nothing of the other's."""
+    token = _held_id.set(True)
+    try:
+        yield
+    finally:
+        _held_id.reset(token)
 
 
 def current_tool_call() -> ToolCallContext | None:

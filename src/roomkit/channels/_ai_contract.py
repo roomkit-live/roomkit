@@ -85,7 +85,6 @@ class _AIChannelContract:
         *,
         declared_tools: list[AITool] | None = None,
         parent_span_id: str | None = None,
-        executed_arguments: dict[str, dict[str, Any]] | None = None,
     ) -> list[AIToolResultPart]: ...
 
     def _never_hidden(self, room_id: str | None) -> set[str]: ...
