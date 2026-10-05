@@ -22,6 +22,7 @@ from tests.text_conformance.driver import (
     CACHE_WRITE_USAGE,
     COMPOSITION,
     FILTER_STOP,
+    FUNCTIONLESS_CALL,
     MALFORMED_CALL,
     REASONING_USAGE,
     REDACTED_REASONING,
@@ -103,10 +104,18 @@ def _events(script: Script) -> bytes:
         chunks.append(_chunk({"content": script.text}))
     chunks.extend(_call_chunks(script))
     finish = _FINISH[script.finish]
+    if finish is not None:
+        # Mistral's server puts the usage on the chunk that stops (measured
+        # 2026-10-02); an OpenAI-compatible server behind its SDK may send it
+        # on a chunk of its own, with no choice.
+        usage = _usage(script.usage)
+        chunks.append(_chunk({"content": ""}, finish, None if script.usage_alone else usage))
+        if script.usage_alone:
+            chunks.append({**_chunk({}), "choices": [], "usage": usage})
+    chunks = [{**chunk, "model": script.answered_by} for chunk in chunks]
     lines = [f"data: {json.dumps(chunk)}\n\n" for chunk in chunks]
     if finish is not None:
-        final = _chunk({"content": ""}, finish, _usage(script.usage))
-        lines += [f"data: {json.dumps(final)}\n\n", "data: [DONE]\n\n"]
+        lines.append("data: [DONE]\n\n")
     return "".join(lines).encode()
 
 
@@ -134,6 +143,7 @@ class MistralWire(ChatDriver):
         FILTER_STOP: "Mistral's finish reasons are stop, length, model_length, error, tool_calls",
         REDACTED_REASONING: "a Mistral ThinkChunk carries text and a signature, no redacted form",
         STREAM_WITHOUT_FINISH: "Mistral streams each call whole in one chunk: none stops mid-call",
+        FUNCTIONLESS_CALL: "the SDK's ToolCall requires its function",
         # Measured 2026-10-02 on mistral-medium-latest with reasoning_effort high.
         REASONING_USAGE: "Mistral counts reasoning inside completion_tokens, with no breakdown",
         SIGNED_REASONING: (

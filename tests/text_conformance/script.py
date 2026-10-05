@@ -26,6 +26,9 @@ class Call:
     as_object: bool = False
     """The server sends the arguments as the JSON object they spell, in one
     piece, not as text (a wire whose arguments are always objects ignores it)."""
+    functionless: bool = False
+    """The entry carries no function at all (a custom tool's call, or one a
+    server's tool parser lost): nothing the loop can run."""
 
 
 @dataclass(frozen=True)
@@ -57,6 +60,11 @@ class Script:
     usage: Usage = field(default_factory=Usage)
     calls_in_one_chunk: bool = False
     """Stream every call's first fragment in the same chunk."""
+    answered_by: str = "served-model"
+    """The model the response names as the one that answered: no provider's
+    configured model, so a reader that reports the asked one shows."""
+    usage_alone: bool = False
+    """Stream the usage on a chunk of its own, with no choice, after the stop."""
 
 
 # What a request replayed of a round, in a driver's normalized words:

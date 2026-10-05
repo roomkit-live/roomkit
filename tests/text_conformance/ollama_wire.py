@@ -27,13 +27,16 @@ from tests.text_conformance.driver import (
     CALL_INDEX,
     COMPOSITION,
     FILTER_STOP,
+    FUNCTIONLESS_CALL,
     MALFORMED_CALL,
     REASONING_USAGE,
     REDACTED_REASONING,
     REPEATED_ID,
+    SERVER_ID,
     SIGNED_REASONING,
     STREAM_WITHOUT_FINISH,
     THINK_TAGS,
+    USAGE_ALONE,
     WRITTEN_UNREADABLE,
     Driver,
 )
@@ -67,6 +70,11 @@ def _chunk(message: ollama.Message, **fields: Any) -> ollama.ChatResponse:
     return ollama.ChatResponse(
         model=_MODEL, created_at=_AT, message=message, **{"done": False, **fields}
     )
+
+
+def _answered(script: Script, chunks: list[ollama.ChatResponse]) -> list[ollama.ChatResponse]:
+    """Each chunk naming the model that answered."""
+    return [chunk.model_copy(update={"model": script.answered_by}) for chunk in chunks]
 
 
 def _done(script: Script, message: ollama.Message) -> ollama.ChatResponse:
@@ -108,7 +116,7 @@ def _transport(script: Script, requests: list[Any]) -> httpx.MockTransport:
     def answer(request: httpx.Request) -> httpx.Response:
         body = json.loads(request.content)
         requests.append(body)
-        chunks = _stream(script) if body.get("stream") else [_response(script)]
+        chunks = _answered(script, _stream(script) if body.get("stream") else [_response(script)])
         lines = [chunk.model_dump_json(exclude_none=True) for chunk in chunks]
         return httpx.Response(200, content="\n".join(lines).encode())
 
@@ -145,6 +153,9 @@ class OllamaWire(ChatDriver):
         MALFORMED_CALL: "Ollama has no stop reason for a call it could not parse",
         FILTER_STOP: "Ollama's done reasons are stop, length, load and unload",
         REASONING_USAGE: "Ollama counts thinking inside eval_count",
+        FUNCTIONLESS_CALL: "an Ollama call is its function (SDK Message.ToolCall)",
+        USAGE_ALONE: "the counts ride the done chunk, never a chunk of their own",
+        SERVER_ID: "an Ollama call carries no id (SDK Message.ToolCall holds only function)",
     }
     reasoning = "field"
     calls_by_name = True

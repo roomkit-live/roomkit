@@ -13,8 +13,10 @@ from tests.text_conformance.chat_wire import pieces
 from tests.text_conformance.driver import (
     CALL_INDEX,
     CALLS_IN_ONE_CHUNK,
+    FUNCTIONLESS_CALL,
     MALFORMED_CALL,
     THINK_TAGS,
+    USAGE_ALONE,
     WRITTEN_UNREADABLE,
     Driver,
 )
@@ -120,7 +122,7 @@ def _final(script: Script, left_open: list[Any]) -> Any:
             output_tokens_details=SimpleNamespace(thinking_tokens=usage.reasoning),
         ),
         stop_reason=_STOP[script.finish],
-        model="claude",
+        model=script.answered_by,
     )
 
 
@@ -162,6 +164,8 @@ class AnthropicWire(Driver):
         WRITTEN_UNREADABLE: "a closed tool_use block always parses; one that does not was cut",
         MALFORMED_CALL: "Anthropic has no stop reason for a call it could not parse",
         THINK_TAGS: "reasoning comes in thinking blocks; text is the answer's",
+        FUNCTIONLESS_CALL: "a tool_use block always names its tool",
+        USAGE_ALONE: "usage rides message_start and message_delta, never a chunk of its own",
     }
     reasoning = "blocks"
     error_flag = True

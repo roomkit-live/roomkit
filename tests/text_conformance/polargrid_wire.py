@@ -23,6 +23,7 @@ from tests.text_conformance.driver import (
     CACHE_USAGE,
     CACHE_WRITE_USAGE,
     CALL_INDEX,
+    FUNCTIONLESS_CALL,
     MALFORMED_CALL,
     OBJECT_ARGUMENTS_RESPONSE,
     REASONING_USAGE,
@@ -112,8 +113,9 @@ def _stream(script: Script, body: dict[str, Any]) -> list[dict[str, Any]]:
     if finish is not None:
         chunks.append(_chunk({}, finish))
     if (body.get("stream_options") or {}).get("include_usage"):
+        # On a chunk of its own, with no choice (``usage_alone`` or not).
         chunks.append(_chunk(usage=_usage(script)))
-    return chunks
+    return [{**chunk, "model": script.answered_by} for chunk in chunks]
 
 
 def _response(script: Script) -> dict[str, Any]:
@@ -130,7 +132,7 @@ def _response(script: Script) -> dict[str, Any]:
         "id": "chatcmpl-0",
         "object": "chat.completion",
         "created": 0,
-        "model": _MODEL,
+        "model": script.answered_by,
         "choices": [{"index": 0, "message": message, "finish_reason": FINISH[script.finish]}],
         "usage": _usage(script),
     }
@@ -172,6 +174,7 @@ class PolarGridWire(ChatDriver):
         RESPONSE_CALL_WITHOUT_ID: "polargrid-sdk's ToolCall requires an id on a response",
         CACHE_WRITE_USAGE: "polargrid-sdk's TokenUsage holds prompt, completion and total tokens",
         MALFORMED_CALL: "PolarGrid has no stop reason for a call the server could not parse",
+        FUNCTIONLESS_CALL: "polargrid-sdk's ToolCall requires its function on a response",
         OBJECT_ARGUMENTS_RESPONSE: (
             "polargrid-sdk's ToolCall types arguments as a string and refuses an object "
             "when it parses the response"

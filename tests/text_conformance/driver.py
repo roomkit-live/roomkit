@@ -54,6 +54,12 @@ OBJECT_ARGUMENTS_RESPONSE = "object_arguments_response"
 """A response that is not streamed can carry a call's arguments as an object."""
 THINK_TAGS = "think_tags"
 """Reasoning can come inline in the answer's text, as ``<think>`` tags."""
+FUNCTIONLESS_CALL = "functionless_call"
+"""A response can carry a tool-call entry with no function at all."""
+USAGE_ALONE = "usage_alone"
+"""A stream can report its usage on a chunk of its own, with no choice."""
+SERVER_ID = "server_id"
+"""A call carries the id its server gave it."""
 
 ReasoningConvention = Literal["blocks", "call_signature", "inline", "field", "dropped"]
 """How a wire replays earlier reasoning: as signed blocks, as one signature on

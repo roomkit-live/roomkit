@@ -131,6 +131,9 @@ class _Vendor:
 
 
 def _fragment(call: Call, first: bool, piece: Any) -> dict[str, Any]:
+    if call.functionless:
+        # A custom tool's entry: an id and a type, no function to run.
+        return {"index": call.index or 0, "id": call.id, "type": "custom"}
     fragment: dict[str, Any] = {"function": {"arguments": piece}}
     if call.index is not None:
         fragment["index"] = call.index
@@ -179,12 +182,17 @@ def _stream(script: Script, vendor: _Vendor) -> bytes:
     finish = FINISH[script.finish]
     if finish is not None:
         chunks.append(_chunk({}, finish))
+    # The usage on a chunk of its own, with no choice, as the server sends it
+    # under ``stream_options.include_usage`` (``usage_alone`` or not).
     chunks.append({**_chunk(), "usage": vendor.usage(script.usage)})
+    chunks = [{**chunk, "model": script.answered_by} for chunk in chunks]
     lines = [f"data: {json.dumps(chunk)}\n\n" for chunk in chunks]
     return "".join([*lines, "data: [DONE]\n\n"]).encode()
 
 
 def _response_call(call: Call) -> dict[str, Any]:
+    if call.functionless:
+        return {"id": call.id, "type": "custom", "custom": {"name": call.name, "input": ""}}
     rendered: dict[str, Any] = {
         "type": "function",
         "function": {"name": call.name, "arguments": wire_arguments(call)},
@@ -205,7 +213,7 @@ def _response(script: Script, vendor: _Vendor) -> dict[str, Any]:
         "id": "chatcmpl-0",
         "object": "chat.completion",
         "created": 0,
-        "model": "m",
+        "model": script.answered_by,
         "choices": [{"index": 0, "message": message, "finish_reason": FINISH[script.finish]}],
         "usage": vendor.usage(script.usage),
     }

@@ -7,7 +7,8 @@ from typing import Any
 
 import pytest
 
-from roomkit.providers.ai.base import AITool, StreamDone
+from roomkit.providers.ai.base import AIContext, AIMessage, AITool, StreamDone
+from roomkit.providers.ai.response_schema import ResponseSchemaError
 from roomkit.providers.ai.tool_calls import is_malformed_call, is_truncation
 from tests.text_conformance.driver import (
     ARGUMENT_TEXT,
@@ -17,16 +18,19 @@ from tests.text_conformance.driver import (
     CALLS_IN_ONE_CHUNK,
     COMPOSITION,
     FILTER_STOP,
+    FUNCTIONLESS_CALL,
     MALFORMED_CALL,
     OBJECT_ARGUMENTS_RESPONSE,
     REASONING_USAGE,
     REDACTED_REASONING,
     REPEATED_ID,
     RESPONSE_CALL_WITHOUT_ID,
+    SERVER_ID,
     SIGNED_REASONING,
     STREAM_USAGE,
     STREAM_WITHOUT_FINISH,
     THINK_TAGS,
+    USAGE_ALONE,
     WRITTEN_UNREADABLE,
     Driver,
 )
@@ -82,6 +86,22 @@ class TestCalls:
 
         assert [c.arguments for c in answer.calls] == [{"q": "a"}, {"q": "b"}]
         assert len({c.id for c in answer.calls}) == 2
+
+    async def test_a_new_server_id_is_the_calls_own(self, driver: Driver, mode: str) -> None:
+        """A provider mints an id only when the server gave none, or gave one
+        an earlier call of the response took (RFC §6.4, RMK-510)."""
+        driver.require(SERVER_ID)
+        script = Script(
+            calls=(
+                Call("lookup", '{"q": "a"}', id="c1", index=0),
+                Call("lookup", '{"q": "b"}', id="c2", index=1),
+            ),
+            finish="tool",
+        )
+
+        answer = await generation(driver, script, mode, tool_context(LOOKUP))
+
+        assert [c.id for c in answer.calls] == ["c1", "c2"]
 
     async def test_calls_starting_in_one_chunk_stay_apart(self, driver: Driver) -> None:
         driver.require(CALLS_IN_ONE_CHUNK)
@@ -344,6 +364,16 @@ class TestUsage:
 
         assert (answer.usage["input_tokens"], answer.usage["output_tokens"]) == (11, 7)
 
+    async def test_usage_on_a_chunk_of_its_own_reaches_the_loop(self, driver: Driver) -> None:
+        """Read wherever it arrives: a chunk with no choice counts too
+        (RMK-510)."""
+        driver.require(STREAM_USAGE, USAGE_ALONE)
+        script = Script(text="ok", usage=Usage(input=11, output=7), usage_alone=True)
+
+        answer = await generation(driver, script, "stream", tool_context(LOOKUP))
+
+        assert (answer.usage["input_tokens"], answer.usage["output_tokens"]) == (11, 7)
+
     async def test_cache_reads_are_counted_apart(self, driver: Driver, mode: str) -> None:
         _usage_mode(driver, mode)
         driver.require(CACHE_USAGE)
@@ -400,6 +430,22 @@ class TestModesAgree:
 
         assert done.metadata.get("model") == response.metadata.get("model") is not None
 
+    async def test_the_model_reported_is_the_one_that_answered(
+        self, driver: Driver, mode: str
+    ) -> None:
+        """The response's own model, never the one asked for, when the
+        response names it (RFC §6.7, RMK-510)."""
+        script = Script(text="ok", answered_by="served-model")
+        provider = driver.provider(script)
+        context = tool_context(LOOKUP)
+        if mode == "generate":
+            metadata = (await provider.generate(context)).metadata
+        else:
+            stream = provider.generate_structured_stream(context)
+            metadata = [e async for e in stream if isinstance(e, StreamDone)][-1].metadata
+
+        assert metadata.get("model") == "served-model"
+
     async def test_time_to_first_token_is_labelled_alike_on_both_modes(
         self, driver: Driver
     ) -> None:
@@ -435,3 +481,32 @@ class TestModesAgree:
             pass
 
         assert len(recorder.labels) == 1
+
+
+_SCHEMA = {
+    "type": "object",
+    "properties": {"answer": {"type": "string"}},
+    "required": ["answer"],
+    "additionalProperties": False,
+}
+
+
+class TestResponseSchema:
+    async def test_entries_with_no_function_are_no_tool_round(
+        self, driver: Driver, mode: str
+    ) -> None:
+        """Under a response schema, a round is a step of the loop only when
+        calls reach it: entries with no function hand it none, so the answer
+        is due and checked, on both modes (RFC §6.7, RMK-510)."""
+        driver.require(FUNCTIONLESS_CALL)
+        if not driver.provider(Script()).supports_response_schema:
+            pytest.skip(f"{driver.label}: the provider takes no response schema")
+        script = Script(calls=(Call("x", "", id="c1", index=0, functionless=True),), finish="tool")
+        context = AIContext(
+            messages=[AIMessage(role="user", content="go")], response_schema=_SCHEMA
+        )
+
+        with pytest.raises(ResponseSchemaError) as raised:
+            await generation(driver, script, mode, context)
+
+        assert raised.value.reason == "invalid_json"

@@ -20,6 +20,7 @@ from tests.text_conformance.driver import (
     CACHE_WRITE_USAGE,
     CALL_INDEX,
     COMPOSITION,
+    FUNCTIONLESS_CALL,
     REDACTED_REASONING,
     REPEATED_ID,
     SCHEMA_AS_GIVEN,
@@ -58,6 +59,7 @@ _CANNOT = {
     REDACTED_REASONING: "Gemini has no redacted reasoning",
     THINK_TAGS: "reasoning comes in thought parts; text is the answer's",
     CACHE_WRITE_USAGE: "Gemini's usage counts no cache writes",
+    FUNCTIONLESS_CALL: "a function-call part always carries its FunctionCall",
     SCHEMA_AS_GIVEN: (
         "the provider declares Gemini's OpenAPI subset (parameters), not "
         "parameters_json_schema, which is unmeasured (RMK-386)"
@@ -122,6 +124,7 @@ def _usage(script: Script) -> types.GenerateContentResponseUsageMetadata:
 
 
 def _chunk(
+    script: Script,
     parts: list[types.Part],
     finish: types.FinishReason | None = None,
     usage: types.GenerateContentResponseUsageMetadata | None = None,
@@ -130,23 +133,30 @@ def _chunk(
         content=types.Content(role="model", parts=parts), finish_reason=finish, index=0
     )
     return types.GenerateContentResponse(
-        candidates=[candidate], usage_metadata=usage, model_version="gemini"
+        candidates=[candidate], usage_metadata=usage, model_version=script.answered_by
     )
 
 
 def _stream(script: Script) -> list[types.GenerateContentResponse]:
-    """The last chunk carries the stop reason and the usage."""
+    """The last chunk carries the stop reason and the usage, or the usage
+    comes after it on a chunk with no candidate."""
     pieces = _pieces(script)
     last = pieces.pop() if pieces else []
-    return [
-        *(_chunk(parts) for parts in pieces),
-        _chunk(last, _FINISH[script.finish], _usage(script)),
+    usage = _usage(script)
+    chunks = [
+        *(_chunk(script, parts) for parts in pieces),
+        _chunk(script, last, _FINISH[script.finish], None if script.usage_alone else usage),
     ]
+    if script.usage_alone:
+        chunks.append(
+            types.GenerateContentResponse(usage_metadata=usage, model_version=script.answered_by)
+        )
+    return chunks
 
 
 def _response(script: Script) -> types.GenerateContentResponse:
     parts = [part for parts in _pieces(script) for part in parts]
-    return _chunk(parts, _FINISH[script.finish], _usage(script))
+    return _chunk(script, parts, _FINISH[script.finish], _usage(script))
 
 
 def _json_spelling(node: Any) -> Any:
