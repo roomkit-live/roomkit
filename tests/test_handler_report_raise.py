@@ -28,6 +28,10 @@ from roomkit.providers.ai.base import AIResponse, AIToolCall
 from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.tools.external import PolicyExternalToolHandler, ToolDecision
 from tests.test_framework import SimpleChannel
+from tests.test_refused_reports import _acp as acp_call
+from tests.test_refused_reports import _acp_cut as acp_cut
+from tests.test_refused_reports import _acp_permission as acp_permission
+from tests.test_refused_reports import _acp_ran_anyway as acp_ran_anyway
 
 
 class _RaisesReporting(PolicyExternalToolHandler):
@@ -124,10 +128,31 @@ async def _external_door(outcome: str, after: bool) -> list[ToolCallEvent]:
     return observed
 
 
+async def _acp_door(outcome: str, after: bool) -> list[ToolCallEvent]:
+    """An ACP agent's call, its end handed to the handler."""
+    handler = _RaisesReporting(after=after, deny=outcome in ("refused", "refused_but_ran"))
+    if outcome == "served":
+        heard = await acp_call(handler, status="completed", raw_output={"content": "read"})
+    elif outcome == "failed":
+        heard = await acp_call(handler, status="failed", raw_output={"error": "no such file"})
+    elif outcome == "refused":
+        heard = await acp_permission(handler)
+    elif outcome == "cancelled":
+        heard = await acp_cut(handler)
+    else:
+        heard, _ = await acp_ran_anyway(handler)
+    return heard.observed
+
+
 _CASES = [
     ("external", "served"),
     ("external", "refused"),
     ("external", "cancelled"),
+    ("acp", "served"),
+    ("acp", "failed"),
+    ("acp", "refused"),
+    ("acp", "cancelled"),
+    ("acp", "refused_but_ran"),
 ]
 
 
@@ -136,6 +161,7 @@ _CASES = [
 async def test_a_handler_raising_while_reporting_leaves_the_call_reported_once(
     door: str, outcome: str, after: bool
 ) -> None:
-    observed = await _external_door(outcome, after)
+    door_run = _external_door if door == "external" else _acp_door
+    observed = await door_run(outcome, after)
 
     assert [_outcome(event) for event in observed] == [outcome]

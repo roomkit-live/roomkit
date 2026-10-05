@@ -852,6 +852,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- An ACP call whose end the external handler raised before reporting is
+  reported by the channel, as it ended, for every outcome (RMK-507, RFC
+  §9.3): it was reported to no one unless the agent had run it past a
+  refusal, and that call was reported twice when the handler raised after
+  reporting it. One guard serves ACP and the AI channel's external door:
+  `handler_reported` watches whether the handler's report reached
+  ON_TOOL_CALL.
+
 - Each tool call of a text turn is held as a call of its own, never by its
   provider's id (RMK-506, RFC §9.3, §12.4): a call under an id an earlier
   round of the turn used is a new call, reported, and reported cancelled
