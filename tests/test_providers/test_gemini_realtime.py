@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import importlib
+import logging
 import sys
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -1451,12 +1452,15 @@ class TestGeminiLiveProvider:
         await provider.submit_tool_result(session, "call-4", large_result)
         assert state.tool_result_bytes == 20000
 
-    async def test_submit_tool_result_no_session(self):
+    async def test_submit_tool_result_no_session_is_dropped(self, caplog):
+        """A result for a session the provider does not hold goes out
+        nowhere, with the log every provider writes (RFC §12.4)."""
         mod = _load_provider()
         provider = mod.GeminiLiveProvider(api_key="test-key")
         session = _make_session()
-        with pytest.raises(RuntimeError, match="active Gemini connection"):
+        with caplog.at_level(logging.INFO):
             await provider.submit_tool_result(session, "call-1", "result")
+        assert "dropped: abandoned or never issued" in caplog.text
 
     # ── interrupt() ─────────────────────────────────────────────
 

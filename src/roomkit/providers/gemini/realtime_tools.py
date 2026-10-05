@@ -62,21 +62,18 @@ class GeminiLiveToolsMixin(RealtimeVoiceProvider):
         """Answer *call_id* with *result*, releasing the call as it goes."""
         types = genai_types()
 
-        state = self._sessions.get(session.id)
-        if state is None:
-            raise RuntimeError("Cannot deliver tool result without an active Gemini connection")
-
         # A call the server discarded (tool_call_cancellation), one whose
-        # connection is gone, or one never issued is off the book: the
-        # server will not read its result, and a FunctionResponse for an id
-        # it does not know is an error the application never asked for.
+        # connection or session is gone, or one never issued is off the book:
+        # the server will not read its result, and a FunctionResponse for an
+        # id it does not know is an error the application never asked for.
         # Checked before the connection is: the call was released the moment
-        # its socket was lost, so a result arriving during the back-off is
-        # stale, not an error.
+        # its socket was lost, so a result arriving during the back-off or
+        # after the session ended is stale, not an error (RFC §12.4).
         if not self._holds_tool_call(session, call_id):
             self._log_dropped_result(session, call_id)
             return
-        if state.live_session is None:
+        state = self._sessions.get(session.id)
+        if state is None or state.live_session is None:
             raise RuntimeError("Cannot deliver tool result without an active Gemini connection")
         # A scheduling the config cannot take is refused before the call
         # leaves the book: it stays owed, and is abandoned as any other.
