@@ -314,7 +314,9 @@ class SegmentWriter:
         in the stream_end frame) without any post-hoc rewrite.
 
         ``cancelled`` marks a segment cut short by an interrupted turn, so a
-        reader can tell a finished answer from one the user stopped.
+        reader can tell a finished answer from one the user stopped. The final
+        text of a loop that ended cancelled (a steering Cancel) is marked
+        alike (RFC §12.2 step 13s).
         """
         # Joined even with nothing to write: the caller's last flush is what
         # lets a write cut off by a stop land before the turn returns.
@@ -325,10 +327,11 @@ class SegmentWriter:
         self._accumulated.clear()
         metadata = dict(self._sr.response_metadata or {})
         # Read after the loop's end: this is the turn's final text
-        carries_record = self._turn_record is not None
-        if self._turn_record is not None:
-            metadata.update(self._turn_record)
-        if cancelled:
+        record = self._turn_record
+        carries_record = record is not None
+        if record is not None:
+            metadata.update(record)
+        if cancelled or (record is not None and record.get("loop_end_reason") == "cancelled"):
             metadata["cancelled"] = True
         event = self._build(EventType.MESSAGE, TextContent(body=body), metadata=metadata)
         # The streaming channel already rendered this text chunk by chunk —

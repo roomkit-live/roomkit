@@ -29,6 +29,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The text a steering `Cancel` cuts mid-answer is stored with
+  `metadata.cancelled = true`, as the text of a turn cancelled from outside or
+  stopped by its transport is (RMK-304, RFC §12.2 step 13s): a reader could
+  not tell it from a finished answer.
 - A context overflow Gemini or Vertex refuses ("The input token count
   exceeds the maximum number of tokens allowed") is compacted and replayed,
   as every other provider's is (RMK-304, RFC §6.4): the turn used to end on

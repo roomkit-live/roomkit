@@ -32,7 +32,15 @@ from roomkit.models.event import (
 )
 from roomkit.models.steering import Cancel
 from roomkit.orchestration.strategies.supervisor import _extract_output_text
-from roomkit.providers.ai.base import AIContext, AIResponse, AITool, AIToolCall, ProviderError
+from roomkit.providers.ai.base import (
+    AIContext,
+    AIResponse,
+    AITool,
+    AIToolCall,
+    ProviderError,
+    StreamDone,
+    StreamTextDelta,
+)
 from roomkit.providers.ai.mock import MockAIProvider
 from tests.test_framework import SimpleChannel
 
@@ -521,3 +529,41 @@ class TestTheTurnRecord:
         assert await _ai_messages(kit) == ["Looking."]
         assert "store down" in caplog.text
         await kit.close()
+
+
+class _Holding(MockAIProvider):
+    """Streams half an answer, then holds the rest until released."""
+
+    def __init__(self) -> None:
+        super().__init__(streaming=True)
+        self.started = asyncio.Event()
+        self.release = asyncio.Event()
+
+    async def generate_structured_stream(self, context: AIContext) -> Any:  # type: ignore[override]
+        yield StreamTextDelta(text="Half an ")
+        self.started.set()
+        await self.release.wait()
+        yield StreamTextDelta(text="answer.")
+        yield StreamDone(finish_reason="stop")
+
+
+async def test_a_turn_cancelled_mid_answer_keeps_its_text_marked_cancelled() -> None:
+    """A steering Cancel cuts the answer it streams: the text kept is marked
+    as a turn cancelled from outside marks it (RFC §12.2 step 13s)."""
+    provider = _Holding()
+    kit, ai, _ = await _room(provider)
+    turn = asyncio.ensure_future(
+        kit.process_inbound(
+            InboundMessage(channel_id="sms1", sender_id="u", content=TextContent(body="go"))
+        )
+    )
+    await provider.started.wait()
+    ai.steer(Cancel())
+    provider.release.set()
+    await turn
+
+    events = await kit.store.list_events("r1")
+    [kept] = [e for e in events if e.type == EventType.MESSAGE and e.source.channel_id == "ai1"]
+    assert kept.metadata["loop_end_reason"] == "cancelled"
+    assert kept.metadata.get("cancelled") is True
+    await kit.close()
