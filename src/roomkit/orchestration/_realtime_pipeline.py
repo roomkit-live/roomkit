@@ -108,7 +108,7 @@ class RealtimePipeline:
 
     def _agent_tools(self) -> dict[str, list[AITool]]:
         """The agents' own tools the pipeline serves, each name with every
-        agent's definition of it: a name the channel's host tools carry is the
+        agent's definition of it: a name the channel's tools carry is the
         channel's, declared and served as the channel's (RFC §19.5, §21.1)."""
         host = _channel_tool_names(self._rtv)
         tools: dict[str, list[AITool]] = {}
@@ -330,8 +330,10 @@ def _agent_session_tools(
 
 
 def _channel_tool_names(rtv: RealtimeVoiceChannel) -> set[str]:
-    """The names of the tools the channel carries now."""
-    return {name for t in rtv._tools or [] if (name := t.get("name"))}
+    """The names of the tools the channel carries now: the host's (its
+    definitions and its human-input tools) and those it serves itself (Tool
+    Search's, the skills'), the set its sessions declare as its own."""
+    return set(rtv._host_tool_names()) | rtv._channel_tool_names()
 
 
 def refuse_agents_with_unserved(agents: list[Agent], channel_id: str) -> None:
