@@ -32,7 +32,7 @@ from roomkit.channels.ai import AIChannel
 from roomkit.channels.realtime_voice import RealtimeVoiceChannel
 from roomkit.models.channel import ChannelBinding, ChannelOutput
 from roomkit.models.context import RoomContext
-from roomkit.models.enums import EventType
+from roomkit.models.enums import ChannelType, EventType
 from roomkit.models.event import RoomEvent, ToolCallContent
 from roomkit.models.steering import Cancel
 from roomkit.models.streaming import ToolCallStartMarker
@@ -573,4 +573,42 @@ async def test_an_acp_call_refused_then_approved_fails_on_its_own(tmp_path: Path
     )
 
     assert ("tool_call_end", "failed") in await _tool_rows(kit, "room-1")
+    await kit.close()
+
+
+async def test_a_claimed_report_is_made_though_its_call_is_cut_meanwhile() -> None:
+    """Once a call's one report is claimed, a cut of the call while its
+    observers are told does not lose it (RFC §9.3)."""
+    kit = RoomKit()
+    await kit.create_room(room_id="r")
+    release = asyncio.Event()
+    observed: list[str] = []
+
+    @kit.hook(HookTrigger.ON_TOOL_CALL, execution=HookExecution.ASYNC, name="audit")
+    async def audit(event: Any, ctx: Any) -> None:
+        observed.append(event.tool_call_id)
+
+    told = kit._tell_tool_call
+
+    async def slow_tell(*args: Any) -> None:
+        await release.wait()
+        await told(*args)
+
+    kit._tell_tool_call = slow_tell  # type: ignore[method-assign]
+    event = ToolCallEvent(
+        channel_id="c",
+        channel_type=ChannelType.AI,
+        tool_call_id="x1",
+        name="lookup",
+        arguments={},
+        result="ok",
+        room_id="r",
+    )
+    judging = asyncio.create_task(kit._judge_tool_call(event, "c", claim=lambda: True))
+    await asyncio.sleep(0.05)
+    judging.cancel()
+    release.set()
+    await asyncio.sleep(0.1)
+
+    assert observed == ["x1"]
     await kit.close()

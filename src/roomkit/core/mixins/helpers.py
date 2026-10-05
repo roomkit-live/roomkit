@@ -32,6 +32,7 @@ from uuid import uuid4
 from roomkit.core._participant_channels import channels_reached, warn_cross_channel
 from roomkit.core.exceptions import RoomNotFoundError
 from roomkit.core.hooks import SyncPipelineResult
+from roomkit.core.task_utils import shielded
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundResult
 from roomkit.models.enums import (
@@ -968,12 +969,21 @@ class HelpersMixin:
         if claim is not None and not claim():
             return verdict
         # Observers and the framework event see what the model reads: the
-        # result, or the failure of a call a hook withheld (RFC §9.3).
+        # result, or the failure of a call a hook withheld (RFC §9.3). The
+        # report is claimed now: it is made to its end, a cut of the call
+        # meanwhile included, or the call would have none.
         observed = observed_call_event(hook_result, event, read)
+        await shielded(self._tell_tool_call(observed, context, channel_id))
+        return verdict
+
+    async def _tell_tool_call(
+        self, observed: ToolCallEvent, context: RoomContext | None, channel_id: str
+    ) -> None:
+        """Tell ON_TOOL_CALL's observers and the framework event of a call
+        whose one report was claimed."""
         if context is not None:
             await self._observe_tool_call(observed, context)
         await self._emit_tool_call_event(observed, channel_id)
-        return verdict
 
     async def _run_tool_call_chain(
         self, event: ToolCallEvent, room_id: str, *, carrying: RoomContext | None = None
