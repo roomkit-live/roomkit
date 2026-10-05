@@ -81,7 +81,7 @@ def _call_parts(script: Script) -> list[types.Part]:
     return [
         types.Part(
             function_call=types.FunctionCall(
-                id=call.id, name=call.name, args=json.loads(call.arguments)
+                id=call.id, name=call.name, args=json.loads(call.arguments or "{}")
             )
         )
         for call in script.calls

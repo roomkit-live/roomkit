@@ -55,7 +55,7 @@ def _calls(calls: tuple[Call, ...]) -> list[ollama.Message.ToolCall]:
     return [
         ollama.Message.ToolCall(
             function=ollama.Message.ToolCall.Function(
-                name=call.name, arguments=json.loads(call.arguments)
+                name=call.name, arguments=json.loads(call.arguments or "{}")
             )
         )
         for call in calls

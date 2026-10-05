@@ -84,7 +84,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   usage of a chunk that carries no choice; Gemini reports the model that
   answered (`model_version`) rather than the one asked for, and gives a call
   the id its server gave it, minting one only when the server gave none or an
-  earlier call of the response took it.
+  earlier call of the response took it. A streamed call whose function came
+  with no name and no arguments reaches the loop, which refuses it, as it
+  does through `generate()`, instead of vanishing (the OpenAI wire, Mistral,
+  PolarGrid); a response with no choice, and Anthropic's done event, name the
+  model that answered too.
 
 - ACP: a call whose permission RoomKit rejected because its external handler
   raised deciding it, that the agent ran anyway and closed completed, is now

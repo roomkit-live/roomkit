@@ -193,12 +193,16 @@ class ToolCallSlots:
         call_id: str | None,
         name: str | None,
         fragment: str | Mapping[str, Any] | None,
+        *,
+        has_function: bool = False,
     ) -> StreamToolCallDelta | None:
         """Fold one fragment in; return the composition event it warrants.
 
         A fragment a server sends as an object (Mistral's SDK types it
         ``Dict | str``; some compatible servers do it on OpenAI's wire) reads
-        as the JSON text it stands for.
+        as the JSON text it stands for. *has_function* says the fragment
+        carried a function, even one with no name and no arguments: its call
+        is a call (:meth:`calls`).
         """
         fragment = _argument_text(fragment)
         key = index if index is not None else 0
@@ -214,6 +218,8 @@ class ToolCallSlots:
             self._slots.append(self._new_slot(name))
             position = self._by_index[key] = len(self._slots) - 1
         slot = self._slots[position]
+        if has_function:
+            slot["function"] = "1"
         self._adopt_server_id(slot, call_id)
         delta = fold_tool_call_fragment(slot, position, name, fragment)
         if delta is not None:
@@ -230,6 +236,7 @@ class ToolCallSlots:
             call_id,
             function.name if function else None,
             function.arguments if function else "",
+            has_function=function is not None,
         )
 
     def _new_slot(self, name: str | None) -> dict[str, str]:
@@ -278,12 +285,16 @@ class ToolCallSlots:
         mapping; one whose arguments do not read is partial, and cut when the
         response was cut short over them, which only the last call can be.
 
-        A slot that never got a name or an argument is no call: an entry with
-        no function (a custom tool's call), as a response's reader skips it
-        (:func:`message_tool_calls`). Opening the slot still keeps the
-        server's id for a call whose function arrives on a later fragment.
+        A slot that never carried a function is no call: an entry with no
+        function (a custom tool's call), as a response's reader skips it
+        (:func:`message_tool_calls`). One whose function came with no name
+        and no arguments is a call, as it is there, for the loop to refuse.
+        Opening the slot still keeps the server's id for a call whose
+        function arrives on a later fragment.
         """
-        slots = [slot for slot in self._slots if slot["name"] or slot["arguments"]]
+        slots = [
+            slot for slot in self._slots if slot["name"] or slot["arguments"] or "function" in slot
+        ]
         final = len(slots) - 1
         return [
             StreamToolCall(

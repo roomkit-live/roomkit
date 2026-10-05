@@ -438,7 +438,8 @@ class PolarGridAIProvider(AIProvider):
         choices = getattr(response, "choices", None) or []
         if not choices:
             self._check_schema_answer(context, "", None)
-            return AIResponse(content="", usage=usage)
+            metadata = answered_by(getattr(response, "model", None), self._config.model)
+            return AIResponse(content="", usage=usage, metadata=metadata)
         choice = choices[0]
         message = getattr(choice, "message", None)
         # qwen surfaces reasoning inline as <think>...</think>; split it out
@@ -590,6 +591,7 @@ class PolarGridAIProvider(AIProvider):
         composed: list[StreamToolCallDelta] = []
         for d in deltas:
             func = getattr(d, "function", None)
+            has_function = isinstance(func, dict)
             if not isinstance(func, dict):
                 func = {}
             event = slots.fold(
@@ -597,6 +599,7 @@ class PolarGridAIProvider(AIProvider):
                 getattr(d, "id", None),
                 func.get("name"),
                 func.get("arguments"),
+                has_function=has_function,
             )
             if event is not None:
                 composed.append(event)

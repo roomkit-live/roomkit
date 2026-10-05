@@ -4,6 +4,7 @@ loop runs it."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
 from roomkit.providers.ai.base import (
     AIContext,
@@ -41,6 +42,8 @@ class Answer:
     finish_reason: str | None = None
     text: str = ""
     """The answer's text, reasoning taken out."""
+    metadata: dict[str, Any] = field(default_factory=dict)
+    """What the response says beside its content (its model)."""
 
 
 def tool_context(*tools: AITool, messages: list[AIMessage] | None = None) -> AIContext:
@@ -61,6 +64,7 @@ async def generation(driver: Driver, script: Script, mode: str, context: AIConte
             reasoning=thinking_parts_of(response),
             finish_reason=response.finish_reason,
             text=response.content,
+            metadata=dict(response.metadata),
         )
     events = [event async for event in provider.generate_structured_stream(context)]
     done = next((e for e in events if isinstance(e, StreamDone)), None)
@@ -76,4 +80,5 @@ async def generation(driver: Driver, script: Script, mode: str, context: AIConte
         reasoning=reasoning.parts(),
         finish_reason=done.finish_reason if done is not None else None,
         text="".join(e.text for e in events if isinstance(e, StreamTextDelta)),
+        metadata=dict(done.metadata) if done is not None else {},
     )

@@ -290,7 +290,7 @@ class AnthropicAIProvider(AIProvider):
 
             for call in blocks.remaining(final):
                 yield call
-            yield done_event(final)
+            yield done_event(final, self._config.model)
         except Exception as exc:
             raise self._wrap_error(exc) from exc
         finally:

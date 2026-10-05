@@ -15,6 +15,7 @@ from roomkit.providers.ai.base import (
     StreamEvent,
     StreamTextDelta,
     StreamThinkingDelta,
+    answered_by,
 )
 from roomkit.providers.anthropic.tool_blocks import ToolUseBlocks
 
@@ -42,8 +43,10 @@ def is_first_output(event: StreamEvent) -> bool:
     )
 
 
-def done_event(final: Any) -> StreamDone:
-    """The done event of a finished message: its stop reason, usage and model."""
+def done_event(final: Any, asked: str) -> StreamDone:
+    """The done event of a finished message: its stop reason, usage and model,
+    the one that answered as :func:`answered_by` names it (*asked* when the
+    message names none)."""
     usage: dict[str, int] = {
         "input_tokens": final.usage.input_tokens,
         "output_tokens": final.usage.output_tokens,
@@ -57,7 +60,7 @@ def done_event(final: Any) -> StreamDone:
     thinking = (getattr(details, "thinking_tokens", 0) if details else 0) or 0
     if thinking:
         usage["reasoning_tokens"] = thinking
-    metadata = {"model": final.model}
+    metadata = answered_by(getattr(final, "model", None), asked)
     return StreamDone(finish_reason=final.stop_reason, usage=usage, metadata=metadata)
 
 

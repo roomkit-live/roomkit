@@ -454,7 +454,8 @@ class OpenAIAIProvider(AIProvider):
         usage = self._usage_from(response.usage) if response.usage else {}
         if not response.choices:
             self._check_schema_answer(context, None, "", [])
-            return AIResponse(content="", usage=usage)
+            metadata = answered_by(response.model, self._config.model)
+            return AIResponse(content="", usage=usage, metadata=metadata)
 
         choice = response.choices[0]
         # A message the server sent null reads as an empty one, as on the stream.

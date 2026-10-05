@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from roomkit.providers.ai.base import AIContext, AIMessage, AITool, StreamDone
+from roomkit.providers.ai.base import AIContext, AIMessage, AITool
 from roomkit.providers.ai.response_schema import ResponseSchemaError
 from roomkit.providers.ai.tool_calls import is_malformed_call, is_truncation
 from tests.text_conformance.driver import (
@@ -102,6 +102,16 @@ class TestCalls:
         answer = await generation(driver, script, mode, tool_context(LOOKUP))
 
         assert [c.id for c in answer.calls] == ["c1", "c2"]
+
+    async def test_a_call_with_no_name_reaches_the_loop(self, driver: Driver, mode: str) -> None:
+        """A function with no name and no arguments is a call, streamed or
+        not, which the loop refuses for its missing name (RFC §6.4, RMK-510)."""
+        script = Script(calls=(Call("", "", id="c1", index=0),), finish="tool")
+
+        answer = await generation(driver, script, mode, tool_context(LOOKUP))
+
+        [call] = answer.calls
+        assert (call.name, call.arguments) == ("", {})
 
     async def test_calls_starting_in_one_chunk_stay_apart(self, driver: Driver) -> None:
         driver.require(CALLS_IN_ONE_CHUNK)
@@ -422,29 +432,16 @@ class TestModesAgree:
     """What a response tells the loop beside its content, the same through
     ``generate()`` and the stream (RMK-500)."""
 
-    async def test_the_model_that_answered_is_read_on_both_modes(self, driver: Driver) -> None:
-        context = tool_context(LOOKUP)
-        response = await driver.provider(Script(text="ok")).generate(context)
-        stream = driver.provider(Script(text="ok")).generate_structured_stream(context)
-        done = [e async for e in stream if isinstance(e, StreamDone)][-1]
-
-        assert done.metadata.get("model") == response.metadata.get("model") is not None
-
     async def test_the_model_reported_is_the_one_that_answered(
         self, driver: Driver, mode: str
     ) -> None:
         """The response's own model, never the one asked for, when the
-        response names it (RFC §6.7, RMK-510)."""
+        response names it, alike on both modes (RMK-500, RMK-510)."""
         script = Script(text="ok", answered_by="served-model")
-        provider = driver.provider(script)
-        context = tool_context(LOOKUP)
-        if mode == "generate":
-            metadata = (await provider.generate(context)).metadata
-        else:
-            stream = provider.generate_structured_stream(context)
-            metadata = [e async for e in stream if isinstance(e, StreamDone)][-1].metadata
 
-        assert metadata.get("model") == "served-model"
+        answer = await generation(driver, script, mode, tool_context(LOOKUP))
+
+        assert answer.metadata.get("model") == "served-model"
 
     async def test_time_to_first_token_is_labelled_alike_on_both_modes(
         self, driver: Driver
