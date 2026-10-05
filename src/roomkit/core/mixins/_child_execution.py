@@ -15,6 +15,7 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, NamedTuple, Protocol, runtime_checkable
 from uuid import uuid4
 
+from roomkit.core._failure_log import mark_reported
 from roomkit.core.event_router import stream_record
 from roomkit.core.exceptions import TaskCutShortError, TaskTurnFailedError, TurnCutShortError
 from roomkit.core.lanes import DeliveryCascade
@@ -173,7 +174,7 @@ async def _persist_child_stream(
     except Exception as exc:
         await _report_turn_failure(kit, child_room_id, sr, exc, correlation_id)
         end = _turn_end(stream_record(sr), writer.persisted)
-        raise _turn_failure(exc, _last_text(writer.persisted), end)  # noqa: B904
+        raise mark_reported(_turn_failure(exc, _last_text(writer.persisted), end))  # noqa: B904
     if (cut := _cut_short(answer, _turn_end(stream_record(sr), writer.persisted))) is not None:
         raise cut
     return answer
@@ -331,7 +332,8 @@ async def _deliver_answer(kit: RoomKit, child_room_id: str, result: BroadcastRes
         # The failure carries the end of the responder that failed, never
         # another's (RFC §23.3 step 6).
         text, reason = _answer_of(result, cascade.response_events, failed_by)
-        raise _turn_failure(failure, text, reason)
+        # Reported in the child room, by its reader or the delivery set's.
+        raise mark_reported(_turn_failure(failure, text, reason))
     text, reason = _kept_answer(result, cascade.response_events)
     if (cut := _cut_short(text, reason)) is not None:
         raise cut
@@ -487,7 +489,9 @@ async def _collect_answer(
         if text:
             answers.append(text)
     if failure is not None:
-        raise failure
+        # Reported in the child room: a buffered failure by the delivery set,
+        # a stream's by its trace writer.
+        raise mark_reported(failure)
     return answers[0] if answers else None
 
 

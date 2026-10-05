@@ -1069,15 +1069,18 @@ def record_buffered_reply(
 
 
 def _log_partial_failure(result: BroadcastResult, total: int, room_id: str, event_id: str) -> None:
-    """Sum up a delivery set's failures in one line, leaving out an expected
-    end and a failure its own turn already reported and logged
-    (:func:`needs_reporting`): an incident is logged once."""
-    failed = [ch for ch in result.errors if needs_reporting(result.errors_exc.get(ch))]
-    if not failed:
+    """Sum up a delivery set's failures in one line, unless every one is an
+    expected end or a failure its own turn already reported
+    (:func:`needs_reporting`): such a set has nothing left to warn of."""
+    if not any(needs_reporting(result.errors_exc.get(ch)) for ch in result.errors):
         return
     logger.warning(
         "Partial broadcast failure: %d/%d channels failed",
-        len(failed),
+        len(result.errors),
         total,
-        extra={"room_id": room_id, "event_id": event_id, "failed_channels": failed},
+        extra={
+            "room_id": room_id,
+            "event_id": event_id,
+            "failed_channels": list(result.errors.keys()),
+        },
     )

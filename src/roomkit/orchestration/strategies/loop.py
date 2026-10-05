@@ -406,7 +406,7 @@ def _producer_failure(outcome: _LoopOutcome) -> Exception:
     """The producer's failure, as the loop's caller reads it: its cut (an
     expected end), or its task's error. One its turn raised after it began
     was reported and logged in the task's room already: the caller hands it
-    on without a second report (RFC §15.2)."""
+    on without a second report (RFC §19.7.4)."""
     if reason := outcome.cut_reason:
         return TaskCutShortError(reason, None)
     error = outcome.failure.error if outcome.failure is not None else None
@@ -417,13 +417,12 @@ def _producer_failure(outcome: _LoopOutcome) -> Exception:
 
 
 def _failed_in_its_turn(result: DelegatedTaskResult | None) -> bool:
-    """Whether a task failed in its worker's turn, after the turn began: the
-    turn names how it ended (RFC §23.3), and reported its failure where it
-    ran."""
+    """Whether a task failed in its worker's turn, which reported the failure
+    in the task's room (RFC §23.3)."""
     return (
         result is not None
         and result.status == TaskStatus.FAILED
-        and "loop_end_reason" in result.metadata
+        and bool(result.metadata.get("error_reported"))
     )
 
 

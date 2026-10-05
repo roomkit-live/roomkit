@@ -30,9 +30,8 @@ from roomkit.channels._realtime_tool_executor import (
     report_served_elsewhere,
     run_tool_call,
 )
-from roomkit.core._failure_log import log_failure
+from roomkit.core._failure_log import log_failure, needs_reporting
 from roomkit.core._fallback import FALLBACK_FAILED
-from roomkit.core.exceptions import TurnCutShortError
 from roomkit.core.task_utils import shielded
 from roomkit.models.enums import HookTrigger
 from roomkit.telemetry.base import SpanKind
@@ -350,7 +349,7 @@ class RealtimeDelegationMixin:
         (RFC §12.4.1). A turn its cap, deadline or budget cut is an expected
         end and fires none."""
         log_failure(logger, exc, f"Delegation {delegation_id} (session {session.id})")
-        if not isinstance(exc, TurnCutShortError):
+        if needs_reporting(exc):
             await self._fire_session_error_hook(
                 session,
                 error=str(exc),

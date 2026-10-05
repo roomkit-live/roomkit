@@ -19,12 +19,18 @@ _REPORTED = "_roomkit_reported"
 
 
 def mark_reported[E: BaseException](exc: E) -> E:
-    """Mark *exc* as a failure its own turn already reported to ON_ERROR and
-    logged: whoever receives it next (a strategy's caller, a pass's room
-    turn) hands it on, its type unchanged, and reports and logs it no more
-    (RFC §15.2)."""
+    """Mark *exc* as a failure its own turn already reported to ON_ERROR:
+    whoever receives it next (a strategy's caller, a pass's room turn) hands
+    it on, its type unchanged, without a second report (RFC §19.7.3,
+    §19.7.4). Whoever catches it on its way still logs it once."""
     setattr(exc, _REPORTED, True)
     return exc
+
+
+def was_reported(exc: BaseException) -> bool:
+    """Whether *exc* is a failure its own turn already reported to ON_ERROR
+    (:func:`mark_reported`)."""
+    return bool(getattr(exc, _REPORTED, False))
 
 
 def needs_reporting(exc: BaseException | None) -> bool:
@@ -34,7 +40,7 @@ def needs_reporting(exc: BaseException | None) -> bool:
     reported (:func:`mark_reported`)."""
     if isinstance(exc, TurnCutShortError):
         return False
-    return not getattr(exc, _REPORTED, False)
+    return exc is None or not was_reported(exc)
 
 
 def provider_error_level(exc: ProviderError) -> int:
