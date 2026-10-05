@@ -29,6 +29,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A supervisor's pass 1 stopped by a steering `Cancel` logs nothing, as a
+  room turn stopped so does (RMK-304, RFC §19.7.3): it used to warn "no
+  answer to hand on".
 - The text a steering `Cancel` cuts mid-answer is stored with
   `metadata.cancelled = true`, as the text of a turn cancelled from outside or
   stopped by its transport is (RMK-304, RFC §12.2 step 13s): a reader could

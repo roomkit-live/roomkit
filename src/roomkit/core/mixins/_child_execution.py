@@ -132,15 +132,17 @@ async def persist_tool_calls(
         await kit._finish_cascade(cascade, room_id, caller_logs=True)
     record = dict(stream_record(sr))
     reason = _turn_end(record, writer.persisted)
-    if reason not in (None, "completed"):
+    if reason in (None, "completed"):
+        return PersistedTurn(answer, reason, record)
+    # A stop someone chose (a steering Cancel) is no failure to log (RFC §19.7.3).
+    if reason != "cancelled":
         _tasks_logger.warning(
             "Turn of %s in room %s ended %s: no answer to hand on",
             sr.source_channel_id,
             room_id,
             reason,
         )
-        return PersistedTurn("", reason, record)
-    return PersistedTurn(answer, reason, record)
+    return PersistedTurn("", reason, record)
 
 
 async def _persist_child_stream(

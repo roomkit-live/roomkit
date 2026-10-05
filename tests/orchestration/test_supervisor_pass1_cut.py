@@ -143,15 +143,18 @@ async def test_a_cut_pass_answers_with_the_supervisors_fallback() -> None:
     await kit.close()
 
 
-async def test_a_pass_stopped_on_purpose_says_nothing() -> None:
-    kit, _, transport, delegated = await _supervised(
-        MockAIProvider(ai_responses=[LOOPING] * 50, streaming=True), cancel=True, max_rounds=3
-    )
+async def test_a_pass_stopped_on_purpose_says_nothing(caplog: pytest.LogCaptureFixture) -> None:
+    with caplog.at_level(logging.WARNING, logger="roomkit"):
+        kit, _, transport, delegated = await _supervised(
+            MockAIProvider(ai_responses=[LOOPING] * 50, streaming=True), cancel=True, max_rounds=3
+        )
 
     assert delegated == []
     assert await _supervisor_messages(kit) == []
     assert _delivered_messages(transport) == []
     assert transport.streams == []
+    # A stop someone chose is no failure: nothing logged, as on a room turn.
+    assert "no answer to hand on" not in caplog.text
     await kit.close()
 
 
