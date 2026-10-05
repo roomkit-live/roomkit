@@ -15,6 +15,27 @@ from typing import Any
 from roomkit.core.exceptions import TaskTurnFailedError, TurnCutShortError
 from roomkit.providers.ai.base import ProviderError
 
+_REPORTED = "_roomkit_reported"
+
+
+def mark_reported[E: BaseException](exc: E) -> E:
+    """Mark *exc* as a failure its own turn already reported to ON_ERROR and
+    logged: whoever receives it next (a strategy's caller, a pass's room
+    turn) hands it on, its type unchanged, and reports and logs it no more
+    (RFC §15.2)."""
+    setattr(exc, _REPORTED, True)
+    return exc
+
+
+def needs_reporting(exc: BaseException | None) -> bool:
+    """Whether a turn's failure *exc* is still to be reported to ON_ERROR and
+    logged where it surfaces: not a turn that ended before its answer (an
+    expected end, :class:`TurnCutShortError`), nor one its own turn already
+    reported (:func:`mark_reported`)."""
+    if isinstance(exc, TurnCutShortError):
+        return False
+    return not getattr(exc, _REPORTED, False)
+
 
 def provider_error_level(exc: ProviderError) -> int:
     """ERROR for a missing model or a server fault, WARNING for a transient.

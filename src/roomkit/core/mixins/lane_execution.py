@@ -16,6 +16,7 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
+from roomkit.core._failure_log import needs_reporting
 from roomkit.core.event_router import CHAIN_DEPTH_LIMIT
 from roomkit.core.exceptions import RoomNotFoundError
 from roomkit.core.mixins.helpers import (
@@ -694,16 +695,7 @@ class LaneExecutionMixin(HelpersMixin):
             # trigger's own delivery set, never a reentry's.
             if result.errors:
                 total = len(result.delivery_outputs) + len(result.errors)
-                logger.warning(
-                    "Partial broadcast failure: %d/%d channels failed",
-                    len(result.errors),
-                    total,
-                    extra={
-                        "room_id": room_id,
-                        "event_id": event.id,
-                        "failed_channels": list(result.errors.keys()),
-                    },
-                )
+                _log_partial_failure(result, total, room_id, event.id)
                 await self._emit_framework_event(
                     "broadcast_partial_failure",
                     room_id=room_id,
@@ -797,14 +789,16 @@ class LaneExecutionMixin(HelpersMixin):
     ) -> None:
         """Surface intelligence-channel failures to ON_ERROR so hosts can
         render an error card (transport delivery failures are not turn-level
-        agent errors). Fired off the room lock."""
+        agent errors), each once: a turn that ended before its answer is an
+        expected end, and a failure its own turn reported is not reported
+        again (:func:`needs_reporting`). Fired off the room lock."""
         for binding in context.bindings:
             if binding.category != ChannelCategory.INTELLIGENCE:
                 continue
             error_msg = result.errors.get(binding.channel_id)
-            if not error_msg:
-                continue
             exc = result.errors_exc.get(binding.channel_id)
+            if not error_msg or not needs_reporting(exc):
+                continue
             await self._fire_error_hook(
                 event.room_id,
                 context,
@@ -1072,3 +1066,18 @@ def record_buffered_reply(
     ]
     entry = turn_summary(output.response_metadata, *messages)
     add_turn_entry(cascade.response_metadata, channel_id, entry)
+
+
+def _log_partial_failure(result: BroadcastResult, total: int, room_id: str, event_id: str) -> None:
+    """Sum up a delivery set's failures in one line, leaving out an expected
+    end and a failure its own turn already reported and logged
+    (:func:`needs_reporting`): an incident is logged once."""
+    failed = [ch for ch in result.errors if needs_reporting(result.errors_exc.get(ch))]
+    if not failed:
+        return
+    logger.warning(
+        "Partial broadcast failure: %d/%d channels failed",
+        len(failed),
+        total,
+        extra={"room_id": room_id, "event_id": event_id, "failed_channels": failed},
+    )
