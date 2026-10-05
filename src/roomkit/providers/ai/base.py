@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import sys
 import time as _time
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator, Callable, Iterable, Iterator, Mapping
@@ -251,6 +252,46 @@ class ProviderError(Exception):
 # HTTP status codes that are transient and worth retrying for any AI provider.
 # Providers may extend this set with their own (e.g. Anthropic's 529 "overloaded").
 RETRYABLE_STATUS_CODES: frozenset[int] = frozenset({429, 500, 502, 503})
+
+# What an SDK error that lost its status says of a transient one: some SDKs
+# (Mistral, google-genai) raise HTTP errors that carry no code, and their
+# message is all there is to read.
+_RETRYABLE_ERROR_TERMS: tuple[str, ...] = ("rate", "limit", "429", "500", "502", "503")
+
+
+def is_transport_failure(exc: BaseException) -> bool:
+    """Whether *exc*, or an exception it was raised from, is a transport
+    failure: the connection refused, reset or timed out before any status.
+
+    It is the same failure whichever SDK surfaces it (Anthropic's and
+    OpenAI's ``APIConnectionError`` are raised from it, Mistral and
+    google-genai let it through as it is), and it is worth retrying on every
+    provider. ``httpx`` and ``httpx2`` (Anthropic's client) are read only if
+    already imported: an exception of theirs cannot exist otherwise.
+    """
+    transport: tuple[type[BaseException], ...] = (ConnectionError, TimeoutError)
+    for client in ("httpx", "httpx2"):
+        module = sys.modules.get(client)
+        if module is not None:
+            transport = (*transport, module.TransportError)
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None and id(current) not in seen:
+        if isinstance(current, transport):
+            return True
+        seen.add(id(current))
+        current = current.__cause__
+    return False
+
+
+def unstatused_failure_retryable(exc: BaseException) -> bool:
+    """Whether an SDK failure that carries no status is worth retrying: a
+    transport failure (:func:`is_transport_failure`), or an error whose
+    message names a transient status."""
+    if is_transport_failure(exc):
+        return True
+    text = str(exc).lower()
+    return any(term in text for term in _RETRYABLE_ERROR_TERMS)
 
 
 # The wordings observed across providers for a context-window refusal. One
