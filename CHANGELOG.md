@@ -852,6 +852,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A speech-to-speech session connected again under the same id abandons
+  and reports once the calls its previous connection issued on every
+  provider (RMK-508, RFC §12.4): Gemini sent a stale result on the new
+  socket, ElevenLabs handed it to the replaced conversation's handler, and
+  GPT-Live never reported the abandonment; OpenAI Realtime, xAI and
+  Deepgram already did. A result submitted to Gemini for a session it no
+  longer holds is dropped with a log, as on every provider, instead of
+  raising.
+
 - `AgentReasoningBackend.close()` closes the agent it owns (RMK-511): a
   speech-to-speech channel's close left the agent's provider open and its
   turns uncut. The backend already refused an agent the kit holds.

@@ -14,7 +14,7 @@ import asyncio
 import json
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from pydantic import SecretStr
@@ -31,6 +31,7 @@ from tests.test_openai_live import _FakeWS as LiveWS
 from tests.test_openai_live import _function_call, _provider, _started
 from tests.test_providers.test_gemini_realtime import _load_provider, _make_mock_live_session
 from tests.test_realtime_deepgram import _connect as deepgram_connect
+from tests.test_realtime_elevenlabs import _FakeAsyncConversation, _install_fake_sdk
 
 TOOL = {"name": "lookup", "description": "Look up", "parameters": {"type": "object"}}
 
@@ -63,6 +64,12 @@ class _Gemini:
         await self.provider.submit_tool_result(self.session, call_id, '{"ok": true}')
         return self.live.send_tool_response.await_count > 0
 
+    async def reconnect(self) -> None:
+        self.live = _make_mock_live_session()
+        self.provider._open_live_session = AsyncMock(return_value=(None, self.live))
+        self.provider._start_receive_loop = MagicMock()
+        await self.provider.connect(self.session, tools=[TOOL])
+
     async def stop(self) -> None:
         return None
 
@@ -90,6 +97,14 @@ class _OpenAIRealtime:
             json.loads(c.args[0]).get("item", {}).get("call_id") == call_id
             for c in self.ws.send.await_args_list
         )
+
+    async def reconnect(self) -> None:
+        self.ws = AsyncMock()
+        self.session.state = VoiceSessionState.CONNECTING
+        with patch("websockets.connect", AsyncMock(return_value=self.ws)):
+            await self.provider.connect(
+                self.session, tools=[TOOL], input_sample_rate=24000, output_sample_rate=24000
+            )
 
     async def stop(self) -> None:
         return None
@@ -122,6 +137,13 @@ class _GPTLive:
         await self.provider.submit_tool_result(self.session, call_id, '{"ok": true}')
         return any(call_id in str(frame) for frame in self.ws.sent[before:])
 
+    async def reconnect(self) -> None:
+        self.ws = LiveWS()
+        self.ws.push(_started())
+        self.session.state = VoiceSessionState.CONNECTING
+        with patch("websockets.connect", AsyncMock(return_value=self.ws)):
+            await self.provider.connect(self.session, tools=[TOOL])
+
     async def stop(self) -> None:
         await self.provider.disconnect(self.session)
 
@@ -133,6 +155,7 @@ class _Deepgram:
         self.issued = 0
         self.provider.on_tool_call(lambda *args: setattr(self, "issued", self.issued + 1))
         self.ws = await deepgram_connect(self.provider, self.session)
+        self.old_ws: list[Any] = []
         return self.provider
 
     async def issue(self, call_id: str) -> None:
@@ -151,8 +174,14 @@ class _Deepgram:
         await self.provider.submit_tool_result(self.session, call_id, '{"ok": true}')
         return any(call_id in str(frame) for frame in self.ws.sent[before:])
 
+    async def reconnect(self) -> None:
+        self.old_ws.append(self.ws)
+        self.session.state = VoiceSessionState.CONNECTING
+        self.ws = await deepgram_connect(self.provider, self.session)
+
     async def stop(self) -> None:
-        self.ws.finish()
+        for ws in [*self.old_ws, self.ws]:
+            ws.finish()
         await asyncio.sleep(0.05)
 
 
@@ -184,10 +213,25 @@ class _ElevenLabs:
         await asyncio.wait([task], timeout=1)
         return task.done() and not task.cancelled() and task.exception() is None
 
+    async def reconnect(self) -> None:
+        """Connect again through the fake SDK the provider's own tests use."""
+        self.patches = pytest.MonkeyPatch()
+        _install_fake_sdk(self.patches)
+        self.session.state = VoiceSessionState.CONNECTING
+        connecting = asyncio.create_task(self.provider.connect(self.session, tools=[TOOL]))
+        await until(lambda: bool(_FakeAsyncConversation.instances))
+        conversation = _FakeAsyncConversation.instances[-1]
+        await conversation.started.wait()
+        await conversation.audio_interface.start(AsyncMock())
+        await connecting
+
     async def stop(self) -> None:
         for task in self.waiting.values():
             task.cancel()
         await asyncio.gather(*self.waiting.values(), return_exceptions=True)
+        if getattr(self, "patches", None) is not None:
+            await self.provider.disconnect(self.session)
+            self.patches.undo()
 
 
 PROVIDERS = {
@@ -234,25 +278,22 @@ async def test_a_cancellation_naming_a_call_twice_abandons_it_once() -> None:
     assert abandoned == [["c1"]]
 
 
-async def test_a_second_connect_under_a_live_session_abandons_the_old_connection_s_calls() -> None:
-    """Deepgram connected again under the same session id: the call the old
-    connection issued is abandoned and reported, and its result is not
-    answered on the new socket."""
-    driver = _Deepgram()
+@pytest.mark.parametrize("name", list(PROVIDERS))
+async def test_a_second_connect_under_a_live_session_abandons_the_old_connection_s_calls(
+    name: str,
+) -> None:
+    """Connected again under the same session id, on every provider: the call
+    the old connection issued is abandoned and reported once, and its result
+    goes out on neither connection (RFC §12.4)."""
+    driver = PROVIDERS[name]()
     provider = await driver.start()
     abandoned: list[list[str]] = []
     provider.on_tool_call_cancelled(lambda session, ids: abandoned.append(list(ids)))
     await driver.issue("old-1")
-    old_ws = driver.ws
 
-    driver.session.state = VoiceSessionState.CONNECTING
-    new_ws = await deepgram_connect(provider, driver.session)
-    before = len(new_ws.sent)
-    await provider.submit_tool_result(driver.session, "old-1", "{}")
-    answered = any("old-1" in str(frame) for frame in new_ws.sent[before:])
-    for ws in (old_ws, new_ws):
-        ws.finish()
-    await asyncio.sleep(0.05)
+    await driver.reconnect()
+    late = await driver.sent("old-1")
+    await driver.stop()
 
     assert abandoned == [["old-1"]]
-    assert answered is False
+    assert late is False
