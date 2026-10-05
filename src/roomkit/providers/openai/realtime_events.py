@@ -72,7 +72,6 @@ class OpenAIRealtimeEventHandlersMixin(RealtimeVoiceProvider):
     _connections: dict[str, Any]
     _responding: set[str]
     _pending_responses: dict[str, PendingResponse]
-    _open_calls: dict[str, set[str]]
     _floor_held: set[str]
     _turns_owed: set[str]
     _provider_configs: dict[str, dict[str, Any]]
@@ -263,15 +262,13 @@ class OpenAIRealtimeEventHandlersMixin(RealtimeVoiceProvider):
         # output cap cut it: the channel refuses that call (RFC §12.4).
         cut = item.get("status") == "incomplete"
         arguments = realtime_call_arguments(item.get("arguments"), cut=cut)
-        open_calls = self._open_calls.setdefault(session.id, set())
-        if call_id and call_id not in open_calls:
+        if self._book_tool_call(session, call_id):
             # Only a call the channel may answer holds the response open: one
             # without an id, or under an id in flight, is refused and reported
             # with nothing sent (RFC §12.4).
             pending = self._pending_responses.setdefault(session.id, PendingResponse())
             pending.call_ids.add(call_id)
             pending.had_calls = True
-            open_calls.add(call_id)
         await self._fire(
             self._tool_call_callbacks,
             session,

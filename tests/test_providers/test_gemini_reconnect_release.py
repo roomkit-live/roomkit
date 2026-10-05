@@ -74,8 +74,7 @@ async def _run(path: str) -> list[str]:
         tools=[],
         temperature=None,
     )
-    state.pending_call_ids.add("c1")
-    state.call_names["c1"] = "lookup"
+    provider._book_tool_call(session, "c1", "lookup")
     provider._sessions[session.id] = state
 
     if path == "reconfigure":

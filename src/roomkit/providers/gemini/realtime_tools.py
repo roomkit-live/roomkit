@@ -27,13 +27,14 @@ class GeminiLiveToolsMixin(RealtimeVoiceProvider):
     """Tool calls and the bookkeeping of the ones still in flight.
 
     Mixed into ``GeminiLiveProvider``, which owns the sessions and the model
-    id. ``pending_call_ids`` names every call the current connection issued
-    and has not released. From 3.8 a tool runs in the background by default
-    and a call the model does wait on (a BLOCKING declaration, or any call on
-    the pre-3.8 family) closes the input channel: ``blocking_call_ids`` says
-    which, and the queued injections wait behind it. Three things release a
-    call: the result, a server-side cancellation, or the loss of the
-    connection that issued the id.
+    id. The provider's book (RFC §12.4) names every call the current
+    connection issued and has not released, each with the function it named.
+    From 3.8 a tool runs in the background by default and a call the model
+    does wait on (a BLOCKING declaration, or any call on the pre-3.8 family)
+    closes the input channel: ``blocking_call_ids`` says which, and the
+    queued injections wait behind it. Three things release a call: the
+    result, a server-side cancellation, or the loss of the connection that
+    issued the id.
     """
 
     # Owned by GeminiLiveProvider / its other mixins; declared for typing. An
@@ -65,23 +66,26 @@ class GeminiLiveToolsMixin(RealtimeVoiceProvider):
         if state is None:
             raise RuntimeError("Cannot deliver tool result without an active Gemini connection")
 
-        if call_id in state.cancelled_call_ids:
-            # The server discarded this call (tool_call_cancellation) or the
-            # connection it belonged to is gone: it will not read the result,
-            # and a FunctionResponse for an id it does not know is an error
-            # the application never asked for. Checked before the connection
-            # is: the call was released the moment its socket was lost, so a
-            # result arriving during the back-off is stale, not an error.
-            state.cancelled_call_ids.discard(call_id)
-            logger.info(
-                "[Gemini] dropping the result of cancelled tool call %s (session %s)",
-                call_id,
-                session.id,
-            )
-            return
-
-        if state.live_session is None:
+        # A call the server discarded (tool_call_cancellation), one whose
+        # connection is gone, or one never issued is off the book: the
+        # server will not read its result, and a FunctionResponse for an id
+        # it does not know is an error the application never asked for.
+        # Checked before the connection is: the call was released the moment
+        # its socket was lost, so a result arriving during the back-off is
+        # stale, not an error.
+        if self._holds_tool_call(session, call_id) and state.live_session is None:
             raise RuntimeError("Cannot deliver tool result without an active Gemini connection")
+        # A scheduling the config cannot take is refused before the call
+        # leaves the book: it stays owed, and is abandoned as any other.
+        scheduling = self._response_scheduling(state)
+        # Released as its result goes, before the send yields: the channel
+        # frees the id at the same step, so a call the model issues under it
+        # meanwhile is a new call to both (RFC §12.4).
+        held, name = self._answerable_tool_call(session, call_id)
+        if not held or state.live_session is None:
+            return
+        was_blocking = call_id in state.blocking_call_ids
+        state.blocking_call_ids.discard(call_id)
 
         self._log_tool_result(state, session, call_id, result)
 
@@ -90,9 +94,7 @@ class GeminiLiveToolsMixin(RealtimeVoiceProvider):
         # gemini-3.8-live-extended-thinking reads an unnamed response as a
         # call that failed and tells the user a system error occurred, while
         # the same payload under the call's name is read as the result
-        # (verified against the live API, 2026-09-18). A result for a call
-        # this connection never issued still goes out unnamed: there is
-        # nothing to name it after, and the server answers for the id.
+        # (verified against the live API, 2026-09-18).
         #
         # A background call returns while the model is mid-sentence, so the
         # response has to say when to use it. WHEN_IDLE waits for the end of
@@ -102,28 +104,12 @@ class GeminiLiveToolsMixin(RealtimeVoiceProvider):
         # leaving the field unset keeps the pre-3.8 wire byte for byte.
         response_kwargs: dict[str, Any] = {
             "id": call_id,
-            "name": state.call_names.get(call_id, ""),
+            "name": name,
             "response": function_response_body(result, is_error=is_error),
         }
-        # Only when the caller asks. A default here looked harmless and was
-        # not: gemini-3.8-live-extended-thinking closes the session with
-        # `1007 Function response scheduling is not supported for this model`,
-        # and the models that do take it already deliver a background result
-        # sensibly on their own. Nothing to gain, a session to lose.
-        was_blocking = call_id in state.blocking_call_ids
-        scheduling = state.provider_config.get("tool_response_scheduling")
-        if scheduling and not was_blocking:
-            if live_model_profile(self._model).response_scheduling:
-                response_kwargs["scheduling"] = enum_value(
-                    types.FunctionResponseScheduling, scheduling, "tool_response_scheduling"
-                )
-            else:
-                warn_unsupported(self._model, "tool_response_scheduling", state.warned_unsupported)
+        if scheduling is not None and not was_blocking:
+            response_kwargs["scheduling"] = scheduling
 
-        # The call is released as its result goes, before the send yields:
-        # the channel frees the id at the same step, so a call the model
-        # issues under it meanwhile is a new call to both (RFC §12.4).
-        self._release_call(state, call_id)
         await state.live_session.send_tool_response(
             function_responses=[types.FunctionResponse(**response_kwargs)],
         )
@@ -131,6 +117,27 @@ class GeminiLiveToolsMixin(RealtimeVoiceProvider):
         # Flush what its blocking waited on.
         if not state.blocking_call_ids:
             await self._flush_queued_injections(state)
+
+    def _response_scheduling(self, state: _GeminiSessionState) -> Any:
+        """The scheduling a background call's result is sent with, as the
+        session's config asks for it; ``None`` when it asks for none or the
+        model refuses it (warned once).
+
+        Only when the caller asks. A default here looked harmless and was
+        not: gemini-3.8-live-extended-thinking closes the session with
+        `1007 Function response scheduling is not supported for this model`,
+        and the models that do take it already deliver a background result
+        sensibly on their own. Nothing to gain, a session to lose.
+        """
+        scheduling = state.provider_config.get("tool_response_scheduling")
+        if not scheduling:
+            return None
+        if not live_model_profile(self._model).response_scheduling:
+            warn_unsupported(self._model, "tool_response_scheduling", state.warned_unsupported)
+            return None
+        return enum_value(
+            genai_types().FunctionResponseScheduling, scheduling, "tool_response_scheduling"
+        )
 
     def _log_tool_result(
         self, state: _GeminiSessionState, session: VoiceSession, call_id: str, result: str
@@ -187,13 +194,6 @@ class GeminiLiveToolsMixin(RealtimeVoiceProvider):
             )
             await self._send_image(state, image_data, mime_type, prompt, silent)
 
-    @staticmethod
-    def _release_call(state: _GeminiSessionState, call_id: str) -> None:
-        """Take one call off the books, whether or not the model waited on it."""
-        state.pending_call_ids.discard(call_id)
-        state.blocking_call_ids.discard(call_id)
-        state.call_names.pop(call_id, None)
-
     async def _release_calls_lost_with_the_connection(self, state: _GeminiSessionState) -> None:
         """Forget every tool call the old socket issued, then deliver the
         injections a blocking one held.
@@ -219,10 +219,8 @@ class GeminiLiveToolsMixin(RealtimeVoiceProvider):
     async def _abandon_open_calls(self, state: _GeminiSessionState) -> None:
         """Forget every tool call the connection issued and report them: no
         other connection will read their results (RFC §12.4)."""
-        orphaned = sorted(state.pending_call_ids)
-        state.pending_call_ids.clear()
         state.blocking_call_ids.clear()
-        state.call_names.clear()
+        orphaned = sorted(self._take_tool_calls(state.session))
         if not orphaned:
             return
         logger.info(
@@ -230,7 +228,6 @@ class GeminiLiveToolsMixin(RealtimeVoiceProvider):
             len(orphaned),
             state.session.id,
         )
-        state.cancelled_call_ids.update(orphaned)
         # The application is still working for the old socket. Same fact as
         # a server cancellation: the model will not read the result.
         await self._abandon_tool_calls(state.session, orphaned)
@@ -251,12 +248,11 @@ class GeminiLiveToolsMixin(RealtimeVoiceProvider):
             # for either, the channel refusing them (RFC §12.4). One with an id
             # belongs to this connection now, even if an earlier one cancelled
             # the same id.
-            if fc.id and fc.id not in state.pending_call_ids:
-                state.cancelled_call_ids.discard(fc.id)
-                state.pending_call_ids.add(fc.id)
-                state.call_names[fc.id] = fc.name or ""
-                if fc.name in state.blocking_tool_names:
-                    state.blocking_call_ids.add(fc.id)
+            if (
+                self._book_tool_call(session, fc.id or "", fc.name or "")
+                and fc.name in state.blocking_tool_names
+            ):
+                state.blocking_call_ids.add(fc.id)
             args_dict = dict(fc.args) if fc.args else {}
             self._log_event(
                 session.id,
@@ -293,9 +289,7 @@ class GeminiLiveToolsMixin(RealtimeVoiceProvider):
             return
         logger.info("[Gemini] server cancelled tool call(s) %s (session %s)", ids, session.id)
         self._log_event(session.id, "tool_call_cancellation", ids=ids)
-        for call_id in ids:
-            self._release_call(state, call_id)
-            state.cancelled_call_ids.add(call_id)
-        await self._abandon_tool_calls(session, ids)
+        state.blocking_call_ids.difference_update(ids)
+        await self._abandon_open_tool_calls(session, ids)
         if not state.blocking_call_ids:
             await self._flush_queued_injections(state)

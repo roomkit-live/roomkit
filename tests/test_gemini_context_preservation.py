@@ -34,6 +34,14 @@ def seed(provider, *, strict=True, live=None):
     return session, state
 
 
+async def issue_call(provider, session, call_id):
+    """The connection issues *call_id*: Gemini's own ``tool_call`` message."""
+    call = SimpleNamespace(id=call_id, name="activate_skill", args={})
+    await provider._handle_server_response(
+        session, SimpleNamespace(tool_call=SimpleNamespace(function_calls=[call]))
+    )
+
+
 @pytest.mark.parametrize("strict", [True, False])
 def test_config_compression_and_resumption_match_context_policy(provider, strict):
     config = provider._build_config(
@@ -87,6 +95,7 @@ async def test_reconfigure_cannot_disable_preservation_mid_session(provider):
 
 async def test_unavailable_connection_does_not_claim_result_delivery(provider):
     session, _ = seed(provider)
+    await issue_call(provider, session, "activation")
     with pytest.raises(RuntimeError, match="active Gemini connection"):
         await provider.submit_tool_result(session, "activation", '{"instructions":"full body"}')
 
@@ -105,6 +114,7 @@ async def test_nonresumable_update_invalidates_old_handle(provider, strict):
 async def test_actual_sdk_response_keeps_full_instructions_and_reference(provider):
     live = SimpleNamespace(send_tool_response=AsyncMock())
     session, _ = seed(provider, live=live)
+    await issue_call(provider, session, "activation")
     import json
 
     payload = {"instructions": "Mandatory rule.\n" * 2500, "references": ["guide.md"]}

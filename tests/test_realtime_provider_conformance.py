@@ -175,7 +175,7 @@ def _elevenlabs_waiting_on(call_id: str) -> tuple[ElevenLabsRealtimeProvider, Vo
     provider = ElevenLabsRealtimeProvider(_ELEVENLABS)
     session = _session()
     provider._sessions[session.id] = session
-    provider._pending_tools[session.id] = {call_id: asyncio.get_running_loop().create_future()}
+    provider._book_tool_call(session, call_id, asyncio.get_running_loop().create_future())
     return provider, session, _told(provider)
 
 
@@ -305,8 +305,7 @@ async def test_gemini_live_flags_a_failed_call_as_gemini_text_does(
     submit: str, result: str, response: dict[str, str]
 ) -> None:
     """The flag follows how the call ended, never the result's text (RMK-375)."""
-    provider, session, state, live = _blocking_call_state()
-    state.call_names["call-1"] = "book_room"
+    provider, session, _state, live = _blocking_call_state(tool="book_room")
 
     await getattr(provider, submit)(session, "call-1", result)
 

@@ -75,7 +75,6 @@ class ElevenLabsRealtimeProvider(RealtimeVoiceProvider):
         self._conversations: dict[str, Any] = {}  # AsyncConversation objects
         self._input_callbacks: dict[str, Any] = {}  # async audio input callbacks
         self._client_tools: dict[str, Any] = {}  # ClientTools objects
-        self._pending_tools: dict[str, dict[str, asyncio.Future[str]]] = {}
         self._supervisors: dict[str, asyncio.Task[None]] = {}
         self._readiness: dict[str, asyncio.Future[None]] = {}
         self._pending_audio: dict[str, bytearray] = {}
@@ -389,17 +388,11 @@ class ElevenLabsRealtimeProvider(RealtimeVoiceProvider):
     def _take_pending_tool(
         self, session: VoiceSession, call_id: str
     ) -> asyncio.Future[str] | None:
-        """The future the SDK handler for ``call_id`` awaits, off the books."""
-        pending = self._pending_tools.get(session.id)
-        future = pending.pop(call_id, None) if pending else None
-        if future is None:
-            logger.warning(
-                "[ElevenLabs] tool result for unknown call %s (session %s) — "
-                "the call timed out or the session ended",
-                call_id,
-                session.id,
-            )
-        return future
+        """The future the SDK handler for ``call_id`` awaits, off the book;
+        ``None`` for a call that timed out, whose session ended, or that was
+        never issued (RFC §12.4)."""
+        held, future = self._answerable_tool_call(session, call_id)
+        return future if held else None
 
     async def interrupt(self, session: VoiceSession) -> None:
         # ElevenLabs decides interruption server-side from its own VAD; the
@@ -424,7 +417,7 @@ class ElevenLabsRealtimeProvider(RealtimeVoiceProvider):
         await self._end_response(session)
         # A handoff reconnects through here too (the base reconfigure): the
         # new conversation never issued these calls (RFC §12.4).
-        abandoned = self._reject_pending_tools(session.id, "the voice session ended")
+        abandoned = self._reject_pending_tools(session, "the voice session ended")
         await self._abandon_tool_calls(session, abandoned)
 
         conversation = self._conversations.pop(session.id, None)
@@ -578,11 +571,9 @@ class ElevenLabsRealtimeProvider(RealtimeVoiceProvider):
             # ``tool_call_id`` the model wrote is one of them (sdk_patch).
             call_id, arguments = sdk_patch.split_call(parameters)
 
-            pending_calls = self._pending_tools.setdefault(session.id, {})
-            if not call_id or call_id in pending_calls:
-                await self._hand_on_unanswerable(session, call_id, name, arguments)
             future: asyncio.Future[str] = asyncio.get_running_loop().create_future()
-            pending_calls[call_id] = future
+            if not self._book_tool_call(session, call_id, future):
+                await self._hand_on_unanswerable(session, call_id, name, arguments)
 
             await self._fire(
                 self._tool_call_callbacks,
@@ -600,25 +591,20 @@ class ElevenLabsRealtimeProvider(RealtimeVoiceProvider):
                 # The agent reads an error now and never the result: the call
                 # is abandoned, its id freed before the channel is told, as
                 # every provider frees it (RFC §12.4).
-                self._forget_pending(session.id, call_id, future)
-                await self._abandon_tool_calls(session, [call_id])
+                await self._abandon_open_tool_calls(
+                    session, [call_id], where=lambda booked: booked is future
+                )
                 # Raising is how the SDK is told this is an error result;
                 # returning a string would read as a successful call.
                 raise RuntimeError(
                     f"Tool '{name}' did not return within {self._config.tool_timeout_s:g}s"
                 ) from None
             finally:
-                self._forget_pending(session.id, call_id, future)
+                # Once its result went out, the id may already name a newer
+                # call, whose future this must not take.
+                self._drop_tool_call(session, call_id, future)
 
         return handler
-
-    def _forget_pending(self, session_id: str, call_id: str, future: asyncio.Future[str]) -> None:
-        """Drop *call_id*'s pending future when it is still *future*: once its
-        result went out, the id may already name a newer call, whose future
-        this must not take."""
-        pending = self._pending_tools.get(session_id)
-        if pending is not None and pending.get(call_id) is future:
-            del pending[call_id]
 
     async def _hand_on_unanswerable(
         self, session: VoiceSession, call_id: str, name: str, arguments: dict[str, Any] | str
@@ -632,10 +618,10 @@ class ElevenLabsRealtimeProvider(RealtimeVoiceProvider):
         )
         raise asyncio.CancelledError
 
-    def _reject_pending_tools(self, session_id: str, reason: str) -> list[str]:
+    def _reject_pending_tools(self, session: VoiceSession, reason: str) -> list[str]:
         """Fail every in-flight call so no SDK handler is left hanging; the
         ids of the calls it abandoned."""
-        pending = self._pending_tools.pop(session_id, {})
+        pending = self._take_tool_calls(session)
         for call_id, future in pending.items():
             if not future.done():
                 future.set_exception(RuntimeError(f"Tool call {call_id} abandoned: {reason}"))
@@ -677,7 +663,7 @@ class ElevenLabsRealtimeProvider(RealtimeVoiceProvider):
         idle_s = self._config.response_idle_ms / 1000
         while session.id in self._responding:
             await asyncio.sleep(idle_s / 2)
-            if self._pending_tools.get(session.id):
+            if self._has_open_tool_calls(session):
                 continue
             last = self._last_audio_at.get(session.id)
             if last is None or (time.monotonic() - last) >= idle_s:
@@ -714,7 +700,7 @@ class ElevenLabsRealtimeProvider(RealtimeVoiceProvider):
         if ready is not None and not ready.done():
             ready.set_exception(RuntimeError(message))
         await self._end_response(session)
-        abandoned = self._reject_pending_tools(session.id, message)
+        abandoned = self._reject_pending_tools(session, message)
         self._forget_session(session.id)
         await self._abandon_tool_calls(session, abandoned)
 
@@ -740,7 +726,7 @@ class ElevenLabsRealtimeProvider(RealtimeVoiceProvider):
             ready.cancel()
         self._pending_audio.pop(session_id, None)
         self._audio_locks.pop(session_id, None)
-        self._pending_tools.pop(session_id, None)
+        self._forget_tool_calls(session_id)
         self._last_audio_at.pop(session_id, None)
         self._responding.discard(session_id)
 

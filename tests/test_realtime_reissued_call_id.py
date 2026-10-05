@@ -300,6 +300,6 @@ async def test_elevenlabs_answers_an_id_reissued_while_its_report_runs(
 
     # The SDK hands a refusal back as the handler's error: answered, both.
     assert first.done() and second in done
-    assert not provider._pending_tools.get(session.id)
+    assert not provider._has_open_tool_calls(session)
     for task in (first, second):
         assert "not declared" in json.loads(str(task.exception()))["error"]

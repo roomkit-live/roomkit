@@ -125,14 +125,15 @@ class OpenAILiveHostedDelegationMixin(RealtimeVoiceProvider):
         cut = item.get("status") == "incomplete"
         arguments = realtime_call_arguments(item.get("arguments"), cut=cut)
 
-        if call_id and call_id not in state.open_calls:
+        # Booked with the connection that issued it and the delegation it
+        # answers: only that connection's end abandons it (RFC §12.4).
+        if self._book_tool_call(state.session, call_id, (state, key)):
             # Only a call the channel may answer holds the response open: one
             # without an id, or under an id in flight, is refused and reported
             # with nothing sent (RFC §12.4).
             pending = state.pending.setdefault(key, PendingResponse())
             pending.call_ids.add(call_id)
             pending.had_calls = True
-            state.open_calls[call_id] = key
         await self._fire(
             self._tool_call_callbacks,
             state.session,
@@ -201,15 +202,10 @@ class OpenAILiveHostedDelegationMixin(RealtimeVoiceProvider):
         state = self._states.get(session.id)
         if state is None:
             return
-        key = state.open_calls.pop(call_id, None)
-        if key is None:
-            logger.warning(
-                "[%s] tool result for unknown call %s dropped (session %s)",
-                _LOG_TAG,
-                call_id,
-                session.id,
-            )
+        held, booked = self._answerable_tool_call(session, call_id)
+        if not held:
             return
+        _, key = booked
         logger.debug(
             "[%s →] response.item.create call=%s (session %s)", _LOG_TAG, call_id, session.id
         )

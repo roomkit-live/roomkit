@@ -686,6 +686,23 @@ class TestOpenAIRealtimeProvider:
     async def test_submit_tool_result(self):
         mod = _load_provider()
         provider, ws, session = _make_connected_provider(mod)
+        await provider._handle_server_event(
+            session,
+            {
+                "type": "response.output_item.done",
+                "item": {
+                    "type": "function_call",
+                    "call_id": "call-123",
+                    "name": "get_weather",
+                    "arguments": "{}",
+                    "status": "completed",
+                },
+            },
+        )
+        await provider._handle_server_event(
+            session, {"type": "response.done", "response": {"status": "completed", "usage": {}}}
+        )
+        ws.send.reset_mock()
 
         await provider.submit_tool_result(session, "call-123", '{"temperature": 72}')
 
@@ -698,6 +715,17 @@ class TestOpenAIRealtimeProvider:
 
         second_msg = json.loads(ws.send.call_args_list[1][0][0])
         assert second_msg["type"] == "response.create"
+
+    async def test_a_result_for_a_call_never_issued_is_dropped(self):
+        """Nothing goes out for an id the provider never issued or already
+        abandoned, as on every realtime provider (RFC §12.4). It used to be sent."""
+        mod = _load_provider()
+        provider, ws, session = _make_connected_provider(mod)
+
+        await provider.submit_tool_result(session, "never-issued", '{"temperature": 72}')
+        await provider.submit_tool_error(session, "never-issued", '{"error": "no"}')
+
+        ws.send.assert_not_awaited()
 
     async def test_submit_tool_result_no_connection(self):
         mod = _load_provider()

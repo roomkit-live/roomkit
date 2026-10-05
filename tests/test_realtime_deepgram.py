@@ -733,7 +733,7 @@ class TestInboundDispatch:
         # Server-side calls are Deepgram's to run — only the client-side one surfaces.
         assert tool_call.calls == [call]
         assert call == (session, "fc_1", "get_weather", {"location": "Montréal"})
-        pending = provider._states[session.id].pending_calls["fc_1"]
+        pending = provider._open_tool_calls.get(session.id, {}).get("fc_1")
         assert pending.name == "get_weather"
         assert pending.thought_signature is None
 
@@ -788,8 +788,8 @@ class TestInboundDispatch:
             (session, "fc-dup", "first", {}),
             (session, "fc-dup", "second", {}),
         ]
-        assert list(provider._states[session.id].pending_calls) == ["fc-dup"]
-        assert provider._states[session.id].pending_calls["fc-dup"].name == "first"
+        assert list(provider._open_tool_calls.get(session.id, {})) == ["fc-dup"]
+        assert provider._open_tool_calls[session.id]["fc-dup"].name == "first"
         await provider.disconnect(session)
 
     @pytest.mark.parametrize("etype", ["Error", "Warning"])
@@ -1037,8 +1037,23 @@ class TestOutbound:
             "name": "get_weather",
             "content": '{"temp": 21}',
         }
-        assert "fc_9" not in provider._states[session.id].pending_calls
+        assert not provider._holds_tool_call(session, "fc_9")
 
+        await provider.disconnect(session)
+
+    async def test_a_result_for_a_call_never_issued_is_dropped(
+        self, provider: DeepgramAgentProvider, session: VoiceSession
+    ) -> None:
+        """Nothing goes out for an id Deepgram never issued or the provider
+        abandoned, as on every realtime provider (RFC §12.4). It used to be
+        sent without a name."""
+        ws = await _connect(provider, session)
+        sent_before = len(ws.sent)
+
+        await provider.submit_tool_result(session, "fc_unknown", '{"temp": 21}')
+        await provider.submit_tool_error(session, "fc_unknown", '{"error": "no"}')
+
+        assert len(ws.sent) == sent_before
         await provider.disconnect(session)
 
     async def test_submit_tool_result_preserves_gemini_thought_signature(
@@ -1089,7 +1104,7 @@ class TestOutbound:
         original = ws.send
 
         async def send(payload: str) -> None:
-            during_send.append("fc_1" in provider._states[session.id].pending_calls)
+            during_send.append(provider._holds_tool_call(session, "fc_1"))
             ws.push(request)  # Deepgram issues the id again meanwhile
             await tool_call.wait()
             await original(payload)
@@ -1099,7 +1114,7 @@ class TestOutbound:
 
         assert during_send == [False]
         assert ws.last_of_type("FunctionCallResponse")["name"] == "lookup"
-        assert "fc_1" in provider._states[session.id].pending_calls
+        assert provider._holds_tool_call(session, "fc_1")
         await provider.disconnect(session)
 
     async def test_a_failed_tool_result_send_still_releases_the_call(
@@ -1127,7 +1142,7 @@ class TestOutbound:
         ):
             await provider.submit_tool_result(session, "fc_retry", "done")
 
-        assert "fc_retry" not in provider._states[session.id].pending_calls
+        assert not provider._holds_tool_call(session, "fc_retry")
         await provider.disconnect(session)
 
     async def test_interrupt_sends_nothing(

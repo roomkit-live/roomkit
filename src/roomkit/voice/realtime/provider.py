@@ -81,6 +81,10 @@ class RealtimeVoiceProvider(ABC):
         self._delegation_callbacks: list[RealtimeDelegationCallback] = []
         self._usage_callbacks: list[RealtimeUsageCallback] = []
         self._usage_tasks: set[asyncio.Task[None]] = set()
+        # The calls each session issued that still owe a result, by session
+        # and call id, each with what its provider needs to answer it (a
+        # name, a pending future): the one book of RFC §12.4's ids.
+        self._open_tool_calls: dict[str, dict[str, Any]] = {}
 
     @property
     @abstractmethod
@@ -681,6 +685,88 @@ class RealtimeVoiceProvider(ABC):
                 abandoned,
                 label="tool_call_cancelled",
             )
+
+    # -- The book of open calls (RFC §12.4) --
+
+    def _book_tool_call(self, session: VoiceSession, call_id: str, payload: Any = None) -> bool:
+        """Book *call_id* as issued on *session* and owing a result, with
+        *payload*, what answering it takes. ``False``, nothing booked, for a
+        call without an id or under an id still in flight: the channel
+        refuses both and nothing is sent for them."""
+        calls = self._open_tool_calls.setdefault(session.id, {})
+        if not call_id or call_id in calls:
+            return False
+        calls[call_id] = payload
+        return True
+
+    def _holds_tool_call(self, session: VoiceSession, call_id: str) -> bool:
+        """Whether *call_id* is booked on *session*, its result still owed."""
+        return call_id in self._open_tool_calls.get(session.id, {})
+
+    def _open_tool_call_count(self, session: VoiceSession) -> int:
+        """How many of *session*'s calls still owe a result."""
+        return len(self._open_tool_calls.get(session.id, {}))
+
+    def _has_open_tool_calls(self, session: VoiceSession) -> bool:
+        """Whether *session* has a call whose result is still owed."""
+        return self._open_tool_call_count(session) > 0
+
+    def _forget_tool_calls(self, session_id: str) -> None:
+        """Drop a session's book, its calls already abandoned and reported."""
+        self._open_tool_calls.pop(session_id, None)
+
+    def _answerable_tool_call(self, session: VoiceSession, call_id: str) -> tuple[bool, Any]:
+        """Take *call_id* off the book to send its result: ``(True, payload)``
+        while it is booked, before the send yields, so a call issued under the
+        id meanwhile is a new call; ``(False, None)``, logged, for one the
+        provider abandoned or never issued: nothing goes out for it, on every
+        provider (RFC §12.4)."""
+        calls = self._open_tool_calls.get(session.id, {})
+        if call_id not in calls:
+            logger.info(
+                "[%s] result for tool call %r dropped: abandoned or never issued (session %s)",
+                self.name,
+                call_id,
+                session.id,
+            )
+            return False, None
+        return True, calls.pop(call_id)
+
+    def _drop_tool_call(self, session: VoiceSession, call_id: str, payload: Any) -> None:
+        """Take *call_id* off the book while it is still booked with
+        *payload*: once its result went out, the id may name a newer call."""
+        calls = self._open_tool_calls.get(session.id)
+        if calls is not None and call_id in calls and calls[call_id] is payload:
+            del calls[call_id]
+
+    def _take_tool_calls(
+        self,
+        session: VoiceSession,
+        call_ids: Iterable[str] | None = None,
+        *,
+        where: Callable[[Any], bool] | None = None,
+    ) -> dict[str, Any]:
+        """Take off the book *session*'s calls among *call_ids* (all of them
+        when ``None``) whose payload passes *where*, each with its payload."""
+        calls = self._open_tool_calls.get(session.id, {})
+        wanted = list(calls) if call_ids is None else [cid for cid in call_ids if cid in calls]
+        taken = {cid: calls.pop(cid) for cid in wanted if where is None or where(calls[cid])}
+        if not calls:
+            self._open_tool_calls.pop(session.id, None)
+        return taken
+
+    async def _abandon_open_tool_calls(
+        self,
+        session: VoiceSession,
+        call_ids: Iterable[str] | None = None,
+        *,
+        where: Callable[[Any], bool] | None = None,
+    ) -> None:
+        """Abandon the booked calls among *call_ids* (all of *session*'s
+        when ``None``, or those whose payload passes *where*) and report
+        them, each once: an id freed already is not reported again."""
+        taken = self._take_tool_calls(session, call_ids, where=where)
+        await self._abandon_tool_calls(session, list(taken))
 
     async def _fire(
         self,

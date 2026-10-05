@@ -292,6 +292,23 @@ class TestSubmitToolResult:
     ) -> None:
         ws = _mock_ws()
         _inject_ws(provider, session, ws)
+        await provider._handle_server_event(
+            session,
+            {
+                "type": "response.output_item.done",
+                "item": {
+                    "type": "function_call",
+                    "call_id": "call-1",
+                    "name": "get_weather",
+                    "arguments": "{}",
+                    "status": "completed",
+                },
+            },
+        )
+        await provider._handle_server_event(
+            session, {"type": "response.done", "response": {"status": "completed", "usage": {}}}
+        )
+        ws.send.reset_mock()
 
         await provider.submit_tool_result(session, "call-1", '{"temp": 72}')
 

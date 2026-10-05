@@ -120,8 +120,10 @@ async def _gpt_live_calls(
         event = {"type": "response.output_item.done", "item": item}
         ws.push(_response_event(event, delegation_id=delegation))
     await asyncio.sleep(0.1)
-    # Read before the disconnect clears the books.
-    open_calls = dict(provider._states[session.id].open_calls)
+    # Read before the disconnect clears the book: each open call with the
+    # delegation it answers.
+    booked = provider._open_tool_calls.get(session.id, {})
+    open_calls = {call_id: key for call_id, (_, key) in booked.items()}
     await provider.disconnect(session)
     return open_calls, heard
 
@@ -194,7 +196,7 @@ async def test_openai_realtime_books_only_a_call_it_can_answer() -> None:
         await provider._on_output_item_done(session, {"item": {**item, "arguments": "{}"}})
 
     assert heard == ["c1", "c1", ""]
-    assert provider._open_calls[session.id] == {"c1"}
+    assert set(provider._open_tool_calls.get(session.id, {})) == {"c1"}
     assert provider._pending_responses[session.id].call_ids == {"c1"}
 
 

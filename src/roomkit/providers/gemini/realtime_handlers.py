@@ -296,7 +296,7 @@ class GeminiLiveEventHandlersMixin(RealtimeVoiceProvider):
                 "turn_complete",
                 turn=state.turn_count,
                 audio_chunks=state.audio_chunk_count,
-                pending_tool_calls=len(state.pending_call_ids),
+                pending_tool_calls=self._open_tool_call_count(session),
                 interaction_status=str(status) if status is not None else None,
             )
 

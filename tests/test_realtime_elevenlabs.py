@@ -686,7 +686,7 @@ class TestClientToolBridge:
         assert seen["name"] == "get_weather"
         # tool_call_id is SDK plumbing, not a declared parameter of the tool.
         assert seen["arguments"] == {"city": "Montreal"}
-        assert provider._pending_tools[session.id] == {}
+        assert provider._open_tool_calls.get(session.id, {}) == {}
         await asyncio.gather(*tasks)
 
     async def test_a_call_without_an_id_goes_to_the_channel_and_sends_nothing(
@@ -700,7 +700,7 @@ class TestClientToolBridge:
             await asyncio.wait_for(handler({"tool_call_id": None}), 1)
 
         assert heard == [""]
-        assert provider._pending_tools.get(session.id, {}) == {}
+        assert provider._open_tool_calls.get(session.id, {}) == {}
 
     async def test_a_duplicate_inflight_call_goes_to_the_channel_and_sends_nothing(
         self, provider: ElevenLabsRealtimeProvider, session: VoiceSession
@@ -710,7 +710,7 @@ class TestClientToolBridge:
         handler = provider._make_tool_handler(session, "lookup")
         first = asyncio.create_task(handler({"tool_call_id": "same"}))
         for _ in range(100):
-            if "same" in provider._pending_tools.get(session.id, {}):
+            if provider._holds_tool_call(session, "same"):
                 break
             await asyncio.sleep(0)
 
@@ -732,17 +732,17 @@ class TestClientToolBridge:
         handler = provider._make_tool_handler(session, "lookup")
         first = asyncio.create_task(handler({"tool_call_id": "c1"}))
         for _ in range(100):
-            if "c1" in provider._pending_tools.get(session.id, {}):
+            if provider._holds_tool_call(session, "c1"):
                 break
             await asyncio.sleep(0)
 
         await provider.submit_tool_result(session, "c1", "one")
         # The newer call's future, booked before the first handler resumes.
         newer: asyncio.Future[str] = asyncio.get_running_loop().create_future()
-        provider._pending_tools[session.id]["c1"] = newer
+        assert provider._book_tool_call(session, "c1", newer)
         assert await first == "one"
 
-        assert provider._pending_tools[session.id].get("c1") is newer
+        assert provider._open_tool_calls[session.id].get("c1") is newer
 
     async def test_a_call_nobody_answers_times_out_as_an_error(
         self, session: VoiceSession
@@ -758,7 +758,7 @@ class TestClientToolBridge:
         with pytest.raises(RuntimeError, match="did not return within"):
             await handler({"tool_call_id": "call-1"})
 
-        assert provider._pending_tools[session.id] == {}
+        assert provider._open_tool_calls.get(session.id, {}) == {}
 
     async def test_a_timed_out_call_frees_its_id_before_the_channel_hears(
         self, session: VoiceSession
@@ -772,7 +772,7 @@ class TestClientToolBridge:
         held: list[set[str]] = []
 
         async def cancelled(session: VoiceSession, call_ids: list[str]) -> None:
-            held.append(set(provider._pending_tools.get(session.id, {})))
+            held.append(set(provider._open_tool_calls.get(session.id, {})))
             await asyncio.sleep(0)
 
         provider.on_tool_call_cancelled(cancelled)
@@ -806,7 +806,7 @@ class TestClientToolBridge:
     ) -> None:
         future: asyncio.Future[str] = asyncio.get_running_loop().create_future()
         provider._sessions[session.id] = session
-        provider._pending_tools[session.id] = {"call-1": future}
+        provider._book_tool_call(session, "call-1", future)
 
         await provider.disconnect(session)
 
@@ -843,15 +843,14 @@ class TestResponseLifecycle:
         provider._sessions[session.id] = session
 
         await bridge.output(b"\x00")
-        provider._pending_tools[session.id] = {
-            "call-1": asyncio.get_running_loop().create_future()
-        }
+        future: asyncio.Future[str] = asyncio.get_running_loop().create_future()
+        provider._book_tool_call(session, "call-1", future)
         await asyncio.sleep(0.1)
 
         # The agent resumes speaking on this same turn once it has the result.
         end_cb.assert_not_awaited()
 
-        provider._pending_tools[session.id].clear()
+        provider._drop_tool_call(session, "call-1", future)
         await asyncio.sleep(0.1)
 
         end_cb.assert_awaited_once_with(session)

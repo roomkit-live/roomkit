@@ -1514,6 +1514,7 @@ def _make_gemini_provider() -> Any:
     p._response_start_callbacks = []
     p._response_end_callbacks = []
     p._error_callbacks = []
+    p._open_tool_calls = {}
     p._blob_cls = None
     p._mime_cache = {}
     return p

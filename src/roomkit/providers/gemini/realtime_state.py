@@ -77,25 +77,15 @@ class _GeminiSessionState:
     turn_count: int = 0
     tool_result_bytes: int = 0
     input_sample_rate: int = 16000
-    # Ids of every call the current connection issued and has not yet
-    # released. A call is released when its result goes back, when the server
-    # cancels it, or when the connection that issued it is gone: ids are
-    # connection-scoped, so this is the set a reconnect orphans, blocking
-    # calls and background calls alike.
-    pending_call_ids: set[str] = field(default_factory=set)
-    # The function each pending call named, by id, so its result can carry
-    # the name back. ``gemini-3.8-live-extended-thinking`` reads a
-    # FunctionResponse without one as a failed call and tells the user a
-    # system error occurred; the earlier models matched on the id alone.
-    call_names: dict[str, str] = field(default_factory=dict)
     # Tools this session declared BLOCKING. From 3.8 the model runs its calls
     # in the background by default, but a single tool can still ask to block
     # where the model allows it, so the mode is a property of the call and not
     # of the model: deriving it from the model's default let a blocking call
     # slip past the injection queue that exists precisely for it.
     blocking_tool_names: set[str] = field(default_factory=set)
-    # The subset of ``pending_call_ids`` the API is waiting on. Non-empty
-    # means it refuses client_content.
+    # The calls still open (on the provider's book, each with the function
+    # it named) the API is waiting on. Non-empty means it refuses
+    # client_content.
     blocking_call_ids: set[str] = field(default_factory=set)
     queued_injections: list[tuple[bytes, str, str, bool]] = field(default_factory=list)
     realtime_input_sent: bool = False
@@ -120,10 +110,6 @@ class _GeminiSessionState:
     # the provider, it went out for the first call of the process and never
     # again.
     warned_unsupported: set[str] = field(default_factory=set)
-    # Ids the server cancelled (``tool_call_cancellation``) or that a
-    # reconnect orphaned. A result submitted for one is dropped rather than
-    # sent for an id the socket no longer knows.
-    cancelled_call_ids: set[str] = field(default_factory=set)
     # The interruption already ended this response: the turn_complete (and
     # IDLE) that closes the interrupted request must not end it again.
     response_ended_by_interrupt: bool = False

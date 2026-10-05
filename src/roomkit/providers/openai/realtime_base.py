@@ -65,9 +65,6 @@ class OpenAIRealtimeBase(OpenAIRealtimeEventHandlersMixin):
         # The current response's function calls: the model is asked to go on
         # once that response is done and every call has its output (RFC §12.4)
         self._pending_responses: dict[str, PendingResponse] = {}
-        # Every function call issued and not yet answered, whatever its
-        # response: the connection's end abandons them (RFC §12.4)
-        self._open_calls: dict[str, set[str]] = {}
         # provider_config as passed to connect, kept so mid-session calls
         # (image injection, for one) can read settings fixed at connect time
         self._provider_configs: dict[str, dict[str, Any]] = {}
@@ -334,7 +331,9 @@ class OpenAIRealtimeBase(OpenAIRealtimeEventHandlersMixin):
         await self._request_response(session, ws, "text injected")
 
     async def submit_tool_result(self, session: VoiceSession, call_id: str, result: str) -> None:
-        self._open_calls.get(session.id, set()).discard(call_id)
+        held, _ = self._answerable_tool_call(session, call_id)
+        if not held:
+            return
         ws = self._connections.get(session.id)
         if ws is None:
             return
@@ -461,7 +460,7 @@ class OpenAIRealtimeBase(OpenAIRealtimeEventHandlersMixin):
     async def _abandon_open_calls(self, session: VoiceSession) -> None:
         """Report the calls this connection leaves unanswered: no other
         connection will read their results (RFC §12.4)."""
-        await self._abandon_tool_calls(session, self._open_calls.pop(session.id, ()))
+        await self._abandon_open_tool_calls(session)
 
     async def _discard_connection(
         self,

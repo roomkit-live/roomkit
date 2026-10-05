@@ -214,7 +214,7 @@ class GeminiLiveConnectionMixin(RealtimeVoiceProvider):
                     exc,
                     status_code,
                     response_json,
-                    len(state.pending_call_ids),
+                    self._open_tool_call_count(state.session),
                 )
                 state.live_session = None
 

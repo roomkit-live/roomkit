@@ -76,9 +76,6 @@ class _SessionState:
     # Whether response_start has already fired for the turn being spoken.
     # Reset by AgentAudioDone, which closes the turn.
     audio_started: bool = False
-    # FunctionCallResponse requires fields that the RealtimeVoiceProvider contract
-    # does not hand back to submit_tool_result(), so preserve them by call id.
-    pending_calls: dict[str, _PendingCall] = field(default_factory=dict)
     # Prompt/model/voice updates are read-modify-write operations. Serialise them
     # so concurrent handoffs and supervisor injections cannot lose each other.
     update_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
@@ -621,15 +618,13 @@ class DeepgramAgentProvider(RealtimeVoiceProvider):
             # A call without an id, or under an id still in flight, goes to the
             # channel all the same, which refuses and reports it, sending
             # nothing (RFC §12.4); only a call it may answer is kept here.
-            if call_id and call_id not in state.pending_calls:
-                raw_signature = function.get("thought_signature")
-                signature = (
-                    raw_signature if isinstance(raw_signature, str) and raw_signature else None
-                )
-                state.pending_calls[call_id] = _PendingCall(
-                    name=fname,
-                    thought_signature=signature,
-                )
+            # FunctionCallResponse needs fields the contract does not hand
+            # back to submit_tool_result(): they ride the call's booking.
+            raw_signature = function.get("thought_signature")
+            signature = raw_signature if isinstance(raw_signature, str) and raw_signature else None
+            self._book_tool_call(
+                state.session, call_id, _PendingCall(name=fname, thought_signature=signature)
+            )
             await self._fire(
                 self._tool_call_callbacks,
                 state.session,
@@ -746,22 +741,16 @@ class DeepgramAgentProvider(RealtimeVoiceProvider):
         # Released as its result goes, before the send yields: the channel
         # frees the id at the same step, so a call Deepgram issues under it
         # meanwhile is a new call to both (RFC §12.4).
-        pending = state.pending_calls.pop(call_id, None)
-        fname = pending.name if pending is not None else ""
-        if pending is None:
-            logger.warning(
-                "No pending Deepgram function call for id %s (session %s) — "
-                "responding without a name",
-                call_id,
-                session.id,
-            )
+        held, pending = self._answerable_tool_call(session, call_id)
+        if not held:
+            return
         response = {
             "type": "FunctionCallResponse",
             "id": call_id,
-            "name": fname,
+            "name": pending.name,
             "content": result,
         }
-        if pending is not None and pending.thought_signature is not None:
+        if pending.thought_signature is not None:
             response["thought_signature"] = pending.thought_signature
         await state.ws.send(json.dumps(response))
 
@@ -859,9 +848,7 @@ class DeepgramAgentProvider(RealtimeVoiceProvider):
         state.responding = False
         state.audio_started = False
         # The agent will not read these calls' results (RFC §12.4).
-        abandoned = list(state.pending_calls)
-        state.pending_calls.clear()
-        await self._abandon_tool_calls(state.session, abandoned)
+        await self._abandon_open_tool_calls(state.session)
         state.deferred_messages.clear()
         state.deferred_bytes = 0
         state.session.state = VoiceSessionState.ENDED

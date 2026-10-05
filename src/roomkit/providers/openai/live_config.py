@@ -146,8 +146,7 @@ class _LiveSession:
     start_error: str | None = None
     receive_task: asyncio.Task[None] | None = None
     responding: bool = False
-    # Hosted delegation: Responses runs by delegation id, and the open
-    # function calls each still owes an output.
+    # Hosted delegation: Responses runs by delegation id; the open function
+    # calls are on the provider's book, each with the delegation it answers.
     pending: dict[str, PendingResponse] = field(default_factory=dict)
-    open_calls: dict[str, str] = field(default_factory=dict)
     live_seconds: float = 0.0

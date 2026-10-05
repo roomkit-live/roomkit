@@ -54,7 +54,7 @@ async def test_deepgram_hands_on_a_call_that_named_no_tool() -> None:
     await asyncio.sleep(0.1)
 
     assert heard == [("fc1", "")]
-    assert "fc1" in provider._states[session.id].pending_calls
+    assert provider._holds_tool_call(session, "fc1")
     await provider.disconnect(session)
 
 
@@ -69,7 +69,7 @@ async def test_gpt_live_hands_on_a_call_that_named_no_tool() -> None:
     await asyncio.sleep(0.1)
 
     assert heard == [("c1", "", {})]
-    assert "c1" in provider._states[session.id].open_calls
+    assert provider._holds_tool_call(session, "c1")
     await provider.disconnect(session)
 
 

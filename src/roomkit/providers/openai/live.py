@@ -422,9 +422,7 @@ class OpenAILiveProvider(
     async def _abandon_open_calls(self, state: _LiveSession) -> None:
         """Report the hosted calls this connection leaves unanswered: no other
         connection issued them, so their results will never be read (RFC §12.4)."""
-        abandoned = list(state.open_calls)
-        state.open_calls.clear()
-        await self._abandon_tool_calls(state.session, abandoned)
+        await self._abandon_open_tool_calls(state.session, where=lambda booked: booked[0] is state)
 
     async def _close_socket(self, state: _LiveSession, *, timeout: float | None = None) -> None:
         """Close one socket under the library's own bound.
