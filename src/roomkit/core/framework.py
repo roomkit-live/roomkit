@@ -349,8 +349,9 @@ class RoomKit(
         self._pending_traces: dict[str, list[object]] = {}
         # Track fire-and-forget trace hook tasks to prevent GC
         self._pending_hook_tasks: set[asyncio.Task[Any]] = set()
-        # The strategies' background runs (orchestration._background): held
-        # so close() ends them (RFC §19.7.3, §19.7.4).
+        # The background work held until it ends (core.task_utils.hold_task),
+        # so close() cuts it: the strategies' runs and the delegations'
+        # hand-backs under way (RFC §19.7.3, §19.7.4, §23.3).
         self._background_runs: set[asyncio.Task[None]] = set()
         self._resource_leases: set[asyncio.Event] = set()
         self._resource_leases_sealed = False
@@ -530,7 +531,8 @@ class RoomKit(
         if self._delivery_backend is not None:
             await self._delivery_backend.close()
         # Cancel in-flight background work first: the strategies' runs, which
-        # end their workers' delegations as they end, then delegated tasks.
+        # end their workers' delegations as they end, and the hand-backs under
+        # way, then delegated tasks.
         await self._cancel_background_runs()
         await self._task_runner.close()
         # Cancel pending trace hook tasks

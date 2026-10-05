@@ -189,6 +189,9 @@ class DelegationHost(Protocol):
         _hook_engine: Engine for hook execution (via :class:`HelpersMixin`).
         _telemetry: Telemetry / tracing provider (optional — mixin
             falls back to ``NoopTelemetryProvider`` when absent).
+        _closed: Whether the framework is closing (no delegation starts).
+        _background_runs: The background work the framework holds until it
+            ends, so its close cuts it (a hand-back under way included).
 
     Cross-mixin methods (provided by other mixins in the MRO):
         get_room: From :class:`RoomLifecycleMixin`.
@@ -203,6 +206,8 @@ class DelegationHost(Protocol):
     _task_runner: TaskRunner
     _hook_engine: HookEngine
     _telemetry: TelemetryProvider | None
+    _closed: bool
+    _background_runs: set[asyncio.Task[None]]
 
 
 def _delegation_result_text(result: DelegatedTaskResult) -> str:
@@ -228,6 +233,7 @@ class DelegationMixin(HelpersMixin):
     _channels: dict[str, Channel]
     _task_runner: TaskRunner
     _closed: bool
+    _background_runs: set[asyncio.Task[None]]
 
     # Cross-mixin methods — attribute annotations avoid MRO shadowing
     get_room: Any  # see DelegationHost
@@ -636,7 +642,7 @@ class DelegationMixin(HelpersMixin):
         delivery = self._deliver_delegation_result(
             result, notify_channel_id, chain_depth, session_id
         )
-        if await await_interruptible(hold_task(self, delivery)):  # ty: ignore[invalid-argument-type]
+        if await await_interruptible(hold_task(self, delivery)):
             _tasks_logger.info(
                 "Result of task %s not handed back: the framework closed", result.task_id
             )

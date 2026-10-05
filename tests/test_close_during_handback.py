@@ -2,8 +2,9 @@
 hands one back (RMK-514, RFC §23.3 step 8).
 
 The work is done and the notified agent is answering the result when the
-framework closes: its turn is cancelled, nothing of it is stored after the
-close, and ``close()`` does not wait for it. A delegation run by the task
+framework closes: its turn is cancelled, what it had already said is kept as
+a cancelled response and nothing more is stored, and ``close()`` does not
+wait for it. A delegation run by the task
 runner (``delegate(wait=False, notify=...)``) is cut as a strategy's
 background run is: a supervisor's per-worker or strategy tool, an
 asynchronous Loop.
@@ -12,6 +13,7 @@ asynchronous Loop.
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from typing import Any
 
@@ -24,29 +26,31 @@ from roomkit.orchestration.strategies.loop import _VoiceLoopServer
 from roomkit.orchestration.strategies.supervisor import Supervisor
 from roomkit.orchestration.strategies.supervisor._inject_per_worker import _PerWorkerToolServer
 from roomkit.orchestration.strategies.supervisor._inject_strategy import _StrategyToolServer
-from roomkit.providers.ai.base import AIContext, AIResponse
+from roomkit.providers.ai.base import AIContext, StreamTextDelta
 from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.tools.context import ToolCallContext, _current_tool_call
 from tests.test_framework import SimpleChannel
 
 
 class _Answering(MockAIProvider):
-    """The notified agent: it answers the result until cancelled."""
+    """The notified agent: it starts answering the result, then holds the
+    rest of its answer until cancelled."""
 
     def __init__(self) -> None:
         super().__init__(streaming=True)
         self.started = asyncio.Event()
         self.cancelled = False
 
-    async def generate(self, context: AIContext) -> AIResponse:
+    async def generate_structured_stream(self, context: AIContext) -> Any:  # type: ignore[override]
         self.calls.append(context)
+        yield StreamTextDelta(text="Thanks, ")
         self.started.set()
         try:
             await asyncio.sleep(30)
         except asyncio.CancelledError:
             self.cancelled = True
             raise
-        return AIResponse(content="Thanks, worker.")
+        yield StreamTextDelta(text="worker.")
 
 
 async def _kit() -> tuple[RoomKit, Agent, Agent, _Answering]:
@@ -67,16 +71,27 @@ async def _task_runner(kit: RoomKit, boss: Agent, worker: Agent) -> None:
     await kit.delegate("r", "worker", "Find it.", notify="boss")
 
 
-async def test_the_delegation_still_ends_when_its_hand_back_is_cut() -> None:
-    """The task's end goes on past the cut: its waiters wake on its result."""
+async def test_the_delegation_still_ends_when_its_hand_back_is_cut(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The task's end goes on past the cut: its completion callback runs and
+    its waiters wake on its result; the cut is logged."""
+    caplog.set_level(logging.INFO, logger="roomkit.tasks")
     kit, boss, worker, answering = await _kit()
-    handle = await kit.delegate("r", "worker", "Find it.", notify="boss")
+    completed: list[str] = []
+
+    async def on_complete(result: Any) -> None:
+        completed.append(str(result.status))
+
+    handle = await kit.delegate("r", "worker", "Find it.", notify="boss", on_complete=on_complete)
     await asyncio.wait_for(answering.started.wait(), 5)
 
     await kit.close()
     result = await handle.wait(timeout=1)
 
     assert (str(result.status), result.output) == ("completed", "APPROVED")
+    assert completed == ["completed"]
+    assert "not handed back: the framework closed" in caplog.text
 
 
 async def _per_worker(kit: RoomKit, boss: Agent, worker: Agent) -> None:
@@ -139,8 +154,10 @@ async def test_close_cuts_a_hand_back_under_way(door: str) -> None:
     assert answering.cancelled
     assert took < 5
     stored = [
-        event
+        (event.content.body, event.metadata.get("cancelled"))
         for event in await kit.store.list_events("r")
         if event.type == EventType.MESSAGE and event.source.channel_id == "boss"
     ]
-    assert stored == []
+    # What it said before the cut, kept cancelled (RFC §12.2 step 13s); never
+    # the answer it would have finished.
+    assert stored == [("Thanks, ", True)]
