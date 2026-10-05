@@ -108,16 +108,17 @@ class RealtimePipeline:
 
     def _agent_tools(self) -> dict[str, list[AITool]]:
         """The agents' own tools the pipeline serves, each name with every
-        agent's definition of it: a name the channel's tools carry is the
-        channel's, declared and served as the channel's (RFC §19.5, §21.1)."""
-        host = _channel_tool_names(self._rtv)
+        agent's definition of it: a name the channel carries is the
+        channel's, the agent's tool under it neither declared nor served
+        (RFC §19.5, §21.1)."""
+        carried = _carried_tool_names(self._rtv)
         tools: dict[str, list[AITool]] = {}
         for agent in self._agent_map.values():
             for tool in agent._user_tools:
-                if tool.name in host:
+                if tool.name in carried:
                     logger.warning(
                         "Agent %s's tool %r shares its name with a tool of channel %s: "
-                        "the channel's is declared and served",
+                        "the name is the channel's, the agent's is neither declared nor served",
                         agent.channel_id,
                         tool.name,
                         self._rtv.channel_id,
@@ -325,11 +326,11 @@ def _agent_session_tools(
     return [*host, *own.values(), handoff.model_dump()]
 
 
-def _channel_tool_names(rtv: RealtimeVoiceChannel) -> set[str]:
-    """The names of the tools the channel carries now: the host's (its
-    definitions and its human-input tools) and those it serves itself (Tool
-    Search's, the skills'), the set its sessions declare as its own."""
-    return set(rtv._host_tool_names()) | rtv._channel_tool_names()
+def _carried_tool_names(rtv: RealtimeVoiceChannel) -> set[str]:
+    """Every name the channel carries now, declared in a session or not: its
+    host definitions, every name its human-input tools serve, and the tools
+    it serves itself (Tool Search's, the skills')."""
+    return set(rtv._host_tool_names()) | rtv._human_input.names | rtv._channel_tool_names()
 
 
 def refuse_agents_with_unserved(agents: list[Agent], channel_id: str) -> None:

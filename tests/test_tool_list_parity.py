@@ -22,6 +22,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from roomkit import ConferenceRealtimeConfig, RoomKit
+from roomkit.channels._tool_search_constants import FIND_TOOLS_SCHEMA
 from roomkit.channels.agent import Agent
 from roomkit.channels.ai import AIChannel
 from roomkit.channels.realtime_voice import RealtimeVoiceChannel
@@ -59,6 +60,9 @@ def _dicts(tools: list[AITool]) -> list[dict[str, Any]]:
     return [
         {"name": t.name, "description": t.description, "parameters": t.parameters} for t in tools
     ]
+
+
+ASK = AITool(name="ask", description="the channel's", parameters={})
 
 
 def _schema(name: str, description: str = "") -> dict[str, Any]:
@@ -208,22 +212,51 @@ class TestPipelineTools:
         assert config is not None
         assert [t["name"] for t in config.tools or []] == ["new_lookup", "handoff_conversation"]
 
-    @staticmethod
-    def _channel_carrying(
-        kind: str, provider: MockRealtimeProvider
-    ) -> tuple[RealtimeVoiceChannel, str]:
-        """A channel carrying a tool of *kind*, and that tool's name."""
-        if kind == "human-input":
-            ask = AITool(name="ask", description="the channel's", parameters={})
-            human = HumanInputToolHandler(tool_names={"ask"}, tool_definitions=[ask])
-            options: dict[str, Any] = {"human_input_handler": human}
-            name = "ask"
-        elif kind == "channel-own":
-            options = {"tools": [_schema("other")], "tool_search": True}
-            name = "find_tools"
-        else:
-            options = {"tools": [_schema("lookup", "the channel's")]}
-            name = "lookup"
+    @pytest.mark.parametrize(
+        ("options", "name", "declared"),
+        [
+            pytest.param(
+                {"tools": [_schema("lookup", "the channel's")]},
+                "lookup",
+                "the channel's",
+                id="host",
+            ),
+            pytest.param(
+                {
+                    "human_input_handler": HumanInputToolHandler(
+                        tool_names={"ask"}, tool_definitions=[ASK]
+                    )
+                },
+                "ask",
+                "the channel's",
+                id="human-input",
+            ),
+            pytest.param(
+                {"human_input_handler": HumanInputToolHandler(tool_names={"ask"})},
+                "ask",
+                None,
+                id="human-input-undeclared",
+            ),
+            pytest.param(
+                {"tools": [_schema("other")], "tool_search": True},
+                "find_tools",
+                FIND_TOOLS_SCHEMA["description"],
+                id="channel-own",
+            ),
+        ],
+    )
+    async def test_a_name_the_channel_carries_is_the_channels(
+        self,
+        options: dict[str, Any],
+        name: str,
+        declared: str | None,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """One schema, one server (§21.1): the agent's tool of that name is
+        neither declared nor served, a warning names it, and the agent's other
+        tools are installed and served, whatever tool of the channel's
+        carries the name, declared in the session or not (RMK-517)."""
+        provider = MockRealtimeProvider()
         rtv = RealtimeVoiceChannel(
             "rtv",
             provider=provider,
@@ -231,21 +264,13 @@ class TestPipelineTools:
             tool_handler=AsyncMock(return_value="channel"),
             **options,
         )
-        return rtv, name
-
-    @pytest.mark.parametrize("kind", ["host", "human-input", "channel-own"])
-    async def test_a_name_the_channel_carries_is_the_channels(
-        self, kind: str, caplog: pytest.LogCaptureFixture
-    ) -> None:
-        """One schema, one server (§21.1): the agent's tool of that name is
-        neither declared nor served, a warning names it, and the install goes
-        through, whatever tool of the channel's carries the name (RMK-517)."""
-        provider = MockRealtimeProvider()
-        rtv, name = self._channel_carrying(kind, provider)
         agent = Agent(
             "agent-a",
             role="A",
-            tools=[AITool(name=name, description="the agent's", parameters={})],
+            tools=[
+                AITool(name=name, description="the agent's", parameters={}),
+                AITool(name="balance", description="the agent's own", parameters={}),
+            ],
             tool_handler=AsyncMock(return_value="agent"),
             tool_search=False,
         )
@@ -258,14 +283,15 @@ class TestPipelineTools:
             pipeline.install(kit, [agent], voice_channel_id="rtv")
         room = await kit.create_room()
         await kit.attach_channel(room.id, "rtv")
-        await rtv.start_session(room.id, "u", "ws")
+        session = await rtv.start_session(room.id, "u", "ws")
 
         connect = next(c for c in provider.calls if c.method == "connect")
-        [declared] = [t for t in connect.args["tools"] or [] if t["name"] == name]
-        assert declared["description"] != "the agent's"
+        descriptions = {t["name"]: t["description"] for t in connect.args["tools"] or []}
+        assert descriptions.get(name) == declared
+        # Declared, or behind find_tools when Tool Search holds the catalogue.
+        assert descriptions.get("balance", "the agent's own") == "the agent's own"
         assert "shares its name with a tool of channel rtv" in caplog.text
-        entry = rtv._registry.lookup(name, room.id)
-        assert entry is None or entry.definition.description != "the agent's"
+        assert await _call(rtv, provider, session, "balance", {}) == "agent"
         await kit.close()
 
     async def test_the_channel_cannot_take_an_agents_name_later(self) -> None:
