@@ -194,7 +194,6 @@ class _ExternalStreamTools:
         chain: a cut before then leaves it owed, with this outcome, to the
         turn's end. A handler that reports nothing has made the call's report.
         """
-        refused = decided.kind is OutcomeKind.REFUSED
         event = ToolCallEvent(
             channel_id=self.channel_id,
             channel_type=ChannelType.AI,
@@ -204,7 +203,7 @@ class _ExternalStreamTools:
             result=as_tool_result(decided.result),
             room_id=self.room_id,
             is_error=decided.kind is not OutcomeKind.SERVED,
-            refused=refused,
+            refused=decided.kind is OutcomeKind.REFUSED,
             error_detail=decided.detail,
         )
         self.loop_ctx.known_outcomes[call.id] = event
@@ -215,7 +214,22 @@ class _ExternalStreamTools:
             self.loop_ctx.claim_report(call.id)
             return
         handler = None if decided.by_channel else self.handler
-        if handler is not None and refused:
+        if handler is not None:
+            await self._hand_to_handler(handler, call, decided, event)
+        elif self.report is not None:
+            await self.report(event)
+        self.loop_ctx.claim_report(call.id)
+
+    async def _hand_to_handler(
+        self,
+        handler: ExternalToolHandler,
+        call: StreamToolCall,
+        decided: _Decided,
+        event: ToolCallEvent,
+    ) -> None:
+        """The handler reports what it decided: its refusal, with what failed
+        when it came from a failure, or the call it let through."""
+        if decided.kind is OutcomeKind.REFUSED:
             await handler.on_tool_refused(
                 call.name,
                 decided.arguments,
@@ -224,18 +238,15 @@ class _ExternalStreamTools:
                 room_id=self.room_id,
                 **refusal_detail(handler, decided.detail),
             )
-        elif handler is not None:
-            await handler.on_tool_result(
-                call.name,
-                decided.arguments,
-                decided.result,
-                is_error=event.is_error,
-                tool_call_id=call.id,
-                room_id=self.room_id,
-            )
-        elif self.report is not None:
-            await self.report(event)
-        self.loop_ctx.claim_report(call.id)
+            return
+        await handler.on_tool_result(
+            call.name,
+            decided.arguments,
+            decided.result,
+            is_error=event.is_error,
+            tool_call_id=call.id,
+            room_id=self.room_id,
+        )
 
 
 async def report_cut(

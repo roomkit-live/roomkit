@@ -80,14 +80,10 @@ _MODEL_CALL_ID: ContextVar[str | None] = ContextVar("_model_call_id", default=No
 
 def model_call_id() -> str | None:
     """The id the backend's model gave the call being run or reported, for
-    the channel to report it under (RFC §12.4.1): the call its tool loop runs
-    (``current_tool_call()``), or one its loop refused before the gate.
-    ``None`` for a backend that runs no tool loop of the framework's."""
-    refused = _MODEL_CALL_ID.get()
-    if refused is not None:
-        return refused
-    call = current_tool_call()
-    return call.tool_call_id if call is not None and call.tool_call_id else None
+    the channel to report it under (RFC §12.4.1), as the backend's own tool
+    loop sets it around the call it serves or refuses. ``None`` for a backend
+    that runs no tool loop of the framework's."""
+    return _MODEL_CALL_ID.get()
 
 
 CallReporter = Callable[..., Awaitable[None]]
@@ -395,7 +391,11 @@ class AgentReasoningBackend(ReasoningBackend):
         loop_ctx = _current_loop_ctx.get()
         if call is not None and loop_ctx is not None:
             loop_ctx.claim_report(call.tool_call_id)
-        done = await _execute(_DELEGATION.get(), name, arguments)
+        token = _MODEL_CALL_ID.set(call.tool_call_id or None if call is not None else None)
+        try:
+            done = await _execute(_DELEGATION.get(), name, arguments)
+        finally:
+            _MODEL_CALL_ID.reset(token)
         if not done.is_error:
             return done.text
         if done.refused:

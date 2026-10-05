@@ -469,7 +469,7 @@ async def test_an_acp_call_refused_then_run_is_reported_served_with_the_refusal_
 
 
 class _NarrowDenying(PolicyExternalToolHandler):
-    """A handler whose overrides predate the optional keywords."""
+    """A handler whose overrides take neither optional keyword."""
 
     async def process_tool_call(self, tool_name: str, tool_input: Any, **kw: Any) -> ToolDecision:
         return ToolDecision(approved=False, reason="denied", detail="gate: approval db down")
@@ -522,3 +522,17 @@ async def test_an_override_without_detail_still_reports_the_refusal(door: str) -
 
     [event] = heard.observed
     assert (event.is_error, event.refused, event.error_detail) == (True, True, None)
+
+
+class _RaisingReporter(_Denying):
+    """A handler whose result report raises."""
+
+    async def on_tool_result(self, tool_name: str, *args: Any, **kwargs: Any) -> None:
+        raise RuntimeError("report store down")
+
+
+async def test_a_call_run_past_a_refusal_is_reported_though_the_handler_s_report_raises() -> None:
+    heard, _ = await _acp_ran_anyway(_RaisingReporter())
+
+    [event] = heard.observed
+    assert event.refused_but_ran is True

@@ -35,7 +35,7 @@ from roomkit.models.streaming import (
 )
 from roomkit.models.tool_call import ToolCallEvent
 from roomkit.realtime.base import EphemeralEvent, EphemeralEventType
-from roomkit.tools.external import refusal_detail, takes_keyword
+from roomkit.tools.external import refusal_detail, takes_keyword, warn_once
 from roomkit.tools.result import cancelled_tool_error, failure_detail, tool_failure
 
 if TYPE_CHECKING:
@@ -192,11 +192,11 @@ def _handler_reports(handler: ExternalToolHandler, tool: _ToolState, end: _ToolE
         handler.on_tool_result, "refused_but_ran"
     ):
         return True
-    logger.warning(
-        "%s.on_tool_result takes no 'refused_but_ran': the channel reports call %s, which "
-        "the agent ran past its refusal, itself; accept **kwargs to hear such calls",
-        type(handler).__name__,
-        tool.tool_id,
+    warn_once(
+        handler,
+        "refused_but_ran",
+        "%s.on_tool_result takes no 'refused_but_ran': the channel reports the calls the "
+        "agent runs past its refusal itself; accept **kwargs to hear them",
     )
     return False
 
@@ -585,7 +585,11 @@ class ACPEventsMixin:
         elif self._external_tool_handler is not None and _handler_reports(
             self._external_tool_handler, tool, end
         ):
-            await self._report_tool_end(self._external_tool_handler, room_id, tool, end)
+            reported = await self._report_tool_end(self._external_tool_handler, room_id, tool, end)
+            if not reported and _ran_despite_refusal(tool, end):
+                # Never lost: a call run past a refusal the handler could not
+                # report is the channel's to report, with its marker.
+                await self._report_agent_call(room_id, tool, end)
         elif self._tool_report_hook is not None:
             # No handler to report it: ON_TOOL_CALL still hears of every call,
             # as of a call an AI provider ran itself (RFC §9.3).
@@ -641,16 +645,16 @@ class ACPEventsMixin:
     @staticmethod
     async def _report_tool_end(
         handler: ExternalToolHandler, room_id: str | None, tool: _ToolState, end: _ToolEnd
-    ) -> None:
+    ) -> bool:
         """Hand a call's end to the handler: a call the turn cut has no result,
         and the handler reports it cancelled; one it refused, refused
-        (RFC §9.3)."""
+        (RFC §9.3). ``False`` when the handler raised doing so."""
         try:
             if end.outcome == "cancelled":
                 await handler.on_tool_cancelled(
                     tool.name, tool.arguments, tool_call_id=tool.tool_id, room_id=room_id
                 )
-                return
+                return True
             if end.outcome == "refused":
                 await handler.on_tool_refused(
                     tool.name,
@@ -660,7 +664,7 @@ class ACPEventsMixin:
                     room_id=room_id,
                     **refusal_detail(handler, tool.refusal_detail),
                 )
-                return
+                return True
             await handler.on_tool_result(
                 tool.name,
                 tool.arguments,
@@ -672,6 +676,8 @@ class ACPEventsMixin:
             )
         except Exception:
             logger.exception("ACP external tool-result handler failed")
+            return False
+        return True
 
     async def _request_permission(
         self,

@@ -107,8 +107,7 @@ class BeforeToolDecision:
 
 def takes_keyword(method: Callable[..., Any], name: str) -> bool:
     """Whether *method* accepts the keyword *name* (named, or ``**kwargs``):
-    a handler override written before a keyword was added does not, and is
-    never handed it (RFC §9.3)."""
+    a handler override that does not is never handed it (RFC §9.3)."""
     try:
         parameters = inspect.signature(method).parameters
     except (TypeError, ValueError):
@@ -127,12 +126,27 @@ def refusal_detail(handler: ExternalToolHandler, detail: str | None) -> dict[str
         return {}
     if takes_keyword(handler.on_tool_refused, "detail"):
         return {"detail": detail}
-    logger.warning(
-        "%s.on_tool_refused takes no 'detail': what failed is left out of the refusal's "
-        "report; accept **kwargs and hand them to super().on_tool_refused",
-        type(handler).__name__,
+    warn_once(
+        handler,
+        "detail",
+        "%s.on_tool_refused takes no 'detail': what failed is left out of its refusals' "
+        "reports; accept **kwargs and hand them to super().on_tool_refused",
     )
     return {}
+
+
+_WARNED: set[tuple[type, str]] = set()
+
+
+def warn_once(handler: ExternalToolHandler, keyword: str, message: str) -> None:
+    """Log *message* (``%s``, the handler's class) once per handler class and
+    keyword: an override that cannot take *keyword* says so once, not at
+    every call."""
+    key = (type(handler), keyword)
+    if key in _WARNED:
+        return
+    _WARNED.add(key)
+    logger.warning(message, type(handler).__name__)
 
 
 # Callback type injected by the framework.
