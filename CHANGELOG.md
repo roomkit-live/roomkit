@@ -17,7 +17,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   on reaches it. `PolicyExternalToolHandler` reports it on the event's
   `error_detail`.
 
+### Changed
+
+- `AnthropicConfig.max_retries`, default `0` (RMK-509): the Anthropic SDK no
+  longer retries a request itself (it made 3 attempts by default), as the
+  OpenAI, Ollama and PolarGrid clients already do not; the channel's
+  `RetryPolicy` owns the retries, so a refused connection is one attempt per
+  try instead of three. A 429, 5xx or 529 is retried by the `RetryPolicy`
+  alone, without the SDK's reading of `retry-after`; set `max_retries` to
+  keep the SDK's own retries.
+
 ### Fixed
+
+- `kit.close()` cuts a delegation's result being handed back
+  (`delegate(wait=False, notify=...)`) as it cuts a strategy's background
+  run: the notified agent's turn is cancelled, nothing of it is stored after
+  the close, and `close()` no longer waits for it; the task still ends and
+  wakes its waiters (RMK-514, RFC §23.3).
 
 - Every path reads a channel hosting a realtime model the same way
   (RMK-516, RFC §12.4, §22.1, §23.3 step 8). `deliver()` with no
@@ -29,13 +45,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   channel's `inject_text`, so ON_REALTIME_TEXT_INJECTED hears them as it
   hears a delivery. A conference's tool handler reads the session that
   issued its call through `get_current_voice_session()`, as the realtime
-  channel's does, so `hand_back` returns the result to that session.
+  channel's does, so `hand_back` returns the result to that session. A
+  pipeline's handoff greeting goes in at the depth of the call that handed
+  off, so `max_chain_depth` still holds across a handoff.
 
 - A realtime pipeline warns about and skips an agent's tool under any name
-  the channel carries, as it already did under a host tool's name: a
-  human-input tool's (`ask`) or a tool the channel serves itself
-  (`find_tools` under Tool Search, a skill's). The install used to fail with
-  `ToolNameCollisionError` and install nothing (RMK-517, RFC §19.5).
+  the channel carries, as it already did under a host tool's name: a name its
+  human-input tools serve, declared or not, or a tool the channel serves
+  itself (`find_tools` under Tool Search, a skill's). The install used to
+  fail with `ToolNameCollisionError` and install nothing, or let the agent's
+  tool answer a name the channel serves (RMK-517, RFC §19.5).
 
 - A transport failure is now `retryable` on every text provider: a
   connection refused, reset or timed out before any status on Anthropic,
