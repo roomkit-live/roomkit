@@ -852,6 +852,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A tool call whose own handler detaches its conference room or unplugs
+  the conference's realtime provider runs on and reports its own outcome,
+  as on a `RealtimeVoiceChannel` (RMK-515, RFC §12.4): the detach cancelled
+  the handler midway, its call was reported cancelled, the bot never left,
+  and `kit.close()` failed. The other calls the ending reaches are still
+  interrupted and reported cancelled.
+
 - A speech-to-speech session connected again under the same id abandons
   and reports once the calls its previous connection issued on every
   provider (RMK-508, RFC §12.4): Gemini sent a stale result on the new
