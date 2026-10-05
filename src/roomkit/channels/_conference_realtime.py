@@ -42,7 +42,7 @@ from roomkit.channels._conference_tools import (
     declared_tools,
     warn_unused_role_overrides,
 )
-from roomkit.channels._realtime_endings import SparedCalls, interrupt_for_ending
+from roomkit.channels._realtime_endings import SparedCalls, abandon_calls, interrupt_for_ending
 from roomkit.channels._realtime_text_injected import fire_text_injected
 from roomkit.channels._realtime_tool_calls import RealtimeToolCall, ToolCallBook
 from roomkit.channels._realtime_tool_executor import (
@@ -660,24 +660,12 @@ class ConferenceRealtime:
         call.task.add_done_callback(lambda _: self._tool_calls.close(call))
 
     async def _on_tool_call_cancelled(self, session: VoiceSession, call_ids: list[str]) -> None:
-        """The model will not read these calls' results: interrupt their
-        handlers, send nothing, and report them to ON_TOOL_CALL's observers as
-        cancelled.
-
-        Each call's id is freed, as the provider freed it, so nothing is sent
-        for the call and a call issued under the id is a new one (RFC §12.4).
-        A call whose outcome ON_TOOL_CALL already has is left to finish,
-        sending nothing: a second report would put two outcomes on one call.
-        """
-        room = self._guarded(session)
-        if room is None:
+        """The model will not read these calls' results: interrupt them as a
+        realtime voice channel does (:func:`abandon_calls`), send nothing, and
+        report each to ON_TOOL_CALL's observers as cancelled (RFC §12.4)."""
+        if self._guarded(session) is None:
             return
-        for call_id in call_ids:
-            call = self._tool_calls.release(session.id, call_id)
-            if call is None or not call.interruptible:
-                continue
-            assert call.task is not None  # interruptible  # noqa: S101
-            call.task.cancel()
+        for call in abandon_calls(self._tool_calls, session.id, call_ids):
             # Off the provider's callback: an audit hook must not hold up the
             # interruption it reports. Tracked beside the teardown, as a
             # detach's reports are: a detach does not cut it.

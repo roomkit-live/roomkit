@@ -29,6 +29,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A conference's realtime tool call whose own handler caused the reconnect
+  that orphaned it runs on, as on a realtime voice channel (RMK-304, RFC
+  §9.3): it used to be cancelled mid-handler and reported `cancelled`. Both
+  hosts now abandon a provider's orphaned calls through one step.
 - A realtime tool call whose own handler causes an ending is spared on
   every ending, host and door (RMK-520, RFC §12.4): it is known by its call
   context, which lasts until its outcome is reported and which every task its

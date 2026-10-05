@@ -149,3 +149,38 @@ async def test_a_cancellation_while_the_observers_run_adds_no_second_report() ->
     assert [(e.tool_call_id, e.cancelled) for e in observed] == [("c1", False)]
     assert provider.tool_results == []
     await kit.close()
+
+
+class _Reconnecting:
+    """A handler whose work makes the provider reconnect, orphaning the ids
+    the old socket issued, its own call's included."""
+
+    def __init__(self) -> None:
+        self.provider: MockRealtimeProvider | None = None
+        self.session: Any = None
+        self.ran_on = False
+
+    async def __call__(self, room_id: str, name: str, arguments: dict[str, Any]) -> str:
+        assert self.provider is not None
+        await self.provider.simulate_tool_call_cancellation(self.session, ["c1"])
+        await asyncio.sleep(0)
+        self.ran_on = True
+        return "reconfigured"
+
+
+async def test_a_call_whose_handler_caused_the_reconnect_runs_on() -> None:
+    """Not abandoned, as on a realtime voice channel: it runs to its end, its
+    result stays off the wire and it is reported served (RFC §9.3)."""
+    handler = _Reconnecting()
+    kit, _, provider, session, observed = await _conference(handler)  # type: ignore[arg-type]
+    handler.provider, handler.session = provider, session
+
+    await provider.simulate_tool_call(session, "c1", "lookup", {})
+    await until(lambda: bool(observed))
+
+    assert handler.ran_on
+    assert [(e.tool_call_id, e.cancelled, e.result) for e in observed] == [
+        ("c1", False, "reconfigured")
+    ]
+    assert provider.tool_results == []
+    await kit.close()

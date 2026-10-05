@@ -13,9 +13,7 @@ from collections.abc import AsyncIterator, Iterator
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
-from roomkit.channels._realtime_context import (
-    spare_own_orphaned_call,
-)
+from roomkit.channels._realtime_endings import abandon_calls
 from roomkit.channels._realtime_skills import RequiredToolsCheck
 from roomkit.channels._realtime_tool_calls import RealtimeToolCall, ToolCallBook
 from roomkit.channels._realtime_tool_executor import (
@@ -310,19 +308,10 @@ class RealtimeToolsMixin:
     def _on_provider_tool_call_cancelled(self, session: VoiceSession, call_ids: list[str]) -> Any:
         """Provider callback: the model will not read these calls' results (RFC §12.4).
 
-        The provider freed each call's id: the channel frees it too, so
-        nothing is sent for the call and a call issued under the id is a new
-        one (RFC §12.4). The handler still running for one of them is working
-        for a result nobody will read: its task is cancelled and the call is
+        Each is interrupted as on every host (:func:`abandon_calls`) and
         reported to ON_TOOL_CALL's observers as cancelled. A call no longer in
         the books (its result left before the cancellation arrived) has no
-        event to build: the provider dropped the stale result and logged it. A
-        call whose outcome the observers already received is left to finish,
-        sending nothing: a second event would put two outcomes on one
-        ``tool_call_id``. A reconnect the call's own handler caused (a handoff
-        reconfiguring its session) orphans that call too, and it is not
-        abandoned: it runs on, its id freed and its result kept off the wire
-        (RFC §9.3).
+        event to build: the provider dropped the stale result and logged it.
         """
         try:
             loop = asyncio.get_running_loop()
@@ -330,34 +319,11 @@ class RealtimeToolsMixin:
             return
         if session.state == VoiceSessionState.ENDED:
             return
-        for call_id in call_ids:
-            call = self._tool_calls.get(session.id, call_id)
-            if call is None:
-                logger.debug(
-                    "Cancelled tool call %s is not in flight for session %s", call_id, session.id
-                )
-                continue
-            if self._spared_by_own_reconnect(call):
-                continue
-            if self._tool_calls.release(session.id, call_id) is None or not call.interruptible:
-                logger.debug(
-                    "Cancelled tool call %s already gave its outcome for session %s",
-                    call_id,
-                    session.id,
-                )
-                continue
-            assert call.task is not None  # interruptible  # noqa: S101
-            call.task.cancel()
-            logger.info(
-                "Tool call %s(%s) abandoned by the provider for session %s",
-                call.name,
-                call_id,
-                session.id,
-            )
+        for call in abandon_calls(self._tool_calls, session.id, call_ids):
             report = self._track_task(
                 loop,
                 report_cancelled_call(self, call, ABANDONED_BY_PROVIDER),
-                name=f"rt_tool_cancelled:{session.id}:{call_id}",
+                name=f"rt_tool_cancelled:{session.id}:{call.call_id}",
             )
             self._tool_reports.add(report)
             report.add_done_callback(self._tool_reports.discard)
@@ -368,26 +334,6 @@ class RealtimeToolsMixin:
         cancelled leaves them running."""
         if self._tool_reports:
             await asyncio.wait(list(self._tool_reports), timeout=5.0)
-
-    @staticmethod
-    def _spared_by_own_reconnect(call: RealtimeToolCall) -> bool:
-        """Whether the call's own handler caused the reconnect that orphaned it.
-
-        Such a call is not abandoned: its handler runs on, its result stays
-        off the wire, and its outcome is reported as usual (RFC §9.3). A call
-        issued under its id after its result went out is another call, which
-        the reconnect abandons as any other.
-        """
-        if not spare_own_orphaned_call(call):
-            return False
-        logger.info(
-            "Tool call %s(%s) lost its id to the reconnect its own handler caused; "
-            "the handler runs on and its result stays off the wire (session %s)",
-            call.name,
-            call.call_id,
-            call.session.id,
-        )
-        return True
 
     def _session_room(self, session: VoiceSession) -> str | None:
         with self._state_lock:

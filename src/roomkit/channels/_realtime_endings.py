@@ -1,21 +1,84 @@
 """What an ending does to the realtime tool calls it reaches, on every host
 (RFC §12.4): cut them but the one whose handler caused it, and settle the
-calls it spared when their channel closes."""
+calls it spared when their channel closes. The provider abandoning calls is
+one such ending."""
 
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Iterable
 from functools import partial
 from typing import TYPE_CHECKING, Any
 
-from roomkit.channels._realtime_context import ending_cause, held_by
+from roomkit.channels._realtime_context import ending_cause, held_by, spare_own_orphaned_call
 from roomkit.channels._realtime_tool_executor import report_interrupted_calls
 from roomkit.core.task_utils import CLOSE_WAIT_S
 
 if TYPE_CHECKING:
-    from roomkit.channels._realtime_tool_calls import RealtimeToolCall
+    from roomkit.channels._realtime_tool_calls import RealtimeToolCall, ToolCallBook
     from roomkit.channels._realtime_tool_executor import ToolCallHost
+
+logger = logging.getLogger("roomkit.channels.realtime_tools")
+
+
+def abandon_calls(
+    book: ToolCallBook, session_id: str, call_ids: Iterable[str]
+) -> list[RealtimeToolCall]:
+    """Interrupt the calls the provider abandoned, on every host: each id is
+    freed as the provider freed it, so nothing is sent for the call, and its
+    handler is cancelled (RFC §12.4). The calls to report cancelled.
+
+    A call whose outcome ON_TOOL_CALL already has is left to finish, sending
+    nothing: a second report would put two outcomes on one call. A call whose
+    own handler caused the reconnect that orphaned it is not abandoned: it
+    runs on, its result kept off the wire (RFC §9.3).
+    """
+    abandoned: list[RealtimeToolCall] = []
+    for call_id in call_ids:
+        call = book.get(session_id, call_id)
+        if call is None:
+            logger.debug(
+                "Cancelled tool call %s is not in flight for session %s", call_id, session_id
+            )
+            continue
+        if _spared_by_own_reconnect(call):
+            continue
+        if book.release(session_id, call_id) is None or not call.interruptible:
+            logger.debug(
+                "Cancelled tool call %s already gave its outcome for session %s",
+                call_id,
+                session_id,
+            )
+            continue
+        assert call.task is not None  # interruptible  # noqa: S101
+        call.task.cancel()
+        logger.info(
+            "Tool call %s(%s) abandoned by the provider for session %s",
+            call.name,
+            call_id,
+            session_id,
+        )
+        abandoned.append(call)
+    return abandoned
+
+
+def _spared_by_own_reconnect(call: RealtimeToolCall) -> bool:
+    """Whether the call's own handler caused the reconnect that orphaned it.
+
+    A call issued under its id after its result went out is another call,
+    which the reconnect abandons as any other.
+    """
+    if not spare_own_orphaned_call(call):
+        return False
+    logger.info(
+        "Tool call %s(%s) lost its id to the reconnect its own handler caused; "
+        "the handler runs on and its result stays off the wire (session %s)",
+        call.name,
+        call.call_id,
+        call.session.id,
+    )
+    return True
 
 
 def interrupt_for_ending(
