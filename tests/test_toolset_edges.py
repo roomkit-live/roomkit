@@ -35,6 +35,7 @@ from roomkit.providers.ai.base import AIResponse, AITool, AIToolCall
 from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.skills.registry import SkillRegistry
 from roomkit.tools import current_tool_allowed_names
+from roomkit.tools.human_input import HumanInputToolHandler
 from roomkit.tools.policy import ToolPolicy
 from roomkit.voice.realtime.mock import MockRealtimeProvider, MockRealtimeTransport
 from tests.conference.test_conference_realtime import ROOM, realtime_kit
@@ -558,3 +559,55 @@ async def test_a_native_tool_does_not_count_toward_tool_search(tmp_path: Path) -
 
     assert "find_tools" not in [t.get("name") for t in _declared(provider)]
     await kit.close()
+
+
+def _person() -> HumanInputToolHandler:
+    ask = AITool(
+        name="ask_person", description="Ask the person", parameters=_schema("x")["parameters"]
+    )
+    return HumanInputToolHandler({"ask_person"}, timeout=2.0, tool_definitions=[ask])
+
+
+async def test_an_activation_hints_no_human_input_tool_on_either_path(tmp_path: Path) -> None:
+    """The channel declares and serves its human-input tools itself (RFC
+    §9.3), so a hint names them on neither path (RFC §24.4)."""
+    text_provider = MockAIProvider(
+        ai_responses=[_calling("activate_skill", name="ask"), AIResponse(content="done")]
+    )
+    text = AIChannel(
+        "ai1",
+        provider=text_provider,
+        tools=[_tool("ask_db")],
+        tool_handler=_Recorder(),
+        skills=_skills(tmp_path / "text", "guide"),
+        human_input_handler=_person(),
+        tool_search=False,
+    )
+    await _text_turn(text)
+    [text_answer] = [
+        json.loads(str(part.result))
+        for message in text_provider.calls[1].messages
+        if message.role == "tool"
+        for part in message.content
+    ]
+
+    provider = MockRealtimeProvider()
+    realtime = RealtimeVoiceChannel(
+        "rt",
+        provider=provider,
+        transport=MockRealtimeTransport(),
+        tools=[_schema("ask_db")],
+        tool_handler=_Recorder(),
+        skills=_skills(tmp_path / "realtime", "guide"),
+        human_input_handler=_person(),
+        tool_search=False,
+    )
+    kit, session = await _session(realtime)
+    realtime_answer = json.loads(
+        await _call(realtime, provider, session, "activate_skill", {"name": "ask"})
+    )
+    await kit.close()
+
+    for answer in (text_answer, realtime_answer):
+        assert "ask_db" in answer["tools_hint"]
+        assert "ask_person" not in answer["tools_hint"]

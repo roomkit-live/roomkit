@@ -241,6 +241,7 @@ class RealtimeToolsMixin:
     _session_policy_check: Any  # RealtimeToolGateMixin — cross-mixin
     _tool_reachable: Any  # RealtimeToolGateMixin — cross-mixin
     _channel_tool_names: Any  # RealtimeToolGateMixin — cross-mixin
+    _human_input_names: Any  # RealtimeToolGateMixin — cross-mixin
 
     def _on_provider_tool_call(
         self,
@@ -682,9 +683,9 @@ class RealtimeToolsMixin:
         if skill is not None or not isinstance(name, str):
             return result, []
         session_id = call.session.id
-        # Only the turn's own catalogue, never the channel's own tools, as on
-        # the text path (RFC §24.4).
-        own = self._channel_tool_names()
+        # Only the turn's own catalogue, never the channel's own tools, its
+        # human-input ones included, as on the text path (RFC §24.4).
+        own = self._channel_tool_names() | self._human_input_names()
         reachable = [
             tool_name
             for tool in tools

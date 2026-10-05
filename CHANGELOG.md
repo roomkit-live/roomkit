@@ -29,6 +29,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- On a realtime session, `activate_skill` on a name that is no skill hints
+  none of the channel's human-input tools, as on a text turn (RMK-304, RFC
+  §24.4).
 - A supervisor's pass 1 stopped by a steering `Cancel` logs nothing, as a
   room turn stopped so does (RMK-304, RFC §19.7.3): it used to warn "no
   answer to hand on".
