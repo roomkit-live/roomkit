@@ -8,6 +8,7 @@ from contextlib import AsyncExitStack
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from roomkit.core.exceptions import ChannelNotRegisteredError, RoomNotFoundError
+from roomkit.core.lanes import deferred_caller_logs
 from roomkit.core.mixins.channel_ops import is_channel_detached
 from roomkit.core.mixins.helpers import HelpersMixin
 from roomkit.core.mixins.inbound_identity import _IdentityBlockedError
@@ -437,23 +438,12 @@ class InboundMixin(HelpersMixin):
             )
 
         if defer_delivery:
-            # Deferred completion (RFC §10.1 step 18): the caller takes the
-            # committed event now — blocked was decided under the lock above,
-            # so a refusal is still synchronous — and the rest of the turn
-            # (delivery set, reentry passes, streamed responses) follows in
-            # the room's lane, its streams consumed on the same background
-            # task a detached caller uses. The handle is the caller's grip on
-            # that tail; it backfills delivery results, errors and response
-            # metadata on completion.
-            # Every result that reached this locked region gets one — a hook
-            # refusal included, whose near-empty cascade resolves at once. A
-            # refusal shed before it (rate limited, pre-commit timeout,
-            # identity block) returned above with delivery=None: there is no
-            # delivery to follow.
-            consumer = self._consume_streams_when_cascade_completes(cascade, room_id)
-            result.delivery = DeliveryHandle(cascade, consumer, result)
-            await self._connect_session_if_ready(message, channel, room_id, result)
-            return result
+            # Every result that reached this locked region gets a handle — a
+            # hook refusal included, whose near-empty cascade resolves at
+            # once. A refusal shed before it (rate limited, pre-commit
+            # timeout, identity block) returned above with delivery=None:
+            # there is no delivery to follow.
+            return await self._defer_inbound_delivery(result, cascade, message, channel, room_id)
 
         # The caller observes its event's delivery-set completion (RFC §10.1
         # step 18): the cascade — the trigger's delivery set plus every
@@ -472,6 +462,31 @@ class InboundMixin(HelpersMixin):
             result.error = stream_error
         merge_caller_record(result.response_metadata, record)
 
+        await self._connect_session_if_ready(message, channel, room_id, result)
+        return result
+
+    async def _defer_inbound_delivery(
+        self,
+        result: InboundResult,
+        cascade: DeliveryCascade,
+        message: InboundMessage,
+        channel: Channel,
+        room_id: str,
+    ) -> InboundResult:
+        """Hand the caller the committed event now, with a handle on the rest
+        of its turn (RFC §10.1 step 18, deferred completion).
+
+        Blocked was decided under the lock, so a refusal is still synchronous;
+        the delivery set, reentry passes and streamed responses follow in the
+        room's lane, its streams consumed on the same background task a
+        detached caller uses. The handle is the caller's grip on that tail: it
+        backfills delivery results, errors and response metadata on
+        completion. A caller that waits on it receives the streams' failure
+        and logs it, as a waiting caller does (a background hand-back).
+        """
+        cascade.caller_logs = deferred_caller_logs()
+        consumer = self._consume_streams_when_cascade_completes(cascade, room_id)
+        result.delivery = DeliveryHandle(cascade, consumer, result)
         await self._connect_session_if_ready(message, channel, room_id, result)
         return result
 
