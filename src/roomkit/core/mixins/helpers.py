@@ -61,7 +61,7 @@ from roomkit.models.tool_call import (
 )
 from roomkit.tools._outcome import kept_in_tool_memory
 from roomkit.tools.context import turn_report_claim
-from roomkit.tools.external import BeforeToolDecision
+from roomkit.tools.external import BeforeToolDecision, note_handler_report
 from roomkit.tools.result import before_tool_use_detail, hook_errors_detail, tool_call_verdict
 
 _RECENT_EVENTS_LIMIT = 2_000
@@ -1015,6 +1015,9 @@ class HelpersMixin:
         kit_ref = self
 
         async def _callback(event: ToolCallEvent) -> None:
+            # A handler that raises past this point has made the call's
+            # report: its door does not make it again.
+            note_handler_report(event.tool_call_id)
             # The turn that announced the call claims its one report where
             # the observers hear it (RFC §9.3).
             claim = turn_report_claim(event.tool_call_id, channel_id)

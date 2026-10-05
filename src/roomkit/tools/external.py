@@ -37,6 +37,7 @@ import inspect
 import logging
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
+from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Any
 
@@ -135,16 +136,40 @@ def refusal_detail(handler: ExternalToolHandler, detail: str | None) -> dict[str
     return {}
 
 
-async def handler_reported(report: Awaitable[Any], what: str) -> bool:
-    """Await an external handler's report of a call: ``False`` when it
-    raised, logged with *what* it was reporting. The door then makes the
-    call's report itself unless the handler made it before raising, so a
-    call is reported once, never zero times (RFC §9.3)."""
+@dataclass
+class _ReportWatch:
+    """A handler's report of one call being awaited, and whether it reached
+    ON_TOOL_CALL."""
+
+    call_id: str
+    reached: bool = False
+
+
+_report_watch: ContextVar[_ReportWatch | None] = ContextVar("_report_watch", default=None)
+
+
+def note_handler_report(call_id: str) -> None:
+    """Mark that a handler's report of call *call_id* reached ON_TOOL_CALL,
+    for the :func:`handler_reported` awaiting it, if any."""
+    watch = _report_watch.get()
+    if watch is not None and watch.call_id == call_id:
+        watch.reached = True
+
+
+async def handler_reported(report: Awaitable[Any], what: str, call_id: str) -> bool:
+    """Await an external handler's report of call *call_id*: ``False`` when
+    it raised before that report reached ON_TOOL_CALL, logged with *what* it
+    was reporting. The door then reports the call itself, so a call is
+    reported once, never zero times nor twice, on every door (RFC §9.3)."""
+    watch = _ReportWatch(call_id)
+    token = _report_watch.set(watch)
     try:
         await report
     except Exception:
         logger.exception("External tool handler failed %s", what)
-        return False
+        return watch.reached
+    finally:
+        _report_watch.reset(token)
     return True
 
 

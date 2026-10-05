@@ -252,9 +252,7 @@ class _ExternalStreamTools:
         handler = None if decided.by_channel else self.handler
         if handler is not None:
             report = self._hand_to_handler(handler, call, decided, event)
-            if await handler_reported(report, f"reporting the call {call.id}"):
-                return
-            if self.loop_ctx.was_reported(call.id):
+            if await handler_reported(report, f"reporting the call {call.id}", call.id):
                 return
         # No handler to report it, or one that raised before it did.
         if self.report is not None:
@@ -294,12 +292,13 @@ async def report_cut(
 ) -> bool:
     """Tell *handler* the turn cut *call* before its report: it reports the
     call cancelled, as every channel reports a call it cut (RFC §9.3). A
-    handler that raises does not disturb the turn's end: ``False``, and the
-    caller reports the call itself unless the handler did before raising."""
+    handler that raises does not disturb the turn's end: ``False`` when it
+    raised before its report reached ON_TOOL_CALL, and the caller reports
+    the call itself."""
     report = handler.on_tool_cancelled(
         call.name, call.arguments, tool_call_id=call.id, room_id=room_id
     )
-    return await handler_reported(report, f"on the cut call {call.id}")
+    return await handler_reported(report, f"on the cut call {call.id}", call.id)
 
 
 def _end_marker(
