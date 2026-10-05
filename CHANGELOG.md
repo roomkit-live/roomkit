@@ -29,6 +29,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A reasoning backend's tool call that names no tool is refused before the
+  gate as unreadable, as a provider's is (RMK-304, RFC §12.4): its model and
+  ON_TOOL_CALL read "Tool call named no tool" where they read "Tool '' is
+  not declared".
 - A conference's realtime tool call whose own handler caused the reconnect
   that orphaned it runs on, as on a realtime voice channel (RMK-304, RFC
   §9.3): it used to be cancelled mid-handler and reported `cancelled`. Both

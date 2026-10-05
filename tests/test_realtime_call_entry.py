@@ -24,6 +24,7 @@ from roomkit.providers.deepgram.config import DeepgramAgentConfig
 from roomkit.providers.deepgram.realtime import DeepgramAgentProvider
 from roomkit.voice.base import VoiceSession, VoiceSessionState
 from roomkit.voice.realtime.mock import MockRealtimeProvider, MockRealtimeTransport
+from roomkit.voice.realtime.reasoning import ReasoningBackend, ReasoningOutput
 from tests.test_openai_live import _connect as live_connect
 from tests.test_openai_live import _function_call, _response_event
 from tests.test_openai_live import _provider as live_provider
@@ -302,3 +303,50 @@ async def test_a_call_on_an_ended_session_leaves_no_barrier_behind() -> None:
 
     assert session.id not in channel._transcription_order_locks
     await kit.close()
+
+
+class _NamelessBackend(ReasoningBackend):
+    """A custom backend whose model issues a call naming no tool."""
+
+    def __init__(self) -> None:
+        self.read: list[tuple[str, bool, bool]] = []
+
+    async def run(self, request: Any) -> Any:  # type: ignore[override]
+        done = await request.execute_tool_call("", {"q": "x"})
+        self.read.append((json.loads(done.text)["error"], done.is_error, done.refused))
+        yield ReasoningOutput("ok", spoken=True)
+
+
+async def test_a_backends_call_that_named_no_tool_is_refused_as_the_providers() -> None:
+    """Refused before the gate as unreadable, not as an undeclared tool, on a
+    reasoning backend's door as on the provider's (RFC §12.4)."""
+    backend = _NamelessBackend()
+    provider = MockRealtimeProvider(full_duplex=True)
+    channel = RealtimeVoiceChannel(
+        "rt",
+        provider=provider,
+        transport=MockRealtimeTransport(),
+        tools=[{"name": "t1", "parameters": {"type": "object"}}],
+        tool_handler=lambda *a: "ok",
+        reasoning_backend=backend,
+    )
+    kit = RoomKit()
+    kit.register_channel(channel)
+    await kit.create_room(room_id="r1")
+    await kit.attach_channel("r1", "rt")
+    seen: list[Any] = []
+
+    @kit.hook(HookTrigger.ON_TOOL_CALL, execution=HookExecution.ASYNC, name="audit")
+    async def audit(event: Any, ctx: Any) -> None:
+        seen.append((json.loads(str(event.result))["error"], event.refused))
+
+    session = await channel.start_session("r1", "u", "ws")
+    await provider.simulate_delegation(session, "d1", "integrator")
+    for _ in range(100):
+        if seen:
+            break
+        await asyncio.sleep(0.01)
+    await kit.close()
+
+    assert backend.read == [(NAMELESS, True, True)]
+    assert seen == [(NAMELESS, True)]

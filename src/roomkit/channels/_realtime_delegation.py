@@ -477,9 +477,10 @@ class RealtimeDelegationMixin:
         backend model, with whether it failed, not to the provider (RFC §12.4.1).
         """
         # Under the id the backend's model gave it, as its other reports are
-        # (RFC §9.3).
+        # (RFC §9.3). Read as a provider's call is: one naming no tool is
+        # refused before the gate (RFC §12.4).
         call_id = _backend_call_id(delegation_id, model_call_id())
-        call = RealtimeToolCall(session, call_id, name, arguments)
+        call = RealtimeToolCall.from_provider(session, call_id, name, arguments)
         # The task serving the call, and the delegation's that holds it: a
         # call that ends its own session is not taken for one the session's
         # end interrupted, nor cut with its delegation (RFC §12.4).
