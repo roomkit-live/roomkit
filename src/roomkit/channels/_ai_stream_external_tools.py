@@ -21,6 +21,7 @@ from roomkit.providers.ai.base import StreamToolCall
 from roomkit.providers.ai.tool_calls import partial_call_error
 from roomkit.realtime.base import EphemeralEventType
 from roomkit.tools._outcome import OutcomeKind, ToolOutcome
+from roomkit.tools._turn_calls import AnnouncedCall, reporting
 from roomkit.tools.context import _ToolLoopContext
 from roomkit.tools.external import ExternalToolHandler, refusal_detail
 from roomkit.tools.result import as_tool_result, failure_detail, tool_failure
@@ -97,15 +98,15 @@ class _ExternalStreamTools:
         # outcome is reported at once, before anything can cut the call. Only a
         # still-pending call can be denied or rewritten before acting.
         pending = served is None and self.handler is not None
-        self._announce(call, arguments, pending=pending)
+        entry = self._announce(call, pending=pending)
         if not pending:
-            await self._report(call, _Decided(arguments, result, kind))
+            await self._report(entry, _Decided(arguments, result, kind))
         yield ToolCallStartMarker(tool_name=call.name, tool_id=call.id, arguments=arguments)
         await self._publish_start(call, arguments, round_idx)
         if pending and self.handler is not None:
             decided = await self._decide(self.handler, call, _Decided(arguments, result, kind))
             arguments, result, kind = decided.arguments, decided.result, decided.kind
-            await self._report(call, decided)
+            await self._report(entry, decided)
         duration_ms = int((time.monotonic() - started_at) * 1000)
         # The model reads it bounded, as any outcome, and so does its END row;
         # the report above heard it whole (RFC §21.5).
@@ -141,13 +142,13 @@ class _ExternalStreamTools:
                 duration_ms=duration_ms,
             )
 
-    def _announce(self, call: StreamToolCall, arguments: dict[str, Any], *, pending: bool) -> None:
+    def _announce(self, call: StreamToolCall, *, pending: bool) -> AnnouncedCall:
         """Put *call* in the turn's registry before anything can cut it: the
         turn's end reports it if nothing did, a *pending* one through the
-        handler that was to decide it (RFC §9.3)."""
-        self.loop_ctx.announced_calls[call.id] = call.model_copy(update={"arguments": arguments})
-        if pending:
-            self.loop_ctx.external_calls.add(call.id)
+        handler that was to decide it (RFC §9.3). Under an id another call
+        of the round holds, it is a call of its own (RFC §12.4)."""
+        copy = call.model_copy(update={"arguments": dict(call.arguments)})
+        return self.loop_ctx.calls.announce(copy, external=pending)
 
     async def _decide(
         self, handler: ExternalToolHandler, call: StreamToolCall, pending: _Decided
@@ -182,7 +183,7 @@ class _ExternalStreamTools:
             return _Decided(arguments, decision.result, OutcomeKind.SERVED)
         return _Decided(arguments, pending.result, pending.kind)
 
-    async def _report(self, call: StreamToolCall, decided: _Decided) -> None:
+    async def _report(self, entry: AnnouncedCall, decided: _Decided) -> None:
         """Report the call's outcome once, by whoever decided it: the handler
         its refusal (:meth:`~ExternalToolHandler.on_tool_refused`) or what it
         let through; the channel, to ON_TOOL_CALL, a call it refused itself, a
@@ -192,8 +193,11 @@ class _ExternalStreamTools:
 
         The report is claimed where the observers hear it, past the SYNC
         chain: a cut before then leaves it owed, with this outcome, to the
-        turn's end. A handler that reports nothing has made the call's report.
+        turn's end. A handler that reports nothing has made the call's
+        report. The report is the call's own, whichever call of its round
+        holds its id.
         """
+        call = entry.call
         event = ToolCallEvent(
             channel_id=self.channel_id,
             channel_type=ChannelType.AI,
@@ -206,19 +210,25 @@ class _ExternalStreamTools:
             refused=decided.kind is OutcomeKind.REFUSED,
             error_detail=decided.detail,
         )
-        self.loop_ctx.known_outcomes[call.id] = event
-        if decided.by_channel and self.observe is not None:
-            # It never ran: the observers alone hear of it, as of a local call
-            # refused or failed (RFC §9.3).
-            await self.observe(event)
+        entry.known = event
+        with reporting(entry):
+            await self._deliver_report(call, decided, event)
             self.loop_ctx.claim_report(call.id)
+
+    async def _deliver_report(
+        self, call: StreamToolCall, decided: _Decided, event: ToolCallEvent
+    ) -> None:
+        """Hand *event* to whoever reports it: the observers alone for a call
+        that never ran and that the channel decided (as a local call refused
+        or failed), the handler for what it decided, else ON_TOOL_CALL."""
+        if decided.by_channel and self.observe is not None:
+            await self.observe(event)
             return
         handler = None if decided.by_channel else self.handler
         if handler is not None:
             await self._hand_to_handler(handler, call, decided, event)
         elif self.report is not None:
             await self.report(event)
-        self.loop_ctx.claim_report(call.id)
 
     async def _hand_to_handler(
         self,

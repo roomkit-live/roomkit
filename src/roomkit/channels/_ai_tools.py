@@ -67,7 +67,8 @@ from roomkit.skills.models import missing_required_tools, missing_tools_error
 from roomkit.telemetry.base import SpanKind, TelemetryProvider
 from roomkit.telemetry.redaction import redact
 from roomkit.tools._outcome import OutcomeKind, ToolOutcome, kept_in_tool_memory, read_outcome
-from roomkit.tools.context import ToolCallContext, _current_tool_call, held_id_call
+from roomkit.tools._turn_calls import AnnouncedCall, reporting
+from roomkit.tools.context import ToolCallContext, _current_tool_call
 from roomkit.tools.result import (
     GateRefusal,
     as_tool_result,
@@ -419,11 +420,12 @@ class AIToolsMixin(_AIChannelContract):
             declared_tools=declared_tools,
             parent_span_id=parent_span_id,
         )
+        calls = self._get_loop_ctx().calls
         tasks = [
             asyncio.create_task(
-                self._refuse_id_in_flight(tc, scope) if held else self._run_call(tc, scope)
+                self._serve_announced(tc, calls.entry_of(tc) or calls.announce(tc), scope)
             )
-            for tc, held in zip(tool_calls, _ids_held(tool_calls), strict=True)
+            for tc in tool_calls
         ]
         try:
             results = await asyncio.gather(*tasks)
@@ -437,6 +439,16 @@ class AIToolsMixin(_AIChannelContract):
             await asyncio.gather(*tasks, return_exceptions=True)
             raise
         return list(results)
+
+    async def _serve_announced(
+        self, tc: Any, entry: AnnouncedCall, scope: _CallRound
+    ) -> AIToolResultPart:
+        """One call of a round as a call of its own: its reports are its, and
+        a duplicate of its id is refused."""
+        with reporting(entry):
+            if entry.duplicate:
+                return await self._refuse_id_in_flight(tc, scope)
+            return await self._run_call(tc, scope)
 
     async def _run_call(self, tc: Any, scope: _CallRound) -> AIToolResultPart:
         """One call of a round, through its gates to the part the model reads."""
@@ -460,8 +472,7 @@ class AIToolsMixin(_AIChannelContract):
         holds: refused before any gate, as a realtime session refuses it,
         and reported as a call of its own (RFC §9.3, §12.4)."""
         body = call_id_in_flight_error(tc.id)
-        with held_id_call():
-            await self._fire_tool_refusal(tc, tc.arguments, body, scope.room_id, refused=True)
+        await self._fire_tool_refusal(tc, tc.arguments, body, scope.room_id, refused=True)
         return ToolOutcome(OutcomeKind.REFUSED, body).as_part(tc.id, tc.name)
 
     async def _reject_call(
@@ -494,11 +505,12 @@ class AIToolsMixin(_AIChannelContract):
         every report of a call carries those (RFC §9.3). Snapshot before user
         code sees them, so persistence tells the model's request from what
         executed."""
-        loop_ctx = self._get_loop_ctx()
-        if tc.id in loop_ctx.announced_calls:
-            loop_ctx.announced_calls[tc.id] = tc.model_copy(update={"arguments": dict(arguments)})
-        if (marker := loop_ctx.start_markers.get(tc.id)) is not None:
-            marker.ran_with = dict(arguments)
+        entry = self._get_loop_ctx().calls.entry_for(tc.id)
+        if entry is None:
+            return
+        entry.arguments = dict(arguments)
+        if entry.marker is not None:
+            entry.marker.ran_with = dict(arguments)
 
     async def _gate_call(
         self, tc: Any, scope: _CallRound
@@ -678,19 +690,27 @@ class AIToolsMixin(_AIChannelContract):
         it before its result. Every channel reports such a call once (RFC §9.3):
         one whose outcome the model already read with that outcome, one its
         external handler was deciding through that handler."""
+        for entry in loop_ctx.calls.unreported():
+            with reporting(entry):
+                await self._report_cut_call(loop_ctx, entry)
+
+    async def _report_cut_call(self, loop_ctx: _ToolLoopContext, entry: AnnouncedCall) -> None:
+        """Report one call the turn cut before its report: with the outcome
+        the model read, through the handler that was deciding it, or
+        cancelled, with the arguments it ran with."""
+        tc = entry.as_ran()
+        if entry.known is not None:
+            await self._report_known_outcome(loop_ctx, entry.known)
+            return
         handler = self._external_tool_handler
-        for tc in loop_ctx.unreported_calls():
-            if (known := loop_ctx.known_outcomes.get(tc.id)) is not None:
-                await self._report_known_outcome(loop_ctx, known)
-                continue
-            if handler is not None and tc.id in loop_ctx.external_calls:
-                # The report is claimed where the observers hear it; a handler
-                # that reports nothing has still made it.
-                await report_cut(handler, tc, loop_ctx.room_id)
-                loop_ctx.claim_report(tc.id)
-                continue
-            body = cancelled_tool_error(tc.name, "The turn ended before its result.")
-            await self._fire_tool_refusal(tc, tc.arguments, body, loop_ctx.room_id, cancelled=True)
+        if handler is not None and entry.external:
+            # The report is claimed where the observers hear it; a handler
+            # that reports nothing has still made it.
+            await report_cut(handler, tc, loop_ctx.room_id)
+            loop_ctx.claim_report(tc.id)
+            return
+        body = cancelled_tool_error(tc.name, "The turn ended before its result.")
+        await self._fire_tool_refusal(tc, tc.arguments, body, loop_ctx.room_id, cancelled=True)
 
     async def _report_known_outcome(
         self, loop_ctx: _ToolLoopContext, event: ToolCallEvent
@@ -1363,14 +1383,3 @@ def _preview(value: Any) -> str:
     if len(text) <= _PREVIEW_CHARS:
         return text
     return f"{text[:_PREVIEW_CHARS]}… ({len(text)} chars)"
-
-
-def _ids_held(calls: list[Any]) -> list[bool]:
-    """Whether each call of a round reuses an id an earlier call of the round
-    holds: the earlier keeps it (RFC §12.4)."""
-    seen: set[str] = set()
-    held: list[bool] = []
-    for tc in calls:
-        held.append(tc.id in seen)
-        seen.add(tc.id)
-    return held

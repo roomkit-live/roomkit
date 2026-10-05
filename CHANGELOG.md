@@ -852,6 +852,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Each tool call of a text turn is held as a call of its own, never by its
+  provider's id (RMK-506, RFC §9.3, §12.4): a call under an id an earlier
+  round of the turn used is a new call, reported, and reported cancelled
+  when the turn cuts it, where its report was taken for the earlier call's
+  and never made.
+
 - A result submitted for a realtime tool call the provider abandoned, or
   never issued, is dropped with a log on every provider (RMK-502, RFC §12.4):
   OpenAI Realtime, xAI and Deepgram sent it, Deepgram without a name, and

@@ -569,6 +569,9 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                     yield turn.end("cancelled")
                     return
                 context = self._prepare_round_context(context, loop_ctx, rules, index)
+                # A provider's id names a call within its round only: one
+                # under it in this round is a new call (RFC §12.4).
+                loop_ctx.calls.next_round()
                 round_ = self._new_stream_round(turn, rules, index, external)
                 turn.segments.append(round_.state.reported)
                 # What this round declares, as the provider receives it.
@@ -695,16 +698,11 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
 def _announce(
     loop_ctx: _ToolLoopContext, calls: list[Any], markers: list[ToolCallStartMarker]
 ) -> None:
-    """Announce a round's calls and their start markers to the turn, by id.
+    """Announce a round's calls to the turn, each with its start marker.
 
-    Two calls under one id in the round are two calls: the first keeps the
-    id, the second is refused at its gate (RFC §12.4), so it records nothing
-    the first's record could be taken for.
+    Two calls under one id in the round are two calls: the first holds the
+    id, the second is announced a duplicate, refused at its gate (RFC §12.4),
+    and each keeps its own record.
     """
-    announced: dict[str, Any] = {}
-    started: dict[str, ToolCallStartMarker] = {}
     for call, marker in zip(calls, markers, strict=True):
-        announced.setdefault(call.id, call)
-        started.setdefault(call.id, marker)
-    loop_ctx.announced_calls.update(announced)
-    loop_ctx.start_markers.update(started)
+        loop_ctx.calls.announce(call, marker=marker)

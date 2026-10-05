@@ -33,13 +33,14 @@ from uuid import uuid4
 
 from roomkit.models.response_metadata import ResponseMetadata
 from roomkit.models.room import Room
+from roomkit.tools._turn_calls import TurnCalls
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Iterator, Mapping
 
     from roomkit.channels._turn_budget import TurnBudget
     from roomkit.models.steering import SteeringDirective
-    from roomkit.models.tool_call import DeclaredTool, ToolCallEvent
+    from roomkit.models.tool_call import DeclaredTool
     from roomkit.providers.ai.base import AIMessage, AITool
 
 
@@ -234,22 +235,11 @@ class _ToolLoopContext:
     # ``response_metadata``: whichever context recorded a round, the emission
     # reads the whole turn.
     declared_tools: dict[str, DeclaredTool] = field(default_factory=dict)
-    # The calls the loop announced (their id to the call), and those
-    # whose one ON_TOOL_CALL report was made: a call announced and never
-    # reported, whatever cut it (a stop, a cancellation, a transport that
-    # stopped reading), is reported cancelled when the loop ends (RFC §9.3).
-    announced_calls: dict[str, Any] = field(default_factory=dict)
-    reported_calls: set[str] = field(default_factory=set)
-    # Each announced call's start marker, by its id: the arguments the call
-    # runs with ride it, so a call the turn cuts is closed with them.
-    start_markers: dict[str, Any] = field(default_factory=dict)
-    # The announced calls the channel's external handler decides: one cut
-    # before its report is reported through that handler (RFC §9.3).
-    external_calls: set[str] = field(default_factory=set)
-    # The announced calls whose outcome the model already read (a call the
-    # provider ran, or one an external handler decided), each with its
-    # report: one cut before its observers heard it owes them that outcome.
-    known_outcomes: dict[str, ToolCallEvent] = field(default_factory=dict)
+    # The calls the loop announced, each held as a call of its own with its
+    # one ON_TOOL_CALL report: a call announced and never reported, whatever
+    # cut it (a stop, a cancellation, a transport that stopped reading), is
+    # reported cancelled when the loop ends (RFC §9.3).
+    calls: TurnCalls = field(default_factory=TurnCalls)
     # Whether the turn's tool policy, resolved for its actor, admits a name;
     # ``None`` when no policy applies. Read by ``current_tool_allowed_names()``
     # (RFC §21.4): the gate refuses what it denies, so it is not callable.
@@ -279,31 +269,13 @@ class _ToolLoopContext:
         self.withdrawn_tools = self.withdrawn_tools | gone
 
     def claim_report(self, call_id: str) -> bool:
-        """Claim the one report of call *call_id*: ``False`` when it was made.
-
-        A call made under an id another call of the turn holds
-        (:func:`held_id_call`) is a call of its own: its report is made and
-        claims nothing of the other's.
-        """
-        if _held_id.get():
-            return True
-        if call_id in self.reported_calls:
-            return False
-        self.reported_calls.add(call_id)
-        return True
+        """Claim the one report of the call *call_id* names now: ``False``
+        when it was made (see :class:`TurnCalls`)."""
+        return self.calls.claim(call_id)
 
     def was_reported(self, call_id: str) -> bool:
-        """Whether call *call_id*'s one report was made (never, for a call
-        made under an id another holds)."""
-        return not _held_id.get() and call_id in self.reported_calls
-
-    def unreported_calls(self) -> list[Any]:
-        """The announced calls no report claimed yet, in announcement order."""
-        return [
-            call
-            for call_id, call in self.announced_calls.items()
-            if call_id not in self.reported_calls
-        ]
+        """Whether the call *call_id* names now has had its one report."""
+        return self.calls.was_reported(call_id)
 
     @classmethod
     def for_loop(
@@ -365,21 +337,6 @@ class _ToolLoopContext:
 _current_loop_ctx: contextvars.ContextVar[_ToolLoopContext | None] = contextvars.ContextVar(
     "_current_loop_ctx", default=None
 )
-
-# Set while a call made under an id another call of the turn holds is
-# refused and reported (RFC §12.4): its report claims nothing of the other's.
-_held_id: contextvars.ContextVar[bool] = contextvars.ContextVar("_held_id", default=False)
-
-
-@contextmanager
-def held_id_call() -> Iterator[None]:
-    """Run the enclosed code for a call made under an id another call of the
-    turn holds: its report is its own, and claims nothing of the other's."""
-    token = _held_id.set(True)
-    try:
-        yield
-    finally:
-        _held_id.reset(token)
 
 
 def current_tool_call() -> ToolCallContext | None:
@@ -484,7 +441,7 @@ def turn_report_claim(call_id: str, channel_id: str) -> Callable[[], bool] | Non
     """The claim on call *call_id*'s one report in *channel_id*'s turn running
     now, or ``None`` when no such turn announced it (RFC §9.3)."""
     ctx = _current_loop_ctx.get()
-    if ctx is None or ctx.channel_id != channel_id or call_id not in ctx.announced_calls:
+    if ctx is None or ctx.channel_id != channel_id or ctx.calls.entry_for(call_id) is None:
         return None
     return partial(ctx.claim_report, call_id)
 
