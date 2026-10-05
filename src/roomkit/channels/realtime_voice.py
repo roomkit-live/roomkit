@@ -2081,6 +2081,22 @@ class RealtimeVoiceChannel(
             custom={"realtime": True, "server_vad": True},
         )
 
+    async def _cancel_scheduled_tasks(self) -> None:
+        """Cancel the tasks the channel still runs at its close, and wait for
+        them within the close's bound."""
+        tasks = list(self._scheduled_tasks)
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            try:
+                await asyncio.wait_for(
+                    asyncio.gather(*tasks, return_exceptions=True),
+                    timeout=CLOSE_WAIT_S,
+                )
+            except TimeoutError:
+                logger.warning("Timed out waiting for %d tasks during close", len(tasks))
+        self._scheduled_tasks.clear()
+
     async def close(self) -> None:
         """End owned sessions, unsubscribe callbacks, and close owned resources."""
         for unsubscribe in self._transport_unsubscribers:
@@ -2125,19 +2141,7 @@ class RealtimeVoiceChannel(
         # cut it.
         await self._settle_ended_sessions()
 
-        # Cancel all outstanding scheduled tasks with timeout
-        tasks = list(self._scheduled_tasks)
-        for task in tasks:
-            task.cancel()
-        if tasks:
-            try:
-                await asyncio.wait_for(
-                    asyncio.gather(*tasks, return_exceptions=True),
-                    timeout=CLOSE_WAIT_S,
-                )
-            except TimeoutError:
-                logger.warning("Timed out waiting for %d tasks during close", len(tasks))
-        self._scheduled_tasks.clear()
+        await self._cancel_scheduled_tasks()
 
         # Queued resampler close jobs still run; sessions are already ended
         # so nothing new can be queued.
