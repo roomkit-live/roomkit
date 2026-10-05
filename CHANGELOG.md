@@ -37,13 +37,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`find_tools` under Tool Search, a skill's). The install used to fail with
   `ToolNameCollisionError` and install nothing (RMK-517, RFC §19.5).
 
-- A connection refused, reset or timed out before any status is now
-  `retryable` on Anthropic, Mistral and Gemini, as it already was on the
-  OpenAI wire, Ollama and PolarGrid, so the channel's `RetryPolicy` retries it
-  on every text provider, through `generate()` and the stream (RMK-509).
-  `providers.ai.base.is_transport_failure` recognises it once, through the
-  error's cause chain (httpx, httpx2, `ConnectionError`, `TimeoutError`);
-  a 400 stays final everywhere.
+- A transport failure is now `retryable` on every text provider: a
+  connection refused, reset or timed out before any status on Anthropic,
+  Mistral and Gemini, as it already was on the OpenAI wire, Ollama and
+  PolarGrid, and one that drops a stream before its first event on the
+  OpenAI wire too (RMK-509). The channel's `RetryPolicy` retries such a
+  turn's stream; a direct `generate()` call reads the same flag. One rule
+  recognises the failure through the error's cause chain (httpx, httpx2,
+  `ConnectionError`, `TimeoutError`); a 400 stays final everywhere.
+
+- Every text provider reads a response the same way (RMK-510, RFC §6.4,
+  §6.7): OpenAI's `generate()` checks a constrained answer when the message's
+  `tool_calls` hold only entries with no function, as its stream does,
+  instead of returning an empty answer unchecked; Mistral's stream keeps the
+  usage of a chunk that carries no choice; Gemini reports the model that
+  answered (`model_version`) rather than the one asked for, and gives a call
+  the id its server gave it, minting one only when the server gave none or an
+  earlier call of the response took it.
 
 - ACP: a call whose permission RoomKit rejected because its external handler
   raised deciding it, that the agent ran anyway and closed completed, is now
