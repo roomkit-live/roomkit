@@ -1,13 +1,18 @@
 """Each call of a text turn is held as a call of its own (RMK-506, RFC §9.3, §12.4).
 
-A provider's id names a call within its round. A call under an id an earlier
-round used is a new call: reported, and cancelled when the turn cuts it.
+A provider's id names a call within its round. On the external door, two
+calls under one id are two calls: the second is refused while the first is
+pending, or reported as its own when the provider ran it, and a handler that
+raises reporting a call does not fail the turn. A call under an id an
+earlier round used is a new call: reported, and cancelled when the turn cuts
+it.
 """
 
 from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 from collections.abc import Callable
 from typing import Any
 
@@ -27,6 +32,7 @@ from roomkit.models.enums import EventType
 from roomkit.models.event import ToolCallContent
 from roomkit.providers.ai.base import AIResponse, AIToolCall, ServedCall
 from roomkit.providers.ai.mock import MockAIProvider
+from roomkit.tools.external import PolicyExternalToolHandler, ToolDecision
 from tests.test_framework import SimpleChannel
 from tests.tool_doors import DOORS, TOOL
 
@@ -97,6 +103,62 @@ def _outcomes(reports: list[ToolCallEvent]) -> list[tuple[str, bool, bool, bool]
     return sorted((r.arguments["q"], r.refused, r.cancelled, r.is_error) for r in reports)
 
 
+class _Approves(PolicyExternalToolHandler):
+    """An external handler approving every call, recording what it was asked."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.asked: list[dict[str, Any]] = []
+
+    async def process_tool_call(
+        self, tool_name: str, tool_input: dict[str, Any], **kw: Any
+    ) -> ToolDecision:
+        self.asked.append(dict(tool_input))
+        await asyncio.sleep(0.05)
+        return await super().process_tool_call(tool_name, tool_input, **kw)
+
+
+@pytest.mark.parametrize("door", TEXT_DOORS)
+async def test_a_pending_external_call_under_a_held_id_is_refused_as_its_own(door: str) -> None:
+    """The handler decides the first; the second is refused by the channel,
+    never asked of the handler, and reported as a call of its own."""
+    handler = _Approves()
+    calls = [_call("first", name="remote"), _call("second", name="remote")]
+    channel = AIChannel("ai", provider=_provider([calls], door), external_tool_handler=handler)
+    kit, reports = await _room(channel)
+
+    await kit.process_inbound(_message())
+    await _until(lambda: len(reports) == 2)
+    _, ends = await _rows(kit)
+    await kit.close()
+
+    assert handler.asked == [{"q": "first"}]
+    assert _outcomes(reports) == [("first", False, False, False), ("second", True, False, True)]
+    [refused] = [r for r in reports if r.refused]
+    assert "has not had its result yet" in str(refused.result)
+    assert ends == [("served", "first"), ("refused", "second")]
+
+
+@pytest.mark.parametrize("door", TEXT_DOORS)
+async def test_two_calls_the_provider_ran_under_one_id_are_each_reported(door: str) -> None:
+    """Their side effects happened: each is reported served, with its own
+    arguments and result."""
+    calls = [_call("first", name="web", served="one"), _call("second", name="web", served="two")]
+    channel = AIChannel("ai", provider=_provider([calls], door))
+    kit, reports = await _room(channel)
+
+    await kit.process_inbound(_message())
+    await _until(lambda: len(reports) == 2)
+    _, ends = await _rows(kit)
+    await kit.close()
+
+    assert sorted((r.arguments["q"], str(r.result), r.is_error) for r in reports) == [
+        ("first", "one", False),
+        ("second", "two", False),
+    ]
+    assert ends == [("served", "first"), ("served", "second")]
+
+
 @pytest.mark.parametrize("door", TEXT_DOORS)
 async def test_a_call_under_an_id_an_earlier_round_used_is_a_new_call(door: str) -> None:
     ran: list[str] = []
@@ -144,3 +206,33 @@ async def test_a_reused_id_call_the_turn_cuts_is_reported_cancelled(door: str) -
 
     assert _outcomes(reports) == [("first", False, False, False), ("second", False, True, True)]
     assert (starts, ends) == (2, [("served", "first"), ("cancelled", "second")])
+
+
+class _RaisesReporting(_Approves):
+    async def on_tool_result(
+        self, tool_name: str, tool_input: dict[str, Any], result: str, **kw: Any
+    ) -> None:
+        raise RuntimeError("audit sink down")
+
+
+@pytest.mark.parametrize("door", TEXT_DOORS)
+async def test_a_handler_raising_while_reporting_leaves_the_turn_whole(
+    door: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The raise is logged; the turn does not fail on it, the call keeps its
+    end row, and its report is not made a second time by the turn's end."""
+    handler = _RaisesReporting()
+    provider = _provider([[_call("only", name="remote")]], door)
+    channel = AIChannel("ai", provider=provider, external_tool_handler=handler)
+    kit, reports = await _room(channel)
+
+    with caplog.at_level(logging.ERROR):
+        await kit.process_inbound(_message())
+    _, ends = await _rows(kit)
+    await kit.close()
+
+    assert [r.getMessage() for r in caplog.records if r.levelno >= logging.ERROR] == [
+        "External tool handler failed reporting the call c1"
+    ]
+    assert reports == []
+    assert ends == [("served", "only")]

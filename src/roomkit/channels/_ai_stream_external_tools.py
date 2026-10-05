@@ -24,7 +24,12 @@ from roomkit.tools._outcome import OutcomeKind, ToolOutcome
 from roomkit.tools._turn_calls import AnnouncedCall, reporting
 from roomkit.tools.context import _ToolLoopContext
 from roomkit.tools.external import ExternalToolHandler, refusal_detail
-from roomkit.tools.result import as_tool_result, failure_detail, tool_failure
+from roomkit.tools.result import (
+    as_tool_result,
+    call_id_in_flight_error,
+    failure_detail,
+    tool_failure,
+)
 
 logger = logging.getLogger("roomkit.channels.ai")
 
@@ -104,7 +109,7 @@ class _ExternalStreamTools:
         yield ToolCallStartMarker(tool_name=call.name, tool_id=call.id, arguments=arguments)
         await self._publish_start(call, arguments, round_idx)
         if pending and self.handler is not None:
-            decided = await self._decide(self.handler, call, _Decided(arguments, result, kind))
+            decided = await self._settle(entry, self.handler, _Decided(arguments, result, kind))
             arguments, result, kind = decided.arguments, decided.result, decided.kind
             await self._report(entry, decided)
         duration_ms = int((time.monotonic() - started_at) * 1000)
@@ -150,6 +155,17 @@ class _ExternalStreamTools:
         copy = call.model_copy(update={"arguments": dict(call.arguments)})
         return self.loop_ctx.calls.announce(copy, external=pending)
 
+    async def _settle(
+        self, entry: AnnouncedCall, handler: ExternalToolHandler, pending: _Decided
+    ) -> _Decided:
+        """What a still-pending call becomes. One under an id another call of
+        its round holds is refused by the channel, as on every door, and the
+        handler never asked (RFC §12.4)."""
+        if entry.duplicate:
+            body = call_id_in_flight_error(entry.call.id)
+            return _Decided(pending.arguments, body, OutcomeKind.REFUSED, by_channel=True)
+        return await self._decide(handler, entry.call, pending)
+
     async def _decide(
         self, handler: ExternalToolHandler, call: StreamToolCall, pending: _Decided
     ) -> _Decided:
@@ -193,9 +209,9 @@ class _ExternalStreamTools:
 
         The report is claimed where the observers hear it, past the SYNC
         chain: a cut before then leaves it owed, with this outcome, to the
-        turn's end. A handler that reports nothing has made the call's
-        report. The report is the call's own, whichever call of its round
-        holds its id.
+        turn's end. A handler that reports nothing, or raises reporting, has
+        made the call's report. The report is the call's own, whichever call
+        of its round holds its id.
         """
         call = entry.call
         event = ToolCallEvent(
@@ -225,10 +241,16 @@ class _ExternalStreamTools:
             await self.observe(event)
             return
         handler = None if decided.by_channel else self.handler
-        if handler is not None:
+        if handler is None:
+            if self.report is not None:
+                await self.report(event)
+            return
+        try:
             await self._hand_to_handler(handler, call, decided, event)
-        elif self.report is not None:
-            await self.report(event)
+        except Exception:
+            # As on the cut path: a handler that raises reporting does not
+            # end the turn, and its report is not made twice.
+            logger.exception("External tool handler failed reporting the call %s", call.id)
 
     async def _hand_to_handler(
         self,
