@@ -269,15 +269,11 @@ class MistralAIProvider(AIProvider):
                 # Accumulate streamed tool call deltas
                 if hasattr(delta, "tool_calls") and delta.tool_calls:
                     for tc_delta in delta.tool_calls:
-                        function = getattr(tc_delta, "function", None)
                         # Surface the call while it is being composed. The
                         # complete StreamToolCall below remains the unit of
                         # execution and persistence.
-                        composed = tool_call_slots.fold(
-                            getattr(tc_delta, "index", None),
-                            _server_call_id(tc_delta.id),
-                            function.name if function else None,
-                            function.arguments if function else "",
+                        composed = tool_call_slots.fold_object(
+                            tc_delta, _server_call_id(tc_delta.id)
                         )
                         if composed is not None:
                             yield composed

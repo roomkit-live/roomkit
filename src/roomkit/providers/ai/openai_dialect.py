@@ -220,6 +220,18 @@ class ToolCallSlots:
             slot["announced"] = "1"
         return delta
 
+    def fold_object(self, fragment: Any, call_id: str | None) -> StreamToolCallDelta | None:
+        """Fold one SDK tool-call fragment (an object with ``index`` and
+        ``function``, as the OpenAI and Mistral SDKs stream them) under
+        *call_id*, the server's id as the caller reads it (:meth:`fold`)."""
+        function = getattr(fragment, "function", None)
+        return self.fold(
+            getattr(fragment, "index", None),
+            call_id,
+            function.name if function else None,
+            function.arguments if function else "",
+        )
+
     def _new_slot(self, name: str | None) -> dict[str, str]:
         call_id = minted_call_id(name or "tool")
         self._taken.add(call_id)
