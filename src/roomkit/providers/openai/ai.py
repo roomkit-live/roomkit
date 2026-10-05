@@ -25,6 +25,7 @@ from roomkit.providers.ai.base import (
     AIProvider,
     AIResponse,
     AITool,
+    AIToolCall,
     FirstToken,
     ModelInfo,
     ProviderError,
@@ -365,12 +366,15 @@ class OpenAIAIProvider(AIProvider):
         if schema is not None:
             kwargs["response_format"] = json_schema_format(schema)
 
-    def _check_schema_answer(self, context: AIContext, choice: Any, content: str) -> None:
-        """Refuse a constrained answer that did not deliver its JSON document."""
-        if context.response_schema is None or getattr(
-            getattr(choice, "message", None), "tool_calls", None
-        ):
-            return  # a tool round is a step of the loop, not the answer
+    def _check_schema_answer(
+        self, context: AIContext, choice: Any, content: str, tool_calls: list[AIToolCall]
+    ) -> None:
+        """Refuse a constrained answer that did not deliver its JSON document.
+        A round that hands the loop calls is a step of the loop, not the
+        answer: decided on the calls read off the message, as the stream
+        decides on the calls it emits, never on the raw entries (RFC §6.7)."""
+        if context.response_schema is None or tool_calls:
+            return
         check_schema_answer(
             content,
             schema=context.response_schema,
@@ -468,7 +472,7 @@ class OpenAIAIProvider(AIProvider):
         # no choice still billed its input.
         usage = self._usage_from(response.usage) if response.usage else {}
         if not response.choices:
-            self._check_schema_answer(context, None, "")
+            self._check_schema_answer(context, None, "", [])
             return AIResponse(content="", usage=usage)
 
         choice = response.choices[0]
@@ -479,7 +483,7 @@ class OpenAIAIProvider(AIProvider):
         # Extract <think>...</think> tags from response text.
         thinking, content = extract_think_tags(getattr(message, "content", None) or "")
         thinking = merge_thinking(thinking, field_reasoning(message))
-        self._check_schema_answer(context, choice, content)
+        self._check_schema_answer(context, choice, content, tool_calls)
 
         return AIResponse(
             content=content,
