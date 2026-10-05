@@ -100,7 +100,7 @@ class _OpenAIRealtime:
 
     async def reconnect(self) -> None:
         self.ws = AsyncMock()
-        self.session.state = VoiceSessionState.CONNECTING
+        self.session.renegotiate()
         with patch("websockets.connect", AsyncMock(return_value=self.ws)):
             await self.provider.connect(
                 self.session, tools=[TOOL], input_sample_rate=24000, output_sample_rate=24000
@@ -140,7 +140,7 @@ class _GPTLive:
     async def reconnect(self) -> None:
         self.ws = LiveWS()
         self.ws.push(_started())
-        self.session.state = VoiceSessionState.CONNECTING
+        self.session.renegotiate()
         with patch("websockets.connect", AsyncMock(return_value=self.ws)):
             await self.provider.connect(self.session, tools=[TOOL])
 
@@ -176,7 +176,7 @@ class _Deepgram:
 
     async def reconnect(self) -> None:
         self.old_ws.append(self.ws)
-        self.session.state = VoiceSessionState.CONNECTING
+        self.session.renegotiate()
         self.ws = await deepgram_connect(self.provider, self.session)
 
     async def stop(self) -> None:
@@ -217,7 +217,7 @@ class _ElevenLabs:
         """Connect again through the fake SDK the provider's own tests use."""
         self.patches = pytest.MonkeyPatch()
         _install_fake_sdk(self.patches)
-        self.session.state = VoiceSessionState.CONNECTING
+        self.session.renegotiate()
         connecting = asyncio.create_task(self.provider.connect(self.session, tools=[TOOL]))
         await until(lambda: bool(_FakeAsyncConversation.instances))
         conversation = _FakeAsyncConversation.instances[-1]

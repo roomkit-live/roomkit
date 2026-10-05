@@ -766,9 +766,9 @@ class RealtimeVoiceProvider(ABC):
         """Before a connection registers under *session*'s id: the calls an
         earlier connection under that id issued are not the new one's to
         answer, so they are abandoned and reported once (RFC §12.4). Every
-        ``connect()`` takes this step; a first connection has none."""
-        if self._has_open_tool_calls(session):
-            await self._abandon_open_tool_calls(session)
+        provider that books calls takes this step in its ``connect()``; a
+        first connection has none."""
+        await self._abandon_open_tool_calls(session)
 
     async def _abandon_open_tool_calls(
         self,

@@ -418,8 +418,7 @@ class ElevenLabsRealtimeProvider(RealtimeVoiceProvider):
         await self._end_response(session)
         # A handoff reconnects through here too (the base reconfigure): the
         # new conversation never issued these calls (RFC §12.4).
-        abandoned = self._reject_pending_tools(session, "the voice session ended")
-        await self._abandon_tool_calls(session, abandoned)
+        await self._abandon_pending_tools(session, "the voice session ended")
 
         conversation = self._conversations.pop(session.id, None)
         try:
@@ -623,7 +622,13 @@ class ElevenLabsRealtimeProvider(RealtimeVoiceProvider):
         """The base step, each pending call's SDK handler failed first: the
         replaced conversation's handler is not left waiting for a result
         that will never come."""
-        abandoned = self._reject_pending_tools(session, "the voice session connected again")
+        await self._abandon_pending_tools(session, "the voice session connected again")
+
+    async def _abandon_pending_tools(self, session: VoiceSession, reason: str) -> None:
+        """Fail each pending call's SDK handler with *reason*, then abandon
+        and report the calls. ``_fail_session`` keeps the two steps apart: it
+        forgets the session in between, its once-only guard."""
+        abandoned = self._reject_pending_tools(session, reason)
         await self._abandon_tool_calls(session, abandoned)
 
     def _reject_pending_tools(self, session: VoiceSession, reason: str) -> list[str]:
