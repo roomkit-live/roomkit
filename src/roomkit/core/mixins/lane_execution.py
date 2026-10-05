@@ -739,17 +739,9 @@ class LaneExecutionMixin(HelpersMixin):
                 if target not in intelligence or target not in reached
             ]
             await self._record_failed_deliveries(event, cascade.delivery_results)
-            await self._report_intelligence_errors(event, context, result)
-            first_error = self._first_intelligence_error(result, context)
-            if first_error is not None:
-                cascade.record_error(first_error)
-            # A non-streaming channel has finished generation before execute_plan
-            # returns, so its record is final now. Streaming records stay live
-            # until their generators are consumed outside the lane and are merged
-            # there instead — copying them here would freeze late tool writes.
-            for channel_id, output in result.outputs.items():
-                if output.response_stream is None:
-                    record_buffered_reply(cascade, channel_id, output, root=plan.emit_processed)
+            await self._settle_buffered_replies(
+                cascade, event, context, result, root=plan.emit_processed
+            )
 
         # A stream any pass started is read by the caller (RFC §8.3); one a
         # reentry pass or a streamed segment's delivery started answers an
@@ -772,6 +764,33 @@ class LaneExecutionMixin(HelpersMixin):
 
         if plan.emit_processed:
             await self._emit_framework_event("event_processed", room_id=room_id, event_id=event.id)
+
+    async def _settle_buffered_replies(
+        self,
+        cascade: DeliveryCascade,
+        event: RoomEvent,
+        context: RoomContext,
+        result: BroadcastResult,
+        *,
+        root: bool,
+    ) -> None:
+        """What a delivery set's buffered replies leave their caller (RFC
+        §10.1 step 18), on every path that waits for one (the lane, a
+        regeneration): each failure to ON_ERROR, the first as the cascade's
+        error, before any stream's; each reply's end under ``turns``.
+
+        A non-streaming channel has finished generation before the delivery
+        set returns, so its record is final now. Streaming records stay live
+        until their generators are consumed and are merged there instead:
+        copying them here would freeze late tool writes.
+        """
+        await self._report_intelligence_errors(event, context, result)
+        first_error = self._first_intelligence_error(result, context)
+        if first_error is not None:
+            cascade.record_error(first_error)
+        for channel_id, output in result.outputs.items():
+            if output.response_stream is None:
+                record_buffered_reply(cascade, channel_id, output, root=root)
 
     async def _report_intelligence_errors(
         self, event: RoomEvent, context: RoomContext, result: BroadcastResult

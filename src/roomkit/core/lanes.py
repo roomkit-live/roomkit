@@ -284,6 +284,16 @@ class DeliveryCascade:
             stream.chained = chained
         self.streams.extend(streams)
 
+    def caller_logs_failure_of(self, stream: Any, *, rendered: bool) -> bool:
+        """Whether the caller logs *stream*'s failure, the framework's own
+        line then dropping to DEBUG: never a chained stream's, which is not
+        the caller's; one a streaming target *rendered* only for a caller that
+        logs every failure of its turn (a delegation); any other when the
+        caller receives it (RFC §15.2)."""
+        if stream.chained:
+            return False
+        return self.caller_logs_streamed if rendered else self.caller_logs
+
     def record_error(self, exc: Exception) -> None:
         """Record an intelligence failure; the first one wins."""
         if self.error is None:

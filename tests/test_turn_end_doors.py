@@ -4,7 +4,9 @@
 A turn cancelled from outside records ``cancelled`` as one its reader
 stopped does; a delegated turn's failure is reported, scoped and logged as a
 room turn's; the error a caller reads, a kit that closes and a reasoning
-backend's failure follow one rule whichever door the turn came through.
+backend's failure follow one rule whichever door the turn came through. How
+a turn ended by its own loop reads on each door (pass 1, regenerate, the
+caller's ``turns``) is in tests/orchestration/test_turn_end_on_every_door.py.
 """
 
 from __future__ import annotations
@@ -38,6 +40,7 @@ from roomkit.providers.ai.base import (
     StreamTextDelta,
 )
 from roomkit.providers.ai.mock import MockAIProvider
+from roomkit.tasks.delegate import DelegateHandler
 from roomkit.voice.realtime.mock import MockRealtimeProvider, MockRealtimeTransport
 from roomkit.voice.realtime.reasoning import (
     AgentReasoningBackend,
@@ -48,13 +51,15 @@ from roomkit.voice.realtime.reasoning import (
 )
 from tests.test_framework import SimpleChannel
 
+LOOKUP = AITool(name="lookup", description="Look up", parameters={"type": "object"})
+
 
 class _Slow(MockAIProvider):
     """Streams the start of an answer, says so, then waits for the rest."""
 
-    def __init__(self) -> None:
+    def __init__(self, started: asyncio.Event) -> None:
         super().__init__(streaming=True)
-        self.started = asyncio.Event()
+        self.started = started
 
     async def generate_structured_stream(self, context: AIContext) -> AsyncIterator[StreamEvent]:
         for word in ("The ", "partial "):
@@ -64,14 +69,40 @@ class _Slow(MockAIProvider):
         yield StreamTextDelta(text="rest.")
 
 
-async def _kit() -> tuple[RoomKit, _Slow]:
-    provider = _Slow()
+class _ToolRound(MockAIProvider):
+    """Says it is checking and calls a tool: its text is written at the
+    call's boundary, before the tool runs."""
+
+    def __init__(self) -> None:
+        super().__init__(streaming=True)
+
+    async def generate(self, context: AIContext) -> AIResponse:
+        self.calls.append(context)
+        if len(self.calls) == 1:
+            call = AIToolCall(id="c1", name="lookup", arguments={})
+            return AIResponse(content="Checking.", finish_reason="tool_calls", tool_calls=[call])
+        return AIResponse(content="The answer.")
+
+
+async def _kit(phase: str = "text") -> tuple[RoomKit, asyncio.Event]:
+    """A room whose worker is cut while it streams text, or while a tool runs."""
+    started = asyncio.Event()
+
+    async def slow_tool(name: str, arguments: dict[str, Any]) -> str:
+        started.set()
+        await asyncio.sleep(5)
+        return "found"
+
+    if phase == "text":
+        worker = Agent("worker", provider=_Slow(started))
+    else:
+        worker = Agent("worker", provider=_ToolRound(), tools=[LOOKUP], tool_handler=slow_tool)
     kit = RoomKit()
     kit.register_channel(SimpleChannel("tx"))
-    kit.register_channel(Agent("worker", provider=provider))
+    kit.register_channel(worker)
     await kit.create_room(room_id="r")
     await kit.attach_channel("r", "tx")
-    return kit, provider
+    return kit, started
 
 
 async def _worker_rows(kit: RoomKit, room_id: str) -> list[Any]:
@@ -82,17 +113,17 @@ async def _worker_rows(kit: RoomKit, room_id: str) -> list[Any]:
     ]
 
 
-async def _room_cancelled(kit: RoomKit, provider: _Slow) -> tuple[str, Any]:
+async def _room_cancelled(kit: RoomKit, started: asyncio.Event) -> tuple[str, Any]:
     await kit.attach_channel("r", "worker", category=ChannelCategory.INTELLIGENCE)
     message = InboundMessage(channel_id="tx", sender_id="u", content=TextContent(body="Go."))
     result = await kit.process_inbound(message, defer_delivery=True)
-    await provider.started.wait()
+    await started.wait()
     assert result.delivery is not None
     final = await result.delivery.cancel()
     return "r", dict(final.response_metadata).get("turns")
 
 
-async def _delegate_cancelled(kit: RoomKit, provider: _Slow) -> tuple[str, Any]:
+async def _delegate_cancelled(kit: RoomKit, started: asyncio.Event) -> tuple[str, Any]:
     rooms: list[str] = []
 
     @kit.hook(HookTrigger.ON_TASK_COMPLETED, execution=HookExecution.ASYNC)
@@ -100,7 +131,7 @@ async def _delegate_cancelled(kit: RoomKit, provider: _Slow) -> tuple[str, Any]:
         rooms.append(event.metadata["child_room_id"])
 
     delegation = asyncio.ensure_future(kit.delegate("r", "worker", "Go.", wait=True))
-    await provider.started.wait()
+    await started.wait()
     delegation.cancel()
     with contextlib.suppress(asyncio.CancelledError):
         await delegation
@@ -111,20 +142,33 @@ async def _delegate_cancelled(kit: RoomKit, provider: _Slow) -> tuple[str, Any]:
     return rooms[0], None
 
 
-@pytest.mark.parametrize("door", [_room_cancelled, _delegate_cancelled], ids=["room", "delegate"])
-async def test_a_turn_cancelled_from_outside_records_cancelled(door: Any) -> None:
-    kit, provider = await _kit()
+async def _task_cancelled(kit: RoomKit, started: asyncio.Event) -> tuple[str, Any]:
+    task = await kit.delegate("r", "worker", "Go.")
+    await started.wait()
+    await kit.task_runner.cancel(task.id)
+    await asyncio.sleep(0.05)
+    return task.child_room_id, None
 
-    room_id, turns = await door(kit, provider)
+
+@pytest.mark.parametrize("phase", ["text", "tool"], ids=["mid-text", "mid-tool"])
+@pytest.mark.parametrize(
+    "door",
+    [_room_cancelled, _delegate_cancelled, _task_cancelled],
+    ids=["room", "delegate", "task-runner"],
+)
+async def test_a_turn_cancelled_from_outside_records_cancelled(door: Any, phase: str) -> None:
+    """Its kept text says the turn ended ``cancelled``, whether the cancel
+    came while text streamed or while a tool ran after the text was written
+    at the call's boundary."""
+    kit, started = await _kit(phase)
+
+    room_id, turns = await door(kit, started)
     rows = await _worker_rows(kit, room_id)
     await kit.close()
 
     assert rows == ["cancelled"]
     if door is _room_cancelled:
         assert turns == {"worker": {"loop_end_reason": "cancelled"}}
-
-
-LOOKUP = AITool(name="lookup", description="Look up", parameters={"type": "object"})
 
 
 class _FailsAfterARound(MockAIProvider):
@@ -398,3 +442,46 @@ async def test_a_delegated_turn_s_failure_is_logged_once(
 
     lines = [r for r in caplog.records if r.name.startswith("roomkit")]
     assert [r.name for r in lines] == ["roomkit.tasks"]
+
+
+async def test_a_cancelled_read_keeps_the_turns_of_the_streams_read_before() -> None:
+    """Two agents answer; the read is cancelled during the second's stream:
+    the caller's ``turns`` hold both, the first completed, the second
+    cancelled."""
+    started = asyncio.Event()
+    kit = RoomKit()
+    kit.register_channel(SimpleChannel("tx"))
+    kit.register_channel(
+        Agent("fast", provider=MockAIProvider(responses=["done"], streaming=True))
+    )
+    kit.register_channel(Agent("slow", provider=_Slow(started)))
+    await kit.create_room(room_id="r")
+    await kit.attach_channel("r", "tx")
+    for agent_id in ("fast", "slow"):
+        await kit.attach_channel("r", agent_id, category=ChannelCategory.INTELLIGENCE)
+    message = InboundMessage(channel_id="tx", sender_id="u", content=TextContent(body="Go."))
+    result = await kit.process_inbound(message, defer_delivery=True)
+    await started.wait()
+    assert result.delivery is not None
+    final = await result.delivery.cancel()
+    await kit.close()
+
+    turns = dict(final.response_metadata)["turns"]
+    assert {agent: entry["loop_end_reason"] for agent, entry in turns.items()} == {
+        "fast": "completed",
+        "slow": "cancelled",
+    }
+
+
+async def test_the_delegate_task_tool_starts_nothing_on_a_closing_kit() -> None:
+    kit = RoomKit()
+    kit.register_channel(SimpleChannel("sms"))
+    kit.register_channel(Agent("worker", provider=MockAIProvider(responses=["done"])))
+    await kit.create_room(room_id="r")
+    await kit.attach_channel("r", "sms")
+    kit._closed = True  # the window close() opens before it seals the store
+
+    with pytest.raises(RoomKitError, match="no delegation starts"):
+        await DelegateHandler(kit).handle("r", "caller", {"agent": "worker", "task": "Go."})
+    kit._closed = False
+    await kit.close()

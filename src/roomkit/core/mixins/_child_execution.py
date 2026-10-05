@@ -434,6 +434,30 @@ def _last_answer(rows: list[RoomEvent], channel_id: str) -> RoomEvent | None:
     )
 
 
+async def _buffered_outcome(
+    kit: RoomKit, child_room_id: str, output: Any
+) -> tuple[str | None, Exception | None]:
+    """A delegated buffered reply's answer, or why the turn has none.
+
+    Its trace is kept first: ``response_events`` already hold the tool-call
+    events, and all of them persist, not just the final text. An error fails
+    the turn, whether the reply answered or not, as on the room path
+    (:func:`_responder_failure`); a turn its cap, deadline or budget cut has
+    no answer (RFC §6.4).
+    """
+    if not output.responded:
+        return None, output.error
+    final_text = await _persist_response_events(kit, child_room_id, output.response_events)
+    reason = _turn_end(output.response_metadata, output.response_events)
+    if output.error is not None:
+        # A turn the provider interrupted after a round kept its trace and
+        # has no answer.
+        return None, _turn_failure(output.error, final_text, reason)
+    if (cut := _cut_short(final_text, reason)) is not None:
+        return None, cut
+    return final_text, None
+
+
 async def _collect_answer(
     kit: RoomKit, child_room_id: str, result: BroadcastResult, child_depth: int
 ) -> str | None:
@@ -445,30 +469,13 @@ async def _collect_answer(
     """
     answers: list[str] = []
     failure: Exception | None = None
-    # Non-streaming: response_events already include the tool-call events —
-    # persist them all (not just the final text) so the trace survives.
     for output in result.outputs.values():
         if output.response_stream is not None:
             continue
-        if not output.responded:
-            # Its error still fails the turn, as on the room path
-            # (_responder_failure): no answer, and why.
-            failure = failure or output.error
-            continue
-        final_text = await _persist_response_events(kit, child_room_id, output.response_events)
-        if output.error is not None:
-            # A turn the provider interrupted after a round kept its trace and
-            # has no answer.
-            reason = _turn_end(output.response_metadata, output.response_events)
-            failure = failure or _turn_failure(output.error, final_text, reason)
-        elif (
-            cut := _cut_short(
-                final_text, _turn_end(output.response_metadata, output.response_events)
-            )
-        ) is not None:
-            failure = failure or cut
-        elif final_text is not None:
-            answers.append(final_text)
+        answer, failed = await _buffered_outcome(kit, child_room_id, output)
+        failure = failure or failed
+        if answer is not None:
+            answers.append(answer)
     # Streaming: drain the marker stream, persisting tool calls + text segments.
     for sr in result.streaming_responses:
         try:

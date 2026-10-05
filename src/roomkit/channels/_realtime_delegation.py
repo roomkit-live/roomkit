@@ -313,6 +313,8 @@ class RealtimeDelegationMixin:
         try:
             await asyncio.wait_for(_relay(), timeout=self._reasoning_timeout_s)
         except TimeoutError:
+            # The channel's bound, an expected end as a turn's deadline is:
+            # spoken, logged, no ON_ERROR (RFC §12.4.1).
             logger.warning(
                 "Delegation %s exceeded %.0fs (session %s)",
                 delegation_id,
@@ -323,15 +325,7 @@ class RealtimeDelegationMixin:
         except asyncio.CancelledError:
             raise
         except Exception as exc:
-            log_failure(logger, exc, f"Delegation {delegation_id} (session {session.id})")
-            # A failed turn is an error a host renders, as a room turn's is
-            # (RFC §12.4.1): ON_ERROR once, beside the spoken fallback. A turn
-            # its cap, deadline or budget cut is an expected end, not one.
-            if not isinstance(exc, TurnCutShortError):
-                await self._fire_session_error_hook(
-                    session, str(exc), type(exc).__name__, "reasoning", type(backend).__name__
-                )
-            await self._fallback(session, delegation_id, FALLBACK_FAILED)
+            await self._backend_failed(session, delegation_id, exc, backend)
         else:
             if not answered:
                 logger.warning(
@@ -340,6 +334,28 @@ class RealtimeDelegationMixin:
                 await self._fallback(session, delegation_id, FALLBACK_NO_OUTPUT)
             else:
                 logger.info("Delegation %s served (session %s)", delegation_id, session.id)
+
+    async def _backend_failed(
+        self,
+        session: VoiceSession,
+        delegation_id: str,
+        exc: Exception,
+        backend: ReasoningBackend,
+    ) -> None:
+        """Answer a delegation whose backend raised: logged, reported to
+        ON_ERROR once as a room turn's failure is, then the spoken fallback
+        (RFC §12.4.1). A turn its cap, deadline or budget cut is an expected
+        end and fires none."""
+        log_failure(logger, exc, f"Delegation {delegation_id} (session {session.id})")
+        if not isinstance(exc, TurnCutShortError):
+            await self._fire_session_error_hook(
+                session,
+                error=str(exc),
+                error_type=type(exc).__name__,
+                category="reasoning",
+                provider=type(backend).__name__,
+            )
+        await self._fallback(session, delegation_id, FALLBACK_FAILED)
 
     def _take_handover(self, session: VoiceSession) -> _Handover:
         """What a delegation takes as it is handed over, in the order the

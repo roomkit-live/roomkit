@@ -875,9 +875,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - A turn ends the same on every door that runs one (RMK-497, RFC §6.4,
   §12.4.1, §23.3): a turn cancelled from outside (`handle.cancel()`, a
-  cancelled `delegate(wait=True)`, `task_runner.cancel()`) records
-  `loop_end_reason: cancelled` on its kept text and under its caller's
-  `turns`, as one its reader stopped does, where it recorded no end; a
+  cancelled `delegate(wait=True)`, `task_runner.cancel()`), while its text
+  streamed or while a tool ran after it, records `loop_end_reason: cancelled`
+  on its kept text, and a room turn's caller reads it under `turns` beside
+  the turns read before the cancel, as when its reader stopped, where it
+  recorded no end; a
   delegated turn whose stream fails on the trace path fires `ON_ERROR` in the
   turn's scope (depth, correlation, thread), where it fired at depth 0 with
   no correlation; `regenerate_response()` reports the buffered failure first,
@@ -890,7 +892,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   closing kit, as a strategy's background run does; and a reasoning
   backend's turn that fails on an error fires `ON_ERROR` once (category
   `reasoning`) beside its spoken fallback, where only the logs saw it (a turn
-  its cap, deadline or budget cut fires none).
+  its cap, deadline or budget cut, or a run past `reasoning_timeout_s`, fires
+  none).
 
 - The session start, `BEFORE_TOOL_USE`, `ON_TOOL_CALL` and provider `ON_ERROR`
   events of a `RealtimeAudioVideoChannel` name its own channel type

@@ -8,6 +8,7 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
+from roomkit.models.event import EventSource
 from roomkit.telemetry.base import Attr, SpanKind
 from roomkit.voice.base import VoiceSessionState
 
@@ -336,18 +337,20 @@ class RealtimeResponseMixin:
         self._track_task(
             loop,
             self._fire_session_error_hook(
-                session, message, code, "realtime_provider", self._provider.name
+                session,
+                error=message,
+                error_type=code,
+                category="realtime_provider",
+                provider=self._provider.name,
             ),
             name=f"rt_provider_error:{session.id}",
         )
 
     async def _fire_session_error_hook(
-        self, session: VoiceSession, error: str, error_type: str, category: str, provider: str
+        self, session: VoiceSession, *, error: str, error_type: str, category: str, provider: str
     ) -> None:
         """Fire ON_ERROR for a failure of *session*'s, as its channel: the
         provider's, or the reasoning backend's turn (RFC §12.4.1)."""
-        from roomkit.models.event import EventSource
-
         framework = self._framework
         if framework is None:
             return

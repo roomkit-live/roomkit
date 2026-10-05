@@ -290,6 +290,10 @@ class SegmentWriter:
         await self.close_calls(await reader.abandon())
         self.end_stopped()
         await self.flush_text(cancelled=True)
+        # Text already written at a call's boundary carries no record of its
+        # own: the turn's end goes on the last message now, as a stopped
+        # read's does, since no later step of a cancelled read writes it.
+        await self.record_on_last_message()
 
     async def end_failed(self, reader: ResponseReader) -> None:
         """Write what a failed turn leaves: open calls closed as ``turn failed``, text kept."""

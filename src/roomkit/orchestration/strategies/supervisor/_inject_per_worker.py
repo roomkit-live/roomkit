@@ -14,7 +14,6 @@ from roomkit.channels._tool_registry import orchestration_tool
 from roomkit.orchestration._background import (
     BackgroundRun,
     background_failure_text,
-    check_open,
     run_in_background,
     start_background_run,
 )
@@ -137,10 +136,9 @@ class _PerWorkerToolServer:
         if (rid, worker_id) in pending:
             return _already_working(worker_id)
         pending.add((rid, worker_id))
-        # If the start raises (shutdown race), free the worker so it isn't
-        # stuck in already_running.
+        # If the start raises (a kit closing refuses it), free the worker so
+        # it isn't stuck in already_running.
         try:
-            check_open(self._kit)
             delegated = await self._kit.delegate(
                 rid,
                 worker_id,

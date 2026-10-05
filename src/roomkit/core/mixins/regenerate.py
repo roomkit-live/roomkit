@@ -9,7 +9,6 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 from roomkit.core.exceptions import RoomClosedError
 from roomkit.core.lanes import DeliveryCascade
 from roomkit.core.mixins.helpers import _REFUSING_STATUSES, HelpersMixin
-from roomkit.core.mixins.lane_execution import record_buffered_reply
 from roomkit.models.delivery import InboundResult
 from roomkit.models.enums import ChannelCategory, EventStatus
 from roomkit.models.event import RoomEvent
@@ -40,7 +39,7 @@ class RegenerateHost(Protocol):
         _commit_responses: From :class:`LaneExecutionMixin`.
         _commit_blocked_events: From :class:`LaneExecutionMixin`.
         _finish_cascade: From :class:`LaneExecutionMixin`.
-        _report_intelligence_errors: From :class:`LaneExecutionMixin`.
+        _settle_buffered_replies: From :class:`LaneExecutionMixin`.
     """
 
     _store: ConversationStore
@@ -65,7 +64,7 @@ class RegenerateMixin(HelpersMixin):
     _commit_responses: Any  # see RegenerateHost
     _commit_blocked_events: Any  # see RegenerateHost
     _finish_cascade: Any  # see RegenerateHost
-    _report_intelligence_errors: Any  # see RegenerateHost
+    _settle_buffered_replies: Any  # see RegenerateHost
 
     async def regenerate_target(self, room_id: str) -> RoomEvent | None:
         """The event :meth:`regenerate_response` would re-run the agent on.
@@ -201,7 +200,6 @@ class RegenerateMixin(HelpersMixin):
         pending_streams: list[Any] = []
         regenerated: list[RoomEvent] = []
         trigger: RoomEvent | None = None
-        broadcast_error: Exception | None = None
 
         async with self._lock_manager.locked(room_id):
             context, found = await self._regenerate_target(room_id)
@@ -246,10 +244,6 @@ class RegenerateMixin(HelpersMixin):
             )
 
             pending_streams.extend(broadcast_result.streaming_responses)
-            # A non-streaming intelligence failure surfaces as a broadcast error:
-            # the first one is the caller's (InboundResult.error), as on the
-            # inbound path; each fires its ON_ERROR after the lock (below).
-            broadcast_error = self._first_intelligence_error(broadcast_result, context)
 
             # Non-streaming providers return the response as reentry events.
             # Each takes its own commit pass after the lock (below), as any
@@ -265,7 +259,6 @@ class RegenerateMixin(HelpersMixin):
             broadcast_result,
             regenerated,
             pending_streams,
-            broadcast_error=broadcast_error,
         )
 
     async def _finish_regeneration(
@@ -276,8 +269,6 @@ class RegenerateMixin(HelpersMixin):
         broadcast_result: BroadcastResult,
         regenerated: list[RoomEvent],
         pending_streams: list[Any],
-        *,
-        broadcast_error: Exception | None,
     ) -> InboundResult:
         """Deliver what a regeneration produced, off the room lock, and report it."""
         # Outside the room lock (RFC §10.1): the regenerated answers reach
@@ -295,19 +286,10 @@ class RegenerateMixin(HelpersMixin):
             room_id, broadcast_result.tasks, broadcast_result.observations, trigger, context
         )
         await self._commit_responses(room_id, regenerated, trigger.response_visibility, cascade)
-        # Each non-streaming failure fires ON_ERROR here, as on the inbound path
-        # (the streaming path fires its own while its stream is read), so the
-        # host renders an error card per failed agent on either path.
-        await self._report_intelligence_errors(trigger, context, broadcast_result)
-        # The buffered failure is the cascade's first, as on the inbound path
-        # (RFC §10.1 step 18): a stream's failure is the caller's only after it.
-        if broadcast_error is not None:
-            cascade.record_error(broadcast_error)
-        # Each buffered reply's record read as the inbound path reads it: its
-        # end under ``turns``, a ``turns`` key its hooks wrote left out (RFC §6.4).
-        for channel_id, output in broadcast_result.outputs.items():
-            if output.response_stream is None:
-                record_buffered_reply(cascade, channel_id, output, root=True)
+        # The buffered replies settle as on the inbound path: an error card
+        # per failed agent, the buffered failure the caller's first, each
+        # reply's end under ``turns`` (RFC §6.4, §10.1 step 18).
+        await self._settle_buffered_replies(cascade, trigger, context, broadcast_result, root=True)
         stream_error, stream_meta = await self._finish_cascade(cascade, room_id, caller_logs=True)
 
         result = InboundResult(event=trigger)

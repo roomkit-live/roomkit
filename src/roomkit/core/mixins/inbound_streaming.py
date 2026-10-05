@@ -26,6 +26,7 @@ from roomkit.models.event import EventSource, RoomEvent, TextContent
 from roomkit.models.response_metadata import (
     ResponseMetadata,
     add_turn_entry,
+    merge_caller_record,
     merge_channel_record,
     turn_summary,
 )
@@ -197,8 +198,7 @@ class InboundStreamingMixin(HelpersMixin):
                 reader,
                 context,
                 correlation_id=correlation_id,
-                # A delegation logs its turn's failure itself, rendered or not.
-                caller_logs=cascade.caller_logs_streamed and not sr.chained,
+                caller_logs=cascade.caller_logs_failure_of(sr, rendered=True),
             )
         else:
             # No streaming targets (e.g. a PII-locked / edge agent whose stream
@@ -220,8 +220,7 @@ class InboundStreamingMixin(HelpersMixin):
                     sr,
                     context,
                     correlation_id=correlation_id,
-                    # A chained stream's failure is not the caller's.
-                    caller_logs=cascade.caller_logs and not sr.chained,
+                    caller_logs=cascade.caller_logs_failure_of(sr, rendered=False),
                 )
 
         # Every segment's delivery set, awaited once now that the stream is
@@ -525,10 +524,7 @@ class InboundStreamingMixin(HelpersMixin):
                         response_events=response_events,
                     )
                 except asyncio.CancelledError:
-                    # A turn cancelled from outside still tells its caller how
-                    # it ended, as one its reader stopped does (RFC §6.4).
-                    if not sr.chained:
-                        _add_turn(cascade.response_metadata, sr)
+                    _record_cancelled_read(cascade, record, sr)
                     raise
                 if sr.chained:
                     continue
@@ -565,6 +561,18 @@ class InboundStreamingMixin(HelpersMixin):
             room_id, unanswered(sr.trigger_event, sr.source_channel_id, sr.source_channel_type)
         )
         return False
+
+
+def _record_cancelled_read(
+    cascade: DeliveryCascade, record: ResponseMetadata, sr: StreamingResponse
+) -> None:
+    """Tell a caller whose read was cancelled from outside how its turns
+    ended, as a stopped read does (RFC §6.4): the streams it read before, then
+    the one the cancel cut. Nothing is returned past the cancel, so the
+    cascade carries them to the caller's result."""
+    merge_caller_record(cascade.response_metadata, record)
+    if not sr.chained:
+        _add_turn(cascade.response_metadata, sr)
 
 
 def _add_turn(record: MutableMapping[str, Any], sr: StreamingResponse) -> None:
