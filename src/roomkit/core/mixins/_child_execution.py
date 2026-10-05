@@ -131,7 +131,13 @@ async def persist_tool_calls(
     finally:
         await kit._finish_cascade(cascade, room_id, caller_logs=True)
     record = dict(stream_record(sr))
-    reason = _turn_end(record, writer.persisted)
+    return _handed_on(answer, _turn_end(record, writer.persisted), record, sr, room_id)
+
+
+def _handed_on(
+    answer: str, reason: str | None, record: dict[str, Any], sr: StreamingResponse, room_id: str
+) -> PersistedTurn:
+    """The turn as handed on: its answer only when it completed (RFC §6.4)."""
     if reason in (None, "completed"):
         return PersistedTurn(answer, reason, record)
     # A stop someone chose (a steering Cancel) is no failure to log (RFC §19.7.3).
