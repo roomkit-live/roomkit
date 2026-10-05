@@ -73,7 +73,10 @@ class GeminiLiveToolsMixin(RealtimeVoiceProvider):
         # Checked before the connection is: the call was released the moment
         # its socket was lost, so a result arriving during the back-off is
         # stale, not an error.
-        if self._holds_tool_call(session, call_id) and state.live_session is None:
+        if not self._holds_tool_call(session, call_id):
+            self._log_dropped_result(session, call_id)
+            return
+        if state.live_session is None:
             raise RuntimeError("Cannot deliver tool result without an active Gemini connection")
         # A scheduling the config cannot take is refused before the call
         # leaves the book: it stays owed, and is abandoned as any other.
@@ -81,9 +84,7 @@ class GeminiLiveToolsMixin(RealtimeVoiceProvider):
         # Released as its result goes, before the send yields: the channel
         # frees the id at the same step, so a call the model issues under it
         # meanwhile is a new call to both (RFC §12.4).
-        held, name = self._answerable_tool_call(session, call_id)
-        if not held or state.live_session is None:
-            return
+        _, name = self._answerable_tool_call(session, call_id)
         was_blocking = call_id in state.blocking_call_ids
         state.blocking_call_ids.discard(call_id)
 

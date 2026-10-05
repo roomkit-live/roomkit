@@ -718,7 +718,7 @@ class TestOpenAIRealtimeProvider:
 
     async def test_a_result_for_a_call_never_issued_is_dropped(self):
         """Nothing goes out for an id the provider never issued or already
-        abandoned, as on every realtime provider (RFC §12.4). It used to be sent."""
+        abandoned, as on every realtime provider (RFC §12.4)."""
         mod = _load_provider()
         provider, ws, session = _make_connected_provider(mod)
 

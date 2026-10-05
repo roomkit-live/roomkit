@@ -284,6 +284,10 @@ class DeepgramAgentProvider(RealtimeVoiceProvider):
             speak=speak,
             max_prompt_chars=max_prompt_chars,
         )
+        if session.id in self._states:
+            # Connected again under a live session id: the calls the old
+            # connection issued are not this one's to answer (RFC §12.4).
+            await self._abandon_open_tool_calls(session)
         self._states[session.id] = state
 
         try:
@@ -735,14 +739,14 @@ class DeepgramAgentProvider(RealtimeVoiceProvider):
             state.think["prompt"] = prompt
 
     async def submit_tool_result(self, session: VoiceSession, call_id: str, result: str) -> None:
-        state = self._states.get(session.id)
-        if state is None:
-            return
         # Released as its result goes, before the send yields: the channel
         # frees the id at the same step, so a call Deepgram issues under it
         # meanwhile is a new call to both (RFC §12.4).
         held, pending = self._answerable_tool_call(session, call_id)
         if not held:
+            return
+        state = self._states.get(session.id)
+        if state is None:
             return
         response = {
             "type": "FunctionCallResponse",

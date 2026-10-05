@@ -1045,8 +1045,7 @@ class TestOutbound:
         self, provider: DeepgramAgentProvider, session: VoiceSession
     ) -> None:
         """Nothing goes out for an id Deepgram never issued or the provider
-        abandoned, as on every realtime provider (RFC §12.4). It used to be
-        sent without a name."""
+        abandoned, as on every realtime provider (RFC §12.4)."""
         ws = await _connect(provider, session)
         sent_before = len(ws.sent)
 

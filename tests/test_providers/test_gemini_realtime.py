@@ -1161,8 +1161,7 @@ class TestGeminiLiveProvider:
 
     async def test_a_result_for_a_call_never_issued_is_dropped(self):
         """Nothing to name it after, and the server knows no such id: nothing
-        goes out, as on every realtime provider (RFC §12.4). It used to go out
-        unnamed."""
+        goes out, as on every realtime provider (RFC §12.4)."""
         mod = _load_provider()
         provider = mod.GeminiLiveProvider(api_key="test-key", model="gemini-3.8-live")
         session = _make_session()

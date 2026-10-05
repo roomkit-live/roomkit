@@ -858,9 +858,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Gemini sent one for an id it never issued, unnamed; Gemini, GPT-Live and
   ElevenLabs already dropped an abandoned one. The open calls are one book on
   `RealtimeVoiceProvider` (`_book_tool_call`, `_answerable_tool_call`,
-  `_abandon_open_tool_calls`, ...), which each provider answers through.
-  Reachable only by an application calling `submit_tool_result` itself: the
-  channel's own book already sent nothing for such a call.
+  `_abandon_open_tool_calls`, ...), which each provider answers through; a
+  call issued by a connection that is gone is dropped too, and a session
+  connected again under the same id (Deepgram, OpenAI Realtime, xAI) abandons
+  and reports its previous connection's calls. Reachable only by an
+  application calling `submit_tool_result` itself: the channel's own book
+  already sent nothing for such a call.
 
 - A tool call's report and its rows say the same thing on every door
   (RMK-498, RFC §9.3, §12.4): two calls under one id in a text round are two

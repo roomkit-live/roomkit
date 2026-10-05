@@ -219,6 +219,10 @@ class OpenAIRealtimeBase(OpenAIRealtimeEventHandlersMixin):
             timeout=_CONNECT_TIMEOUT,
         )
 
+        if session.id in self._connections:
+            # Connected again under a live session id: the calls the old
+            # socket issued are not this one's to answer (RFC §12.4).
+            await self._abandon_open_calls(session)
         self._connections[session.id] = ws
         self._sessions[session.id] = session
         self._provider_configs[session.id] = pc

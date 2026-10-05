@@ -723,14 +723,19 @@ class RealtimeVoiceProvider(ABC):
         provider (RFC §12.4)."""
         calls = self._open_tool_calls.get(session.id, {})
         if call_id not in calls:
-            logger.info(
-                "[%s] result for tool call %r dropped: abandoned or never issued (session %s)",
-                self.name,
-                call_id,
-                session.id,
-            )
+            self._log_dropped_result(session, call_id)
             return False, None
         return True, calls.pop(call_id)
+
+    def _log_dropped_result(self, session: VoiceSession, call_id: str) -> None:
+        """Say that a result for *call_id* goes out nowhere: the call was
+        abandoned, never issued, or belongs to a connection that is gone."""
+        logger.info(
+            "[%s] result for tool call %r dropped: abandoned or never issued (session %s)",
+            self.name,
+            call_id,
+            session.id,
+        )
 
     def _drop_tool_call(self, session: VoiceSession, call_id: str, payload: Any) -> None:
         """Take *call_id* off the book while it is still booked with
@@ -749,7 +754,9 @@ class RealtimeVoiceProvider(ABC):
         """Take off the book *session*'s calls among *call_ids* (all of them
         when ``None``) whose payload passes *where*, each with its payload."""
         calls = self._open_tool_calls.get(session.id, {})
-        wanted = list(calls) if call_ids is None else [cid for cid in call_ids if cid in calls]
+        # Each id once: a server may name a call twice in one cancellation.
+        wanted = list(calls) if call_ids is None else list(dict.fromkeys(call_ids))
+        wanted = [cid for cid in wanted if cid in calls]
         taken = {cid: calls.pop(cid) for cid in wanted if where is None or where(calls[cid])}
         if not calls:
             self._open_tool_calls.pop(session.id, None)

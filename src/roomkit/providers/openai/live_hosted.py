@@ -199,13 +199,15 @@ class OpenAILiveHostedDelegationMixin(RealtimeVoiceProvider):
             )
 
     async def submit_tool_result(self, session: VoiceSession, call_id: str, result: str) -> None:
-        state = self._states.get(session.id)
-        if state is None:
-            return
         held, booked = self._answerable_tool_call(session, call_id)
         if not held:
             return
-        _, key = booked
+        issuer, key = booked
+        state = self._states.get(session.id)
+        if state is None or issuer is not state:
+            # Issued by a connection that is gone: no one reads its result.
+            self._log_dropped_result(session, call_id)
+            return
         logger.debug(
             "[%s →] response.item.create call=%s (session %s)", _LOG_TAG, call_id, session.id
         )

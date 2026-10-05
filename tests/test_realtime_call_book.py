@@ -2,8 +2,10 @@
 
 A result submitted for a call the provider abandoned, or never issued, goes
 out on none of them; a call issued again under an abandoned id is a new call,
-answered; the abandonment is reported once. Each provider is driven through
-its own wire: its inbound event issues the call, its own path abandons it.
+answered; the abandonment is reported once. Each provider issues the call
+from its own wire (its inbound event); the abandonment is the provider's own
+path where it has one on the wire (Gemini's cancellation), else the step its
+connection's end runs.
 """
 
 from __future__ import annotations
@@ -215,3 +217,42 @@ async def test_a_result_for_an_abandoned_or_unknown_id_goes_out_on_no_provider(n
     assert (late, unknown, reissued) == (False, False, True)
     assert abandoned[0] == ["c1"]
     assert sum(ids.count("c1") for ids in abandoned) == 1
+
+
+async def test_a_cancellation_naming_a_call_twice_abandons_it_once() -> None:
+    """A server may name a call twice in one cancellation: it is abandoned
+    and reported once, and the receive loop never sees an error."""
+    driver = _Gemini()
+    provider = await driver.start()
+    abandoned: list[list[str]] = []
+    provider.on_tool_call_cancelled(lambda session, ids: abandoned.append(list(ids)))
+    await driver.issue("c1")
+
+    cancellation = SimpleNamespace(tool_call_cancellation=SimpleNamespace(ids=["c1", "c1"]))
+    await provider._handle_server_response(driver.session, cancellation)
+
+    assert abandoned == [["c1"]]
+
+
+async def test_a_second_connect_under_a_live_session_abandons_the_old_connection_s_calls() -> None:
+    """Deepgram connected again under the same session id: the call the old
+    connection issued is abandoned and reported, and its result is not
+    answered on the new socket."""
+    driver = _Deepgram()
+    provider = await driver.start()
+    abandoned: list[list[str]] = []
+    provider.on_tool_call_cancelled(lambda session, ids: abandoned.append(list(ids)))
+    await driver.issue("old-1")
+    old_ws = driver.ws
+
+    driver.session.state = VoiceSessionState.CONNECTING
+    new_ws = await deepgram_connect(provider, driver.session)
+    before = len(new_ws.sent)
+    await provider.submit_tool_result(driver.session, "old-1", "{}")
+    answered = any("old-1" in str(frame) for frame in new_ws.sent[before:])
+    for ws in (old_ws, new_ws):
+        ws.finish()
+    await asyncio.sleep(0.05)
+
+    assert abandoned == [["old-1"]]
+    assert answered is False
