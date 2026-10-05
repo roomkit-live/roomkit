@@ -8,6 +8,7 @@ import time
 from collections.abc import Awaitable, Callable, Mapping
 from copy import deepcopy
 from dataclasses import dataclass
+from functools import partial
 from typing import TYPE_CHECKING, Any, ClassVar, Literal
 
 from roomkit.channels._acp_client import (
@@ -681,7 +682,7 @@ class ACPEventsMixin:
         """Hand a call's end to the handler (:func:`_handler_report`).
         ``False`` when the handler raised before its report reached
         ON_TOOL_CALL: the call's report is then the channel's (RFC §9.3)."""
-        report = _handler_report(handler, room_id, tool, end)
+        report = partial(_handler_report, handler, room_id, tool, end)
         return await handler_reported(
             report, f"reporting the ACP call {tool.tool_id}", tool.tool_id
         )

@@ -858,7 +858,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   refusal, and that call was reported twice when the handler raised after
   reporting it. One guard serves ACP and the AI channel's external door:
   `handler_reported` watches whether the handler's report reached
-  ON_TOOL_CALL.
+  ON_TOOL_CALL's observers, and catches an override that raises at the call
+  itself (one that cannot take the arguments the door hands it), which
+  failed an ACP turn or a cut call's report. The failure is logged on
+  `roomkit.tools.external` ("External tool handler failed ..."), where ACP
+  logged it on `roomkit.channels.acp`.
 
 - Each tool call of a text turn is held as a call of its own, never by its
   provider's id (RMK-506, RFC §9.3, §12.4): a call under an id an earlier

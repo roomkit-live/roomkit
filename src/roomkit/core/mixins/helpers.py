@@ -1015,12 +1015,17 @@ class HelpersMixin:
         kit_ref = self
 
         async def _callback(event: ToolCallEvent) -> None:
-            # A handler that raises past this point has made the call's
-            # report: its door does not make it again.
-            note_handler_report(event.tool_call_id)
             # The turn that announced the call claims its one report where
             # the observers hear it (RFC §9.3).
-            claim = turn_report_claim(event.tool_call_id, channel_id)
+            turn_claim = turn_report_claim(event.tool_call_id, channel_id)
+
+            def claim() -> bool:
+                # Where the observers hear it: a handler that raises past
+                # this point has made the call's report, and its door does
+                # not make it again.
+                note_handler_report(event.tool_call_id)
+                return turn_claim() if turn_claim is not None else True
+
             await kit_ref._report_tool_call(event, channel_id, claim=claim)
 
         return _callback
