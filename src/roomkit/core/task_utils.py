@@ -16,6 +16,11 @@ class _Closable(Protocol):
     _closed: bool
 
 
+# How long a channel's close waits for the work it cancelled (its calls, its
+# scheduled tasks) before it goes on and says what is still running.
+CLOSE_WAIT_S = 5.0
+
+
 def check_open(kit: _Closable, what: str = "background run") -> None:
     """Refuse to start *what* on a closing *kit*: started now, it would
     outlive it (RFC §19.7.3). Every door that starts a worker's turn on its

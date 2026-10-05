@@ -7,6 +7,7 @@ is the channel's own, served by the loop (RFC §9.3, who serves a call).
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time
@@ -26,8 +27,10 @@ from roomkit.tools._turn_calls import AnnouncedCall, reporting
 from roomkit.tools.context import _ToolLoopContext
 from roomkit.tools.external import ExternalToolHandler, handler_reported, refusal_detail
 from roomkit.tools.result import (
+    CHANNEL_CLOSED,
     as_tool_result,
     call_id_in_flight_error,
+    cancelled_tool_error,
     failure_detail,
     tool_failure,
 )
@@ -111,9 +114,19 @@ class _ExternalStreamTools:
         entry.marker = start
         yield start
         await self._publish_start(call, arguments, round_idx)
-        decided = _Decided(arguments, result, kind)
+        decided: _Decided | None = _Decided(arguments, result, kind)
         if pending and self.handler is not None:
             decided = await self._settle(entry, self.handler, decided)
+        if decided is None:
+            # The channel's close cut the decision: the call is the turn
+            # end's to report, through the handler, as any cut call.
+            end = self._cut_end(call, arguments, started_at)
+            start.ended = end
+            yield end
+            await self._publish_end(
+                call, end.result, OutcomeKind.CANCELLED, round_idx, end.duration_ms
+            )
+            return
         duration_ms = int((time.monotonic() - started_at) * 1000)
         # The model reads it bounded, as any outcome, and so does its END row;
         # the report heard it whole (RFC §21.5).
@@ -165,14 +178,40 @@ class _ExternalStreamTools:
 
     async def _settle(
         self, entry: AnnouncedCall, handler: ExternalToolHandler, pending: _Decided
-    ) -> _Decided:
-        """What a still-pending call becomes. One under an id another call of
-        its round holds is refused by the channel, as on every door, and the
-        handler never asked (RFC §12.4)."""
+    ) -> _Decided | None:
+        """What a still-pending call becomes; ``None`` when the channel's
+        close cut it first. One under an id another call of its round holds
+        is refused by the channel, as on every door, and the handler never
+        asked (RFC §12.4)."""
         if entry.duplicate:
             body = call_id_in_flight_error(entry.call.id)
             return _Decided(pending.arguments, body, OutcomeKind.REFUSED, by_channel=True)
-        return await self._decide(handler, entry.call, pending)
+        if self.loop_ctx.closing:
+            return None
+        decision = asyncio.ensure_future(self._decide_in_turn(handler, entry.call, pending))
+        try:
+            return await decision
+        except asyncio.CancelledError:
+            task = asyncio.current_task()
+            if decision.cancelled() and task is not None and task.cancelling() == 0:
+                return None
+            raise
+
+    async def _decide_in_turn(
+        self, handler: ExternalToolHandler, call: StreamToolCall, pending: _Decided
+    ) -> _Decided:
+        """The handler's decision, run as one of the turn's calls: the
+        channel's close cuts it (RFC §9.3)."""
+        with self.loop_ctx.cut_by_close():
+            return await self._decide(handler, call, pending)
+
+    def _cut_end(
+        self, call: StreamToolCall, arguments: dict[str, Any], started_at: float
+    ) -> ToolCallEndMarker:
+        """The END marker of a pending call the channel's close cut."""
+        body = cancelled_tool_error(call.name, CHANNEL_CLOSED)
+        duration_ms = int((time.monotonic() - started_at) * 1000)
+        return _end_marker(call, arguments, body, OutcomeKind.CANCELLED, duration_ms)
 
     async def _decide(
         self, handler: ExternalToolHandler, call: StreamToolCall, pending: _Decided

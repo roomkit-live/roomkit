@@ -271,6 +271,11 @@ def unserved_tool_error(name: str) -> str:
     return json.dumps({"error": f"No handler for tool {name}"})
 
 
+# What a cancelled call's result says cut it (RFC §9.3).
+TURN_ENDED = "The turn ended before its result."
+CHANNEL_CLOSED = "The channel closed before its result."
+
+
 def cancelled_tool_error(name: str, hint: str) -> str:
     """The failure a call reports when a stop or an ending interrupted it
     before its result, on every channel (RFC §9.3); *hint* says what did."""

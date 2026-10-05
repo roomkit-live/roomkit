@@ -62,7 +62,7 @@ from roomkit.channels.base import (
     RealtimeModelHost,
     _check_room_scope,
 )
-from roomkit.core.task_utils import _finish_cleanup
+from roomkit.core.task_utils import CLOSE_WAIT_S, _finish_cleanup
 from roomkit.models.channel import ChannelBinding, ChannelCapabilities, ChannelOutput
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundMessage
@@ -1591,7 +1591,7 @@ class RealtimeVoiceChannel(
         for task in tool_tasks:
             task.cancel()
         if tool_tasks:
-            _, pending = await asyncio.wait(tool_tasks, timeout=5.0)
+            _, pending = await asyncio.wait(tool_tasks, timeout=CLOSE_WAIT_S)
             if pending:
                 logger.warning(
                     "Timed out cancelling %d tools for session %s", len(pending), session.id
@@ -2134,7 +2134,7 @@ class RealtimeVoiceChannel(
             try:
                 await asyncio.wait_for(
                     asyncio.gather(*tasks, return_exceptions=True),
-                    timeout=5.0,
+                    timeout=CLOSE_WAIT_S,
                 )
             except TimeoutError:
                 logger.warning("Timed out waiting for %d tasks during close", len(tasks))

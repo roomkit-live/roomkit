@@ -71,6 +71,8 @@ from roomkit.tools._outcome import OutcomeKind, ToolOutcome, kept_in_tool_memory
 from roomkit.tools._turn_calls import AnnouncedCall, reporting
 from roomkit.tools.context import ToolCallContext, _current_tool_call
 from roomkit.tools.result import (
+    CHANNEL_CLOSED,
+    TURN_ENDED,
     GateRefusal,
     as_tool_result,
     call_id_in_flight_error,
@@ -421,16 +423,13 @@ class AIToolsMixin(_AIChannelContract):
             declared_tools=declared_tools,
             parent_span_id=parent_span_id,
         )
-        loop_ctx = self._get_loop_ctx()
-        calls = loop_ctx.calls
+        calls = self._get_loop_ctx().calls
         tasks = [
             asyncio.create_task(
                 self._serve_announced(tc, calls.entry_of(tc) or calls.announce(tc), scope)
             )
             for tc in tool_calls
         ]
-        # The channel's close cancels them, each then ending cancelled.
-        loop_ctx.round_tasks = tasks
         try:
             results = await asyncio.gather(*tasks)
         except BaseException:
@@ -442,49 +441,48 @@ class AIToolsMixin(_AIChannelContract):
                     task.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
             raise
-        finally:
-            loop_ctx.round_tasks = []
         return list(results)
 
     async def _serve_announced(
         self, tc: Any, entry: AnnouncedCall, scope: _CallRound
     ) -> AIToolResultPart:
         """One call of a round as a call of its own: its reports are its, a
-        duplicate of its id is refused, and its end rides its start marker
-        as soon as it is known, so a turn cut later closes it as it ended."""
+        duplicate of its id is refused, the channel's close cuts it, and its
+        end rides its start marker as soon as it is known, so a turn cut
+        later closes it as it ended."""
+        loop_ctx = self._get_loop_ctx()
         started = time.monotonic()
-        with reporting(entry):
-            try:
-                if entry.duplicate:
-                    part = await self._refuse_id_in_flight(tc, scope)
-                else:
-                    part = await self._run_call(tc, scope)
-            except asyncio.CancelledError:
-                if not self._cut_by_close():
-                    raise
-                part = await self._report_closed_call(entry, scope)
+        with reporting(entry), loop_ctx.cut_by_close():
+            if loop_ctx.closing:
+                part = await self._closed_call_part(loop_ctx, entry)
+            else:
+                try:
+                    part = await self._serve_entry(tc, entry, scope)
+                except asyncio.CancelledError:
+                    if not loop_ctx.absorb_close_cut():
+                        raise
+                    part = await self._closed_call_part(loop_ctx, entry)
         if entry.marker is not None:
             duration_ms = int((time.monotonic() - started) * 1000)
             entry.marker.ended = call_end_marker(tc, entry.marker, part, duration_ms)
         return part
 
-    def _cut_by_close(self) -> bool:
-        """Whether the cancellation raised here came from the channel's close
-        alone: it is then the call's outcome, and the task goes on to report
-        it. A cancellation of the turn itself still ends the task."""
-        task = asyncio.current_task()
-        if task is None or not self._get_loop_ctx().closing:
-            return False
-        return task.uncancel() == 0
-
-    async def _report_closed_call(
-        self, entry: AnnouncedCall, scope: _CallRound
+    async def _serve_entry(
+        self, tc: Any, entry: AnnouncedCall, scope: _CallRound
     ) -> AIToolResultPart:
-        """The outcome of a call the channel's close cut: cancelled, reported
-        once with the arguments it ran with (RFC §9.3)."""
-        tc = entry.as_ran()
-        body = cancelled_tool_error(tc.name, "The channel closed before its result.")
-        await self._fire_tool_refusal(tc, tc.arguments, body, scope.room_id, cancelled=True)
+        """Run the call, or refuse it when its id is held (RFC §12.4)."""
+        if entry.duplicate:
+            return await self._refuse_id_in_flight(tc, scope)
+        return await self._run_call(tc, scope)
+
+    async def _closed_call_part(
+        self, loop_ctx: _ToolLoopContext, entry: AnnouncedCall
+    ) -> AIToolResultPart:
+        """What the model reads of a call the channel's close cut, the call
+        reported as any call a cut leaves (RFC §9.3)."""
+        await self._report_cut_call(loop_ctx, entry, CHANNEL_CLOSED)
+        tc = entry.call
+        body = cancelled_tool_error(tc.name, CHANNEL_CLOSED)
         return ToolOutcome(OutcomeKind.CANCELLED, body).as_part(tc.id, tc.name)
 
     async def _run_call(self, tc: Any, scope: _CallRound) -> AIToolResultPart:
@@ -731,11 +729,13 @@ class AIToolsMixin(_AIChannelContract):
             with reporting(entry):
                 await self._report_cut_call(loop_ctx, entry)
 
-    async def _report_cut_call(self, loop_ctx: _ToolLoopContext, entry: AnnouncedCall) -> None:
-        """Report one call the turn cut before its report: with the outcome
+    async def _report_cut_call(
+        self, loop_ctx: _ToolLoopContext, entry: AnnouncedCall, hint: str = TURN_ENDED
+    ) -> None:
+        """Report one call a cut left before its report: with the outcome
         the model read, through the handler that was deciding it, or
-        cancelled, with the arguments it ran with (also when that handler
-        raised before reporting it)."""
+        cancelled, with the arguments it ran with and *hint* saying what cut
+        it (also when that handler raised before reporting it)."""
         if entry.known is not None:
             await self._report_known_outcome(loop_ctx, entry.known)
             return
@@ -750,7 +750,7 @@ class AIToolsMixin(_AIChannelContract):
             # that reports nothing has still made it.
             loop_ctx.claim_report(tc.id)
             return
-        body = cancelled_tool_error(tc.name, "The turn ended before its result.")
+        body = cancelled_tool_error(tc.name, hint)
         await self._fire_tool_refusal(tc, tc.arguments, body, loop_ctx.room_id, cancelled=True)
 
     async def _report_known_outcome(

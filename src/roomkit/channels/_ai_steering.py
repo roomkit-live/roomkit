@@ -6,6 +6,7 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING
 
+from roomkit.core.task_utils import CLOSE_WAIT_S
 from roomkit.models.steering import Cancel, InjectMessage, SteeringDirective, UpdateSystemPrompt
 from roomkit.providers.ai.base import AIContext, AIMessage
 from roomkit.tools.context import _current_loop_ctx, _ToolLoopContext
@@ -16,10 +17,6 @@ else:
     _AIChannelContract = object
 
 logger = logging.getLogger("roomkit.channels.ai")
-
-# How long a close waits for its cut turns to end, as a speech-to-speech
-# channel's close waits for the tools it cancels.
-_CLOSE_WAIT_S = 5.0
 
 
 class AISteeringMixin(_AIChannelContract):
@@ -85,31 +82,39 @@ class AISteeringMixin(_AIChannelContract):
 
     async def _end_running_turns(self) -> None:
         """Cut every turn still running, as the channel closes (RFC §9.3):
-        the calls its round executes are cancelled and reported cancelled, no
-        further round is asked, and the close waits for the turns to end, at
-        most :data:`_CLOSE_WAIT_S`. A call whose own handler closes the
-        channel runs on, and its turn is not waited for."""
+        the calls it runs are cancelled and reported cancelled, no further
+        round is asked, and the close waits for the turns to end, at most
+        :data:`CLOSE_WAIT_S`. A close from inside a turn (one of its calls,
+        one of its hooks) spares the current task and does not wait for that
+        turn; a turn an earlier close cut is not cut or waited for again."""
         current = asyncio.current_task()
-        ending: list[asyncio.Event] = []
-        for ctx in list(self._active_loops.values()):
-            ctx.closing = True
-            ctx.cancel_event.set()
-            if current in ctx.round_tasks:
-                continue
-            for task in ctx.round_tasks:
-                task.cancel()
-            ending.append(ctx.ended)
+        ending = [
+            ctx.ended
+            for ctx in list(self._active_loops.values())
+            if not ctx.closing and self._cut_turn(ctx, current)
+        ]
         if not ending:
             return
         waits = asyncio.gather(*(ended.wait() for ended in ending))
         try:
-            await asyncio.wait_for(waits, _CLOSE_WAIT_S)
+            await asyncio.wait_for(waits, CLOSE_WAIT_S)
         except TimeoutError:
             logger.warning(
                 "Channel %s closed with %d turn(s) still running",
                 self.channel_id,
                 sum(not ended.is_set() for ended in ending),
             )
+
+    @staticmethod
+    def _cut_turn(ctx: _ToolLoopContext, current: asyncio.Task[object] | None) -> bool:
+        """Cut one turn: no further round, its calls cancelled but the current
+        task. Whether the close waits for it: not when it runs the close."""
+        ctx.closing = True
+        ctx.cancel_event.set()
+        for task in list(ctx.cancellable):
+            if task is not current:
+                task.cancel()
+        return current not in ctx.cancellable and _current_loop_ctx.get() is not ctx
 
     def _steering_targets(
         self, directive: SteeringDirective, loop_id: str | None, room_id: str | None

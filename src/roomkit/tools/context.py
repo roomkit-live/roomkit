@@ -217,11 +217,12 @@ class _ToolLoopContext:
     has_turn: bool = True
     steering_queue: asyncio.Queue[SteeringDirective] = field(default_factory=asyncio.Queue)
     cancel_event: asyncio.Event = field(default_factory=asyncio.Event)
-    # Set by the channel's close (RFC §9.3): the calls the round runs are
+    # Set by the channel's close (RFC §9.3): the calls the turn runs are
     # cancelled, each reported cancelled, and no further round is asked.
     closing: bool = False
-    # The tasks running the current round's calls, which the close cancels.
-    round_tasks: list[asyncio.Task[Any]] = field(default_factory=list)
+    # The tasks running the turn's calls (its round's, an external handler's
+    # pending decision), each registered once running: the close cancels them.
+    cancellable: set[asyncio.Task[Any]] = field(default_factory=set)
     # Set once the turn ended and the calls it cut were reported.
     ended: asyncio.Event = field(default_factory=asyncio.Event)
     loop_id: str = ""
@@ -283,6 +284,29 @@ class _ToolLoopContext:
     def was_reported(self, call_id: str) -> bool:
         """Whether the call *call_id* names now has had its one report."""
         return self.calls.was_reported(call_id)
+
+    @contextmanager
+    def cut_by_close(self) -> Iterator[None]:
+        """Run the enclosed code as one of the turn's calls: the channel's
+        close cancels the current task while it is inside (RFC §9.3)."""
+        task = asyncio.current_task()
+        if task is None:
+            yield
+            return
+        self.cancellable.add(task)
+        try:
+            yield
+        finally:
+            self.cancellable.discard(task)
+
+    def absorb_close_cut(self) -> bool:
+        """Absorb a cancellation the channel's close made: ``True`` when it
+        was the close's alone, and the task goes on, its call cancelled;
+        ``False`` for a cancellation of the turn itself, to re-raise."""
+        task = asyncio.current_task()
+        if task is None or not self.closing:
+            return False
+        return task.uncancel() == 0
 
     @classmethod
     def for_loop(

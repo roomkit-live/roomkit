@@ -852,14 +852,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- An `AIChannel` closed while a tool runs, by itself or by the kit, cancels
-  the call and reports it once, cancelled, with its end row, and asks no
-  further round (RMK-511, RFC §9.3), as a speech-to-speech channel's close
-  interrupts its calls: the tool ran on, its report never reached
-  ON_TOOL_CALL's observers on `kit.close()` (the store was sealed), and on
-  `channel.close()` the turn went on to the model's next round. The close
-  waits for its turns to end, at most 5 s; a handler that closes its own
-  channel runs on.
+- An `AIChannel` closed while its turn runs a call, by itself or by the
+  kit, cancels the call and reports it once, cancelled, with its end row,
+  and asks no further round (RMK-511, RFC §9.3), as a speech-to-speech
+  channel's close interrupts its calls: the channel's own tool and an
+  external handler's pending decision alike (the handler hears
+  `on_tool_cancelled`), and a round whose calls had not started yet runs
+  none of them. The tool ran on, its report never reached ON_TOOL_CALL's
+  observers on `kit.close()` (the store was sealed), and on `channel.close()`
+  the turn went on to the model's next round. The close waits for its turns
+  to end, at most 5 s, as a speech-to-speech channel's does; a call whose
+  handler closes its own channel runs on (the other calls of its round are
+  cut), a close from one of the turn's hooks does not wait for that turn,
+  and a second close does not wait again for a turn the first one cut.
 
 - An agent's auto-greeting on a `RealtimeAudioVideoChannel` session reaches
   the model as its own `assistant` turn again (RMK-501), as on a
