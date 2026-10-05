@@ -19,6 +19,7 @@ from roomkit.models.hook import HookResult
 from roomkit.voice.realtime.mock import MockRealtimeProvider, MockRealtimeTransport
 from roomkit.voice.testing import VoiceTrace
 from tests.test_realtime_skills import _registry_with_skill
+from tests.tool_doors import serve_recovered
 
 
 class FixedProvider(MockRealtimeProvider):
@@ -288,9 +289,7 @@ async def test_hangup_cancels_only_its_calls_and_refuses_late_execution(route: s
             assert not channel._try_recover_tool_call_from_text(
                 session, "call:calendar{action:list}"
             )[0]
-            await channel._dispatch_recovered_tool_call(
-                session, "calendar", {"action": "list"}, ""
-            )
+            await serve_recovered(channel, session, "calendar", {"action": "list"})
             await channel._inject_recovered_result(session, "calendar", "{}")
             assert not any(c.method == "inject_text" for c in provider.calls)
         else:

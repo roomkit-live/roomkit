@@ -858,7 +858,7 @@ class TestSendGreeting:
         mock_rtv = MagicMock()
         mock_rtv.__class__ = RealtimeVoiceChannel
         mock_rtv.get_room_sessions.return_value = [mock_session]
-        mock_rtv.provider.inject_text = AsyncMock(
+        mock_rtv.inject_text = AsyncMock(
             side_effect=lambda *a, **k: order.append(f"{k['role']}:{a[1]}")
         )
         kit.channels = {"voice": mock_rtv}
@@ -872,7 +872,7 @@ class TestSendGreeting:
         await handler.send_greeting("r1", channel_id="voice")
 
         assert order == ["system:Respond in French.", "greeting"]
-        assert mock_rtv.provider.inject_text.await_args.kwargs["silent"] is True
+        assert mock_rtv.inject_text.await_args.kwargs["silent"] is True
 
 
 class TestSetLanguage:

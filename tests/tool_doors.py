@@ -204,7 +204,7 @@ async def _realtime_door(
         await _until(lambda: bool(provider.tool_results) and _reported(seen))
         seen.model_read = provider.tool_results[0][2] if provider.tool_results else None
     elif door == "rt-recovered":
-        await channel._dispatch_recovered_tool_call(session, call.name, arguments, "raw")
+        await serve_recovered(channel, session, call.name, arguments)
         await _until(lambda: _reported(seen))
         seen.model_read = provider.injected_texts[-1][1] if provider.injected_texts else None
     else:
@@ -287,3 +287,13 @@ async def run_door(
     if door == "conference":
         return await _conference_door(handler, call, hooks, schema, options)
     return await _realtime_door(door, handler, call, hooks, schema, options)
+
+
+async def serve_recovered(
+    channel: RealtimeVoiceChannel, session: Any, name: str, arguments: dict[str, Any]
+) -> None:
+    """Serve a call recovered from speech in this task, as the channel's
+    recovery does in a task of its own."""
+    call = channel._book_recovered_call(session, name, arguments)
+    call.task = asyncio.current_task()
+    await channel._serve_recovered_call(call)

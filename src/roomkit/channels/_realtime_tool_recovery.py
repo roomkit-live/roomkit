@@ -74,6 +74,10 @@ class RealtimeToolRecoveryHost(Protocol):
 
     def _session_catalogue(self, session_id: str) -> list[dict[str, Any]]: ...
 
+    async def inject_text(
+        self, session: VoiceSession, text: str, *, role: str = "user", silent: bool = False
+    ) -> Any: ...
+
 
 class RealtimeToolRecoveryMixin:
     """Detect and recover tool calls that a voice model emitted as text.
@@ -89,6 +93,7 @@ class RealtimeToolRecoveryMixin:
     _close_tool_call: Any  # cross-mixin (RealtimeToolsMixin)
     _tool_call_span: Any  # cross-mixin (RealtimeToolsMixin)
     _session_catalogue: Any  # cross-mixin (RealtimeToolsMixin)
+    inject_text: Any  # cross-mixin (RealtimeVoiceChannel)
 
     # ------------------------------------------------------------------
     # Public entry point (called from _realtime_transcription.py)
@@ -191,27 +196,17 @@ class RealtimeToolRecoveryMixin:
         denial travels the same way as a result — the model reads why it was
         refused and can correct itself on its next turn. The result arrives
         bounded by the channel's ``tool_result_max_length`` (RFC §21.5).
+        Injected through the channel, which announces it to
+        ON_REALTIME_TEXT_INJECTED as every injection (RFC §12.4).
         """
         if session.state == VoiceSessionState.ENDED:
             return
-        await self._provider.inject_text(
+        await self.inject_text(
             session,
             f"[Tool {tool_name} {verb}: {result_str}]",
             role="user",
             silent=True,
         )
-
-    async def _dispatch_recovered_tool_call(
-        self,
-        session: VoiceSession,
-        tool_name: str,
-        arguments: dict[str, Any],
-        raw_text: str,
-    ) -> None:
-        """Book a recovered tool call and serve it in this task."""
-        call = self._book_recovered_call(session, tool_name, arguments)
-        call.task = asyncio.current_task()
-        await self._serve_recovered_call(call)
 
     def _book_recovered_call(
         self, session: VoiceSession, tool_name: str, arguments: dict[str, Any]

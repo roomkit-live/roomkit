@@ -531,7 +531,7 @@ class HandoffHandler:
             lang = self._get_room_language(room, agent_id)
             for session in channel.get_room_sessions(room_id):
                 if lang:
-                    await channel.provider.inject_text(
+                    await channel.inject_text(
                         session, f"Respond in {lang}.", role="system", silent=True
                     )
                 await self._kit.send_greeting(

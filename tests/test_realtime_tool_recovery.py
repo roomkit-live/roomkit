@@ -479,7 +479,8 @@ class TestSpokenCallParsing:
         channel._framework = None
 
         text = "call:lookup{city:Paris}"
-        await channel._dispatch_recovered_tool_call(session, "lookup", {"city": "Paris"}, text)
+        assert channel._try_recover_tool_call_from_text(session, text)[0]
+        await asyncio.gather(*list(channel._scheduled_tasks))
 
         (injected,) = _injected(provider)
         assert "failed" in injected and "No handler for tool lookup" in injected

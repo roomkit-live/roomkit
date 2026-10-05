@@ -124,9 +124,11 @@ class GreetingMixin(HelpersMixin):
         if session is not None and isinstance(voice_ch, RealtimeVoiceChannel):
             # Every realtime channel, an audio-video one included (its session
             # start names its own type): the greeting is the model's own turn.
-            # Store first so AI sees greeting in history even if inject fails
+            # Store first so AI sees greeting in history even if inject fails.
+            # Through the channel, which announces it to
+            # ON_REALTIME_TEXT_INJECTED as every injection (RFC §12.4).
             await self._store_greeting_event(room_id, agent.channel_id, text)
-            await voice_ch.provider.inject_text(session, text, role="assistant")
+            await voice_ch.inject_text(session, text, role="assistant")
             return
 
         if session is not None and channel_type == ChannelType.VOICE:

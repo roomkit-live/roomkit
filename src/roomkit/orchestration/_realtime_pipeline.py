@@ -306,11 +306,7 @@ class RealtimePipeline:
                 # full-duplex provider voices a user injection instead
                 # of following it (RFC §12.4).
                 msg = self.greeting(new_id, language=lang)
-                await rtv.provider.inject_text(
-                    session,
-                    msg,
-                    role="system",
-                )
+                await rtv.inject_text(session, msg, role="system")
 
 
 def _agent_session_tools(
