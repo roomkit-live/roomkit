@@ -116,13 +116,11 @@ async def test_a_producer_cut_after_an_output_keeps_it_not_approved() -> None:
         "producer_failed",
         1,
     )
-    # The draft goes out and the failure surfaces beside it.
+    # The draft goes out and the cut surfaces beside it, to the caller: an
+    # expected end fires no ON_ERROR, as a room turn's cut fires none (RMK-513).
     assert isinstance(result.error, TaskCutShortError)
-    for _ in range(50):
-        if errors:
-            break
-        await asyncio.sleep(0.01)
-    assert [e.metadata["error_type"] for e in errors] == ["TaskCutShortError"]
+    await asyncio.sleep(0.1)
+    assert errors == []
     state = get_conversation_state(await kit.get_room("r"))
     assert state.context["_loop_stopped"] == "producer_failed"
     await kit.close()

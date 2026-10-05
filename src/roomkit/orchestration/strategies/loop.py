@@ -15,10 +15,11 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from roomkit.channels._tool_registry import orchestration_tool, schema_tool
+from roomkit.core._failure_log import mark_reported
 from roomkit.core.exceptions import RoomKitError, TaskCutShortError
 from roomkit.models.channel import ChannelBinding, ChannelOutput
 from roomkit.models.context import RoomContext
-from roomkit.models.enums import ChannelType
+from roomkit.models.enums import ChannelType, TaskStatus
 from roomkit.models.event import EventSource, RoomEvent, TextContent
 from roomkit.orchestration._background import (
     BackgroundRun,
@@ -402,13 +403,27 @@ def _cut_reason(result: DelegatedTaskResult | None) -> str | None:
 
 
 def _producer_failure(outcome: _LoopOutcome) -> Exception:
-    """The producer's failure, as the loop's caller reads it: its cut, or its
-    task's error."""
+    """The producer's failure, as the loop's caller reads it: its cut (an
+    expected end), or its task's error. One its turn raised after it began
+    was reported and logged in the task's room already: the caller hands it
+    on without a second report (RFC §15.2)."""
     if reason := outcome.cut_reason:
         return TaskCutShortError(reason, None)
     error = outcome.failure.error if outcome.failure is not None else None
-    return RoomKitError(
+    failure = RoomKitError(
         f"The producer's task failed: {error}" if error else "The producer's task gave no output"
+    )
+    return mark_reported(failure) if _failed_in_its_turn(outcome.failure) else failure
+
+
+def _failed_in_its_turn(result: DelegatedTaskResult | None) -> bool:
+    """Whether a task failed in its worker's turn, after the turn began: the
+    turn names how it ended (RFC §23.3), and reported its failure where it
+    ran."""
+    return (
+        result is not None
+        and result.status == TaskStatus.FAILED
+        and "loop_end_reason" in result.metadata
     )
 
 
