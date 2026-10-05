@@ -254,17 +254,18 @@ class MistralAIProvider(AIProvider):
             async for event in response:
                 data = event.data
                 model = getattr(data, "model", None) or model
-                if not data.choices:
-                    continue
-                delta = data.choices[0].delta
-                finish_reason = data.choices[0].finish_reason or finish_reason
-
-                # Extract usage from the stream when available. Normalize to
-                # the canonical key names every other provider emits
+                # Extract usage from the stream when available, before the
+                # choice guard: a server may report it on a chunk of its own
+                # with no choice, as the OpenAI wire does. Normalize to the
+                # canonical key names every other provider emits
                 # (input_tokens / output_tokens) so downstream usage trackers
                 # read one contract — Mistral's SDK calls them prompt/completion.
                 if data.usage:
                     usage = self._usage_from(data.usage)
+                if not data.choices:
+                    continue
+                delta = data.choices[0].delta
+                finish_reason = data.choices[0].finish_reason or finish_reason
 
                 # Accumulate streamed tool call deltas
                 if hasattr(delta, "tool_calls") and delta.tool_calls:
