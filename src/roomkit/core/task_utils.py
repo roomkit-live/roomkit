@@ -16,6 +16,10 @@ class _Closable(Protocol):
     _closed: bool
 
 
+class _HoldsRuns(Protocol):
+    _background_runs: set[asyncio.Task[None]]
+
+
 # How long a channel's close waits for the work it cancelled (its calls, its
 # scheduled tasks) before it goes on and says what is still running.
 CLOSE_WAIT_S = 5.0
@@ -31,6 +35,18 @@ def check_open(kit: _Closable, what: str = "background run") -> None:
     """
     if kit._closed:  # noqa: SLF001
         raise RoomKitError(f"The framework is closing: no {what} starts")
+
+
+def hold_task(kit: _HoldsRuns, work: Coroutine[Any, Any, None]) -> asyncio.Task[None]:
+    """Run *work* as a task *kit* holds until it ends, so its ``close()``
+    cancels it with the other background work (RFC §19.7.3, §23.3 step 8);
+    an exception it ends on is logged."""
+    task = asyncio.create_task(work)
+    runs = kit._background_runs  # noqa: SLF001
+    runs.add(task)
+    task.add_done_callback(runs.discard)
+    task.add_done_callback(log_task_exception)
+    return task
 
 
 async def _finish_cleanup(coro: Coroutine[Any, Any, object]) -> None:

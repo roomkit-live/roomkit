@@ -481,8 +481,9 @@ class RoomKit(
         return self._event_router
 
     async def _cancel_background_runs(self) -> None:
-        """Cancel the strategies' background runs and wait for their ends:
-        each frees its room and posts its terminal entry, cancelled."""
+        """Cancel the background work the kit holds and wait for its ends:
+        a strategy's run frees its room and posts its terminal entry,
+        cancelled; a delegation's hand-back under way is cut (RFC §23.3)."""
         runs = set(self._background_runs)
         while runs:
             await cancel_and_wait(*runs, log_errors_to=logger)

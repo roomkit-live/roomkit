@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Any
 from roomkit.channels._realtime_context import get_current_voice_session
 from roomkit.core._fallback import FALLBACK_FAILED
 from roomkit.core.exceptions import RoomKitError
-from roomkit.core.task_utils import check_open, log_task_exception
+from roomkit.core.task_utils import check_open, hold_task
 from roomkit.orchestration.status_bus import StatusLevel
 from roomkit.tasks.handback import hand_back, not_handed_back
 from roomkit.tools.context import _current_turn_chain_depth, current_tool_call
@@ -81,11 +81,7 @@ def start_background_run(kit: RoomKit, run: Coroutine[Any, Any, None]) -> None:
     except RoomKitError:
         run.close()
         raise
-    task = asyncio.create_task(run)
-    runs = kit._background_runs
-    runs.add(task)
-    task.add_done_callback(runs.discard)
-    task.add_done_callback(log_task_exception)
+    hold_task(kit, run)
 
 
 async def run_in_background[T](kit: RoomKit, run: BackgroundRun[T]) -> None:
