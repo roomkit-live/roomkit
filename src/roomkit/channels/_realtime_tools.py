@@ -14,7 +14,6 @@ from dataclasses import replace
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from roomkit.channels._realtime_context import (
-    _current_voice_session,
     serving_call,
     spare_own_orphaned_call,
 )
@@ -659,12 +658,8 @@ class RealtimeToolsMixin:
                 if dict_tool_name(tool)  # a provider's native tool has no name
             ]
             loop_ctx.admits = self._session_policy_check(session.id)
-        token = _current_voice_session.set(session)
-        try:
-            with serving_tool_call(call, self.channel_id, loop_ctx):
-                yield loop_ctx
-        finally:
-            _current_voice_session.reset(token)
+        with serving_tool_call(call, self.channel_id, loop_ctx):
+            yield loop_ctx
 
     def _call_timeout(self, name: str, room_id: str | None) -> float | None:
         """The bound of one call to *name* (RFC §21.6): the channel's, unless

@@ -18,6 +18,7 @@ from collections.abc import Awaitable, Callable, Iterable, Iterator
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any, Protocol
 
+from roomkit.channels._realtime_context import _current_voice_session
 from roomkit.core.exceptions import ToolFailedError, ToolRefusedError, UnservedToolCallError
 from roomkit.core.task_utils import shielded
 from roomkit.models.tool_call import ToolCallVerdict
@@ -453,15 +454,20 @@ def serving_tool_call(
     call: RealtimeToolCall, channel_id: str, loop_ctx: _ToolLoopContext
 ) -> Iterator[None]:
     """Run a handler inside *call*'s tool call context: ``current_tool_call()``
-    names the call, its room and the channel, as on every channel (RFC §21.4).
-    The structured copy the handler leaves there stays on *call*, for
-    ON_TOOL_CALL to see (RFC §9.3)."""
+    names the call, its room and the channel, as on every channel (RFC §21.4),
+    and ``get_current_voice_session()`` the session that issued it, on every
+    host (RFC §23.3 step 8). The structured copy the handler leaves there
+    stays on *call*, for ON_TOOL_CALL to see (RFC §9.3)."""
     call_ctx = ToolCallContext(
         room_id=loop_ctx.room_id or "", tool_call_id=call.call_id, channel_id=channel_id
     )
-    with _installed(loop_ctx, call_ctx):
-        yield
-        call.structured_content = call_ctx.structured_content
+    token = _current_voice_session.set(call.session)
+    try:
+        with _installed(loop_ctx, call_ctx):
+            yield
+            call.structured_content = call_ctx.structured_content
+    finally:
+        _current_voice_session.reset(token)
 
 
 def ended_outcome(call: RealtimeToolCall) -> ToolOutcome:
