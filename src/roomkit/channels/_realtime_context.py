@@ -77,6 +77,13 @@ def ending_cause() -> RealtimeToolCall | None:
     return served.call
 
 
+def held_by(call: RealtimeToolCall | None) -> list[asyncio.Task[Any]]:
+    """The tasks that hold *call*: its own, and the one carrying it."""
+    if call is None:
+        return []
+    return [task for task in (call.task, call.carrier) if task is not None]
+
+
 _carrying_task: contextvars.ContextVar[asyncio.Task[Any] | None] = contextvars.ContextVar(
     "_carrying_task",
     default=None,

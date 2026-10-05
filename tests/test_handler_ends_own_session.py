@@ -18,7 +18,7 @@ from typing import Any
 import pytest
 
 from roomkit import ConferenceRealtimeConfig, HookExecution, HookTrigger, RoomKit
-from roomkit.channels import _realtime_tool_executor
+from roomkit.channels import _realtime_endings
 from roomkit.channels.agent import Agent
 from roomkit.channels.realtime_voice import RealtimeVoiceChannel, get_current_voice_session
 from roomkit.providers.ai.base import AIResponse, AIToolCall
@@ -311,7 +311,7 @@ async def test_a_spared_call_still_working_at_close_is_waited_for(host: str) -> 
 async def test_a_spared_call_past_the_close_bound_is_cut_and_reported(
     host: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(_realtime_tool_executor, "CLOSE_WAIT_S", 0.1)
+    monkeypatch.setattr(_realtime_endings, "CLOSE_WAIT_S", 0.1)
     kit, reports, trace = await _ends_then_works(host, 30)
 
     await asyncio.wait_for(kit.close(), 5)

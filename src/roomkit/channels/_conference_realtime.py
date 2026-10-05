@@ -42,18 +42,17 @@ from roomkit.channels._conference_tools import (
     declared_tools,
     warn_unused_role_overrides,
 )
+from roomkit.channels._realtime_endings import interrupt_for_ending, settle_spared_calls
 from roomkit.channels._realtime_text_injected import fire_text_injected
 from roomkit.channels._realtime_tool_calls import RealtimeToolCall, ToolCallBook
 from roomkit.channels._realtime_tool_executor import (
     ABANDONED_BY_PROVIDER,
     ToolCallDoor,
-    interrupt_for_ending,
     report_cancelled_call,
     report_interrupted_calls,
     run_tool_call,
     serve_unbooked,
     serving_tool_call,
-    settle_spared_calls,
     submit_tool_outcome,
     tool_loop_context,
 )
