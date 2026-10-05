@@ -100,6 +100,7 @@ class AnthropicAIProvider(AIProvider):
             "timeout": self._anthropic.Timeout(
                 self._config.timeout, connect=self._config.connect_timeout
             ),
+            "max_retries": self._config.max_retries,
         }
         if self._config.base_url:
             client_kwargs["base_url"] = self._config.base_url

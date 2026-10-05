@@ -1426,6 +1426,29 @@ class TestAgainstInstalledSDK:
         assert type(timeout) is anthropic.Timeout
         assert (timeout.connect, timeout.read) == (3.0, 12.0)
 
+    async def test_a_refused_connection_is_one_attempt_the_retry_policy_judges(self) -> None:
+        """The SDK retries nothing itself: one HTTP attempt, then a retryable
+        error for RoomKit's RetryPolicy, which owns the retries (RMK-509)."""
+        anthropic = pytest.importorskip("anthropic")
+        httpx2 = pytest.importorskip("httpx2")
+        from roomkit.providers.ai.base import ProviderError
+        from roomkit.providers.anthropic.ai import AnthropicAIProvider
+
+        attempts: list[Any] = []
+
+        def refuse(request: Any) -> Any:
+            attempts.append(request)
+            raise httpx2.ConnectError("[Errno 111] Connection refused", request=request)
+
+        provider = AnthropicAIProvider(_config())
+        http = anthropic.DefaultAsyncHttpxClient(transport=httpx2.MockTransport(refuse))
+        provider._client = provider._client.with_options(http_client=http)
+
+        with pytest.raises(ProviderError) as raised:
+            await provider.generate(_context())
+
+        assert (raised.value.retryable, len(attempts)) == (True, 1)
+
     def test_it_builds_in_a_process_that_never_imported_openai(self) -> None:
         """The openai SDK rewrites ``httpx.Timeout.__module__`` on import, which
         let an httpx object past anthropic's httpx2 check. Only a fresh process

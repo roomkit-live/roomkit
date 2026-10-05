@@ -38,6 +38,10 @@ class AnthropicConfig(BaseModel):
     """TCP connect timeout in seconds, kept apart from ``timeout`` so a host
     that no longer accepts connections is given up on in seconds rather
     than after the read budget. The SDK's own default."""
+    max_retries: int = 0
+    """SDK-level retry count. Default 0 because RoomKit's RetryPolicy
+    handles retries at the right layer with proper backoff and fallback; the
+    SDK's own retries would multiply its attempts (RMK-509)."""
     base_url: str | None = None
     """Override the base URL (e.g., for Claude Code sandbox proxy).
 
