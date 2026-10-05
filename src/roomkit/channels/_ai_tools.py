@@ -705,18 +705,20 @@ class AIToolsMixin(_AIChannelContract):
     async def _report_cut_call(self, loop_ctx: _ToolLoopContext, entry: AnnouncedCall) -> None:
         """Report one call the turn cut before its report: with the outcome
         the model read, through the handler that was deciding it, or
-        cancelled, with the arguments it ran with."""
-        tc = entry.as_ran()
+        cancelled, with the arguments it ran with (also when that handler
+        raised before reporting it)."""
         if entry.known is not None:
             await self._report_known_outcome(loop_ctx, entry.known)
             return
+        tc = entry.as_ran()
         handler = self._external_tool_handler
         if handler is not None and entry.external:
-            # The report is claimed where the observers hear it; a handler
-            # that reports nothing has still made it.
-            await report_cut(handler, tc, loop_ctx.room_id)
-            loop_ctx.claim_report(tc.id)
-            return
+            reported = await report_cut(handler, tc, loop_ctx.room_id)
+            if reported or loop_ctx.was_reported(tc.id):
+                # The report is claimed where the observers hear it; a
+                # handler that reports nothing has still made it.
+                loop_ctx.claim_report(tc.id)
+                return
         body = cancelled_tool_error(tc.name, "The turn ended before its result.")
         await self._fire_tool_refusal(tc, tc.arguments, body, loop_ctx.room_id, cancelled=True)
 

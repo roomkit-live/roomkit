@@ -860,8 +860,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pending call of its round holds is refused ("has not had its result yet")
   without asking the handler, and one the provider ran is reported with its
   own arguments, where the handler decided both and one report was made; a
-  handler that raises reporting a call is logged and no longer fails the
-  turn. A turn cut while two calls under one id are open closes each of
+  handler that raises reporting a call, or reporting it cut, is logged and
+  no longer fails the turn, and the channel reports the call itself unless
+  the handler reported it before raising, so it is reported once. A turn cut while two calls under one id are open closes each of
   them, the one already refused as refused and the one running as
   cancelled, where one END row closed only one of their two START rows; a
   call that ended before the cut is closed with its outcome, its end riding

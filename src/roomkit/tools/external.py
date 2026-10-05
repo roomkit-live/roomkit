@@ -135,6 +135,19 @@ def refusal_detail(handler: ExternalToolHandler, detail: str | None) -> dict[str
     return {}
 
 
+async def handler_reported(report: Awaitable[Any], what: str) -> bool:
+    """Await an external handler's report of a call: ``False`` when it
+    raised, logged with *what* it was reporting. The door then makes the
+    call's report itself unless the handler made it before raising, so a
+    call is reported once, never zero times (RFC §9.3)."""
+    try:
+        await report
+    except Exception:
+        logger.exception("External tool handler failed %s", what)
+        return False
+    return True
+
+
 _WARNED: set[tuple[type, str]] = set()
 
 

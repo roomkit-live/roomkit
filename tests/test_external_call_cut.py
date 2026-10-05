@@ -329,14 +329,19 @@ async def test_a_local_call_cut_is_reported_by_the_channel_not_the_handler() -> 
 async def test_a_handler_failing_on_the_cut_does_not_disturb_the_turns_end(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
+    """The raise is logged, and the call is still reported cancelled, once:
+    by the channel, since the handler never reported it."""
     handler = _RaisesOnCut(pending=True)
     kit = await _room(_channel(handler, [_call("Bash"), AIResponse(content="done")]))
+    observed, _ = _observe(kit)
 
     with caplog.at_level(logging.ERROR):
         await _cut_while(kit, handler.asked)
+        await _until(lambda: bool(observed))
         await asyncio.sleep(0.05)
 
     assert "External tool handler failed on the cut call c1" in caplog.text
+    assert [(e.name, e.cancelled) for e in observed] == [("Bash", True)]
     await kit.close()
 
 

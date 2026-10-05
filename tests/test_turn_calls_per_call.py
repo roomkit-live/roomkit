@@ -6,7 +6,7 @@ pending, or reported as its own when the provider ran it, and a handler that
 raises reporting a call does not fail the turn. A call under an id an
 earlier round used is a new call: reported, and cancelled when the turn cuts
 it. A turn cut while two calls under one id are open closes each of them,
-with its own outcome.
+with its own outcome, and a call that ended before the cut keeps its own.
 """
 
 from __future__ import annotations
@@ -234,31 +234,70 @@ async def test_a_cut_turn_closes_each_of_two_open_calls_under_one_id(door: str) 
     assert (starts, sorted(ends)) == (2, [("cancelled", "first"), ("refused", "second")])
 
 
+@pytest.mark.parametrize("door", TEXT_DOORS)
+async def test_a_call_that_ended_before_its_round_was_cut_keeps_its_outcome(door: str) -> None:
+    """Its sibling hangs and the turn is cut: the call already served is
+    closed served, as its report says, and only the sibling cancelled."""
+    ran: list[str] = []
+
+    async def second_hangs(name: str, arguments: dict[str, Any]) -> str:
+        ran.append(arguments["q"])
+        if arguments["q"] == "second":
+            await asyncio.sleep(30)
+        return "fine"
+
+    calls = [_call("first"), _call("second").model_copy(update={"id": "c2"})]
+    channel = AIChannel(
+        "ai", provider=_provider([calls], door), tools=[TOOL], tool_handler=second_hangs
+    )
+    kit, reports = await _room(channel)
+
+    await _cut(kit, lambda: "second" in ran and len(reports) == 1)
+    await _until(lambda: len(reports) == 2)
+    starts, ends = await _rows(kit)
+    await kit.close()
+
+    assert _outcomes(reports) == [("first", False, False, False), ("second", False, True, True)]
+    assert (starts, sorted(ends)) == (2, [("cancelled", "second"), ("served", "first")])
+
+
 class _RaisesReporting(_Approves):
+    """Raises reporting, before its report reached ON_TOOL_CALL or after."""
+
+    def __init__(self, *, after: bool) -> None:
+        super().__init__()
+        self.after = after
+
     async def on_tool_result(
         self, tool_name: str, tool_input: dict[str, Any], result: str, **kw: Any
     ) -> None:
+        if self.after:
+            await super().on_tool_result(tool_name, tool_input, result, **kw)
         raise RuntimeError("audit sink down")
 
 
+@pytest.mark.parametrize("after", [False, True], ids=["before-its-report", "after-its-report"])
 @pytest.mark.parametrize("door", TEXT_DOORS)
-async def test_a_handler_raising_while_reporting_leaves_the_turn_whole(
-    door: str, caplog: pytest.LogCaptureFixture
+async def test_a_handler_raising_while_reporting_leaves_the_call_reported_once(
+    door: str, after: bool, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """The raise is logged; the turn does not fail on it, the call keeps its
-    end row, and its report is not made a second time by the turn's end."""
-    handler = _RaisesReporting()
+    """The raise is logged and the turn does not fail on it; the call keeps
+    its end row and is reported once: by the channel when the handler raised
+    before reporting it, never a second time when it raised after."""
+    handler = _RaisesReporting(after=after)
     provider = _provider([[_call("only", name="remote")]], door)
     channel = AIChannel("ai", provider=provider, external_tool_handler=handler)
     kit, reports = await _room(channel)
 
     with caplog.at_level(logging.ERROR):
         await kit.process_inbound(_message())
+    await _until(lambda: bool(reports))
+    await asyncio.sleep(0.05)
     _, ends = await _rows(kit)
     await kit.close()
 
     assert [r.getMessage() for r in caplog.records if r.levelno >= logging.ERROR] == [
         "External tool handler failed reporting the call c1"
     ]
-    assert reports == []
+    assert _outcomes(reports) == [("only", False, False, False)]
     assert ends == [("served", "only")]

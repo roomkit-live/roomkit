@@ -23,7 +23,7 @@ from roomkit.realtime.base import EphemeralEventType
 from roomkit.tools._outcome import OutcomeKind, ToolOutcome
 from roomkit.tools._turn_calls import AnnouncedCall, reporting
 from roomkit.tools.context import _ToolLoopContext
-from roomkit.tools.external import ExternalToolHandler, refusal_detail
+from roomkit.tools.external import ExternalToolHandler, handler_reported, refusal_detail
 from roomkit.tools.result import (
     as_tool_result,
     call_id_in_flight_error,
@@ -216,9 +216,10 @@ class _ExternalStreamTools:
 
         The report is claimed where the observers hear it, past the SYNC
         chain: a cut before then leaves it owed, with this outcome, to the
-        turn's end. A handler that reports nothing, or raises reporting, has
-        made the call's report. The report is the call's own, whichever call
-        of its round holds its id.
+        turn's end. A handler that reports nothing has made the call's
+        report; one that raises before making it leaves it to ON_TOOL_CALL.
+        The report is the call's own, whichever call of its round holds its
+        id.
         """
         call = entry.call
         event = ToolCallEvent(
@@ -243,21 +244,21 @@ class _ExternalStreamTools:
     ) -> None:
         """Hand *event* to whoever reports it: the observers alone for a call
         that never ran and that the channel decided (as a local call refused
-        or failed), the handler for what it decided, else ON_TOOL_CALL."""
+        or failed), the handler for what it decided, else ON_TOOL_CALL (and
+        when the handler raised before reporting it)."""
         if decided.by_channel and self.observe is not None:
             await self.observe(event)
             return
         handler = None if decided.by_channel else self.handler
-        if handler is None:
-            if self.report is not None:
-                await self.report(event)
-            return
-        try:
-            await self._hand_to_handler(handler, call, decided, event)
-        except Exception:
-            # As on the cut path: a handler that raises reporting does not
-            # end the turn, and its report is not made twice.
-            logger.exception("External tool handler failed reporting the call %s", call.id)
+        if handler is not None:
+            report = self._hand_to_handler(handler, call, decided, event)
+            if await handler_reported(report, f"reporting the call {call.id}"):
+                return
+            if self.loop_ctx.was_reported(call.id):
+                return
+        # No handler to report it, or one that raised before it did.
+        if self.report is not None:
+            await self.report(event)
 
     async def _hand_to_handler(
         self,
@@ -290,16 +291,15 @@ class _ExternalStreamTools:
 
 async def report_cut(
     handler: ExternalToolHandler, call: StreamToolCall, room_id: str | None
-) -> None:
+) -> bool:
     """Tell *handler* the turn cut *call* before its report: it reports the
     call cancelled, as every channel reports a call it cut (RFC §9.3). A
-    handler that raises does not disturb the turn's end."""
-    try:
-        await handler.on_tool_cancelled(
-            call.name, call.arguments, tool_call_id=call.id, room_id=room_id
-        )
-    except Exception:
-        logger.exception("External tool handler failed on the cut call %s", call.id)
+    handler that raises does not disturb the turn's end: ``False``, and the
+    caller reports the call itself unless the handler did before raising."""
+    report = handler.on_tool_cancelled(
+        call.name, call.arguments, tool_call_id=call.id, room_id=room_id
+    )
+    return await handler_reported(report, f"on the cut call {call.id}")
 
 
 def _end_marker(
