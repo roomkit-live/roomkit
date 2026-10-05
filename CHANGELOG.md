@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `ExternalToolHandler.on_tool_result(..., error_detail=)` (RMK-512, RFC
+  §9.3): what failed in the refusal of a call an ACP agent ran anyway (a hook
+  that failed closed, or the handler raising while it decided). Passed only
+  with `refused_but_ran`, and only to an override that takes it; it bears
+  `_fire_on_tool_hook`'s own name, so an override that hands its `**kwargs`
+  on reaches it. `PolicyExternalToolHandler` reports it on the event's
+  `error_detail`.
+
 ### Fixed
 
 - Every path reads a channel hosting a realtime model the same way
@@ -38,10 +48,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - ACP: a call whose permission RoomKit rejected because its external handler
   raised deciding it, that the agent ran anyway and closed completed, is now
   marked `refused_but_ran` like a refused one (RMK-512, RFC §9.3). Its report
-  carries what failed in the rejection (`error_detail`) whether the handler or
-  the channel makes it: `ExternalToolHandler.on_tool_result` takes an optional
-  `detail`, passed only with `refused_but_ran` and only to an override that
-  takes it, and `PolicyExternalToolHandler` hands it on as `error_detail`.
+  carries what failed in the rejection (`error_detail`) whether the handler,
+  through `on_tool_result(error_detail=)`, or the channel makes it.
 
 ## [0.95.0] — 2026-10-05
 

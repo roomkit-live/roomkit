@@ -608,4 +608,35 @@ async def test_an_override_without_detail_still_reports_a_call_run_past_a_refusa
 
     [event] = heard.observed
     assert (event.refused_but_ran, event.error_detail) == (True, None)
-    assert "on_tool_result takes no 'detail'" in caplog.text
+    assert "on_tool_result takes no 'error_detail'" in caplog.text
+
+
+class _Forwarding(_FailedClosed):
+    """An override of ``on_tool_result`` written as its docstring says: it
+    takes ``**kwargs`` and hands them on to ``_fire_on_tool_hook``."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.reported: list[str] = []
+
+    async def on_tool_result(
+        self, tool_name: str, tool_input: Any, result: str, **kwargs: Any
+    ) -> None:
+        kwargs.pop("job_id", None)
+        await self._fire_on_tool_hook(tool_name, tool_input, result, **kwargs)
+        self.reported.append(tool_name)
+
+
+async def test_an_override_handing_its_keywords_on_reports_a_call_run_past_a_refusal(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The keywords a door passes are ``_fire_on_tool_hook``'s own: handed
+    on whole, they report the call with its marker and what failed, and the
+    handler's report is its own, not the channel's fallback (RMK-512)."""
+    handler = _Forwarding()
+    heard, _ = await _acp_ran_anyway(handler)
+
+    [event] = heard.observed
+    assert (event.refused_but_ran, event.error_detail) == (True, "gate: approval db down")
+    assert handler.reported == [event.name]
+    assert "External tool handler failed" not in caplog.text

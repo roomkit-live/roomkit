@@ -57,7 +57,8 @@ class _ToolState:
     closed), for the observers only."""
     failure: str | None = None
     """What failed when the external tool handler raised deciding the
-    permission: the call is reported failed, by the channel, with it."""
+    permission: a call that did not run is reported failed, by the channel,
+    with it; one the agent ran anyway carries it as its rejection's detail."""
     failure_error: str | None = None
     """That failure as the AI door words it for a model: the tool failed and
     the failure's class, never its message."""

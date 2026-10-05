@@ -230,7 +230,7 @@ def _handler_report(
             _reported_body(tool, end),
             tool_call_id=tool.tool_id,
             room_id=room_id,
-            **detail_keyword(handler, "on_tool_refused", tool.refusal_detail),
+            **detail_keyword(handler, "on_tool_refused", _decision_detail(tool)),
         )
     return handler.on_tool_result(
         tool.name,
@@ -239,11 +239,11 @@ def _handler_report(
         is_error=end.status == "failed",
         tool_call_id=tool.tool_id,
         room_id=room_id,
-        **_ran_past_refusal(handler, tool, end),
+        **_ran_past_refusal_keywords(handler, tool, end),
     )
 
 
-def _ran_past_refusal(
+def _ran_past_refusal_keywords(
     handler: ExternalToolHandler, tool: _ToolState, end: _ToolEnd
 ) -> dict[str, Any]:
     """The keywords *handler*'s ``on_tool_result`` takes for a call the

@@ -127,7 +127,9 @@ class ToolCallEvent:
     closed and so refused the call, for logs and observers only. The model reads
     :attr:`result`, the failure without the message: that message can hold
     anything the failing code held, a connection string with its password
-    included. ``None`` for every other outcome.
+    included. Also on a call that ran past a refusal
+    (:attr:`refused_but_ran`), what failed in that refusal, when something
+    did. ``None`` for every other outcome.
     """
 
     refused: bool = False
@@ -144,10 +146,11 @@ class ToolCallEvent:
     """
     refused_but_ran: bool = False
     """Whether the call ran although RoomKit refused it: an ACP agent that
-    executed a call whose permission was rejected and closed it completed.
-    Reported as it ended, served (:attr:`refused` and :attr:`is_error`
-    false), and marked so an audit sees the refusal the agent went past
-    (RFC §9.3)."""
+    executed a call whose permission was rejected (refused, or its handler
+    raised deciding it) and closed it completed. Reported as it ended,
+    served (:attr:`refused` and :attr:`is_error` false), and marked so an
+    audit sees the refusal the agent went past, with what failed in it on
+    :attr:`error_detail` when something did (RFC §9.3)."""
 
 
 @dataclass(frozen=True)
