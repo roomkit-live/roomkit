@@ -22,6 +22,7 @@ from roomkit.providers.ai.base import (
     StreamToolCall,
     stream_done,
     tool_call_of,
+    unstatused_failure_retryable,
 )
 from roomkit.providers.ai.chat_request import ChatDialect, chat_messages
 from roomkit.providers.ai.openai_dialect import (
@@ -356,9 +357,7 @@ class MistralAIProvider(AIProvider):
         retryable = (
             status_code in RETRYABLE_STATUS_CODES
             if status_code
-            else any(
-                term in str(exc).lower() for term in ["rate", "limit", "429", "500", "502", "503"]
-            )
+            else unstatused_failure_retryable(exc)
         )
         return ProviderError(
             str(exc),

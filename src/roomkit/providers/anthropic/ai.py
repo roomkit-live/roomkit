@@ -25,6 +25,7 @@ from roomkit.providers.ai.base import (
     StreamTextDelta,
     StreamThinkingDelta,
     StreamToolCall,
+    is_transport_failure,
     request_api_key,
     tool_call_of,
 )
@@ -73,6 +74,7 @@ class AnthropicAIProvider(AIProvider):
             ) from exc
         self._config = config
         self._api_status_error = _anthropic.APIStatusError
+        self._api_connection_error = _anthropic.APIConnectionError
         self._anthropic = _anthropic
         self._client = self._build_client(config.api_key.get_secret_value())
         # Clients for credentials supplied per request (see ``request_api_key``),
@@ -297,10 +299,20 @@ class AnthropicAIProvider(AIProvider):
                 provider="anthropic",
                 status_code=exc.status_code,
             ) from exc
-        except Exception as exc:
+        except self._api_connection_error as exc:
+            # The SDK's own verdict: no status, the request never got an answer.
             raise ProviderError(
                 str(exc),
-                retryable=False,
+                retryable=True,
+                provider="anthropic",
+                status_code=None,
+            ) from exc
+        except Exception as exc:
+            # A transport failure the SDK let through mid-stream is as
+            # transient as the one it wraps (RMK-509).
+            raise ProviderError(
+                str(exc),
+                retryable=is_transport_failure(exc),
                 provider="anthropic",
                 status_code=None,
             ) from exc

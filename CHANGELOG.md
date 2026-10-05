@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A connection refused, reset or timed out before any status is now
+  `retryable` on Anthropic, Mistral and Gemini, as it already was on the
+  OpenAI wire, Ollama and PolarGrid, so the channel's `RetryPolicy` retries it
+  on every text provider, through `generate()` and the stream (RMK-509).
+  `providers.ai.base.is_transport_failure` recognises it once, through the
+  error's cause chain (httpx, httpx2, `ConnectionError`, `TimeoutError`);
+  a 400 stays final everywhere.
+
 - ACP: a call whose permission RoomKit rejected because its external handler
   raised deciding it, that the agent ran anyway and closed completed, is now
   marked `refused_but_ran` like a refused one (RMK-512, RFC §9.3). Its report

@@ -36,10 +36,15 @@ class _FakeAPIStatusError(Exception):
         self.status_code = status_code
 
 
+class _FakeAPIConnectionError(Exception):
+    """Stub for anthropic.APIConnectionError used in tests."""
+
+
 def _mock_anthropic_module() -> MagicMock:
     """Return a MagicMock that behaves like the anthropic module."""
     mod = MagicMock()
     mod.APIStatusError = _FakeAPIStatusError
+    mod.APIConnectionError = _FakeAPIConnectionError
     return mod
 
 
