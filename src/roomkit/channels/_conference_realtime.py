@@ -47,6 +47,7 @@ from roomkit.channels._realtime_tool_calls import RealtimeToolCall, ToolCallBook
 from roomkit.channels._realtime_tool_executor import (
     ABANDONED_BY_PROVIDER,
     ToolCallDoor,
+    interrupt_for_ending,
     report_cancelled_call,
     report_interrupted_calls,
     run_tool_call,
@@ -830,14 +831,13 @@ class ConferenceRealtime:
         if utterance is not None and not utterance.discarded:
             utterance.discarded = True
             utterance.finish()
-        for task in list(room.tasks):
-            task.cancel()
+        session, room.session = room.session, None
+        calls = self._tool_calls.take(session.id) if session is not None else []
+        interrupted, _ = interrupt_for_ending(calls, list(room.tasks))
         # A room off the books has nothing in flight: a delivery waiting on it
         # goes on to find its session gone.
         room.idle.set()
-        session, room.session = room.session, None
-        if session is not None:
-            self._report_detached_calls(session)
+        self._report_detached_calls(interrupted)
         return session
 
     def _report_stale_call(self, call: RealtimeToolCall) -> None:
@@ -854,13 +854,12 @@ class ConferenceRealtime:
         report.add_done_callback(self._reports.discard)
         report.add_done_callback(log_task_exception)
 
-    def _report_detached_calls(self, session: VoiceSession) -> None:
+    def _report_detached_calls(self, calls: list[RealtimeToolCall]) -> None:
         """Report each call the detach interrupted, once, as cancelled (RFC §12.4).
 
         The reports run beside the teardown; the disconnect that follows waits
         for them, so none races the store's release at close.
         """
-        calls = self._tool_calls.take(session.id)
         if not calls:
             return
         self._track_report(report_interrupted_calls(self, calls, _LEFT_THE_ROOM))

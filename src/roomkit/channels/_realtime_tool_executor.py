@@ -14,9 +14,9 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-from collections.abc import Awaitable, Callable, Iterator
+from collections.abc import Awaitable, Callable, Iterable, Iterator
 from dataclasses import replace
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 from roomkit.core.exceptions import ToolFailedError, ToolRefusedError, UnservedToolCallError
 from roomkit.core.task_utils import shielded
@@ -338,6 +338,20 @@ def cancelled_outcome(call: RealtimeToolCall, why: str) -> ToolOutcome:
     """The outcome of *call*, cut before its result by what *why* names."""
     body = cancelled_tool_error(call.name, f"{why} before its result; nothing was sent.")
     return ToolOutcome(OutcomeKind.CANCELLED, body)
+
+
+def interrupt_for_ending(
+    calls: Iterable[RealtimeToolCall], tasks: Iterable[asyncio.Task[Any]]
+) -> tuple[list[RealtimeToolCall], list[asyncio.Task[Any]]]:
+    """Cancel what an ending reaches, on every host: each of *tasks* and of
+    *calls* but the current task's, whose handler caused the ending and runs
+    on to report its own outcome (RFC §12.4). The calls to report
+    interrupted, and the tasks cancelled."""
+    current = asyncio.current_task()
+    cancelled = [task for task in tasks if task is not current]
+    for task in cancelled:
+        task.cancel()
+    return [call for call in calls if call.task is not current], cancelled
 
 
 async def report_interrupted_calls(

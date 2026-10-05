@@ -29,7 +29,11 @@ from roomkit.channels._realtime_response import RealtimeResponseMixin
 from roomkit.channels._realtime_speech import RealtimeSpeechMixin
 from roomkit.channels._realtime_text_injected import fire_text_injected
 from roomkit.channels._realtime_tool_calls import ToolCallBook
-from roomkit.channels._realtime_tool_executor import SESSION_ENDED, report_interrupted_calls
+from roomkit.channels._realtime_tool_executor import (
+    SESSION_ENDED,
+    interrupt_for_ending,
+    report_interrupted_calls,
+)
 from roomkit.channels._realtime_tool_gate import RealtimeToolGateMixin
 from roomkit.channels._realtime_tool_recovery import RealtimeToolRecoveryMixin
 from roomkit.channels._realtime_tools import RealtimeToolsMixin
@@ -1576,20 +1580,15 @@ class RealtimeVoiceChannel(
         call whose own handler ends the session (a hang-up tool) is not
         interrupted: it runs on and reports its own outcome.
         """
-        current = asyncio.current_task()
-        interrupted = [c for c in self._tool_calls.take(session.id) if c.task is not current]
         prefixes = (
             f"rt_tool_call:{session.id}:",
             f"rt_tool_recovery:{session.id}:",
             f"rt_delegation:{session.id}:",
         )
-        tool_tasks = [
-            task
-            for task in self._scheduled_tasks
-            if task is not current and task.get_name().startswith(prefixes)
-        ]
-        for task in tool_tasks:
-            task.cancel()
+        interrupted, tool_tasks = interrupt_for_ending(
+            self._tool_calls.take(session.id),
+            [task for task in self._scheduled_tasks if task.get_name().startswith(prefixes)],
+        )
         if tool_tasks:
             _, pending = await asyncio.wait(tool_tasks, timeout=CLOSE_WAIT_S)
             if pending:
