@@ -26,6 +26,7 @@ from roomkit.providers.ai.base import (
     StreamTextDelta,
     StreamThinkingDelta,
     StreamToolCall,
+    answered_by,
     tool_call_of,
 )
 from roomkit.providers.ai.response_schema import checked_stream, schema_for_generate
@@ -325,6 +326,7 @@ class GeminiAIProvider(AIProvider):
         usage: dict[str, int] = {}
         finish_reason: str | None = None
         block_reason: str | None = None
+        answered: str | None = None
 
         try:
             response_stream = await self._client.aio.models.generate_content_stream(  # ty: ignore[unresolved-attribute]
@@ -336,6 +338,7 @@ class GeminiAIProvider(AIProvider):
                 # Extract usage from each chunk (last one has the totals)
                 if chunk.usage_metadata:
                     usage = _usage_from_metadata(chunk.usage_metadata)
+                answered = getattr(chunk, "model_version", None) or answered
 
                 block_reason = prompt_block_reason(chunk) or block_reason
                 # Read before the content guards below: the chunk that reports
@@ -422,7 +425,7 @@ class GeminiAIProvider(AIProvider):
                 usage=usage,
                 finish_reason=finish_reason,
                 metadata={
-                    "model": self._config.model,
+                    **answered_by(answered, self._config.model),
                     **({"prompt_block_reason": block_reason} if block_reason else {}),
                 },
             )
