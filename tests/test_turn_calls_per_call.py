@@ -14,7 +14,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
 from typing import Any
 
 import pytest
@@ -28,14 +28,20 @@ from roomkit import (
     TextContent,
     ToolCallEvent,
 )
+from roomkit.channels.agent import Agent
 from roomkit.channels.ai import AIChannel
+from roomkit.channels.realtime_voice import RealtimeVoiceChannel
+from roomkit.core.mixins._response_reader import ResponseReader
 from roomkit.models.enums import EventType
 from roomkit.models.event import ToolCallContent
+from roomkit.models.streaming import ToolCallEndMarker, ToolCallStartMarker
 from roomkit.providers.ai.base import AIResponse, AIToolCall, ServedCall
 from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.tools.external import PolicyExternalToolHandler, ToolDecision
+from roomkit.voice.realtime.mock import MockRealtimeProvider, MockRealtimeTransport
+from roomkit.voice.realtime.reasoning import AgentReasoningBackend
 from tests.test_framework import SimpleChannel
-from tests.tool_doors import DOORS, TOOL
+from tests.tool_doors import DOORS, TOOL, TOOL_DICT
 
 TEXT_DOORS = [door for door in DOORS if door.startswith("text-")]
 
@@ -301,3 +307,96 @@ async def test_a_handler_raising_while_reporting_leaves_the_call_reported_once(
     ]
     assert _outcomes(reports) == [("only", False, False, False)]
     assert ends == [("served", "only")]
+
+
+async def _backend_turn(rounds: list[list[AIToolCall]]) -> tuple[list[ToolCallEvent], list[str]]:
+    """A realtime delegation run by an agent reasoning backend whose model
+    makes *rounds*: what ON_TOOL_CALL heard, and what ran."""
+    ran: list[str] = []
+
+    async def serves(name: str, arguments: dict[str, Any]) -> str:
+        ran.append(arguments["q"])
+        await asyncio.sleep(0.05)
+        return "fine"
+
+    responses = [AIResponse(content="", finish_reason="tool_calls", tool_calls=c) for c in rounds]
+    model = MockAIProvider(ai_responses=[*responses, AIResponse(content="done")])
+    provider = MockRealtimeProvider(full_duplex=True)
+    channel = RealtimeVoiceChannel(
+        "rt",
+        provider=provider,
+        transport=MockRealtimeTransport(),
+        tool_handler=serves,
+        tools=[TOOL_DICT],
+        reasoning_backend=AgentReasoningBackend(Agent("reasoner", provider=model)),
+    )
+    kit = RoomKit()
+    kit.register_channel(channel)
+    await kit.create_room(room_id="r")
+    await kit.attach_channel("r", "rt")
+    reports: list[ToolCallEvent] = []
+
+    @kit.hook(HookTrigger.ON_TOOL_CALL, execution=HookExecution.ASYNC, name="audit")
+    async def audit(event: ToolCallEvent, context: Any) -> None:
+        reports.append(event)
+
+    session = await channel.start_session("r", "u", "ws")
+    await provider.simulate_delegation(session, "d1", "integrator")
+    await _until(lambda: len(model.calls) > len(rounds) and len(reports) == 2)
+    await asyncio.sleep(0.05)
+    await kit.close()
+    return reports, ran
+
+
+async def test_a_reasoning_backend_s_reused_id_is_a_new_call() -> None:
+    """The rt-agent-backend door runs the same turn: a call under an id its
+    model used in an earlier round is run and reported, under that id."""
+    reports, ran = await _backend_turn([[_call("first")], [_call("second")]])
+
+    assert ran == ["first", "second"]
+    assert [(r.tool_call_id, r.arguments["q"], r.is_error) for r in reports] == [
+        ("d1:c1", "first", False),
+        ("d1:c1", "second", False),
+    ]
+
+
+async def test_a_reasoning_backend_s_second_call_under_a_held_id_is_refused() -> None:
+    reports, ran = await _backend_turn([[_call("first"), _call("second")]])
+
+    assert ran == ["first"]
+    assert _outcomes(reports) == [("first", False, False, False), ("second", True, False, True)]
+
+
+async def test_a_stopped_reader_closes_each_of_two_open_calls_under_one_id() -> None:
+    """A barge-in stops the reader while the round executes: each start is
+    closed by its own end, the one its ``ended`` is first, then the earliest
+    still open under the id."""
+    gate = asyncio.Event()
+    first = ToolCallStartMarker(tool_name="lookup", tool_id="c1", arguments={"q": "first"})
+    second = ToolCallStartMarker(tool_name="lookup", tool_id="c1", arguments={"q": "second"})
+    second.ended = ToolCallEndMarker(
+        tool_name="lookup", tool_id="c1", status="failed", outcome="refused"
+    )
+    first_end = ToolCallEndMarker(tool_name="lookup", tool_id="c1", outcome="served")
+
+    async def round_() -> AsyncIterator[Any]:
+        yield first
+        yield second
+        await gate.wait()
+        yield second.ended
+        yield first_end
+
+    reader = ResponseReader(round_())
+    assert [await reader.next(), await reader.next()] == [first, second]
+    executing = asyncio.ensure_future(reader.next())
+    await asyncio.sleep(0)
+    executing.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await executing
+    gate.set()
+    closed = await reader.stop()
+
+    assert [(start is first, end.outcome) for start, end in closed] == [
+        (False, "refused"),
+        (True, "served"),
+    ]

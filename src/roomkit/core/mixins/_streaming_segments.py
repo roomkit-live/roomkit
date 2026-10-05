@@ -128,7 +128,9 @@ class SegmentWriter:
         self._record_owed = False
         self._accumulated: list[str] = []
         self._writing: set[asyncio.Task[RoomEvent | None]] = set()
-        self._started: set[str] = set()
+        # The starts whose row was handed to the writer, by identity: two
+        # calls under one id are two calls (RFC §12.4).
+        self._started: list[ToolCallStartMarker] = []
         # Whether the reader was handed anything, a thinking delta included:
         # from there the turn began, and a stop cuts it.
         self._began = False
@@ -336,9 +338,9 @@ class SegmentWriter:
             self._record_owed = False
         return row
 
-    def started(self, tool_id: str) -> bool:
+    def started(self, marker: ToolCallStartMarker) -> bool:
         """Whether this call's start row was handed to the writer."""
-        return tool_id in self._started
+        return any(start is marker for start in self._started)
 
     async def take(self, marker: Any) -> list[RoomEvent]:
         """Handle a stream marker; the rows it committed, in order.
@@ -379,12 +381,12 @@ class SegmentWriter:
         (RFC §12.2 step 13s).
         """
         for start, end in closed:
-            if not self.started(start.tool_id):
+            if not self.started(start):
                 await self._write(self._start_row(start), exclude=None)
             await self._write(self._end_row(end), exclude=None)
 
     def _start_row(self, marker: ToolCallStartMarker) -> RoomEvent:
-        self._started.add(marker.tool_id)
+        self._started.append(marker)
         return self._build(
             EventType.TOOL_CALL_START,
             ToolCallContent(

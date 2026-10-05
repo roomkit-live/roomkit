@@ -22,6 +22,7 @@ from roomkit.channels._ai_loop_rules import (
 )
 from roomkit.channels._ai_stream_external_tools import _ExternalStreamTools
 from roomkit.channels._ai_stream_round import _StreamRound, _StreamRoundState
+from roomkit.channels._ai_tools import call_end_marker
 from roomkit.core.task_utils import shielded
 from roomkit.models.channel import ChannelOutput
 from roomkit.models.event import RoomEvent
@@ -464,9 +465,13 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
             answered=answered,
         )
         turn.count_round(calls)
-        for marker in markers:
+        for call, marker, result in zip(calls, markers, results, strict=False):
+            # Each call's end was set on its start as it finished; one is
+            # built here only if it was not, so every start gets its end.
             if marker.ended is not None:
                 yield marker.ended
+            else:
+                yield call_end_marker(call, marker, result, duration_ms)
         if turn.room_id:
             await self._publish_tool_event(
                 EphemeralEventType.TOOL_CALL_END,
@@ -556,9 +561,6 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                     yield turn.end("cancelled")
                     return
                 context = self._prepare_round_context(context, loop_ctx, rules, index)
-                # A provider's id names a call within its round only: one
-                # under it in this round is a new call (RFC §12.4).
-                loop_ctx.calls.next_round()
                 round_ = self._new_stream_round(turn, rules, index, external)
                 turn.segments.append(round_.state.reported)
                 # What this round declares, as the provider receives it.
@@ -611,7 +613,11 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
         index: int,
         external: _ExternalStreamTools,
     ) -> _StreamRound:
-        """One generation's consumer, wired to this channel's windows and hooks."""
+        """Begin a generation round: its consumer, wired to this channel's
+        windows and hooks, with the ids the previous round held freed."""
+        # A provider's id names a call within its round only: one under it
+        # in this round is a new call (RFC §12.4).
+        turn.loop_ctx.calls.next_round()
         return _StreamRound(
             index=index,
             room_id=turn.room_id,

@@ -42,8 +42,10 @@ class ToolCallStartMarker:
 class ToolCallEndMarker:
     """Yielded when a tool call completes.
 
-    One marker per individual tool call, matching a prior
-    :class:`ToolCallStartMarker` by ``tool_id``.
+    One marker per individual tool call, closing a prior
+    :class:`ToolCallStartMarker`: the one whose ``ended`` it is, else the
+    earliest still open under its ``tool_id`` (two calls under one id are
+    two calls, RFC §12.4).
     """
 
     tool_name: str

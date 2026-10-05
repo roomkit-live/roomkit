@@ -13,7 +13,11 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from roomkit.models.streaming import ToolCallStartMarker
+    from roomkit.models.tool_call import ToolCallEvent
 
 
 @dataclass(eq=False)
@@ -21,7 +25,8 @@ class AnnouncedCall:
     """One call the turn announced, and what the turn knows of it."""
 
     call: Any
-    marker: Any | None = None
+    """The provider's call (an ``AIToolCall`` or a ``StreamToolCall``)."""
+    marker: ToolCallStartMarker | None = None
     """Its start marker, on which the arguments it ran with and its end ride."""
     external: bool = False
     """The channel's external handler decides it: one cut before its report
@@ -30,7 +35,7 @@ class AnnouncedCall:
     """It came under an id another call of its round holds: refused."""
     arguments: dict[str, Any] | None = None
     """What it runs with, or what its gate had when it stopped it."""
-    known: Any | None = None
+    known: ToolCallEvent | None = None
     """Its report, once the model read its outcome: one cut before its
     observers heard it owes them that outcome."""
     reported: bool = False
@@ -67,7 +72,7 @@ class TurnCalls:
         self._unannounced: set[str] = set()
 
     def announce(
-        self, call: Any, *, marker: Any | None = None, external: bool = False
+        self, call: Any, *, marker: ToolCallStartMarker | None = None, external: bool = False
     ) -> AnnouncedCall:
         """Announce *call*, a duplicate when another call of the round holds
         its id, which then keeps it."""
@@ -95,6 +100,7 @@ class TurnCalls:
         held = self._holders.get(call_id)
         if held is not None:
             return held
+        # A call whose round ended, named from outside its own reporting.
         return next((e for e in reversed(self.entries) if e.call.id == call_id), None)
 
     def claim(self, call_id: str) -> bool:

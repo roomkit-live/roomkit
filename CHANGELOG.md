@@ -867,7 +867,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cancelled, where one END row closed only one of their two START rows; a
   call that ended before the cut is closed with its outcome, its end riding
   `ToolCallStartMarker.ended`, and each call's END row carries its own
-  duration rather than its round's.
+  duration rather than its round's (the round's ephemeral `TOOL_CALL_END`
+  event keeps the round's).
 
 - A result submitted for a realtime tool call the provider abandoned, or
   never issued, is dropped with a log on every provider (RMK-502, RFC §12.4):

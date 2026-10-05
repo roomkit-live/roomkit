@@ -119,7 +119,7 @@ class _ExternalStreamTools:
         bounded = self.bound(call.name, decided.result, call.id)
         end = _end_marker(call, decided.arguments, bounded, decided.kind, duration_ms)
         # Its end rides its start before its report: a turn cut meanwhile
-        # closes it as the model read it.
+        # closes it with the outcome decided, the one its report carries.
         start.ran_with, start.ended = dict(decided.arguments), end
         if pending:
             await self._report(entry, decided)
