@@ -120,12 +120,13 @@ class GreetingMixin(HelpersMixin):
         from roomkit.channels.realtime_voice import RealtimeVoiceChannel
         from roomkit.channels.voice import VoiceChannel
 
-        if session is not None and channel_type == ChannelType.REALTIME_VOICE:
+        voice_ch = self._channels.get(session.channel_id) if session is not None else None
+        if session is not None and isinstance(voice_ch, RealtimeVoiceChannel):
+            # Every realtime channel, an audio-video one included (its session
+            # start names its own type): the greeting is the model's own turn.
             # Store first so AI sees greeting in history even if inject fails
             await self._store_greeting_event(room_id, agent.channel_id, text)
-            voice_ch = self._channels.get(session.channel_id)
-            if isinstance(voice_ch, RealtimeVoiceChannel):
-                await voice_ch.provider.inject_text(session, text, role="assistant")
+            await voice_ch.provider.inject_text(session, text, role="assistant")
             return
 
         if session is not None and channel_type == ChannelType.VOICE:
