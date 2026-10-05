@@ -55,6 +55,9 @@ class DelegatedTask:
         self.result: DelegatedTaskResult | None = None
         self._done: asyncio.Event | None = None
         self._start_time = time.monotonic()
+        # Whether the delegation posts the task on the StatusBus (RFC §23.3):
+        # off for a caller that follows its tasks there itself.
+        self._post_status = True
 
     def _get_done_event(self) -> asyncio.Event:
         """Lazily create the Event on first use (inside a running loop)."""

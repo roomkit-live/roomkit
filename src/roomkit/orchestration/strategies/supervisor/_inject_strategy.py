@@ -34,10 +34,20 @@ from roomkit.orchestration.strategies.supervisor.supervised import (
     _run_supervised_sequential,
 )
 from roomkit.providers.ai.base import AITool
+from roomkit.tasks.status import TASK_STATUS_TOOL
+from roomkit.tools.context import current_tool_allowed_names
 
 if TYPE_CHECKING:
     from roomkit.channels.agent import Agent
     from roomkit.core.framework import RoomKit
+
+
+def _follow_hint(what: str) -> str:
+    """Tell the supervisor to use ``task_status`` to *what*, only when its turn
+    has it (RFC §23.4): never point an agent at a tool it was not given."""
+    if TASK_STATUS_TOOL in (current_tool_allowed_names() or set()):
+        return f"Use {TASK_STATUS_TOOL} to {what}. "
+    return ""
 
 
 class _StrategyToolMixin:
@@ -180,9 +190,8 @@ class _StrategyToolServer:
                     "status": "already_running",
                     "message": (
                         "Workers are already running for this room. "
-                        "Do NOT call this tool again. "
-                        "Use check_status_bus to see progress."
-                    ),
+                        "Do NOT call this tool again. " + _follow_hint("see progress")
+                    ).strip(),
                 }
             )
         self._start_team(rid, task_desc)
@@ -192,9 +201,8 @@ class _StrategyToolServer:
                 "workers": [w.channel_id for w in self._workers],
                 "message": (
                     "Workers are running in the background. "
-                    "Use check_status_bus to follow progress. "
-                    "Their combined results will be handed to you "
-                    "when they are done."
+                    + _follow_hint("follow progress")
+                    + "Their combined results will be handed to you when they are done."
                 ),
             }
         )

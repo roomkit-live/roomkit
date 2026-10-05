@@ -728,13 +728,18 @@ def _as_instruction(event: RoomEvent, message: InboundMessage) -> RoomEvent:
 
     An instruction is the caller's decision, not the wire's: a channel parses
     content and need not know the type, so the pipeline applies it, as it
-    does the address. Standalone is the typed field's word alone (step 7): a
-    caller's metadata key of the same name is dropped, never honoured. The
-    instruction is never stored, so nothing is lost.
+    does the address. The caller's metadata rides it (step 4); standalone is
+    the typed field's word alone (step 7): a caller's metadata key of the same
+    name is dropped, never honoured. The instruction is never stored, so
+    nothing is lost.
     """
     if event.type != EventType.INSTRUCTION:
         event = event.model_copy(update={"type": EventType.INSTRUCTION})
-    metadata = {k: v for k, v in event.metadata.items() if k != STANDALONE}
+    # The caller's metadata rides the instruction, whatever the transport's
+    # parser kept of it; a key the parser set keeps its value (RFC §10.1.1
+    # step 4): a delegation's hand-back names its task (§23.3 step 8).
+    merged = {**message.metadata, **event.metadata}
+    metadata = {k: v for k, v in merged.items() if k != STANDALONE}
     if message.standalone:
         metadata[STANDALONE] = True
     return event.model_copy(update={"metadata": metadata})

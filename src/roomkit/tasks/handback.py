@@ -58,8 +58,10 @@ async def hand_back(
     chain_depth: int,
     *,
     session_id: str | None = None,
+    metadata: dict[str, Any] | None = None,
 ) -> DeliveryOutcome | None:
-    """Deliver *text* in *room_id* to *notify*, at *chain_depth*.
+    """Deliver *text* in *room_id* to *notify*, at *chain_depth*, with *metadata*
+    (a delegation's names its task, RFC §23.3 step 8).
 
     *notify* names who is told: an intelligence channel receives an instruction
     addressed to it, through the room's transport; a realtime voice channel, an
@@ -78,6 +80,8 @@ async def hand_back(
         logger.info("Result for %s not handed back: not attached to room %s", notify, room_id)
         return None
     target = _target(kit, notify, session_id)
+    if metadata is not None:
+        target["metadata"] = metadata
     outcome = await kit.deliver(room_id, text, chain_depth=chain_depth, **target)
     if outcome.status in _NOT_DELIVERED:
         _log_not_delivered(notify, room_id, outcome)

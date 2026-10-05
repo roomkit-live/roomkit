@@ -184,7 +184,8 @@ async def _delegate(
 ) -> WorkerOutcome:
     """The delegation itself, inline, within *timeout*: a ``TimeoutError``
     the delegation raised itself is its own failure, not the bound's."""
-    answer = kit.delegate(room_id, worker_id, task, wait=True, **delegation)
+    # The worker run posts the task's entries itself (RFC §23.3).
+    answer = kit.delegate(room_id, worker_id, task, wait=True, post_status=False, **delegation)
     try:
         delegated = await answer_within(timeout, worker_id, answer)
     except ToolTimeoutError:

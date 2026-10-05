@@ -145,6 +145,7 @@ class _PerWorkerToolServer:
                 task_desc,
                 notify=CALLER_HANDS_BACK,
                 share_channels=self._share_channels,
+                post_status=False,  # the background run follows it (RFC §23.3)
             )
         except BaseException:
             pending.discard((rid, worker_id))

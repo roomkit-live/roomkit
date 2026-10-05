@@ -43,6 +43,7 @@ from roomkit.tasks.models import (
     finished_task_fields,
     task_work,
 )
+from roomkit.tasks.status import post_task_ended, post_task_pending
 from roomkit.telemetry.base import Attr, SpanKind
 from roomkit.tools.context import _current_turn_chain_depth
 
@@ -255,6 +256,7 @@ class DelegationMixin(HelpersMixin):
         require_structured_result: bool = False,
         max_result_retries: int = 3,
         result_tool: ResultTool | None = None,
+        post_status: bool = True,
     ) -> DelegatedTask:
         """Delegate a task to an agent in a child room.
 
@@ -284,6 +286,10 @@ class DelegationMixin(HelpersMixin):
                 is re-prompted.
             result_tool: The tool to force, when not ``submit_result``
                 (:data:`~roomkit.orchestration.result.SUBMIT_RESULT`).
+            post_status: Follow the task on :attr:`status_bus` (RFC §23.3):
+                ``pending`` once announced, then ``completed`` or ``failed``.
+                ``False`` for a caller that posts its tasks there itself (an
+                orchestration strategy's worker run), so none shows twice.
 
         Returns:
             A :class:`DelegatedTask` handle. When *wait* is ``True``,
@@ -314,6 +320,7 @@ class DelegationMixin(HelpersMixin):
             agent_id=agent_id,
             task=task,
         )
+        handle._post_status = post_status
         telemetry = getattr(self, "_telemetry", None) or NoopTelemetryProvider()
         mode = "inline" if wait else "background"
         span = _DelegationSpan(
@@ -465,6 +472,8 @@ class DelegationMixin(HelpersMixin):
         await self._hook_engine.run_async_hooks(
             room_id, HookTrigger.ON_TASK_DELEGATED, hook_event, room_context
         )
+        if handle._post_status:
+            post_task_pending(self, handle)  # ty: ignore[invalid-argument-type]
 
     async def _run_inline(
         self,
@@ -548,6 +557,8 @@ class DelegationMixin(HelpersMixin):
         span.end(result)
         await record_task_end(self, result)  # ty: ignore[invalid-argument-type]
         await self._on_delegation_complete(result)
+        if handle._post_status:
+            post_task_ended(self, result)  # ty: ignore[invalid-argument-type]
         if on_complete:
             try:
                 await on_complete(result)
@@ -575,6 +586,8 @@ class DelegationMixin(HelpersMixin):
         async def _on_bg_complete(result: DelegatedTaskResult) -> None:
             span.end(result)
             await self._on_delegation_complete(result)
+            if handle._post_status:
+                post_task_ended(self, result)  # ty: ignore[invalid-argument-type]
             if notify_channel != CALLER_HANDS_BACK:
                 await self._hand_back_held(result, notify_channel, chain_depth, session_id)
             if on_complete:
@@ -675,6 +688,11 @@ class DelegationMixin(HelpersMixin):
                 _delegation_result_text(result),
                 chain_depth,
                 session_id=session_id,
+                metadata={
+                    "task_id": result.task_id,
+                    "agent_id": result.agent_id,
+                    "task_status": str(result.status),
+                },
             )
         except Exception:
             _tasks_logger.exception("Delivery failed for task %s", result.task_id)

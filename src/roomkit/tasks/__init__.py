@@ -11,6 +11,7 @@ from roomkit.tasks.delegate import (
 )
 from roomkit.tasks.memory import InMemoryTaskRunner
 from roomkit.tasks.models import DelegatedTask, DelegatedTaskResult
+from roomkit.tasks.status import TASK_STATUS_TOOL, TaskStatusTool
 
 __all__ = [
     "CompletedTaskCache",
@@ -20,7 +21,9 @@ __all__ = [
     "DelegatedTaskResult",
     "InMemoryTaskRunner",
     "OnCompleteCallback",
+    "TASK_STATUS_TOOL",
     "TaskRunner",
+    "TaskStatusTool",
     "build_delegate_tool",
     "setup_delegation",
     "setup_realtime_delegation",

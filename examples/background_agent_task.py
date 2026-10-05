@@ -9,9 +9,13 @@ Demonstrates the first-class delegation API:
    reaches it — the task brief; the reviewer's answer is collected for the
    hand-back and stored, not broadcast
 5. PR reviewer works in the background — its own event history
-6. Voice conversation continues uninterrupted (turn 2 while the task runs)
+6. Voice conversation continues uninterrupted (turn 2 while the task runs): the
+   user asks how the review is going, and the voice agent looks it up with its
+   ``task_status`` tool, which reads the task on ``kit.status_bus``
 7. When the child room completes, the result is handed back to the voice agent
-   as an instruction through ``kit.deliver()`` (strategy and delivery hooks apply)
+   as an instruction through ``kit.deliver()`` (strategy and delivery hooks
+   apply), its metadata naming the task (``task_id``, ``agent_id``,
+   ``task_status``)
 8. Voice agent tells the user the result, the user thanks it (turn 3)
 
 Key concept:
@@ -35,6 +39,7 @@ from shared import setup_logging
 from roomkit import (
     ChannelCategory,
     HookExecution,
+    HookResult,
     HookTrigger,
     RoomKit,
     TextContent,
@@ -43,10 +48,13 @@ from roomkit import (
 from roomkit.channels import EmailChannel
 from roomkit.channels.agent import Agent
 from roomkit.channels.ai import AIChannel
+from roomkit.models.enums import EventType
 from roomkit.models.event import SystemContent
 from roomkit.providers.ai import AIContext, AIResponse
+from roomkit.providers.ai.base import AIToolCall
 from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.providers.email.mock import MockEmailProvider
+from roomkit.tasks import TASK_STATUS_TOOL, TaskStatusTool
 from roomkit.voice import VoiceCapability
 from roomkit.voice.audio_frame import AudioFrame
 from roomkit.voice.backends.mock import MockVoiceBackend
@@ -121,29 +129,38 @@ async def main() -> None:
     stt = MockSTTProvider(
         transcripts=[
             "Can you review the latest PR on roomkit for me?",
-            "Sure, while we wait, what's on my calendar today?",
+            "How is the PR review going?",
             "Great, thanks for the update!",
         ]
     )
     tts = MockTTSProvider()
 
-    # Voice assistant — front-facing, talks to the user
+    # Voice assistant — front-facing, talks to the user. On turn 2 it calls
+    # its task_status tool, then answers from what the tool said.
     voice_ai = MockAIProvider(
-        responses=[
-            (
-                "I'll review the latest PR on roomkit for you right away. "
-                "I'm delegating this to the PR reviewer — you'll have the "
-                "summary shortly. What else can I help with?"
+        ai_responses=[
+            AIResponse(
+                content=(
+                    "I'll review the latest PR on roomkit for you right away. "
+                    "I'm delegating this to the PR reviewer — you'll have the "
+                    "summary shortly. What else can I help with?"
+                )
             ),
-            ("You have a team standup at 10am and a 1-on-1 with Sarah at 2pm. Anything else?"),
+            AIResponse(
+                content="",
+                tool_calls=[AIToolCall(id="status-1", name=TASK_STATUS_TOOL, arguments={})],
+            ),
+            AIResponse(content="The reviewer is still on it. I'll tell you as soon as it's done."),
             # Answer to the hand-back instruction, not to a user turn
-            (
-                "Great news — the PR review just came back! "
-                "PR #42 adds a TaskExecutor ABC with InMemory implementation: "
-                "340 additions, 45 deletions across 8 files, 12 unit tests. "
-                "Assessment: clean implementation, ready to merge."
+            AIResponse(
+                content=(
+                    "Great news — the PR review just came back! "
+                    "PR #42 adds a TaskExecutor ABC with InMemory implementation: "
+                    "340 additions, 45 deletions across 8 files, 12 unit tests. "
+                    "Assessment: clean implementation, ready to merge."
+                )
             ),
-            "You're welcome! Talk to you later.",
+            AIResponse(content="You're welcome! Talk to you later."),
         ]
     )
 
@@ -182,8 +199,11 @@ async def main() -> None:
         system_prompt=(
             "You are a helpful voice assistant. "
             "You can delegate complex tasks to background agents. "
-            "Keep chatting with the user while tasks run."
+            "Keep chatting with the user while tasks run, and check on them "
+            f"with {TASK_STATUS_TOOL}."
         ),
+        # Reads the room's tasks on kit.status_bus (RFC §23.4).
+        tools=[TaskStatusTool(kit)],
     )
 
     pr_reviewer = Agent(
@@ -212,6 +232,19 @@ async def main() -> None:
     @kit.hook(HookTrigger.ON_TASK_COMPLETED, execution=HookExecution.ASYNC)
     async def on_completed(event, ctx):
         logger.info("[hook] Task completed: %s", event.metadata.get("task_id"))
+
+    # The hand-back is an instruction whose metadata names its task.
+    @kit.hook(HookTrigger.BEFORE_BROADCAST, event_types={EventType.INSTRUCTION})
+    async def on_hand_back(event, ctx):
+        meta = event.metadata
+        if "task_id" in meta:
+            logger.info(
+                "[hook] Hand-back of %s from %s: %s",
+                meta["task_id"],
+                meta["agent_id"],
+                meta["task_status"],
+            )
+        return HookResult.allow()
 
     # ── Parent room ───────────────────────────────────────────────────
 
@@ -357,6 +390,20 @@ async def main() -> None:
     print(f"  Child room agent:   {child_room.metadata.get('task_agent_id')}")
 
     await _show_hand_back(kit, voice_ai)
+    answers = [
+        part.result
+        for call in voice_ai.calls
+        for message in call.messages
+        if message.role == "tool" and isinstance(message.content, list)
+        for part in message.content
+        if getattr(part, "name", None) == TASK_STATUS_TOOL
+    ]
+    print(f"  task_status answered the voice agent: {answers[0][:110] if answers else None}")
+
+    print("\n" + "=" * 70)
+    print("  STATUS BUS (kit.status_bus)")
+    print("=" * 70)
+    print(await kit.status_bus.recent_text(10))
 
     print(f"\n  STT transcriptions: {len(stt.calls)} of 3 user turns")
     print(f"  Lines the voice agent spoke (TTS): {len(tts.calls)}")

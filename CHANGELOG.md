@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Delegated tasks are followed on `kit.status_bus` (RMK-537, RFC §23.3):
+  `kit.delegate()` posts `pending` once the task's child room is ready, then
+  `completed` with its result, or `failed` for a task that failed or was
+  cancelled (never the error's text), under the worker's `agent_id` with
+  `action="task"` and `room_id` (the parent room), `task_id` and
+  `child_room_id` in the metadata, plus `task_status` and `duration_ms` at the
+  end. `kit.delegate(..., post_status=False)` posts nothing, for a caller that
+  follows its tasks on the bus itself: the orchestration strategies' worker
+  runs do, so no task shows twice.
+- `TaskStatusTool` (`roomkit.tasks`, tool name `task_status`; RMK-538, RFC
+  §23.4): a tool an agent is given on its own to check on its room's tasks
+  while it keeps talking: those running and those ended, with the worker, the
+  task and the result; `task_id` narrows to one. It reads the bus for the room
+  of the call only.
+- A delegation's hand-back names its task (RMK-539, RFC §23.3 step 8): its
+  metadata carries `task_id`, `agent_id` and `task_status`, on the delivery
+  hooks' event and on the instruction a `BEFORE_BROADCAST` hook sees.
+  `hand_back(..., metadata=)` takes it. An instruction now carries its
+  caller's metadata whatever the transport's parser keeps (RFC §10.1.1 step
+  4); a key the parser set keeps its value.
+
 - `ExternalToolHandler.on_tool_result(..., error_detail=)` (RMK-512, RFC
   §9.3): what failed in the refusal of a call an ACP agent ran anyway (a hook
   that failed closed, or the handler raising while it decided). Passed only
@@ -28,6 +49,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   keep the SDK's own retries.
 
 ### Fixed
+
+- The Supervisor's background dispatch told its agent to "use
+  check_status_bus", a tool RoomKit never provided (RMK-538): it now names
+  `task_status` only to an agent that was given it, and says nothing of a
+  tool otherwise.
 
 - On a realtime session, `activate_skill` on a name that is no skill hints
   none of the channel's human-input tools, as on a text turn (RMK-304, RFC

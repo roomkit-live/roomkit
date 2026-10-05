@@ -124,8 +124,9 @@ class Supervisor(
                 - strategy-tool mode (``strategy`` set): the
                   ``delegate_workers`` tool fires background workers
                   and returns ``{"status": "dispatched", ...}``
-                  immediately. Use ``check_status_bus`` to follow
-                  progress.
+                  immediately; its reply points the supervisor at
+                  ``task_status`` (:class:`~roomkit.tasks.status.TaskStatusTool`)
+                  only when the supervisor was given it.
                 - voice ``auto_delegate`` mode: injects a
                   ``delegate_workers`` tool on the voice channel;
                   supervisor is not attached (voice handles UI).
