@@ -36,7 +36,7 @@ from roomkit.models.streaming import (
 )
 from roomkit.models.tool_call import ToolCallEvent
 from roomkit.realtime.base import EphemeralEvent, EphemeralEventType
-from roomkit.tools.external import handler_reported, refusal_detail, takes_keyword, warn_once
+from roomkit.tools.external import detail_keyword, handler_reported, takes_keyword, warn_once
 from roomkit.tools.result import cancelled_tool_error, failure_detail, tool_failure
 
 if TYPE_CHECKING:
@@ -78,6 +78,13 @@ def _end_outcome(tool: _ToolState, status: str, *, interrupted: bool) -> ToolCal
     if interrupted:
         return "cancelled"
     return "failed" if status == "failed" else "served"
+
+
+def _decision_detail(tool: _ToolState) -> str | None:
+    """What failed in RoomKit's decision on the call's permission, for the
+    observers only: its handler's failure, or what its refusal came from
+    (RFC §9.3)."""
+    return tool.failure or tool.refusal_detail
 
 
 def _decided_error(tool: _ToolState) -> str | None:
@@ -223,7 +230,7 @@ def _handler_report(
             _reported_body(tool, end),
             tool_call_id=tool.tool_id,
             room_id=room_id,
-            **refusal_detail(handler, tool.refusal_detail),
+            **detail_keyword(handler, "on_tool_refused", tool.refusal_detail),
         )
     return handler.on_tool_result(
         tool.name,
@@ -232,8 +239,20 @@ def _handler_report(
         is_error=end.status == "failed",
         tool_call_id=tool.tool_id,
         room_id=room_id,
-        **({"refused_but_ran": True} if _ran_despite_refusal(tool, end) else {}),
+        **_ran_past_refusal(handler, tool, end),
     )
+
+
+def _ran_past_refusal(
+    handler: ExternalToolHandler, tool: _ToolState, end: _ToolEnd
+) -> dict[str, Any]:
+    """The keywords *handler*'s ``on_tool_result`` takes for a call the
+    agent ran past RoomKit's rejection: the marker, and what failed in the
+    rejection as the channel's own report carries it (RFC §9.3)."""
+    if not _ran_despite_refusal(tool, end):
+        return {}
+    detail = detail_keyword(handler, "on_tool_result", _decision_detail(tool))
+    return {"refused_but_ran": True, **detail}
 
 
 def _channel_decided(tool: _ToolState, end: _ToolEnd) -> bool:
@@ -670,7 +689,7 @@ class ACPEventsMixin:
             is_error=end.status == "failed",
             cancelled=end.outcome == "cancelled",
             refused=end.outcome == "refused",
-            error_detail=tool.failure or tool.refusal_detail,
+            error_detail=_decision_detail(tool),
             refused_but_ran=_ran_despite_refusal(tool, end),
         )
         try:

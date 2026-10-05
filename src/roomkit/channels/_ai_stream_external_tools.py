@@ -25,7 +25,7 @@ from roomkit.realtime.base import EphemeralEventType
 from roomkit.tools._outcome import OutcomeKind, ToolOutcome
 from roomkit.tools._turn_calls import AnnouncedCall, reporting
 from roomkit.tools.context import _ToolLoopContext
-from roomkit.tools.external import ExternalToolHandler, handler_reported, refusal_detail
+from roomkit.tools.external import ExternalToolHandler, detail_keyword, handler_reported
 from roomkit.tools.result import (
     CHANNEL_CLOSED,
     as_tool_result,
@@ -314,7 +314,7 @@ class _ExternalStreamTools:
                 decided.result,
                 tool_call_id=call.id,
                 room_id=self.room_id,
-                **refusal_detail(handler, decided.detail),
+                **detail_keyword(handler, "on_tool_refused", decided.detail),
             )
             return
         await handler.on_tool_result(

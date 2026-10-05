@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- ACP: a call whose permission RoomKit rejected because its external handler
+  raised deciding it, that the agent ran anyway and closed completed, is now
+  marked `refused_but_ran` like a refused one (RMK-512, RFC §9.3). Its report
+  carries what failed in the rejection (`error_detail`) whether the handler or
+  the channel makes it: `ExternalToolHandler.on_tool_result` takes an optional
+  `detail`, passed only with `refused_but_ran` and only to an override that
+  takes it, and `PolicyExternalToolHandler` hands it on as `error_detail`.
+
 ## [0.95.0] — 2026-10-05
 
 This release makes a tool call one contract on every door that runs one: an

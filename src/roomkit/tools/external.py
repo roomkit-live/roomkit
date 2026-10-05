@@ -39,7 +39,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
 from contextvars import ContextVar
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 from roomkit.models.enums import ChannelType
 from roomkit.models.tool_call import ToolCallEvent
@@ -118,20 +118,26 @@ def takes_keyword(method: Callable[..., Any], name: str) -> bool:
     )
 
 
-def refusal_detail(handler: ExternalToolHandler, detail: str | None) -> dict[str, Any]:
-    """The ``detail`` keyword a door hands *handler*'s
-    :meth:`~ExternalToolHandler.on_tool_refused`: only when there is one and
-    the override takes it. One that does not still reports the refusal,
-    without what failed, and the log says so."""
+def detail_keyword(
+    handler: ExternalToolHandler,
+    report: Literal["on_tool_refused", "on_tool_result"],
+    detail: str | None,
+) -> dict[str, Any]:
+    """The ``detail`` keyword a door hands *handler*'s *report* method (a
+    refusal's :meth:`~ExternalToolHandler.on_tool_refused`, or the
+    :meth:`~ExternalToolHandler.on_tool_result` of a call run past a
+    refusal): only when there is one and the override takes it. One that
+    does not still makes its report, without what failed, and the log says
+    so."""
     if detail is None:
         return {}
-    if takes_keyword(handler.on_tool_refused, "detail"):
+    if takes_keyword(getattr(handler, report), "detail"):
         return {"detail": detail}
     warn_once(
         handler,
-        "detail",
-        "%s.on_tool_refused takes no 'detail': what failed is left out of its refusals' "
-        "reports; accept **kwargs and hand them to super().on_tool_refused",
+        f"{report}.detail",
+        f"%s.{report} takes no 'detail': what failed is left out of its reports; "
+        "accept **kwargs and hand it on to the ON_TOOL_CALL report",
     )
     return {}
 
@@ -272,6 +278,7 @@ class ExternalToolHandler(ABC):
         job_id: str | None = None,
         room_id: str | None = None,
         refused_but_ran: bool = False,
+        detail: str | None = None,
     ) -> None:
         """Called AFTER the external provider executed a tool.
 
@@ -295,6 +302,10 @@ class ExternalToolHandler(ABC):
                 ACP agent past a rejected permission); passed only then, so
                 an override should take ``**kwargs`` and hand it on to
                 ``_fire_on_tool_hook``.
+            detail: What failed in that refusal (a hook that failed closed,
+                or this handler raising while it decided); passed only with
+                ``refused_but_ran`` and when there is one, for
+                ``_fire_on_tool_hook``'s ``error_detail``.
         """
 
     async def on_tool_cancelled(
@@ -539,12 +550,14 @@ class PolicyExternalToolHandler(ExternalToolHandler):
         job_id: str | None = None,
         room_id: str | None = None,
         refused_but_ran: bool = False,
+        detail: str | None = None,
     ) -> None:
         await self._fire_on_tool_hook(
             tool_name,
             tool_input,
             result,
             is_error=is_error,
+            error_detail=detail,
             tool_call_id=tool_call_id,
             room_id=room_id,
             refused_but_ran=refused_but_ran,

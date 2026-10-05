@@ -542,3 +542,70 @@ async def test_a_call_run_past_a_refusal_is_reported_though_the_handler_s_report
 
     [event] = heard.observed
     assert event.refused_but_ran is True
+
+
+class _NarrowRaising(_NarrowDenying):
+    """A handler that raises deciding, whose overrides take neither optional
+    keyword: the channel reports a call the agent ran past its rejection."""
+
+    async def process_tool_call(self, tool_name: str, tool_input: Any, **kw: Any) -> ToolDecision:
+        raise RuntimeError(SECRET)
+
+
+@pytest.mark.parametrize(
+    ("handler", "detail"),
+    [
+        pytest.param(_FailedClosed(), "gate: approval db down", id="refusal-handler-reports"),
+        pytest.param(_NarrowDenying(), "gate: approval db down", id="refusal-channel-reports"),
+        pytest.param(_Raising(), f"RuntimeError: {SECRET}", id="raise-handler-reports"),
+        pytest.param(_NarrowRaising(), f"RuntimeError: {SECRET}", id="raise-channel-reports"),
+    ],
+)
+async def test_a_call_run_past_a_rejection_carries_what_failed_whoever_reports_it(
+    handler: Any, detail: str
+) -> None:
+    """The same marker and the same ``error_detail``, whether the rejection
+    came from a refusal or from a handler that raised, and whether the
+    handler or the channel reports the call (RMK-512, RFC §9.3)."""
+    heard, rows = await _acp_ran_anyway(handler)
+
+    [event] = heard.observed
+    assert (event.is_error, event.refused_but_ran, event.error_detail) == (False, True, detail)
+    assert SECRET not in str(event.result)
+    [row] = rows
+    assert (row.outcome, row.refused_but_ran) == ("served", True)
+
+
+class _MarkerOnly(_FailedClosed):
+    """A handler whose ``on_tool_result`` takes the marker, not the detail."""
+
+    async def on_tool_result(
+        self,
+        tool_name: str,
+        tool_input: Any,
+        result: str,
+        *,
+        is_error: bool = False,
+        tool_call_id: str = "",
+        room_id: str | None = None,
+        refused_but_ran: bool = False,
+    ) -> None:
+        await self._fire_on_tool_hook(
+            tool_name,
+            tool_input,
+            result,
+            is_error=is_error,
+            tool_call_id=tool_call_id,
+            room_id=room_id,
+            refused_but_ran=refused_but_ran,
+        )
+
+
+async def test_an_override_without_detail_still_reports_a_call_run_past_a_refusal(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    heard, _ = await _acp_ran_anyway(_MarkerOnly())
+
+    [event] = heard.observed
+    assert (event.refused_but_ran, event.error_detail) == (True, None)
+    assert "on_tool_result takes no 'detail'" in caplog.text
