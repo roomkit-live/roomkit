@@ -11,8 +11,9 @@ import json
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, TypeGuard
+from uuid import uuid4
 
-from roomkit.core._failure_log import log_failure
+from roomkit.core._failure_log import mark_reported
 from roomkit.core._fallback import FALLBACK_FAILED
 from roomkit.core.event_router import StreamingResponse, stream_record
 from roomkit.core.mixins._child_execution import persist_tool_calls
@@ -302,7 +303,8 @@ async def _pass1_task(
 ) -> _Pass1:
     """The task pass 1 hands on: its final answer, as every streamed turn is
     read, its tool calls stored in the room as any turn's (RFC §19.7.3). A
-    pass that failed hands its error to the turn's caller, its stream read."""
+    pass that failed is reported as a streamed turn's failure is, then hands
+    its error to the turn's caller, its stream read."""
     if output.error is not None or output.response_stream is None:
         return _Pass1(output, await _extract_output_text(output))
     stream = StreamingResponse(
@@ -312,15 +314,32 @@ async def _pass1_task(
         trigger_event=event,
         response_metadata=output.response_metadata,
     )
+    correlation_id = uuid4().hex
     try:
-        turn = await persist_tool_calls(kit, room_id, stream, context)
+        turn = await persist_tool_calls(kit, room_id, stream, context, correlation_id)
     except Exception as exc:
-        # Logged once, at its own level: whoever opened the turn may not
-        # receive it (``send_event``, a delivery).
-        log_failure(logger, exc, f"Pass 1 of {supervisor.channel_id} in room {room_id}")
+        await _report_pass1_failure(kit, exc, supervisor, stream, context, correlation_id)
         record = dict(stream_record(stream))
         return _Pass1(_read(output, error=exc), end=recorded_turn_end(record), record=record)
     return _Pass1(_read(output), turn.answer, turn.end, turn.record)
+
+
+async def _report_pass1_failure(
+    kit: RoomKit,
+    exc: Exception,
+    supervisor: Agent,
+    stream: StreamingResponse,
+    context: RoomContext,
+    correlation_id: str,
+) -> None:
+    """Report pass 1's failure as every streamed turn's: one log line at its
+    own level (whoever opened the turn may not receive it: ``send_event``, a
+    delivery), ON_ERROR once, ``streaming``, with its tool rows' correlation;
+    then marked, so the room turn it fails hands it on unreported (RFC
+    §19.7.3, §15.2)."""
+    what = f"Pass 1 of {supervisor.channel_id} in room {context.room.id}"
+    await kit._report_stream_failure(exc, what, stream, context, correlation_id=correlation_id)
+    mark_reported(exc)
 
 
 def _with_record(pass1: _Pass1) -> ChannelOutput:

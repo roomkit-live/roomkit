@@ -93,10 +93,11 @@ class PersistedTurn(NamedTuple):
 
 
 async def persist_tool_calls(
-    kit: RoomKit, room_id: str, sr: StreamingResponse, context: RoomContext
+    kit: RoomKit, room_id: str, sr: StreamingResponse, context: RoomContext, correlation_id: str
 ) -> PersistedTurn:
     """Store a turn's tool calls in *room_id* as any streamed turn's, its text
-    kept out of the room; the turn's answer, how it ended, and its record.
+    kept out of the room, under *correlation_id*; the turn's answer, how it
+    ended, and its record.
 
     The rows cross the room's gate and ride its lane (``BEFORE_BROADCAST``,
     the source's right to write, the delivery's visibility), one deeper than
@@ -121,7 +122,7 @@ async def persist_tool_calls(
         chain_depth=scope.chain_depth,
         visibility=scope.visibility,
         response_visibility=scope.response_visibility,
-        correlation_id=uuid4().hex,
+        correlation_id=correlation_id,
         parent_event_id=scope.parent_event_id,
     )
     try:
