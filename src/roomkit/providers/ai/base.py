@@ -313,6 +313,7 @@ _CONTEXT_OVERFLOW_PHRASES: tuple[str, ...] = (
     "prompt is too long",  # Anthropic
     "exceeds the model",
     "range of input length",  # Qwen / DashScope
+    "exceeds the maximum number of tokens",  # Gemini / Vertex: "The input token count ..."
 )
 
 

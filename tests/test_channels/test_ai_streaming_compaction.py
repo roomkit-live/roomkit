@@ -379,9 +379,18 @@ def test_the_shared_phrase_list_covers_both_packages_wordings() -> None:
         "the request rode past the token limit",
         "prompt is too long: 210000 tokens > 200000 maximum",
         "Range of input length should be [1, 30720]",
+        # Gemini and Vertex, as a live 400 words it.
+        "400 INVALID_ARGUMENT. {'error': {'code': 400, 'message': 'The input token count "
+        "exceeds the maximum number of tokens allowed (8192).', 'status': 'INVALID_ARGUMENT'}}",
+        "The input token count (1200000) exceeds the maximum number of tokens allowed (1048576).",
     ):
         assert is_context_overflow_message(text), text
     assert not is_context_overflow_message("invalid api key")
+    # Gemini's quota refusal names the input token count too: a 429, never an overflow.
+    assert not is_context_overflow_message(
+        "429 RESOURCE_EXHAUSTED. Quota exceeded for metric: "
+        "generativelanguage.googleapis.com/generate_content_free_tier_input_token_count"
+    )
     # OpenAI's tokens-per-minute rate limit — a 429 worth retrying, and the
     # wording that once cost a transient error its whole retry budget.
     assert not is_context_overflow_message(_TPM_RATE_LIMIT)
