@@ -7,60 +7,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+This release makes a tool call one contract on every door that runs one: an
+`AIChannel` turn, an external tool handler, an ACP agent, a speech-to-speech
+session, a conference and a realtime reasoning backend now share the same
+gate, the same refusal texts, a bound by default, and one report per call
+carrying the outcome the model read. An `AIChannel` runs one tool loop for
+every turn. Most breaking changes below follow from that work; each states its
+migration.
+
 ### Added
 
-- `human_input_handler=` on `RealtimeVoiceChannel` and
-  `ConferenceRealtimeConfig` (RMK-481, RFC §9.3, §21.6), as on an
-  `AIChannel`: the channel declares the handler's `tool_definitions` in every
-  session and serves its tools before `tool_handler`, on every door (the
-  provider's call, a call recovered from speech, a reasoning backend's, a
-  conference's), under the handler's own `timeout` rather than the default
-  call bound that cut them at 10 s. Each request fires `ON_USER_INPUT_REQUIRED`,
-  whose BLOCK rejects it (it was never wired on a voice door), with
-  `channel_type` naming the door; the requests still open are settled when
-  the channel closes, and on a conference when its realtime provider is
-  unplugged. A host tool under a name the handler declares is refused where
-  the host gives it (the constructor, `configure()`, a conference's
-  configuration); one a session is reconfigured with is left out, the
-  person's kept. A provider that calls no tool is warned about, as for any
-  tool. A `HumanInputToolHandler` given as a realtime channel's
-  `tool_handler` stays a plain handler, and a warning points to the option.
-  A realtime pipeline's agent never carries one (RMK-482).
-  `HumanInputToolHandler.ask(name, arguments, *, channel_type=...)` asks on a
-  door of that channel type; `ConferenceRealtimeConfig.tool_bound()` takes
-  `waits=`. Example: `examples/realtime_human_input.py`.
+#### Tools and hooks
 
-- `ReasoningRequest.report_call` (RMK-480, RFC §12.4.1), a last field
-  defaulting to `None`: reports a call the backend's own provider served,
-  outside the channel's gate, to the channel's ON_TOOL_CALL hooks, served or
-  failed, once. `AgentReasoningBackend` relays its agent's provider-side
-  calls through it: they were reported nowhere, where the same provider on
-  an AIChannel reports them.
+- `AFTER_TOOL_ROUND` (RMK-409, RMK-430, RFC §6.4, §9.2): a SYNC hook between
+  two rounds of an AI channel's tool loop. It fires after each round the
+  channel ran calls in, with a `ToolRoundEvent` carrying the round whole (its
+  calls, the channel's results and the ones the provider served) and `tools`,
+  the names the turn can reach: what `BEFORE_AI_GENERATION` is shown, after
+  the tool policy and skill gating, Tool Search's whole catalogue included.
+  `event.withdraw(*names)` takes tools out of the rest of the turn with every
+  guarantee of a `BEFORE_AI_GENERATION` withdrawal (never declared again,
+  refused if called, the channel's own tools included, never handed to an
+  external handler); it takes any name, listed or not, so a tool stays closed
+  even if its skill is activated later in the turn. `event.add_message(text)`
+  is what the next round reads after the results. A BLOCK stops the hooks
+  after it and changes nothing of the round. Example:
+  `examples/hook_after_tool_round.py`.
 
-- `roomkit.tools.tool_turn_context(...)` (RMK-476): a context manager that runs
-  its block as a tool call of the turn its arguments describe (`room_id` or
-  `room`, `actor_id`, `tools`, `chain_depth`, `call`), so a test calling a
-  handler directly reads `current_tool_room_id()`, `current_tool_actor_id()`,
-  `current_tool_allowed_names()`, `current_tool_call()` and
-  `current_response_metadata()` as a tool loop would set them, and the previous
-  context comes back when the block exits. Replaces setting the private
-  `_current_loop_ctx` / `_current_tool_call` contextvars by hand.
+- Tool call bounds (RMK-366, RMK-417, RFC §21.6): `tool_timeout_seconds` and
+  `tool_timeouts` on `AIChannel`, `RealtimeVoiceChannel` and
+  `ConferenceRealtimeConfig`, and `ToolTimeoutError`: how long one call may
+  take, by default and per tool name (`None` for no bound). Past it the
+  handler is cancelled and the call fails like one whose handler raised: the
+  model reads `Tool 'x' failed (ToolTimeoutError)`, the observers the detail,
+  and the turn goes on. One bound serves every path: an `AIChannel` turn; a
+  realtime session's provider calls, calls recovered from speech, skill
+  scripts and a pipeline agent's tools; a realtime reasoning backend's calls,
+  which the voice channel bounds (the backend agent's own settings do not
+  apply); a conference's calls, whose bound
+  `ConferenceRealtimeConfig.tool_bound(name, *, waits=False)` gives. A tool
+  that keeps a bound of its own is exempt: an orchestration tool that waits
+  on another agent (a delegation, a Supervisor's or a Loop's strategy tool
+  such as `delegate_workers`, marked by the new `ToolTraits.waits`), a
+  `HumanInputToolHandler`'s tools, and `sandbox_bash`, whose `timeout`
+  argument the sandbox enforces. The defaults are a breaking change, see
+  Changed.
 
-- `AudioPipeline.on_session_ending(session)` (RMK-466): a session's end has
-  begun and its teardown still awaits. From there the session's inbound
-  frames are not processed (nor recorded) and the callbacks still due for it
-  are dropped; its state stays, and its recording keeps the outbound audio,
-  until `on_session_ended`. `RealtimeVoiceChannel` calls it as the session
-  turns `ENDED`.
-
-- `ToolCallResult.refused` (RMK-465, RFC §12.4.1), a last field defaulting to
-  `False`: among the errors a reasoning backend reads, a refusal. The voice
-  channel fills it from the call's outcome, and an agent backend's loop reads
-  a call its gate refused as refused and any other error as failed (a failed
-  call read as refused, logged as one and left out of its tool memory). A
-  backend that builds its own `ToolCallResult` is untouched; an
-  `execute_tool_call` of its own that returns `is_error` without `refused`
-  is read as failed.
+- `ToolFailedError(message)` (RMK-459, RFC §9.3), beside `ToolRefusedError`: a
+  handler's failure in its own words. The tool ran and could not do it; the
+  model reads the message verbatim, and the call is recorded failed, not
+  refused (observers with the message as `error_detail`, stored end row,
+  audit), and kept in the room's tool memory.
 
 - `HumanInputRejectedError` (RMK-465, RFC §9.3), exported from `roomkit`: what
   `HumanInputHandler.wait()` raises for a request a human or an
@@ -68,41 +65,135 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `RuntimeError`, so a caller catching `RuntimeError` around `wait()` still
   catches it.
 
+- How a tool call ended, wherever it is read (RMK-305, RMK-308, RMK-432,
+  RMK-498, RFC §6.4, §9.3):
+  - `ToolCallContent.outcome` and `ToolCallOutcome`, exported from `roomkit`:
+    a stored `TOOL_CALL_END` says `served`, `refused`, `failed`, `blocked`,
+    `unserved` or `cancelled`, which `status` folds into completed/failed. A
+    row written before reads by its `status`. The tool memory and the skill
+    activations rebuilt from stored rows read it.
+  - `status` (`completed` or `failed`) on each call of an `AIChannel`'s
+    ephemeral `TOOL_CALL_END`, as the ACP channel's and the stored event
+    carry it: a live surface read a refused, failed or cancelled call out of
+    the result preview.
+  - `ToolCallEvent.refused`, beside `cancelled`, set by every gate and
+    handler that refuses a call and carried by the `tool_call` framework
+    event; `refused_but_ran` on `ToolCallEvent`, `ToolCallContent` and
+    `ToolCallEndMarker` for an ACP call RoomKit refused that the agent ran
+    anyway.
+
+- `ExternalToolHandler.on_tool_refused(...)` and `on_tool_cancelled(tool_name,
+  tool_input, *, tool_call_id, job_id, room_id)` (RMK-432, RMK-419, RMK-498,
+  RFC §9.3), not abstract: the handler hears its own refusal, and a call the
+  turn cut before its report (cancelled while the handler decided it, or
+  before it was asked). Each reports the call to `ON_TOOL_CALL`'s observers
+  by default; an override withdraws what the call left pending, then calls
+  `super()`. When a refusal comes from a failure (a `BEFORE_TOOL_USE` hook
+  that failed closed), the new `ToolDecision.detail` says what failed: the
+  observers read it as `error_detail` and `on_tool_refused` receives it as
+  `detail=`, never the model. `on_tool_result` receives
+  `refused_but_ran=True` for an ACP call the agent ran past a refusal. Both
+  keywords are passed only to an override that accepts them. See Changed for
+  what `on_tool_result` no longer receives.
+
+- `roomkit.tools.tool_turn_context(...)` (RMK-476): a context manager that runs
+  its block as a tool call of the turn its arguments describe (`room_id` or
+  `room`, `actor_id`, `tools`, `chain_depth`, `call`), so a test calling a
+  handler directly reads `current_tool_room_id()`, `current_tool_actor_id()`,
+  `current_tool_allowed_names()`, `current_tool_call()` and
+  `current_response_metadata()` as a tool loop sets them, and the previous
+  context comes back when the block exits. Replaces setting the private
+  `_current_loop_ctx` / `_current_tool_call` contextvars by hand.
+
 - `TOOL_SEARCH_INFRA_TOOL_NAMES`, `TOOL_FIND_TOOLS` and `TOOL_LIST_TOOLS`,
   exported from `roomkit` and `roomkit.channels` (RMK-468): the names of the
   two discovery tools a channel serves itself under Tool Search, `find_tools`
-  and `list_tools`, as a set and one by one, for a host that treats them
-  apart (a guard that must not judge a catalogue schema as tool output, a
-  view that labels them) without spelling them. `call_tool` is not one of
-  them: it runs the tool it names.
+  and `list_tools`, for a host that treats them apart (a guard that must not
+  judge a catalogue schema as tool output, a view that labels them) without
+  spelling them. `call_tool` is not one of them: it runs the tool it names.
 
-- `realtime_call_arguments(raw, *, cut)` and `CutArguments`, exported from
-  `roomkit.providers.ai` beside `readable_arguments` (RMK-455, RFC §6.4): the
-  rule a realtime provider whose wire tells a cut reads a call through, for a
-  provider written outside RoomKit as for the shipped ones. A cut call runs
-  only when its argument text arrived and reads; otherwise it reaches the
-  channel as `CutArguments`, refused before the gate as `Tool call cut off`.
+- `add_turn_note`, `split_turn_notes` and `TURN_NOTES_HEADER`, exported from
+  `roomkit` and `roomkit.channels` (RMK-368, RFC §6.4): a
+  `BEFORE_AI_GENERATION` hook adds a block to the turn's notes with
+  `event.ai_context.messages = add_turn_note(event.ai_context.messages, block)`.
+  The block joins the section the channel opened, under its one header, or
+  opens it, and the notes read exactly as if assembled at once, so the prefix a provider
+  caches is unchanged; a compaction keeps them whole with the input. The
+  header is the notes' only mark: an input or a note that quotes it as the
+  channel places it (a paragraph of its own, a block after it) is misread.
 
-- `ToolFailedError(message)` (RMK-459, RFC §9.3), beside `ToolRefusedError`:
-  a handler's failure in its own words. The tool ran and could not do it;
-  the model reads the message verbatim, the call is failed
-  (`refused=False`), its observers read the message as `error_detail`, its
-  stored end row says `failed` and the room's tool memory keeps it, on the
-  text and realtime doors alike. An audit records it `failed`, as the
-  failure envelope.
+#### AI channel
 
-- `FastRTCRealtimeTransport.reject_connection(webrtc_id, *, message=None)`
-  (RMK-408): refuse a peer the host will not serve, told why on its data
-  channel, what carries it closed (its peer connection, or a websocket
-  client's socket), the stream cleaned and its handler unregistered, each step
-  even when an earlier one fails.
+- `AIChannel(continuation=...)` (`ContinuationPolicy`, RMK-410, RMK-411, RFC
+  §6.4): a policy for an answer that did not act. Given the text of a round
+  the model ended itself, without a call and with a tool declared, it returns
+  the instruction that makes the model go on, or `None` when the answer stands
+  (a recognizer of "I will check that", say). It applies to a natural stop
+  only, every provider alike (`stop`, `end_turn`, `STOP`; never a truncation, a
+  filter, an unparsable call or a stream that ended without saying why),
+  shares the empty round's bound (`max_empty_retries`), and never runs after a
+  cancellation, a force-stop, or past the turn's deadline or budget. A turn
+  whose policy still asks once the bound has run out ends on the new
+  `LoopEndReason` `unfinished`, with its end marker and `ON_AI_RESPONSE`. The
+  continued round's text stays its own message: the loop yields the new
+  `SegmentBreakMarker` there. A continued round is not a tool round in
+  `LoopEndMarker.rounds`. Example: `examples/ai_continuation_policy.py`.
 
-- `MCPToolProvider.tool_meta()`, `read_resource(uri)` and
-  `call_tool_result(name, arguments)` (RMK-408): what an MCP App's host reads
-  from the connection beside the model's tools, each tool's `_meta` from the
-  listing made at connection, a resource, and a tool's raw `CallToolResult`.
-  `call_tool_result`, like `call_tool`, is not bound by `tool_filter`, which
-  shapes discovery only. `connected` says whether the connection is live.
+- `InboundResult.response_metadata["turns"]` (RMK-437, RMK-479, RMK-497, RFC
+  §6.4, §6.7): how each agent's turn ended, keyed by channel id
+  (`loop_end_reason`, and `ai_usage` when the record has one), for every
+  channel that replied to the caller's event, from `process_inbound()` and
+  `regenerate_response()` alike, streamed or buffered. A turn that wrote no
+  message, a turn cancelled from outside and a Supervisor's task-formulation
+  pass have their entry; an answer to an answer has none. An ACP agent's
+  entry is its stop reason (`completed` once its prompt returned on
+  `end_turn`, `interrupted` when it never returned or failed after), and its
+  `ON_AI_RESPONSE` now carries it as `loop_end_reason`, whose type widens to
+  `str`. `turns` is RoomKit's key: a value a hook or a tool writes there is
+  not carried to the caller. A `BEFORE_TOOL_USE` hook that writes
+  `current_response_metadata()` reaches `InboundResult.response_metadata`,
+  the turn answered or failed: the way to count the calls a turn started.
+
+- `LoopEndMarker` states the limits the turn ran under (RMK-411):
+  `max_rounds`, `timeout_seconds`, `budget_tokens` and `budget_usd`, `None`
+  for no such limit, so a consumer names the limit a `max_rounds`, `timeout`
+  or `budget_exceeded` end hit without reading the channel. The budget is
+  resolved per turn (the binding, then the turn's config, then the channel).
+  The limits ride the marker only, not `ON_AI_RESPONSE`. The fields have
+  defaults: a marker built by keyword still builds.
+
+- The turn's footprint (RMK-406, RFC §20): before it reads its memory, an AI
+  channel measures what the turn takes of the window besides its history, as
+  the first round sends it, readable for the turn as `current_turn_footprint()`,
+  a `TurnFootprint` (`roomkit`, `roomkit.memory`, `roomkit.tools`):
+  `input_tokens` (the system prompt with an `Agent`'s identity, the tools
+  declared and the tool policy, the channel's own notes: the room's plan, the
+  digest of the tools already used, the speaker attribution) and
+  `reply_tokens` (the turn's `max_tokens`, 0 when the provider applies its
+  own). What a `BEFORE_AI_GENERATION` hook adds afterwards is not measured.
+  `history_budget()` takes `reply_tokens=` and reserves the larger of its
+  margin and that budget. `BudgetAwareMemory` reads it, see Changed.
+
+- `AIChannel(describe_empty_event=...)` (`EmptyEventDescriber`, RMK-407): a
+  callable asked only for an event whose content extracts to nothing (a
+  captionless upload, say); its text stands in for the event in the history
+  and the turn's input, `None` keeps the omission. The stored event and the
+  memory query are untouched.
+
+- `Agent(identity_in_prompt=False)` (RMK-407): a host that renders the agent's
+  identity in its own prompt turns RoomKit's `--- Agent Identity ---` block
+  off, in a turn, a handoff and a realtime pipeline alike;
+  `build_identity_block()` returns `None` and the fields stay readable.
+  Example: `examples/ai_shared_agent_rooms.py`.
+
+- `AIChannel.steer(directive, *, loop_id=None, room_id=None)` addresses a room
+  and returns how many loops it reached (RMK-407, RFC §21.3). One channel
+  object serves every room it is bound to: addressed to a room, a `Cancel`
+  reaches every loop of that room and no other, another directive the room's
+  most recent loop. Without either, the most recent loop whatever its room,
+  as before. `loop_id` and `room_id` together raise `ValueError`.
+
+#### AI providers
 
 - `transport=` on `OpenAIAIProvider`, `AzureAIProvider`,
   `OpenRouterAIProvider` and `create_vllm_provider` (RMK-408), inherited by
@@ -113,146 +204,112 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   transport owns its pool and limits, and environment proxies are not read.
   Example: `examples/openai_outbound_policy.py`.
 
-- `ConferenceChannel.ensure_bot(room_id)` (RMK-408, RFC §12.10.4): a host's
-  own request for the bot's join, awaited, returning the `BotSession`; one join
-  for concurrent calls and the lazy triggers, a lost session joined again,
-  `RoomNotAttachedError` for a room the channel is not attached to, and
-  `ConferenceCapabilityError` for a channel with nothing to consume or say.
+- `AIResponse.thinking_parts`, `AIThinkingPart.redacted`, and
+  `StreamThinkingDelta.block` / `.redacted` carry a provider's reasoning
+  blocks one by one (RMK-377, RFC §6.4), which Anthropic now replays as such
+  (see Fixed).
 
-- `acp_event_text(event)` (RMK-408, RFC §6.4): the text an `ACPChannel`
-  gives its agent for an event, a `RichContent` read as its `plain_text`, for a
-  host that builds an ACP prompt of its own.
+- Speech models are tagged in a model listing (RMK-389, RFC §6.7): a chat
+  provider's `list_models()` gives a speech-to-text model the `transcription`
+  capability and a text-to-speech model `speech`, so a model picker can keep
+  them out of a chat list. OpenAI (`whisper-1`, `gpt-4o-transcribe`, `tts-1`,
+  `gpt-4o-mini-tts`…), Gemini and Mistral tag them by name, PolarGrid from its
+  catalog (its chat models carry their capability tags too), LiteLLM from its
+  cost map's `mode`, whatever alias the operator gave the model. A curated
+  catalog's `capabilities`, mostly internal routing flags, stay out of a live
+  listing. `roomkit.providers.ai.model_tags` holds the tags
+  (`TRANSCRIPTION_CAPABILITY`, `SPEECH_CAPABILITY`) and `speech_tags` /
+  `with_speech_tags`, which read them off a model id.
 
-- The turn's footprint (RMK-406, RFC §20): before it reads its memory, an AI
-  channel measures what the turn takes of the window besides its history, as
-  the first round sends it, readable for the turn as `current_turn_footprint()`,
-  a `TurnFootprint` (`roomkit`, `roomkit.memory`, `roomkit.tools`):
-  `input_tokens` (the system prompt with an `Agent`'s identity, the tools
-  declared under Tool Search and the tool policy, the channel's own notes: the
-  room's plan, the digest of the tools already used, the speaker attribution)
-  and `reply_tokens` (the turn's `max_tokens`, 0 when the provider applies its
-  own). What a `BEFORE_AI_GENERATION` hook adds afterwards is not measured.
-  `history_budget()` takes `reply_tokens=` and reserves the larger of its
-  margin and that budget.
+- The rules the shipped providers apply, in `roomkit.providers.ai`, for a
+  provider written outside RoomKit (RMK-309, RMK-375, RMK-377, RMK-438,
+  RMK-439, RMK-455, RFC §6.4, §6.7):
+  - reading a call: `readable_arguments`, `unreadable_arguments`,
+    `realtime_call_arguments(raw, *, cut)` and `CutArguments` (a realtime
+    call the wire says was cut runs only when its argument text arrived and
+    reads, and otherwise reaches the channel as `CutArguments`, refused as
+    `Tool call cut off`), `call_partial` and `call_garbled` (with `last=`, as
+    `call_cut` now takes), `AIToolCall.garbled` / `StreamToolCall.garbled`,
+    `tool_call_of`, `stream_call_of`, `partial_call_error`,
+    `unreadable_call_error`;
+  - a call the provider already ran: `AIToolCall.served` /
+    `StreamToolCall.served`, a `ServedCall(result, is_error)` (see Changed);
+  - declaring and rendering: `declared_parameters`, `chat_tool_declarations`,
+    `ToolNameRule`, `some_vendor_accepts_tool_name`, and `chat_messages` with
+    its `ChatDialect` (`OPENAI_CHAT` is OpenAI's own), the one builder OpenAI
+    and its derivatives, Mistral and PolarGrid render a conversation through;
+  - reasoning: `thinking_parts_of`, `ThinkingBlocks`, `RoundTranscript` and
+    `round_parts`.
+
+#### Realtime and voice
+
+- `AgentReasoningBackend(agent)` (RMK-396, RMK-511, RFC §12.4.1): a realtime
+  reasoning backend that serves the voice session's delegations with an agent
+  you configured (prompt, temperature, thinking, round cap, deadline, budget)
+  on the AI channel's tool loop, its tools the session's catalogue, each call
+  through the voice channel's gate. An agent carrying tools of its own (tools,
+  skills, a sandbox, planning, an external or human-input handler) is
+  refused, and so is an agent registered with a kit, whose hooks would judge
+  each call a second time. `close()` closes the agent it owns, releasing its
+  provider and cutting its turns. `AIProviderReasoningBackend` is now built on
+  it, see Changed.
+
+- `ReasoningRequest` gains four last fields, each with a default (RMK-306,
+  RMK-396, RMK-428, RMK-465, RMK-480, RFC §12.4.1):
+  - `execute_tool_call`, which returns a `ToolCallResult` (its text,
+    `is_error` and `refused`), so the backend's model reads a refused, failed
+    or unserved call as one; `execute_tool` still returns the text alone. A
+    backend that builds its own `ToolCallResult` is untouched; an
+    `execute_tool_call` of its own that returns `is_error` without `refused`
+    is read as failed;
+  - `report_refusal(name, arguments, body, *, cancelled=False,
+    refused=True, detail=None)`, which reports to the voice channel's
+    `ON_TOOL_CALL` observers a call the backend's loop ended before the gate:
+    refused (unreadable arguments, say), cut, or failed with `refused=False`
+    and what failed as `detail`. A backend's call is reported under
+    `<delegation>:<the model's id>`, which `model_call_id()` reads;
+  - `report_call`, which reports a call the backend's own provider served,
+    outside the channel's gate, once, served or failed;
+  - `unavailable`, the session's tools the backend's model is not offered,
+    each with its refusal.
+
+- `human_input_handler=` on `RealtimeVoiceChannel` and
+  `ConferenceRealtimeConfig` (RMK-481, RFC §9.3, §21.6), as on an `AIChannel`:
+  the channel declares the handler's `tool_definitions` in every session and
+  serves its tools before `tool_handler`, on every door (the provider's call,
+  a call recovered from speech, a reasoning backend's, a conference's), under
+  the handler's own `timeout` rather than the default call bound. Each request
+  fires `ON_USER_INPUT_REQUIRED`, whose BLOCK rejects it, with `channel_type`
+  naming the door; the requests still open are settled when the channel
+  closes, and on a conference when its realtime provider is unplugged. A host
+  tool under a name the handler declares is refused where the host gives it;
+  one a session is reconfigured with is left out. A provider that calls no
+  tool is warned about, as for any tool. A `HumanInputToolHandler` given as a
+  realtime channel's `tool_handler` stays a plain handler, and a warning
+  points to the option. `HumanInputToolHandler.ask(name, arguments, *,
+  channel_type=...)` asks on a door of that channel type. Example:
+  `examples/realtime_human_input.py`.
+
+- `RealtimeVoiceProvider.submit_tool_error` and
+  `RealtimeVoiceProvider.supports_tools` (RMK-299, RFC §12.4). The channel
+  returns a refused, failed, blocked or unserved call through
+  `submit_tool_error`, which a provider whose protocol marks an error
+  overrides (Gemini Live and ElevenLabs do) and which otherwise sends the
+  result as `submit_tool_result` does. `supports_tools` is `False` on Anam and
+  PersonaPlex, whose models call no tool: the channel and a conference declare
+  them none, offer them no skill or Tool Search in the prompt, and warn once
+  rather than leave every call unanswered.
 
 - `RunSkillScriptTool(skills, executor)` (RMK-406, RFC §24): `run_skill_script`
   as a `Tool`, for a realtime channel running the scripts of skills another
   agent holds, through the one script handler every channel uses;
   `RunSkillScriptTool.name` is the name it is declared and called under.
 
-- `SkillRegistry.add(skill)` and `SkillRegistry.copy(names=None, *,
-  marks=True)` (RMK-406, RFC §24.3): register a skill built in memory, and copy
-  a subset that keeps each skill's path (a skill discovered but not yet loaded
-  is still found) and, unless `marks=False`, the source's marks. Example:
-  `examples/agent_skills_in_memory.py`.
-
-- `RoomKit.commit_event(room_id, event, *, organization_id=None)`
-  (RMK-405, RFC §10.5): commit a record no member receives (a trace, a
-  display snapshot, a copy a branched conversation starts from) outside the
-  pipeline. An event naming another room raises `ValueError`; the room is
-  read under its lock, scoped to the tenant; a room that refuses events
-  raises `RoomClosedError` and nothing is written; the
-  record takes the next index, which the room's delivery lane counts as
-  delivered at once, so the next event never waits on it. No hook, no
-  broadcast, stored as given (§7.5 rule 2 does not apply).
-
-- `PostgresStore.event_from_row(row)` (RMK-405): the `RoomEvent` a row of the
-  `events` table stores, for a host that reads events with a query of its
-  own; columns beyond the table's are ignored.
-
-- A room's recordings started, fed and stopped by the host (RMK-405, RFC
-  §12.11): `start_room_recording(room_id, recorders, *, organization_id=None)`
-  starts recorders on an existing room, all or nothing, under its lock, each
-  announced (`ON_RECORDING_STARTED`) before it returns, so a recording resumed
-  after a restart announces its consent point again;
-  `await room_recordings(room_id, *, organization_id=None)` lists the running
-  handles; `await add_room_recording_track(room_id, track, *,
-  organization_id=None)` declares a track and returns a `RoomRecordingFeed` its
-  media goes through; `stop_room_recording(room_id, *, organization_id=None)`
-  returns the results. All four read the room scoped to its organization
-  (RMK-469): another organization's room is not found, and nothing of its
-  recordings is listed, fed or stopped. List, feed and stop reach the
-  recordings of a room whose row is gone while they run, for the
-  organization they were started under only (the framework keeps it while
-  the room records); a missing room that records nothing raises
-  `RoomNotFoundError`. A recording started on a live room joins the room's
-  media only once announced, each declared track told to it first; it
-  captures the room's declared tracks, not a session that joined while the
-  room recorded nothing. Example: `examples/room_recording_on_demand.py`.
-
-- `steer(directive, *, loop_id=None, room_id=None)` addresses a room and
-  returns how many loops it reached (RMK-407, RFC §21.3). One channel object
-  serves every room it is bound to: addressed to a room, a `Cancel` reaches
-  every loop of that room and no other, another directive the room's most
-  recent loop. Without either, the most recent loop whatever its room, as
-  before. `loop_id` and `room_id` together raise `ValueError`.
-
-- `AIChannel(describe_empty_event=...)` (RMK-407): a callable
-  (`EmptyEventDescriber`) asked only for an event whose content extracts to
-  nothing, a captionless upload say; its text stands in for the event in the
-  history and the turn's input, `None` keeps the omission. The stored event
-  and the memory query are untouched.
-
-- `Agent(identity_in_prompt=False)` (RMK-407): a host that renders the
-  agent's identity in its own prompt turns RoomKit's `--- Agent Identity ---`
-  block off in a turn, a handoff and a realtime pipeline alike;
-  `build_identity_block()` returns `None` and the fields stay readable.
-  Example: `examples/ai_shared_agent_rooms.py`.
-
-- `LoopEndMarker` states the limits the turn ran under (RMK-411):
-  `max_rounds`, `timeout_seconds`, `budget_tokens` and `budget_usd`, `None`
-  for no such limit, so a consumer names the limit a `max_rounds`, `timeout`
-  or `budget_exceeded` end hit without reading the channel. The budget is
-  resolved per turn (the binding, then the turn's config, then the
-  channel), which the channel could not say. The limits ride the marker
-  only, not `ON_AI_RESPONSE`. The fields have defaults: a marker built by
-  keyword still builds.
-
-- `ExternalToolHandler.on_tool_cancelled(tool_name, tool_input, *,
-  tool_call_id, job_id, room_id)` (RMK-419, RFC §9.3), not abstract: the turn
-  cut a call the handler was to decide before its report (cancelled while the
-  handler decided it, or before it was asked). The default reports it to
-  `ON_TOOL_CALL`'s observers once, `is_error=True, cancelled=True`; an
-  override can withdraw what the call left pending, then call `super()`. Such
-  a call on an AI channel was reported nowhere, and an ACP call the turn ended
-  under reached the handler's `on_tool_result` without `cancelled`.
-
-- `AIChannel(continuation=...)` (RMK-410, RFC §6.4): an AI channel's
-  continuation policy goes on an answer that did not act. Given the text of a
-  round the model ended itself, without a call and with a tool declared, it
-  returns the instruction that makes the model go on, or `None` when the
-  answer stands (a recognizer of "I will check that", say). The loop decides
-  the natural stop from what the round carried, every provider alike
-  (`stop`, `end_turn`, `STOP`; never a truncation, a filter, a call it could
-  not parse or a stream that ended without saying why). It shares the empty
-  round's bound (`max_empty_retries`) and the loop keeps its guards (no
-  continuation after a cancellation or a force-stop, nor past the turn's
-  deadline or budget). A turn whose policy still asks once the bound has run
-  out ends on the new `LoopEndReason` `unfinished`, with its end marker and
-  `ON_AI_RESPONSE`, never `completed`. The text of a round it continues
-  stays its own message: the loop yields the new `SegmentBreakMarker`
-  there, where the room writer and a reasoning backend end the segment, as
-  at a call's start. Example: `examples/ai_continuation_policy.py`.
-
-- `AFTER_TOOL_ROUND` (RMK-409, RFC §6.4, §9.2): a SYNC hook between two rounds
-  of an AI channel's tool loop. It fires after each round the channel ran
-  calls in, with a `ToolRoundEvent` carrying the round whole (its calls, the
-  channel's results and the ones the provider served) and the names of the
-  turn's toolset (`tools`, Tool Search's catalogue included), so a rule about the
-  round's concurrent calls (one success among failures, say) has the round to
-  read. `event.withdraw(*names)` takes tools out of the rest of the turn with
-  every guarantee of a `BEFORE_AI_GENERATION` withdrawal (never declared
-  again, refused if called, the channel's own tools included, never handed to
-  an external handler); `event.add_message(text)` is what the next round reads
-  after the results. Hooks act on the event in place; a BLOCK stops the hooks
-  after it, as on any SYNC trigger, and changes nothing of the round. A
-  `BEFORE_TOOL_USE` hook writing `current_response_metadata()` reaches
-  `InboundResult.response_metadata`, the turn answered or failed: the way to
-  count the calls a turn started. Example: `examples/hook_after_tool_round.py`.
-
-- `SkillRegistry.has_entries` (RMK-397): whether a registry has anything to
-  tell the model, a skill it can activate or one marked unavailable; the text
-  turn and the realtime session decide on it alike.
+- `RealtimeModelHost` and its predicate `hosts_realtime_model()` (RMK-501, RFC
+  §23.3): the contract a channel that hosts a realtime model inherits
+  (`get_room_sessions()`, `inject_text()`, `wait_idle()`), shared by
+  `RealtimeVoiceChannel`, `RealtimeAudioVideoChannel` and `ConferenceChannel`
+  and the only thing the delivery paths read (see Fixed).
 
 - `PhraseBackchannelDetector` (`roomkit.voice.pipeline.backchannel`, RMK-390):
   RoomKit's first real backchannel detector, for the `SEMANTIC` interruption
@@ -262,481 +319,215 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   classified as it grows, "okay, and what about..." still cuts in. English
   and French phrases by default (`ENGLISH_BACKCHANNELS`,
   `FRENCH_BACKCHANNELS`), `max_words=4`; without words it judges nothing a
-  backchannel and the strategy falls back on duration (RFC §12.3.13). In a
-  session of the local Vui example, 6 of 20 barge-ins were a lone "okay".
+  backchannel and the strategy falls back on duration (RFC §12.3.13).
 
-- `StripBrackets(keep=...)` passes a TTS's own tags through and removes every
-  other bracketed word, and `TTSFilterChain` runs several filters as one
-  channel `tts_filter` (RMK-390). `VUI_TAGS` lists the tags Vui renders as
-  sounds (`breath`, `laugh`, `sigh`, `gasp`, `cough`, `hesitate`): with
+- `StripBrackets(keep=...)`, `TTSFilterChain` and `VUI_TAGS` (RMK-390): a TTS's
+  own tags pass through while every other bracketed word is removed, and
+  several filters run as one channel `tts_filter`. With
   `TTSFilterChain(StripEmoji(), StripBrackets(keep=VUI_TAGS))`, the emoji and
   the stage directions a small model writes despite its prompt (`[nod]`,
-  `[smiles]`) no longer reach Vui, which read or garbled them.
+  `[smiles]`) no longer reach Vui, while the tags it renders as sounds
+  (`breath`, `laugh`, `sigh`, `gasp`, `cough`, `hesitate`) do.
 
 - `FluxionsTTSProvider` and `FluxionsTTSConfig` (`roomkit[fluxions]`, RMK-373):
   Vui hosted by fluxions.ai, beside the local `VuiTTSProvider`, with an API
   key and no GPU. Each text is rendered on its own and streamed as 24 kHz
-  PCM; the speech API takes no conversation context, so the provider stays
-  at `TTSContextLevel.NONE`. `voice` takes a short id (`maeve`), resolved to
-  the id of the model Fluxions currently serves and resolved again once when
-  a render answers 404, or a full id. `list_voices()` lists the hosted voices,
-  then the account's cloned voices (`GET /vui/v1/voices/mine`). See
-  `examples/voice_fluxions.py`.
+  PCM; the speech API takes no conversation context, so the provider stays at
+  `TTSContextLevel.NONE`. `voice` takes a short id (`maeve`), resolved to the
+  id of the model Fluxions currently serves and resolved again once when a
+  render answers 404, or a full id. `list_voices()` lists the hosted voices,
+  then the account's cloned voices. Example: `examples/voice_fluxions.py`.
 
-- `roomkit.providers.ai.model_tags`: the `transcription` and `speech`
-  capability tags (`TRANSCRIPTION_CAPABILITY`, `SPEECH_CAPABILITY`), and
-  `speech_tags` / `with_speech_tags`, which read them off a model id (RMK-389,
-  RFC §6.7 model listings).
+- `AudioPipeline.on_session_ending(session)` (RMK-466): a session's end has
+  begun and its teardown still awaits. From there the session's inbound
+  frames are not processed (nor recorded) and the callbacks still due for it
+  are dropped; its state stays, and its recording keeps the outbound audio,
+  until `on_session_ended`. `RealtimeVoiceChannel` calls it as the session
+  turns `ENDED`.
 
-- `AIResponse.thinking_parts`, `AIThinkingPart.redacted`, and
-  `StreamThinkingDelta.block` / `.redacted` carry a provider's reasoning
-  blocks (RMK-377, RFC §6.4); `thinking_parts_of`, `ThinkingBlocks`,
-  `RoundTranscript` and `round_parts` in `roomkit.providers.ai` read and
-  assemble them.
+- `FastRTCRealtimeTransport.reject_connection(webrtc_id, *, message=None)`
+  (RMK-408): refuse a peer the host will not serve, told why on its data
+  channel, what carries it closed (its peer connection, or a websocket
+  client's socket), the stream cleaned and its handler unregistered, each step
+  even when an earlier one fails.
 
-- `ACPSessionInvalidatedError`: a transport may authorize one reconstruction
-  of a room session after a pre-execution refusal. The same turn lock spans
-  the refusal, normal session opening and recomposed visible catch-up. Partial
-  activity, standalone turns and a second refusal are never retried; the host
-  retains responsibility for durable admission and retry authorization.
+- `roomkit.voice.PlaybackErrors` (RMK-448, RFC §12.2): the context manager a
+  voice backend reads a TTS stream inside, so that a synthesis failure reaches
+  the channel while the backend's own transport errors stay logged. The local,
+  RTP, FastRTC and Buzz backends use it, and the video backends inherit it.
 
-- `ToolCallContent.outcome` and `ToolCallOutcome`, exported from `roomkit`
-  (RMK-308, RFC §6.4): a stored `TOOL_CALL_END` states how its call ended,
-  `served`, `refused`, `failed`, `blocked`, `unserved` or `cancelled`, which
-  `status` folds into completed/failed; a row written before reads by its
-  `status`. The tool memory and the skill activations rebuilt from the
-  stored rows read it.
+#### Conference, ACP and MCP
 
-- `RealtimeVoiceProvider.submit_tool_error` and
-  `RealtimeVoiceProvider.supports_tools` (RMK-299, RFC §12.4). The channel
-  returns a refused, failed, blocked or unserved call through
-  `submit_tool_error`, which a provider whose protocol marks an error
-  overrides and which otherwise sends the result as `submit_tool_result`
-  does. `supports_tools` is `False` on Anam and PersonaPlex, whose models
-  call no tool: the channel, and a conference, declare them none, offer
-  them no skill or Tool Search in the prompt, and warn once rather than
-  leave every call unanswered.
+- `ConferenceChannel.ensure_bot(room_id)` (RMK-408, RFC §12.10.4): a host's
+  own request for the bot's join, awaited, returning the `BotSession`; one
+  join for concurrent calls and the lazy triggers, a lost session joined
+  again, `RoomNotAttachedError` for a room the channel is not attached to, and
+  `ConferenceCapabilityError` for a channel with nothing to consume or say.
 
-- `add_turn_note`, `split_turn_notes` and `TURN_NOTES_HEADER`, exported from
-  `roomkit` and `roomkit.channels` (RMK-368, RFC §6.4): a
-  `BEFORE_AI_GENERATION` hook adds a block to the turn's notes with
-  `event.ai_context.messages = add_turn_note(event.ai_context.messages, block)`.
-  The block joins the section the channel opened, under its one header, or
-  opens it, and the notes read exactly as if assembled at once, so the prefix
-  a provider caches is unchanged; a compaction keeps them whole with the
-  input. `split_turn_notes(text)` returns the input and its notes. The header
-  is the notes' only mark, recognized as the channel places it (a paragraph
-  of its own, a block after it): an input, or a note, that quotes it that way
-  is what either function misreads.
+- `acp_event_text(event)` (RMK-408, RFC §6.4): the text an `ACPChannel` gives
+  its agent for an event, a `RichContent` read as its `plain_text`, for a host
+  that builds an ACP prompt of its own.
 
-- `ToolCallResult` and `ReasoningRequest.execute_tool_call` (RMK-306, RFC
-  §12.4.1): a reasoning backend's tool call returns its text and whether it
-  failed, so the backend's model reads a refused, failed or unserved call as
-  one. `execute_tool` still returns the text alone; the built-in
-  `AIProviderReasoningBackend` uses the new one and marks such a call
-  `is_error`, where its model read every call as a success.
+- `ACPSessionInvalidatedError(reason, *, recovery_authorized=False)`,
+  exported from `roomkit`: a transport's connection raises it from `prompt`
+  when it refused a prompt before executing any of it and the session is no
+  longer usable. With `recovery_authorized=True`, which asserts that the host
+  reserved a safe retry for this event, the channel forgets that room session
+  and its catch-up cursor, opens a new one normally and prompts the same
+  event once, under the same turn lock. Any observed activity, a second
+  refusal or a standalone turn is terminal; RoomKit keeps no retry policy of
+  its own.
 
-- `tool_timeout_seconds` and `tool_timeouts` on `AIChannel`,
-  `RealtimeVoiceChannel` and `ConferenceRealtimeConfig`, and
-  `ToolTimeoutError` (RMK-366, RFC §21.6): how long one tool call may take,
-  by default and per tool name (`None` for no bound). Past it the handler is
-  cancelled and the call fails like one whose handler raised: the model reads
-  `Tool 'x' failed (ToolTimeoutError)`, the observers the detail, and the turn
-  goes on. A handler that never answered held its turn for good: the text
-  loop's deadline is read between rounds, and speech-to-speech and conference
-  calls had none. One bound serves every path: both text loops; a realtime
-  session's provider calls, the calls it recovers from speech, its reasoning
-  backend's calls, its skill scripts and a pipeline agent's own tools; a
-  conference's calls. A tool that keeps a bound of its own is not subject to
-  the default: an orchestration tool that waits on another agent (a
-  delegation, a supervisor's or a loop's strategy tool, marked by the new
-  `ToolTraits.waits`), a `HumanInputToolHandler`'s tools, and `sandbox_bash`,
-  whose `timeout` argument the sandbox enforces.
-- `status` (`completed` or `failed`) on each call of an `AIChannel`'s
-  ephemeral `TOOL_CALL_END` (RMK-305, RFC §6.4), as the ACP channel's and the
-  stored event carry it: a live surface read a refused, failed or cancelled
-  call out of the result preview.
+- `MCPToolProvider.tool_meta()`, `read_resource(uri)`,
+  `call_tool_result(name, arguments)` and `connected` (RMK-408): what an MCP
+  App's host reads from the connection beside the model's tools, each tool's
+  `_meta` from the listing made at connection, a resource, a tool's raw
+  `CallToolResult`, and whether the connection is live. `call_tool_result`,
+  like `call_tool`, is not bound by `tool_filter`, which shapes discovery
+  only.
+
+#### Skills
+
+- `SkillRegistry.add(skill)` and `SkillRegistry.copy(names=None, *,
+  marks=True)` (RMK-406, RFC §24.3): register a skill built in memory, and copy
+  a subset that keeps each skill's path (a skill discovered but not yet loaded
+  is still found) and, unless `marks=False`, the source's marks. Example:
+  `examples/agent_skills_in_memory.py`.
+
+- `SkillRegistry.has_entries` (RMK-397): whether a registry has anything to
+  tell the model, a skill it can activate or one marked unavailable; the text
+  turn and the realtime session decide on it alike.
+
+- `SkillRegistry(requires_match=...)` (`RequiresMatch`, default
+  `serves_exactly`), `SkillRegistry.gated_tool_names()` and
+  `missing_required_tools` (`roomkit.skills`) (RMK-429, RFC §24.3): how a
+  skill's `requires` names are served, the tools a registry keeps closed, and
+  the one rule every door checks `requires` with. See Changed.
+
+#### Rooms, storage and recording
+
+- `RoomKit.commit_event(room_id, event, *, organization_id=None)` (RMK-405, RFC
+  §10.5): commit a record no member receives (a trace, a display snapshot, a
+  copy a branched conversation starts from) outside the pipeline. An event
+  naming another room raises `ValueError`; the room is read under its lock,
+  scoped to the tenant; a room that refuses events raises `RoomClosedError`
+  and nothing is written; the record takes the next index, which the room's
+  delivery lane counts as delivered at once, so the next event never waits on
+  it. No hook, no broadcast, stored as given (§7.5 rule 2 does not apply).
+
+- `PostgresStore.event_from_row(row)` (RMK-405): the `RoomEvent` a row of the
+  `events` table stores, for a host that reads events with a query of its
+  own; columns beyond the table's are ignored.
+
+- A room's recordings started, fed and stopped by the host (RMK-405, RMK-469,
+  RFC §12.11): `start_room_recording(room_id, recorders, *,
+  organization_id=None)` starts recorders on an existing room, all or
+  nothing, under its lock, each announced (`ON_RECORDING_STARTED`) before it
+  returns, so a recording resumed after a restart announces its consent point
+  again; `await room_recordings(...)` lists the running handles; `await
+  add_room_recording_track(room_id, track, ...)` declares a track and returns
+  a `RoomRecordingFeed` its media goes through; `stop_room_recording(...)`
+  returns the results. All four read the room scoped to its organization:
+  another organization's room is not found, and nothing of its recordings is
+  listed, fed or stopped. Listing, feeding and stopping still reach the
+  recordings of a room whose row is gone while they run, for the organization
+  they were started under only; a missing room that records nothing raises
+  `RoomNotFoundError`. A recording started on a live room joins the room's
+  media only once announced, each declared track told to it first; it
+  captures the room's declared tracks, not a session that joined while the
+  room recorded nothing. Example:
+  `examples/room_recording_on_demand.py`.
+
 - `MediaRecordingConfig.encryption` and `storage_encrypted_at_rest`, and the
   same two fields on `ConferenceRecordingConfig`, which hands them to every
   track recording it opens (RMK-69, RFC §17.6). `encryption` takes the
   `RecordingEncryption` the voice recorder already takes: the recorder hands
   it each finished file and deletes the plaintext, and a file the cipher
-  cannot encrypt is deleted rather than left in the clear.
+  cannot encrypt is deleted rather than left in the clear. See Changed for
+  the recorder that now requires one of them.
 
 ### Changed
 
-- `attach_channel()` takes the channel's own category when none is given
-  (RMK-501, RFC §5.7): an agent attached without `category=` was bound as a
-  transport. It answered the room's messages, but an instruction addressed to
-  it (a background result handed back) was refused (`no_transport`) and
-  `deliver(channel_id=<agent>)` could recurse. It now takes part as an
-  intelligence channel. Passing `category=` keeps its meaning.
+#### Hook behaviour
 
-- A realtime pipeline refuses, at its install, an agent that carries a
-  human-input handler, planning, a sandbox or an external tool handler, as it
-  already refused one carrying skills (RMK-482, RFC §19.5): a realtime session
-  serves none of these for an agent, so the model called a tool nothing
-  declared (`Tool 'ask_user' is not declared.`). Each cause is named, with the
-  voice channel's own option where it has one
-  (`RealtimeVoiceChannel(..., skills=...)`, `human_input_handler=...`). A
-  configuration that installed without serving those tools now raises. The
-  rule is the one a reasoning backend's agent is refused by, and it refuses a
-  skill registry even empty, which a pipeline installed: a skill added to it
-  afterwards opened its gated tools in the session with nothing to gate them.
+- **BREAKING — `BEFORE_TTS` runs on each sentence of a streamed response**
+  (RMK-268, RFC §9.3, §12.2 step 12s.b). A `VoiceChannel` whose TTS reads
+  text as it streams (`supports_streaming_input`: Gradium and Grok always,
+  ElevenLabs with `stream_input=True`) skipped `BEFORE_TTS` on an AI response
+  it spoke while it streamed, so a redaction or moderation hook was bypassed
+  and the original text was spoken. The hook now judges each sentence before
+  the TTS reads it, once for all sessions: a `MODIFY` replaces the sentence, a
+  `BLOCK` drops it and the next one is judged on its own, and the fail-closed
+  rule applies sentence by sentence (a hook that raises, times out or returns
+  something unusable drops its sentence). A sentence redacted to an empty
+  string is not synthesized. The hook sees the sentence after the TTS text
+  filter, and `AFTER_TTS` and the final assistant transcript carry the text as
+  spoken. Without a `BEFORE_TTS` hook nothing changes. Migration: a SYNC
+  `BEFORE_TTS` hook that returns no `HookResult` now silences the sentences of
+  a streamed response, as it already silenced a non-streamed one: return
+  `HookResult.allow()`, or register it as ASYNC.
 
-- **BREAKING — a channel that streams a response which then fails no longer
-  gets its text again through `deliver()`** (RMK-467, RFC §12.2 step 13s):
-  the text reaches it once, inside the stream, as a text row before the
-  failure. The default `Channel.deliver_stream`, which buffers, delivers what
-  it buffered before the failure propagates. Migration: a host channel whose
-  own `deliver_stream` buffers the text instead of rendering it delivers its
-  buffer when the stream raises, as the default does; one that renders as it
-  reads needs nothing.
+- **BREAKING — a BLOCK from a `BEFORE_TOOL_USE` hook reaches the model in the
+  hook's words on every channel** (RMK-306, RFC §9.3). An `AIChannel`, a
+  conference and `PolicyExternalToolHandler` gave the plain `Tool 'x' denied
+  by pre-execution hook.` while a realtime session gave the reason, so a
+  reason meant for logs and observers now reaches the model on those
+  channels. A hook that fails closed still gives the plain refusal, never its
+  error. `BeforeToolDecision.reason` carries it. Migration: word a block's
+  reason for the model, or block without one (`HookResult.block()`) to keep
+  the plain refusal.
 
-- `regenerate_response` fires `ON_ERROR` for every intelligence channel whose
-  failure the broadcast reports, as `process_inbound` does, not only the first
-  (RMK-402); the first failure stays the one on `InboundResult.error`. It reads
-  them through the same helpers as the inbound path.
+- **BREAKING — `ON_TOOL_CALL`'s SYNC hooks judge only a call that ran; a
+  refused or cut call reaches its observers only, on every door** (RMK-432,
+  RMK-419, RFC §9.3). On the external-handler and ACP doors, a call that never
+  ran reached the SYNC hooks: a handler's denial, a call refused because its
+  arguments were cut, a rejected ACP permission with or without a handler, a
+  handler that raised while it decided, and a call the turn cut. Each now
+  reaches the ASYNC observers only, as on the other doors, with
+  `ToolCallEvent.refused` or `cancelled` set. Migration: move what a SYNC hook
+  did with those calls to an ASYNC observer.
 
-- **BREAKING — the human-input tool reads only a rejection as a refusal**
-  (RMK-465, RFC §9.3). A request a human or an `ON_USER_INPUT_REQUIRED` hook
-  rejected is still refused (`ToolRefusedError`, the model reading why). A
-  request nobody answered in time is a failure (`ToolFailedError`): the tool
-  ran and got no answer, where it was refused. A request the handler gave up
-  on (closed or released before an answer, whether before the call or while
-  it waits) and any other `RuntimeError` take the generic failure path, the
-  message withheld from the model, where the model read it as a refusal's
-  reason. What follows for a timed-out call: its observers read
-  `refused=False` with the timeout's text in `error_detail`, its stored end
-  row says `failed`, and the room's tool memory keeps it (the next turn's
-  digest of tools already used names it). `HumanInputHandler.wait()` raises
-  `HumanInputRejectedError` for a rejection and a plain `RuntimeError` for a
-  request the handler gave up on. Migration: a host that told a refusal from
-  a timeout by `refused` reads `refused=False` plus the timeout text now; one
-  that catches `RuntimeError` around `wait()` is untouched, and one that
-  wants only rejections catches `HumanInputRejectedError`.
-
-- **BREAKING — `MCPToolProvider.as_tool_handler()` raises `ToolFailedError`
-  for a result that says `isError`, no longer `ToolRefusedError`** (RMK-459,
-  RFC §9.3): the tool ran and failed. Observers read `refused=False` and the
-  server's words as `error_detail`, the stored end row says `failed`, and the
-  call enters the room's tool memory and digest, where a refusal stayed out;
-  an audit still records `failed`. Migration: code that catches
-  `ToolRefusedError` around an MCP handler to tell a server's answer from an
-  unexpected exception catches `ToolFailedError` beside it.
-
-- **BREAKING — a realtime Tool Search call is judged by `ON_TOOL_CALL`
-  before the model reads it** (RMK-447, RFC §6.4, §9.3). `find_tools` and
+- **BREAKING — a realtime Tool Search call is judged by `ON_TOOL_CALL` before
+  the model reads it** (RMK-447, RFC §6.4, §9.3). `find_tools` and
   `list_tools` on a realtime session were reported to the hooks after their
   result went out, so nothing a SYNC hook returned counted. They are now
-  judged as any call, as `activate_skill` is: a BLOCK is what the model
-  reads and reveals nothing, a replacement is what it reads (a served call
-  still reveals its matches, as a served activation opens its gates), and
-  the hooks' latency now precedes the result. The hooks receive the whole
-  result, where the observers read the bounded copy (RFC §21.5); a
-  replacement or a refusal in place of `list_tools(name=...)` is bounded,
-  only the schema it serves goes out whole. A reconfiguration that fails
-  after a served search is logged, no longer reported as a failed call, and
-  a handoff that gives the session another catalogue while the call is
-  judged drops its reveal (so for an activation's hint). Migration: a
-  SYNC `ON_TOOL_CALL` hook that blocks or rewrites every call by default now
-  reaches Tool Search too; let `find_tools` and `list_tools` through to keep
-  the old behaviour.
-
-- **BREAKING — a refused call reaches `ON_TOOL_CALL`'s observers only, on
-  every door, and an external handler hears its own refusal through
-  `on_tool_refused`** (RMK-432, RFC §9.3). `ToolCallEvent` gains `refused`
-  (beside `cancelled`), set by every gate and handler that refuses a call, and
-  the `tool_call` framework event carries it. On the external-handler and ACP
-  doors a call that never ran reached the SYNC hooks: a handler's denial, a
-  call the external door refused itself because its arguments were cut, a
-  rejected ACP permission with or without a handler, and a handler that
-  raised while it decided; each now reaches the observers only.
-  `ExternalToolHandler.on_tool_refused(tool_name, tool_input, reason, ...)`
-  (not abstract) hears the handler's own refusal and reports it by default.
-  **`on_tool_result` no longer hears a refusal, a call the channel refused
-  itself, or a call whose `process_tool_call` raised**: the channel reports
-  the last two, a raise with what failed (`error_detail`, which the external
-  door dropped and ACP read as a refusal; it ends `failed`, no longer
-  `refused`). A refusal ACP imposes on a handler's approval it cannot apply
-  (an input or a result) is the channel's too. Migration: a handler that
-  recorded refusals in `on_tool_result` overrides `on_tool_refused` (and
-  calls `super()` to keep the report). An ACP call reports the same body with
-  and without a handler: a cancellation's `cancelled_tool_error` envelope, a
-  failure's bounded error, which a handler's `on_tool_result` now receives
-  too (a failed call carrying an image reported 614 456 characters through a
-  handler, 78 without).
-
-- A peer that `FastRTCRealtimeTransport`'s `auth` refuses is closed
-  (RMK-408): its peer connection, or a websocket client's socket, closed and
-  the stream cleaned, through `reject_connection`. It was left connected with
-  its audio ignored until the client hung up. A websocket client that
-  `FastRTCVoiceBackend`'s `auth` refuses is closed too.
-
-- `MCPToolProvider` keeps a server whose listing it cannot read from leaking
-  (RMK-408, RFC §21.2): the catalogue is built before the connection is kept,
-  so a failure there closes what was opened, a stdio server included.
-
-- `OpenTelemetryProvider` never exports on the event loop (RMK-408): the SDK's
-  `force_flush` exports in the calling thread, behind the exporter's retries,
-  and ignores its timeout, so a slow collector froze every task at the end of
-  a voice session. `flush()` now hands the export to a thread and returns at
-  once (a flush asked while one runs is skipped); `close()` waits for it at most
-  `shutdown_flush_timeout` seconds (new constructor argument, 4.0 by default),
-  then logs that spans may be lost.
-
-- **BREAKING — `WebhookHTTPProvider.build_payload(event, to, text)` and
-  `build_headers(body)` are public, with a `config` property** (RMK-408): the
-  extension points a subclass overrides to send another body or sign another
-  way, and the ones `send()` calls. A subclass that overrode the former
-  `_build_payload` / `_build_headers` is no longer called, without an error:
-  it sends RoomKit's envelope, signed with `X-RoomKit-Signature`. Migration:
-  rename the overrides to `build_payload` / `build_headers`, and read
-  `self.config` instead of `self._config`.
-
-- **BREAKING — `ToolRoundEvent.tools` (`AFTER_TOOL_ROUND`) names what
-  `BEFORE_AI_GENERATION` is shown** (RMK-430, RFC §6.4): what the tool
-  policy and skill gating let the turn reach, Tool Search's whole catalogue
-  included, nothing withdrawn. It listed every tool of the turn, the denied
-  and the skill-gated ones included. Migration: a hook that keeps only some
-  tools by withdrawing every name it is shown but those leaves a gated tool
-  out of reach of its withdrawal; withdraw by name (`event.withdraw` takes
-  any name, listed or not) to keep a tool closed even once its skill is
-  activated later in the turn.
-
-- **BREAKING — a call the provider already ran is marked on the call,
-  never in its arguments** (RMK-439, RFC §9.3): the channel read a `_result`
-  key in a call's arguments as "the provider ran it" (and `_is_error` as
-  that run's failure; on a call an external handler decided, `_is_error` was
-  stripped from what the handler saw and turned its approval into a
-  failure), so a model that wrote `{"q": "a", "_result": "forged"}` had its
-  call stored `served` with that text, without the tool policy, the gate or
-  its handler, and an external handler received `on_tool_result` for a call
-  nobody decided. The
-  mark is now `AIToolCall.served` / `StreamToolCall.served`, a
-  `ServedCall(result, is_error)` only a provider sets (exported from
-  `roomkit.providers.ai`); a `_result` key is an argument like any other.
-  No provider of the tree set the old mark. Migration: a provider that runs
-  its own tools sets `served=ServedCall(result=..., is_error=...)` on the
-  call instead of the `_result` / `_is_error` keys. One that still sends the
-  keys has its already-run call handled as a new one: a channel tool of that
-  name runs it again, an external handler is asked about it, or it is
-  refused as undeclared.
-
-- `BudgetAwareMemory` reserves the turn's measured footprint (RMK-406, RFC
-  §20): the larger of `reserved_tokens` and the measured input, which a host's
-  reserve floors and does not add to, and for the reply the larger of the
-  safety margin and the turn's `max_tokens`, never both. A host that passed
-  `reserved_tokens=0`, or only its system prompt, now has its history trimmed
-  to what the declared tools, the channel's notes and a reply budget larger
-  than the margin leave. `CompactingMemory` and `SummarizingMemory` do not
-  read the footprint.
-
-- **BREAKING — a delegated task cancelled from outside ends `cancelled`,
-  through `ON_TASK_COMPLETED` and its callback, inline or in the
-  background** (RMK-434, RFC §23.1, §23.3). In the background
-  (`kit.task_runner.cancel`, the runner's `close`) a cancelled task fired no
-  `ON_TASK_COMPLETED` and no `on_complete`, its notified agent heard nothing,
-  and a Supervisor's worker stayed `already_running` in that room for good;
-  inline (a caller's timeout, as a Supervisor's `task_timeout`) it ended
-  `failed` with "cancelled (timed out)" and no `on_complete`. Both now end
-  once, `status="cancelled"`, `error="cancelled"`, even right after
-  `delegate()` returned or while its delegation was still being set up; the
-  hooks and the callback run to their end, and a task whose work already ran
-  ends as it stands. A notified agent is told the task was cancelled, except
-  while the framework closes: `kit.close()` starts no hand-back turn. An
-  inline task now records its end on its child room as a background one
-  does. The delegation span, left open on a cancel, ends with the task's
-  status: `ok`, `error` (it said `ok` for a failed task, which OpenTelemetry
-  now records as an error) or `cancelled`. `DelegatedTask.cancel()` only
-  unblocks the handle's waiters, as before. A custom `TaskRunner` must end a
-  cancelled task through its `on_complete` with
-  `roomkit.tasks.models.cancelled_task_fields`. Migration: a host that read
-  an inline timeout as `task_status == "failed"` reads `"cancelled"`; one
-  that counted on no `ON_TASK_COMPLETED` for a background cancel now hears
-  it once.
-
-- A room recording's end is announced (RMK-405, RFC §12.11):
-  `ON_RECORDING_STOPPED` and the `recording_stopped` framework event fire for
-  each room recording that stops, on an explicit stop, `close_room`,
-  `archive_room`, a room closed by its timer and `kit.close()`, as a
-  session's and a conference track's do. `RecordingStoppedEvent.session` is
-  optional (`None` for a room recording, as on `RecordingStartedEvent`) and
-  the event carries `room_id`, last among its fields.
-
-- A call served outside the channel (RMK-419, RFC §9.3):
-  - An `ExternalToolHandler` subclass no longer hears an ACP call the turn
-    ended under in `on_tool_result`: it comes through `on_tool_cancelled`.
-    A subclass that recorded results there, or closed a prompt, overrides
-    `on_tool_cancelled` too.
-  - A call the turn cut reaches `ON_TOOL_CALL`'s ASYNC observers only, never
-    its SYNC hooks, as a local call cut does; an ACP call without a handler
-    included.
-  - A call the provider already ran is reported before its start, so a
-    transport that stops reading there no longer leaves it unreported.
-  - A `process_tool_call` that raises fails the call (the model reads
-    `{"error": "Tool 'X' failed (RuntimeError)"}`, the log the message)
-    rather than the turn.
-
-- A delegated worker whose turn does not complete (its round cap, deadline
-  or budget cuts it, a stop cancels it, its answer is cut or never comes)
-  fails its task (RMK-414, RFC §23.3): `status=failed`, `error` saying how
-  the turn ended, `output` its last narration, `metadata["loop_end_reason"]`
-  the reason (also on `ON_TASK_COMPLETED`), where the narration ("Still
-  checking.") was returned as a completed result. Streamed or buffered,
-  inline or in the background, with a shared transport or not. A worker that
-  owes a result and submitted it before the cut keeps it; without one, the
-  task fails without a re-prompt. The Loop and Supervisor strategies and a
-  notified agent read a failed task's work as none (new
-  `roomkit.tasks.models.task_work`): a Loop no longer approves a cut
-  producer's narration, and a supervised chain stops on a cut worker as on
-  any failed delegation. The failure is logged once as a warning without a
-  traceback, as is a reasoning backend's cut turn (new `TaskCutShortError`,
-  and `TurnCutShortError` its base and `ReasoningCutShortError`'s).
-
-- An ACP worker whose prompt stops on any reason but `end_turn`
-  (`max_tokens`, `max_turn_requests`, `refusal`, `cancelled`), or never
-  returns (`interrupted`: the channel closing mid-turn), fails its task as a
-  cut AI worker does (RMK-418, RFC §23.3), that reason in `error` and
-  `metadata["loop_end_reason"]`, where it completed with its narration.
-  A worker cut before writing any text, with a transport shared into the
-  child room, fails naming its end too, where its task failed with no
-  `error` and no `loop_end_reason`, so a notified agent was not told. With
-  several agents answering in the child room, the answer and how its turn
-  ended are read off the same agent. A buffered response that failed with
-  no rows now fails the task, as it does with a shared transport.
-
-- A realtime reasoning backend is an agent like any other, on the AI
-  channel's tool loop (RMK-396, RFC §12.4.1). `AgentReasoningBackend(agent)`
-  serves the delegations with an agent you configured (prompt, temperature,
-  thinking, round cap, deadline, budget), its tools the voice session's
-  catalogue, each call through the voice channel's gate; an agent carrying
-  tools of its own (tools, skills, a sandbox, planning, an external or
-  human-input handler) is refused, and so is an agent registered with a kit,
-  whose hooks would judge each call a second time. `AIProviderReasoningBackend`
-  keeps its signature and builds that agent. A delegation now ends as every
-  AI turn does (RFC §6.4): a call the provider could not parse
-  (`MALFORMED_FUNCTION_CALL`) or an empty answer after a round is asked
-  again, where the backend stopped and the user heard "The delegated work
-  finished without an answer."; a call whose arguments do not read is
-  reported to the voice channel's `ON_TOOL_CALL` observers (new
-  `ReasoningRequest.report_refusal`); the turn has its `llm.generate` span
-  under the voice session's span, with its usage; a large result is stored
-  and read back with `read_stored_result`; and the session's conversation
-  keeps the tool rounds. A turn that does not complete (its round cap,
-  deadline or budget, an answer cut or empty) raises
-  `ReasoningCutShortError`, answered by the channel's spoken fallback, where
-  its last narration was spoken as the answer. A session's delegations run
-  one at a time, each reading the one before it; two at once lost one
-  exchange from the conversation. A backend call the run's timeout cuts is
-  reported once, cancelled, and the call it left unanswered no longer
-  reaches the next delegation's provider request, which OpenAI and
-  Anthropic refuse.
+  judged as any call, as `activate_skill` is: a BLOCK is what the model reads
+  and reveals nothing, a replacement is what it reads, and a served search
+  reveals its matches. The hooks receive the whole result, the observers the
+  bounded copy (RFC §21.5). On both the text and the realtime door, a
+  `find_tools` call a hook blocked, or one that failed, no longer reveals its
+  matches, and a search that finds nothing no longer empties the reveal
+  window. Migration: a SYNC `ON_TOOL_CALL` hook that blocks or rewrites every
+  call by default now reaches Tool Search too; let `find_tools` and
+  `list_tools` through to keep the old behaviour.
 
 - `PolicyExternalToolHandler` applies its policy before `BEFORE_TOOL_USE`
   (RMK-394, RFC §21.1): an approval or audit hook is no longer called for a
-  tool the policy denies. The refusal reads as every gate's
-  (`Tool 'X' is not permitted by the agent's tool policy.`, `policy_refusal`,
-  now in `roomkit.tools.policy`), where it said "denied by policy".
+  tool the policy denies. The refusal reads as every gate's (`Tool 'X' is not
+  permitted by the agent's tool policy.`, `policy_refusal`, now in
+  `roomkit.tools.policy`), where it said "denied by policy".
 
-- Under `SEMANTIC`, a segment held during playback that ends before its first
-  word is judged on its final transcript instead of being discarded unheard
-  (RMK-390, RFC §12.3.13). A streaming transducer often releases a short word
-  only once the speech is over (Nemotron: "okay" and "no" came only at the
-  final, measured): a lone "stop" was thrown away and the voice talked on.
-  Now no words or a backchannel is discarded while the voice talks on, and
-  anything else cuts it off, about the time the STT takes to finalize after
-  the speech ends, and becomes the user's turn. With that, a longer
-  `transcript_wait_ms` no longer swallows short interruptions; the examples
-  use 2 s (`INTERRUPTION_WAIT_MS`).
+- `HookEngine.run_sync_hooks`'s `fold` also runs after a hook's `modify`, with
+  that hook's metadata, empty when it set none (RMK-305): `ON_TOOL_CALL`, its
+  only user in roomkit, needs it to tell an emptied result from a call nothing
+  served. Its signature is unchanged.
 
-- The `ollama` extra is capped below 0.7 and the `polargrid` extra below
-  polargrid-sdk 0.11: RoomKit patches both SDKs through private methods until
-  they are fixed upstream (`providers/ollama/sdk_patch.py`,
-  `providers/polargrid/sdk_patch.py`), so a minor release is taken only once
-  the conformance suite has run on it (RMK-383, RMK-384).
+#### Tool calls
 
-- **BREAKING — a realtime call whose arguments do not read as an object
-  never runs, and a realtime endpoint's tool-name rule is checked when the
-  session's tools are declared** (RMK-375, RFC §6.4, §6.7, §12.4).
-  `on_tool_call` now receives the text the model wrote in place of the
-  mapping for such a call (`RealtimeToolCallCallback` takes
-  `dict[str, Any] | str`): OpenAI Realtime, xAI, GPT-Live and Deepgram read
-  the wire with the new `readable_arguments`, where they handed
-  `{"raw": …}` and the handler ran on it. The channel and a conference refuse
-  such a call before the gate, with the text the AI channel's tool loop
-  gives (`Tool call arguments unreadable`), and report it to the observers;
-  a conference ran it before. An application registered directly on a
-  provider's `on_tool_call` reads a `str` for such a call. A tool name the
-  endpoint refuses raises a `ProviderError` naming it when the session's
-  tools are declared, before the socket opens at connection and before
-  anything is sent at a reconfiguration: OpenAI Realtime and GPT-Live's
-  hosted backend, each on its own endpoint, check OpenAI's rule, Deepgram the
-  rule of the think provider in force (`open_ai`, `anthropic`, `google`; none
-  for another or a custom endpoint, `settings` overrides included), xAI
-  none, since it accepts any name (measured 2026-10-02); GPT-Live's hosted
-  backend failed such a call later with "connection error: unknown", and
-  Deepgram's think stage with `THINK_REQUEST_FAILED`. A tool dict given to a
-  `RealtimeVoiceChannel` (at construction, `configure`, a session's
-  `metadata` or `reconfigure_session`) or a conference under a name no vendor
-  accepts is refused, as `AITool` refuses it.
-- **BREAKING — a tool name no provider accepts is refused when the tool is
-  defined** (RMK-309, RFC §6.7): `AITool` raises on an empty name or one with
-  a character other than a letter, a digit, `_`, `.`, `:` or `-`, which every
-  vendor refused with a 400 mid-turn. That holds for every definition: a
-  tool given as a dict in binding metadata fails the turn that builds it,
-  and a supervisor whose worker's channel id carries such a character
-  (`delegate_to_<channel_id>`) fails to install. An MCP tool under such a
-  name is skipped with a warning, the server's other tools kept. A name one
-  vendor refuses fails before the request, with a `ProviderError` naming the
-  tool and the vendor's rule, on OpenAI's own endpoint and on Anthropic
-  (`[A-Za-z0-9_-]{1,128}`), Gemini (a dot and a colon accepted, a leading
-  digit not) and Mistral (a dot accepted, a colon not); a server behind a
-  custom URL (`base_url`, Mistral's `server_url`) decides its names.
-  `some_vendor_accepts_tool_name` states the first rule.
-- **BREAKING — a tool call whose arguments do not read as an object never
-  runs** (RMK-309, RFC §6.4), on every AI provider and whatever stop reason
-  the response gave: invalid JSON, an array or a scalar marks the call
-  `partial`, where only a call the output cap or a content filter cut was,
-  and a tool whose schema required nothing ran with `{"raw": …}`. The model
-  reads why: cut (the response was cut short, a stream that stopped without
-  a stop reason or Mistral's `error` included) or written unreadable, which a
-  provider marks with the new `AIToolCall.garbled` /
-  `StreamToolCall.garbled`; `partial` alone still reads as cut. `call_cut`
-  is true accordingly for a response without a stop reason and for
-  complete JSON that is not an object. The realtime reasoning backend
-  records such a call `refused`, as the tool loop does, where it recorded it
-  `failed`. A speech-to-speech provider hands such a call to the channel as
-  text since RMK-375. `unreadable_arguments`, `call_garbled`, `partial_call_error`,
-  `unreadable_call_error`, `tool_call_of` and `stream_call_of` join the
-  helpers of `roomkit.providers.ai`.
-- `declared_parameters`, `chat_tool_declarations` and `ToolNameRule`, in
-  `roomkit.providers.ai`: the declaration every provider builds from (RMK-309).
-- OpenAI and its derivatives, Mistral and PolarGrid render a conversation
-  through one builder, `chat_messages` in `roomkit.providers.ai` (RMK-309):
-  what a provider renders differently, where a model's earlier reasoning goes,
-  whether a tool message names its tool, whether text goes flat, is its
-  `ChatDialect` (Cerebras's `reasoning` field among them), and
-  `OPENAI_CHAT` is OpenAI's own. The providers' `_build_messages` keep their
-  output, but for a history whose tool calls ride a message other than the
-  assistant's, which PolarGrid now sends as an assistant round as the others
-  do.
+- **BREAKING — a tool call is bounded by default** (RMK-366, RFC §21.6): 30 s
+  on `AIChannel`, 10 s on `RealtimeVoiceChannel` and in a conference, where a
+  handler that never answered held its turn for good. A host tool that
+  legitimately takes longer now fails its call with `ToolTimeoutError`, its
+  handler cancelled. `ElevenLabsRealtimeConfig.tool_timeout_s` defaults to
+  `None` instead of 30 s: the channel bounds each call now, and the
+  provider's own wait cut a tool given a longer bound at 30 s while its
+  handler kept running; set it only to cap the channel's bound on this
+  provider. Migration: name a slow tool in `tool_timeouts`
+  (`{"export_report": 120}`, or `None` for no bound), or pass
+  `tool_timeout_seconds=None` to keep calls unbounded.
 
-- `VuiTTSProvider` runs on `vui-tts>=1.2.0,<1.3` and uses no private
-  `vui-tts` attribute any more (RMK-197). A barge-in cuts the cache back
-  with `Row.truncate`, after the last frame heard and before any word of
-  the text chunk that follows it. A cloned voice zeroes the conditioning
-  bias first, since a prefill without one keeps the last voice's. The
-  audio decoder is no longer re-seeded at each reply: `vui-tts` 1.2 counts
-  the user's audio in its 10 s clock and keeps the decoder on that grid
-  (RMK-199), except after a barge-in cut. `Row.truncate` leaves the codec's
-  count on every frame generated, so from the cut until the conversation
-  restarts from the prompt, the decoder's 10 s restarts run ahead of the
-  cache by the frames nobody heard (open upstream, fluxions-ai/vui#42).
-  `vui-tts` 1.2 also logs user turns at DEBUG instead of printing them to
-  stdout.
-- **BREAKING — an `AIChannel` runs one tool loop for every turn** (RMK-308,
-  RFC §6.4). A provider that does not stream is read through
+- **BREAKING — an `AIChannel` runs one tool loop for every turn** (RMK-308, RFC
+  §6.4). A provider that does not stream is read through
   `generate_structured_stream`'s default, which wraps `generate()`, and a turn
   without tools is one round of the same loop. For a host:
   - `AIChannel.on_event` answers with a `response_stream` on every turn,
@@ -751,8 +542,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `ON_AI_RESPONSE` fires from one place for every provider, its `thinking`
     the turn's reasoning (each round's, where a streamed turn reported none
     and a buffered one its last round's), `streaming` true;
-  - the turn's `llm.generate` span is a child of the broadcast it answers,
-    as the telemetry guide documents, where a streamed turn's hung from the
+  - the turn's `llm.generate` span is a child of the broadcast it answers, as
+    the telemetry guide documents, where a streamed turn's hung from the
     inbound span, and its `llm.streaming` attribute is `true`;
   - a muted `AIChannel` no longer runs its turn: nothing is generated and no
     tool runs, where a provider that does not stream ran the turn and stored
@@ -761,73 +552,345 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     segments stored after the write, no longer the ones stored before it;
   - when the fallback provider fails before it emits, the primary's error is
     raised, the fallback's as its cause.
-- **BREAKING — who serves a tool call is decided call by call** (RMK-308, RFC
-  §9.3). A call the provider already ran is reported, a pending call to a tool
-  the channel does not serve is the external tool handler's, and every other
-  call is the channel's: an `AIChannel` without a `tool_handler` gates it
-  (a `BEFORE_TOOL_USE` BLOCK refuses it) and, nothing serving it, the model
-  reads it unserved and the turn goes on, where the turn used to end on it.
-  A round that mixes both hands the next round every call it made, each with
-  its result, and a call the external handler denies, or one the response
-  cut short, is stored `refused`.
+
+- **BREAKING — who serves a tool call is decided call by call** (RMK-308,
+  RMK-480, RFC §9.3, §21.5). A call the provider already ran is reported, a
+  pending call to a tool the channel does not serve is the external tool
+  handler's, and every other call is the channel's: an `AIChannel` without a
+  `tool_handler` gates it (a `BEFORE_TOOL_USE` BLOCK refuses it) and, nothing
+  serving it, the model reads it unserved and the turn goes on, where the turn
+  used to end on it. A round that mixes both hands the next round every call
+  it made, each with its result, bounded as any result is; a call the external
+  handler denies, or one the response cut short, is stored `refused`.
+
+- **BREAKING — what an `ExternalToolHandler` hears** (RMK-432, RMK-419, RFC
+  §9.3). **`on_tool_result` no longer hears a refusal, a call the channel
+  refused itself, a call whose `process_tool_call` raised, or an ACP call the
+  turn ended under.** The handler's own refusal comes through
+  `on_tool_refused`, a cut call through `on_tool_cancelled` (see Added); the
+  channel reports the other two, a raise with what failed (`error_detail`,
+  which the external door dropped and ACP read as a refusal): such a call ends
+  `failed`, no longer `refused`, and the model reads `{"error": "Tool 'X'
+  failed (RuntimeError)"}` where the turn failed. A refusal ACP imposes on a
+  handler's approval it cannot apply (an input or a result) is the channel's
+  too. A call the provider already ran is reported before its start. An ACP
+  call reports the same body with and without a handler (a cancellation's
+  `cancelled_tool_error` envelope, a failure's bounded error, which
+  `on_tool_result` now receives too). Migration: a handler that recorded
+  refusals or results in `on_tool_result` overrides `on_tool_refused` and
+  `on_tool_cancelled` too, and calls `super()` to keep the report.
+
+- **BREAKING — a call the provider already ran is marked on the call, never in
+  its arguments** (RMK-439, RFC §9.3): the channel read a `_result` key in a
+  call's arguments as "the provider ran it" (and `_is_error` as that run's
+  failure), so a model that wrote `{"q": "a", "_result": "forged"}` had its
+  call stored `served` with that text, without the tool policy, the gate or
+  its handler. The mark is now `AIToolCall.served` / `StreamToolCall.served`,
+  a `ServedCall(result, is_error)` only a provider sets (exported from
+  `roomkit.providers.ai`); a `_result` key is an argument like any other. No
+  provider of the tree set the old mark. Migration: a provider that runs its
+  own tools sets `served=ServedCall(result=..., is_error=...)` on the call
+  instead of the `_result` / `_is_error` keys; one that still sends the keys
+  has its already-run call handled as a new one.
+
+- **BREAKING — a tool call whose arguments do not read as an object never
+  runs, on any door** (RMK-309, RMK-375, RMK-442, RMK-455, RFC §6.4, §12.4).
+  Invalid JSON, an array or a scalar marks the call `partial` on every AI
+  provider, whatever stop reason the response gave, where only a call the
+  output cap or a content filter cut was, and a tool whose schema required
+  nothing ran with `{"raw": …}`. The model reads why: cut (the response was
+  cut short, a stream that stopped without a stop reason or Mistral's `error`
+  included) or written unreadable, which a provider marks with the new
+  `AIToolCall.garbled` / `StreamToolCall.garbled`; `partial` alone still
+  reads as cut. `call_cut` takes `last=` (default `True`) and is true for a
+  response without a stop reason and for complete JSON that is not an
+  object. On a realtime session, every provider reads a call's
+  arguments with one rule: text that reads as an object runs with it, blank
+  text or `null` with `{}`, anything else reaches the channel as the model's
+  text, and the channel and a conference refuse it before the gate (`Tool call
+  arguments unreadable`) and report it, where OpenAI Realtime, xAI, GPT-Live
+  and Deepgram handed `{"raw": …}` to the handler and a conference ran it. A
+  realtime reasoning backend records such a call `refused`. Migration:
+  `RealtimeToolCallCallback` takes `dict[str, Any] | str`; an application
+  registered directly on a provider's `on_tool_call` reads a `str` for such a
+  call.
+
+- **BREAKING — a tool name no provider accepts is refused when the tool is
+  defined, and a name the vendor refuses fails before the request** (RMK-309,
+  RMK-375, RFC §6.7, §12.4): `AITool` raises on an empty name or one with a
+  character other than a letter, a digit, `_`, `.`, `:` or `-`, which every
+  vendor refused with a 400 mid-turn. That holds for every definition: a tool
+  given as a dict in binding metadata fails the turn that builds it, a tool
+  dict given to a `RealtimeVoiceChannel` (construction, `configure`, a
+  session's `metadata`, `reconfigure_session`) or a conference is refused, and
+  a supervisor whose worker's channel id carries such a character
+  (`delegate_to_<channel_id>`) fails to install. An MCP tool under such a name
+  is skipped with a warning, the server's other tools kept. A name one vendor
+  refuses raises a `ProviderError` naming the tool and the rule: on OpenAI's
+  own endpoint, Anthropic and DeepSeek (`[A-Za-z0-9_-]{1,128}`), Gemini (a dot
+  and a colon accepted, a leading digit not) and Mistral (a dot accepted, a
+  colon not) before the request; on OpenAI Realtime, GPT-Live's hosted backend
+  and Deepgram (the rule of its think provider) when the session's tools are
+  declared, before the socket opens or anything is sent at a
+  reconfiguration. xAI accepts any name. A server behind a custom URL
+  (`base_url`, Mistral's `server_url`) decides its names.
+
+- **BREAKING — roomkit's own tool handlers decline a call by raising
+  `UnservedToolCallError`** (RMK-305, RFC §21.4):
+  `MCPToolProvider.as_tool_handler()`, `HumanInputToolHandler`,
+  `ScreenInputTools`, `DescribeScreenTool`, `DescribeWebcamTool`,
+  `ListWebcamsTool` and a realtime pipeline's agent tools returned `{"error":
+  "Unknown tool: ..."}` for a tool not theirs. A channel and
+  `compose_tool_handlers` read the exception as they read the envelope, which
+  stays accepted from a host's handler, as text or as a mapping. The channel's
+  own refusal of an undeclared tool no longer reads like the envelope: `Tool
+  'x' is not declared in this turn.` / `No tool named 'x' exists.` Migration:
+  a host that calls one of these handlers itself, or a composition that ends
+  with one, catches `UnservedToolCallError`.
+
+- **BREAKING — `MCPToolProvider.as_tool_handler()` raises `ToolFailedError`
+  for a result that says `isError`, no longer `ToolRefusedError`** (RMK-459,
+  RFC §9.3): the tool ran and failed. The call is recorded failed (observers
+  read the server's words as `error_detail`, the stored end row says
+  `failed`) and stays in the room's tool memory and digest, which no longer
+  keeps a refusal (see below); an audit still records `failed`. Migration:
+  code that catches
+  `ToolRefusedError` around an MCP handler to tell a server's answer from an
+  unexpected exception catches `ToolFailedError` beside it.
+
+- **BREAKING — the human-input tool reads only a rejection as a refusal**
+  (RMK-465, RFC §9.3). A request a human or an `ON_USER_INPUT_REQUIRED` hook
+  rejected is still refused (`ToolRefusedError`, the model reading why). A
+  request nobody answered in time raised `ToolRefusedError` too; it is now a
+  failure (`ToolFailedError`): the model reads the timeout's text, the call
+  is recorded failed (`refused=False`, the text in `error_detail`, a `failed`
+  end row) and stays in the room's tool memory. A request the handler gave
+  up on (closed or released before an answer) and any other `RuntimeError`
+  raise from the tool as they are and take the generic failure path, the
+  message withheld from the model, where they became a `ToolRefusedError`
+  the model read as a refusal's reason. `HumanInputHandler.wait()` raises
+  `HumanInputRejectedError` (a `RuntimeError`) for a rejection and a plain
+  `RuntimeError` for a request the handler gave up on. Migration: code that
+  caught `ToolRefusedError` from the human-input tool catches
+  `ToolFailedError` for a timeout and `RuntimeError` for a handler closed or
+  released; code that catches `RuntimeError` around `wait()` is untouched,
+  and code that wants only rejections catches `HumanInputRejectedError`.
+
+- **BREAKING — a skill's `requires` is checked on a text turn too** (RMK-429,
+  RFC §24.3), as a realtime session checks it, with one rule
+  (`missing_required_tools`) against the tools the conversation declares once
+  its tool policy is applied: a text activation of a skill whose required
+  tool is absent was served. A `requires` name is an exact tool name unless
+  the host says how its names are served with `SkillRegistry(requires_match=
+  ...)` (copies keep it), so a host whose skills name a hub (`requires:
+  boards` for its `boards_*` tools) passes its own reading. Migration: **a
+  host with such names must pass `requires_match` before upgrading, or its
+  text activations are refused**, as its realtime ones already were.
+
 - The room's tool memory no longer keeps a handler's own refusal
   (`ToolRefusedError`), like the channel's refusals (RMK-308): the rule reads
   the call's outcome, the same for the live memory and the one rebuilt from
   the stored rows.
 
-- **BREAKING — a BLOCK from a BEFORE_TOOL_USE hook reaches the model in the
-  hook's words on every channel** (RMK-306, RFC §9.3), a hook-trigger
-  behaviour change: an `AIChannel`, a conference and
-  `PolicyExternalToolHandler` gave the plain `Tool 'x' denied by pre-execution
-  hook.` while a realtime session gave the reason, so a reason that only logs
-  and observers saw on those channels now reaches the model. Migration: word
-  a block's reason for the model, or block without one
-  (`HookResult.block()`) to keep the plain refusal. A hook that fails closed
-  still gives the plain refusal, never its error. `BeforeToolDecision.reason`
-  carries it.
+#### AI channel and providers
 
-- **BREAKING — roomkit's own tool handlers decline a call by raising
-  `UnservedToolCallError`** (RMK-305, RFC §21.4): `MCPToolProvider.as_tool_handler()`,
-  `HumanInputToolHandler`, `ScreenInputTools`, `DescribeScreenTool`,
-  `DescribeWebcamTool`, `ListWebcamsTool` and a realtime pipeline's agent
-  tools returned `{"error": "Unknown tool: ..."}` for a tool not theirs. A
-  channel and `compose_tool_handlers` read the exception as they read the
-  envelope, which stays accepted from a host's handler, as text or as a
-  mapping. A host that calls one of these handlers itself, or a composition
-  that ends with one, catches `UnservedToolCallError`. The channel's own refusal of
-  an undeclared tool no longer reads like the envelope: `Tool 'x' is not
-  declared in this turn.` / `No tool named 'x' exists.`
-- `HookEngine.run_sync_hooks`'s `fold` also runs after a hook's `modify`,
-  with that hook's metadata, empty when it set none (RMK-305): `ON_TOOL_CALL`,
-  its only user in roomkit, needs it to tell an emptied result from a call
-  nothing served. Its signature is unchanged.
-- **BREAKING — a tool call is bounded by default** (RMK-366, RFC §21.6): 30 s
-  on `AIChannel`, 10 s on `RealtimeVoiceChannel` and in a conference. A host
-  tool that legitimately takes longer now fails its call with
-  `ToolTimeoutError`, its handler cancelled. Migration: name it in
-  `tool_timeouts` (`{"export_report": 120}`, or `None` for no bound), or pass
-  `tool_timeout_seconds=None` to keep calls unbounded.
-- `ElevenLabsRealtimeConfig.tool_timeout_s` defaults to `None` instead of
-  30 s (RMK-366): the channel bounds each call now, and the provider's own
-  wait capped it, cutting a tool given a longer bound at 30 s while its
-  handler kept running. Set it only to cap the channel's bound on this
-  provider.
-- **BREAKING — `BEFORE_TTS` runs on each sentence of a streamed response**
-  (RMK-268, RFC §9.3 and §12.2 step 12s.b), a hook-trigger behaviour change.
-  A Voice Channel whose TTS reads text as it streams (`supports_streaming_input`:
-  Gradium and Grok always, ElevenLabs with `stream_input=True`) used to skip
-  `BEFORE_TTS` on an AI response it spoke while it streamed, so a redaction or
-  moderation hook was bypassed and the original text was spoken. The hook now
-  judges each sentence before the TTS reads it, once for all sessions: a
-  `MODIFY` replaces the sentence, a `BLOCK` drops it and the next one is judged
-  on its own, and the fail-closed rule applies sentence by sentence — a hook
-  that raises, times out or returns something unusable drops its sentence. A
-  sentence redacted to an empty string is not synthesized. The hook sees the
-  sentence after the TTS text filter, and `AFTER_TTS` and the final assistant
-  transcript carry the text as spoken. Without a `BEFORE_TTS` hook nothing
-  changes. A SYNC `BEFORE_TTS` hook that returns no `HookResult` now silences
-  the sentences of a streamed response, as it already silenced a non-streamed
-  one: return `HookResult.allow()`, or register it as ASYNC.
+- **BREAKING — a channel that streams a response which then fails gets its
+  text once, inside the stream, no longer again through `deliver()`**
+  (RMK-467, RFC §12.2 steps 13s and 15s). When the provider raised after a
+  sentence, the text already streamed went back to that channel as an
+  ordinary event: a `VoiceChannel` spoke it a second time, the CLI printed it
+  again, and a WebSocket client got it after `stream_error`, outside the
+  stream. The row now reaches the streaming channel inside the stream, as a
+  completed response's last row does, then the failure; the other channels
+  still get it, `ON_ERROR` still fires and the text is stored as before. A
+  voice speaks all the text the response produced, its last partial sentence
+  included, and fires `AFTER_TTS` with it. A channel that swallows the
+  failure no longer turns the turn into a cancelled success, and an error the
+  channel raises on top of it no longer replaces it as the turn's error. A
+  failure of the streaming channel itself keeps its fallback: the text goes
+  to every channel, that one included. The default `Channel.deliver_stream`,
+  which buffers, delivers what it buffered before the failure propagates.
+  Migration: a host channel whose own `deliver_stream` buffers the text
+  instead of rendering it delivers its buffer when the stream raises, as the
+  default does; one that renders as it reads needs nothing.
+
+- **BREAKING — `WebhookHTTPProvider.build_payload(event, to, text)` and
+  `build_headers(body)` are public, with a `config` property** (RMK-408): the
+  extension points a subclass overrides to send another body or sign another
+  way, and the ones `send()` calls. A subclass that overrode the former
+  `_build_payload` / `_build_headers` is no longer called, without an error:
+  it sends RoomKit's envelope, signed with `X-RoomKit-Signature`. Migration:
+  rename the overrides to `build_payload` / `build_headers`, and read
+  `self.config` instead of `self._config`.
+
+- `BudgetAwareMemory` reserves the turn's measured footprint (RMK-406, RFC
+  §20): the larger of `reserved_tokens` and the measured input, which a host's
+  reserve floors and does not add to, and for the reply the larger of the
+  safety margin and the turn's `max_tokens`, never both. A host that passed
+  `reserved_tokens=0`, or only its system prompt, now has its history trimmed
+  to what the declared tools, the channel's notes and a reply budget larger
+  than the margin leave. `CompactingMemory` and `SummarizingMemory` do not
+  read the footprint.
+
+- `regenerate_response` reads its replies and failures as `process_inbound`
+  does (RMK-402, RMK-479, RMK-497, RFC §6.4): it fires `ON_ERROR` for every
+  intelligence channel whose failure the broadcast reports, not only the
+  first, and reports the buffered failure first; the first failure stays the
+  one on `InboundResult.error`.
+
+- `attach_channel()` takes the channel's own category when none is given
+  (RMK-501, RFC §5.7): an agent attached without `category=` was bound as a
+  transport. It answered the room's messages, but an instruction addressed to
+  it (a background result handed back) was refused (`no_transport`) and
+  `deliver(channel_id=<agent>)` could recurse. It now takes part as an
+  intelligence channel. Passing `category=` keeps its meaning.
+
+- `OpenTelemetryProvider` never exports on the event loop (RMK-408): the SDK's
+  `force_flush` exports in the calling thread, behind the exporter's retries,
+  and ignores its timeout, so a slow collector froze every task at the end of
+  a voice session. `flush()` now hands the export to a thread and returns at
+  once (a flush asked while one runs is skipped); `close()` waits for it at
+  most `shutdown_flush_timeout` seconds (new constructor argument, 4.0 by
+  default), then logs that spans may be lost.
+
+- **BREAKING — the time-to-first-token metric's `provider` label on
+  `generate()` is the provider's class name, as on its stream** (RMK-500):
+  `openai` becomes `OpenAIAIProvider`, likewise for `AzureAIProvider`,
+  `DeepSeekAIProvider`, `LiteLLMAIProvider`, `MetaAIProvider`,
+  `OpenRouterAIProvider`, `QwenAIProvider` and `XAIAIProvider`; vLLM names
+  itself `vllm` in its errors. Migration: a dashboard or an alert that
+  filters that metric on `provider="openai"` filters on the class name.
+
+#### Realtime and voice
+
+- **BREAKING — a realtime pipeline refuses, at its install, an agent that
+  carries what a realtime session never serves for it** (RMK-427, RMK-482,
+  RFC §19.5): skills (a `SkillRegistry`, even empty), a human-input handler,
+  planning, a sandbox or an external tool handler.
+  `ConversationPipeline.install(..., voice_channel_id=)` on a
+  `RealtimeVoiceChannel` raises `ValueError` before installing anything,
+  naming each cause. A realtime session serves the channel's tools only, so
+  the agent's skill-gated tools ran without their skill and the model called
+  tools nothing declared (`Tool 'ask_user' is not declared.`); a skill added
+  to an empty registry afterwards opened its gated tools with nothing to gate
+  them. The rule is the one a reasoning backend's agent is refused by.
+  Migration: give the channel what the agent carried,
+  `RealtimeVoiceChannel(..., skills=...)` or `human_input_handler=...`.
+
+- **BREAKING — `AIProviderReasoningBackend` runs on `AgentReasoningBackend`,
+  and its `close()` closes the provider it was given** (RMK-396, RMK-511, RFC
+  §6.4, §12.4.1). Its signature is unchanged. Its `close()`, which
+  `RealtimeVoiceChannel.close()` calls, closes the agent it builds and so the
+  provider, where it only cleared its histories. Migration: a host that
+  shares one provider instance between the backend and another channel gives
+  the backend its own instance. A delegation ends as every AI turn does. A
+  call the provider could not parse
+  (`MALFORMED_FUNCTION_CALL`) or an empty answer after a round is asked again,
+  where the backend stopped and the user heard "The delegated work finished
+  without an answer."; a turn that does not complete (its round cap, deadline
+  or budget, an answer cut or empty) raises `ReasoningCutShortError`, answered
+  by the channel's spoken fallback, where its last narration was spoken as the
+  answer. A large result is stored and read back with `read_stored_result`,
+  the session's conversation keeps the tool rounds, and the turn has its
+  `llm.generate` span under the voice session's span, with its usage. A
+  session's delegations run one at a time, each reading the one before it
+  (two at once lost one exchange from the conversation). A backend call the
+  run's timeout cuts is reported once, cancelled, and its unanswered call no
+  longer reaches the next delegation's request, which OpenAI and Anthropic
+  refuse.
+
+- Under `SEMANTIC`, a segment held during playback that ends before its first
+  word is judged on its final transcript instead of being discarded unheard
+  (RMK-390, RFC §12.3.13). A streaming transducer often releases a short word
+  only once the speech is over (Nemotron: "okay" and "no" came only at the
+  final), so a lone "stop" was thrown away and the voice talked on. Now no
+  words or a backchannel is discarded while the voice talks on, and anything
+  else cuts it off and becomes the user's turn. A longer `transcript_wait_ms`
+  no longer swallows short interruptions; the examples use 2 s
+  (`INTERRUPTION_WAIT_MS`).
+
+- **BREAKING — `deliver(channel_id=<conference>)` reaches the conference's
+  realtime model when one is plugged in** (RMK-501, RFC §23.3 step 8): the
+  text is injected into the model's room session (`user` intent, `system`
+  with `instruction=True`) instead of published through the room as the
+  conference's own words, is `unavailable` (`voice_session_unavailable`)
+  before that session connects, and is refused (`voice_session_replaced`)
+  when the model is unplugged before a delivery whose sessions were pinned
+  goes out. `WaitForIdle` and `Queued` wait on a conference's model as on a
+  realtime voice channel, and the injection fires
+  `ON_REALTIME_TEXT_INJECTED`. Without a realtime model the conference
+  publishes as before. Migration: a host that used it to post text into the
+  room while a model is plugged in delivers through another channel of the
+  room.
+
+- **BREAKING — an `AudioPipeline` drops the frames of a session it ended**
+  (RMK-466): for a direct `AudioPipeline` user, frames for a session after
+  `on_session_ended` are dropped until `on_session_active` activates it
+  again, where they ran the whole pipeline and rebuilt its stages' state.
+  Migration: call `on_session_active` before feeding a session again.
+
+- A peer that `FastRTCRealtimeTransport`'s `auth` refuses is closed (RMK-408):
+  its peer connection, or a websocket client's socket, closed and the stream
+  cleaned, through `reject_connection`. It was left connected with its audio
+  ignored until the client hung up. A websocket client that
+  `FastRTCVoiceBackend`'s `auth` refuses is closed too.
+
+#### Orchestration and delegation
+
+- **BREAKING — a delegated task cancelled from outside ends `cancelled`,
+  through `ON_TASK_COMPLETED` and its callback, inline or in the background**
+  (RMK-434, RFC §23.1, §23.3). In the background (`kit.task_runner.cancel`,
+  the runner's `close`) a cancelled task fired no `ON_TASK_COMPLETED` and no
+  `on_complete`, its notified agent heard nothing, and a Supervisor's worker
+  stayed `already_running` in that room for good; inline (a caller's timeout,
+  as a Supervisor's `task_timeout`) it ended `failed` with "cancelled (timed
+  out)" and no `on_complete`. Both now end once, `status="cancelled"`,
+  `error="cancelled"`, even right after `delegate()` returned or while its
+  delegation was still being set up; the hooks and the callback run to their
+  end, and a task whose work already ran ends as it stands. A notified agent
+  is told the task was cancelled, except while the framework closes:
+  `kit.close()` starts no hand-back turn. An inline task now records its end
+  on its child room as a background one does. The delegation span, left open
+  on a cancel, ends with the task's status: `ok`, `error` (it said `ok` for a
+  failed task) or `cancelled`. `DelegatedTask.cancel()` only unblocks the
+  handle's waiters, as before. Migration: a host that read an inline timeout
+  as `task_status == "failed"` reads `"cancelled"`; one that counted on no
+  `ON_TASK_COMPLETED` for a background cancel now hears it once; a custom
+  `TaskRunner` ends a cancelled task through its `on_complete` with
+  `roomkit.tasks.models.cancelled_task_fields`.
+
+- A delegated worker whose turn does not complete fails its task (RMK-414,
+  RMK-418, RMK-433, RFC §6.4, §23.3), where its narration ("Still checking.")
+  was returned as a completed result:
+  - an AI worker its round cap, deadline or budget cuts, a stop cancels, or
+    whose answer is cut or never comes; an ACP worker whose prompt stops on
+    any reason but `end_turn` (`max_tokens`, `max_turn_requests`, `refusal`,
+    `cancelled`) or never returns (`interrupted`: the channel closing
+    mid-turn). The task ends `status=failed`, `error` saying how the turn
+    ended, `output` its last narration and `metadata["loop_end_reason"]` the
+    reason (also on `ON_TASK_COMPLETED`). A worker that owes a result and
+    submitted it before the cut keeps it; without one, the task fails without
+    a re-prompt;
+  - a worker whose provider errored after a round, or an ACP worker whose
+    prompt raised, keeps its end too (`loop_end_reason` `error`, or
+    `interrupted` for ACP, and its last narration as `output`, where it had
+    `output=None` and no reason). The failure reaches the delegation as the
+    new `TaskTurnFailedError` (exported from `roomkit`), whose message and
+    cause are the error's; `ON_TASK_COMPLETED`'s content is the narration;
+  - the Loop and Supervisor strategies and a notified agent read a failed
+    task's work as none (`roomkit.tasks.models.task_work`): a Loop no longer
+    approves a cut producer's narration, and a supervised chain stops on a
+    cut worker as on any failed delegation. `task_cut_reason` tells a cut from
+    a failure, and the cut is logged once as a warning without a traceback
+    (`TaskCutShortError`, with `TurnCutShortError` the base of it and of
+    `ReasoningCutShortError`).
+
+  The rule holds streamed or buffered, inline or in the background, with a
+  transport shared into the child room or not; a buffered response that
+  failed with no rows fails the task too. With several agents in the child
+  room, the answer and how its turn ended are read off the same agent.
+
+#### Recording
 
 - **BREAKING — `PyAVMediaRecorder` refuses to start a recording that would be
   stored unencrypted** (RMK-69, RFC §17.6), as `WavFileRecorder` already does:
@@ -835,1594 +898,837 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   MediaRecordingConfig.encryption or storage_encrypted_at_rest=True")`. Room
   and conference recordings were written in the clear, against the RFC's MUST
   on encryption at rest. `create_room` with such a recorder now raises that
-  error; a conference track's recording is refused and logged, the track
-  still transcribed. With `encryption`, `MediaRecordingResult.url` names the
-  encrypted artifact and `size_bytes` its size. Migration: pass
-  `encryption=<your RecordingEncryption>`, or `storage_encrypted_at_rest=True`
-  when the storage already encrypts every byte (an encrypted volume or
-  bucket), on `MediaRecordingConfig` or `ConferenceRecordingConfig`.
+  error, before anything is written; a conference track's recording is
+  refused and logged, the track still transcribed. With `encryption`,
+  `MediaRecordingResult.url` names the encrypted artifact and `size_bytes`
+  its size. Migration: pass `encryption=<your RecordingEncryption>`, or
+  `storage_encrypted_at_rest=True` when the storage already encrypts every
+  byte (an encrypted volume or bucket), on `MediaRecordingConfig` or
+  `ConferenceRecordingConfig`.
 
-- **BREAKING — a realtime pipeline refuses an agent that carries skills**
-  (RMK-427, RFC §19.5): `ConversationPipeline.install(..., voice_channel_id=)`
-  on a `RealtimeVoiceChannel` raises `ValueError` before installing anything
-  when an agent has a non-empty `SkillRegistry`. A realtime session serves
-  the channel's skills only, so the agent's skill-gated tools ran without
-  their skill and its activation reached nothing. Migration: pass the skills
-  to `RealtimeVoiceChannel(..., skills=...)`.
+- A room recording's end is announced (RMK-405, RFC §12.11):
+  `ON_RECORDING_STOPPED` and the `recording_stopped` framework event fire for
+  each room recording that stops, on an explicit stop, `close_room`,
+  `archive_room`, a room closed by its timer and `kit.close()`, as a
+  session's and a conference track's do. `RecordingStoppedEvent.session` is
+  optional (`None` for a room recording, as on `RecordingStartedEvent`) and
+  the event carries `room_id`, last among its fields.
+
+#### Dependencies
+
+- The `vui` extra requires `vui-tts>=1.2.0,<1.3` (RMK-197), and
+  `VuiTTSProvider` uses no private `vui-tts` attribute any more. A barge-in
+  cuts the cache back with `Row.truncate`, after the last frame heard; a
+  cloned voice zeroes the conditioning bias first, since a prefill without
+  one keeps the last voice's; the audio decoder is no longer re-seeded at
+  each reply, `vui-tts` 1.2 keeping it on its own clock, except after a
+  barge-in cut, where the decoder's restarts run ahead of the cache by the
+  frames nobody heard until the conversation restarts from the prompt (open
+  upstream, fluxions-ai/vui#42). `vui-tts` 1.2 logs user turns at DEBUG
+  instead of printing them.
+
+- Optional extras capped below their next minor release, because RoomKit
+  patches each SDK through private methods until it is fixed upstream, so a
+  minor release is taken only once the conformance suite has run on it
+  (RMK-383, RMK-384, RMK-440): `ollama` below 0.7
+  (`providers/ollama/sdk_patch.py`), `polargrid` below polargrid-sdk 0.11
+  (`providers/polargrid/sdk_patch.py`), and `elevenlabs` and
+  `realtime-elevenlabs` below elevenlabs 2.70
+  (`providers/elevenlabs/sdk_patch.py`, whose canaries say when the cap can
+  move). The `providers` extra now installs `realtime-elevenlabs`, so those
+  canaries run in CI.
+
+- New `fluxions` extra (`httpx>=0.27`) for `FluxionsTTSProvider`, included in
+  `all`.
 
 ### Fixed
 
-- A tool call whose own handler detaches its conference room or unplugs
-  the conference's realtime provider runs on and reports its own outcome,
-  as on a `RealtimeVoiceChannel` (RMK-515, RFC §12.4): the detach cancelled
-  the handler midway, its call was reported cancelled, the bot never left,
-  and `kit.close()` failed. The other calls the ending reaches are still
-  interrupted and reported cancelled.
+#### Tool calls on every door
 
-- A speech-to-speech session connected again under the same id abandons
-  and reports once the calls its previous connection had issued, on every
-  provider (RMK-508, RFC §12.4): for such a call, Gemini sent a stale result
-  on the new socket, ElevenLabs handed it to the replaced conversation's
-  handler, and GPT-Live never reported the abandonment; OpenAI Realtime,
-  xAI and Deepgram already did. A result submitted to Gemini for a session it no
-  longer holds is dropped with a log, as on every provider, instead of
-  raising.
+- Every tool call is reported to `ON_TOOL_CALL` once, with the outcome the
+  model read and the arguments it ran with, whatever cuts it (RMK-395,
+  RMK-431, RMK-459, RMK-480, RMK-498, RMK-506, RMK-507, RFC §9.3):
+  - an AI channel reports, once and `cancelled=True`, every call its turn
+    announced that nothing else reported, whatever cut it (a stop while the
+    calls were announced, a transport that stopped reading such as a voice
+    barge-in, the turn cancelled in the gate, in the handler or while
+    `ON_TOOL_CALL` judged the call); such a call was stored `cancelled` and
+    never reported. A call whose outcome the model already read and whose
+    report a cut interrupted is reported with that outcome;
+  - an ACP channel reports every call its agent ran, with or without an
+    external handler, as a call an AI provider ran itself; without a handler
+    none was reported. An ACP call the turn ended under is stored
+    `cancelled`, one whose permission RoomKit refused `refused`, where both
+    were `failed`. RoomKit's decision on a call's permission stands however
+    the agent ends the call: a call the handler refused, then left open as
+    the turn ended, is reported refused with the handler's reason, and one
+    whose handler raised is reported failed with what failed, where both were
+    closed `failed` as the turn's end; a
+    refusal for a call the agent never announced is reported, and an
+    approved call the agent never announced nor closed is reported once,
+    cancelled;
+  - an external handler that raises while it reports a call is logged on
+    `roomkit.tools.external` and no longer fails the turn;
+    the channel reports the call itself unless the handler reported it
+    before raising, so it is reported once;
+  - each call of a text turn is held as a call of its own, never by its
+    provider's id: two calls under one id in a round are two calls, the
+    second refused ("has not had its result yet") and reported as its own,
+    where both ran and one report was made; a call under an id an earlier
+    round used is a new call; a turn cut while two calls under one id are
+    open closes each; each call's END row carries its own duration;
+  - the report and the END row carry the arguments the call ran with, or that
+    the gate had when it stopped it, where an AI channel reported a blocked,
+    rewritten or cut call with the model's own arguments;
+  - a refusal that came from a failure (a `BEFORE_TOOL_USE` hook that failed
+    closed) carries `error_detail` on the external handler's doors too;
+  - a reasoning backend's call is reported under `<delegation>:<the model's
+    id>` on every path;
+  - the `tool_call` framework event carries `is_error` and `cancelled` on
+    every path, says failed for a call `ON_TOOL_CALL` withheld (a BLOCK, a
+    fail-closed hook), and is the call's one report when the hooks' context
+    will not build, on every door;
+  - a call issued once its session ended (by the provider, from speech, by a
+    reasoning backend, or by a conference session left behind) runs no gate
+    and is reported once, cancelled, with one body: `{"error": "Tool call
+    cancelled", ... "The session ended before its result; nothing was
+    sent."}`.
 
-- `AgentReasoningBackend.close()` closes the agent it owns (RMK-511): a
-  speech-to-speech channel's close left the agent's provider open and its
-  turns uncut. The backend already refused an agent the kit holds.
+- A tool call meets the same gate and reads the same refusal on every door
+  (RMK-394, RMK-428, RMK-420, RMK-480, RMK-482, RMK-499, RFC §9.3, §21.1,
+  §21.4, §21.5):
+  - an `AIChannel` turn, a reasoning backend's turn, a realtime session and a
+    conference say `Tool 'X' is not permitted by the agent's tool policy.`,
+    `Tool 'X' is gated by a skill. Activate the skill first using
+    activate_skill.` or `Tool 'X' is not declared.`; a text turn gave one text
+    for both of the first two causes, so its model never learnt to activate
+    the skill. A reasoning backend, which cannot activate a skill, reads that
+    the conversation has not activated it. A name no tool carries reads `No
+    tool named 'X' exists.` on a realtime session under Tool Search as on a
+    text turn. A test asserting the old texts needs the new ones;
+  - the gate checks the policy and skill gating before the arguments on every
+    door: a realtime session and a conference validated the arguments first,
+    so a denied `wire_money({})` answered `missing required argument 'iban'`
+    and named its schema;
+  - arguments a `BEFORE_TOOL_USE` hook edited so they no longer fit the schema
+    read `Invalid rewritten arguments` on an `AIChannel` too, where it said
+    `Invalid arguments`, as if the model had sent them;
+  - under Tool Search, a sandbox command the model calls while it is hidden
+    is recovered and validated as a host tool is, where it ran unvalidated;
+    the person's tools (a human-input handler's) are never hidden by Tool
+    Search on a text turn, as on a realtime session;
+  - an AI channel bounds a gate's refusal as it bounds a result (a 300 KB
+    reason reached the model whole); an `activate_skill` call is exempt only
+    for the instructions it served. A realtime or conference refusal's
+    observers receive the raw message, as on an AI channel, where they
+    received the model's bounded copy;
+  - a realtime session serves its skill tools (`run_skill_script`,
+    `read_skill_reference`) inside the tool call context, where
+    `current_tool_call()` and `current_tool_room_id()` answered `None`, and a
+    realtime or conference handler can set
+    `current_tool_call().structured_content`, which reaches `ON_TOOL_CALL` as
+    on an AI channel;
+  - `read_skill_reference` and `run_skill_script` on a skill the registry does
+    not offer are refused on every door, where they were reported served with
+    an `{"error": ...}` body; `activate_skill` on a name that is no skill is
+    refused when its answer carries no hint;
+  - `current_tool_allowed_names()` leaves out a tool the turn's policy denies
+    its actor on a text turn and a realtime session, as in a conference, and
+    answers every tool a realtime or conference session declares, where it
+    answered `None`; it stays `None` for a session that declares no
+    catalogue (any name admitted);
+  - a tool a realtime session is given (its metadata, `reconfigure_session`)
+    under a name orchestration serves is not declared, as on a text turn: a
+    pipeline's handoff or agent tool given again with another schema was
+    declared with it, the gate checked that schema and the pipeline served the
+    call. A call to such a name is checked against its server's schema; each
+    agent's own definition of a name stays its own;
+  - a human-input definition given twice, or under a name the channel serves
+    itself, is refused on every door; a `HumanInputToolHandler` given as a
+    text channel's `tool_handler`, and a human-input name nothing declares on
+    a realtime session or a conference, are warned about.
 
-- An `AIChannel` closed while its turn runs a call, by itself or by the
-  kit, cancels the call and reports it once, cancelled, with its end row,
-  and asks no further round (RMK-511, RFC §9.3), as a speech-to-speech
-  channel's close interrupts its calls: the channel's own tool and an
-  external handler's pending decision alike (the handler hears
-  `on_tool_cancelled`), and a round whose calls had not started yet runs
-  none of them. The tool ran on, its report never reached ON_TOOL_CALL's
-  observers on `kit.close()` (the store was sealed), and on `channel.close()`
-  the turn went on to the model's next round. The close waits for its turns
-  to end, at most 5 s, as a speech-to-speech channel's does; a call whose
-  handler closes its own channel runs on (the other calls of its round are
-  cut), a close from one of the turn's hooks does not wait for that turn,
-  and a second close does not wait again for a turn the first one cut.
+- One tool list and one set of rules on a text turn and a realtime session
+  (RMK-397, RMK-430, RFC §6.4, §12.4, §19.5, §21.1, §21.4, §24.3, §24.4):
+  - a skill registry whose every skill is unavailable gives the reasons and
+    declares `activate_skill` and `read_skill_reference` on a text turn too,
+    where the turn said nothing and the model guessed;
+  - a realtime skill's `requires` is checked against every tool the session
+    declares, the channel's own tools included (a skill requiring
+    `delegate_task` after `setup_realtime_delegation` was refused); a realtime
+    session counted a tool its policy denies as available;
+  - `SkillRegistry.mark_unavailable` no longer opens the tools the skill
+    gated, unless an activated skill gates them too; a required tool only a
+    closed gate holds
+    is missing, and a call to it reads `gated by a skill that is not available
+    here`; no hook sees a denied tool's schema;
+  - a realtime `activate_skill` missing a required tool, at activation or
+    once the hooks ran, is refused for the model and the observers alike,
+    where the observers read it served; on a fixed-declaration provider in
+    `on_demand`, an activation whose required tool the policy denies is
+    refused, where it handed the model that tool's full schema;
+  - a realtime pipeline reads the channel's tools when a session opens or a
+    handoff lands (after `configure(tools=...)`, new sessions kept the
+    install's tools), and a name the channel's tools carry is the channel's;
+  - a provider's native tool without a name (`{"google_search": {}}`) stays
+    declared under Tool Search and an allow-list on a realtime session and a
+    conference, and no longer makes a realtime skill activation fail with
+    `KeyError`;
+  - `list_tools` lists every tool a realtime session can call, its
+    orchestration and skill tools included; on a fixed-declaration provider,
+    `list_tools(name=...)` and `call_tool` reach every tool it lists, and
+    `call_tool` is in `current_tool_allowed_names()`;
+  - `activate_skill` called with a tool's name ("spotify" for `spotify_play`)
+    adds the same `tools_hint` on the realtime door as on the text door, and
+    both reveal those tools once the call is served; a name that is no skill
+    hints none of the tools the channel serves itself;
+  - `read_stored_result` is in `current_tool_allowed_names()` and
+    `list_tools` from a turn's first round, where it appeared only once a
+    result was stored; an infrastructure tool the turn does not declare (`find_tools` while Tool
+    Search hides nothing, `run_skill_script` with no executor) is refused as
+    undeclared, where it was served;
+  - `find_tools` no longer names, as related, a tool it never returns, and a
+    tool Tool Search never hides (`plan_tasks`) stays `always` in
+    `declared_tools`.
 
-- An agent's auto-greeting on a `RealtimeAudioVideoChannel` session reaches
-  the model as its own `assistant` turn again (RMK-501), as on a
-  `RealtimeVoiceChannel`: since its session start names its own channel
-  type, the greeting took the text path, injected as `system` and broadcast
-  to the room's other transports.
+- A hidden tool the model calls by its exact name under Tool Search stays
+  revealed only once the tool answered the call (RMK-461, RFC §6.4): a call a
+  `BEFORE_TOOL_USE` hook blocked, or one the handler refused, left the tool
+  declared on the turn's next rounds and on later turns. A reveal also
+  survives a `find_tools` of the same round that swaps the reveal window,
+  whichever call settles first.
 
-- An ACP call whose end the external handler raised before reporting is
-  reported by the channel, as it ended, for every outcome (RMK-507, RFC
-  §9.3): it was reported to no one unless the agent had run it past a
-  refusal, and that call was reported twice when the handler raised after
-  reporting it. One guard serves ACP and the AI channel's external door:
-  `handler_reported` watches whether the handler's report reached
-  ON_TOOL_CALL's observers, and catches an override that raises at the call
-  itself (one that cannot take the arguments the door hands it), which
-  failed an ACP turn or a cut call's report. The failure is logged on
-  `roomkit.tools.external` ("External tool handler failed ..."), where ACP
-  logged it on `roomkit.channels.acp`.
+- Tool results reach the model as the handler gave them (RMK-305, RMK-306, RFC
+  §9.3, §15.8.1, §21.4):
+  - a SYNC `ON_TOOL_CALL` hook that empties a served call's result leaves the
+    call served (the model reads `null`), where the next hook could serve it
+    again; on a call an external handler or a provider ran, the next SYNC
+    hook sees a `metadata={"result": ...}` rewrite as it sees a `modify`;
+  - a call whose handler declines it is served by nothing on every path,
+    where a conference reported it served and a call recovered from speech
+    `completed`; a SYNC `ON_TOOL_CALL` hook may serve such a call in a
+    conference too, and a conference call no handler serves reads as unserved
+    (`No handler for tool <name>`), where it was refused;
+  - a channel's own tool whose result reads like the `{"error": "Unknown
+    tool: ..."}` envelope is served: only the host's handler may decline a
+    call that way. `compose_tool_handlers` hands the call on when a handler
+    declines with the envelope as a mapping;
+  - a result made of mappings that name a part type among other data reaches
+    the model as JSON (`[{"type": "text", "text": "chunk", "page": 2}]` lost
+    its `page`);
+  - every result the model reads in a channel's tool loop is built from the
+    call's typed outcome, so a cancelled or failed external call carries
+    `is_error`;
+  - the results of Tool Search and of reading a skill's references are bounded
+    by `tool_result_max_length` on a realtime session, as any result is; an
+    activated skill's instructions and the complete schema
+    `list_tools(name=...)` serves go out whole. The truncation note says how
+    long the result was;
+  - `audit_tool_handler` hands the channel the handler's answer itself, where
+    it returned `str()` of it; a cancelled call is recorded `cancelled`
+    (was `ok`), a refusal or a declined call `failed` (was `error`);
+  - `read_stored_result` on an id that is not stored is a refusal, where the
+    room's tool memory kept the miss as the answer; `extract_tools` and a tool
+    schema given as a dict keep their `tags`.
 
-- Each tool call of a text turn is held as a call of its own, never by its
-  provider's id (RMK-506, RFC §9.3, §12.4): a call under an id an earlier
-  round of the turn used is a new call, reported, and reported cancelled
-  when the turn cuts it, where its report was taken for the earlier call's
-  and never made; on the external handler's door, a call under an id a
-  pending call of its round holds is refused ("has not had its result yet")
-  without asking the handler, and one the provider ran is reported with its
-  own arguments, where the handler decided both and one report was made; a
-  handler that raises reporting a call, or reporting it cut, is logged and
-  no longer fails the turn, and the channel reports the call itself unless
-  the handler reported it before raising, so it is reported once. A turn cut while two calls under one id are open closes each of
-  them, the one already refused as refused and the one running as
-  cancelled, where one END row closed only one of their two START rows; a
-  call that ended before the cut is closed with its outcome, its end riding
-  `ToolCallStartMarker.ended`, and each call's END row carries its own
-  duration rather than its round's (the round's ephemeral `TOOL_CALL_END`
-  event keeps the round's).
+- An `AIChannel` closed while its turn runs a call, by itself or by the kit,
+  cancels the call and reports it once, cancelled, with its end row, and asks
+  no further round (RMK-511, RFC §9.3): the tool ran on, its report never
+  reached the observers on `kit.close()`, and on `channel.close()` the turn
+  went on to the model's next round. An external handler's pending decision
+  is cut too (it hears `on_tool_cancelled`). The close waits for its turns to
+  end, at most 5 s; a call whose handler closes its own channel runs on, and
+  a close from one of the turn's hooks does not wait for that turn.
 
-- A result submitted for a realtime tool call the provider abandoned, or
-  never issued, is dropped with a log on every provider (RMK-502, RFC §12.4):
-  OpenAI Realtime, xAI and Deepgram sent it, Deepgram without a name, and
-  Gemini sent one for an id it never issued, unnamed; Gemini, GPT-Live and
-  ElevenLabs already dropped an abandoned one. The open calls are one book on
-  `RealtimeVoiceProvider` (`_book_tool_call`, `_answerable_tool_call`,
-  `_abandon_open_tool_calls`, ...), which each provider answers through; a
-  call issued by a connection that is gone is dropped too, and a session
-  connected again under the same id (Deepgram, OpenAI Realtime, xAI) abandons
-  and reports its previous connection's calls. Reachable only by an
-  application calling `submit_tool_result` itself: the channel's own book
-  already sent nothing for such a call.
-
-- A tool call's report and its rows say the same thing on every door
-  (RMK-498, RFC §9.3, §12.4): two calls under one id in a text round are two
-  calls, the second refused as a realtime session refuses it ("has not had its
-  result yet") and reported as its own, where both ran, one report was made
-  and the first's END row carried the second's arguments; a refusal that came
-  from a failure (a `BEFORE_TOOL_USE` hook that failed closed) carries what
-  failed (`error_detail`) on the external handler's doors too, through
-  `ToolDecision.detail` and `ExternalToolHandler.on_tool_refused(detail=...)`
-  (passed only then, and only to an override that takes it: one that does
-  not still reports the refusal, without the detail, and the log says so); a
-  reasoning backend's call is reported under
-  `<delegation>:<the model's id>` on every path, where a call through the gate
-  or refused by it got a minted id (`model_call_id()`); a call the turn cuts
-  while it runs is closed with the arguments it ran with, as its report is
-  (they ride `ToolCallStartMarker.ran_with`), where its END row kept the
-  model's; and an ACP call RoomKit refused that the
-  agent ran anyway and closed completed is reported served with
-  `refused_but_ran` on its report (`ToolCallEvent`), its END row
-  (`ToolCallContent`, `ToolCallEndMarker`) and its `tool_call` framework
-  event (`on_tool_result(refused_but_ran=True)`, passed only then; an
-  override that cannot take it, or whose report raises, leaves that call's
-  report to the channel, never a report without the marker, nor none).
-
-- A turn ends the same on every door that runs one (RMK-497, RFC §6.4,
-  §12.4.1, §23.3): a turn cancelled from outside (`handle.cancel()`, a
-  cancelled `delegate(wait=True)`, `task_runner.cancel()`), while its text
-  streamed or while a tool ran after it, records `loop_end_reason: cancelled`
-  on its kept text, and a room turn's caller reads it under `turns` beside
-  the turns read before the cancel, as when its reader stopped, where it
-  recorded no end; a
-  delegated turn whose stream fails on the trace path fires `ON_ERROR` in the
-  turn's scope (depth, correlation, thread), where it fired at depth 0 with
-  no correlation; `regenerate_response()` reports the buffered failure first,
-  as `process_inbound()` does, where it reported the stream's; a delegated
-  turn whose stream a shared transport rendered is logged once, by its task,
-  where the framework logged it a second time (a room turn streamed to a live
-  target keeps its one line); a delegated reply that did not respond
-  and carries an error fails the task with that error on the trace path,
-  where the task failed with none; `kit.delegate()` refuses to start on a
-  closing kit, as a strategy's background run does; and a reasoning
-  backend's turn that fails on an error fires `ON_ERROR` once (category
-  `reasoning`) beside its spoken fallback, where only the logs saw it (a turn
-  its cap, deadline or budget cut, or a run past `reasoning_timeout_s`, fires
-  none).
-
-- The session start, `BEFORE_TOOL_USE`, `ON_TOOL_CALL` and provider `ON_ERROR`
-  events of a `RealtimeAudioVideoChannel` name its own channel type
-  (RMK-501): they said `REALTIME_VOICE`, so a hook filtered on
-  `REALTIME_AUDIO_VIDEO` never saw them.
-
-- The chat wires read a response the same through `generate()` and the
-  stream (RMK-500, RFC §6.4): `OpenAIAIProvider` behind a `base_url`,
-  `OpenRouterAIProvider` and `AzureAIProvider` let the server decide whether
-  their model reads images, where they guessed from OpenAI's model names and
-  dropped the images of a local vision model, of every OpenRouter model
-  (`vendor/model` ids never matched) and of an Azure deployment not named
-  after an OpenAI model. `generate()` records time to first token under the
-  provider's name as its stream does: the metric's `provider` label on
-  `generate()` changes from `openai` to `OpenAIAIProvider` (likewise
-  `AzureAIProvider`, `DeepSeekAIProvider`, `LiteLLMAIProvider`,
-  `MetaAIProvider`, `OpenRouterAIProvider`, `QwenAIProvider`,
-  `XAIAIProvider`), and vLLM names itself `vllm` in its errors. A choice whose
-  message is null reads as an empty answer, where OpenAI's `generate()` raised
-  a bare `AttributeError` that skipped the retries and the fallback provider.
-  A `tool_calls` entry without a function (a custom tool's call) is no call on
-  the stream either, and a call whose id arrives before its function keeps
-  the server's id. The model rides the stream's end on OpenAI's wire,
-  PolarGrid, Ollama and Mistral as it rides `generate()`, under one rule on
-  both modes: the model that answered, else the one asked for. A stream
-  records its first token on text or reasoning only, never on a call's
-  fragment, including text a think-tag parser held back to the end (it was
-  not recorded on PolarGrid).
-
-- A turn that states reasoning off (`enable_thinking=False`,
-  `thinking_budget=0`, `reasoning_effort="none"`) sends the least effort the
-  model takes, as its catalogue declares it and the wire answered (RMK-500,
-  RFC §6.7): `none` to OpenAI's GPT-5.1 and later and to Cerebras's Qwen,
-  `minimal` to GPT-5 and its mini and nano and to Meta's Muse, `low` to o3,
-  o4-mini and Cerebras's GPT OSS. The switch sent nothing on OpenAI, Meta and
-  Cerebras, and `reasoning_effort="none"` answered 400 on the models that
-  cannot stop reasoning. A model the catalogue declares no floor for (one
-  that does not reason, one behind a `base_url`, an Azure deployment, whose
-  name hides the model) keeps what it was sent; xAI is left as it was.
-
-- A tool a realtime session is given (its metadata, `reconfigure_session`)
-  under a name orchestration serves is not declared, as a turn's is not on a
-  text door (RMK-499, RFC §21.1): a pipeline's handoff or agent tool given
-  again with another schema was declared with it, the gate checked that
-  schema and the pipeline served the call. Every agent's own definition of a
-  name stays its own: two agents giving `lookup` two schemas each declare
-  theirs. A call to such a name is checked against its server's schema though
-  the session declares none of its own.
-  The person's tools are never hidden by Tool Search on a text turn, as on a
-  realtime session; a human-input definition given twice, or under a name the
-  channel serves itself, is refused on every door; a `HumanInputToolHandler`
-  given as a text channel's `tool_handler`, and a human-input name nothing
-  declares on a realtime session or a conference, are warned about as on the
-  other doors.
-
-- A background result handed back to a channel that hosts a realtime model
-  reaches that model on every such channel (RMK-501, RFC §23.3 step 8): a
-  `RealtimeAudioVideoChannel` and a `ConferenceChannel` with a realtime model
-  plugged in published it as their own words to the room's other channels,
-  the outcome saying `sent`, and the model that delegated heard nothing. It is
-  injected with the `system` intent into the model's session, as on a
-  `RealtimeVoiceChannel`. `RealtimeModelHost`, exported with its predicate
-  `hosts_realtime_model()`, is the contract such a channel inherits
-  (`get_room_sessions()`, `inject_text()`, `wait_idle()`), and the delivery
-  paths read only it. For a conference this changes
-  `deliver(channel_id=<conference>)`: with a realtime model plugged in, the
-  text is injected into the model's room session (`user` intent, `system`
-  with `instruction=True`) instead of published through the room, and is
-  `unavailable` (`voice_session_unavailable`) before that session connects. `WaitForIdle`
-  and `Queued` wait on a conference's model as on a realtime voice channel
-  (its answer ended and published, nobody heard speaking), and the injection
-  fires ON_REALTIME_TEXT_INJECTED. A delivery whose sessions were pinned is
-  refused (`voice_session_replaced`) when the model is unplugged before it
-  goes out, where it was published to the room as the channel's own words.
-  With no channel named, an agent attached as a transport is no longer
-  picked as the room's transport, and `deliver()` to an intelligence channel
-  whose only transport is itself an intelligence channel is refused
-  (`no_transport`), where it recursed until a `RecursionError`.
-
-- A `system` message in the history (a memory provider's summary, an
-  instruction) goes to Anthropic as a user turn, as to Gemini (RMK-484, RFC
-  §6.7): it went as a message role the Messages API does not take.
-
-- A reasoning block with no text (redacted, a signature alone) goes back as
-  nothing in an assistant answer without calls on a wire that replays
-  reasoning inline (RMK-484, RFC §6.4), as it already did in a round with
-  calls: it went as an empty `<think></think>` block.
-
-- A streamed call whose arguments a server sends as an object, not as text,
-  reads as the text it spells on every chat wire (RMK-484, RFC §6.4): OpenAI's
-  wire and PolarGrid failed the stream (`can only concatenate str`), where
-  Mistral read it. `ToolCallSlots.fold` takes the object itself. A PolarGrid
-  response that is not streamed still cannot carry one: its SDK refuses it
-  when it parses the response.
-
-- A chat completion read through `generate()` hands the loop what the stream
-  hands it (RMK-484, RFC §6.4): a call whose server lost its name reaches the
-  loop with an empty one, which the loop refuses, where OpenAI's wire raised
-  a raw `ValidationError`; a response with no choice reports its usage, which
-  OpenAI's wire and PolarGrid dropped. One reader,
-  `openai_dialect.message_tool_calls`, reads a response's calls for both;
-  Ollama, which reads its own wire, keeps a lost name empty too, where it read
-  a tool named `None`.
-
-- A provider that holds no tool unseen receives each tool result as its text
-  (RMK-484, RFC §6.4): the references a Tool Search result carries, which only
-  a deferring provider reads, stayed on it, and Anthropic behind a `base_url`
-  sent them as `tool_reference` blocks a gateway does not take, where OpenAI
-  sent the text. `declared_for` drops them with the held tools.
-
-- A `<think>` block the output cap cut before its close is reasoning, never
-  answer, through `generate()` as on the stream (RMK-484, RFC §6.4): OpenAI's
-  wire and PolarGrid handed it over as the answer's text, and the OpenAI vision
-  provider left it in its description. `extract_think_tags` now reads a whole
-  response with the stream's `ThinkTagParser`.
-
-- A vendor's official URL written out as `base_url` is the vendor's own
-  endpoint (RMK-484, RFC §6.7): `https://api.openai.com/v1` for OpenAI's text
-  provider, `https://api.anthropic.com` for Anthropic's, the official URL with
-  a trailing slash for OpenAI Realtime and GPT-Live, `https://api.deepseek.com`
-  as well as its `/v1` for DeepSeek, `https://api.mistral.ai` for Mistral, its
-  scheme's default port written out included. Each read such a configuration
-  as a server behind a proxy, and dropped the vendor's tool-name rule, the
-  catalogue's tool-turn reasoning profile and a modern model's defaults
-  (Anthropic's adaptive thinking, its deferred tools, OpenAI's response schema
-  beside tools). One helper,
-  `roomkit.providers.vendor_endpoint.is_vendor_endpoint`, decides it everywhere.
-
-- Arguments a `BEFORE_TOOL_USE` hook edited in place so they no longer fit
-  the schema read `Invalid rewritten arguments` on an AIChannel too (RMK-482,
-  RFC §21.1), as on a realtime session and a conference: the AI channel said
-  `Invalid arguments`, as if the model had sent them. The check and its words
-  live in one helper, `rewritten_arguments_error`, which the three gates use.
-
-- An `AIChannel`'s human-input tools are served by the channel itself
-  (RMK-481, RFC §9.3), after its own tools and before the host's handler:
-  replacing `channel.tool_handler` dropped them, since the handler given as
-  `human_input_handler=` was composed into the host's. They keep their
-  declarations, their own timeout and `ON_USER_INPUT_REQUIRED`.
-
-- A turn constrained to a response schema that its round cap, deadline,
-  budget or an interruption cuts fails `truncated` on every door that reads
-  its loop (RMK-479, RFC A.9): the rule lived in the envelope of an agent's
-  room turn, so a reasoning backend's turn ended its `llm.generate` span
-  `ok`. The voice model was already told the delegated work could not be
-  completed.
-
-- A response its transport stopped reading once it began (a barge-in) ends
-  `cancelled` (RMK-479, RFC §6.4, §12.2 step 13s): a delegated AIChannel
-  worker's task read it as a completed answer, where an ACP worker's failed,
-  and a room turn left the caller's `turns` without its entry. It began with
-  the first thing its reader was handed, a thinking delta included. An ACP
-  agent that finished its prompt while its transport had stopped reading ends
-  `cancelled` too, where it read `completed` and its task handed on the
-  partial text; one whose record says how it was cut (`interrupted`, a stop
-  reason) keeps it. A response never read still names no end.
-
-- ON_ERROR fires once for a delegated turn that failed, whichever path its
-  delegation took (RMK-479, RFC §23.3 step 6), through the reporter a room
-  turn uses: a worker's stream that failed on the trace path (no transport
-  shared into its child room) fired nothing, and neither did a worker that
-  raised or returned its error on either path, nor one that answered then
-  failed with a transport shared.
-
-- How a supervisor's task-formulation pass ended reaches its caller under
-  `turns` only (RMK-479, RFC §6.4): its `loop_end_reason` and `ai_usage` were
-  copied beside them, flat, where a room turn's never are; a channel's own
-  record keys still reach the caller, those two excepted.
-
-- `regenerate_response` reads its buffered replies as `process_inbound` does
-  (RMK-479, RFC §6.4): a regenerated reply that carries its end on its last
-  message (a supervisor's pass 1 cut by its round cap) left the caller's
-  `turns` without its entry, and a `turns` key a turn's hook wrote reached
-  the caller.
-
-- A supervisor's task-formulation pass tells its caller how it ended, as a
-  room turn does (RMK-479, RFC §6.4): a pass that failed with an error, was
-  cancelled, or completed without a task left the caller's `turns` without
-  its entry (only a pass its round cap cut carried one).
-
-- `read_skill_reference` and `run_skill_script` on a skill the registry does
-  not offer are refused, on the AI channel, a realtime session and a backend
-  (RMK-480, RFC §9.3): they were reported served with an `{"error": ...}`
-  body. The model reads the same error. `activate_skill` on a name that is
-  no skill is refused too when its answer carries no hint (no tool matches
-  the name, or the skill is unavailable); with a hint it stays an answer,
-  the hint revealing the tools it names (RFC §6.4).
-
-- A call's report carries the arguments it ran with, or that the gate had
-  when it stopped it, on every door (RMK-480, RFC §9.3): an AIChannel
-  reported a call BEFORE_TOOL_USE blocked, or rewrote into a shape the schema
-  refuses, and a call its turn cut while it ran, with the model's own
-  arguments, where a realtime session, a backend and a conference report the
-  gate's (repaired, rewritten). Observers of a refused or cut call on the
-  text door now see the executed arguments (a de-tokenising hook's values
-  included), as they already did for a served call; its TOOL_CALL_END row
-  carries the same. The END row of a call the turn cut keeps its START row's.
-
-- RoomKit's decision on an ACP call's permission stands however the agent
-  ends the call (RMK-480, RFC §9.3): a call whose permission the external
-  tool handler refused, then left open as the turn ended, was reported
-  `cancelled` (now refused, with the handler's reason, as on the AI door);
-  one whose handler raised read `cancelled` too (now failed, with what
-  failed, its body the AI door's `Tool '<name>' failed (<class>)`); and a
-  refusal for a call the agent never announced was reported nowhere. A
-  permission the handler approved with an input or a result ACP cannot apply
-  is refused with the channel's reason, no longer the approval's, and an
-  approved call the agent never announced nor closed before its turn ended
-  is reported once, cancelled.
-
-- A provider-served call's result is bounded as every outcome the model
-  reads (RMK-480, RFC §21.5): in a round mixing it with a call the channel
-  served, the next round read it whole (40 000 characters) and its
-  TOOL_CALL_END row kept it whole. ON_TOOL_CALL's observers still hear it
-  whole.
-
-- The `tool_call` framework event of a call ON_TOOL_CALL withheld says it
-  failed, on every door (RMK-480, RFC §9.3): a SYNC hook's BLOCK, or a
-  fail-closed hook that raised or whose context would not build, left it
-  without `is_error`. When the hooks' context will not build, that framework
-  event is the call's one report on every door, a call nothing served
-  included: the AI channel reported such a call nowhere, and a realtime
-  session's observers heard it once the context built on a second attempt.
-
-- A supervisor's sequential team in the background is supervised, as in its
-  turn (RMK-478, RFC §19.7.3): `delegate_workers` with `async_delivery`, on
-  a text supervisor or a voice channel, ran the workers in a chain the
-  supervisor never framed nor validated, and every background run ignored
-  the install's `task_timeout` and `max_revisions` (120 s whatever was set).
-  A voice `auto_delegate` install registers its supervisor on the kit, not
-  attached to the room, for the supervised flow to delegate to. A supervisor
-  without a model (a configuration-only agent, as a voice supervisor often
-  is) cannot frame nor judge a step: its sequential team runs unsupervised,
-  as before.
-
-- A supervisor's per-worker background delegation (`delegate_to_<id>` with
-  `wait_for_result=False`) is followed by the strategies' background run
-  (RMK-478, RFC §19.7.3): the delegation is still a task of the kit's task
-  runner (its `task_id` in the dispatch answer, `kit.task_runner.cancel`
-  ending it, a custom `TaskRunner` running it), and the run waits for it
-  within `task_timeout`, past which the runner cancels it. The worker is
-  freed before its outcome is handed back (a dispatch made in answer read
-  `already_running`), the run alone hands the outcome back, and its terminal
-  entry is posted under `orchestration` (action `worker`), `failed` when the
-  outcome reached nobody.
-
-- A supervisor's background run whose work did not complete posts its
-  terminal entry `failed`, as a Loop whose producer failed, and the
-  supervisor is told the work could not be completed (RMK-478, RFC §19.7.3):
-  it read `completed` and `workers completed`. The work did not complete when
-  no worker's task completed (`no worker completed`), or when the supervisor
-  left a supervised step unvalidated and the chain stopped there (`a step was
-  not validated`), as it reads it within the turn. Each worker result carries
-  `completed`, whether its task completed.
-
-- `kit.close()` ends the strategies' background runs (RMK-478, RFC §19.7.3,
-  §19.7.4): a supervisor's `delegate_workers` with `async_delivery` and a
-  Loop's `delegate_loop` ran as bare tasks that outlived the kit, their
-  workers still generating after `close()` returned, with no terminal entry.
-  The kit holds each run and `close()` cancels it before the delegated tasks:
-  its worker's delegation ends cancelled, its room is freed, and its terminal
-  entry is posted `failed` (`cancelled`), with nothing handed back. A run
-  asked for once `close()` began (a voice session still open while the kit
-  closes) does not start: the call that asked for it fails.
-
-- A strategy's worker delegation is one sequence on every door (RMK-478,
-  RFC §19.7.3, §19.7.4): the supervisor's workers (sequential, parallel,
-  supervised, `delegate_to_<id>` waiting) and the Loop's producer and
-  reviewers post their pending entry, are bounded by the supervisor's
-  `task_timeout` (the Loop has none), and post one terminal entry however the
-  delegation ends. A delegation its caller cancelled (a call bound, a turn
-  cut) left its worker `pending` on the status bus, `delegate_to_<id>` with
-  `wait_for_result=True` ignored `task_timeout`, and a worker past its bound
-  now reads `The task timed out after <n>s.` on every door.
-
-- A delegated worker's turn cut at its bound no longer leaves its context in
-  the delegating call (RMK-478, RFC §23.3): an inline delegation
-  (`kit.delegate(wait=True)`) runs the worker's turn in a task of its own,
-  and a turn that ended before its caller was cancelled ends as it stands,
-  completed with its output, the cancellation going on after. A
-  supervisor's worker cut at its `task_timeout` while running inline under
-  the supervisor's call (the supervised sequential `delegate_workers`) left
-  the worker's tool-loop context in the call's task, and the supervisor's
-  call was reported twice on `ON_TOOL_CALL`: with its result, then as
-  cancelled when the turn ended.
-
-- A realtime call an ending interrupts is reported once, cancelled, on the
-  conference as on the channel, and when a session's start fails (RMK-477,
-  RFC §12.4). On a conference, a detach, the unplug of its realtime provider
-  or a detach after its bot was lost cut the report of a call issued under an
-  id in flight, or of a call the provider abandoned, before it was made; the
-  channel's `close()` cut the latter. A call the provider issued while a
-  start that then failed was pending was dropped unreported, whether the
-  handshake was rolled back, the session ended once filed, the start
-  cancelled before or after the call, or the channel closed while the leg
-  rang. On a start whose connection is no awaitable, a call issued during the
-  handshake is now stopped and reported cancelled when the start fails: its
-  handler ran to its end and the call read as served.
-
-- A human-input request whose waiting call is cut (a turn cancelled, a
-  session ended, a call abandoned) is withdrawn (RMK-465, RFC §9.3): it
-  stayed active, and a late answer was accepted for a call that was gone.
-
-- A realtime `activate_skill` for a name that is no skill hints none of the
-  tools the channel serves itself (RMK-461, RFC §24.4), as the text path:
-  it named `activate_skill`, `read_skill_reference`, `find_tools` or
-  `list_tools`, which a fixed-declaration provider then failed to call.
+- A human-input request whose waiting call is cut (a turn cancelled, a session
+  ended, a call abandoned) is withdrawn (RMK-465, RFC §9.3): it stayed active
+  and a late answer was accepted. An `AIChannel`'s human-input tools are served
+  by the channel itself (RMK-481): replacing `channel.tool_handler` dropped
+  them.
 
 - `delegate_task`'s cache answers a repeat of a call only once its task
   completed (RMK-462, RFC §23.3): a failed or cancelled task is run again,
   where the cache returned its `delegated` answer for five minutes.
 
-- ElevenLabs reads a call's parameters with the rule every realtime
-  provider applies (`readable_arguments`, RMK-455, RFC §6.4): text that
-  reads as an object runs with it and blank text or `null` with `{}`,
-  where ElevenLabs refused them as unreadable.
+#### Realtime tool calls
 
-- A realtime call an ending cuts before its task ran, or that arrives while
-  the session is torn down, is reported once, cancelled, on every door
-  (RMK-460, RFC §12.4): a call recovered from speech is booked on arrival
-  as a provider's call is (a session ending first left it unreported), and
-  a conference reports a late call after `unplug_realtime()` as after a
-  detach.
+- Every door of a speech-to-speech channel serves a tool call through one
+  sequence: gate, serving, `ON_TOOL_CALL`, bound, delivery, report (RMK-306,
+  RFC §12.4):
+  - the provider's calls, the calls recovered from speech and a reasoning
+    backend's calls run inside the tool call context, where
+    `current_tool_call()` was `None` and a `HumanInputToolHandler` filed its
+    request with an empty room;
+  - a conference's handler runs inside the call's context, at the chain depth
+    of the answer that issued it, so a delegation started from a conference
+    is bounded;
+  - each call is delivered once and reported once, on one book per session: a
+    second call under an id still running is refused and sends nothing, where
+    both handlers ran and two results went out under one id; with
+    `mute_on_tool_call`, the input stays muted until the last call in flight
+    ends; a Tool Search or skill call whose reconfiguration fails once its
+    result went out sends no second result;
+  - a realtime session and a conference emit the `before_tool_use` framework
+    event for every call, where they emitted it only when a
+    `BEFORE_TOOL_USE` hook was registered, and a call whose hooks cannot get
+    their room context is refused before it runs (`BEFORE_TOOL_USE`) or keeps
+    its result (`ON_TOOL_CALL`), where it failed on the store error;
+  - a call's span names the tool a fixed-declaration `call_tool` carries, and
+    a recovered or backend call's span sits under the session's span.
 
-- Gemini Live frees the calls a reconnect orphans before the new socket's
-  handshake when `reconfigure()` asked for the reconnect, as its receive
-  loop already did (RMK-460, RFC §12.4): a handler finishing during the
-  handshake failed to send into a connection that was not there, its
-  observers having read the call as served.
+- Every realtime call reaches the channel and gets its answer (RMK-440,
+  RMK-442, RMK-441, RMK-460, RFC §12.4):
+  - a call to a tool the channel never declared on ElevenLabs (the SDK
+    answered it itself), a call under an id still in flight or without an id
+    on Deepgram and GPT-Live (dropped), a call ElevenLabs answered twice on
+    the wire, a GPT-Live call the output cap cut, and a call that named no
+    tool on Deepgram and GPT-Live (the vendor then waited on it) or reached
+    the channel with `name=None` elsewhere: each now reaches the channel. It
+    refuses an id-less or duplicate call once, reported, sending nothing, so
+    the response goes on, and a duplicate leaves the first call's tool name
+    and delegation in place; it refuses a nameless call before the gate
+    (`Tool call named no tool`) and answers it under its id. On
+    ElevenLabs, a channel that declares no tools runs any name the agent
+    calls through its `tool_handler`, as every provider does;
+  - an id names its call until its result goes out, or until the provider
+    abandons it, on the channel and the provider alike: a call the vendor
+    issued under the same id in between was refused as a duplicate and never
+    answered, which left an ElevenLabs response open for good and froze a
+    Gemini Live blocking call's input. A Gemini injection made while a
+    blocking call's result is sent queues behind the ones that call held
+    instead of overtaking them;
+  - ElevenLabs keeps the service's call id (a `tool_call_id` the model wrote
+    replaced it), and a call without one, or with `parameters` that are no
+    object, no longer raises in the SDK and ends the conversation.
 
-- A hidden tool a served recovery revealed stays revealed when a
-  `find_tools` of the same round swaps the reveal window, whichever call
-  settles first (RMK-461, RFC §6.4): it was dropped when the recovery
-  settled before the search.
+- A realtime call the response cut runs only when its argument text reads, as
+  on a text turn (RMK-455, RFC §6.4, §12.4). OpenAI Realtime and xAI handed a
+  call on before the item's status said whether the response cut it, and
+  GPT-Live never read that status: a call cut before any argument ran with
+  `{}`. They now hand a call on once its item is done, and a cut call whose
+  text does not read is refused before the gate as `Tool call cut off`,
+  whether the output cap or a barge-in's `response.cancel` cut it; the hint
+  says to call again if still needed. Deepgram's requests carry no sign of a
+  cut.
 
-- A conference call no tool handler serves reads as unserved (RMK-465, RFC
-  §9.3, §21.4), as on every channel: an `ON_TOOL_CALL` hook may still serve
-  it, and otherwise the model reads `No handler for tool <name>` and the call
-  is reported failed, where the conference refused it.
+- What a realtime provider owes its tool calls when a session ends, reconnects
+  or fails (RMK-299, RMK-460, RMK-477, RMK-502, RMK-508, RMK-515, RFC §12.4):
+  - every provider reports the calls it abandons (ElevenLabs the call its
+    `tool_timeout_s` cuts and the calls a disconnect or a handoff drops,
+    GPT-Live the calls a restart replaces, every provider the calls open when
+    its connection is lost or closed), where the channel and a conference
+    recorded the handler's result as one the model read; they now report them
+    once, cancelled, and cancel the handler;
+  - a session connected again under the same id abandons and reports once the
+    calls its previous connection had issued, on every provider: for such a
+    call, Gemini sent a stale result on the new socket, ElevenLabs handed it
+    to the replaced conversation's handler, and GPT-Live never reported the
+    abandonment. Gemini Live frees the calls a reconnect orphans before the
+    new handshake;
+  - a result submitted for a call the provider abandoned, or never issued, or
+    for a session it no longer holds, is dropped with a log on every provider,
+    where OpenAI Realtime, xAI and Deepgram sent it, and Gemini sent one for
+    an id it never issued and raised for a session it no longer held.
+    Reachable only by an application calling `submit_tool_result` itself;
+  - a call an ending interrupts is reported once, cancelled, on a conference
+    (a detach, the unplug of its realtime provider) as on the channel, and
+    when a session's start fails; a call recovered from speech is booked on
+    arrival, so a session ending first no longer leaves it unreported;
+  - a call whose own handler detaches its conference room or unplugs the
+    conference's realtime provider runs on and reports its own outcome, as on
+    a `RealtimeVoiceChannel`, where the detach cancelled it, the bot never
+    left and `kit.close()` failed;
+  - every provider runs a session's receive loop, keepalive and supervisor in
+    a context of its own: a session reopened from inside a tool handler (a
+    handoff) carried that call's context into every event of the new
+    connection;
+  - Gemini Live tells the model, once until the user speaks again, that a
+    call it ended its turn on without being able to write
+    (`MALFORMED_FUNCTION_CALL`) did not run, where the turn ended in silence.
 
-- A response that fails mid-stream is no longer handed again to the channel
-  that streamed it (RMK-467, RFC §12.2 steps 13s and 15s). When the provider
-  raised after a sentence, the text already streamed went back to that
-  channel as an ordinary event: a `VoiceChannel` spoke it a second time, the
-  CLI printed it again, and a WebSocket client got it after `stream_error`,
-  outside the stream. The row now reaches the streaming channel inside the
-  stream, as a completed response's last row does, then the failure; the
-  other channels still get it, `ON_ERROR` still fires and the text is stored
-  as before. A voice speaks all the text the response produced, its last
-  partial sentence included, sends it as the assistant transcript and fires
-  `AFTER_TTS` with it. A channel that swallows the failure no longer turns the
-  turn into a cancelled success, and an error the channel raises on top of it
-  no longer replaces it as the turn's error. A call still open when the
-  response fails is closed even when the channel cancels its read meanwhile.
-  A failure of the streaming channel itself keeps its fallback: the text goes
-  to every channel, that one included. A streamed failure's log line carries
-  its traceback again.
-
-- Audio work of a session whose end has begun reaches nothing and rebuilds
-  nothing (RMK-466). A frame still in the stages on an `inbound_dsp_threads`
-  worker when its session ended, and the callbacks it sent back to the loop,
-  reached the channel after the end: a realtime provider heard
-  `send_activity_start` and a truncate after its `disconnect`, the client a
-  `clear_audio`, and a `VoiceChannel` recreated the per-session entries
-  `unbind_session` had removed. A frame a backend still delivered after
-  `unbind_session` ran the whole pipeline again, and a frame reaching a
-  realtime session during its teardown's awaits (`provider.disconnect`,
-  `transport.disconnect`) went through it before `on_session_ended`. Each
-  rebuilt the stages' per-stream state (VAD, denoiser, AEC: native memory)
-  for good, one leak per session ended with audio in flight. The pipeline
-  now remembers the streams it ended: their frames are not processed, the
-  callbacks still due for them are dropped, a frame in flight across the
-  release leaves nothing behind, a frame played to an ended session is
-  processed and leaves no stage state, and its AEC reference and activity
-  are ignored. For a direct `AudioPipeline` user, frames for a session after
-  `on_session_ended` are dropped until `on_session_active` activates it
-  again. The `VoiceChannel` doors outside the pipeline (the input and output
-  level hooks, an out-of-band DTMF) no longer write an entry for a session
-  unbound since, and the `max_audio_frames_per_second` limiter, which still
-  counts every session, forgets the windows that expired.
-
-- `VoiceChannel.unbind_session` forgets the speech state of a session
-  unbound mid-utterance (RMK-466): its speech onset, its energy barge-in
-  count, its suppression and the segments queued for after playback stayed
-  for good, since only the SPEECH_END that never came would have cleared
-  them.
-
-- A voice session's `pipeline.speech_segment` spans hang under its session
-  span (RMK-466). `VoiceChannel.bind_session` handed its `voice.session` span
-  to the pipeline before activating the session, whose cleanup of a previous
-  session's state dropped it; `RealtimeVoiceChannel` never handed over its
-  `realtime_session` span. Every segment span had no parent.
-
-- A voice `Loop` (`async_delivery=True`) hands its outcome back to the voice
-  channel that started it, success and failure alike (RMK-462, RFC §19.7.4),
-  as the supervisor's background door does since RMK-451. A loop that raised
-  was only logged: the model, which had told the user results would follow,
-  never heard. Its success went to the room through `kit.deliver()` and
-  reached the session as the user's words, unbounded and unfenced. Both now
-  go through `hand_back`: an instruction to the voice channel, the output
-  bounded and fenced as a worker's, and for a loop that raised, that the work
-  could not be completed, without the error's message. The room is released
-  before the outcome is handed back, and the loop posts one terminal status
-  entry (`orchestration`, `loop`) after its hand-back, `failed` when its
-  producer's task stopped it. The loop and the supervisor's background
-  workers now run through one sequence (run, release the room, hand back,
-  post the terminal entry), with these changes for both:
-  - the outcome is told in the session that made the call: with two
-    sessions of a voice channel in the room, `deliver()` refused it as
-    ambiguous and nobody heard it;
-  - one run per room, whichever voice channel's session calls the tool: two
-    voice channels in one room each started their own run;
-  - the terminal entry is `failed` (`not handed back: ...`) when the outcome
-    reached no one (refused, unavailable, past `max_chain_depth`), where it
-    read `completed`.
-
-- A background `kit.delegate()` whose notified channel is a realtime voice
-  channel is told in the session whose tool call delegated (RMK-462, RFC
-  §23.3), and a task that did not complete is handed back whatever text it
-  left: one that failed with no output and an empty error (an empty answer,
-  an exception without a message) was never handed back.
-
-- A hidden tool the model calls by its exact name under Tool Search stays
-  revealed only once the tool answered the call (RMK-461, RFC §6.4). The
-  recovery recorded the reveal for the room before any gate ran: a call a
-  `BEFORE_TOOL_USE` hook blocked, or one the handler refused, left the tool
-  declared on the turn's next rounds and on later turns. Such a call now
-  reveals nothing, and leaves every other reveal of its round as it was; a
-  call the tool answered (served, failed, its result withheld by an
-  `ON_TOOL_CALL` hook) reveals the tool once it answered, as the tool memory
-  keeps any tool used, so a sibling call that answers first references
-  nothing of it.
-
-- A realtime call the provider abandons frees its id at once (RMK-460, RFC
-  §12.4), as RMK-441 made a delivered call free it. The provider freed the id
-  when it reported the abandonment, the channel only once the interrupted
-  handler had finished: a call the vendor issued under the id while that
-  handler cleaned up was refused as a duplicate by the channel and booked by
-  the provider, and never answered (a Gemini Live blocking call froze the
-  input). The channel and the conference now free it at the same step, send
-  nothing for the abandoned call even when its handler answers anyway, and
-  answer the new call. A call a reconnect its own handler caused orphans,
-  which runs on, frees its id the same way: the new connection never issued
-  it. ElevenLabs frees a call `tool_timeout_s` abandons before the channel
-  hears of it, as every provider does.
-
-- The line between a refused and a failed call reads the same everywhere
-  (RMK-459, RFC §9.3). A reasoning backend's relay of a call its loop
-  ended before the gate keeps the outcome and what failed: a failed call
-  reached the observers refused and without its detail. The reporter is
-  now called with `refused=False` for a failure and `detail=` when one is
-  set, so a host reporter written to `(name, arguments, body, *,
-  cancelled=False)` still hears refusals and cuts. A refused, failed or
-  cancelled call whose observers' context does not build, and a call an
-  external handler ran, still emit their `tool_call` framework event.
-
-- A realtime call its response cut runs only when its argument text reads,
-  as on a text turn (RMK-455, RFC §6.4, §12.4). OpenAI Realtime and xAI
-  handed a call on at `response.function_call_arguments.done`, before the
-  item's status says whether the response cut it, and GPT-Live never read
-  that status: a call cut before any argument ran with `{}`, and one cut
-  mid-arguments was refused as unreadable. They now hand a call on once its
-  item is done (`response.output_item.done`), and a cut call whose text
-  does not read reaches the channel marked cut, refused before the gate as
-  `Tool call cut off`, as the text providers refuse it, whether the output
-  cap or a cancel (a barge-in's `response.cancel`) cut the response; the
-  hint now says to call again if still needed, with shorter arguments if
-  the response ran out of room (on every channel). Measured on OpenAI
-  Realtime (`max_output_tokens` 40): the cut call's arguments, then its item
-  `incomplete`, then the response `incomplete`. Deepgram's requests carry no
-  sign of a cut.
+- Gemini (and Vertex) and Gemini Live send a refused, failed, blocked,
+  unserved or cancelled call's result under the function response's `error`
+  key, and a served one under `result` (RMK-375, RMK-378, RFC §6.4, §12.4): a
+  refusal in plain words went under `result`, as a success, and a served body
+  that carried an `error` field went out as a failure. On Gemini Live, a
+  served JSON object reaches the model as text under `result`, no longer as
+  the response's own fields. ElevenLabs sends a
+  failed call's result as a tool error (RMK-299), where its agent read a
+  refusal or a failure as a success.
 
 - A reasoning backend is offered the tools the participant's current role
-  admits (RMK-458, RFC §12.4.1, §21.1). Its catalogue and the refusals it is
-  handed (`unavailable`) were built with the role and the room's agent as the
-  session last read them, while the gate reads them again at each call: a
-  participant promoted mid-session was still not offered the tool, and one
-  demoted was offered a tool its call was then refused. They are now read
-  when the channel hands each delegation to the backend, inside the
-  delegation's bound (a read that fails is answered by the spoken fallback);
-  a delegation the backend queues behind another keeps what was read then,
-  its calls still judged at the gate. Each delegation takes its transcript
-  and `first` in the order it was announced. On a door through which the
-  channel serves none of its own tools, skill gating exempts none of them
-  either, as the policy already did, and a backend's call to a gated tool
-  reads, at the gate, the refusal worded for a model that cannot activate a
-  skill, as in `unavailable` (it was told to activate one).
+  admits (RMK-458, RFC §12.4.1, §21.1): its catalogue was built with the role
+  as the session last read it, so a participant promoted mid-session was
+  still not offered the tool, and one demoted was offered a tool its call was
+  then refused. They are now read when the channel hands each delegation to
+  the backend.
 
-- A supervisor's background workers whose pipeline fails hand the failure
-  back to the supervisor (RMK-451, RFC §19.7.3). A delegation that raised
-  under the dispatch tool (`delegate_workers`, voice or text with a
-  strategy) was logged and posted `FAILED` on the status bus, and the
-  supervisor, which had told the user results would follow, never heard
-  of it. It now receives an instruction that the work could not be
-  completed, as it receives the workers' results, without the error's
-  message, which stays in the logs and on the status bus. The room is
-  released and its cached `dispatched` answer dropped before the supervisor
-  hears the outcome, success included: a dispatch it makes in answer starts a
-  new run (bounded by `max_chain_depth`) where it read that stale answer and
-  promised results that never came. A run posts one terminal status entry,
-  after its hand-back, and no background result is handed back while the
-  framework closes (one check, in `hand_back`).
+- The active agent of a realtime pipeline answers to its own tool policy
+  (RMK-427, RFC §19.5): `Agent(tool_policy=ToolPolicy(deny=["wire_money"]))`
+  had `wire_money` declared and served on its session, the policy read on its
+  text turns only. Its policy now holds beside the channel's, on the
+  declaration, the gate, Tool Search, `current_tool_allowed_names()` and the
+  skills preamble, and a handoff applies the next agent's policy on every
+  session of the room. As on its text turns, an allow-list policy also hides
+  `handoff_conversation`: allow it for an agent that hands off.
 
-- A `find_tools` call an `ON_TOOL_CALL` hook blocked, or one that failed, no
-  longer reveals its matches (RMK-447, RFC §6.4). A text turn revealed them
-  from the handler, before the hooks judged the call: the next round declared
-  them and the room kept them for the next turns. A realtime session swapped
-  its reveal window and reconfigured whatever a hook returned. The reveal now
-  waits for the served call on both, as a skill activation's does. A search
-  that finds nothing reveals nothing: it no longer empties the reveal window,
-  which on a realtime session diverged from what the session declared.
+- A `RealtimeAudioVideoChannel`'s session start, `BEFORE_TOOL_USE`,
+  `ON_TOOL_CALL` and provider `ON_ERROR` events name its own channel type
+  (RMK-501): they said `REALTIME_VOICE`, so a hook filtered on
+  `REALTIME_AUDIO_VIDEO` never saw them.
 
-- Every realtime call reaches the channel, and every refusal at its entry
-  takes the path of any call (RMK-442, RFC §12.4). A call that named no tool
-  was dropped by Deepgram and GPT-Live (the vendor then waited on it) and
-  handed on with `name=None` by ElevenLabs, Gemini, and OpenAI Realtime and
-  xAI for an explicit `"name": null` (an explicit `"call_id": null` came
-  through as `None` too); every provider now hands it on, and the channel
-  refuses it before the gate (`Tool call named no tool`) and answers under
-  its id, its `ToolCallEvent.name` `""`. A call without an id or under an id
-  in flight was reported before the transcription barrier and under
-  `call_tool` rather than the tool it carried: it now runs the normal path,
-  its refusal naming the carried tool, and sends nothing; one still behind
-  the barrier when the channel closes is reported, cancelled, where it was
-  lost. A call on an ended session is cancelled rather than refused, an
-  id-less, nameless or unreadable one included, and leaves no barrier lock
-  behind. ElevenLabs keeps
-  the service's call id: a `tool_call_id` the model wrote replaced it (the
-  SDK answered on the wire under the model's text) and is now an argument
-  like any, which a schema refusing unknown keys refuses; a call without one
-  raised `KeyError` in the SDK, which ended the conversation, and is now
-  refused as id-less (`sdk_patch.conversation` and `split_call`, with a
-  canary); `parameters` that are no object (a string, a list) ended it too
-  and now reach the channel as the model's text, which it refuses as
-  unreadable.
-
-- A TTS that fails mid-sentence is reported on the local, RTP, FastRTC and
-  Buzz backends too (RMK-448, RFC §12.2). They absorbed every exception
-  raised while they played a `VoiceChannel`'s audio, so a vendor's 401 or
-  429, a dropped connection, or a chunk the channel refused as not PCM
-  (RMK-415) left only a line in the backend's log: `say()` fired
-  `AFTER_TTS` as if the sentence had been spoken, no `tts_error` was
-  emitted, and `deliver_stream()` ended normally. An exception raised by
-  the audio stream now reaches the caller of `send_audio` once the backend
-  has stopped playing, as it already did on Twilio, WebTransport and SIP;
-  the backend's own transport errors (a full WebRTC queue, a closed
-  WebSocket, an output device gone) stay logged and absorbed. The four
-  backends read the stream inside one context manager,
-  `roomkit.voice.PlaybackErrors`, and the video backends inherit it.
-  - Every session whose synthesis or playback fails is reported once, as
-    `tts_error` with its `session_id`, once its playback is released (a
-    handler waiting for the playback no longer waits on it), on `say()`,
-    `deliver()` and streamed responses alike: a session failing beside
-    served ones, a session the channel never bound, and a session that
-    failed before the AI did included. `AFTER_TTS` fires only when a session
-    was served. A TTS without `synthesize_stream()` is one such failure:
-    `say()` and `deliver()` no longer fire `AFTER_TTS` for it.
-  - On a streamed response, a session whose TTS fails stops early, as a
-    barge-in does (RFC §12.2 step 12s.d). Once every session has stopped,
-    the response is stored as it stood (`metadata.cancelled` when the
-    generation was still running, which then ends) per step 13s; `ON_ERROR`
-    does not fire. The failure
-    used to reach the inbound stream as the AI's (on Twilio, SIP and
-    WebTransport already): `ON_ERROR` fired and the text was replayed to the
-    `VoiceChannel`, so the user heard the start of the answer twice. A
-    failure of the AI itself still takes the error path.
-
-- A realtime call issued under an id whose result already went out gets its
-  answer (RMK-441, RFC §12.4). The provider freed the id with the result and
-  the channel only once the call's task ended, its report included: a call
-  the vendor issued under the id in between was refused by the channel as a
-  duplicate and booked by the provider as awaiting, and never answered, which
-  left an ElevenLabs response open for good. An id now names its call until
-  its result goes out, on the channel (`ToolCallBook`) and the conference;
-  Gemini Live and Deepgram free the id before the send yields, as ElevenLabs
-  already did, and OpenAI Realtime, xAI and GPT-Live now take it off the
-  response's books there too (a call issued under it during the send lost its
-  hold on the response, which then resumed without its answer); an
-  ElevenLabs handler's cleanup takes only its own future. The call issued
-  under the id is another call to the channel throughout: a reconnect the
-  first call's handler caused abandons it rather than sparing it as the
-  handler's own. A Gemini injection made while a blocking call's result is
-  sent queues behind the ones that call held instead of overtaking them.
-  Deepgram no longer keeps a call whose result send failed: nothing resends
-  it.
-
-- A skill's `requires` and gates read the same on every door (RMK-429, RFC
-  §24.3): a text turn now checks `requires` as a realtime session does, with
-  one rule (`missing_required_tools`, exported from `roomkit.skills`), against the tools
-  the conversation declares once its tool policy is applied; a text activation
-  of a skill whose required tool is absent was served. A realtime session
-  counted a tool its policy denies as available, and on a fixed-declaration
-  provider in `on_demand` the activation handed the model that tool's full
-  schema; it now refuses the activation (`Required tools not available`).
-  `SkillRegistry.mark_unavailable` no longer opens the tools the skill gated:
-  they stay closed, read through the new `SkillRegistry.gated_tool_names()`,
-  which every door uses. Per review: a `requires` name is an exact tool name
-  unless the host says how its names are served, `SkillRegistry(
-  requires_match=...)` (`RequiresMatch`, default `serves_exactly`; copies keep
-  it), so a host whose skills name a hub (`requires: boards` for its
-  `boards_*` tools) passes its own reading, and a fixed-provider activation
-  hands over the tools that serve it; **a host with such names must pass it
-  before upgrading, or its text activations are refused** as its realtime ones
-  already were. A pattern an activated skill gates is no longer held closed
-  by an unavailable skill gating it too (`closed_tool_names`); a required tool
-  only a closed gate holds is missing; a call to it reads `gated by a skill
-  that is not available here`; a realtime session counts the channel's own
-  tools as requirements, as a text turn does; no hook sees a denied tool's
-  schema.
-
-- A refusal reads the same text for the same cause on every door (RMK-428,
-  RFC §21.1, §12.4): an `AIChannel` turn, a reasoning backend's turn, a
-  `RealtimeVoiceChannel` session and a conference now say `Tool 'X' is not
-  permitted by the agent's tool policy.`, `Tool 'X' is gated by a skill.
-  Activate the skill first using activate_skill.` or `Tool 'X' is not
-  declared.` A text turn said `exists but is not available to this agent
-  (blocked by the tool policy or gated behind a skill)` for both causes, so
-  its model never learnt to activate the skill; a reasoning backend said `is
-  not declared in this turn.`; a realtime session and a conference said `is
-  not declared` without the stop. The gate checks the policy and skill gating
-  before the arguments on every door: a realtime session and a conference
-  validated the arguments first, so a denied `wire_money({})` answered
-  `missing required argument 'iban'` and named its schema. A test asserting
-  the old texts needs the new ones. `ReasoningRequest` gains `unavailable`
-  (last field, default empty): the session's tools the backend's model is not
-  offered, each with its refusal. Per review: a name no tool carries reads
-  the same under Tool Search on a realtime session (`No tool named 'X'
-  exists.` with the hint to search) as on a text turn, its fixed-declaration
-  `call_tool` and `list_tools` included (they said `unavailable in this
-  session`); a reasoning backend, which cannot activate a skill, reads that
-  the conversation has not activated it rather than being told to call
-  `activate_skill`; a tool both denied and gated reads the policy's text.
+#### AI turns and providers
 
 - Every text provider reads the end of a response with one rule (RMK-438,
-  RFC §6.4). Anthropic's `model_context_window_exceeded` and `refusal` now cut
-  a `tool_use` block they stop, as the output cap does: such a call with no
-  argument yet ran with `{}`, and one with a fragment was told its arguments
-  were unreadable instead of cut. A response the context window cut
-  (`model_context_window_exceeded`, Mistral's `model_length`) ends the turn
-  `truncated` without a retry, as the output cap does; it ended
-  `empty_response` after a nudge that grew a full context. Every response
-  schema check (Mistral's, the vision providers', the OpenAI-shaped ones')
-  reads that cut as `truncated`; Mistral said `invalid_json`. Gemini's
-  `UNEXPECTED_TOOL_CALL` (a call to a tool the request did not enable) is
-  told the model and retried as `MALFORMED_FUNCTION_CALL` is; a first round
-  ending on it was a silent `completed`. On a Chat Completions wire, a call
-  another call followed is closed: under a cut response it runs when its
-  arguments read, as Anthropic's closed block does, and only the last call
-  can be cut. `call_partial`, `call_cut` and `call_garbled` take `last=`
-  (default `True`), and `call_partial` is exported from `roomkit.providers.ai`
-  for a custom provider. Per review: a call to a tool the request did not
-  enable is told so (`UNEXPECTED_CALL_NUDGE`, chosen by
-  `malformed_call_nudge(finish_reason)`), not that it "could not be parsed";
-  a response ending on either Gemini reason carries no schema document and
-  says so by its finish reason (RFC §6.7). The internal
-  `check_schema_answer` takes `finish_reason=` instead of `truncated=`, and
-  `checked_stream` no longer takes `truncated=`.
+  RMK-398, RFC §6.4):
+  - a call the response cut short (the output cap, a content filter, a stream
+    with no stop reason, Anthropic's `model_context_window_exceeded` and
+    `refusal`) runs only when its argument text arrived and reads, where the
+    OpenAI-family providers ran a call cut before its first argument with
+    `{}`; on a Chat Completions wire only the last call can be cut;
+  - a response the context window cut (`model_context_window_exceeded`,
+    Mistral's `model_length`) ends the turn `truncated` without a retry, where
+    it ended `empty_response` after a nudge that grew a full context; every
+    response schema check reads that cut as `truncated`;
+  - Gemini's `UNEXPECTED_TOOL_CALL` is told the model and retried as
+    `MALFORMED_FUNCTION_CALL` is, where a first round ending on it was a
+    silent `completed`.
 
-- The caller reads how each agent's turn ended, even one that wrote no
-  message (RMK-437, RFC §6.4, §6.7): `InboundResult.response_metadata` now
-  carries `turns[channel_id]` (`loop_end_reason`, and `ai_usage` when the
-  record has one) for every channel that replied to the caller's event,
-  streamed or buffered (a Supervisor's cut pass included); an ACP agent's
-  entry is its stop reason, `completed` once its prompt returned on
-  `end_turn`, `interrupted` when it never returned or failed after, and an
-  ACP turn never prompted has none. An AI turn cut before writing any message
-  told its caller nothing, and the per-channel key keeps two agents from
-  overwriting each other's end; an answer to an answer has no entry. `turns`
-  is RoomKit's key: a value a hook or tool writes there is not carried to the
-  caller. The ACP record gains `prompt_returned`; a record naming both a stop
-  reason and `interrupted` reads as its stop reason. An ACP turn's
-  `ON_AI_RESPONSE` now carries its stop reason as `loop_end_reason` (it was
-  always `None`); the field's type widens to `str` to hold ACP's reasons.
+- A provider request takes a shape every vendor accepts (RMK-398, RMK-309, RFC
+  §6.4, §6.7): a `fallback_provider` receives the primary's rounds in a form
+  its vendor takes (an unsigned reasoning block no longer goes to Anthropic,
+  a round without thought signatures goes to Gemini 3 as text), where each
+  answered 400; a tool schema whose root has no `type`, and a tool without
+  parameters, are declared as an object on every provider and realtime
+  session, where Anthropic, OpenAI and Mistral refused them.
 
-- A Supervisor whose task-formulation pass stopped short of its answer
-  answers the user (RMK-436, RFC §19.7.3): with `auto_delegate` and
-  `refine_task=True` (two-pass), a pass 1 its round cap, deadline or budget
-  cut (any end but `completed`, save `cancelled`) ran no worker, as it
-  should, but the user's message got no answer at all, the end readable only
-  on `ON_AI_RESPONSE` and in a log. The supervisor now answers with the
-  fallback a reasoning backend speaks ("The delegated work could not be
-  completed."), stored and delivered with the turn's record
-  (`loop_end_reason`, `ai_usage`, what the turn wrote). A pass whose provider
-  failed after a round is logged once at its own level, not twice, and
-  neither case hands a streaming transport an empty stream.
+- The chat wires read a response the same through `generate()` and the stream
+  (RMK-500, RMK-484, RFC §6.4):
+  - `OpenAIAIProvider` behind a `base_url`, `OpenRouterAIProvider` and
+    `AzureAIProvider` let the server decide whether their model reads images,
+    where they guessed from OpenAI's model names and dropped the images of a
+    local vision model, of every OpenRouter model and of an Azure deployment
+    not named after an OpenAI model;
+  - a choice whose message is null reads as an empty answer, where OpenAI's
+    `generate()` raised an `AttributeError` that skipped the retries and the
+    fallback provider; a call whose server lost its name reaches the loop with
+    an empty one, where OpenAI's wire raised a `ValidationError`; a response
+    with no choice reports its usage;
+  - a streamed call whose arguments a server sends as an object reads as the
+    text it spells, where OpenAI's wire and PolarGrid failed the stream;
+  - a `<think>` block the output cap cut before its close is reasoning, never
+    answer, through `generate()` as on the stream, and in the OpenAI vision
+    provider's description;
+  - the model rides the stream's end on OpenAI's wire, PolarGrid, Ollama and
+    Mistral as it rides `generate()`; time to first token is recorded on text
+    or reasoning only, never on a call's fragment.
 
-- A delegated turn that failed after it began keeps its end on the task
-  (RMK-433, RFC §6.4, §23.3 step 6): a worker whose provider errored after a
-  round, or an ACP worker whose prompt raised, failed its task with
-  `error="upstream 400"`, `output=None` and no `loop_end_reason`, although
-  the child room recorded the end. The task keeps the error and now carries
-  `metadata["loop_end_reason"]` (`error`, `interrupted` for ACP) and the
-  worker's last narration as `output`, on `ON_TASK_COMPLETED` too, streamed
-  or buffered, with a shared transport or not. The failure reaches the
-  delegation as a new `TaskTurnFailedError` (exported from `roomkit`), whose
-  message is the error's and whose cause is the error; it is logged as its
-  cause is, a `ProviderError` without a traceback. `ON_TASK_COMPLETED`'s
-  content is the narration where it was the error's text. A result the
-  worker submitted through its result tool before the failure still counts,
-  as before a cut. With several agents in the child room, one agent's
-  failure never carries another's end. `roomkit.tasks.models.task_cut_reason`
-  tells a cut from such a failure, and a Loop whose producer fails after a
-  round still reports the provider's error, not a cut.
+- Streamed tool calls stay apart and keep their id (RMK-309, RMK-301): a call
+  without arguments followed by another on the same index lost the first, a
+  name-only first fragment merged two calls, and a name repeated on every
+  fragment made a phantom call. Gemini folds a call re-emitted in a later
+  chunk, where it could run twice; Anthropic gives two blocks under one server
+  id their own ids and runs both, where the second was dropped; Ollama mints
+  ids once per response.
 
-- A turn's toolset reads alike at its edges, on every door (RMK-430, RFC
-  §6.4, §21.1, §21.4, §24.4):
-  - A provider's native tool without a name (`{"google_search": {}}`) left a
-    realtime session's declaration once Tool Search hid the catalogue, and an
-    allow-list (`ToolPolicy(allow=["crm_*"])`) dropped it on a realtime
-    session and a conference. It stays declared.
-  - Tool Search's `call_tool` on a fixed-declaration provider is exempt like
-    `find_tools` and `list_tools`: it was declared under an allow-list but
-    missing from `current_tool_allowed_names()`.
-  - `read_stored_result`, declared from a turn's first round, is in
-    `current_tool_allowed_names()` and `list_tools` from then on, not only
-    once a result was stored.
-  - `activate_skill` called with a tool's name ("spotify" for
-    `spotify_play`): the realtime door answered "Skill 'spotify' not found"
-    alone; it now adds the same `tools_hint` as the text door. Both doors
-    reveal those tools as `find_tools` reveals its matches (the window
-    swapped, what is declared anyway left out, kept for the next turns),
-    once the call is served: an `ON_TOOL_CALL` block reveals nothing. On a
-    fixed-declaration provider the hint points to `list_tools` and
-    `call_tool`; the text door no longer hints its own tools
-    (`activate_skill('skill')`).
-  - A realtime skill activation failed with `KeyError` when the session's
-    catalogue held a native tool; skill gating dropped a native tool under
-    `allowed_tools: *`, and it counted toward the size that turns Tool
-    Search on.
+- A turn that states reasoning off (`enable_thinking=False`,
+  `thinking_budget=0`, `reasoning_effort="none"`) sends the least effort the
+  model takes, as its catalogue declares it (RMK-500, RFC §6.7): `none` to
+  OpenAI's GPT-5.1 and later and to Cerebras's Qwen, `minimal` to GPT-5 and
+  its mini and nano and to Meta's Muse, `low` to o3, o4-mini and Cerebras's
+  GPT OSS. The switch sent nothing on OpenAI, Meta and Cerebras, and
+  `reasoning_effort="none"` answered 400 on models that cannot stop
+  reasoning. A model the catalogue declares no floor for keeps what it was
+  sent; xAI is left as it was.
+
+- A vendor's official URL written out as `base_url` is the vendor's own
+  endpoint (RMK-484, RFC §6.7), for OpenAI, Anthropic, OpenAI Realtime,
+  GPT-Live, DeepSeek and Mistral: each read it as a proxy and dropped the
+  vendor's tool-name rule, the catalogue's tool-turn reasoning profile and a
+  modern model's defaults (Anthropic's adaptive thinking and deferred tools,
+  OpenAI's response schema beside tools).
+
+- Anthropic (RMK-484, RMK-377, RMK-378, RMK-309, RFC §6.4, §6.7):
+  - reasoning goes back block by block, each thinking block with its own
+    signature and its place among the round's calls and text, and a
+    `redacted_thinking` block replayed as its opaque data, where the blocks
+    were merged under the last signature (which Anthropic refuses) and a
+    redacted block was dropped; the realtime reasoning backend replays them
+    too;
+  - a `system` message in the history (a memory summary, an instruction) goes
+    as a user turn, as to Gemini, where it went as a role the Messages API
+    does not take;
+  - a tool result whose call was refused, failed, blocked, unserved or
+    cancelled is sent with `is_error`;
+  - a provider behind a `base_url` no longer sends a Tool Search result's
+    references as `tool_reference` blocks a gateway does not take;
+  - thinking tokens are reported as `reasoning_tokens`, a detail of
+    `output_tokens`.
+
+- A reasoning block with no text (redacted, a signature alone) goes back as
+  nothing on a wire that replays reasoning inline, where it went as an empty
+  `<think></think>` block (RMK-484).
+
+- OpenAI (RMK-309, RMK-378): `OpenAIAIProvider` refuses, before the request, a
+  model Chat Completions refuses (GPT-6 Astra and GPT-6.1 Sol with function
+  tools, the `-pro` models), each of which came back 400 or 404; a
+  context-overflow error is recognised by its `context_length_exceeded` code
+  again.
+
+- DeepSeek receives earlier reasoning in `reasoning_content`, on every round
+  that called tools and on an answer that reasoned, where it went inline as a
+  `<think>` block (RMK-309, RFC §6.4): in thinking mode DeepSeek refuses a
+  round of the turn in progress without that field (400), and the inline copy
+  was billed on top of it.
+
+- Mistral reports cached prompt tokens apart (`cache_read_input_tokens`) and
+  leaves them out of `input_tokens` (RMK-378).
+
+- PolarGrid (RMK-389, RMK-384, RMK-309):
+  - an answer is no longer cut short: with no `max_tokens` set, polargrid-sdk
+    sent 150, cutting an answer mid-sentence under a `stop` finish. The
+    provider always sends a cap, 4096 (PolarGrid's maximum) when none is set
+    or what a small model's window leaves; a larger one is sent as 4096 with
+    a warning, where the SDK failed the turn;
+  - a `temperature` (or `top_p`) of 0 is sent as given, where the SDK sent
+    0.7 (0.9);
+  - errors keep their HTTP status on `ProviderError.status_code`, and a
+    `BillingError` (402) is no longer retried;
+  - a streamed turn reports its usage, through a patch of the SDK
+    (`providers/polargrid/sdk_patch.py`), which could neither ask for it nor
+    read it;
+  - a history whose tool calls ride a message other than the assistant's is
+    sent as an assistant round.
+
+- Ollama receives a tool's nested parameters (RMK-383): ollama-python dropped
+  a nested object's `properties` and `required` and an `anyOf` from a
+  declaration (ollama/ollama-python#724), and the model invented the missing
+  keys. A request that declares tools goes through the SDK's own request
+  method with the declarations as given (`providers/ollama/sdk_patch.py`);
+  the server itself still drops a `$ref` and the constraints. Ollama keeps a
+  call's lost name empty, where it read a tool named `None`.
+
+- Calls a provider ran itself, and providers that do not stream (RMK-308): a
+  provider that does not stream had no path for its own calls, and its
+  thinking signature and every call's metadata (a Gemini thought signature
+  among them) were lost on the way to the tool loop; an `AIChannel` with tools
+  of its own sent a call its provider had already run to local dispatch,
+  where it failed as not declared; a channel without a handler fired
+  `BEFORE_TOOL_USE` on a provider's pending call and dropped its BLOCK; a
+  non-streaming turn with more than about two dozen tool calls lost its
+  answer, stored BLOCKED. The realtime reasoning backend keeps a call's
+  metadata on its next round.
+
+- A turn's text and how it ended are recorded as they happened (RMK-410,
+  RMK-411, RMK-407, RMK-479, RFC §6.4, §12.2 step 13s, A.9):
+  - words the model wrote before a call the provider could not parse are
+    their own message, where the room stored `Let me look.The run finished at
+    noon.` as one;
+  - `LoopEndMarker.rounds` counts tool rounds, as `ON_AI_RESPONSE`'s
+    `round_count` does, where it counted every generation;
+  - a response its transport stopped reading once it began (a barge-in) ends
+    `cancelled`, where a delegated AIChannel worker's task read it as a
+    completed answer; an ACP agent that finished its prompt meanwhile ends
+    `cancelled` too;
+  - a turn constrained to a response schema that its round cap, deadline,
+    budget or an interruption cuts fails `truncated` on every door that reads
+    its loop, a reasoning backend's included;
+  - a turn cancelled from outside (`handle.cancel()`, a cancelled
+    `delegate(wait=True)`, `task_runner.cancel()`), while its text streamed
+    or while a tool ran after it, records `loop_end_reason: cancelled` on its
+    kept text, where it recorded no end;
+  - a turn an AI channel fails before its stream exists reaches `ON_ERROR`
+    named by the exception's type, where it read `error_type="unknown"`.
+
+- A failed turn, delivery or delegated task is logged once, at the level its
+  cause calls for (RMK-403, RFC §15.2): a `ProviderError` without a
+  traceback, naming the provider and the status, `ERROR` for a missing model
+  (404) or a server fault (5xx), `WARNING` otherwise, `DEBUG` when the caller
+  receives the failure (`process_inbound`, `regenerate_response`, a
+  delegation's child turn) and the turn had no streaming target. A broadcast
+  target's 404 or 5xx is now `ERROR` where it was `WARNING`, and a delegated
+  task's provider error is logged without its traceback, as every
+  `ProviderError` is. `send_event`, which returns only
+  the stored event, and a stream read in the background keep the failure's
+  own level.
+
+- An AI channel's tool memory and skill activations, rebuilt from the stored
+  rows at its first turn in a room, read its own rows only and pair each
+  call's end with its start in the same turn (RMK-393, RFC §6.4, §7.5 rule
+  8): an agent joining a room, or taking it over by handoff, put another
+  agent's calls in "Tools you've ALREADY CALLED" and its activated skill in
+  its system prompt, even when its binding withheld those events; a call id
+  reused in a later turn rebuilt calls with the wrong turn's arguments. The
+  rebuild no longer takes refusals and calls nothing served for answers, nor
+  counts an activation a hook withheld (RMK-308).
+
+- `ACPChannel`'s `ON_AI_RESPONSE` carries the agent's thought chunks of the
+  turn as `thinking`, where it carried none (RMK-308).
+
+#### Orchestration and delegation
+
+- A background run hands its outcome back to the agent that started it,
+  success and failure alike (RMK-451, RMK-462, RMK-478, RFC §19.7.3, §19.7.4,
+  §23.3):
+  - a supervisor's background workers whose pipeline fails, and a voice
+    `Loop` (`async_delivery=True`) that raised, hand back that the work could
+    not be completed (without the error's message), where only the logs and
+    the status bus heard it and the model had promised results that never
+    came; a Loop's success, which reached the session through `kit.deliver()`
+    as the user's words, unbounded and unfenced, is handed back as an
+    instruction, bounded and fenced as a worker's output;
+  - the outcome is told in the session that made the call (with two sessions
+    of a voice channel in the room, `deliver()` refused it as ambiguous), and
+    a background `kit.delegate()` whose notified channel is a realtime voice
+    channel is told in the session whose call delegated;
+  - a task that did not complete is handed back whatever text it left (one
+    that failed with no output and an empty error was never handed back);
+  - the room is released and the cached `dispatched` answer dropped before
+    the outcome is handed back, so a dispatch made in answer starts a new run
+    (bounded by `max_chain_depth`), and one run per room whichever voice
+    channel calls the tool;
+  - each run posts one terminal status entry after its hand-back, `failed`
+    when the work did not complete (no worker completed, a step was not
+    validated, the producer failed) or the outcome reached no one, where it
+    read `completed`; each worker result carries `completed`, whether its
+    task completed. No background result is handed back while the framework
+    closes.
+
+- A supervisor's background work follows the strategy it was installed with
+  (RMK-478, RFC §19.7.3, §19.7.4):
+  - a sequential team in the background (`delegate_workers` with
+    `async_delivery`, on a text supervisor or a voice channel) is supervised
+    as in the turn, where its chain ran unframed and unvalidated; a voice
+    `auto_delegate` install registers its supervisor on the kit, not
+    attached to the room, for the supervised flow to delegate to; a
+    supervisor without a model still runs it unsupervised;
+  - every background run obeys the install's `task_timeout` and
+    `max_revisions`, where it used 120 s whatever was set;
+  - a per-worker background delegation (`delegate_to_<id>` with
+    `wait_for_result=False`) stays a task of the kit's task runner (its
+    `task_id` in the answer, cancellable, run by a custom `TaskRunner`) and
+    is followed by the background run within `task_timeout`;
+  - `kit.close()` cancels the strategies' background runs before the
+    delegated tasks, where they outlived the kit with their workers still
+    generating; a run asked for once `close()` began does not start;
+  - a worker delegation posts its pending entry and one terminal entry however
+    it ends, and a worker past its bound reads `The task timed out after
+    <n>s.` on every door; `delegate_to_<id>` with `wait_for_result=True`
+    obeys `task_timeout`;
+  - a worker cut at its bound while running inline no longer leaves its
+    tool-loop context in the supervisor's call, which was reported twice on
+    `ON_TOOL_CALL`.
+
+- A Supervisor's task-formulation pass (RMK-396, RMK-436, RFC §19.7.3): the
+  workers' task is its final answer, where the narration of its tool round
+  was glued to it ("Let me check.Anthropic"), and its tool calls are stored in
+  the room. A pass its round cap, deadline or budget cut runs no worker and
+  answers the user with the fallback a reasoning backend speaks ("The
+  delegated work could not be completed."), where the user's message got no
+  answer at all.
+
+- A Loop whose producer's task failed says so (RMK-435, RFC §19.7.4, §23.3):
+  the sync Loop published an empty producer message with no reason. With no
+  output its turn now has no answer; with an earlier output that output goes
+  out, `approved: False`, with `metadata["stopped"]` (`approved`,
+  `max_iterations` or `producer_failed`) and `iteration`. `InboundResult.error`
+  carries the producer's failure and `ON_ERROR` fires. The async Loop no
+  longer says "max iterations reached" whatever stopped it.
+
+- A delegated worker's result is read from its trace and is the worker's own
+  call that ended served (RMK-396, RFC §23.3): a `submit_result` an
+  `ON_TOOL_CALL` hook blocked, one refused, or one another channel shared into
+  the child room made, was taken for the result.
+
+- A delegated turn's failure is reported once, in the turn's scope (RMK-479,
+  RMK-497, RFC §23.3): `ON_ERROR` fires once for a delegated turn that
+  failed, whichever path its delegation took (a worker that failed on the
+  trace path, raised or returned its error fired nothing), at the turn's
+  depth and correlation; a delegated reply that carries an error fails the
+  task with that error; a reasoning backend's turn that fails on an error
+  fires `ON_ERROR` once (category `reasoning`) beside its spoken fallback;
+  `kit.delegate()` refuses to start on a closing kit.
+
+- A transport shared into a delegated room (`share_channels`) receives the
+  agent's answers and never the task (RMK-360, RFC §23.3): it was handed the
+  task description and a result tool's re-prompts, while the agent's answers
+  were only stored in the child room's trace, so "email me the summary"
+  emailed the request. When a transport is shared, the agent's response
+  crosses `BEFORE_BROADCAST` hooks and the agent's right to write and rides
+  the child room's delivery lane, so a redaction hook applies before the
+  email leaves; the task result is the answer the child room kept, a hook's
+  rewrite included.
+
+- A background result handed back to a channel that hosts a realtime model
+  reaches that model (RMK-501, RFC §23.3 step 8): a
+  `RealtimeAudioVideoChannel` and a `ConferenceChannel` with a realtime model
+  published it as their own words to the room's other channels, the outcome
+  saying `sent`, and the model that delegated heard nothing. It is injected
+  with the `system` intent into the model's session, as on a
+  `RealtimeVoiceChannel` (see Changed for `deliver(channel_id=<conference>)`).
+  With no channel named, an agent attached as a
+  transport is no longer picked as the room's transport, and `deliver()` to
+  an intelligence channel whose only transport is itself an intelligence
+  channel is refused (`no_transport`), where it recursed until a
+  `RecursionError`.
+
+#### Voice
+
+- A TTS failure is reported on every voice backend (RMK-448, RFC §12.2): the
+  local, RTP, FastRTC and Buzz backends absorbed every exception raised while
+  they played a `VoiceChannel`'s audio, so a vendor's 401 or 429 or a dropped
+  connection left only a log line, `say()` fired `AFTER_TTS` as if the
+  sentence had been spoken, and no `tts_error` was emitted. The failure now
+  reaches the caller of `send_audio` once the backend has stopped playing, as
+  on Twilio, WebTransport and SIP; the backend's own transport errors stay
+  logged. Every session whose synthesis or playback fails is reported once as
+  `tts_error` with its `session_id`, on `say()`, `deliver()` and streamed
+  responses alike, and `AFTER_TTS` fires only when a session was served (a
+  TTS without `synthesize_stream()` is one such failure). On a streamed
+  response, a session whose TTS fails stops early, as a barge-in does (RFC
+  §12.2 step 12s.d); once every session has stopped, the response is stored
+  as it stood (`metadata.cancelled` when the generation was still running,
+  which then ends) and `ON_ERROR` does not fire, where the failure reached
+  the inbound stream as the AI's and the text was replayed, the user hearing
+  the start of the answer twice.
 
 - A `VoiceChannel` refuses a TTS chunk that is not 16-bit PCM instead of
-  playing it as samples (RMK-415, RFC §12.2). Every voice backend and the
-  outbound pipeline read a chunk as PCM whatever its `format`, so a TTS
-  streaming MP3, Opus or G.711 (`ElevenLabsTTSProvider` with its default
-  `output_format="mp3_44100_128"`, Grok `codec="mp3"`, Gradium `opus`) was
-  heard as noise, or cut the sentence on a chunk of odd length, with no error
-  naming the cause. The first such chunk is now refused with a `ValueError`
-  ("VoiceChannel expects decoded PCM, got format 'mp3'") before a byte reaches
-  the pipeline or the transport, on `say()`, `deliver()` and
-  `deliver_stream()` alike; set the TTS to a PCM output
-  (`output_format="pcm_16000"`). The error is raised inside the stream the
-  backend reads: twilio_ws, WebTransport and SIP hand it back (`say()` and
-  `deliver()` log it, `deliver_stream()` raises it to the inbound stream),
-  while the local, RTP, FastRTC and Buzz backends log it themselves.
-  `VoiceBackend.send_audio` is documented as receiving decoded PCM only. The
-  check is the one conference backends applied, now shared; the mock
-  conference backend also refuses another PCM width, as LiveKit does.
+  playing it as samples (RMK-415, RFC §12.2): a TTS streaming MP3, Opus or
+  G.711 (`ElevenLabsTTSProvider` with its default `output_format=
+  "mp3_44100_128"`, Grok `codec="mp3"`, Gradium `opus`) was heard as noise,
+  with no error naming the cause. The first such chunk is refused with a
+  `ValueError` ("VoiceChannel expects decoded PCM, got format 'mp3'") before a
+  byte reaches the pipeline or the transport; set the TTS to a PCM output
+  (`output_format="pcm_16000"`). `VoiceBackend.send_audio` is documented as
+  receiving decoded PCM only.
+
+- TTS wire formats (RMK-413):
+  - `GrokTTSProvider` with `codec="wav"` and `GradiumTTSProvider` with
+    `output_format="wav"` no longer click at the start of every streamed
+    sentence: both servers open a streamed WAV with its RIFF header, played as
+    samples. A streamed request now asks for raw `pcm`; `synthesize()` still
+    returns a WAV;
+  - `ElevenLabsTTSProvider` declares the sample rate and codec its
+    `output_format` asks for: `pcm_8000`, `pcm_32000`, `pcm_48000` and
+    `ulaw_8000` were declared at 44100 Hz (`pcm_8000` played 5.5 times too
+    fast), and `alaw`, `opus` and `wav` audio was typed `mp3` / `audio/mpeg`.
+    `GradiumTTSProvider.synthesize()` types `alaw_8000` as `audio/alaw` and its
+    `opus` as `audio/ogg`;
+  - `ElevenLabsTTSProvider.synthesize()` returns its audio again: every call
+    raised `TypeError: 'async_generator' object can't be awaited`.
+
+- Audio of a session whose end has begun reaches nothing and rebuilds nothing
+  (RMK-466): a frame still in the stages on an `inbound_dsp_threads` worker
+  when its session ended, a frame a backend delivered after `unbind_session`,
+  and a frame reaching a realtime session during its teardown reached the
+  channel after the end (a provider heard `send_activity_start` after its
+  `disconnect`, a `VoiceChannel` recreated the entries `unbind_session` had
+  removed) and rebuilt the stages' per-stream state (VAD, denoiser, AEC native
+  memory) for good, one leak per session ended with audio in flight (see
+  Changed for a direct `AudioPipeline` user). The
+  `VoiceChannel` doors outside the pipeline (the level hooks, an out-of-band
+  DTMF) no longer write an entry for a session unbound since, and the
+  `max_audio_frames_per_second` limiter forgets the windows that expired.
+  `VoiceChannel.unbind_session` forgets the speech state of a session unbound
+  mid-utterance, and a voice session's `pipeline.speech_segment` spans hang
+  under its session span, where every segment span had no parent.
+
+- With `AudioPipelineConfig(inbound_dsp_threads=N)`, a voice channel behaves as
+  it does inline (RMK-392): the pipeline's callbacks ran on the DSP worker, so
+  a `VoiceChannel` with a streaming STT never opened its stream (every segment
+  went to a batch `transcribe()` with no partial transcript), and a
+  `RealtimeVoiceChannel` sent the provider no audio at all. The stages still
+  run on the pool; the callbacks a frame fires run on the pipeline's event
+  loop, in order. `close()` on either channel first stops taking frames and
+  lets the pool finish the ones it holds.
+
+- A sentence the user resumes is answered once, even when the STT is slower
+  than the turn's wait (RMK-391, RFC §12.3.12): the wait counted silence from
+  the end of the resumed speech and routed the turn before the resumed
+  speech's transcript arrived, so the first words were answered alone and the
+  rest became a second turn. The wait now ends only once every transcript of
+  ended speech has joined the turn, at most 10 s more.
+
+- `VuiTTSProvider` (RMK-400, RMK-371, RMK-197):
+  - a reply written on several lines is spoken without invented syllables at
+    each line break (a poem one verse per line came out 15 to 18 % wrong, now
+    4 to 5 %): the provider joins the lines into running sentences;
+    `VuiTTSConfig.max_secs` goes from 30 to 60 s, and a reply that reaches it
+    logs a warning instead of ending silently;
+  - every `vui-tts` call runs on a thread of its own, started with the engine
+    and stopped by `close()`: Vui's codec left the shared executor's threads
+    in `torch.inference_mode()`, so an engine built later in one of them failed
+    on its first reply. Call `close()` when done with the provider;
+  - a preset voice is prefilled with its speaker token and its conditioning
+    bias, as Vui's own server renders it.
+
+- `RealtimeVoiceChannel` fires `ON_RECORDING_STARTED` and
+  `ON_RECORDING_STOPPED` for the recorder of its audio pipeline (RMK-355, RFC
+  §17.6): a speech-to-speech call was recorded with no hook to notify the
+  participants.
+
+#### Rooms, recording and MCP
+
+- A room recorder that refuses to start no longer leaves a half-created room
+  (RMK-365, RFC §12.11): `create_room` wrote the room, then started its
+  recorders, so a refusal raised with the room already stored, without its
+  orchestration or `ON_ROOM_CREATED`. Recorders bound at creation now start
+  first, all or nothing, and a room write that fails stops them. A room
+  created again under its id on a store that rewrites it (`InMemoryStore`,
+  `SQLiteStore`) adds its recordings beside the running ones instead of
+  orphaning them. A recorder that fails to stop is logged and no longer holds
+  the others: `close_room` raised at the first one, leaving the room active
+  and the rest of its recordings running past `RoomKit.close()`.
 
 - Closing or archiving a room stops its recordings once the room is found
   (RMK-405, RFC §12.11): a call scoped to another organization stopped the
   room's recordings, then raised `RoomNotFoundError`.
 
-- A Loop whose producer's task failed says so (RMK-435, RFC §19.7.4,
-  §23.3): the sync Loop published an empty producer message with no reason
-  and no error. With no output at all its turn now has no answer; with an
-  earlier output that output goes out, `approved: False`, with a new
-  `metadata["stopped"]` (`approved`, `max_iterations` or `producer_failed`)
-  and `iteration` naming the last iteration completed. Either way
-  `InboundResult.error` carries the producer's failure and ON_ERROR fires.
-  The async Loop's text named "max iterations reached" whatever stopped it;
-  it now says the producer's task failed (and the cut that ended it), never
-  with the task's error. The room's conversation state records
-  `_loop_stopped`. The voice `delegate_workers` of a Supervisor with
-  `auto_delegate` and `async_delivery` is a strategy's tool, no longer bound
-  by the channel's default call timeout (RFC §21.6).
-
-- The active agent of a realtime pipeline answers to its own tool policy
-  (RMK-427, RFC §19.5): `Agent(tool_policy=ToolPolicy(deny=["wire_money"]))`
-  had `wire_money` declared and served on its session, the policy read on
-  its text turns only. Its policy now holds beside the channel's, each
-  resolved for the session's participant, on the declaration, the gate, Tool
-  Search, `current_tool_allowed_names()` and the skills preamble's
-  `run_skill_script` promise. A handoff applies the next agent's policy on
-  every session of the room before any is reconfigured, read for the
-  participant's role, and the gate judges each call by the agent the room
-  talks to, the one that serves it. As on the agent's text turns, an
-  allow-list policy (`ToolPolicy(allow=["balance"])`) also hides
-  `handoff_conversation`: allow it for an agent that hands off.
-
-- Every realtime provider hands every tool call to the channel (RMK-440, RFC
-  §12.4): a call to a tool the channel never declared on ElevenLabs (the
-  SDK's `ClientTools` answered it itself, so RoomKit never saw it), a call
-  under an id still in flight on Deepgram and GPT-Live (dropped with a
-  warning) and on ElevenLabs (answered twice on the wire), a call without an
-  id on Deepgram and GPT-Live (dropped), and a GPT-Live call the output cap
-  cut (dropped; its arguments are read when they parse whole, as on OpenAI
-  Realtime). The channel refuses a call without an id as it refuses a
-  duplicate: reported once, nothing sent, on ElevenLabs too. No provider
-  books such a call as awaiting its result, so the response goes on once the
-  calls the channel answers are answered, and a duplicate leaves the first
-  call's tool name and delegation in place. The ElevenLabs part lives in
-  `providers/elevenlabs/sdk_patch.py`, with canaries that fail once the SDK
-  stops answering an unregistered tool itself or starts answering a
-  cancelled handler. On ElevenLabs, a channel that declares no tools runs any
-  name the agent calls through its `tool_handler`, as every provider does.
-  `elevenlabs` is capped below 2.70 and installed by the `providers` extra,
-  so the canaries run in CI.
-
-- A tool call is reported once, whatever cuts it (RMK-431, RFC §9.3):
-  - A call whose outcome the model already read and whose report a cut
-    interrupted is reported to ON_TOOL_CALL's observers with that outcome: a
-    call the provider ran, a call an external handler decided (no longer
-    reported a second time, cancelled, when cut while its observers ran), a
-    realtime call refused or failed whose result went out (a realtime Tool
-    Search call is judged before its result goes out since RMK-447). Every
-    report runner claims the report once the observers' context is built,
-    and an ACP call's end reaches its report even when its task is cut.
-  - A call issued once its session ended (by the provider, from speech, by
-    a reasoning backend, or by a conference session left behind) runs no
-    gate and is reported once, cancelled: it was reported nowhere. Every
-    ended call reads one body, `{"error": "Tool call cancelled", ...
-    "The session ended before its result; nothing was sent."}`.
-
-- A turn an AI channel fails before its stream exists (its memory refuses
-  it, say) reaches `ON_ERROR` named by the exception's type, as a turn that
-  fails while streaming is (RMK-407): it read `error_type="unknown"`.
-
-- `LoopEndMarker.rounds` is how many tool rounds ran, as its docstring said
-  and as `ON_AI_RESPONSE` counts them in `round_count` (RMK-411). It counted
-  the loop's generations, so a round tried again without a call (an empty
-  one, one whose call could not be parsed, one the continuation policy goes
-  on) counted as a tool round: a turn ending `unfinished` after one
-  continuation reported `rounds=1` and `round_count=0`. The loop's logs that
-  count rounds count tool rounds too.
-
-- `current_tool_allowed_names()` leaves out a tool the turn's policy denies
-  its actor, on a text turn and a realtime session as on a conference
-  (RMK-420, RFC §21.4): `ToolPolicy(deny=["secret_op"])` gave
-  `{"lookup", "secret_op"}` there and `{"lookup"}` in a conference, while
-  the gate refuses `secret_op` before any handler on all three. A tool a
-  skill keeps closed stays in, and so does a tool that escapes the policy.
-  The toolset a reasoning backend drives its agent with follows the agent's
-  policy the same way.
-
-- A call the provider could not parse, tried again after words of its own,
-  no longer runs them on into the next round's text (RMK-410, RFC §6.4): the
-  room stored `Let me look.The run finished at noon.` as one message, while
-  `ON_AI_RESPONSE` reported two segments, and a reasoning backend spoke the
-  run-on. The loop yields a `SegmentBreakMarker` before the try, and the
-  words are their own message.
-
-- A reasoning backend's tool call is bounded by the voice channel's gate only
-  (RMK-417, RFC §12.4.1, §21.6): the backend agent's own bound (30 s by
-  default) cut it first, so a tool that waits by design (`delegate_task`) or
-  one the voice channel bounds above 30 s failed with `ToolTimeoutError` for
-  the model while the observers read it cancelled. The backend agent's own
-  `tool_timeout_seconds` and `tool_timeouts` no longer apply to its calls: set
-  a backend call's bound on the voice channel.
-
-- A provider request takes the same shape on every provider (RMK-398, RFC
-  §6.4, §6.7):
-  - A call the response cut short (the output cap, a content filter, a
-    stream with no stop reason) runs only when its argument text arrived and
-    reads (`null`, a whole object), on every provider: Anthropic marked every
-    cut call partial, and the OpenAI-family providers ran a call the cap cut
-    before its first argument chunk, with `{}`. Anthropic sends no stop for a
-    block it cuts, often before any argument text (measured).
-  - A `fallback_provider` receives the primary's rounds in a form its vendor
-    takes: a reasoning block without a signature (DeepSeek, Qwen, vLLM) no
-    longer goes to Anthropic, which answered 400
-    (`thinking.signature: Field required`), and a round of the current turn
-    none of whose calls carries a thought signature goes to a Gemini 3 model
-    (or one the catalogue does not know) as text, its result images kept,
-    where Gemini answered 400 (`Function call is missing a
-    thought_signature`). Both measured on the vendors' APIs.
-  - A tool schema whose root has no `type` is declared an object on every
-    provider: Anthropic and OpenAI refused it with a 400.
-
-- `GrokTTSProvider` with `codec="wav"` and `GradiumTTSProvider` with
-  `output_format="wav"` no longer click at the start of every sentence they
-  stream (RMK-413). Both servers open a streamed WAV with its 44-byte RIFF
-  header, which the chunks, declared `pcm_s16le`, handed to the transport as
-  22 samples at 93-100 % of full scale. A streamed request now asks for raw
-  `pcm` in place of `wav`, on both paths of each provider
-  (`synthesize_stream` and `synthesize_stream_input`); `synthesize()` still
-  returns a WAV.
-
-- `ElevenLabsTTSProvider` declares the sample rate and codec its
-  `output_format` asks for (RMK-413). The rate was read from a list of four
-  values with 44.1 kHz for anything else: `pcm_8000`, `pcm_32000`,
-  `pcm_48000` and the telephony `ulaw_8000` reached the transport declared at
-  44100 Hz, so `pcm_8000` played 5.5 times too fast. `alaw_8000` and `opus_*`
-  chunks were declared `mp3`, and a `synthesize()` in `wav_*`, `alaw_*` or
-  `opus_*` returned a data URL typed `audio/mpeg`. The rate is now the number
-  after the codec in `output_format` and the codec has its own MIME type and
-  chunk format (`audio/alaw` / `alaw`, `audio/ogg` / `opus`, `audio/wav`).
-  `GradiumTTSProvider.synthesize()` likewise types `alaw_8000` as
-  `audio/alaw` (was `audio/basic`, the µ-law type) and its Ogg-wrapped `opus`
-  as `audio/ogg` (was `audio/opus`).
-
-- `ElevenLabsTTSProvider.synthesize()` returns its audio again (found under
-  RMK-413). Since the move to the official SDK it awaited
-  `text_to_speech.convert()`, which is an async generator, and every call
-  raised `TypeError: 'async_generator' object can't be awaited`; the tests
-  mocked `convert` as a coroutine returning bytes. The provider now reads the
-  stream to its end.
-
-- One tool list and one set of rules on a text turn and a realtime session
-  (RMK-397, RFC §6.4, §12.4, §19.5, §21.1, §21.4, §24.3):
-  - A skill registry whose every skill is unavailable gives the reasons and
-    declares `activate_skill` and `read_skill_reference` on a text turn too,
-    where the turn said nothing and the model guessed.
-  - A realtime skill's `requires` is checked against every tool the session
-    declares: a skill requiring `delegate_task` after
-    `setup_realtime_delegation` was refused ("Required tools not available").
-  - A realtime pipeline reads the channel's tools when a session opens or a
-    handoff lands: after `configure(tools=...)`, new sessions kept the
-    install's tools. A name the channel's tools carry is the channel's: the
-    agent's tool of that name is no longer declared under the channel's
-    handler, nor once the channel drops its own, and a warning names it at
-    the install.
-  - `find_tools` no longer names, as related, a tool it never returns (one
-    pinned or declared already), on either path.
-  - A channel tool Tool Search never hides (`plan_tasks`) is reported
-    `always` in `declared_tools` after its first use too, where it read
-    `sticky`.
-  - `list_tools` lists every tool a realtime session can call, its
-    orchestration and skill tools included, as a text turn does; on a
-    fixed-declaration provider, `list_tools(name=...)` and `call_tool` reach
-    every tool it lists.
-  - An infrastructure tool the turn or the session does not declare
-    (`find_tools` while Tool Search hides nothing, `run_skill_script` with no
-    executor) is refused as undeclared on both paths, where it was served.
-  - `current_tool_allowed_names()` answers every tool the session declares
-    in a realtime or conference tool handler, where it answered `None`; it
-    stays `None` for a session that declares no catalogue (any name admitted).
-
-- With `AudioPipelineConfig(inbound_dsp_threads=N)`, a voice channel behaves
-  as it does inline (RMK-392). The pipeline's callbacks ran on the DSP worker,
-  while the channels' handlers are written for the event loop. A
-  `VoiceChannel` with a streaming STT never opened its stream: every segment
-  went to a batch `transcribe()` once the speech had ended, with no partial
-  transcript. In continuous mode a chunk reached the stream only when the
-  loop woke up for another reason. A `RealtimeVoiceChannel` sent the provider
-  no audio at all (0 frames of 10 in a probe) and did not clear the client's
-  audio on speech start. The stages still run on the pool; the callbacks a
-  frame fires now run on the pipeline's event loop, in the order the chain
-  fired them. The audio bridge's forwarding is one of them, so with the pool
-  it runs on the loop as it does inline. `close()` on either channel first
-  stops taking frames and lets the pool finish the ones it holds, so a
-  frame in flight cannot open an STT stream after the teardown, nor reach
-  the provider after its session ended.
-
-- `VuiTTSProvider` speaks a reply written on several lines without inventing
-  syllables at each line break, and no longer cuts a reply at 30 s (RMK-400).
-  A poem the LLM wrote one verse per line came out of the local Vui with
-  garbled syllables at line ends ("peaks of Quebec *could be*", "*Pazak*
-  with French songs"): 15 to 18 % of its words wrong over two takes. The
-  provider now joins a reply's lines into running sentences, a line without
-  closing punctuation taking a comma or a full stop, and a reply ending on a
-  comma ends on a full stop, after which Vui ran on in 3 takes of 3: the
-  same poem comes out at 4 to 5 %. `VuiTTSConfig.max_secs` goes from 30 to
-  60 s, since the poem needed 42 s and was cut mid-verse at 30.0 s, and a
-  reply that reaches it logs a warning instead of ending silently.
-
-- A failed turn, delivery or delegated task is logged once, at the level its
-  cause calls for (RMK-403, RFC §15.2). Since the single tool loop (RMK-308)
-  the AI channel logged a provider error and the stream's consumer logged it
-  too: two lines for one incident with a streaming target (a traceback once a
-  round had run), and a WARNING for a headless `process_inbound` caller, which
-  gets the error on `InboundResult.error`. The channel now raises and logs
-  nothing; the component that catches the failure writes the one line, through
-  one rule shared by the stream consumer, the broadcast, the delegation, the
-  task runner and a realtime channel's reasoning delegation: a `ProviderError`
-  without a traceback, naming the provider and
-  the status, `ERROR` for a missing model (404) or a server fault (5xx),
-  `WARNING` otherwise, `DEBUG` when the caller receives the failure
-  (`process_inbound`, `regenerate_response`, a delegation's child turn) and the
-  turn had no streaming target. `send_event`, which returns only the stored
-  event, and a stream read in the background keep the failure's own level. A
-  delegated task's provider error lost its traceback, and a broadcast target's
-  404 or 5xx is now `ERROR` where it was `WARNING`.
-
-- A supervisor's task-formulation pass is read as every streamed turn
-  (RMK-396, RFC §19.7.3): the workers' task is its final answer, where the
-  narration of its tool round was glued to it ("Let me check.Anthropic"), and
-  a pass cut short (round cap, deadline, budget) hands on no task. Its tool
-  calls are stored in the room as TOOL_CALL rows, through `BEFORE_BROADCAST`
-  and in the answered event's scope and thread.
-
-- A delegated worker's result is read from its trace, wherever the result
-  tool was served, and is the worker's own call that ended served (RMK-396,
-  RFC §23.3): a `submit_result` an `ON_TOOL_CALL` hook blocked, one refused,
-  or one another channel shared into the child room made, was taken for the
-  result.
-
-- Every outcome of a tool call reaches `ON_TOOL_CALL` as the model read it,
-  on every door (RMK-395, RFC §9.3):
-  - An AI channel reports, once and with `cancelled=True`, every call its
-    turn announced and nothing else reported, whatever cut it: a stop while
-    the calls were announced, a transport that stopped reading (a voice
-    barge-in), the turn cancelled in the gate, in the handler or while
-    `ON_TOOL_CALL` judged the call. It was stored `cancelled` and never
-    reported. Each call's one report is claimed, as a realtime call's is: the
-    loop's own reports and the `ON_TOOL_CALL` judgement claim it (the
-    framework's judge callback now takes `claim=`), and the turn's end reports
-    the calls left.
-  - An ACP channel reports every call its agent ran, with or without an
-    external handler, through the same report as a call an AI provider ran
-    itself. Without a handler, none was reported.
-  - An ACP call the turn ended under is stored `cancelled`, and one whose
-    permission RoomKit refused `refused`, as an AI channel stores them,
-    where both were `failed`.
-  - A report's `ON_TOOL_CALL` chain (a call an external handler or a provider
-    ran) runs through the one chain runner: the next SYNC hook sees a
-    `metadata={"result": ...}` rewrite as it sees a `modify`.
-  - A realtime `activate_skill` missing a required tool, at activation or
-    once the hooks ran (a handoff changed the catalogue meanwhile), is
-    refused for the model and the observers alike: the observers read it
-    served while the model read the refusal. The second check is made once,
-    after the hooks and before the observers; a handoff landing after it no
-    longer withdraws the activation under the configuration lock, and the
-    skill's calls to a tool the handoff removed are refused as undeclared.
-  - A permission RoomKit refused and then approved for the same ACP call no
-    longer stores the call `refused` when it fails on its own, and the
-    `tool_call` framework event of a reported call carries `is_error` and
-    `cancelled` on every path, a report included.
-  - A realtime pipeline reads an agent's handler answer through
-    `declined_answer`: `{"error": "Unknown tool: ..."}` is a call nothing
-    served, not a result.
-
-- A tool call meets the same gate and the same serving on every door
-  (RMK-394, RFC §6.4, §9.3, §21.1, §21.4, §21.5):
-  - Under Tool Search, a sandbox command or a human-input tool the model calls
-    while it is hidden is recovered and validated as a host tool is, where it
-    ran unvalidated (`sandbox_bash` with `{"cmd": 42}` ran against a strict
-    schema, and an `AskUserQuestion` with bogus arguments made the turn wait on
-    a person). One the policy or a skill keeps from the turn is still refused
-    by the gate, in its own words.
-  - An AI channel bounds a gate's refusal (a `BEFORE_TOOL_USE` block's reason,
-    a validation error) as it bounds a result: a 300 KB reason reached the
-    model whole. An `activate_skill` call is exempt only for the instructions
-    it served: its refusal, its block or a hook's replacement is bounded, as on
-    a realtime session. A realtime or conference refusal's observers receive
-    the raw message, as on an AI channel, where they received the model's
-    bounded copy.
-  - A realtime session serves its skill tools (`run_skill_script`,
-    `read_skill_reference`) inside the tool call context, as a handler:
-    `current_tool_call()` and `current_tool_room_id()` answered `None`.
-  - A realtime or conference handler's structured copy
-    (`current_tool_call().structured_content`) reaches `ON_TOOL_CALL`: a SYNC
-    hook sees it and may replace or clear it, and the observers receive what
-    the chain left, as on an AI channel. It was dropped.
-
-- An AI channel's tool memory and skill activations, rebuilt from the stored
-  tool rows at its first turn in a room, read its own rows only, and pair
-  each call's end with the start of the same call in the same turn (RMK-393,
-  RFC §6.4, §7.5 rule 8). The rebuild read every agent's rows: an agent
-  joining a room, or taking over one by handoff, put another agent's call and
-  result in "Tools you've ALREADY CALLED" and its activated skill in its
-  system prompt, which its live memory never held, even when that agent's
-  binding withheld its events (`visibility="sms1"`), and the other agents'
-  calls ate the window of 30. A call id a provider reused in a later turn, or
-  in a turn running at the same time, rebuilt the calls with the wrong turn's
-  arguments.
-
-- A sentence the user resumes is answered once, even when the STT is slower
-  than the turn's wait (RMK-391, RFC §12.3.12). The wait for an incomplete
-  turn, or for a complete one held because the user spoke again, counted
-  silence from the end of the resumed speech and routed the turn when that
-  silence lasted the wait, before the resumed speech's transcript arrived:
-  a streaming STT finalizes after the speech. The first words were answered
-  alone and the rest became a second turn with a second answer ("Mm so um",
-  then "...give me a poem about Quebec", whose final came 0.4 s after a
-  1.5 s wait). The wait now ends only once every transcript of ended speech
-  has joined the turn and been judged, or turned out empty; one that never
-  comes holds the turn at most 10 s more.
-
-- `VuiTTSProvider` runs every `vui-tts` call on a thread of its own,
-  started with the engine and stopped by `close()` (RMK-371). Vui's codec
-  keeps `torch.inference_mode()` entered between calls, and calling it from
-  the shared default executor left that executor's threads in inference
-  mode: an engine built later in one of them failed on its first reply
-  (`Inplace update to inference tensor outside InferenceMode`), and any
-  torch code run there made inference tensors. `release_context()` empties
-  the cache on that thread too, after any reply in progress. `close()`
-  closes the engine's row there, drops the Vui objects and joins the
-  thread, even when cancelled or when closing the row fails; call it when
-  done with the provider, since one dropped without it leaves inference
-  mode on in whichever thread collects it.
-
-- A PolarGrid answer is no longer cut short: with no `max_tokens` set, the
-  request carried none and polargrid-sdk sent 150 (the server, given none,
-  stops near 200), cutting an answer mid-sentence under a `stop` finish
-  (measured: 132 words of a 600-word answer). The provider now always sends a
-  cap: 4096 (PolarGrid's documented maximum, which polargrid-sdk enforces)
-  when none is set, or what the model's window leaves after the prompt on a
-  small-window model; a larger one is sent as 4096 with one warning, where
-  polargrid-sdk refused it and failed the turn (RMK-389).
-
-- PolarGrid receives a `temperature` (or `top_p`) of 0 as given, on
-  `generate()` and the stream alike: polargrid-sdk's body builder read a 0 as
-  unset and sent 0.7 (0.9), so a deterministic call, a memory summary
-  included, ran at 0.7 (RMK-389).
-
-- The speech models a chat provider's `list_models()` surfaces carry
-  `transcription` (speech-to-text) or `speech` (text-to-speech) in
-  `capabilities`, so a model picker can keep them out of a chat list: OpenAI
-  (`whisper-1`, `gpt-4o-transcribe`, `tts-1`, `gpt-4o-mini-tts`…), Gemini
-  (`gemini-3.5-transcribe`, `gemini-*-tts`), Mistral (`voxtral-*-transcribe-*`,
-  `voxtral-*-tts-*`) by their names (`roomkit.providers.ai.model_tags`), and
-  PolarGrid from its catalog, whose edge reports no model type: its chat
-  models carry their capability tags too, its speech models (`kokoro-82m`,
-  `tada-3b-ml` among them) theirs, and LiteLLM from its cost map's `mode`,
-  whatever alias the operator gave the model (RMK-389). A curated catalog's
-  `capabilities`, mostly internal routing flags, stay out of a live listing:
-  every `list_models()` ends through one `AIProvider._listing`.
-
-- PolarGrid errors keep their HTTP status on `ProviderError.status_code`
-  (401, 402, 400, 404, 429, 5xx) from the SDK class each is built from, where
-  only a server error kept one, and a `BillingError` (402) is no longer
-  retried (RMK-389).
-
-- A streamed PolarGrid turn reports its usage: polargrid-sdk can neither ask
-  for a stream's usage nor read it (no `stream_options` on its request, no
-  `usage` on its chunk, measured on 0.10.0), so every streamed turn reported
-  no tokens. Until the SDK carries it, the provider streams through a patch
-  that asks for the usage and reads it from the server's last line, the SDK
-  still building, authenticating and parsing the rest
-  (`providers/polargrid/sdk_patch.py`, RMK-384).
-
-- Ollama receives a tool's nested parameters: ollama-python drops a nested
-  object's `properties` and `required` and an `anyOf` from a declaration
-  before the request leaves (ollama/ollama-python#724, measured on 0.6.2 and
-  0.6.3), although the server reads them, and the model then invented the
-  missing keys (`code` for a declared `zq_code`, measured on qwen3:8b). Until
-  a release sends them, a request that declares tools goes through the SDK's
-  own request method, its messages built by the SDK's own types and the
-  declarations as given (`providers/ollama/sdk_patch.py`, RMK-383). The
-  server itself still drops a `$ref` and the constraints.
-
-- DeepSeek receives earlier reasoning in `reasoning_content`, on every round
-  that called tools (empty when the round did not reason) and on an answer
-  that reasoned, where it went inline as a `<think>` block in the content
-  (RMK-309, RFC §6.4). In thinking mode DeepSeek refuses a round of the turn in progress
-  without that field (400): it recovers the reasoning of a call it issued
-  itself a moment ago, and refuses a call id it does not know. The inline copy
-  was also billed on top of the recovered one (measured on `deepseek-v4-pro`:
-  1,057 prompt tokens, 813 now).
-
-- Gemini Live sends a failed call's result under the function response's
-  `error` key, through the new `submit_tool_error`, and a served result under
-  `result`, with Gemini text's `function_response_body` (RMK-375, RFC §12.4).
-  The key followed the result's text before: a refusal in plain words went
-  under `result`, as a success, and a served body that carried an `error`
-  field of its own went out as a failure. Measured on `gemini-3.8-live`,
-  `gemini-3.8-live-extended-thinking` and
-  `gemini-2.5-flash-native-audio-preview-12-2025`: the model reads the refusal
-  as one, reads a served JSON body under `result`, and reports no system
-  error. A served JSON object now reaches the model as text under `result`
-  rather than as the response's own fields.
-
-- Gemini (and Vertex) receives a tool result whose call was refused, failed,
-  blocked, served by nothing or cancelled under its function response's
-  `error` key, where it went under `result` like a success (RMK-378, RFC
-  §6.4). Gemini Live does the same since RMK-375.
-
-- Anthropic reports a response's thinking tokens as `reasoning_tokens`, a
-  detail of `output_tokens`, from the `output_tokens_details.thinking_tokens`
-  it sends (RMK-378).
-
-- An OpenAI or Azure context-overflow error is recognised by its
-  `context_length_exceeded` code again: the `openai` SDK hands over the
-  body's `error` object itself, which the check read one level too deep, so
-  only the message wording caught it (RMK-378).
-
-- DeepSeek checks a tool name against its rule (`[A-Za-z0-9_-]{1,128}`,
-  measured) before the request on its own endpoint, where a dot or a colon
-  failed the turn with DeepSeek's 400 (RMK-309).
-
-- Mistral reports cached prompt tokens apart (`cache_read_input_tokens`) and
-  leaves them out of `input_tokens`: the SDK hands `prompt_tokens_details` over
-  as a dict, which the provider read as an object and always found empty
-  (RMK-378).
-
-- Anthropic's reasoning goes back to it block by block (RMK-377, RFC §6.4): each
-  thinking block of a response keeps its own signature and its place relative to
-  the round's calls and stretches of text, and a `redacted_thinking` block is
-  kept and replayed as its opaque data, where the blocks of a response were
-  merged into one under the last signature (Anthropic refuses a round whose
-  blocks changed in number) and a redacted block was dropped. A block the
-  response cut before its signature is not replayed, since Anthropic refuses an
-  unsigned block. A provider without blocks keeps one per round. The realtime
-  reasoning backend replays a round's blocks too, first, a signature without
-  text included.
-
-- `OpenAIAIProvider` refuses, before the request, a model OpenAI's Chat
-  Completions refuses (RMK-309, RFC §6.7): GPT-6 Astra and GPT-6.1 Sol with
-  function tools, which they take on the Responses API only, and the `-pro`
-  models, not chat models there; each sent its request and came back 400 or
-  404. The catalogue tags them `chat_tools_refused` and `responses_only`; a
-  server behind a `base_url` still decides.
-- Anthropic receives a tool result whose call was refused, failed, blocked,
-  served by nothing or cancelled with `is_error` set (RMK-309, RFC §6.7);
-  the text the model reads is unchanged.
-- A tool without parameters is declared as an object with none, on every
-  provider and realtime session (RMK-309): Anthropic refused the empty map it
-  was sent with a 400, and Mistral and Anthropic refuse a declaration without
-  a schema.
-- Streamed tool calls stay apart and keep their id (RMK-309, RMK-301): a call
-  without arguments followed by another on the same index lost the first, a
-  name-only first fragment merged two calls under `raw`, and a name repeated
-  on every fragment followed by blanks made a phantom call; a composition
-  event named a call by an id it did not end with when two calls shared a
-  server id or the id came after the first fragment. Gemini folds a call
-  re-emitted in a later chunk whichever copy carries an id, where one with
-  and one without ran twice. Two id-less calls to the same tool on one index
-  stay two when each brings arguments; two that bring none stay one, which
-  the wire cannot tell from a name repeated on every fragment. Anthropic
-  hands two blocks under one server id their own ids and runs both, where
-  the second was dropped, and a block the response ended before closing
-  keeps the id its composition announced and the arguments that streamed,
-  where it took the SDK's parse of them; Ollama mints ids once per response
-  and replays every reasoning part of a message.
-
-- A Vui preset voice is prefilled with its speaker token and its baked
-  conditioning bias, as Vui's own server renders it (RMK-197): the bias was
-  not applied, and the token was set after the prompt, which the prompt
-  never saw.
-- A provider that does not stream lost its thinking signature and every
-  call's metadata (a Gemini thought signature among them) on the way to the
-  tool loop, and so did the mock; the realtime reasoning backend dropped a
-  call's metadata on its next round (RMK-308).
-- An `AIChannel` with tools of its own sent a call its provider had already
-  run to local dispatch, where it failed as not declared; a channel without
-  a handler fired `BEFORE_TOOL_USE` on a provider's pending call and dropped
-  its BLOCK; a provider that does not stream had no path for its own calls
-  at all (RMK-308).
-- A turn of a provider that does not stream with more than about two dozen
-  tool calls lost its answer: its buffered rows used the reentry budget up,
-  and the final message was stored BLOCKED (RMK-308).
-- The tool memory rebuilt from a room's stored rows after a restart took
-  refusals and calls nothing served for answers, which the live memory never
-  keeps, and the skill activations rebuilt from them counted one a hook
-  withheld (RMK-308).
-- `ACPChannel`'s `ON_AI_RESPONSE` carried no `thinking`: it carries the
-  agent's thought chunks of the turn (RMK-308).
-
-- What a realtime provider owes its tool calls (RMK-299, RFC §12.4):
-  - ElevenLabs sends a failed call's result as a tool error, where its agent
-    read a refusal or a failure as a success;
-  - every provider reports the calls it abandons, where only Gemini Live's
-    cancellation and reconnect did: ElevenLabs the call its
-    `tool_timeout_s` cuts and the calls a disconnect or a handoff drops,
-    GPT-Live the calls still open on the connection a restart replaces (a
-    voice or codec change), and Gemini Live, ElevenLabs, GPT-Live, OpenAI
-    Realtime, xAI and Deepgram the calls still open when their connection
-    is lost or closed. The channel and a conference recorded their
-    handler's result as one the model read; they now report them once,
-    cancelled, and cancel the handler;
-  - every provider runs a session's receive loop, keepalive and supervisor,
-    and ElevenLabs its SDK's conversation task, in a context of their own,
-    as Gemini Live did alone: a session reopened from inside a tool handler
-    (a handoff) carried that call's context into every event of the new
-    connection;
-  - Gemini Live tells the model, once until the user speaks again, that a
-    call it ended its turn on without being able to write
-    (`MALFORMED_FUNCTION_CALL`) did not run, where the turn ended in
-    silence.
-
-- Every door of a speech-to-speech channel serves a tool call through one
-  sequence (RMK-306, RFC §12.4): gate, serving, ON_TOOL_CALL, bound,
-  delivery, report. What each door had of its own is gone with its copy:
-  - the provider's calls, the calls recovered from speech and a reasoning
-    backend's calls run inside the tool call context: `current_tool_call()`
-    was `None`, so a `HumanInputToolHandler` filed its request with an empty
-    room;
-  - the results of Tool Search and of reading a skill's references are
-    bounded by `tool_result_max_length`, as any result is; an activated
-    skill's instructions and the complete schema `list_tools(name=...)`
-    reads are not. The truncation note says how long the result was, not
-    that "the full content has been delivered to the client";
-  - a recovered call whose outcome cannot be injected is reported with the
-    call's own failure;
-  - a conference's calls take the same sequence: its handler runs inside the
-    call's tool call context, at the chain depth of the answer that issued
-    it (`current_tool_room_id()` and `current_tool_call()` were `None` and
-    the depth 0, so a delegation started from a conference was not bounded);
-    a second call under an id in flight sends nothing; a call the detach
-    interrupts, or that the provider cancels while ON_TOOL_CALL judges it, is
-    reported once, as cancelled (neither was reported);
-  - the participant's role a tool policy reads before each call is read
-    under the framework's lease, like every store read a channel makes;
-  - an `activate_skill` refusal, block or hook replacement is bounded as any
-    result is (only the activated instructions go out whole), and a bound
-    shorter than the truncation note cuts the text alone rather than exceed
-    its limit;
-  - a Tool Search call whose reconfiguration fails once its result went out
-    sends no second result (since RMK-447 its observers judged it before it
-    went out, and the failure is logged);
-  - a call's span is opened once a fixed-declaration `call_tool` is
-    unwrapped, so it names the tool it carries. A gate refusal's span carries
-    `realtime.tool_denied` as a handler refusal's did, and a recovered or a
-    backend call's span sits under the session's span. A conference handler's
-    context loads the room once per call (`current_tool_room()`).
-
-- A realtime session and a conference emit the `before_tool_use` framework
-  event for every tool call, as an `AIChannel` does (RMK-306): they emitted it
-  only when a BEFORE_TOOL_USE hook was registered. A realtime call whose
-  BEFORE_TOOL_USE hooks cannot get their room context is refused before it
-  runs, as on every channel: it failed on the store error.
-
-- Each realtime tool call is delivered once and reported once (RMK-306, RFC
-  §12.4), on one book per session that every door of a speech-to-speech
-  channel uses (the provider's function call, a call recovered from speech, a
-  reasoning backend's call):
-  - a second call under an id still running is refused and reported once,
-    and sends nothing: the id's one result is the first call's, which runs
-    on. Both handlers ran and two results went out under one id;
-  - with `mute_on_tool_call`, the input stays muted until the last call in
-    flight ends: the first call to end unmuted it while another still ran;
-  - the session's end reports each call it interrupted, as cancelled, a call
-    recovered from speech included: they ended unreported;
-  - a Tool Search or skill call whose reconfiguration fails once its result
-    went out sends no second result, and a cancellation that lands after the
-    result went out is neither reported nor interrupts the reconfiguration.
-
-- A call whose handler declines it is served by nothing on every path
-  (RMK-305, RFC §21.4): a conference reported it served and a call a realtime
-  session recovered from speech `completed`, both reading the envelope as a
-  result. A SYNC `ON_TOOL_CALL` hook may now serve such a call in a conference
-  too. `compose_tool_handlers` hands the call on when a handler declines it
-  with the envelope as a mapping, which it read as a result.
-- Every tool result the model reads in a channel's tool loop is built from
-  the call's typed outcome (RMK-305): a call patched as cancelled when a turn
-  resumed and a streamed external call that failed reached the model, or the
-  live view, without `is_error`. A realtime reasoning backend's own calls are
-  not covered yet.
-- A SYNC `ON_TOOL_CALL` hook that empties a served call's result leaves the
-  call served (RMK-305, RFC §9.3): the next hook read the emptied call as one
-  nothing served and could serve it in place of the empty result, on every
-  channel, whether the first hook emptied it through `metadata` or with
-  `modify`. The model reads `null`. One reader now applies a verdict for the
-  text loops, a realtime session and a conference, and one runner runs the
-  chain.
-- A realtime tool call whose `ON_TOOL_CALL` hooks cannot get their room
-  context keeps its result, as on an `AIChannel` and in a conference
-  (RMK-305, RFC §9.3): the call failed on the store error. On an `AIChannel`
-  and in a conference such a served call is now reported by the `tool_call`
-  framework event, as on a realtime session; nothing reported it.
-- A tool result made of mappings that name a part type among other data
-  reaches the model as JSON (RMK-305, RFC §21.4): `[{"type": "text", "text":
-  "chunk", "page": 2}]` was read as a text part and lost its `page`. A
-  mapping is a content part only in a part's exact shape, and one whose
-  `type` is not text (a list, say) no longer fails the call.
-- A channel's own tool whose result reads like the `{"error": "Unknown tool:
-  ..."}` envelope is served (RMK-305, RFC §21.4): a sandbox command that
-  failed with that error, or an orchestration tool, read as a call nothing
-  served. Only the host's handler may decline a call that way.
-- `extract_tools` and a tool schema given as a dict keep their `tags`
-  (RMK-305): Tool Search scored such a tool without them.
-- `read_stored_result` on an id that is not stored is a refusal (RMK-305): the
-  call read as a success, and the room's tool memory kept the miss as the
-  answer to that read.
-- `audit_tool_handler` hands the channel the handler's answer itself
-  (RMK-305, RFC §15.8.1): it returned `str()` of it, so a content-part list
-  or a mapping reached the model as Python's printing of it. A cancelled call
-  is recorded `cancelled`, where it was recorded `ok`, and a refusal or a
-  declined call `failed`, where it was `error`. A call the channel's per-call
-  bound cuts short reaches the wrapped handler as a cancellation, so it is
-  recorded `cancelled` too; the channel reads it as failed.
-- A room recorder that refuses to start no longer leaves a half-created room
-  (RMK-365, RFC §12.11): `create_room` wrote the room, then started its
-  recorders, so a refusal (an unencrypted `PyAVMediaRecorder` since RMK-69)
-  raised with the room already stored, without its orchestration or
-  `ON_ROOM_CREATED`. Recorders bound at creation now start first, all or
-  nothing, and a refusal raises before anything is written; a room write
-  that fails stops them, leaving an existing room's recordings alone. With
-  several recorders, one that refused used to leave those started before it
-  running and unregistered; they are stopped. A room created again under its
-  id on a store that rewrites it (`InMemoryStore`, `SQLiteStore`) adds its
-  recordings beside the ones already running instead of orphaning them, so
-  `close_room` stops them all. A recorder that fails to stop is logged and
-  no longer holds the others: `close_room` used to raise at the first one,
-  leaving the room active and the rest of its recordings running past
-  `RoomKit.close()`. `ON_RECORDING_STARTED` still fires once the room exists.
-- `RealtimeVoiceChannel` fires `ON_RECORDING_STARTED` and
-  `ON_RECORDING_STOPPED` for the recorder of its audio pipeline (RMK-355, RFC
-  §17.6): it records through the same pipeline as `VoiceChannel` but never
-  subscribed to its recording callbacks, so a speech-to-speech call was
-  recorded with no hook to notify the participants, and its end went
-  unreported. Both channels now announce a recording through one shared
-  implementation.
-
-- A transport shared into a delegated room (`share_channels`) receives the
-  agent's answers and never the task (RMK-360, RFC §23.3): it was handed the
-  task description and a result tool's re-prompts, the delegating side's
-  instructions, while the agent's answers were only stored in the child
-  room's trace, so "email me the summary" emailed the request and never the
-  summary. The task and the re-prompts now reach the child room's agents
-  only. When a transport is shared, the agent's response is committed as a
-  room's is: each row, buffered or streamed, crosses `BEFORE_BROADCAST`
-  hooks and the agent's right to write and rides the child room's delivery
-  lane, so a redaction hook applies before the email leaves and a binding
-  that may not read receives nothing. The task result is the answer the
-  child room kept, a hook's rewrite included. A child room with no shared
-  transport keeps its trace as before, past no hook.
+- `MCPToolProvider` no longer leaks a server whose listing it cannot read
+  (RMK-408, RFC §21.2): the catalogue is built before the connection is kept,
+  so a failure there closes what was opened, a stdio server included.
 
 ### Security
 
 - `kit.join()`, a realtime channel's `start_session()` and a conference
-  channel's `mint_access()` take `organization_id=None` (RMK-475, RFC
-  §17.2): the room is read scoped to it before any session is created or
-  bound and before any credential is minted, so a host acting for one
-  organization that knows another's room id gets `RoomNotFoundError` there,
-  and no session joins that room, declares a track to its recordings or is
-  admitted to its conference. `join()` read the room unscoped, and
-  `start_session()` and `mint_access()` did not read it; left unset, `join()`
-  reads it unscoped and the other two read none for the scope. A scoped call
-  on a channel no framework registered has no room to read and raises
-  `RoomNotFoundError`.
+  channel's `mint_access()` take `organization_id=None` (RMK-475, RFC §17.2):
+  the room is read scoped to it before any session is created or bound and
+  before any credential is minted, so a host acting for one organization that
+  knows another's room id gets `RoomNotFoundError` there, and no session joins
+  that room, declares a track to its recordings or is admitted to its
+  conference. `join()` read the room unscoped, and `start_session()` and
+  `mint_access()` did not read it; left unset, `join()` reads it unscoped and
+  the other two read none for the scope. A scoped call on a channel no
+  framework registered raises `RoomNotFoundError`.
 
 - A call under an MCP alias is judged by the tool policy and skill gating
-  under both names (RMK-483, RFC §21.1), on every gate: a channel's (text,
-  realtime, conference) and `PolicyExternalToolHandler`'s.
-  `MCPToolProvider.as_tool_handler()` runs `mcp__<server>__<tool>` as
-  `<tool>` after the gate judged the alias: on a realtime session or a
-  conference that declares no catalogue, a policy denying `delete_*` let
-  `mcp__crm__delete_records` delete the records; an external agent (which
-  names MCP tools that way) got the call approved; and a text channel that
-  declares the tool under its alias ran it although a skill gated
-  `delete_*`. The alias is still served for a tool the policy and the gates
-  admit. A policy's patterns judge the tool's own name: an allow-list
-  written in alias form (`mcp__crm__*`) now refuses the alias calls too,
-  since the tool they run is not on it.
+  under both names, on every gate (RMK-483, RFC §21.1):
+  `MCPToolProvider.as_tool_handler()` runs `mcp__<server>__<tool>` as `<tool>`
+  after the gate judged the alias, so on a realtime session or a conference
+  that declares no catalogue, a policy denying `delete_*` let
+  `mcp__crm__delete_records` delete the records; an external agent got the
+  call approved; and a text channel that declares the tool under its alias
+  ran it although a skill gated `delete_*`. A policy's patterns judge the
+  tool's own name: an allow-list written in alias form (`mcp__crm__*`) now
+  refuses the alias calls too.
 
-- A model could pass its own tool call off as one the provider already ran
-  by writing `_result` among its arguments, so the call skipped the tool
-  policy and the gate (RMK-439): the mark is now `AIToolCall.served`, which
-  only a provider sets (see Changed).
+- A model could pass its own tool call off as one the provider already ran by
+  writing `_result` among its arguments, so the call skipped the tool policy
+  and the gate (RMK-439): the mark is now `AIToolCall.served`, which only a
+  provider sets (see Changed).
 
 - `ScreenInputTools` no longer turns pyautogui's failsafe off (RMK-356): the
   library set `pyautogui.FAILSAFE = False` for the whole process, so a person
-  watching a model drive their mouse and keyboard had no emergency stop, and
-  the model acts on what it reads on the screen. The failsafe now stays as
-  the host set it, on by default: with the mouse in a screen corner, each
-  tool call answers an error the model reads (nothing was typed or clicked)
-  instead of acting. A host that wants it off sets `pyautogui.FAILSAFE`
-  itself.
+  watching a model drive their mouse and keyboard had no emergency stop. The
+  failsafe now stays as the host set it, on by default: with the mouse in a
+  screen corner, each tool call answers an error the model reads instead of
+  acting. A host that wants it off sets `pyautogui.FAILSAFE` itself.
+
 - `SANDBOX_PREAMBLE` no longer tells the model that its commands run in an
   isolated container (RMK-357): a `SandboxExecutor` may be a local process,
-  as the example's is, and the prompt promised an isolation the host may not
-  have. It now says the environment is the host's sandbox executor and not to
-  assume it is isolated from the host machine.
+  and the prompt promised an isolation the host may not have. It now says the
+  environment is the host's sandbox executor and not to assume it is isolated
+  from the host machine.
 
 ## [0.94.0] — 2026-10-01
 
