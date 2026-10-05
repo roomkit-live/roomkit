@@ -41,9 +41,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `kit.close()` cuts a delegation's result being handed back
   (`delegate(wait=False, notify=...)`) as it cuts a strategy's background
-  run: the notified agent's turn is cancelled, nothing of it is stored after
-  the close, and `close()` no longer waits for it; the task still ends and
-  wakes its waiters (RMK-514, RFC §23.3).
+  run: the notified agent's turn is cancelled, what it had said is kept as a
+  cancelled response and nothing more is stored, and `close()` no longer
+  waits for it; the task's completion callback and waiters still run
+  (RMK-514, RFC §23.3). A pipeline's handoff greeting turn is held and cut
+  at close the same way.
 
 - Every path reads a channel hosting a realtime model the same way
   (RMK-516, RFC §12.4, §22.1, §23.3 step 8). `deliver()` with no

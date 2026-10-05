@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
 
+from roomkit.core.task_utils import hold_task
 from roomkit.models.enums import EventType, HookExecution, HookTrigger
 from roomkit.orchestration._realtime_pipeline import (
     RealtimePipeline,
@@ -435,8 +436,10 @@ class ConversationPipeline:
                 except Exception:
                     logger.exception("Handoff greeting failed for room %s", event.room_id)
 
-            loop = asyncio.get_running_loop()
-            loop.create_task(_trigger_greeting(), context=contextvars.Context())
+            # Held by the kit, so its close cuts the greeting's turn as it
+            # cuts every background turn, in a fresh context: an inherited
+            # room lock would fake reentrancy.
+            hold_task(kit, _trigger_greeting(), context=contextvars.Context())
 
         if farewell:
 

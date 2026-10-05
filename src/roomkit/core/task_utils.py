@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import logging
 from collections.abc import Coroutine
 from typing import Any, Protocol
@@ -37,11 +38,17 @@ def check_open(kit: _Closable, what: str = "background run") -> None:
         raise RoomKitError(f"The framework is closing: no {what} starts")
 
 
-def hold_task(kit: _HoldsRuns, work: Coroutine[Any, Any, None]) -> asyncio.Task[None]:
+def hold_task(
+    kit: _HoldsRuns,
+    work: Coroutine[Any, Any, None],
+    *,
+    context: contextvars.Context | None = None,
+) -> asyncio.Task[None]:
     """Run *work* as a task *kit* holds until it ends, so its ``close()``
     cancels it with the other background work (RFC §19.7.3, §23.3 step 8);
-    an exception it ends on is logged."""
-    task = asyncio.create_task(work)
+    an exception it ends on is logged. *context*, when given, is the one it
+    runs in instead of a copy of the caller's."""
+    task = asyncio.create_task(work, context=context)
     runs = kit._background_runs  # noqa: SLF001
     runs.add(task)
     task.add_done_callback(runs.discard)
