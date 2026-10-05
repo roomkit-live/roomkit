@@ -421,13 +421,16 @@ class AIToolsMixin(_AIChannelContract):
             declared_tools=declared_tools,
             parent_span_id=parent_span_id,
         )
-        calls = self._get_loop_ctx().calls
+        loop_ctx = self._get_loop_ctx()
+        calls = loop_ctx.calls
         tasks = [
             asyncio.create_task(
                 self._serve_announced(tc, calls.entry_of(tc) or calls.announce(tc), scope)
             )
             for tc in tool_calls
         ]
+        # The channel's close cancels them, each then ending cancelled.
+        loop_ctx.round_tasks = tasks
         try:
             results = await asyncio.gather(*tasks)
         except BaseException:
@@ -439,6 +442,8 @@ class AIToolsMixin(_AIChannelContract):
                     task.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
             raise
+        finally:
+            loop_ctx.round_tasks = []
         return list(results)
 
     async def _serve_announced(
@@ -449,14 +454,38 @@ class AIToolsMixin(_AIChannelContract):
         as soon as it is known, so a turn cut later closes it as it ended."""
         started = time.monotonic()
         with reporting(entry):
-            if entry.duplicate:
-                part = await self._refuse_id_in_flight(tc, scope)
-            else:
-                part = await self._run_call(tc, scope)
+            try:
+                if entry.duplicate:
+                    part = await self._refuse_id_in_flight(tc, scope)
+                else:
+                    part = await self._run_call(tc, scope)
+            except asyncio.CancelledError:
+                if not self._cut_by_close():
+                    raise
+                part = await self._report_closed_call(entry, scope)
         if entry.marker is not None:
             duration_ms = int((time.monotonic() - started) * 1000)
             entry.marker.ended = call_end_marker(tc, entry.marker, part, duration_ms)
         return part
+
+    def _cut_by_close(self) -> bool:
+        """Whether the cancellation raised here came from the channel's close
+        alone: it is then the call's outcome, and the task goes on to report
+        it. A cancellation of the turn itself still ends the task."""
+        task = asyncio.current_task()
+        if task is None or not self._get_loop_ctx().closing:
+            return False
+        return task.uncancel() == 0
+
+    async def _report_closed_call(
+        self, entry: AnnouncedCall, scope: _CallRound
+    ) -> AIToolResultPart:
+        """The outcome of a call the channel's close cut: cancelled, reported
+        once with the arguments it ran with (RFC §9.3)."""
+        tc = entry.as_ran()
+        body = cancelled_tool_error(tc.name, "The channel closed before its result.")
+        await self._fire_tool_refusal(tc, tc.arguments, body, scope.room_id, cancelled=True)
+        return ToolOutcome(OutcomeKind.CANCELLED, body).as_part(tc.id, tc.name)
 
     async def _run_call(self, tc: Any, scope: _CallRound) -> AIToolResultPart:
         """One call of a round, through its gates to the part the model reads."""

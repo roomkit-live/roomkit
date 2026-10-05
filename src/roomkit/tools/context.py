@@ -217,6 +217,13 @@ class _ToolLoopContext:
     has_turn: bool = True
     steering_queue: asyncio.Queue[SteeringDirective] = field(default_factory=asyncio.Queue)
     cancel_event: asyncio.Event = field(default_factory=asyncio.Event)
+    # Set by the channel's close (RFC §9.3): the calls the round runs are
+    # cancelled, each reported cancelled, and no further round is asked.
+    closing: bool = False
+    # The tasks running the current round's calls, which the close cancels.
+    round_tasks: list[asyncio.Task[Any]] = field(default_factory=list)
+    # Set once the turn ended and the calls it cut were reported.
+    ended: asyncio.Event = field(default_factory=asyncio.Event)
     loop_id: str = ""
     # The turn's one response-metadata record (see ``roomkit.models.response_metadata``).
     # Created here, at the start of the turn, so a memory provider writing during

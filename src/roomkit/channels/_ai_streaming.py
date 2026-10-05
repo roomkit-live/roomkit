@@ -359,8 +359,11 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
         finally:
             # Finalization may itself be cancelled while publishing a hook.
             self._active_loops.pop(loop_ctx.loop_id, None)
-            await shielded(self._report_unreported_calls(loop_ctx))
-            _current_loop_ctx.set(enclosing_ctx)
+            try:
+                await shielded(self._report_unreported_calls(loop_ctx))
+            finally:
+                loop_ctx.ended.set()
+                _current_loop_ctx.set(enclosing_ctx)
 
     async def _end_raised_turn(self, turn: _StreamTurnState, exc: BaseException) -> None:
         """End a turn left by an exception: reported when the provider interrupted
