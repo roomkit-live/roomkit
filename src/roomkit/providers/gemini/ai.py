@@ -169,6 +169,57 @@ def _fold_function_call(
     held["server_id"] = held["server_id"] or getattr(fc, "id", None)
 
 
+def _log_round_signatures(
+    calls: dict[str, dict[str, Any]], order: list[str], thinking_config: Any
+) -> None:
+    """Log a round's calls, and warn when none carries a thought_signature."""
+    if not order:
+        return
+    logger.debug(
+        "Gemini tool calls finalized: %s",
+        [f"{calls[k]['name']}({'sig' if calls[k]['signature'] else 'NOSIG'})" for k in order],
+    )
+    if any(calls[k]["signature"] for k in order):
+        return
+    # Gemini signs the first functionCall part of a round only, and
+    # ``format_messages`` lends that signature to the round's other calls — so
+    # a single signature anywhere in the round replays fine and is not worth a
+    # word. None at all is the case with nothing to lend: if the model was
+    # thinking, Gemini 3 rejects the whole round on the next turn ("Function
+    # call is missing a thought_signature").
+    logger.warning(
+        "Gemini round of %d function call(s) %s carries no "
+        "thought_signature (thinking config %s) — "
+        "nothing to replay them signed with; Gemini 3 rejects the next "
+        "turn when the model was thinking",
+        len(order),
+        [calls[k]["name"] for k in order],
+        thinking_config,
+    )
+
+
+def _round_calls(calls: dict[str, dict[str, Any]], order: list[str]) -> list[StreamToolCall]:
+    """The round's calls, in order: each takes the server's id when no
+    earlier call of the response took it, a minted one otherwise (RFC §6.4);
+    a re-emission already folded into its call."""
+    call_ids = CallIds()
+    round_calls: list[StreamToolCall] = []
+    for key in order:
+        held = calls[key]
+        meta: dict[str, Any] = {}
+        if held["signature"] is not None:
+            meta["thought_signature"] = held["signature"]
+        round_calls.append(
+            StreamToolCall(
+                id=call_ids(held["server_id"], held["name"]),
+                name=held["name"],
+                arguments=held["arguments"],
+                metadata=meta,
+            )
+        )
+    return round_calls
+
+
 class GeminiAIProvider(AIProvider):
     """AI provider using the Google Gemini API."""
 
@@ -383,46 +434,11 @@ class GeminiAIProvider(AIProvider):
                     elif hasattr(part, "function_call") and part.function_call:
                         _fold_function_call(part, in_chunk, fcalls, fcall_order)
 
-            if fcall_order:
-                logger.debug(
-                    "Gemini tool calls finalized: %s",
-                    [
-                        f"{fcalls[k]['name']}({'sig' if fcalls[k]['signature'] else 'NOSIG'})"
-                        for k in fcall_order
-                    ],
-                )
-                if not any(fcalls[k]["signature"] for k in fcall_order):
-                    # Gemini signs the first functionCall part of a round only,
-                    # and ``format_messages`` lends that signature to the
-                    # round's other calls — so a single signature anywhere in
-                    # the round replays fine and is not worth a word. None at
-                    # all is the case with nothing to lend: if the model was
-                    # thinking, Gemini 3 rejects the whole round on the next
-                    # turn ("Function call is missing a thought_signature").
-                    logger.warning(
-                        "Gemini round of %d function call(s) %s carries no "
-                        "thought_signature (thinking config %s) — "
-                        "nothing to replay them signed with; Gemini 3 rejects the next "
-                        "turn when the model was thinking",
-                        len(fcall_order),
-                        [fcalls[k]["name"] for k in fcall_order],
-                        getattr(gen_config, "thinking_config", None),
-                    )
-            # Each call takes the server's id when no earlier call of the
-            # response took it, a minted one otherwise (RFC §6.4); a
-            # re-emission already folded into its call above.
-            call_ids = CallIds()
-            for key in fcall_order:
-                fc_data = fcalls[key]
-                meta: dict[str, Any] = {}
-                if fc_data["signature"] is not None:
-                    meta["thought_signature"] = fc_data["signature"]
-                yield StreamToolCall(
-                    id=call_ids(fc_data["server_id"], fc_data["name"]),
-                    name=fc_data["name"],
-                    arguments=fc_data["arguments"],
-                    metadata=meta,
-                )
+            _log_round_signatures(
+                fcalls, fcall_order, getattr(gen_config, "thinking_config", None)
+            )
+            for call in _round_calls(fcalls, fcall_order):
+                yield call
 
             yield StreamDone(
                 usage=usage,
