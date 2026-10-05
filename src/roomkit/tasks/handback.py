@@ -80,14 +80,23 @@ async def hand_back(
     target = _target(kit, notify, session_id)
     outcome = await kit.deliver(room_id, text, chain_depth=chain_depth, **target)
     if outcome.status in _NOT_DELIVERED:
-        logger.warning(
-            "Result for %s in room %s not delivered: %s (%s)",
-            notify,
-            room_id,
-            outcome.status,
-            outcome.reason,
-        )
+        _log_not_delivered(notify, room_id, outcome)
     return outcome
+
+
+def _log_not_delivered(notify: str, room_id: str, outcome: DeliveryOutcome) -> None:
+    """Log a hand-back that reached nobody: a warning, unless the notified
+    agent's turn failed, which was logged where it failed, with its cause and
+    at its level, and is only noted here (RFC §15.2)."""
+    turn_failed = outcome.inbound is not None and outcome.inbound.error is not None
+    logger.log(
+        logging.DEBUG if turn_failed else logging.WARNING,
+        "Result for %s in room %s not delivered: %s (%s)",
+        notify,
+        room_id,
+        outcome.status,
+        outcome.reason,
+    )
 
 
 def not_handed_back(outcome: DeliveryOutcome | None) -> str | None:

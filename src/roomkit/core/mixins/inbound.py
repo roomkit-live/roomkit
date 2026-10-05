@@ -8,7 +8,6 @@ from contextlib import AsyncExitStack
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from roomkit.core.exceptions import ChannelNotRegisteredError, RoomNotFoundError
-from roomkit.core.lanes import deferred_caller_logs
 from roomkit.core.mixins.channel_ops import is_channel_detached
 from roomkit.core.mixins.helpers import HelpersMixin
 from roomkit.core.mixins.inbound_identity import _IdentityBlockedError
@@ -481,10 +480,8 @@ class InboundMixin(HelpersMixin):
         room's lane, its streams consumed on the same background task a
         detached caller uses. The handle is the caller's grip on that tail: it
         backfills delivery results, errors and response metadata on
-        completion. A caller that waits on it receives the streams' failure
-        and logs it, as a waiting caller does (a background hand-back).
+        completion.
         """
-        cascade.caller_logs = deferred_caller_logs()
         consumer = self._consume_streams_when_cascade_completes(cascade, room_id)
         result.delivery = DeliveryHandle(cascade, consumer, result)
         await self._connect_session_if_ready(message, channel, room_id, result)

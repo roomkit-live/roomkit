@@ -32,7 +32,7 @@ import contextvars
 import logging
 import math
 from collections import deque
-from collections.abc import Coroutine, Iterator
+from collections.abc import Coroutine
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
@@ -57,29 +57,6 @@ logger = logging.getLogger("roomkit.lanes")
 # a disjoint key space, so the ContextVar reentrancy of ``locked()`` can never
 # confuse "I hold the delivery claim" with "I hold the room lock".
 DELIVERY_CLAIM_PREFIX = "__delivery__:"
-
-_deferred_caller_waits: contextvars.ContextVar[bool] = contextvars.ContextVar(
-    "_deferred_caller_waits", default=False
-)
-
-
-@contextlib.contextmanager
-def deferred_caller_waits(waits: bool) -> Iterator[None]:
-    """Say, around a deferred ``process_inbound``, that its caller waits for
-    the turn's tail and receives its failure, which it logs: its streams'
-    failure is then logged at DEBUG only by the framework, as a waiting
-    caller's is (RFC §15.2)."""
-    token = _deferred_caller_waits.set(waits)
-    try:
-        yield
-    finally:
-        _deferred_caller_waits.reset(token)
-
-
-def deferred_caller_logs() -> bool:
-    """Whether the deferred ``process_inbound`` running now has a caller that
-    waits and logs (:func:`deferred_caller_waits`)."""
-    return _deferred_caller_waits.get()
 
 
 # Room id whose lane executor the current task belongs to. Lets

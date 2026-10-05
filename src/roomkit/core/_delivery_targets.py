@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING
 from roomkit.channels.base import hosts_realtime_model
 from roomkit.core._voice_delivery import active_sessions as _active_sessions
 from roomkit.core._voice_delivery import deliver_to_realtime_voice, replay_explicit_session
-from roomkit.core.lanes import deferred_caller_waits
 from roomkit.models.delivery import DeliveryError, DeliveryOutcome, InboundMessage, InboundResult
 from roomkit.models.enums import (
     Access,
@@ -116,10 +115,7 @@ async def deliver_to_channel(ctx: DeliveryContext, channel_id: str) -> DeliveryO
         idempotency_key=ctx.idempotency_key,
         chain_depth=ctx.chain_depth,
     )
-    # A delivery that waits for its turn hands the turn's failure to its
-    # caller, who logs it (a hand-back logs it not delivered): once.
-    with deferred_caller_waits(ctx._wait_for_turn):
-        result = await ctx.kit.process_inbound(message, room_id=ctx.room_id, defer_delivery=True)
+    result = await ctx.kit.process_inbound(message, room_id=ctx.room_id, defer_delivery=True)
     if not isinstance(result, InboundResult):
         return DeliveryOutcome(status="unknown", reason="inbound_outcome_unknown")
     if result.delivery is not None and ctx._wait_for_turn:
