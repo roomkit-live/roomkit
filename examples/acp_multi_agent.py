@@ -219,14 +219,19 @@ class TerminalPermissionHandler(ExternalToolHandler):
         tool_call_id: str = "",
         job_id: str | None = None,
         room_id: str | None = None,
+        refused_but_ran: bool = False,
+        error_detail: str | None = None,
     ) -> None:
+        # A call the agent ran past a refusal keeps its marker and what failed.
         await self._fire_on_tool_hook(
             tool_name,
             tool_input,
             result,
             is_error=is_error,
+            error_detail=error_detail,
             tool_call_id=tool_call_id,
             room_id=room_id,
+            refused_but_ran=refused_but_ran,
         )
 
 
