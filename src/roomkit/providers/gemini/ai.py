@@ -11,7 +11,6 @@ import json
 import logging
 from collections.abc import AsyncIterator
 from typing import Any
-from uuid import uuid4
 
 from roomkit.providers.ai.base import (
     AIContext,
@@ -30,6 +29,7 @@ from roomkit.providers.ai.base import (
     tool_call_of,
 )
 from roomkit.providers.ai.response_schema import checked_stream, schema_for_generate
+from roomkit.providers.ai.tool_calls import CallIds
 from roomkit.providers.gemini.config import GeminiConfig
 from roomkit.providers.gemini.errors import (
     REFUSAL_FINISH_REASONS,
@@ -158,7 +158,6 @@ def _fold_function_call(
     held = calls.get(key)
     if held is None:
         calls[key] = {
-            "id": f"call_{uuid4().hex[:12]}",
             "server_id": getattr(fc, "id", None) or None,
             "name": name,
             "arguments": args,
@@ -409,13 +408,17 @@ class GeminiAIProvider(AIProvider):
                         [fcalls[k]["name"] for k in fcall_order],
                         getattr(gen_config, "thinking_config", None),
                     )
+            # Each call takes the server's id when no earlier call of the
+            # response took it, a minted one otherwise (RFC §6.4); a
+            # re-emission already folded into its call above.
+            call_ids = CallIds()
             for key in fcall_order:
                 fc_data = fcalls[key]
                 meta: dict[str, Any] = {}
                 if fc_data["signature"] is not None:
                     meta["thought_signature"] = fc_data["signature"]
                 yield StreamToolCall(
-                    id=fc_data["id"],
+                    id=call_ids(fc_data["server_id"], fc_data["name"]),
                     name=fc_data["name"],
                     arguments=fc_data["arguments"],
                     metadata=meta,
