@@ -852,6 +852,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `AgentReasoningBackend.close()` closes the agent it owns (RMK-511): a
+  speech-to-speech channel's close left the agent's provider open and its
+  turns uncut. The backend already refused an agent the kit holds.
+
 - An `AIChannel` closed while its turn runs a call, by itself or by the
   kit, cancels the call and reports it once, cancelled, with its end row,
   and asks no further round (RMK-511, RFC §9.3), as a speech-to-speech

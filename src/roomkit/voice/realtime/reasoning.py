@@ -446,6 +446,9 @@ class AgentReasoningBackend(ReasoningBackend):
         self._sessions.pop(session_id, None)
 
     async def close(self) -> None:
+        """Close the agent the backend owns (it refuses one the kit has):
+        its running turns are cut and its provider released."""
+        await self._agent.close()
         self._histories.clear()
         self._sessions.clear()
 

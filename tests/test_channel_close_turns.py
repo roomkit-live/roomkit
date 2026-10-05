@@ -483,3 +483,26 @@ def _one_call_provider() -> MockAIProvider:
             AIResponse(content="done"),
         ]
     )
+
+
+class _ClosingProvider(MockAIProvider):
+    closed = False
+
+    async def close(self) -> None:
+        self.closed = True
+
+
+async def test_a_realtime_channel_s_close_closes_its_reasoning_backend_s_agent() -> None:
+    """The backend owns its agent: the channel's close releases the agent's
+    provider, as it releases its own."""
+    model = _ClosingProvider(responses=["x"])
+    channel = RealtimeVoiceChannel(
+        "rt",
+        provider=MockRealtimeProvider(full_duplex=True),
+        transport=MockRealtimeTransport(),
+        reasoning_backend=AgentReasoningBackend(Agent("reasoner", provider=model)),
+    )
+
+    await channel.close()
+
+    assert model.closed is True
