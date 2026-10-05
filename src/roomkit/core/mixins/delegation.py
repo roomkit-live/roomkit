@@ -23,7 +23,7 @@ from roomkit.core.mixins._child_execution import (
     run_agent_in_child_room,
 )
 from roomkit.core.mixins.helpers import HelpersMixin
-from roomkit.core.task_utils import check_open, shielded
+from roomkit.core.task_utils import await_interruptible, check_open, hold_task, shielded
 from roomkit.models.enums import (
     ChannelCategory,
     ChannelType,
@@ -570,9 +570,7 @@ class DelegationMixin(HelpersMixin):
             span.end(result)
             await self._on_delegation_complete(result)
             if notify_channel != CALLER_HANDS_BACK:
-                await self._deliver_delegation_result(
-                    result, notify_channel, chain_depth, session_id
-                )
+                await self._hand_back_held(result, notify_channel, chain_depth, session_id)
             if on_complete:
                 await on_complete(result)
 
@@ -622,6 +620,25 @@ class DelegationMixin(HelpersMixin):
         except Exception:
             _tasks_logger.exception(
                 "Failed to fire ON_TASK_COMPLETED hook for task %s", result.task_id
+            )
+
+    async def _hand_back_held(
+        self,
+        result: DelegatedTaskResult,
+        notify_channel_id: str,
+        chain_depth: int,
+        session_id: str | None,
+    ) -> None:
+        """Hand a background delegation's result back in a task the kit holds,
+        so its ``close()`` cuts it as it cuts a strategy's hand-back: the turn
+        it started is cancelled and the cut logged, and the task's end goes
+        on (RFC §23.3 step 8)."""
+        delivery = self._deliver_delegation_result(
+            result, notify_channel_id, chain_depth, session_id
+        )
+        if await await_interruptible(hold_task(self, delivery)):  # ty: ignore[invalid-argument-type]
+            _tasks_logger.info(
+                "Result of task %s not handed back: the framework closed", result.task_id
             )
 
     async def _deliver_delegation_result(
