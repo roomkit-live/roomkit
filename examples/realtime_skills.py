@@ -78,7 +78,7 @@ async def main() -> None:
             room = await kit.create_room()
             await kit.attach_channel(room.id, channel.channel_id)
             session = await channel.start_session(room.id, "caller", object())
-            await provider.inject_text(
+            await channel.inject_text(
                 session,
                 "Activate code-review and review this one-line Python example: "
                 "def lookup(db, name): return db.execute(f\"SELECT * FROM users WHERE name='{name}'\") "

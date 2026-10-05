@@ -140,7 +140,7 @@ async def run(api_key: str, output: Path) -> dict[str, Any]:
             room = await kit.create_room()
             await kit.attach_channel(room.id, channel.channel_id)
             session = await channel.start_session(room.id, "caller", object())
-            await provider.inject_text(
+            await channel.inject_text(
                 session,
                 "Read today's calendar appointments, then list the active projects. "
                 "Use both tools and summarize their results in one short sentence.",

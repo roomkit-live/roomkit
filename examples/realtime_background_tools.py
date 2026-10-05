@@ -146,7 +146,7 @@ async def run(api_key: str, output: Path) -> dict[str, Any]:
                 metadata={"provider_config": {"thinking_level": THINKING_LEVEL}},
             )
             mark("session_started")
-            await provider.inject_text(
+            await channel.inject_text(
                 session,
                 "How many units of the blue widget do we have in stock?",
                 role="user",
