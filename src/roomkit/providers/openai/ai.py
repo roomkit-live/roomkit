@@ -34,6 +34,7 @@ from roomkit.providers.ai.base import (
     StreamTextDelta,
     StreamThinkingDelta,
     answered_by,
+    is_transport_failure,
     stream_done,
 )
 from roomkit.providers.ai.chat_request import OPENAI_CHAT, ChatDialect, chat_messages
@@ -443,28 +444,8 @@ class OpenAIAIProvider(AIProvider):
             response = await self._client.chat.completions.create(**kwargs)
         except ProviderError:
             raise
-        except self._api_connection_error as exc:
-            raise ProviderError(
-                str(exc),
-                retryable=True,
-                provider=self._provider_name,
-            ) from exc
-        except self._api_status_error as exc:
-            retryable = exc.status_code in RETRYABLE_STATUS_CODES
-            raise ProviderError(
-                str(exc),
-                retryable=retryable,
-                provider=self._provider_name,
-                status_code=exc.status_code,
-                context_overflow=overflow_fact(exc),
-            ) from exc
         except Exception as exc:
-            raise ProviderError(
-                str(exc),
-                retryable=False,
-                provider=self._provider_name,
-                status_code=None,
-            ) from exc
+            raise self._wrap_error(exc) from exc
 
         self._record_ttfb(t0)
 
@@ -610,26 +591,24 @@ class OpenAIAIProvider(AIProvider):
                 finish_reason, usage, model, self._config.model, "".join(refusal_parts)
             )
 
-        except self._api_connection_error as exc:
-            raise ProviderError(
-                str(exc),
-                retryable=True,
-                provider=self._provider_name,
-            ) from exc
-        except self._api_status_error as exc:
-            raise ProviderError(
+        except Exception as exc:
+            raise self._wrap_error(exc) from exc
+
+    def _wrap_error(self, exc: Exception) -> ProviderError:
+        """The provider error an SDK failure reads as, on both modes: a status
+        the server answered, retryable when transient; the SDK's connection
+        error, or a transport failure it let through while the stream was
+        read (it wraps none raised there), retryable; anything else final."""
+        if isinstance(exc, self._api_status_error):
+            return ProviderError(
                 str(exc),
                 retryable=exc.status_code in RETRYABLE_STATUS_CODES,
                 provider=self._provider_name,
                 status_code=exc.status_code,
                 context_overflow=overflow_fact(exc),
-            ) from exc
-        except Exception as exc:
-            raise ProviderError(
-                str(exc),
-                retryable=False,
-                provider=self._provider_name,
-            ) from exc
+            )
+        retryable = isinstance(exc, self._api_connection_error) or is_transport_failure(exc)
+        return ProviderError(str(exc), retryable=retryable, provider=self._provider_name)
 
     async def generate_stream(self, context: AIContext) -> AsyncIterator[str]:
         """Yield text deltas (thinking content filtered out)."""

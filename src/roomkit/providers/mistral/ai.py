@@ -6,7 +6,6 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 from roomkit.providers.ai.base import (
-    RETRYABLE_STATUS_CODES,
     AIContext,
     AIMessage,
     AIProvider,
@@ -20,9 +19,9 @@ from roomkit.providers.ai.base import (
     StreamTextDelta,
     StreamThinkingDelta,
     StreamToolCall,
+    failure_retryable,
     stream_done,
     tool_call_of,
-    unstatused_failure_retryable,
 )
 from roomkit.providers.ai.chat_request import ChatDialect, chat_messages
 from roomkit.providers.ai.openai_dialect import (
@@ -355,14 +354,9 @@ class MistralAIProvider(AIProvider):
     def _wrap_error(self, exc: Exception) -> ProviderError:
         """Wrap an SDK exception into a ProviderError."""
         status_code = getattr(exc, "status_code", None) or getattr(exc, "code", None)
-        retryable = (
-            status_code in RETRYABLE_STATUS_CODES
-            if status_code
-            else unstatused_failure_retryable(exc)
-        )
         return ProviderError(
             str(exc),
-            retryable=retryable,
+            retryable=failure_retryable(status_code, exc),
             provider="mistral",
             status_code=status_code,
         )

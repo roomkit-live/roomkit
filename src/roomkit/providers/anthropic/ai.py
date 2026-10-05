@@ -290,34 +290,27 @@ class AnthropicAIProvider(AIProvider):
             for call in blocks.remaining(final):
                 yield call
             yield done_event(final)
-        except self._api_status_error as exc:
-            # Anthropic adds 529 "overloaded" to the shared retryable set.
-            retryable = exc.status_code in RETRYABLE_STATUS_CODES or exc.status_code == 529
-            raise ProviderError(
-                str(exc),
-                retryable=retryable,
-                provider="anthropic",
-                status_code=exc.status_code,
-            ) from exc
-        except self._api_connection_error as exc:
-            # The SDK's own verdict: no status, the request never got an answer.
-            raise ProviderError(
-                str(exc),
-                retryable=True,
-                provider="anthropic",
-                status_code=None,
-            ) from exc
         except Exception as exc:
-            # A transport failure the SDK let through mid-stream is as
-            # transient as the one it wraps (RMK-509).
-            raise ProviderError(
-                str(exc),
-                retryable=is_transport_failure(exc),
-                provider="anthropic",
-                status_code=None,
-            ) from exc
+            raise self._wrap_error(exc) from exc
         finally:
             await self._release_client(leased_api_key)
+
+    def _wrap_error(self, exc: Exception) -> ProviderError:
+        """The provider error an SDK failure reads as: a status the server
+        answered, retryable when transient (Anthropic adds 529 "overloaded" to
+        the shared set); the SDK's connection error, or a transport failure
+        it let through while the stream was read, retryable; anything else
+        final (RMK-509)."""
+        if isinstance(exc, self._api_status_error):
+            status = exc.status_code
+            return ProviderError(
+                str(exc),
+                retryable=status in RETRYABLE_STATUS_CODES or status == 529,
+                provider="anthropic",
+                status_code=status,
+            )
+        retryable = isinstance(exc, self._api_connection_error) or is_transport_failure(exc)
+        return ProviderError(str(exc), retryable=retryable, provider="anthropic")
 
     async def generate(self, context: AIContext) -> AIResponse:
         """Generate by consuming the structured stream."""

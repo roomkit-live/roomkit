@@ -514,7 +514,7 @@ class TestAnthropicAIProvider:
 
             class _ErrorStream:
                 async def __aenter__(self) -> _ErrorStream:
-                    raise RuntimeError("connection lost")
+                    raise RuntimeError("unexpected SDK state")
 
                 async def __aexit__(self, *args: Any) -> None:
                     pass

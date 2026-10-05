@@ -4,11 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from roomkit.providers.ai.base import (
-    RETRYABLE_STATUS_CODES,
-    ProviderError,
-    unstatused_failure_retryable,
-)
+from roomkit.providers.ai.base import ProviderError, failure_retryable
 
 #: Finish reasons that mean the model withheld the answer rather than wrote it:
 #: a constrained answer ending on one of these is a refusal, not bad JSON.
@@ -43,17 +39,15 @@ def wrap_gemini_error(exc: Exception) -> ProviderError:
 
     The SDK spells its status on ``code`` or ``status_code`` depending on the
     error class, and some failures carry neither: a transport failure (the
-    httpx error the SDK re-raises after its own retries) or a message naming a
-    transient status is then retryable. Shared by every Gemini provider so "is
-    this retryable" has one answer rather than one per surface.
+    httpx error the SDK lets through, RoomKit's client setting no retries of
+    its own) or a message naming a transient status is then retryable. Shared
+    by every Gemini provider so "is this retryable" has one answer rather than
+    one per surface.
     """
     status_code = getattr(exc, "code", None) or getattr(exc, "status_code", None)
-    retryable = (
-        status_code in RETRYABLE_STATUS_CODES if status_code else unstatused_failure_retryable(exc)
-    )
     return ProviderError(
         str(exc),
-        retryable=retryable,
+        retryable=failure_retryable(status_code, exc),
         provider="gemini",
         status_code=status_code,
     )

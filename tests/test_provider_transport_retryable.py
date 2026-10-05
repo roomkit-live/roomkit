@@ -2,12 +2,13 @@
 error is not (RMK-509).
 
 The channel retries a provider error only when it is ``retryable``
-(``RetryPolicy``). A connection refused before any status is the same failure
-whichever SDK surfaces it, so each provider says it is worth retrying, through
+(``RetryPolicy``). A connection refused before any status, or one the server
+answered then dropped before the first event, is the same failure whichever
+SDK surfaces it, so each provider says it is worth retrying, through
 ``generate()`` and through the stream; a 400 stays final everywhere. Each
 provider is driven as its SDK surfaces the failure: a client over an httpx
-transport that refuses the connection where the SDK takes one (the OpenAI
-wire, Mistral, Ollama), and the SDK's own error otherwise.
+transport where the SDK takes one (the OpenAI wire, Mistral, Ollama), and the
+SDK's own errors otherwise.
 """
 
 from __future__ import annotations
@@ -45,16 +46,27 @@ from roomkit.providers.openai.config import OpenAIConfig
 from roomkit.providers.polargrid.ai import PolarGridAIProvider
 from roomkit.providers.polargrid.config import PolarGridConfig
 
-Failure = Literal["refused", "client_error"]
+Failure = Literal["refused", "dropped", "client_error"]
 
 _CONTEXT = AIContext(messages=[AIMessage(role="user", content="go")])
 _REFUSED = "[Errno 111] Connection refused"
+
+
+class _Dropped(httpx.AsyncByteStream):
+    """A body the server stops sending before its first byte."""
+
+    async def __aiter__(self) -> Any:
+        raise httpx.ReadTimeout("timed out")
+        yield b""  # pragma: no cover
 
 
 def _transport(failure: Failure) -> httpx.MockTransport:
     def answer(request: httpx.Request) -> httpx.Response:
         if failure == "refused":
             raise httpx.ConnectError(_REFUSED, request=request)
+        if failure == "dropped":
+            headers = {"content-type": "text/event-stream"}
+            return httpx.Response(200, headers=headers, stream=_Dropped())
         return httpx.Response(400, json={"error": {"message": "bad request"}})
 
     return httpx.MockTransport(answer)
@@ -78,13 +90,33 @@ def _ollama(failure: Failure) -> AIProvider:
     return provider
 
 
+class _DroppedAnthropicStream:
+    """A message stream the server drops before its first event: the SDK
+    lets the httpx2 error through as it is."""
+
+    async def __aenter__(self) -> _DroppedAnthropicStream:
+        return self
+
+    async def __aexit__(self, *exc: Any) -> None:
+        return None
+
+    def __aiter__(self) -> Any:
+        return self
+
+    async def __anext__(self) -> Any:
+        raise httpx2.RemoteProtocolError("peer closed connection")
+
+
 def _anthropic(failure: Failure) -> AIProvider:
-    """anthropic 1.x takes no httpx transport: its client raises its own
-    errors, a connection error raised from httpx2's."""
+    """anthropic 1.x runs on httpx2: its client raises its own errors, a
+    connection error raised from httpx2's, and lets an error of the stream's
+    read through."""
     provider = AnthropicAIProvider(AnthropicConfig(api_key="k", model="claude-sonnet-5-5"))
     request = httpx2.Request("POST", "https://api.anthropic.com/v1/messages")
 
     def stream(**kwargs: Any) -> Any:
+        if failure == "dropped":
+            return _DroppedAnthropicStream()
         if failure == "refused":
             raise anthropic.APIConnectionError(request=request) from httpx2.ConnectError(
                 _REFUSED, request=request
@@ -96,11 +128,19 @@ def _anthropic(failure: Failure) -> AIProvider:
     return provider
 
 
+async def _dropped_gemini_stream() -> Any:
+    raise httpx.ReadTimeout("timed out")
+    yield  # pragma: no cover
+
+
 def _gemini(failure: Failure) -> AIProvider:
-    """google-genai re-raises the httpx error after its own retries."""
+    """google-genai lets the httpx error through (RoomKit's client sets no
+    retries of its own)."""
     provider = GeminiAIProvider(GeminiConfig(api_key="k"))
 
     async def generate_content_stream(**kwargs: Any) -> Any:
+        if failure == "dropped":
+            return _dropped_gemini_stream()
         if failure == "refused":
             raise httpx.ConnectError(_REFUSED)
         raise genai_errors.ClientError(400, {"error": {"message": "bad request"}})
@@ -116,7 +156,7 @@ def _polargrid(failure: Failure) -> AIProvider:
     client = polargrid.PolarGrid(api_key="k", base_url="http://127.0.0.1:1")
 
     def error() -> Exception:
-        if failure == "refused":
+        if failure in ("refused", "dropped"):
             return polargrid.NetworkError(_REFUSED, None, None)
         return polargrid.ValidationError("bad request", None, "req-1")
 
@@ -153,10 +193,13 @@ async def _error(provider: AIProvider, mode: str) -> ProviderError:
     return raised.value
 
 
+@pytest.mark.parametrize("failure", ["refused", "dropped"])
 @pytest.mark.parametrize("mode", ["generate", "stream"])
 @pytest.mark.parametrize("name", list(_PROVIDERS))
-async def test_a_refused_connection_is_retryable(name: str, mode: str) -> None:
-    error = await _error(_PROVIDERS[name]("refused"), mode)
+async def test_a_transport_failure_is_retryable(name: str, mode: str, failure: Failure) -> None:
+    """Refused before any status, or dropped after it before the first
+    event: both are worth another try, on every provider and both modes."""
+    error = await _error(_PROVIDERS[name](failure), mode)
 
     assert error.retryable is True
     assert error.status_code is None

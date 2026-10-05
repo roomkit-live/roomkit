@@ -261,7 +261,8 @@ _RETRYABLE_ERROR_TERMS: tuple[str, ...] = ("rate", "limit", "429", "500", "502",
 
 def is_transport_failure(exc: BaseException) -> bool:
     """Whether *exc*, or an exception it was raised from, is a transport
-    failure: the connection refused, reset or timed out before any status.
+    failure: the connection refused, reset or timed out, before the status
+    or while the body was read, any error of the HTTP client's transport.
 
     It is the same failure whichever SDK surfaces it (Anthropic's and
     OpenAI's ``APIConnectionError`` are raised from it, Mistral and
@@ -284,10 +285,13 @@ def is_transport_failure(exc: BaseException) -> bool:
     return False
 
 
-def unstatused_failure_retryable(exc: BaseException) -> bool:
-    """Whether an SDK failure that carries no status is worth retrying: a
-    transport failure (:func:`is_transport_failure`), or an error whose
-    message names a transient status."""
+def failure_retryable(status_code: int | None, exc: BaseException) -> bool:
+    """Whether an SDK failure is worth retrying, for an SDK that may lose the
+    status (Mistral, google-genai): a transient status when it carries one;
+    without one, a transport failure (:func:`is_transport_failure`) or an
+    error whose message names a transient status."""
+    if status_code:
+        return status_code in RETRYABLE_STATUS_CODES
     if is_transport_failure(exc):
         return True
     text = str(exc).lower()
