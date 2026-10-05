@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.95.0] — 2026-10-05
+
 This release makes a tool call one contract on every door that runs one: an
 `AIChannel` turn, an external tool handler, an ACP agent, a speech-to-speech
 session, a conference and a realtime reasoning backend now share the same
@@ -12165,7 +12167,8 @@ See entries `0.7.0a1` through `0.7.0a18` below.
 - `STTProvider.transcribe()` returns `TranscriptionResult` (Phase 3.1)
 - Framework event names enriched with payloads (Phase 4)
 
-[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.94.0...HEAD
+[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.95.0...HEAD
+[0.95.0]: https://github.com/roomkit-live/roomkit/compare/v0.94.0...v0.95.0
 [0.94.0]: https://github.com/roomkit-live/roomkit/compare/v0.93.0...v0.94.0
 [0.93.0]: https://github.com/roomkit-live/roomkit/compare/v0.92.0...v0.93.0
 [0.92.0]: https://github.com/roomkit-live/roomkit/compare/v0.91.1...v0.92.0
