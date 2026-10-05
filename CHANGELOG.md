@@ -42,14 +42,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   on but its outcome reaches no hook.
 
 - A turn's end is reported and logged once on every door (RMK-513, RFC
-  §15.2): an expected end (its round cap, a stop) fires no ON_ERROR, and a
-  failure fires one where it happened. A synchronous Loop no longer fires
-  ON_ERROR for its producer's cut, nor a second, untyped one for a failure
-  its producer's turn already reported; a supervisor's task-formulation pass
-  that fails is reported as a streamed turn is (`streaming`, with its tool
-  rows' correlation) and logged once; a background result's hand-back whose
-  turn fails is logged once, by the hand-back. The "Partial broadcast
-  failure" line leaves out what was already reported.
+  §19.7.3, §19.7.4, §23.3): an expected end (its round cap, a stop) fires no
+  ON_ERROR, and a failure fires one where it happened. A synchronous Loop no
+  longer fires ON_ERROR for its producer's cut, nor a second, untyped one for
+  a failure its producer's turn already reported, at its first generation or
+  after a round; a supervisor's task-formulation pass that fails is reported
+  as a streamed turn is (`streaming`, with its tool rows' correlation) and
+  logged once, now under the `roomkit.framework` logger; a background
+  result's hand-back whose turn fails leaves the log line to that failure,
+  with its cause and level, and notes the result not delivered at DEBUG. The
+  "Partial broadcast failure" line is left out when every failure in it was
+  already reported.
 
 - `kit.close()` cuts a delegation's result being handed back
   (`delegate(wait=False, notify=...)`) as it cuts a strategy's background

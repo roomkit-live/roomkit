@@ -51,12 +51,18 @@ def _fails(n: int) -> AIResponse:
     raise ProviderError("upstream 400", provider="mock", status_code=400)
 
 
+def _fails_at_once(n: int) -> AIResponse:
+    raise ProviderError("upstream 400", provider="mock", status_code=400)
+
+
 _ENDS: dict[str, tuple[Callable[[int], AIResponse], dict[str, Any]]] = {
     "completed": (_answers, {}),
     "cap": (_round, {"max_tool_rounds": 1}),
     "cancelled": (_round, {"max_tool_rounds": 10}),
     "failure": (_fails, {}),
+    "failure-at-once": (_fails_at_once, {}),
 }
+_FAILURES = ("failure", "failure-at-once")
 
 
 class _Scripted(MockAIProvider):
@@ -181,10 +187,9 @@ async def _hand_back(end: str) -> tuple[RoomKit, _Errors]:
     await kit.attach_channel("r", "sms")
     await kit.attach_channel("r", "boss", category=ChannelCategory.INTELLIGENCE)
     handle = await kit.delegate("r", "w", "go", notify="boss")
+    # The task ends once its result was handed back and the boss's turn on
+    # it ended (RFC §23.3 step 8).
     await handle.wait(timeout=5)
-    provider = boss._provider
-    await until(lambda: bool(provider.calls), timeout=5)
-    await asyncio.sleep(0.2)
     return kit, errors
 
 
@@ -195,6 +200,19 @@ _DOORS: dict[str, Callable[[str], Awaitable[tuple[RoomKit, _Errors]]]] = {
     "delegated": _delegated,
     "loop-sync": _loop_sync,
     "hand-back": _hand_back,
+}
+
+
+# How many lines a failure gets from the framework on each door: none where
+# the caller receives the error and logs it itself (``InboundResult.error``),
+# one where it is caught and logged on its way (a pass, a task, a hand-back).
+_FAILURE_LINES = {
+    "room": 0,
+    "regenerate": 0,
+    "pass-1": 1,
+    "delegated": 1,
+    "loop-sync": 1,
+    "hand-back": 1,
 }
 
 
@@ -213,14 +231,19 @@ async def test_a_turns_end_is_reported_and_logged_once(
 ) -> None:
     caplog.set_level(logging.WARNING, logger="roomkit")
     kit, errors = await _DOORS[door](end)
+    if end in _FAILURES:
+        await until(lambda: bool(errors.heard), timeout=5)
     await asyncio.sleep(0.1)
     await kit.close()
 
-    if end != "failure":
+    if end not in _FAILURES:
         # An expected end: no failure to report.
         assert errors.heard == []
         return
     [(_, error_type, category, correlation)] = errors.heard
     assert (error_type, category) == ("ProviderError", "streaming")
     assert correlation
-    assert len(_lines(caplog)) <= 1, _lines(caplog)
+    lines = _lines(caplog)
+    assert len(lines) == _FAILURE_LINES[door], lines
+    # The one line says what failed, with the provider's status.
+    assert all("status=400" in line for line in lines), lines
