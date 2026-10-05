@@ -169,9 +169,10 @@ async def test_a_handoffs_language_instruction_is_announced() -> None:
     assert roles == ["system", "assistant"]
 
 
-async def test_a_pipelines_handoff_greeting_is_announced() -> None:
-    kit, channel, provider = await _voice()
-    roles = _announced(kit)
+async def _handing_off(
+    kit: RoomKit, channel: RealtimeVoiceChannel, provider: MockRealtimeProvider
+) -> Any:
+    """A two-agent pipeline that greets on handoff, its session open."""
     triage = Agent("agent-triage", role="Triage", system_prompt="Hi.")
     advisor = Agent("agent-advisor", role="Advisor", system_prompt="Help.")
     pipeline = ConversationPipeline(
@@ -185,19 +186,45 @@ async def test_a_pipelines_handoff_greeting_is_announced() -> None:
     state = ConversationState(active_agent_id="agent-triage", phase="triage")
     await kit.store.update_room(set_conversation_state(room, state))
     await kit.attach_channel("r", "rtv")
-    session = await channel.start_session("r", "u1", "ws")
+    return await channel.start_session("r", "u1", "ws")
 
+
+async def _hand_off(provider: MockRealtimeProvider, session: Any) -> None:
     await provider.simulate_tool_call(
         session,
         "h1",
         "handoff_conversation",
         {"target": "agent-advisor", "reason": "help", "summary": "ctx"},
     )
+
+
+async def test_a_pipelines_handoff_greeting_is_announced() -> None:
+    kit, channel, provider = await _voice()
+    roles = _announced(kit)
+    session = await _handing_off(kit, channel, provider)
+
+    await _hand_off(provider, session)
     await until(lambda: bool(roles))
     await kit.close()
 
     assert [role for role, _ in _injected(provider)] == ["system"]
     assert roles == ["system"]
+
+
+async def test_a_pipelines_handoff_greeting_continues_the_chain() -> None:
+    """The handoff call answers at depth 4 here; the new agent's greeting
+    goes in at that depth, so its answer is 5, never a chain restarted at 1
+    (RFC §8.3)."""
+    kit, channel, provider = await _voice()
+    session = await _handing_off(kit, channel, provider)
+    channel._session_answer_depth(session.id).injected(3)
+
+    await _hand_off(provider, session)
+    await until(lambda: bool(_injected(provider)))
+    answer = channel._session_answer_depth(session.id).answer
+    await kit.close()
+
+    assert answer == 5
 
 
 # -- the issuing session in the handler's context, on every door -------------

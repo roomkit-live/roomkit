@@ -1,4 +1,4 @@
-"""Context variables for RealtimeVoiceChannel tool calls."""
+"""Context variables for the tool calls of a channel hosting a realtime model."""
 
 from __future__ import annotations
 
@@ -20,7 +20,9 @@ _current_voice_session: contextvars.ContextVar[VoiceSession | None] = contextvar
 def get_current_voice_session() -> VoiceSession | None:
     """Get the voice session for the current tool call.
 
-    Available inside tool handlers called by RealtimeVoiceChannel.
+    Available inside the tool handlers of every channel hosting a realtime
+    model (a realtime voice channel, an audio-video one, a conference with
+    a realtime model plugged in), on every door a call is served on.
     Returns None outside of a tool call context.
     """
     return _current_voice_session.get()

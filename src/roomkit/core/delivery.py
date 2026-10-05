@@ -49,8 +49,9 @@ class DeliveryContext:
     async def find_transport_channel_id(self) -> str | None:
         """Prefer voice, then the first other transport bound to the room.
 
-        Voice is a voice channel type or any channel hosting a realtime model
-        now (a conference with one plugged in, :func:`hosts_realtime_model`).
+        Voice is a voice channel type or any channel whose realtime model is
+        plugged in at delivery time (a conference with one,
+        :func:`hosts_realtime_model`).
         An intelligence channel attached as a transport is not one: an
         instruction delivered through it would re-enter the channel it is for.
         """

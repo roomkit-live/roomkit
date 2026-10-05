@@ -72,7 +72,8 @@ class GreetingMixin(HelpersMixin):
 
         Dispatches by session context rather than scanning room bindings:
 
-        * **Realtime voice session** — injects text via the provider.
+        * **Realtime voice session** — injected through the channel as the
+          model's own turn (:meth:`_greet_realtime`).
         * **Voice session** — speaks via ``say()`` (runs BEFORE_TTS /
           AFTER_TTS hooks).
         * **Everything else** (text channels, no session) — stores and
@@ -123,12 +124,8 @@ class GreetingMixin(HelpersMixin):
         voice_ch = self._channels.get(session.channel_id) if session is not None else None
         if session is not None and isinstance(voice_ch, RealtimeVoiceChannel):
             # Every realtime channel, an audio-video one included (its session
-            # start names its own type): the greeting is the model's own turn.
-            # Store first so AI sees greeting in history even if inject fails.
-            # Through the channel, which announces it to
-            # ON_REALTIME_TEXT_INJECTED as every injection (RFC §12.4).
-            await self._store_greeting_event(room_id, agent.channel_id, text)
-            await voice_ch.inject_text(session, text, role="assistant")
+            # start names its own type).
+            await self._greet_realtime(voice_ch, session, room_id, agent.channel_id, text)
             return
 
         if session is not None and channel_type == ChannelType.VOICE:
@@ -148,6 +145,16 @@ class GreetingMixin(HelpersMixin):
             self._make_greeting_event(room_id, agent.channel_id, text),
             agent.channel_id,
         )
+
+    async def _greet_realtime(
+        self, channel: Any, session: VoiceSession, room_id: str, agent_id: str, text: str
+    ) -> None:
+        """Greet in a realtime session as the model's own turn: stored first,
+        so the model sees it in its history even if the injection fails, then
+        injected through the channel, which announces it to
+        ON_REALTIME_TEXT_INJECTED as every injection (RFC §12.4)."""
+        await self._store_greeting_event(room_id, agent_id, text)
+        await channel.inject_text(session, text, role="assistant")
 
     @staticmethod
     def _make_greeting_event(room_id: str, agent_channel_id: str, text: str) -> RoomEvent:
