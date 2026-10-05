@@ -594,7 +594,9 @@ class AIChannel(
         return self._memory.recent_events_window
 
     async def close(self) -> None:
-        """Close the channel, its provider, memory, and executors."""
+        """Close the channel: its running turns first (their calls cancelled
+        and reported, RFC §9.3), then its provider, memory, and executors."""
+        await self._end_running_turns()
         await self._human_input.close(self.channel_id)
         await super().close()
         await self._memory.close()

@@ -17,10 +17,15 @@ else:
 
 logger = logging.getLogger("roomkit.channels.ai")
 
+# How long a close waits for its cut turns to end, as a speech-to-speech
+# channel's close waits for the tools it cancels.
+_CLOSE_WAIT_S = 5.0
+
 
 class AISteeringMixin(_AIChannelContract):
     """Handles steering directives that modify a running tool loop."""
 
+    channel_id: str
     _active_loops: dict[str, _ToolLoopContext]
 
     def _get_loop_ctx(self) -> _ToolLoopContext:
@@ -77,6 +82,34 @@ class AISteeringMixin(_AIChannelContract):
             if isinstance(directive, Cancel):
                 ctx.cancel_event.set()
         return len(targets)
+
+    async def _end_running_turns(self) -> None:
+        """Cut every turn still running, as the channel closes (RFC §9.3):
+        the calls its round executes are cancelled and reported cancelled, no
+        further round is asked, and the close waits for the turns to end, at
+        most :data:`_CLOSE_WAIT_S`. A call whose own handler closes the
+        channel runs on, and its turn is not waited for."""
+        current = asyncio.current_task()
+        ending: list[asyncio.Event] = []
+        for ctx in list(self._active_loops.values()):
+            ctx.closing = True
+            ctx.cancel_event.set()
+            if current in ctx.round_tasks:
+                continue
+            for task in ctx.round_tasks:
+                task.cancel()
+            ending.append(ctx.ended)
+        if not ending:
+            return
+        waits = asyncio.gather(*(ended.wait() for ended in ending))
+        try:
+            await asyncio.wait_for(waits, _CLOSE_WAIT_S)
+        except TimeoutError:
+            logger.warning(
+                "Channel %s closed with %d turn(s) still running",
+                self.channel_id,
+                sum(not ended.is_set() for ended in ending),
+            )
 
     def _steering_targets(
         self, directive: SteeringDirective, loop_id: str | None, room_id: str | None
