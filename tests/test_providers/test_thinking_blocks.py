@@ -41,6 +41,7 @@ from roomkit.providers.ai.thinking_blocks import ThinkingBlocks
 from roomkit.providers.anthropic.ai import AnthropicAIProvider
 from roomkit.providers.anthropic.config import AnthropicConfig
 from roomkit.providers.anthropic.request import build_messages
+from roomkit.voice.base import VoiceSessionState
 from roomkit.voice.realtime.reasoning import (
     AIProviderReasoningBackend,
     ReasoningRequest,
@@ -415,7 +416,7 @@ async def test_the_reasoning_backend_replays_every_block(streaming: bool) -> Non
     )
     backend = AIProviderReasoningBackend(provider)
     request = ReasoningRequest(
-        session=SimpleNamespace(id="s1", room_id="r1"),  # type: ignore[arg-type]
+        session=SimpleNamespace(id="s1", room_id="r1", state=VoiceSessionState.ACTIVE),  # type: ignore[arg-type]
         delegation_id="d1",
         transcript=[],
         first=True,

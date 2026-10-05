@@ -668,9 +668,9 @@ class TestRealtimeVoiceTelemetry:
 
         session = await channel.start_session(room.id, "user1", "fake-ws")
 
-        # Simulate a tool call
+        # Simulate a tool call; its report runs to its end in a task of its own.
         await provider.simulate_tool_call(session, "call-1", "get_weather", {"city": "NYC"})
-        await advance()
+        await advance(10)
 
         tool_spans = mock.get_spans(SpanKind.REALTIME_TOOL_CALL)
         assert len(tool_spans) == 1
