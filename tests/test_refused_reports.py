@@ -454,12 +454,18 @@ async def _acp_ran_anyway(handler: Any) -> tuple[_Heard, list[Any]]:
         return heard, rows
 
 
-@pytest.mark.parametrize("handler", [None, _Denying()], ids=["no-handler", "denying-handler"])
+@pytest.mark.parametrize(
+    "handler",
+    [None, _Denying(), _Raising()],
+    ids=["no-handler", "denying-handler", "raising-handler"],
+)
 async def test_an_acp_call_refused_then_run_is_reported_served_with_the_refusal_marked(
     handler: Any,
 ) -> None:
     """Reported as it ended, served, its flags unchanged; ``refused_but_ran``
-    on its report and its END row tells an audit what it went past (RMK-498)."""
+    on its report and its END row tells an audit what it went past (RMK-498),
+    whatever the rejection came from: a refusal, or a handler that raised
+    deciding the permission (RMK-512)."""
     heard, rows = await _acp_ran_anyway(handler)
 
     [event] = heard.observed

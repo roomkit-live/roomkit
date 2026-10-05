@@ -112,11 +112,13 @@ def _record_decision(tool: _ToolState, decision: _PermissionDecision) -> None:
     """Keep *decision* on its call, the last one standing: a refused call's
     end reads as refused, not as a tool that failed; one approved later can
     fail on its own. A handler that raised refused nothing: the call failed,
-    and the channel reports it with what failed (RFC §9.3)."""
+    and the channel reports it with what failed (RFC §9.3); the agent was
+    still answered with a rejection, which a call it runs anyway went past."""
     tool.decided = True
     tool.failure = decision.failure
     tool.failure_error = decision.failure_error
-    tool.refused = not decision.approved and decision.failure is None
+    tool.rejected = not decision.approved
+    tool.refused = tool.rejected and decision.failure is None
     tool.refusal = decision.refusal if tool.refused else None
     tool.refusal_detail = decision.refusal_detail if tool.refused else None
     tool.channel_refused = decision.channel_refused
@@ -179,9 +181,10 @@ def _end_marker(tool: _ToolState, end: _ToolEnd) -> ToolCallEndMarker:
 
 
 def _ran_despite_refusal(tool: _ToolState, end: _ToolEnd) -> bool:
-    """Whether the agent ran a call RoomKit refused and closed it completed:
-    reported served, as it ran, and marked (RFC §9.3)."""
-    return tool.refused and end.outcome == "served"
+    """Whether the agent ran a call whose permission RoomKit rejected, refused
+    or failed deciding, and closed it completed: reported served, as it ran,
+    and marked (RFC §9.3)."""
+    return tool.rejected and end.outcome == "served"
 
 
 def _handler_reports(handler: ExternalToolHandler, tool: _ToolState, end: _ToolEnd) -> bool:
