@@ -60,6 +60,9 @@ class RealtimeToolCall:
     carrier: asyncio.Task[Any] | None = field(default=None, repr=False)
     """The task that holds the call's task, when another one does (a
     backend's delegation): an ending the call caused spares it too."""
+    caused_ending: bool = False
+    """Its handler caused an ending that took it off the books, which spared
+    it: its delegation, if any, ends once it returns."""
     delivered: bool = False
     released: bool = False
     """The provider no longer waits for its result (it abandoned the call, or

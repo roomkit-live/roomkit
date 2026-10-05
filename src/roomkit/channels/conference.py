@@ -1286,7 +1286,12 @@ class ConferenceChannel(
         realtime_sessions = self._realtime.abandon_all()
         for room in self._rooms.values():
             room.cancel_tasks()
-        await self._realtime.settle_spared()
+        await self._shutdown.spend(
+            self._realtime.settle_spared(),
+            "settling the tool calls an ending spared",
+            component="realtime",
+            operation="settle",
+        )
         # A detach may still be finishing on its own task — the deferred case —
         # and it ends in `leave()`. Cancelling it would strand the bot in the
         # conference, so it is waited for rather than cut off.

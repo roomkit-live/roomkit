@@ -137,7 +137,7 @@ async def test_unsuccessful_delivery_never_opens_gates(tmp_path, ending):
 
         provider.submit_tool_result = blocked_send
         task = asyncio.create_task(
-            channel._handle_tool_call(
+            channel._execute_tool_call(
                 RealtimeToolCall(session, "activation", "activate_skill", {"name": "test-skill"})
             )
         )
@@ -180,7 +180,7 @@ async def test_simultaneous_native_activations_keep_both_bodies(tmp_path):
         provider.reconfigure.side_effect = update
         await asyncio.gather(
             *[
-                channel._handle_tool_call(
+                channel._execute_tool_call(
                     RealtimeToolCall(session, name, "activate_skill", {"name": name})
                 )
                 for name in ["test-skill", "second"]
@@ -223,13 +223,13 @@ async def test_activation_and_configuration_preserve_session_rules(
             if second:
                 second_started.set()
             if activate:
-                await channel._handle_tool_call(
+                await channel._execute_tool_call(
                     RealtimeToolCall(
                         session, "activation", "activate_skill", {"name": "test-skill"}
                     )
                 )
             elif update == "search":
-                await channel._handle_tool_call(
+                await channel._execute_tool_call(
                     RealtimeToolCall(session, "search", "find_tools", {"query": "calendar"})
                 )
             else:

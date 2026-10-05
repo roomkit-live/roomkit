@@ -12,7 +12,6 @@ once, cancelled.
 from __future__ import annotations
 
 import asyncio
-import json
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -117,7 +116,10 @@ class _HangsUpThenLooksUp(ReasoningBackend):
         yield ReasoningOutput("done", is_final=True)
 
 
-async def test_a_backend_call_after_its_session_ended_is_reported_once_cancelled() -> None:
+async def test_a_backend_that_hangs_up_ends_its_delegation_and_its_next_call() -> None:
+    """The hang-up call ended its own session: once it returns, its
+    delegation ends, and the call the backend would make next never runs,
+    nor is anything reported for it (RFC §12.4)."""
     provider = MockRealtimeProvider(full_duplex=True)
     holder: dict[str, Any] = {}
     ran: list[str] = []
@@ -150,19 +152,15 @@ async def test_a_backend_call_after_its_session_ended_is_reported_once_cancelled
 
     seen = _observe(kit)
     await provider.simulate_delegation(session, "d1", "integrator")
-    await _until(lambda: len(backend.results) == 2)
+    await _until(lambda: bool(seen))
     await asyncio.sleep(0.1)
 
     assert ran == ["hangup"]
     # Whoever issued it is gone: no gate runs for it.
     assert gated == ["hangup"]
-    [(_, read)] = [r for r in backend.results if r[0] == "lookup"]
-    assert read.is_error
-    assert json.loads(read.text)["error"] == "Tool call cancelled"
-    assert [(e.name, e.is_error, e.cancelled) for e in seen] == [
-        ("hangup", False, False),
-        ("lookup", True, True),
-    ]
+    # The delegation ended before the backend read the next call's result.
+    assert [name for name, _ in backend.results] == ["hangup"]
+    assert [(e.name, e.is_error, e.cancelled) for e in seen] == [("hangup", False, False)]
     await kit.close()
 
 

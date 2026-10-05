@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
+from roomkit.channels._realtime_context import ending_cause, held_by
 from roomkit.core.task_utils import CLOSE_WAIT_S
 from roomkit.models.steering import Cancel, InjectMessage, SteeringDirective, UpdateSystemPrompt
 from roomkit.providers.ai.base import AIContext, AIMessage
@@ -85,13 +86,15 @@ class AISteeringMixin(_AIChannelContract):
         the calls it runs are cancelled and reported cancelled, no further
         round is asked, and the close waits for the turns to end, at most
         :data:`CLOSE_WAIT_S`. A close from inside a turn (one of its calls,
-        one of its hooks) spares the current task and does not wait for that
-        turn; a turn an earlier close cut is not cut or waited for again."""
-        current = asyncio.current_task()
+        one of its hooks, a task they started) spares the current task and the
+        realtime call whose handler is closing (a reasoning backend's agent,
+        RFC §12.4), and does not wait for that turn; a turn an earlier close
+        cut is not cut or waited for again."""
+        spared = {asyncio.current_task(), *held_by(ending_cause())}
         ending = [
             ctx.ended
             for ctx in list(self._active_loops.values())
-            if not ctx.closing and self._cut_turn(ctx, current)
+            if not ctx.closing and self._cut_turn(ctx, spared)
         ]
         if not ending:
             return
@@ -106,15 +109,19 @@ class AISteeringMixin(_AIChannelContract):
             )
 
     @staticmethod
-    def _cut_turn(ctx: _ToolLoopContext, current: asyncio.Task[object] | None) -> bool:
-        """Cut one turn: no further round, its calls cancelled but the current
-        task. Whether the close waits for it: not when it runs the close."""
+    def _cut_turn(ctx: _ToolLoopContext, spared: set[asyncio.Task[Any] | None]) -> bool:
+        """Cut one turn: no further round, its calls cancelled but the *spared*
+        tasks. Whether the close waits for it: not when it holds one of them,
+        or runs the close."""
         ctx.closing = True
         ctx.cancel_event.set()
+        holds_spared = False
         for task in list(ctx.cancellable):
-            if task is not current:
+            if task in spared:
+                holds_spared = True
+            else:
                 task.cancel()
-        return current not in ctx.cancellable and _current_loop_ctx.get() is not ctx
+        return not holds_spared and _current_loop_ctx.get() is not ctx
 
     def _steering_targets(
         self, directive: SteeringDirective, loop_id: str | None, room_id: str | None

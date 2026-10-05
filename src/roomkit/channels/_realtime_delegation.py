@@ -24,7 +24,9 @@ from uuid import uuid4
 from roomkit.channels._realtime_context import carry_calls, carrying_task
 from roomkit.channels._realtime_tool_calls import RealtimeToolCall
 from roomkit.channels._realtime_tool_executor import (
+    SESSION_ENDED,
     ToolCallHost,
+    cancelled_outcome,
     report_cancelled_call,
     report_failed_call,
     report_served_elsewhere,
@@ -483,6 +485,25 @@ class RealtimeDelegationMixin:
         # end interrupted, nor cut with its delegation (RFC §12.4).
         call.task = asyncio.current_task()
         call.carrier = carrying_task()
+        outcome = await self._run_backend_call(call, delegation_id)
+        logger.info(
+            "Backend tool %s %s (delegation %s, session %s)",
+            name,
+            outcome.kind,
+            delegation_id,
+            session.id,
+        )
+        _end_delegation_after(call)
+        return ToolCallResult(
+            result_text(outcome.result),
+            is_error=outcome.failed,
+            refused=outcome.kind is OutcomeKind.REFUSED,
+        )
+
+    async def _run_backend_call(self, call: RealtimeToolCall, delegation_id: str) -> ToolOutcome:
+        """Serve a backend's *call* on the books, its outcome. An ending's cut
+        of this call alone, its delegation running on, is the call's
+        cancelled outcome (:func:`_take_back_ending_cut`)."""
         self._open_tool_call(call)
         try:
             with self._tool_call_span(
@@ -494,22 +515,13 @@ class RealtimeDelegationMixin:
                     outcome = await run_tool_call(host, call, _BackendDoor())
                 except asyncio.CancelledError:
                     await self._report_cut_backend_call(call)
-                    raise
+                    if not _take_back_ending_cut(call):
+                        raise
+                    outcome = cancelled_outcome(call, SESSION_ENDED)
                 span.close(outcome)
         finally:
             self._close_tool_call(call)
-        logger.info(
-            "Backend tool %s %s (delegation %s, session %s)",
-            name,
-            outcome.kind,
-            delegation_id,
-            session.id,
-        )
-        return ToolCallResult(
-            result_text(outcome.result),
-            is_error=outcome.failed,
-            refused=outcome.kind is OutcomeKind.REFUSED,
-        )
+        return outcome
 
     async def _report_cut_backend_call(self, call: RealtimeToolCall) -> None:
         """Report a backend call the end of its delegation cut, once, as
@@ -605,3 +617,28 @@ class _BackendDoor:
 
     async def deliver(self, call: RealtimeToolCall, outcome: ToolOutcome) -> bool:
         return True
+
+
+def _take_back_ending_cut(call: RealtimeToolCall) -> bool:
+    """Take back the cancellation the current task got when it is an ending's
+    cut of *call* alone: the call runs in a task of its own, under a
+    delegation the ending spared (its cause is another of the delegation's
+    calls). Whether it was one: the cut is then the call's cancelled outcome,
+    so the delegation's turn is not cut with it (RFC §12.4)."""
+    task = asyncio.current_task()
+    carrier = call.carrier
+    if task is None or carrier is None or task is carrier or carrier.cancelling():
+        return False
+    if task.cancelling() != 1:
+        return False
+    task.uncancel()
+    return True
+
+
+def _end_delegation_after(call: RealtimeToolCall) -> None:
+    """End the delegation holding *call* once the call returned on the
+    session its own ending closed: nothing is left to answer it, and no
+    further round runs (RFC §12.4)."""
+    carrier = call.carrier
+    if carrier is not None and call.caused_ending:
+        asyncio.get_running_loop().call_soon(carrier.cancel)

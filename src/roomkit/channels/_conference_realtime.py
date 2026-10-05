@@ -42,7 +42,7 @@ from roomkit.channels._conference_tools import (
     declared_tools,
     warn_unused_role_overrides,
 )
-from roomkit.channels._realtime_endings import interrupt_for_ending, settle_spared_calls
+from roomkit.channels._realtime_endings import SparedCalls, interrupt_for_ending
 from roomkit.channels._realtime_text_injected import fire_text_injected
 from roomkit.channels._realtime_tool_calls import RealtimeToolCall, ToolCallBook
 from roomkit.channels._realtime_tool_executor import (
@@ -67,7 +67,7 @@ from roomkit.tools._human_input_channel import ChannelHumanInput
 from roomkit.tools._outcome import ToolOutcome
 from roomkit.tools.result import GateRefusal, declined_answer, result_text
 from roomkit.tools.timeout import answer_within
-from roomkit.voice.base import AudioChunk, VoiceSession, VoiceSessionState
+from roomkit.voice.base import AudioChunk, VoiceSession
 from roomkit.voice.realtime._answer_depth import AnswerDepth
 from roomkit.voice.realtime.injection import VoiceInjectionResult
 
@@ -196,7 +196,7 @@ class ConferenceRealtime:
         self._reports: set[asyncio.Task[None]] = set()
         # The calls an ending spared (their handler caused it) that may still
         # run: off the books with their room, waited for or cut at close.
-        self._spared_calls: set[RealtimeToolCall] = set()
+        self._spared_calls = SparedCalls()
         # Providers register callbacks append-only, so each instance is wired
         # exactly once, ever — a re-plug of the same provider reuses the
         # registration, and the per-session identity guards make callbacks
@@ -696,7 +696,10 @@ class ConferenceRealtime:
         if config is None:
             await report_cancelled_call(self, call, _LEFT_THE_ROOM)
             return
-        await run_tool_call(self, call, _ConferenceDoor(self, config))
+        outcome = await run_tool_call(self, call, _ConferenceDoor(self, config))
+        logger.info(
+            "Tool call %s(%s) %s for room %s", call.name, call.call_id, outcome.kind, call.room_id
+        )
 
     # -- ToolCallHost: the steps the executor serves a call with -------------
 
@@ -786,8 +789,9 @@ class ConferenceRealtime:
     async def _submit_tool_result(
         self, config: ConferenceRealtimeConfig, call: RealtimeToolCall, outcome: ToolOutcome
     ) -> bool:
-        if call.session.state == VoiceSessionState.ENDED:
-            # A call its own ending spared: nothing is left to answer.
+        if self._call_ended(call):
+            # A call its own ending spared: its room's session is gone, and
+            # nothing is left to answer.
             return False
         try:
             with self._operations.use(
@@ -840,7 +844,7 @@ class ConferenceRealtime:
         session, room.session = room.session, None
         calls = self._tool_calls.take(session.id) if session is not None else []
         interrupted, _ = interrupt_for_ending(calls, list(room.tasks))
-        self._spared_calls.update(call for call in calls if call not in interrupted)
+        self._spared_calls.keep(call for call in calls if call not in interrupted)
         # A room off the books has nothing in flight: a delivery waiting on it
         # goes on to find its session gone.
         room.idle.set()
@@ -874,8 +878,7 @@ class ConferenceRealtime:
     async def settle_spared(self) -> None:
         """At the channel's close, wait for the calls an ending spared that
         still run, then cut and report the rest (RFC §12.4)."""
-        spared, self._spared_calls = self._spared_calls, set()
-        await settle_spared_calls(self, spared, _LEFT_THE_ROOM)
+        await self._spared_calls.settle(self, _LEFT_THE_ROOM)
 
     async def _settle_reports(self) -> None:
         """Wait for the reports of the calls detaches interrupted. A wait

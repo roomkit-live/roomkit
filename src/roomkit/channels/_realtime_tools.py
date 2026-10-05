@@ -14,7 +14,6 @@ from dataclasses import replace
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from roomkit.channels._realtime_context import (
-    serving_call,
     spare_own_orphaned_call,
 )
 from roomkit.channels._realtime_skills import RequiredToolsCheck
@@ -275,7 +274,7 @@ class RealtimeToolsMixin:
             return
         call.task = self._track_task(
             loop,
-            self._handle_tool_call(call),
+            self._execute_tool_call(call),
             name=f"rt_tool_call:{session.id}:{call_id}",
         )
         call.task.add_done_callback(lambda _: self._close_tool_call(call))
@@ -423,10 +422,6 @@ class RealtimeToolsMixin:
         if released and self._transport is not None:
             self._transport.set_input_muted(call.session, False)
         self._update_idle_event(session_id)
-
-    async def _handle_tool_call(self, call: RealtimeToolCall) -> None:
-        with serving_call(call):
-            await self._execute_tool_call(call)
 
     async def _serve_unbooked_call(self, call: RealtimeToolCall) -> None:
         """Take a call no result can name down the path of any call, off the

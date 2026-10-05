@@ -35,6 +35,7 @@ from roomkit.providers.ai.base import AIContext, AIMessage, AITool
 from roomkit.tools.context import _current_loop_ctx, _ToolLoopContext, current_tool_call
 from roomkit.tools.result import tool_failure
 from roomkit.tools.timeout import ToolTimeouts
+from roomkit.voice.base import VoiceSessionState
 
 if TYPE_CHECKING:
     from roomkit.providers.ai.base import AIProvider
@@ -342,9 +343,13 @@ class AgentReasoningBackend(ReasoningBackend):
         finally:
             # The loop extended the context with each round; whatever the
             # turn's end, the session's conversation keeps them, closed by
-            # what the model said last.
-            closing = AIMessage(role="assistant", content="".join(text).strip() or "(no answer)")
-            self._histories[session_id] = [*context.messages, closing]
+            # what the model said last. A session that ended meanwhile keeps
+            # nothing: its end released its history.
+            if request.session.state != VoiceSessionState.ENDED:
+                closing = AIMessage(
+                    role="assistant", content="".join(text).strip() or "(no answer)"
+                )
+                self._histories[session_id] = [*context.messages, closing]
         if reason != "completed":
             # A turn that did not complete has no answer, and its narration
             # is none: the request failed, which the channel answers aloud

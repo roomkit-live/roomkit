@@ -31,15 +31,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - A realtime tool call whose own handler causes an ending is spared on
   every ending, host and door (RMK-520, RFC §12.4): it is known by its call
-  context, which every task its handler starts inherits, not by the task that
-  runs the ending. A handler that ends its session through a task of its own,
-  closes its channel (realtime or conference) or `kit.close()`, or hangs up
-  from a reasoning backend's delegation runs on, and the close completes; it
-  used to be cut mid-teardown, reported `cancelled`, or to fail the close
-  (`RecursionError`). A spared call still running when its channel closes is
-  waited for within the close's bound, then cut and reported once; nothing of
-  it outlives `kit.close()`. A handler that closes the framework itself runs
-  on but its outcome reaches no hook.
+  context, which lasts until its outcome is reported and which every task its
+  handler starts inherits, not by the task that runs the ending. A handler
+  that ends its session through a task of its own, awaited or not, closes its
+  channel (realtime or conference) or `kit.close()`, or hangs up from a
+  reasoning backend's delegation runs on, and the close completes; it used to
+  be cut mid-teardown, reported `cancelled`, or to fail the close
+  (`RecursionError`). The other calls the ending reaches are cut there and
+  then; on a backend's door the delegation ends once the hang-up call
+  returns, with no further round and no history kept for the ended session.
+  A spared call still running when its channel closes is waited for within
+  the close's bound, then cut and reported once; nothing of it outlives
+  `kit.close()`. A handler that closes the framework itself runs on, its
+  outcome logged but reaching no hook.
+
+- A tool call's report, once claimed, is made to its end: a cut of the call
+  while its ON_TOOL_CALL observers are told no longer loses its only report
+  (RMK-520, RFC §9.3).
 
 - A turn's end is reported and logged once on every door (RMK-513, RFC
   §19.7.3, §19.7.4, §23.3): an expected end (its round cap, a stop) fires no

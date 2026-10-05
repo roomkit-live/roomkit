@@ -128,8 +128,19 @@ async def run_tool_call(
     """Serve *call* and deliver its outcome through *door*, once, reported once.
 
     Never raises but a cancellation: a step that fails is the call's failure,
-    which the model reads as one and the observers receive.
+    which the model reads as one and the observers receive. The whole of it
+    runs as the call's own context, which every task its handler starts
+    inherits: an ending started there, awaited or not, spares the call until
+    its outcome is reported (RFC §12.4).
     """
+    with serving_call(call):
+        return await _run_tool_call(host, call, door)
+
+
+async def _run_tool_call(
+    host: ToolCallHost, call: RealtimeToolCall, door: ToolCallDoor
+) -> ToolOutcome:
+    """:func:`run_tool_call`'s steps: the outcome, then its delivery."""
     try:
         outcome = await _decide(host, call, door)
     except asyncio.CancelledError:
@@ -449,9 +460,7 @@ def serving_tool_call(
     )
     token = _current_voice_session.set(call.session)
     try:
-        # The call it serves is this context's, and every task its handler
-        # starts inherits it: an ending started here spares the call.
-        with serving_call(call), _installed(loop_ctx, call_ctx):
+        with _installed(loop_ctx, call_ctx):
             yield
             call.structured_content = call_ctx.structured_content
     finally:
