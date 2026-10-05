@@ -450,10 +450,10 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
         index: int,
         answered: list[AIToolResultPart],
     ) -> AsyncGenerator[StreamDelta, None]:
-        """Execute a round's announced calls, yield one end marker per call,
-        each with the arguments it ran with (its start marker's), then hand
-        the round to AFTER_TOOL_ROUND; *answered* are the round's calls the
-        provider served, read beside them."""
+        """Execute a round's announced calls, yield each call's end marker
+        (set on its start marker as it finished, with the arguments it ran
+        with), then hand the round to AFTER_TOOL_ROUND; *answered* are the
+        round's calls the provider served, read beside them."""
         results, duration_ms = await self._execute_round_tools(
             context,
             calls,
@@ -464,22 +464,9 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
             answered=answered,
         )
         turn.count_round(calls)
-        for call, marker, result in zip(calls, markers, results, strict=False):
-            value = result.result
-            is_error = result.is_error
-            yield ToolCallEndMarker(
-                tool_name=call.name,
-                tool_id=call.id,
-                arguments=marker.ran_with if marker.ran_with is not None else call.arguments,
-                result=value,
-                status="failed" if is_error else "completed",
-                duration_ms=duration_ms,
-                # ``error`` is text; a failure that answered with content parts
-                # flattens the way any text consumer of that result would.
-                error=result.as_text() if is_error else None,
-                structured_content=result.structured_content,
-                outcome=result.outcome,
-            )
+        for marker in markers:
+            if marker.ended is not None:
+                yield marker.ended
         if turn.room_id:
             await self._publish_tool_event(
                 EphemeralEventType.TOOL_CALL_END,

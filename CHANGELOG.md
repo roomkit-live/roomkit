@@ -861,7 +861,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   without asking the handler, and one the provider ran is reported with its
   own arguments, where the handler decided both and one report was made; a
   handler that raises reporting a call is logged and no longer fails the
-  turn.
+  turn. A turn cut while two calls under one id are open closes each of
+  them, the one already refused as refused and the one running as
+  cancelled, where one END row closed only one of their two START rows; a
+  call that ended before the cut is closed with its outcome, its end riding
+  `ToolCallStartMarker.ended`, and each call's END row carries its own
+  duration rather than its round's.
 
 - A result submitted for a realtime tool call the provider abandoned, or
   never issued, is dropped with a log on every provider (RMK-502, RFC §12.4):

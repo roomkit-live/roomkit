@@ -53,6 +53,7 @@ from roomkit.core.exceptions import (
     UnservedToolCallError,
 )
 from roomkit.models.enums import ChannelType
+from roomkit.models.streaming import ToolCallEndMarker, ToolCallStartMarker
 from roomkit.models.tool_call import ToolCallEvent, ToolCallVerdict
 from roomkit.providers.ai.base import (
     AIImagePart,
@@ -443,12 +444,19 @@ class AIToolsMixin(_AIChannelContract):
     async def _serve_announced(
         self, tc: Any, entry: AnnouncedCall, scope: _CallRound
     ) -> AIToolResultPart:
-        """One call of a round as a call of its own: its reports are its, and
-        a duplicate of its id is refused."""
+        """One call of a round as a call of its own: its reports are its, a
+        duplicate of its id is refused, and its end rides its start marker
+        as soon as it is known, so a turn cut later closes it as it ended."""
+        started = time.monotonic()
         with reporting(entry):
             if entry.duplicate:
-                return await self._refuse_id_in_flight(tc, scope)
-            return await self._run_call(tc, scope)
+                part = await self._refuse_id_in_flight(tc, scope)
+            else:
+                part = await self._run_call(tc, scope)
+        if entry.marker is not None:
+            duration_ms = int((time.monotonic() - started) * 1000)
+            entry.marker.ended = call_end_marker(tc, entry.marker, part, duration_ms)
+        return part
 
     async def _run_call(self, tc: Any, scope: _CallRound) -> AIToolResultPart:
         """One call of a round, through its gates to the part the model reads."""
@@ -1383,3 +1391,25 @@ def _preview(value: Any) -> str:
     if len(text) <= _PREVIEW_CHARS:
         return text
     return f"{text[:_PREVIEW_CHARS]}… ({len(text)} chars)"
+
+
+def call_end_marker(
+    tc: Any, marker: ToolCallStartMarker, part: AIToolResultPart, duration_ms: int
+) -> ToolCallEndMarker:
+    """The end of a call that ran or was refused, as its row stores it: the
+    arguments it ran with (its start marker's), its outcome as the model
+    reads it."""
+    is_error = part.is_error
+    return ToolCallEndMarker(
+        tool_name=tc.name,
+        tool_id=tc.id,
+        arguments=marker.ran_with if marker.ran_with is not None else tc.arguments,
+        result=part.result,
+        status="failed" if is_error else "completed",
+        duration_ms=duration_ms,
+        # ``error`` is text; a failure that answered with content parts
+        # flattens the way any text consumer of that result would.
+        error=part.as_text() if is_error else None,
+        structured_content=part.structured_content,
+        outcome=part.outcome,
+    )

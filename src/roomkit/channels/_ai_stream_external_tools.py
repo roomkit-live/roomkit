@@ -106,18 +106,25 @@ class _ExternalStreamTools:
         entry = self._announce(call, pending=pending)
         if not pending:
             await self._report(entry, _Decided(arguments, result, kind))
-        yield ToolCallStartMarker(tool_name=call.name, tool_id=call.id, arguments=arguments)
+        start = ToolCallStartMarker(tool_name=call.name, tool_id=call.id, arguments=arguments)
+        entry.marker = start
+        yield start
         await self._publish_start(call, arguments, round_idx)
+        decided = _Decided(arguments, result, kind)
         if pending and self.handler is not None:
-            decided = await self._settle(entry, self.handler, _Decided(arguments, result, kind))
-            arguments, result, kind = decided.arguments, decided.result, decided.kind
-            await self._report(entry, decided)
+            decided = await self._settle(entry, self.handler, decided)
         duration_ms = int((time.monotonic() - started_at) * 1000)
         # The model reads it bounded, as any outcome, and so does its END row;
-        # the report above heard it whole (RFC §21.5).
-        result = self.bound(call.name, result, call.id)
-        yield _end_marker(call, arguments, result, kind, duration_ms)
-        await self._publish_end(call, result, kind, round_idx, duration_ms)
+        # the report heard it whole (RFC §21.5).
+        bounded = self.bound(call.name, decided.result, call.id)
+        end = _end_marker(call, decided.arguments, bounded, decided.kind, duration_ms)
+        # Its end rides its start before its report: a turn cut meanwhile
+        # closes it as the model read it.
+        start.ran_with, start.ended = dict(decided.arguments), end
+        if pending:
+            await self._report(entry, decided)
+        yield end
+        await self._publish_end(call, bounded, decided.kind, round_idx, duration_ms)
 
     async def _publish_start(
         self, call: StreamToolCall, arguments: dict[str, Any], round_idx: int

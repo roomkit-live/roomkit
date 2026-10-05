@@ -26,12 +26,15 @@ class ResponseReader:
     executing is let finish, a round that had not started executing never
     does, and every call it opened gets its end. A turn cancelled from outside
     still aborts a running tool, through :meth:`abandon`.
+
+    Each start is a call of its own, even under an id another open call
+    carries (RFC §12.4): an end closes the start it rides, else the earliest
+    open under its id.
     """
 
     def __init__(self, stream: AsyncIterator[Any]) -> None:
         self._stream = stream
-        self._open: dict[str, ToolCallStartMarker] = {}
-        self._starts: dict[str, ToolCallStartMarker] = {}
+        self._open: list[ToolCallStartMarker] = []
         self._pending: asyncio.Future[Any] | None = None
 
     async def next(self) -> Any:
@@ -66,8 +69,7 @@ class ResponseReader:
             try:
                 item = await pending
                 while isinstance(item, ToolCallEndMarker):
-                    self._track(item)
-                    if (start := self._starts.get(item.tool_id)) is not None:
+                    if (start := self._track(item)) is not None:
                         ends.append((start, item))
                     if not self._open:
                         break
@@ -89,8 +91,9 @@ class ResponseReader:
     ) -> list[tuple[ToolCallStartMarker, ToolCallEndMarker]]:
         """Cancel a running tool's read (the turn itself was cancelled or failed).
 
-        Returns every call still open, closed as ``failed`` with *error*, so
-        no start row stays pending (RFC §12.2 step 13s).
+        Returns every call still open, closed as it ended when it did, else
+        as ``failed`` with *error*, so no start row stays pending (RFC §12.2
+        step 13s).
         """
         pending, self._pending = self._pending, None
         if pending is not None and not pending.done():
@@ -99,26 +102,38 @@ class ResponseReader:
         return self._close_open(error)
 
     def _close_open(self, error: str) -> list[tuple[ToolCallStartMarker, ToolCallEndMarker]]:
+        """Close every open call: as it ended when its end rides its start (a
+        call that finished, or that its gate refused, before the cut), else
+        cancelled, with the arguments it ran with."""
         closed = [
-            (
-                start,
-                ToolCallEndMarker(
-                    tool_name=start.tool_name,
-                    tool_id=start.tool_id,
-                    arguments=start.ran_with if start.ran_with is not None else start.arguments,
-                    status="failed",
-                    error=error,
-                    outcome="cancelled",
-                ),
-            )
-            for start in self._open.values()
+            (start, start.ended if start.ended is not None else _cut_end(start, error))
+            for start in self._open
         ]
         self._open.clear()
         return closed
 
-    def _track(self, item: Any) -> None:
+    def _track(self, item: Any) -> ToolCallStartMarker | None:
+        """Follow the open calls; the start an end marker closed, if any."""
         if isinstance(item, ToolCallStartMarker):
-            self._open[item.tool_id] = item
-            self._starts[item.tool_id] = item
-        elif isinstance(item, ToolCallEndMarker):
-            self._open.pop(item.tool_id, None)
+            self._open.append(item)
+            return None
+        if not isinstance(item, ToolCallEndMarker):
+            return None
+        # By identity: two starts under one id and one set of arguments are
+        # equal, and still two calls.
+        index = next((i for i, s in enumerate(self._open) if s.ended is item), None)
+        if index is None:
+            index = next((i for i, s in enumerate(self._open) if s.tool_id == item.tool_id), None)
+        return None if index is None else self._open.pop(index)
+
+
+def _cut_end(start: ToolCallStartMarker, error: str) -> ToolCallEndMarker:
+    """The end of a call the turn cut before it ended."""
+    return ToolCallEndMarker(
+        tool_name=start.tool_name,
+        tool_id=start.tool_id,
+        arguments=start.ran_with if start.ran_with is not None else start.arguments,
+        status="failed",
+        error=error,
+        outcome="cancelled",
+    )

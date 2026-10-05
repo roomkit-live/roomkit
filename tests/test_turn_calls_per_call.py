@@ -5,7 +5,8 @@ calls under one id are two calls: the second is refused while the first is
 pending, or reported as its own when the provider ran it, and a handler that
 raises reporting a call does not fail the turn. A call under an id an
 earlier round used is a new call: reported, and cancelled when the turn cuts
-it.
+it. A turn cut while two calls under one id are open closes each of them,
+with its own outcome.
 """
 
 from __future__ import annotations
@@ -206,6 +207,31 @@ async def test_a_reused_id_call_the_turn_cuts_is_reported_cancelled(door: str) -
 
     assert _outcomes(reports) == [("first", False, False, False), ("second", False, True, True)]
     assert (starts, ends) == (2, [("served", "first"), ("cancelled", "second")])
+
+
+@pytest.mark.parametrize("door", TEXT_DOORS)
+async def test_a_cut_turn_closes_each_of_two_open_calls_under_one_id(door: str) -> None:
+    """The first runs and hangs, the second was refused: the cut closes the
+    first cancelled and the second refused, one end per start."""
+    ran: list[str] = []
+
+    async def hangs(name: str, arguments: dict[str, Any]) -> str:
+        ran.append(arguments["q"])
+        await asyncio.sleep(30)
+        return "late"
+
+    calls = [_call("first"), _call("second")]
+    channel = AIChannel("ai", provider=_provider([calls], door), tools=[TOOL], tool_handler=hangs)
+    kit, reports = await _room(channel)
+
+    await _cut(kit, lambda: bool(ran) and any(r.refused for r in reports))
+    await _until(lambda: len(reports) == 2)
+    starts, ends = await _rows(kit)
+    await kit.close()
+
+    assert ran == ["first"]
+    assert _outcomes(reports) == [("first", False, True, True), ("second", True, False, True)]
+    assert (starts, sorted(ends)) == (2, [("cancelled", "first"), ("refused", "second")])
 
 
 class _RaisesReporting(_Approves):
