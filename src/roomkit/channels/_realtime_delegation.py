@@ -21,6 +21,7 @@ from functools import partial
 from typing import TYPE_CHECKING, Any, Literal, Protocol, cast
 from uuid import uuid4
 
+from roomkit.channels._realtime_context import carry_calls, carrying_task
 from roomkit.channels._realtime_tool_calls import RealtimeToolCall
 from roomkit.channels._realtime_tool_executor import (
     ToolCallHost,
@@ -279,7 +280,9 @@ class RealtimeDelegationMixin:
         self, session: VoiceSession, delegation_id: str
     ) -> None:
         """Serve a delegation under its session's span: the backend's own turn
-        is traced as part of the session."""
+        is traced as part of the session, and this task holds the calls its
+        backend makes (an ending one of them causes spares it)."""
+        carry_calls()
         _, token = self._rt_span_ctx(session.id)
         try:
             await self._serve_delegation(session, delegation_id)
@@ -476,9 +479,11 @@ class RealtimeDelegationMixin:
         # (RFC §9.3).
         call_id = _backend_call_id(delegation_id, model_call_id())
         call = RealtimeToolCall(session, call_id, name, arguments)
-        # The delegation's task serves the call: a call that ends its own
-        # session is then not taken for one the session's end interrupted.
+        # The task serving the call, and the delegation's that holds it: a
+        # call that ends its own session is not taken for one the session's
+        # end interrupted, nor cut with its delegation (RFC §12.4).
         call.task = asyncio.current_task()
+        call.carrier = carrying_task()
         self._open_tool_call(call)
         try:
             with self._tool_call_span(

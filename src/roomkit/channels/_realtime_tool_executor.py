@@ -18,9 +18,9 @@ from collections.abc import Awaitable, Callable, Iterable, Iterator
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any, Protocol
 
-from roomkit.channels._realtime_context import _current_voice_session
+from roomkit.channels._realtime_context import _current_voice_session, ending_cause, serving_call
 from roomkit.core.exceptions import ToolFailedError, ToolRefusedError, UnservedToolCallError
-from roomkit.core.task_utils import shielded
+from roomkit.core.task_utils import CLOSE_WAIT_S, shielded
 from roomkit.models.tool_call import ToolCallVerdict
 from roomkit.tools._outcome import OutcomeKind, ToolOutcome, read_outcome
 from roomkit.tools.context import ToolCallContext, _installed, _ToolLoopContext
@@ -345,14 +345,48 @@ def interrupt_for_ending(
     calls: Iterable[RealtimeToolCall], tasks: Iterable[asyncio.Task[Any]]
 ) -> tuple[list[RealtimeToolCall], list[asyncio.Task[Any]]]:
     """Cancel what an ending reaches, on every host: each of *tasks* and of
-    *calls* but the current task's, whose handler caused the ending and runs
-    on to report its own outcome (RFC §12.4). The calls to report
-    interrupted, and the tasks cancelled."""
+    *calls* but the call whose handler caused the ending (:func:`ending_cause`,
+    a task it started included), its tasks and the current one; it runs on
+    to report its own outcome (RFC §12.4). The calls to report interrupted,
+    and the tasks cancelled."""
     current = asyncio.current_task()
-    cancelled = [task for task in tasks if task is not current]
+    cause = ending_cause()
+    spared = {current, *_held_by(cause)}
+    cancelled = [task for task in tasks if task not in spared]
     for task in cancelled:
         task.cancel()
-    return [call for call in calls if call.task is not current], cancelled
+    return [call for call in calls if call is not cause and call.task is not current], cancelled
+
+
+def _held_by(call: RealtimeToolCall | None) -> list[asyncio.Task[Any]]:
+    """The tasks that hold *call*: its own, and the one carrying it."""
+    if call is None:
+        return []
+    return [task for task in (call.task, call.carrier) if task is not None]
+
+
+async def settle_spared_calls(
+    host: ToolCallHost, calls: Iterable[RealtimeToolCall], why: str
+) -> None:
+    """At a close, wait within its bound for the calls an ending spared that
+    still run, then interrupt the rest and report each once, as cancelled
+    (RFC §12.4); never the call whose handler is closing, which runs on."""
+    cause = ending_cause()
+    current = asyncio.current_task()
+    running = {
+        call.task: call
+        for call in calls
+        if call is not cause and call.task is not None and call.task is not current
+        if not call.task.done()
+    }
+    if not running:
+        return
+    _, pending = await asyncio.wait(running, timeout=CLOSE_WAIT_S)
+    for task in pending:
+        task.cancel()
+    if pending:
+        await asyncio.wait(pending, timeout=CLOSE_WAIT_S)
+    await report_interrupted_calls(host, [running[task] for task in pending], why)
 
 
 async def report_interrupted_calls(
@@ -463,7 +497,9 @@ def serving_tool_call(
     )
     token = _current_voice_session.set(call.session)
     try:
-        with _installed(loop_ctx, call_ctx):
+        # The call it serves is this context's, and every task its handler
+        # starts inherits it: an ending started here spares the call.
+        with serving_call(call), _installed(loop_ctx, call_ctx):
             yield
             call.structured_content = call_ctx.structured_content
     finally:

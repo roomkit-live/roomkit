@@ -53,6 +53,7 @@ from roomkit.channels._realtime_tool_executor import (
     run_tool_call,
     serve_unbooked,
     serving_tool_call,
+    settle_spared_calls,
     submit_tool_outcome,
     tool_loop_context,
 )
@@ -67,7 +68,7 @@ from roomkit.tools._human_input_channel import ChannelHumanInput
 from roomkit.tools._outcome import ToolOutcome
 from roomkit.tools.result import GateRefusal, declined_answer, result_text
 from roomkit.tools.timeout import answer_within
-from roomkit.voice.base import AudioChunk, VoiceSession
+from roomkit.voice.base import AudioChunk, VoiceSession, VoiceSessionState
 from roomkit.voice.realtime._answer_depth import AnswerDepth
 from roomkit.voice.realtime.injection import VoiceInjectionResult
 
@@ -194,6 +195,9 @@ class ConferenceRealtime:
         # The tool calls in flight, per session, each delivered and reported once.
         self._tool_calls = ToolCallBook()
         self._reports: set[asyncio.Task[None]] = set()
+        # The calls an ending spared (their handler caused it) that may still
+        # run: off the books with their room, waited for or cut at close.
+        self._spared_calls: set[RealtimeToolCall] = set()
         # Providers register callbacks append-only, so each instance is wired
         # exactly once, ever — a re-plug of the same provider reuses the
         # registration, and the per-session identity guards make callbacks
@@ -783,6 +787,9 @@ class ConferenceRealtime:
     async def _submit_tool_result(
         self, config: ConferenceRealtimeConfig, call: RealtimeToolCall, outcome: ToolOutcome
     ) -> bool:
+        if call.session.state == VoiceSessionState.ENDED:
+            # A call its own ending spared: nothing is left to answer.
+            return False
         try:
             with self._operations.use(
                 ConferenceResource.REALTIME, what=f"tool result for room {call.room_id}"
@@ -834,6 +841,7 @@ class ConferenceRealtime:
         session, room.session = room.session, None
         calls = self._tool_calls.take(session.id) if session is not None else []
         interrupted, _ = interrupt_for_ending(calls, list(room.tasks))
+        self._spared_calls.update(call for call in calls if call not in interrupted)
         # A room off the books has nothing in flight: a delivery waiting on it
         # goes on to find its session gone.
         room.idle.set()
@@ -863,6 +871,12 @@ class ConferenceRealtime:
         if not calls:
             return
         self._track_report(report_interrupted_calls(self, calls, _LEFT_THE_ROOM))
+
+    async def settle_spared(self) -> None:
+        """At the channel's close, wait for the calls an ending spared that
+        still run, then cut and report the rest (RFC §12.4)."""
+        spared, self._spared_calls = self._spared_calls, set()
+        await settle_spared_calls(self, spared, _LEFT_THE_ROOM)
 
     async def _settle_reports(self) -> None:
         """Wait for the reports of the calls detaches interrupted. A wait

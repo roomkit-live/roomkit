@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import contextvars
 from collections.abc import Iterator
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from roomkit.channels._realtime_tool_calls import RealtimeToolCall
@@ -64,6 +65,34 @@ def serving_call(call: RealtimeToolCall) -> Iterator[None]:
     finally:
         served.finished = True
         _served_call.reset(token)
+
+
+def ending_cause() -> RealtimeToolCall | None:
+    """The call whose handler runs the code calling this, or a task that
+    handler started: the call an ending started here was caused by
+    (RFC §12.4). ``None`` outside a call, or once the call has ended."""
+    served = _served_call.get()
+    if served is None or served.finished:
+        return None
+    return served.call
+
+
+_carrying_task: contextvars.ContextVar[asyncio.Task[Any] | None] = contextvars.ContextVar(
+    "_carrying_task",
+    default=None,
+)
+
+
+def carry_calls() -> None:
+    """Make the current task the one that holds every call served under it
+    (a backend's delegation): an ending a call it holds caused spares it too
+    (RFC §12.4)."""
+    _carrying_task.set(asyncio.current_task())
+
+
+def carrying_task() -> asyncio.Task[Any] | None:
+    """The task that holds the calls served under it, if one does."""
+    return _carrying_task.get()
 
 
 def _this_task_serves(call: RealtimeToolCall) -> _ServedCall | None:

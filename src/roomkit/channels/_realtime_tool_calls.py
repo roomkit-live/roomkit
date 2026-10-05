@@ -57,6 +57,9 @@ class RealtimeToolCall:
     """The structured copy its handler left on the tool call context (MCP
     ``structuredContent``), carried to ON_TOOL_CALL (RFC §9.3)."""
     task: asyncio.Task[Any] | None = field(default=None, repr=False)
+    carrier: asyncio.Task[Any] | None = field(default=None, repr=False)
+    """The task that holds the call's task, when another one does (a
+    backend's delegation): an ending the call caused spares it too."""
     delivered: bool = False
     released: bool = False
     """The provider no longer waits for its result (it abandoned the call, or

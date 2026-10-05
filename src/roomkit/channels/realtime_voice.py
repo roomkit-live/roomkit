@@ -28,11 +28,12 @@ from roomkit.channels._realtime_delegation import RealtimeDelegationMixin
 from roomkit.channels._realtime_response import RealtimeResponseMixin
 from roomkit.channels._realtime_speech import RealtimeSpeechMixin
 from roomkit.channels._realtime_text_injected import fire_text_injected
-from roomkit.channels._realtime_tool_calls import ToolCallBook
+from roomkit.channels._realtime_tool_calls import RealtimeToolCall, ToolCallBook
 from roomkit.channels._realtime_tool_executor import (
     SESSION_ENDED,
     interrupt_for_ending,
     report_interrupted_calls,
+    settle_spared_calls,
 )
 from roomkit.channels._realtime_tool_gate import RealtimeToolGateMixin
 from roomkit.channels._realtime_tool_recovery import RealtimeToolRecoveryMixin
@@ -515,6 +516,9 @@ class RealtimeVoiceChannel(
         # The tool calls in flight, per session, each with its one delivery
         # and its one report (RFC §12.4).
         self._tool_calls = ToolCallBook()
+        # The calls an ending spared (their handler caused it) that may still
+        # run off the books: waited for, or cut, at the channel's close.
+        self._spared_calls: set[RealtimeToolCall] = set()
         self._awaiting_tool_response: set[str] = set()
         # Wall-clock of the last user-turn start (VAD SPEECH_START). Consumed by
         # _realtime_transcription when emitting the final user turn as a
@@ -1585,10 +1589,11 @@ class RealtimeVoiceChannel(
             f"rt_tool_recovery:{session.id}:",
             f"rt_delegation:{session.id}:",
         )
+        calls = self._tool_calls.take(session.id)
         interrupted, tool_tasks = interrupt_for_ending(
-            self._tool_calls.take(session.id),
-            [task for task in self._scheduled_tasks if task.get_name().startswith(prefixes)],
+            calls, [task for task in self._scheduled_tasks if task.get_name().startswith(prefixes)]
         )
+        self._spared_calls.update(call for call in calls if call not in interrupted)
         if tool_tasks:
             _, pending = await asyncio.wait(tool_tasks, timeout=CLOSE_WAIT_S)
             if pending:
@@ -2083,10 +2088,12 @@ class RealtimeVoiceChannel(
 
     async def _cancel_scheduled_tasks(self) -> None:
         """Cancel the tasks the channel still runs at its close, and wait for
-        them within the close's bound."""
-        tasks = list(self._scheduled_tasks)
-        for task in tasks:
-            task.cancel()
+        them within the close's bound: a call an ending spared is first waited
+        for, then cut and reported, and the call whose handler is closing the
+        channel runs on (RFC §12.4)."""
+        spared, self._spared_calls = self._spared_calls, set()
+        await settle_spared_calls(self, spared, SESSION_ENDED)
+        _, tasks = interrupt_for_ending((), list(self._scheduled_tasks))
         if tasks:
             try:
                 await asyncio.wait_for(
