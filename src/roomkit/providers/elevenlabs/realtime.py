@@ -246,6 +246,7 @@ class ElevenLabsRealtimeProvider(RealtimeVoiceProvider):
             callback_end_session=self._make_end_session_cb(session),
         )
 
+        await self._abandon_previous_connection(session)
         self._sessions[session.id] = session
         self._conversations[session.id] = conversation
         self._client_tools[session.id] = client_tools
@@ -617,6 +618,13 @@ class ElevenLabsRealtimeProvider(RealtimeVoiceProvider):
             self._tool_call_callbacks, session, call_id, name, arguments, label="tool_call"
         )
         raise asyncio.CancelledError
+
+    async def _abandon_previous_connection(self, session: VoiceSession) -> None:
+        """The base step, each pending call's SDK handler failed first: the
+        replaced conversation's handler is not left waiting for a result
+        that will never come."""
+        abandoned = self._reject_pending_tools(session, "the voice session connected again")
+        await self._abandon_tool_calls(session, abandoned)
 
     def _reject_pending_tools(self, session: VoiceSession, reason: str) -> list[str]:
         """Fail every in-flight call so no SDK handler is left hanging; the

@@ -284,10 +284,7 @@ class DeepgramAgentProvider(RealtimeVoiceProvider):
             speak=speak,
             max_prompt_chars=max_prompt_chars,
         )
-        if session.id in self._states:
-            # Connected again under a live session id: the calls the old
-            # connection issued are not this one's to answer (RFC §12.4).
-            await self._abandon_open_tool_calls(session)
+        await self._abandon_previous_connection(session)
         self._states[session.id] = state
 
         try:

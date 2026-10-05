@@ -339,6 +339,7 @@ class OpenAILiveProvider(
                 on_close=lambda text: self._assistant_turn_closed(session, text),
             ),
         )
+        await self._abandon_previous_connection(session)
         self._states[session.id] = state
 
         try:

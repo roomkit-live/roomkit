@@ -234,6 +234,7 @@ class GeminiLiveProvider(
             blocking_tool_names=self._blocking_tool_names(tools, warned),
             warned_unsupported=warned,
         )
+        await self._abandon_previous_connection(session)
         self._sessions[session.id] = state
 
         session.state = VoiceSessionState.ACTIVE
