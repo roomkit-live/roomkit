@@ -29,6 +29,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A realtime tool call whose own handler causes an ending is spared on
+  every ending, host and door (RMK-520, RFC §12.4): it is known by its call
+  context, which every task its handler starts inherits, not by the task that
+  runs the ending. A handler that ends its session through a task of its own,
+  closes its channel (realtime or conference) or `kit.close()`, or hangs up
+  from a reasoning backend's delegation runs on, and the close completes; it
+  used to be cut mid-teardown, reported `cancelled`, or to fail the close
+  (`RecursionError`). A spared call still running when its channel closes is
+  waited for within the close's bound, then cut and reported once; nothing of
+  it outlives `kit.close()`. A handler that closes the framework itself runs
+  on but its outcome reaches no hook.
+
 - A turn's end is reported and logged once on every door (RMK-513, RFC
   §15.2): an expected end (its round cap, a stop) fires no ON_ERROR, and a
   failure fires one where it happened. A synchronous Loop no longer fires
