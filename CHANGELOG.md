@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Every path reads a channel hosting a realtime model the same way
+  (RMK-516, RFC §12.4, §22.1, §23.3 step 8). `deliver()` with no
+  destination prefers a conference with its model plugged in, as it
+  prefers a realtime voice channel, whatever the attach order: it used to
+  pick a text transport bound before it, which reached nobody and reported
+  `sent`. The greeting, a recovered call's result, a handoff's language
+  instruction and a pipeline's handoff greeting are injected through the
+  channel's `inject_text`, so ON_REALTIME_TEXT_INJECTED hears them as it
+  hears a delivery. A conference's tool handler reads the session that
+  issued its call through `get_current_voice_session()`, as the realtime
+  channel's does, so `hand_back` returns the result to that session.
+
 - A realtime pipeline warns about and skips an agent's tool under any name
   the channel carries, as it already did under a host tool's name: a
   human-input tool's (`ask`) or a tool the channel serves itself
