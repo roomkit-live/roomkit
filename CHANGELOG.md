@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A realtime pipeline warns about and skips an agent's tool under any name
+  the channel carries, as it already did under a host tool's name: a
+  human-input tool's (`ask`) or a tool the channel serves itself
+  (`find_tools` under Tool Search, a skill's). The install used to fail with
+  `ToolNameCollisionError` and install nothing (RMK-517, RFC §19.5).
+
 - A connection refused, reset or timed out before any status is now
   `retryable` on Anthropic, Mistral and Gemini, as it already was on the
   OpenAI wire, Ollama and PolarGrid, so the channel's `RetryPolicy` retries it

@@ -37,6 +37,7 @@ from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.skills.registry import SkillRegistry
 from roomkit.tasks.delegate import DelegateHandler, setup_realtime_delegation
 from roomkit.tools import current_tool_allowed_names
+from roomkit.tools.human_input import HumanInputToolHandler
 from roomkit.voice.realtime.mock import MockRealtimeProvider, MockRealtimeTransport
 from tests.conference.test_conference_realtime import ROOM, realtime_kit, until
 from tests.conftest import make_event
@@ -207,36 +208,65 @@ class TestPipelineTools:
         assert config is not None
         assert [t["name"] for t in config.tools or []] == ["new_lookup", "handoff_conversation"]
 
-    async def test_a_name_the_channel_carries_is_the_channels(
-        self, caplog: pytest.LogCaptureFixture
-    ) -> None:
-        """One schema, one server (§21.1): the agent's tool of that name is
-        neither declared nor served, and a warning names it."""
-        channel_handler = AsyncMock(return_value="channel")
-        agent_handler = AsyncMock(return_value="agent")
+    @staticmethod
+    def _channel_carrying(
+        kind: str, provider: MockRealtimeProvider
+    ) -> tuple[RealtimeVoiceChannel, str]:
+        """A channel carrying a tool of *kind*, and that tool's name."""
+        if kind == "human-input":
+            ask = AITool(name="ask", description="the channel's", parameters={})
+            human = HumanInputToolHandler(tool_names={"ask"}, tool_definitions=[ask])
+            options: dict[str, Any] = {"human_input_handler": human}
+            name = "ask"
+        elif kind == "channel-own":
+            options = {"tools": [_schema("other")], "tool_search": True}
+            name = "find_tools"
+        else:
+            options = {"tools": [_schema("lookup", "the channel's")]}
+            name = "lookup"
         rtv = RealtimeVoiceChannel(
             "rtv",
-            provider=MockRealtimeProvider(),
+            provider=provider,
             transport=MockRealtimeTransport(),
-            tools=[_schema("lookup", "the channel's")],
-            tool_handler=channel_handler,
+            tool_handler=AsyncMock(return_value="channel"),
+            **options,
         )
+        return rtv, name
+
+    @pytest.mark.parametrize("kind", ["host", "human-input", "channel-own"])
+    async def test_a_name_the_channel_carries_is_the_channels(
+        self, kind: str, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """One schema, one server (§21.1): the agent's tool of that name is
+        neither declared nor served, a warning names it, and the install goes
+        through, whatever tool of the channel's carries the name (RMK-517)."""
+        provider = MockRealtimeProvider()
+        rtv, name = self._channel_carrying(kind, provider)
         agent = Agent(
             "agent-a",
             role="A",
-            tools=[AITool(name="lookup", description="the agent's", parameters={})],
-            tool_handler=agent_handler,
+            tools=[AITool(name=name, description="the agent's", parameters={})],
+            tool_handler=AsyncMock(return_value="agent"),
+            tool_search=False,
         )
+        kit = RoomKit()
+        kit.register_channel(rtv)
+        kit.register_channel(agent)
+        pipeline = ConversationPipeline(stages=[PipelineStage(phase="a", agent_id="agent-a")])
 
         with caplog.at_level(logging.WARNING, logger="roomkit.orchestration.pipeline"):
-            self._install(rtv, agent)
-        config = await rtv._room_session_config("r1")
+            pipeline.install(kit, [agent], voice_channel_id="rtv")
+        room = await kit.create_room()
+        await kit.attach_channel(room.id, "rtv")
+        await rtv.start_session(room.id, "u", "ws")
 
-        assert config is not None
-        [lookup] = [t for t in config.tools or [] if t["name"] == "lookup"]
-        assert lookup["description"] == "the channel's"
+        connect = next(c for c in provider.calls if c.method == "connect")
+        [declared] = [t for t in connect.args["tools"] or [] if t["name"] == name]
+        assert declared["description"] != "the agent's"
         assert "shares its name with a tool of channel rtv" in caplog.text
-        assert rtv._registry.lookup("lookup", "r1") is None
+        entry = rtv._registry.lookup(name, room.id)
+        assert entry is None or entry.definition.description != "the agent's"
+        await kit.close()
 
     async def test_the_channel_cannot_take_an_agents_name_later(self) -> None:
         """The registry refuses it, so no call is left between two servers."""
