@@ -835,6 +835,10 @@ class VoiceSTTMixin:
                                     cur_queue.put_nowait(None)
                                 break
 
+                            # The words that cut the playback: the person's
+                            # turn, whatever playback the cut has not yet
+                            # removed when this final is handled (RFC §12.3.13).
+                            cut_by_it = barge_in_fired
                             barge_in_fired = False
                             if not keep_stream:
                                 # Signal audio gen to stop so the SDK's
@@ -862,6 +866,7 @@ class VoiceSTTMixin:
                                     segments=_segments_of(result) if keep_stream else None,
                                     epoch=epoch,
                                     speaker=stage_speaker,
+                                    cut_playback=cut_by_it,
                                 ),
                                 name=f"continuous_stt:{session.id}",
                             )
@@ -976,12 +981,15 @@ class VoiceSTTMixin:
         segments: list[SpeakerSegment] | None = None,
         epoch: int = 0,
         speaker: SpeakerAttribution | None = None,
+        cut_playback: bool = False,
     ) -> None:
         """Process a transcription result from continuous STT.
 
         ``segments`` is set for a diarizing STT: each segment is then its own
         transcript, with its speaker, in its own room message (RFC §12.2.3);
-        ``epoch`` numbers the stream the labels come from.
+        ``epoch`` numbers the stream the labels come from. ``cut_playback``: the
+        words of this final cut the playback, so they are the person's even while
+        the cut, a task of its own, has not removed the playback yet.
 
         A diarized session's finals go through one at a time, in the order they
         were scheduled: a kept stream can deliver the next speaker's final
@@ -1000,12 +1008,19 @@ class VoiceSTTMixin:
                 segments=None,
                 epoch=epoch,
                 speaker=speaker,
+                cut_playback=cut_playback,
             )
             return
         lock = self._transcript_locks.setdefault(session.id, asyncio.Lock())
         async with lock:
             await self._process_continuous_final(
-                session, text, room_id, language=language, segments=segments, epoch=epoch
+                session,
+                text,
+                room_id,
+                language=language,
+                segments=segments,
+                epoch=epoch,
+                cut_playback=cut_playback,
             )
 
     async def _process_continuous_final(
@@ -1018,10 +1033,12 @@ class VoiceSTTMixin:
         segments: list[SpeakerSegment] | None,
         epoch: int,
         speaker: SpeakerAttribution | None = None,
+        cut_playback: bool = False,
     ) -> None:
         """One continuous-mode final, from the echo check to the room.
 
-        ``speaker`` is the pipeline stage's, for a final the STT labelled not.
+        ``speaker`` is the pipeline stage's, for a final the STT labelled not. A
+        final that cut the playback (``cut_playback``) is never taken for echo.
         """
         if not self._framework:
             return
@@ -1038,7 +1055,7 @@ class VoiceSTTMixin:
             last_tts_end = self._last_tts_ended_at.get(session.id, 0.0)
             since_tts = _time.monotonic() - last_tts_end if last_tts_end else -1.0
 
-            if playback:
+            if playback and not cut_playback:
                 logger.warning(
                     "Discarding echo during playback: %r (pos=%dms)",
                     text,

@@ -55,6 +55,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `task_status` only to an agent that was given it, and says nothing of a
   tool otherwise.
 
+- In continuous mode, the words that cut the agent off reach the room (RMK-543,
+  RFC §12.3.13): the STT's final for the speech that claimed the barge-in was
+  taken for echo while the cut, a task of its own, had not removed the playback
+  yet, and the person's turn was dropped.
+
 - `TaskStatusTool` declines a call for another tool (`UnservedToolCallError`),
   as RoomKit's other tool objects do (RMK-538): listed before another tool in
   a channel's `tools`, it answered that tool's calls with the task list.
