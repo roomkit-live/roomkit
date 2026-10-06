@@ -11,9 +11,16 @@ from roomkit.tasks.delegate import (
 )
 from roomkit.tasks.memory import InMemoryTaskRunner
 from roomkit.tasks.models import DelegatedTask, DelegatedTaskResult
-from roomkit.tasks.status import TASK_STATUS_TOOL, TaskStatusTool
+from roomkit.tasks.status import (
+    CANCEL_TASK_TOOL,
+    TASK_STATUS_TOOL,
+    CancelTaskTool,
+    TaskStatusTool,
+)
 
 __all__ = [
+    "CANCEL_TASK_TOOL",
+    "CancelTaskTool",
     "CompletedTaskCache",
     "DELEGATE_TOOL",
     "DelegateHandler",

@@ -1,5 +1,5 @@
-"""A delegated task on the framework's StatusBus, and the tool that reads a room's
-tasks (RFC §23.3, §23.4)."""
+"""A delegated task on the framework's StatusBus, and the tools that read a room's
+tasks and cancel one of them (RFC §23.3, §23.4)."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any
 from roomkit.core.exceptions import UnservedToolCallError
 from roomkit.models.enums import TaskStatus
 from roomkit.orchestration.status_bus import StatusEntry, StatusLevel, post_agent_lifecycle
-from roomkit.tools.context import current_tool_room_id
+from roomkit.tools.context import current_tool_call, current_tool_room_id
 
 if TYPE_CHECKING:
     from roomkit.core.framework import RoomKit
@@ -20,6 +20,7 @@ TASK_ACTION = "task"
 """The action a task's entries carry, a delegation's as an orchestration worker's."""
 
 TASK_STATUS_TOOL = "task_status"
+CANCEL_TASK_TOOL = "cancel_task"
 
 
 def _task_metadata(room_id: str, task_id: str, child_room_id: str) -> dict[str, Any]:
@@ -141,13 +142,97 @@ class TaskStatusTool:
         room_id = current_tool_room_id()
         if room_id is None:
             return json.dumps({"error": "task_status answers only within a conversation"})
-        entries = await self._kit.status_bus.recent(self._window)
-        tasks = room_tasks(
-            e for e in entries if e.action == TASK_ACTION and e.metadata.get("room_id") == room_id
-        )
+        tasks = await _room_task_lines(self._kit, room_id, self._window)
         wanted = str(arguments.get("task_id") or "")
         if wanted:
             tasks = [t for t in tasks if t["task_id"] == wanted]
             if not tasks:
                 return json.dumps({"tasks": [], "message": f"No task {wanted} here."})
         return json.dumps({"tasks": tasks[-self._limit :]}, ensure_ascii=False)
+
+
+async def _room_task_lines(kit: RoomKit, room_id: str, window: int) -> list[dict[str, Any]]:
+    """The tasks the bus lists for *room_id*, read from its latest *window* entries."""
+    entries = await kit.status_bus.recent(window)
+    return room_tasks(
+        e for e in entries if e.action == TASK_ACTION and e.metadata.get("room_id") == room_id
+    )
+
+
+class CancelTaskTool:
+    """``cancel_task``: cancel one task of the room of the call (RFC §23.4).
+
+    A tool an agent is given on its own, as :class:`TaskStatusTool` —
+    ``AIChannel(tools=[TaskStatusTool(kit), CancelTaskTool(kit)])`` — so that a
+    request the person changed or dropped stops its work. It reaches only the
+    tasks the StatusBus lists for the room of the call: never another room's,
+    nor a strategy's worker run, which that strategy follows itself. A running
+    task ends ``cancelled``; the agent that cancelled it is not handed the
+    cancellation back, the tool's answer having told it.
+
+    Args:
+        kit: The framework whose tasks the tool cancels.
+        window: How many of the bus's latest entries are read to find the task.
+    """
+
+    def __init__(self, kit: RoomKit, *, window: int = 500) -> None:
+        self._kit = kit
+        self._window = window
+
+    @property
+    def definition(self) -> dict[str, Any]:
+        return {
+            "name": CANCEL_TASK_TOOL,
+            "description": (
+                "Cancel a background task of this conversation that is still running, "
+                "when what it was asked to do is no longer wanted: the request changed "
+                "or was dropped. Its result will not come back."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "task_id": {
+                        "type": "string",
+                        "description": "The task to cancel (its id, from a delegation's answer).",
+                    },
+                },
+                "required": ["task_id"],
+            },
+        }
+
+    async def handler(self, name: str, arguments: dict[str, Any]) -> str:
+        # A channel chains its tools' handlers, the first to answer wins: a call
+        # for another tool is declined, so the next handler serves it.
+        if name != CANCEL_TASK_TOOL:
+            raise UnservedToolCallError(f"tool {name!r} is not served here")
+        room_id = current_tool_room_id()
+        if room_id is None:
+            return json.dumps({"error": "cancel_task answers only within a conversation"})
+        task_id = str(arguments.get("task_id") or "")
+        if not task_id:
+            return json.dumps({"error": "task_id is required"})
+        line = await self._line(room_id, task_id)
+        if line is None:
+            return _answer(task_id, "unknown", f"No task {task_id} here.")
+        if line.get("status") == "running" and await self._cancel(task_id):
+            return _answer(
+                task_id, str(TaskStatus.CANCELLED), "Cancelled: its result will not come back."
+            )
+        # It ended meanwhile, or before the call: as it stands.
+        ended = await self._line(room_id, task_id) or line
+        return _answer(task_id, str(ended.get("status")), "The task had already ended.")
+
+    async def _line(self, room_id: str, task_id: str) -> dict[str, Any] | None:
+        lines = await _room_task_lines(self._kit, room_id, self._window)
+        return next((t for t in lines if t["task_id"] == task_id), None)
+
+    async def _cancel(self, task_id: str) -> bool:
+        """Cancel for the channel that made the call, which is then not told twice."""
+        call = current_tool_call()
+        if call is not None and call.channel_id:
+            return await self._kit._cancel_task_for(task_id, call.channel_id)
+        return await self._kit.cancel_task(task_id)
+
+
+def _answer(task_id: str, status: str, message: str) -> str:
+    return json.dumps({"task_id": task_id, "status": status, "message": message})

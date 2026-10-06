@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- An agent can cancel a background task the person no longer wants (RMK-549,
+  RFC §23.3, §23.4): `CancelTaskTool` (`cancel_task`), given on its own like
+  `TaskStatusTool`, cancels one task of the room of the call by its `task_id`.
+  The task ends `cancelled` as any task cancelled from outside
+  (`ON_TASK_COMPLETED`, the status bus), and the agent that cancelled it is not
+  handed the cancellation back, which would have it say so twice. It reaches
+  only the tasks the bus lists for that room, never another room's nor a
+  strategy's worker run. `kit.cancel_task(task_id)` cancels from the host; the
+  notified agent is then told. Example: `examples/cancel_background_task.py`.
+
 - An answer names the event it answers (RMK-545, RFC §8.5): every event an
   intelligence channel produces for a turn (its messages, streamed segments
   and tool rows, a blocked stand-in, the ON_ERROR event of a failed turn)

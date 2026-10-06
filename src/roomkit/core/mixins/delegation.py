@@ -193,6 +193,8 @@ class DelegationHost(Protocol):
         _closed: Whether the framework is closing (no delegation starts).
         _background_runs: The background work the framework holds until it
             ends, so its close cuts it (a hand-back under way included).
+        _task_cancelled_by: The tasks a ``cancel_task`` call is cancelling,
+            by the channel that made the call.
 
     Cross-mixin methods (provided by other mixins in the MRO):
         get_room: From :class:`RoomLifecycleMixin`.
@@ -209,6 +211,7 @@ class DelegationHost(Protocol):
     _telemetry: TelemetryProvider | None
     _closed: bool
     _background_runs: set[asyncio.Task[None]]
+    _task_cancelled_by: dict[str, str]
 
 
 def _delegation_result_text(result: DelegatedTaskResult) -> str:
@@ -235,6 +238,7 @@ class DelegationMixin(HelpersMixin):
     _task_runner: TaskRunner
     _closed: bool
     _background_runs: set[asyncio.Task[None]]
+    _task_cancelled_by: dict[str, str]
 
     # Cross-mixin methods — attribute annotations avoid MRO shadowing
     get_room: Any  # see DelegationHost
@@ -588,7 +592,9 @@ class DelegationMixin(HelpersMixin):
             await self._on_delegation_complete(result)
             if handle._post_status:
                 post_task_ended(self, result)  # ty: ignore[invalid-argument-type]
-            if notify_channel != CALLER_HANDS_BACK:
+            if notify_channel != CALLER_HANDS_BACK and not self._cancelled_by_notified(
+                result, notify_channel
+            ):
                 await self._hand_back_held(result, notify_channel, chain_depth, session_id)
             if on_complete:
                 await on_complete(result)
@@ -600,6 +606,37 @@ class DelegationMixin(HelpersMixin):
             on_complete=_on_bg_complete,
         )
         return handle
+
+    async def cancel_task(self, task_id: str) -> bool:
+        """Cancel a delegated task still running in the background (RFC §23.3).
+
+        The task ends ``cancelled``, as any task cancelled from outside:
+        ``ON_TASK_COMPLETED`` fires, the StatusBus posts its end, and the
+        channel its result was going to is told it was cancelled. A task that
+        already ended, or that the framework's task runner does not hold (an
+        inline delegation), is left as it stands.
+
+        Returns:
+            ``True`` when the task was running and is now cancelled.
+        """
+        return await self._task_runner.cancel(task_id)
+
+    async def _cancel_task_for(self, task_id: str, channel_id: str) -> bool:
+        """Cancel *task_id* for *channel_id*'s ``cancel_task`` call: when that
+        channel is the one the result was going to, it is not handed the
+        cancellation back, the tool's answer having told it (RFC §23.4)."""
+        self._task_cancelled_by[task_id] = channel_id
+        try:
+            return await self._task_runner.cancel(task_id)
+        finally:
+            self._task_cancelled_by.pop(task_id, None)
+
+    def _cancelled_by_notified(self, result: DelegatedTaskResult, notify_channel: str) -> bool:
+        """Whether *result* is a cancellation its notified channel asked for."""
+        return (
+            result.status == TaskStatus.CANCELLED
+            and self._task_cancelled_by.get(result.task_id) == notify_channel
+        )
 
     async def _on_delegation_complete(self, result: DelegatedTaskResult) -> None:
         """Fire ``ON_TASK_COMPLETED`` in the parent room for a finished delegation.

@@ -353,6 +353,9 @@ class RoomKit(
         # so close() cuts it: the strategies' runs and the delegations'
         # hand-backs under way (RFC §19.7.3, §19.7.4, §23.3).
         self._background_runs: set[asyncio.Task[None]] = set()
+        # The tasks a ``cancel_task`` call is cancelling, by the channel that
+        # made it: that channel is not handed the cancellation back (RFC §23.4).
+        self._task_cancelled_by: dict[str, str] = {}
         self._resource_leases: set[asyncio.Event] = set()
         self._resource_leases_sealed = False
         # Telemetry
