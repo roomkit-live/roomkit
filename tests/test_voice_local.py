@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -302,86 +303,234 @@ class TestLocalAudioMicCapture:
 # Speaker playback
 # ---------------------------------------------------------------------------
 
+_BLOCK = 960  # 20ms @ 24kHz mono int16
+_PCM = b"\x01\x00"
+
+
+def _drain_block(backend) -> bytes:
+    """Play one 20 ms block: the speaker's PortAudio callback."""
+    out = bytearray(_BLOCK)
+    backend._speaker._callback(out, _BLOCK // 2, None, None)
+    return bytes(out)
+
+
+def _speaker_backend(*, latency: float = 0.0, **kwargs):
+    """A VoiceChannel-mode backend (24 kHz, 20 ms blocks) whose speaker streams
+    are mocks; each records the arguments it was opened with."""
+    backend, sd = _make_backend(output_sample_rate=24000, block_duration_ms=20, **kwargs)
+    streams: list[MagicMock] = []
+
+    def raw_output_stream(**stream_kwargs):
+        stream = MagicMock(latency=latency)
+        stream.kwargs = stream_kwargs
+        streams.append(stream)
+        return stream
+
+    sd.RawOutputStream = raw_output_stream
+    return backend, streams
+
+
+async def _play(backend, session, audio, *, blocks: int = 50) -> None:
+    """send_audio() while the speaker plays its blocks, until it returns."""
+    task = asyncio.create_task(backend.send_audio(session, audio))
+    for _ in range(blocks):
+        for _ in range(3):
+            await asyncio.sleep(0)
+        if task.done():
+            break
+        _drain_block(backend)
+    await asyncio.wait_for(task, 1)
+
+
+async def _response(nbytes: int = 1200):
+    yield AudioChunk(data=_PCM * (nbytes // 2), sample_rate=24000)
+
+
+async def _endless():
+    while True:
+        yield AudioChunk(data=_PCM * (_BLOCK // 2), sample_rate=24000)
+        await asyncio.sleep(0)
+
 
 class TestLocalAudioSpeakerPlayback:
-    async def test_send_audio_bytes(self) -> None:
-        backend, sd = _make_backend()
+    """VoiceChannel mode: every response plays on one persistent stream (RMK-551)."""
 
-        pytest.importorskip("numpy")
-
+    async def test_responses_share_one_output_stream(self) -> None:
+        """A stream per response restarts the echo delay an AEC tracks."""
+        backend, streams = _speaker_backend()
         session = await backend.connect("room-1", "user-1", "voice-1")
 
-        # 4 bytes = 2 samples of PCM-16 LE
-        pcm = b"\x00\x01\x00\x02"
-        await backend.send_audio(session, pcm)
+        await _play(backend, session, _response())
+        await _play(backend, session, _response())
 
-        sd.play.assert_called_once()
-        sd.wait.assert_called_once()
+        assert len(streams) == 1
+        streams[0].start.assert_called_once()
+        streams[0].stop.assert_not_called()
+        streams[0].abort.assert_not_called()
+        assert streams[0].kwargs["blocksize"] == 480  # fixed 20 ms blocks
 
-    async def test_send_audio_stream(self) -> None:
-        backend, sd = _make_backend()
-
-        captured_callback = None
-        mock_stream = MagicMock()
-
-        def fake_raw_output_stream(**kwargs):
-            nonlocal captured_callback
-            captured_callback = kwargs["callback"]
-            return mock_stream
-
-        sd.RawOutputStream = fake_raw_output_stream
-
+    async def test_send_audio_returns_once_the_response_has_played(self) -> None:
+        backend, _ = _speaker_backend()
         session = await backend.connect("room-1", "user-1", "voice-1")
+        played: list[int] = []
+        backend.on_audio_played(lambda _s, frame: played.append(frame.metadata["played_bytes"]))
 
-        async def audio_gen():
-            yield AudioChunk(data=b"\x00\x01\x00\x02")
-            yield AudioChunk(data=b"\x00\x03\x00\x04")
+        task = asyncio.create_task(backend.send_audio(session, _response(1200)))
+        await asyncio.sleep(0.01)
+        assert not task.done()  # queued, not played
+        _drain_block(backend)  # 960 bytes
+        assert not task.done()
+        _drain_block(backend)  # the last 240: drained
+        await asyncio.wait_for(task, 1)
 
-        # Run send_audio in background so we can simulate the callback.
-        send_task = asyncio.create_task(backend.send_audio(session, audio_gen()))
-        await asyncio.sleep(0.05)  # let _consume pull all chunks
+        assert played == [960, 240]
+        assert backend.is_playing(session) is False
 
-        # Simulate PortAudio callback draining the buffer.
-        assert captured_callback is not None
-        outdata = bytearray(1024)
-        with pytest.raises(sd.CallbackStop):
-            captured_callback(outdata, 512, None, None)
-
-        await send_task
-
-        mock_stream.start.assert_called_once()
-        # Normal completion uses stop() (graceful drain), not abort().
-        mock_stream.stop.assert_called_once()
-        mock_stream.close.assert_called_once()
-
-    async def test_streaming_transport_aec_bypasses_after_hardware_drain(self) -> None:
-        """Local native AEC preserves its filter after the output stream drains."""
+    async def test_raw_bytes_play_on_the_same_stream_with_their_reference(self) -> None:
         aec = MagicMock()
-        backend, sd = _make_backend(aec=aec, mute_mic_during_playback=False)
-        captured_callback = None
-        mock_stream = MagicMock()
-
-        def fake_raw_output_stream(**kwargs):
-            nonlocal captured_callback
-            captured_callback = kwargs["callback"]
-            return mock_stream
-
-        sd.RawOutputStream = fake_raw_output_stream
+        aec.stream_delay_ms = 80
+        backend, streams = _speaker_backend(input_sample_rate=24000, aec=aec)
         session = await backend.connect("room-1", "user-1", "voice-1")
 
-        async def audio_gen():
-            yield AudioChunk(data=b"\x00\x01" * 320)
+        await _play(backend, session, _PCM * 600)
 
-        send_task = asyncio.create_task(backend.send_audio(session, audio_gen()))
-        await asyncio.sleep(0.05)
-        assert captured_callback is not None
-        with pytest.raises(sd.CallbackStop):
-            captured_callback(bytearray(1024), 512, None, None)
-        await send_task
+        backend._sd.play.assert_not_called()
+        assert len(streams) == 1
+        reference = b"".join(c.args[0].data for c in aec.feed_reference.call_args_list)
+        assert reference.startswith(_PCM * 600)
 
-        aec.set_stream_active.assert_any_call(session.id, True)
+    async def test_a_played_response_keeps_cancelling_the_echo_tail(self) -> None:
+        """The device and the room still sound after the last block left."""
+        aec = MagicMock()
+        backend, _ = _speaker_backend(input_sample_rate=24000, aec=aec)
+        session = await backend.connect("room-1", "user-1", "voice-1")
+
+        await _play(backend, session, _response())
+        assert session.id in backend._aec_active_sessions
+        fed = aec.feed_reference.call_count
+        for _ in range(25):  # 500 ms of tail at 20 ms a block
+            _drain_block(backend)
+
+        assert aec.feed_reference.call_count > fed  # silence, as reference
         aec.reset.assert_not_called()
         assert aec.set_stream_active.call_args_list[-1].args == (session.id, False)
+        assert session.id not in backend._aec_active_sessions
+
+    async def test_a_cut_keeps_cancelling_the_echo_tail_then_bypasses(self) -> None:
+        aec = MagicMock()
+        backend, _ = _speaker_backend(input_sample_rate=24000, aec=aec, rt_prebuffer_ms=0)
+        session = await backend.connect("room-1", "user-1", "voice-1")
+        task = asyncio.create_task(backend.send_audio(session, _endless()))
+        await asyncio.sleep(0.01)
+        _drain_block(backend)
+        assert session.id in backend._aec_active_sessions
+
+        assert await backend.cancel_audio(session) is True
+        await asyncio.wait_for(task, 1)
+        assert backend._speaker.buffered_bytes == 0
+        for _ in range(25):  # the block reporting the cut, then 24 of the tail
+            assert _drain_block(backend) == b"\x00" * _BLOCK
+        assert session.id in backend._aec_active_sessions
+        _drain_block(backend)
+
+        assert session.id not in backend._aec_active_sessions
+        aec.reset.assert_not_called()
+
+    async def test_streamed_audio_waits_for_room_rather_than_dropping(self) -> None:
+        backend, _ = _speaker_backend(rt_prebuffer_ms=0)
+        backend._speaker._max_bytes = _BLOCK
+        session = await backend.connect("room-1", "user-1", "voice-1")
+        played: list[int] = []
+        backend.on_audio_played(lambda _s, frame: played.append(frame.metadata["played_bytes"]))
+
+        task = asyncio.create_task(backend.send_audio(session, _response(3 * _BLOCK)))
+        for _ in range(20):
+            await asyncio.sleep(0.03)  # the queue is retried every block (20 ms)
+            if task.done():
+                break
+            _drain_block(backend)
+        await asyncio.wait_for(task, 1)
+
+        assert sum(played) == 3 * _BLOCK
+
+    async def test_played_frames_of_a_streamed_response(self) -> None:
+        """Only while it plays; the channel, not the backend, ends its AEC."""
+        backend, _ = _speaker_backend()  # no AEC: half-duplex
+        session = await backend.connect("room-1", "user-1", "voice-1")
+        frames: list[AudioFrame] = []
+        backend.on_audio_played(lambda _s, frame: frames.append(frame))
+
+        await _play(backend, session, _response())
+        count = len(frames)
+        _drain_block(backend)  # idle
+
+        assert len(frames) == count
+        assert sum(f.metadata["played_bytes"] for f in frames) == 1200
+        assert all(f.metadata["playback_ended"] is False for f in frames)
+        assert all(f.metadata["capture_paused"] for f in frames)
+
+    async def test_disconnect_releases_a_streamed_response(self) -> None:
+        backend, _ = _speaker_backend()
+        session = await backend.connect("room-1", "user-1", "voice-1")
+        task = asyncio.create_task(backend.send_audio(session, _endless()))
+        await asyncio.sleep(0.01)
+
+        await backend.disconnect(session)
+
+        await asyncio.wait_for(task, 1)
+
+    async def test_a_device_that_stops_releases_the_playback(self, caplog) -> None:
+        backend, streams = _speaker_backend()
+        session = await backend.connect("room-1", "user-1", "voice-1")
+        task = asyncio.create_task(backend.send_audio(session, _response()))
+        await asyncio.sleep(0.01)
+
+        streams[0].kwargs["finished_callback"]()  # PortAudio stopped the stream
+
+        await asyncio.wait_for(task, 1)
+        assert "stopped by the audio device" in caplog.text
+        await _play(backend, session, _response())
+        assert len(streams) == 2  # the next response opens a new one
+
+    async def test_a_replaced_streams_late_stop_is_ignored(self) -> None:
+        backend, streams = _speaker_backend()
+        backend._speaker.open()
+        late_stop = streams[0].kwargs["finished_callback"]
+        backend._speaker.close()
+        backend._speaker.open()
+
+        late_stop()  # PortAudio's thread, after the stream was replaced
+
+        assert backend._speaker.is_open
+
+    async def test_an_output_underflow_is_logged(self, caplog) -> None:
+        backend, _ = _speaker_backend()
+        with caplog.at_level(logging.WARNING, logger="roomkit.voice.local"):
+            backend._speaker._callback(bytearray(_BLOCK), _BLOCK // 2, None, "output underflow")
+        assert "output underflow" in caplog.text
+
+    async def test_the_aec_delay_is_seeded_when_the_speaker_opens_after_capture(self) -> None:
+        aec = MagicMock()
+        aec.stream_delay_ms = 0
+        backend, _ = _speaker_backend(latency=0.0181, aec=aec)
+        backend._sd.RawInputStream = lambda **kwargs: MagicMock(latency=0.0378)
+        session = await backend.connect("room-1", "user-1", "voice-1")
+        await backend.start_listening(session)
+        aec.set_stream_delay_ms.assert_not_called()  # no speaker yet
+
+        backend._speaker.open()
+        backend._configure_aec_delay()
+
+        aec.set_stream_delay_ms.assert_called_once_with(56)
+
+    def test_with_an_aec_the_mic_stays_open_by_default(self) -> None:
+        def mutes(**kwargs) -> bool:
+            return _make_backend(**kwargs)[0]._mute_mic_during_playback
+
+        assert mutes() is True
+        assert mutes(aec=MagicMock()) is False
+        assert mutes(aec=MagicMock(), mute_mic_during_playback=True) is True
+        assert mutes(mute_mic_during_playback=False) is False
 
     async def test_is_playing_tracks_state(self) -> None:
         backend, _ = _make_backend()
@@ -399,12 +548,13 @@ class TestLocalAudioSpeakerPlayback:
         result = await backend.cancel_audio(session)
         assert result is False
 
-        # Mark as playing (no output stream) → falls back to sd.stop()
         backend._playing_sessions.add(session.id)
+        backend._speaker.append(_PCM * 100)
         result = await backend.cancel_audio(session)
         assert result is True
         assert backend.is_playing(session) is False
-        sd.stop.assert_called_once()
+        assert backend._speaker.buffered_bytes == 0  # what was queued never plays
+        sd.stop.assert_not_called()
 
     async def test_cancel_audio_cancels_playback_task(self) -> None:
         backend, sd = _make_backend()
@@ -412,7 +562,6 @@ class TestLocalAudioSpeakerPlayback:
 
         mock_task = MagicMock()
         backend._playing_sessions.add(session.id)
-        backend._output_streams[session.id] = MagicMock()
         backend._playback_tasks[session.id] = mock_task
 
         result = await backend.cancel_audio(session)
@@ -455,16 +604,6 @@ class TestLocalAudioLazyLoader:
 # Realtime speaker prebuffer (priming state machine)
 # ---------------------------------------------------------------------------
 
-_BLOCK = 960  # 20ms @ 24kHz mono int16
-_PCM = b"\x01\x00"
-
-
-def _drain_block(backend) -> bytes:
-    """Invoke the realtime speaker callback for one 20ms block."""
-    out = bytearray(_BLOCK)
-    backend._rt_speaker_callback(out, _BLOCK // 2, None, None)
-    return bytes(out)
-
 
 async def _rt_backend(**kwargs):
     """LocalAudioBackend in realtime mode (accepted session, mocked stream)."""
@@ -481,14 +620,14 @@ class TestRealtimePrebuffer:
         backend, session = await _rt_backend()
         await backend.send_audio(session, _PCM * (2880 // 2))  # 60ms < 120ms
         assert _drain_block(backend) == b"\x00" * _BLOCK
-        assert backend._rt_buffered_bytes == 2880  # nothing consumed
+        assert backend._speaker.buffered_bytes == 2880  # nothing consumed
 
     async def test_priming_releases_at_prebuffer_threshold(self) -> None:
         backend, session = await _rt_backend()
         await backend.send_audio(session, _PCM * (5760 // 2))  # exactly 120ms
         # Drain starts in the same callback as the release — no wasted block.
         assert _drain_block(backend) == _PCM * (_BLOCK // 2)
-        assert backend._rt_buffered_bytes == 5760 - _BLOCK
+        assert backend._speaker.buffered_bytes == 5760 - _BLOCK
 
     async def test_short_response_drains_on_end_of_response(self) -> None:
         backend, session = await _rt_backend()
@@ -499,7 +638,7 @@ class TestRealtimePrebuffer:
         assert out[:800] == _PCM * 400
         assert out[800:] == b"\x00" * (_BLOCK - 800)
         assert backend.rt_underruns == 0  # clean end, not starvation
-        assert backend._rt_response_complete is False  # consumed by the drain
+        assert backend._speaker._response_complete is False  # consumed by the drain
 
     async def test_end_of_response_noop_while_draining(self) -> None:
         backend, session = await _rt_backend()
@@ -533,16 +672,17 @@ class TestRealtimePrebuffer:
         backend, session = await _rt_backend()
         await backend.send_audio(session, _PCM * (2880 // 2))
         backend.interrupt(session)
-        assert backend._rt_buffered_bytes == 0
+        assert backend._speaker.buffered_bytes == 0
         assert _drain_block(backend) == b"\x00" * _BLOCK
         # First append clears the interrupt flag but must re-prime from zero.
         await backend.send_audio(session, _PCM * (_BLOCK // 2))
-        assert backend._rt_interrupted is False
+        assert backend._speaker._interrupted is False
         assert _drain_block(backend) == b"\x00" * _BLOCK
-        assert backend._rt_buffered_bytes == _BLOCK
+        assert backend._speaker.buffered_bytes == _BLOCK
 
-    async def test_interrupt_bypasses_transport_aec_without_reset(self) -> None:
-        """A cancelled response closes AEC playback without losing its filter."""
+    async def test_interrupt_keeps_cancelling_the_echo_tail_then_bypasses(self) -> None:
+        """A cut response: the device and the room still sound, so the AEC keeps
+        cancelling for the echo tail, then is bypassed without losing its filter."""
         aec = MagicMock()
         backend, session = await _rt_backend(
             input_sample_rate=24000,
@@ -555,6 +695,10 @@ class TestRealtimePrebuffer:
         assert session.id in backend._aec_active_sessions
 
         backend.interrupt(session)
+        for _ in range(25):  # the block reporting the cut, then 24 of the tail
+            _drain_block(backend)
+        assert session.id in backend._aec_active_sessions
+        _drain_block(backend)
 
         assert session.id not in backend._aec_active_sessions
         assert aec.set_stream_active.call_args_list[-1].args == (session.id, False)
@@ -564,7 +708,7 @@ class TestRealtimePrebuffer:
         backend, session = await _rt_backend()
         backend.interrupt(session)
         backend.end_of_response(session)  # Gemini fires response_end on barge-in
-        assert backend._rt_response_complete is False
+        assert backend._speaker._response_complete is False
         await backend.send_audio(session, _PCM * (_BLOCK // 2))
         # Without the guard, the stale EOR would release this audio early.
         assert _drain_block(backend) == b"\x00" * _BLOCK
@@ -572,7 +716,7 @@ class TestRealtimePrebuffer:
     async def test_prime_idle_valve_flushes_partial_buffer(self) -> None:
         backend, session = await _rt_backend()
         await backend.send_audio(session, _PCM * 400)  # 800B, EOR never arrives
-        for _ in range(5):  # _rt_prime_max_idle_blocks = 100ms / 20ms = 5
+        for _ in range(5):  # the idle valve: 100ms / 20ms = 5 blocks
             assert _drain_block(backend) == b"\x00" * _BLOCK
         out = _drain_block(backend)  # valve fires after ~100ms of priming
         assert out[:800] == _PCM * 400
@@ -584,7 +728,7 @@ class TestRealtimePrebuffer:
         await backend.accept(session2, None)
         await backend.send_audio(session2, _PCM * (_BLOCK // 2))
         # _rt_closing used to persist across sessions and drop everything.
-        assert backend._rt_buffered_bytes == _BLOCK
+        assert backend._speaker.buffered_bytes == _BLOCK
 
     async def test_priming_idle_releases_half_duplex_mute(self) -> None:
         backend, session = await _rt_backend()  # mute_mic_during_playback=True
@@ -602,12 +746,12 @@ class TestRealtimePrebuffer:
 
     async def test_realtime_speaker_buffer_is_bounded(self) -> None:
         backend, session = await _rt_backend()
-        backend._rt_max_buffer_bytes = 4
+        backend._speaker._max_bytes = 4
 
         await backend.send_audio(session, b"123456")
 
-        assert backend._rt_buffered_bytes == 4
-        assert list(backend._rt_output_buffer) == [b"1234"]
+        assert backend._speaker.buffered_bytes == 4
+        assert list(backend._speaker._queue) == [b"1234"]
         assert backend._rt_dropped_bytes == 2
 
     async def test_failed_aec_activation_is_retried(self) -> None:
@@ -704,7 +848,10 @@ class TestContinuousPlayedCallbacks:
         assert silence_frame.data == b"\x00" * _BLOCK
 
         backend.end_of_response(session)
-        _drain_block(backend)
+        _drain_block(backend)  # drained: the echo tail starts
+        assert session.id in backend._aec_active_sessions
+        for _ in range(25):
+            _drain_block(backend)
 
         aec.reset.assert_not_called()
         assert aec.set_stream_active.call_args_list[-1].args == (session.id, False)
@@ -918,8 +1065,7 @@ class TestLocalAudioTTSStreamFailure:
 
     async def test_a_failing_stream_reaches_the_caller(self) -> None:
         backend, sd = _make_backend()
-        mock_stream = MagicMock()
-        sd.RawOutputStream = lambda **kwargs: mock_stream
+        sd.RawOutputStream = lambda **kwargs: MagicMock(latency=0.0)
         session = await backend.connect("room-1", "user-1", "voice-1")
 
         async def audio_gen():
@@ -929,7 +1075,7 @@ class TestLocalAudioTTSStreamFailure:
         with pytest.raises(RuntimeError, match="tts down"):
             await backend.send_audio(session, audio_gen())
 
-        mock_stream.close.assert_called_once()  # the playback was released first
+        assert backend._speaker.buffered_bytes == 0  # what was queued never plays
         assert backend.is_playing(session) is False
 
     async def test_a_device_failure_is_still_absorbed(self, caplog) -> None:

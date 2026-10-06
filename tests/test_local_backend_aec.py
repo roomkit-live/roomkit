@@ -141,9 +141,9 @@ class TestAECDelayAutoConfiguration:
         aec = MagicMock()
         aec.stream_delay_ms = 0
         backend = LocalAudioBackend(aec=aec)
-        backend._rt_output_stream = SimpleNamespace(latency=0.0181)
+        backend._speaker._stream = SimpleNamespace(latency=0.0181)
 
-        backend._configure_aec_delay_from_streams(SimpleNamespace(latency=0.0378))
+        backend._note_input_latency(37.8)
 
         aec.set_stream_delay_ms.assert_called_once_with(56)
 
@@ -151,9 +151,9 @@ class TestAECDelayAutoConfiguration:
         aec = MagicMock()
         aec.stream_delay_ms = 80
         backend = LocalAudioBackend(aec=aec)
-        backend._rt_output_stream = SimpleNamespace(latency=0.02)
+        backend._speaker._stream = SimpleNamespace(latency=0.02)
 
-        backend._configure_aec_delay_from_streams(SimpleNamespace(latency=0.04))
+        backend._note_input_latency(40)
 
         aec.set_stream_delay_ms.assert_not_called()
 
@@ -161,9 +161,9 @@ class TestAECDelayAutoConfiguration:
         aec = MagicMock()
         aec.stream_delay_ms = 0
         backend = LocalAudioBackend(aec=aec)
-        backend._rt_output_stream = SimpleNamespace(latency=0.3)
+        backend._speaker._stream = SimpleNamespace(latency=0.3)
 
-        backend._configure_aec_delay_from_streams(SimpleNamespace(latency=0.4))
+        backend._note_input_latency(400)
 
         aec.set_stream_delay_ms.assert_called_once_with(500)
 

@@ -31,16 +31,14 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-import struct
-import sys
 import threading
 import uuid
-from collections import deque
 from typing import TYPE_CHECKING, Any
 
 from roomkit.core.task_utils import await_interruptible
 from roomkit.voice._sounddevice import import_sounddevice
 from roomkit.voice.audio_frame import AudioFrame
+from roomkit.voice.backends._local_speaker import MAX_BUFFER_SECONDS, LocalSpeaker
 from roomkit.voice.backends.base import (
     AECTapCallback,
     AudioPlayedCallback,
@@ -59,19 +57,23 @@ from roomkit.voice.base import (
     VoiceSessionState,
 )
 from roomkit.voice.capture.base import CaptureMark
+from roomkit.voice.pipeline.resampler.linear import LinearResamplerProvider
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Callable
 
     import sounddevice as sd
 
+    from roomkit.voice.backends._local_speaker import SpeakerBlock
     from roomkit.voice.capture.base import AudioCaptureSource, CaptureSubscription
     from roomkit.voice.pipeline.aec.base import AECProvider
-    from roomkit.voice.pipeline.resampler.linear import LinearResamplerProvider
 
 logger = logging.getLogger("roomkit.voice.local")
 
-_MAX_REALTIME_BUFFER_SECONDS = 30
+# After playback drains or is cut, the device and the room still sound: the
+# transport's AEC keeps cancelling this long on the silent reference (RFC
+# §12.3.4), as a pipeline AEC does (VoiceChannel's _AEC_ECHO_TAIL_S).
+_AEC_ECHO_TAIL_MS = 500
 
 _DEFAULT_INPUT_SAMPLE_RATE = 16000
 _DEFAULT_CHANNELS = 1
@@ -111,12 +113,28 @@ def _resolve_input_format(
     return source.sample_rate, source.channels, source.block_duration_ms
 
 
+def _stream_latency_ms(stream: Any) -> float | None:
+    """A PortAudio stream's reported latency in ms, when it reports one."""
+    try:
+        return float(stream.latency) * 1000
+    except Exception:
+        logger.debug("Stream latency unavailable", exc_info=True)
+        return None
+
+
+async def _one_chunk(pcm: bytes, sample_rate: int) -> AsyncIterator[AudioChunk]:
+    """Raw PCM played the way a stream is: as its one chunk."""
+    yield AudioChunk(data=pcm, sample_rate=sample_rate)
+
+
 class LocalAudioBackend(VoiceBackend):
     """VoiceBackend that uses the system microphone and speakers.
 
     Audio captured from the microphone is delivered as ``AudioFrame`` objects
-    via the ``on_audio_received`` callback.  Outbound audio (TTS) is played
-    through the default output device.
+    via the ``on_audio_received`` callback.  Outbound audio is played through
+    the output device by one stream, opened at the first playback and kept
+    open, so the echo delay an AEC tracks holds still across responses
+    (RFC §12.3.4).
 
     Works in two modes:
 
@@ -138,15 +156,18 @@ class LocalAudioBackend(VoiceBackend):
         aec: Optional AEC provider for transport-level echo cancellation.
             Speaker audio is fed as reference via ``aec.feed_reference()``
             from the output callback.
-        mute_mic_during_playback: If True (default), suppress mic frames
-            while the speaker is playing (half-duplex).  Prevents echo
-            from triggering VAD and false barge-ins when using speakers
-            instead of headphones.
+        mute_mic_during_playback: If True, suppress mic frames while the
+            speaker is playing (half-duplex): echo cannot trigger VAD or a
+            false barge-in, and the user cannot talk over the agent either.
+            The default (None) is half-duplex only without ``aec``: an AEC
+            removes the echo, so the mic stays open.
         rt_prebuffer_ms: Audio to accumulate before starting (or resuming
-            after an underrun) realtime speaker playback.  Absorbs burst
-            jitter from realtime providers the same way the SIP pacer's
-            prebuffer does — without it, any momentary starvation inserts
-            an audible mid-sentence gap.  ``0`` plays from the first byte.
+            after an underrun) speaker playback, realtime or streamed TTS.
+            Absorbs the burst jitter of a realtime provider or a TTS stream
+            the same way the SIP pacer's prebuffer does — without it, any
+            momentary starvation inserts an audible mid-sentence gap.  A
+            response shorter than this plays once complete.  ``0`` plays
+            from the first byte.
     """
 
     def __init__(
@@ -159,7 +180,7 @@ class LocalAudioBackend(VoiceBackend):
         input_device: int | str | None = None,
         output_device: int | str | None = None,
         aec: AECProvider | None = None,
-        mute_mic_during_playback: bool = True,
+        mute_mic_during_playback: bool | None = None,
         rt_prebuffer_ms: int = 120,
         source: AudioCaptureSource | None = None,
     ) -> None:
@@ -207,11 +228,12 @@ class LocalAudioBackend(VoiceBackend):
 
         # Playback tracking for barge-in
         self._playing_sessions: set[str] = set()
-        self._output_streams: dict[str, sd.RawOutputStream] = {}
         self._playback_tasks: dict[str, asyncio.Task[None]] = {}
 
-        # Half-duplex echo suppression
-        self._mute_mic_during_playback = mute_mic_during_playback
+        # Half-duplex echo suppression: by default only when nothing cancels it
+        self._mute_mic_during_playback = (
+            aec is None if mute_mic_during_playback is None else mute_mic_during_playback
+        )
 
         # Realtime transport state
         self._muted_sessions: set[str] = set()
@@ -222,45 +244,37 @@ class LocalAudioBackend(VoiceBackend):
         # Realtime mode flag — set by accept(), controls mic dispatch
         self._realtime_mode = False
 
-        # Realtime speaker output: persistent callback-driven stream
-        # with a chunk queue.  Created once in accept(), shared across
-        # all send_audio() calls.
-        self._rt_output_stream: Any = None  # sd.RawOutputStream
-        self._rt_output_buffer: deque[bytes] = deque()
-        self._rt_buf_offset = 0  # bytes consumed in the front chunk
-        self._rt_buf_lock = threading.Lock()
-        self._rt_closing = threading.Event()
-        # When True, speaker callback outputs silence and send_audio()
-        # drops incoming audio.  Set by interrupt(), cleared on next
-        # response_start (via send_audio when _playing_sessions is empty).
-        self._rt_interrupted = False
-        # Prebuffer priming: while True, the callback outputs silence until
-        # the buffer holds rt_prebuffer_ms of audio (or the response is
-        # complete / the idle valve fires).  Re-armed on every underrun so
-        # starvation produces one rare re-prime instead of scattered gaps.
-        self._rt_prebuffer_bytes = int(output_sample_rate * channels * 2 * rt_prebuffer_ms / 1000)
-        self._rt_priming = True
-        # Set by end_of_response(): allows draining a final partial buffer
-        # smaller than the prebuffer (short responses).
-        self._rt_response_complete = False
-        # Running total of queued-unplayed bytes — O(1) check in the
-        # callback instead of summing the deque under the lock every block.
-        self._rt_buffered_bytes = 0
-        self._rt_max_buffer_bytes = (
-            output_sample_rate * channels * 2 * _MAX_REALTIME_BUFFER_SECONDS
+        # The speaker: one persistent output stream for every response, opened
+        # by accept() (realtime) or the first streamed playback (VoiceChannel).
+        self._speaker = LocalSpeaker(
+            self._sd,
+            sample_rate=output_sample_rate,
+            channels=channels,
+            block_duration_ms=block_duration_ms,
+            device=output_device,
+            low_latency=aec is not None,
+            prebuffer_ms=rt_prebuffer_ms,
+            on_block=self._on_speaker_block,
+            on_finished=self._on_speaker_finished,
         )
+        # Set by disconnect()/close(): realtime audio arriving afterwards is
+        # dropped; accept() re-arms it.
+        self._rt_closing = threading.Event()
         self._rt_dropped_bytes = 0
-        # Mid-response starvation counter (see rt_underruns property).
-        self._rt_underruns = 0
-        # Missing end_of_response safety valve: after ~100ms of priming with
-        # no new audio appended, drain whatever is buffered (mirrors the SIP
-        # pacer's 0.1s accumulate-then-burst timeout).
-        self._rt_prime_idle_blocks = 0
-        self._rt_prime_max_idle_blocks = max(1, 100 // block_duration_ms)
+        # VoiceChannel mode: the session whose response the speaker plays, and
+        # the event that response's playback waits on until it has drained.
+        self._speaker_stream: str | None = None
+        self._speaker_drained: tuple[asyncio.AbstractEventLoop, asyncio.Event] | None = None
 
         # --- AEC (transport-level reference feeding) ---
         self._aec = aec
         self._aec_active_sessions: set[str] = set()
+        # Blocks of echo tail left to cancel after a playback drained or was cut.
+        self._aec_tail: dict[str, int] = {}
+        self._aec_tail_blocks = max(1, _AEC_ECHO_TAIL_MS // block_duration_ms)
+        # The capture side's latency, once known: with the speaker's, it seeds
+        # an unset WebRTC delay (_configure_aec_delay).
+        self._input_latency_ms: float | None = None
         # Debug taps of this transport's AEC (RFC §12.3.15): the reference fed
         # since the last captured frame, by stream, for ``aec_reference``.
         self._aec_tap_callbacks: list[AECTapCallback] = []
@@ -280,10 +294,6 @@ class LocalAudioBackend(VoiceBackend):
             )
             self._ref_buffers: dict[str, bytearray] = {}
             if self._aec_needs_resample:
-                from roomkit.voice.pipeline.resampler.linear import (
-                    LinearResamplerProvider,
-                )
-
                 self._aec_resampler: LinearResamplerProvider | None = LinearResamplerProvider()
                 logger.info(
                     "AEC transport-level reference: resampling %dHz -> %dHz",
@@ -358,13 +368,19 @@ class LocalAudioBackend(VoiceBackend):
 
     async def disconnect(self, session: VoiceSession) -> None:
         self._rt_closing.set()
+        # A streamed response still playing ends with its session.
+        task = self._playback_tasks.pop(session.id, None)
+        if task is not None:
+            task.cancel()
         await self.stop_listening(session)
-        self._stop_rt_output()
+        self._close_speaker()
         session.state = VoiceSessionState.ENDED
         self._sessions.pop(session.id, None)
         self._playing_sessions.discard(session.id)
         self._gated_sessions.discard(session.id)
         self._muted_sessions.discard(session.id)
+        if self._speaker_stream == session.id:
+            self._speaker_stream = None
         self._aec_end_playback(session.id)
         self._ref_buffers.pop(session.id, None)
         with self._tap_ref_lock:
@@ -383,7 +399,7 @@ class LocalAudioBackend(VoiceBackend):
         self._rt_closing.set()
         for session in list(self._sessions.values()):
             await self.disconnect(session)
-        self._stop_rt_output()
+        self._close_speaker()
         if self._aec is not None:
             self._aec.close()
 
@@ -477,9 +493,7 @@ class LocalAudioBackend(VoiceBackend):
         handler: Callable[[AudioFrame], None],
     ) -> None:
         """Attach this session to the shared capture source."""
-        latency_ms = source.input_latency_ms
-        if latency_ms is not None:
-            self._configure_aec_delay(latency_ms)
+        self._note_input_latency(source.input_latency_ms)
 
         subscription = source.subscribe(
             handler,
@@ -541,7 +555,7 @@ class LocalAudioBackend(VoiceBackend):
             device=self._input_device,
             callback=_audio_callback,
         )
-        self._configure_aec_delay_from_streams(stream)
+        self._note_input_latency(_stream_latency_ms(stream))
         stream.start()
         self._input_streams[session.id] = stream
         logger.info(
@@ -586,11 +600,11 @@ class LocalAudioBackend(VoiceBackend):
     ) -> None:
         """Play audio through the system speakers.
 
-        In realtime mode, bytes are queued into a persistent output buffer
-        that a callback-driven PortAudio stream drains continuously.
-
-        In VoiceChannel mode, streaming chunks use a per-session output
-        stream, and raw bytes fall back to ``sd.play()``.
+        Every response goes through the one persistent speaker stream.  In
+        realtime mode the bytes are queued and this returns at once: a
+        provider streams a response as many calls.  In VoiceChannel mode a
+        response is one call, raw bytes or a stream of chunks, which returns
+        once that response has played.
 
         Args:
             session: The target session.
@@ -602,227 +616,92 @@ class LocalAudioBackend(VoiceBackend):
             return
 
         # VoiceChannel path
+        chunks = _one_chunk(audio, self._output_sample_rate) if isinstance(audio, bytes) else audio
         self._playing_sessions.add(session.id)
         try:
             with PlaybackErrors(logger, "Error playing audio for session %s", session.id) as play:
-                if isinstance(audio, bytes):
-                    await self._play_pcm(audio)
-                else:
-                    await self._play_stream(session, play.watch(audio))
+                await self._play_stream(session, play.watch(chunks))
         finally:
             self._playing_sessions.discard(session.id)
 
     def _buffer_realtime_audio(self, session: VoiceSession, audio: bytes) -> None:
-        """Queue a realtime response's bytes in the speaker's persistent buffer."""
+        """Queue a realtime response's bytes on the speaker, dropping past its bound."""
         if not audio or self._rt_closing.is_set():
             return
-        with self._rt_buf_lock:
-            was_interrupted = self._rt_interrupted
-            self._rt_interrupted = False
-            available = max(0, self._rt_max_buffer_bytes - self._rt_buffered_bytes)
-            frame_width = self._channels * 2
-            available -= available % frame_width
-            accepted = audio[:available]
-            dropped = len(audio) - len(accepted)
-            if accepted:
-                self._rt_output_buffer.append(accepted)
-                self._rt_buffered_bytes += len(accepted)
-            self._rt_dropped_bytes += dropped
-            # New audio means a response is in flight: a stale
-            # end-of-response must not release the priming gate early.
-            self._rt_response_complete = False
-            self._rt_prime_idle_blocks = 0
-        # Added after releasing the buffer lock: when the callback has just
-        # seen an empty buffer and clears the playing state, this write comes
+        accepted, resumed = self._speaker.append(audio)
+        dropped = len(audio) - accepted
+        self._rt_dropped_bytes += dropped
+        # Added after the queue's lock is released: when the callback has just
+        # seen an empty queue and clears the playing state, this write comes
         # last, so capture stays muted while the new audio plays.
         if accepted:
             self._playing_sessions.add(session.id)
         if dropped and self._rt_dropped_bytes == dropped:
             logger.warning(
                 "Realtime speaker buffer reached its %ds bound; dropping excess audio",
-                _MAX_REALTIME_BUFFER_SECONDS,
+                MAX_BUFFER_SECONDS,
             )
-        if was_interrupted:
+        if resumed:
             logger.info("[INTERRUPT] cleared — buffering for resume")
-
-    async def _play_pcm(self, pcm_data: bytes) -> None:
-        """Play a complete PCM-16 LE buffer through speakers."""
-        if self._aec is not None:
-            logger.warning(
-                "AEC reference feeding is not supported with non-streaming "
-                "playback (sd.play). Use streaming TTS for AEC support."
-            )
-        sd = self._sd
-
-        n_samples = len(pcm_data) // 2
-        if n_samples == 0:
-            return
-
-        samples = struct.unpack(f"<{n_samples}h", pcm_data[: n_samples * 2])
-        import array
-
-        buf = array.array("h", samples)
-
-        def _play() -> None:
-            import numpy as np
-
-            data = np.frombuffer(buf, dtype=np.int16).reshape(-1, self._channels)
-            sd.play(data, samplerate=self._output_sample_rate, device=self._output_device)
-            sd.wait()
-
-        loop = asyncio.get_running_loop()
-        await loop.run_in_executor(None, _play)
 
     async def _play_stream(
         self,
         session: VoiceSession,
         chunks: AsyncIterator[AudioChunk],
     ) -> None:
-        """Play a stream of AudioChunks with buffered output.
+        """Play one streamed response on the persistent speaker.
 
-        Uses a callback-based ``RawOutputStream`` following the
-        `sounddevice asyncio pattern`_: PortAudio's own audio thread
-        pulls PCM data from a shared buffer and raises ``CallbackStop``
-        once the buffer is fully drained, signalling an ``asyncio.Event``
-        to wake the coroutine.
-
-        Chunk consumption runs in a cancellable task so that
-        ``cancel_audio()`` can abort both the TTS HTTP stream and the
-        drain wait in one shot.
-
-        .. _sounddevice asyncio pattern:
-           https://python-sounddevice.readthedocs.io/en/0.5.3/examples.html
-           #using-a-stream-in-an-asyncio-coroutine
+        The chunks are queued on the speaker, waiting for room rather than
+        dropping any; this returns once the response has drained and the
+        device has played it out.  Consumption runs in a cancellable task so
+        that ``cancel_audio()`` aborts both the TTS stream and the wait.
         """
-        sd = self._sd
+        speaker = self._open_speaker()
         loop = asyncio.get_running_loop()
-        finished = asyncio.Event()
-
-        audio_buf = bytearray()
-        buf_lock = threading.Lock()
-        producer_done = threading.Event()
-        # Guard: prevents the callback from accessing shared state once
-        # the asyncio side begins tearing down the stream.
-        stream_closing = threading.Event()
-
-        def _output_callback(outdata: bytearray, frames: int, time_info: Any, status: Any) -> None:
-            # Early exit if the stream is being torn down — avoids
-            # accessing freed memory or Python objects during close().
-            if stream_closing.is_set():
-                nbytes = frames * 2 * self._channels
-                outdata[:nbytes] = b"\x00" * nbytes
-                raise sd.CallbackStop
-
-            nbytes = frames * 2 * self._channels  # int16
-            stop = False
-            with buf_lock:
-                n = min(len(audio_buf), nbytes)
-                if n > 0:
-                    outdata[:n] = bytes(audio_buf[:n])
-                    del audio_buf[:n]
-                if n < nbytes:
-                    outdata[n:] = b"\x00" * (nbytes - n)
-                # When producer finished and buffer drained, stop playback.
-                if producer_done.is_set() and len(audio_buf) == 0:
-                    loop.call_soon_threadsafe(finished.set)
-                    stop = True
-
-            # AEC: feed the COMPLETE output frame (audio + silence) as
-            # reference.  The SpeexDSP split API requires playback() for
-            # every output frame — skipping silence frames causes the
-            # internal ring buffer to lose sync with the actual speaker
-            # output and prevents the adaptive filter from converging.
-            if self._aec is not None and not self._aec_capture_paused(session.id):
-                if n > 0:
-                    self._aec_begin_playback(session.id)
-                if session.id in self._aec_active_sessions:
-                    self._aec_feed_played(bytearray(bytes(outdata)), session.id)
-
-            # Notify listeners about played audio (time-aligned reference
-            # for pipeline AEC).  The frame is created once and shared.
-            if self._audio_played_callbacks:
-                played_frame = AudioFrame(
-                    data=bytes(outdata),
-                    sample_rate=self._output_sample_rate,
-                    channels=self._channels,
-                    sample_width=2,
-                )
-                for cb in self._audio_played_callbacks:
-                    with contextlib.suppress(Exception):
-                        cb(session, played_frame)
-
-            if stop:
-                raise sd.CallbackStop
-
-        # Low latency when AEC is active — minimizes the time gap between
-        # when reference audio is fed and when the speaker actually plays it.
-        # Exception: on macOS CoreAudio, "low" yields tiny hardware buffers
-        # that underrun from Python callback jitter → audible crackling.
-        if sys.platform == "darwin":
-            out_latency = "high"
-        elif self._aec is not None:
-            out_latency = "low"
-        else:
-            out_latency = "high"
-
-        stream = sd.RawOutputStream(
-            samplerate=self._output_sample_rate,
-            channels=self._channels,
-            dtype="int16",
-            callback=_output_callback,
-            device=self._output_device,
-            latency=out_latency,
-        )
-        self._output_streams[session.id] = stream
-        stream.start()
+        drained = asyncio.Event()
+        self._speaker_stream = session.id
+        self._speaker_drained = (loop, drained)
+        speaker.begin_response()
 
         async def _run() -> None:
-            # Consume TTS chunks into the buffer.
             async for chunk in chunks:
                 if session.id not in self._playing_sessions:
                     return
-                if chunk.data:
-                    with buf_lock:
-                        audio_buf.extend(chunk.data)
-
-            # Wait for the PortAudio callback to drain.
-            producer_done.set()
-            with buf_lock:
-                if len(audio_buf) == 0:
-                    return  # nothing to drain
-            await finished.wait()
+                if chunk.data and not await self._queue_on_speaker(chunk.data):
+                    return
+            speaker.end_response()
+            await drained.wait()
+            # The last bytes left the queue; the device still plays them out.
+            await asyncio.sleep(speaker.latency)
 
         task = asyncio.create_task(_run())
         self._playback_tasks[session.id] = task
-        cancelled = False
+        completed = False
         try:
-            cancelled = await await_interruptible(task)  # cancel_audio() during barge-in
-        except asyncio.CancelledError:
-            cancelled = True  # the caller itself is being cancelled
-            raise
+            # False unless cancel_audio() cut it; a cancellation of the caller
+            # itself, or the TTS stream's failure, is raised.
+            completed = not await await_interruptible(task)
         finally:
             self._playback_tasks.pop(session.id, None)
-            ostream = self._output_streams.pop(session.id, None)
-            if ostream is not None:
-                # Signal the callback to stop immediately so it won't
-                # touch shared state while we tear down the stream.
-                stream_closing.set()
-                try:
-                    if cancelled or not ostream.active:
-                        # Barge-in or already stopped: discard buffers.
-                        ostream.abort()
-                    else:
-                        # Normal completion: let PortAudio drain its
-                        # hardware buffer so the last syllable isn't lost.
-                        ostream.stop()
-                except Exception:
-                    with contextlib.suppress(Exception):
-                        ostream.abort()
-                ostream.close()
-            # Transport-level AEC is owned here (NATIVE_AEC), so the pipeline
-            # deliberately cannot end its playback lifecycle.  Bypass after
-            # PortAudio drains, but preserve the converged hardware filter.
-            self._aec_end_playback(session.id)
+            if self._speaker_drained is not None and self._speaker_drained[1] is drained:
+                self._speaker_drained = None
+            if not completed:
+                # Cut, cancelled or failed: what is still queued never plays.
+                self._cut_speaker(session.id)
+
+    async def _queue_on_speaker(self, data: bytes) -> bool:
+        """Queue streamed audio on the speaker, waiting while its queue is full.
+
+        False when the speaker stopped (closed, or its device went away).
+        """
+        while True:
+            accepted, _ = self._speaker.append(data)
+            data = data[accepted:]
+            if not data:
+                return True
+            if not self._speaker.is_open:
+                return False
+            await asyncio.sleep(self._block_duration_ms / 1000)
 
     async def send_transcription(
         self, session: VoiceSession, text: str, role: str = "user"
@@ -906,13 +785,12 @@ class LocalAudioBackend(VoiceBackend):
         was_playing = session.id in self._playing_sessions
         if was_playing:
             self._playing_sessions.discard(session.id)
+            self._cut_speaker(session.id)
             # Cancel the consumption task — unblocks the async-for
             # that may be waiting on the TTS HTTP stream.
             task = self._playback_tasks.pop(session.id, None)
             if task is not None:
                 task.cancel()
-            else:
-                self._sd.stop()  # Fallback for _play_pcm() based playback
             logger.info("Audio cancelled for session %s", session.id)
         return was_playing
 
@@ -941,43 +819,21 @@ class LocalAudioBackend(VoiceBackend):
         # sessions and would silently drop every send_audio() that follows.
         self._rt_closing.clear()
 
-        # Create persistent speaker output stream (callback-driven).
-        # State reset is gated on stream creation: a second accept() while
-        # another session is mid-playback must not clobber the live buffer.
-        if self._rt_output_stream is None:
-            with self._rt_buf_lock:
-                self._rt_output_buffer.clear()
-                self._rt_buf_offset = 0
-                self._rt_buffered_bytes = 0
-                self._rt_dropped_bytes = 0
-                self._rt_priming = True
-                self._rt_response_complete = False
-                self._rt_prime_idle_blocks = 0
-                self._rt_interrupted = False
-            self._start_rt_output()
+        # The persistent speaker stream.  Opening it starts from a clean queue,
+        # so a second accept() while another session is mid-playback never
+        # clobbers the live buffer.
+        self._open_speaker()
 
         await self.start_listening(session)
 
     def interrupt(self, session: VoiceSession) -> None:
         """Flush outbound queue, stop playback (sync)."""
         self._playing_sessions.discard(session.id)
-        # Realtime path: flush the persistent output buffer and signal
-        # the speaker callback to output silence.  The flag also prevents
-        # send_audio() from refilling the buffer before the provider stops.
-        with self._rt_buf_lock:
-            queued = len(self._rt_output_buffer)
-            self._rt_output_buffer.clear()
-            self._rt_buf_offset = 0
-            self._rt_buffered_bytes = 0
-            self._rt_dropped_bytes = 0
-            self._rt_priming = True
-            self._rt_response_complete = False
-            self._rt_prime_idle_blocks = 0
-            self._rt_interrupted = True
-        # A cancelled response never reaches the normal drained-response
-        # boundary. End the playback lifecycle here so capture stops consuming
-        # a stale reference timeline; preserve the converged adaptive filter.
-        self._aec_end_playback(session.id)
+        # Flush the speaker's queue and play silence until the next response:
+        # a provider still streaming the cut one must not refill it.  The AEC
+        # keeps cancelling what the device and the room still play.
+        queued = self._cut_speaker(session.id)
+        self._rt_dropped_bytes = 0
         logger.info(
             "[INTERRUPT] flushed %d chunks, speaker muted (session %s)",
             queued,
@@ -999,20 +855,18 @@ class LocalAudioBackend(VoiceBackend):
         """
         if not self._realtime_mode:
             return
-        with self._rt_buf_lock:
-            if self._rt_interrupted:
-                return
-            self._rt_response_complete = True
+        self._speaker.end_response()
 
     @property
     def rt_underruns(self) -> int:
-        """Mid-response speaker buffer starvations (realtime path).
+        """Mid-response speaker buffer starvations, realtime or streamed TTS.
 
         Each underrun re-arms the prebuffer, converting scattered silence
         gaps into one re-prime; a non-zero count means audio chunks are
-        arriving slower than real time (event-loop or network pressure).
+        arriving slower than real time (event-loop or network pressure, or
+        a TTS slower than real time between sentences).
         """
-        return self._rt_underruns
+        return self._speaker.underruns
 
     def set_input_muted(self, session: VoiceSession, muted: bool) -> None:
         """Mute/unmute the microphone input for a session."""
@@ -1037,229 +891,139 @@ class LocalAudioBackend(VoiceBackend):
         self._speaker_change_callbacks.append(callback)
 
     # -------------------------------------------------------------------------
-    # Realtime speaker output (persistent callback-driven stream)
+    # The speaker: one persistent output stream (_local_speaker.py)
     # -------------------------------------------------------------------------
 
-    def _start_rt_output(self) -> None:
-        """Create a persistent callback-driven speaker output stream.
+    def _open_speaker(self) -> LocalSpeaker:
+        """Open the speaker stream unless it runs, then seed the AEC delay."""
+        if not self._speaker.is_open:
+            self._speaker.open()
+            self._rt_dropped_bytes = 0
+            self._configure_aec_delay()
+        return self._speaker
 
-        PortAudio's audio thread pulls PCM data from the chunk deque.
-        When no AI audio is queued the callback feeds silence, keeping
-        the stream alive and latency-free.
+    def _close_speaker(self) -> None:
+        self._speaker.close()
+        self._rt_dropped_bytes = 0
+
+    def _cut_speaker(self, stream: str) -> int:
+        """Drop the queued audio; returns the chunks dropped.
+
+        The speaker's next block reports the cut and the AEC keeps cancelling
+        through the echo tail.  With no stream running no block comes, so the
+        AEC's playback ends here.
         """
-        sd = self._sd
-        output_blocksize = int(self._output_sample_rate * self._block_duration_ms / 1000)
-        has_aec = self._aec is not None
-        if sys.platform == "darwin":
-            out_latency: str = "high"
-        elif has_aec:
-            out_latency = "low"
-        else:
-            out_latency = "high"
+        queued = self._speaker.flush()
+        if not self._speaker.is_open:
+            self._aec_end_playback(stream)
+        return queued
 
-        out = sd.RawOutputStream(
-            samplerate=self._output_sample_rate,
-            blocksize=output_blocksize,
+    def _speaker_owner(self) -> str | None:
+        """The session the speaker's audio belongs to.
+
+        One physical speaker, so one session owns its playback: in realtime
+        mode the session the capture callback tags its frames with, in
+        VoiceChannel mode the one whose response it plays.
+        """
+        if self._realtime_mode:
+            return next(iter(self._sessions), None)
+        stream = self._speaker_stream
+        return stream if stream in self._sessions else None
+
+    def _on_speaker_block(self, block: SpeakerBlock) -> None:
+        """What a played block means past the device (speaker thread): the
+        AEC's reference, played-audio listeners, the playing state and the
+        drained wait."""
+        stream = self._speaker_owner()
+        if stream is None:
+            return
+        self._aec_on_block(stream, block)
+        if self._realtime_mode:
+            # Every block, silence included: the pipeline AEC reference (wired
+            # via on_audio_played) must be continuous.  Skipping silent blocks
+            # compresses the reference timeline against the actual speaker
+            # output, forcing AEC3 to re-estimate its delay after every gap —
+            # measured as ~1 s echo-leak windows at each response start, which
+            # Gemini's server VAD can mistake for user speech (false barge-in).
+            self._notify_played(stream, block, ended=block.drained)
+            self._track_realtime_playing(block)
+            return
+        # A streamed response's playback is send_audio()'s call; the channel
+        # owns what follows it (VoiceChannel's AEC echo tail).
+        if stream in self._playing_sessions:
+            self._notify_played(stream, block, ended=False)
+        if block.drained:
+            self._signal_drained()
+
+    def _on_speaker_finished(self, closed: bool) -> None:
+        """The stream stopped (speaker thread): release a playback waiting on it."""
+        if not closed:
+            logger.warning("Speaker stream stopped by the audio device")
+        self._signal_drained()
+
+    def _signal_drained(self) -> None:
+        waiter = self._speaker_drained
+        if waiter is None:
+            return
+        loop, event = waiter
+        with contextlib.suppress(RuntimeError):  # the loop has closed
+            loop.call_soon_threadsafe(event.set)
+
+    def _notify_played(self, stream: str, block: SpeakerBlock, *, ended: bool) -> None:
+        """Hand listeners the played block: the time-aligned reference for a
+        pipeline AEC, and the output level at playback pace."""
+        session = self._sessions.get(stream)
+        if not self._audio_played_callbacks or session is None:
+            return
+        frame = AudioFrame(
+            data=block.data,
+            sample_rate=self._output_sample_rate,
             channels=self._channels,
-            dtype="int16",
-            device=self._output_device,
-            latency=out_latency,
-            callback=self._rt_speaker_callback,
+            sample_width=2,
+            metadata={
+                "playback_ended": ended,
+                "played_bytes": block.written,
+                # While capture is paused (mute/gate/half-duplex) the mic
+                # thread drops frames, so the pipeline-AEC reference must
+                # pause in step — the transport-AEC feed already does.  The
+                # broadcast itself continues: playback is physically ongoing,
+                # and level/position listeners must keep seeing it.  The
+                # pipeline consumer honours the flag.
+                "capture_paused": self._aec_capture_paused(stream),
+            },
         )
-        out.start()
-        self._rt_output_stream = out
-        logger.info(
-            "Realtime speaker stream: rate=%dHz blocksize=%d latency=%s device=%s",
-            self._output_sample_rate,
-            output_blocksize,
-            out_latency,
-            self._output_device or "default",
-        )
+        for cb in list(self._audio_played_callbacks):
+            with contextlib.suppress(Exception):
+                cb(session, frame)
 
-    def _rt_speaker_callback(self, outdata: Any, frames: int, time_info: Any, status: Any) -> None:
-        """Pull queued audio into the output buffer; fill gaps with silence."""
-        if status:
-            logger.warning("Speaker callback status: %s", status)
-
-        bytes_needed = frames * self._channels * 2
-        written = 0
-        underrun_no = 0
-        response_drained = False
-
-        with self._rt_buf_lock:
-            buf = self._rt_output_buffer
-            # When interrupted, never drain — barge-in mutes playback within
-            # one callback (~20ms).  While priming, hold silence until enough
-            # audio is buffered to ride out provider burst jitter; released
-            # early when the response is complete (short responses) or after
-            # ~100ms without a new append (missing end-of-response valve).
-            # Both paths fall through so the tail still runs: the AEC
-            # reference and played callbacks must see silence blocks too.
-            draining = not self._rt_interrupted
-            if draining and self._rt_priming:
-                if self._rt_response_complete and self._rt_buffered_bytes == 0:
-                    # A response with no audio still has an AEC activation
-                    # from response_start that must be released.
-                    self._rt_response_complete = False
-                    response_drained = True
-                release = (
-                    self._rt_buffered_bytes >= max(self._rt_prebuffer_bytes, 1)
-                    or (self._rt_response_complete and self._rt_buffered_bytes > 0)
-                    or (
-                        self._rt_buffered_bytes > 0
-                        and self._rt_prime_idle_blocks >= self._rt_prime_max_idle_blocks
-                    )
-                )
-                if release:
-                    # Drain starts in this same callback — no wasted block.
-                    self._rt_priming = False
-                    self._rt_prime_idle_blocks = 0
-                else:
-                    self._rt_prime_idle_blocks += 1
-                    draining = False
-
-            if draining:
-                while written < bytes_needed and buf:
-                    chunk = buf[0]
-                    avail = len(chunk) - self._rt_buf_offset
-                    n = min(avail, bytes_needed - written)
-                    src_start = self._rt_buf_offset
-                    outdata[written : written + n] = chunk[src_start : src_start + n]
-                    written += n
-                    self._rt_buf_offset += n
-                    if self._rt_buf_offset >= len(chunk):
-                        buf.popleft()
-                        self._rt_buf_offset = 0
-                self._rt_buffered_bytes -= written
-
-                if written < bytes_needed:
-                    # Buffer exhausted mid-block: re-arm the prebuffer.  A
-                    # clean end (response complete) is expected; anything
-                    # else is a mid-response starvation — count it.
-                    self._rt_priming = True
-                    self._rt_prime_idle_blocks = 0
-                    if self._rt_response_complete:
-                        self._rt_response_complete = False
-                        response_drained = True
-                    else:
-                        self._rt_underruns += 1
-                        underrun_no = self._rt_underruns
-
-        # Fill remaining with silence (the whole block when interrupted
-        # or priming)
-        if written < bytes_needed:
-            outdata[written:] = b"\x00" * (bytes_needed - written)
-
-        # Log outside the lock, capped like the SIP pacer's underrun warnings.
-        if underrun_no and underrun_no <= 5:
-            logger.warning(
-                "Speaker underrun #%d — buffer starved mid-response, re-priming",
-                underrun_no,
-            )
-
-        # One physical speaker, so one stream owns this playback: the same
-        # session the capture callback tags its frames with.
-        session = next(iter(self._sessions.values()), None)
-
-        # Once playback starts, feed EVERY hardware block, including silence
-        # inserted for network jitter or interruption. Capture keeps advancing
-        # on the mic thread, so skipping render-silence compresses AEC3's
-        # reference timeline and makes it cancel the wrong point in history.
-        # When capture is muted, gated, or half-duplex, both timelines pause.
-        if (
-            self._aec is not None
-            and session is not None
-            and not self._aec_capture_paused(session.id)
-        ):
-            if written > 0:
-                self._aec_begin_playback(session.id)
-            if session.id in self._aec_active_sessions:
-                self._aec_feed_played(bytearray(bytes(outdata)), session.id)
-
-        if session is not None and response_drained:
-            # The persistent realtime stream stays open across responses, so
-            # playback is bypassed at the drained response boundary rather
-            # than at stream close. The learned hardware filter survives.
-            self._aec_end_playback(session.id)
-
-        # Notify listeners about played audio — every block, silence
-        # included.  The pipeline AEC reference (wired via on_audio_played)
-        # must be continuous: skipping silent blocks compresses the
-        # reference timeline vs. the actual speaker output, forcing AEC3 to
-        # re-estimate its delay after every gap — measured as ~1s echo-leak
-        # windows at each response start, which Gemini's server VAD can
-        # mistake for user speech (false barge-in).
-        if self._audio_played_callbacks and session is not None:
-            played_frame = AudioFrame(
-                data=bytes(outdata),
-                sample_rate=self._output_sample_rate,
-                channels=self._channels,
-                sample_width=2,
-                metadata={
-                    "playback_ended": response_drained,
-                    "played_bytes": written,
-                    # While capture is paused (mute/gate/half-duplex) the mic
-                    # thread drops frames, so the pipeline-AEC reference must
-                    # pause in step — the transport-AEC feed above already
-                    # does.  The broadcast itself continues: playback is
-                    # physically ongoing, and level/position listeners must
-                    # keep seeing it.  The pipeline consumer honours the flag.
-                    "capture_paused": self._aec_capture_paused(session.id),
-                },
-            )
-            for cb in self._audio_played_callbacks:
-                with contextlib.suppress(Exception):
-                    cb(session, played_frame)
-
-        # Track playing state based on buffer content
-        if written > 0:
+    def _track_realtime_playing(self, block: SpeakerBlock) -> None:
+        """Realtime mode: the sessions play while the speaker has their audio."""
+        if block.written > 0:
             for sid in self._sessions:
                 self._playing_sessions.add(sid)
-        elif not buf:
+        elif not block.queued:
             for sid in list(self._playing_sessions):
                 self._playing_sessions.discard(sid)
-
-    def _stop_rt_output(self) -> None:
-        """Close the persistent realtime speaker stream."""
-        with self._rt_buf_lock:
-            self._rt_output_buffer.clear()
-            self._rt_buf_offset = 0
-            self._rt_buffered_bytes = 0
-            self._rt_dropped_bytes = 0
-            self._rt_priming = True
-            self._rt_response_complete = False
-            self._rt_prime_idle_blocks = 0
-        out = self._rt_output_stream
-        if out is not None:
-            self._rt_output_stream = None
-            try:
-                out.abort()
-                out.close()
-            except Exception:  # noqa: S110
-                logger.debug("Error closing realtime output stream", exc_info=True)
 
     # -------------------------------------------------------------------------
     # AEC helpers
     # -------------------------------------------------------------------------
 
-    def _configure_aec_delay_from_streams(self, input_stream: Any) -> None:
-        """Seed an unset WebRTC delay from PortAudio's actual stream latencies."""
-        if self._aec is None or self._rt_output_stream is None:
+    def _note_input_latency(self, latency_ms: float | None) -> None:
+        """Record the capture side's latency, then seed the AEC delay if it can."""
+        if latency_ms is None:
             return
-        try:
-            input_latency_ms = float(input_stream.latency) * 1000
-        except Exception:
-            logger.debug("AEC delay auto-configuration unavailable", exc_info=True)
-            return
-        self._configure_aec_delay(input_latency_ms)
+        self._input_latency_ms = latency_ms
+        self._configure_aec_delay()
 
-    def _configure_aec_delay(self, input_latency_ms: float) -> None:
-        """Seed an unset WebRTC delay from a known input latency.
+    def _configure_aec_delay(self) -> None:
+        """Seed an unset WebRTC delay from PortAudio's actual stream latencies.
 
-        Split from the stream variant so a shared capture source, which owns
-        the input stream this backend never sees, can report its own latency.
+        It needs both: the capture side's (this backend's input stream, or a
+        shared capture source's report) and the speaker's.  Called when either
+        opens, so whichever opens last seeds it, in either mode.
         """
-        if self._aec is None or self._rt_output_stream is None:
+        if self._aec is None or self._input_latency_ms is None or not self._speaker.is_open:
             return
 
         setter = getattr(self._aec, "set_stream_delay_ms", None)
@@ -1267,16 +1031,14 @@ class LocalAudioBackend(VoiceBackend):
         if not callable(setter) or configured_delay != 0:
             return
 
-        try:
-            output_latency_ms = float(self._rt_output_stream.latency) * 1000
-        except Exception:
-            logger.debug("AEC delay auto-configuration unavailable", exc_info=True)
-            return
+        output_latency_ms = self._speaker.latency * 1000
+        if output_latency_ms <= 0:
+            return  # the speaker reports none: nothing to seed from
 
         # WebRTC clamps reported stream delay at 500 ms. The acoustic travel
         # time for a local device is negligible next to PortAudio buffering,
         # whose input + output latency is the relevant render/capture offset.
-        delay_ms = min(500, max(0, round(input_latency_ms + output_latency_ms)))
+        delay_ms = min(500, max(0, round(self._input_latency_ms + output_latency_ms)))
         if delay_ms == 0:
             return
 
@@ -1288,7 +1050,7 @@ class LocalAudioBackend(VoiceBackend):
 
         logger.info(
             "AEC delay auto-configured from PortAudio: input=%.1fms output=%.1fms total=%dms",
-            input_latency_ms,
+            self._input_latency_ms,
             output_latency_ms,
             delay_ms,
         )
@@ -1314,6 +1076,7 @@ class LocalAudioBackend(VoiceBackend):
 
     def _aec_end_playback(self, stream: str) -> None:
         """Pause transport AEC without destroying its learned echo path."""
+        self._aec_tail.pop(stream, None)
         if self._aec is None or stream not in self._aec_active_sessions:
             return
         try:
@@ -1323,6 +1086,36 @@ class LocalAudioBackend(VoiceBackend):
             return
         self._aec_active_sessions.discard(stream)
         self._ref_buffers.pop(stream, None)
+
+    def _aec_on_block(self, stream: str, block: SpeakerBlock) -> None:
+        """Run the transport AEC's playback lifecycle on one played block.
+
+        Playback starts at the first block carrying audio.  From then every
+        block is fed, silence included: capture keeps advancing on the mic
+        thread, so skipping render silence would compress AEC3's reference
+        timeline and make it cancel the wrong point in history.  When the
+        playback drains or is cut, the device and the room still sound, so the
+        AEC keeps cancelling for the echo tail on the silent reference that
+        follows (RFC §12.3.4), then is bypassed with its learned filter kept.
+        While capture is paused (muted, gated, half-duplex) both timelines
+        pause, the tail's countdown included.
+        """
+        if self._aec is None:
+            return
+        paused = self._aec_capture_paused(stream)
+        if block.written > 0 and not paused:
+            self._aec_tail.pop(stream, None)
+            self._aec_begin_playback(stream)
+        if stream not in self._aec_active_sessions:
+            return
+        if not paused:
+            self._aec_feed_played(bytearray(block.data), stream)
+        if block.drained or block.flushed:
+            self._aec_tail[stream] = self._aec_tail_blocks
+        elif not paused and block.written == 0 and stream in self._aec_tail:
+            self._aec_tail[stream] -= 1
+            if self._aec_tail[stream] <= 0:
+                self._aec_end_playback(stream)
 
     def _aec_feed_played(self, played: bytearray, stream: str) -> None:
         """Feed actually-played speaker bytes to the AEC as reference.

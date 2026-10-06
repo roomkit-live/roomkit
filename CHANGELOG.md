@@ -84,6 +84,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `LocalAudioBackend(aec=...)` keeps the microphone open while it plays
+  (RMK-551): `mute_mic_during_playback` now defaults to `None`, half-duplex
+  only without an `aec`. With the old default `True`, a backend given an AEC
+  still muted the mic during playback, so the AEC removed nothing and the user
+  could not talk over the agent. Pass `mute_mic_during_playback=True` to keep
+  half-duplex with an AEC. `rt_prebuffer_ms` now paces streamed TTS as it
+  paces realtime audio: a response starts once 120 ms is queued, once it is
+  complete, or after 100 ms without new audio.
+
 - `AnthropicConfig.max_retries`, default `0` (RMK-509): the Anthropic SDK no
   longer retries a request itself (it made 3 attempts by default), as the
   OpenAI, Ollama and PolarGrid clients already do not; the channel's
@@ -93,6 +102,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   keep the SDK's own retries.
 
 ### Fixed
+
+- `LocalAudioBackend` plays every response through one output stream kept open
+  for the session (RMK-551, RFC §12.3.4). In VoiceChannel mode it opened a
+  stream per response: each started at a new echo delay, which PipeWire then
+  took 5 to 10 s to settle, and AEC3 could not follow it. Replayed offline on a
+  recorded session, holding the delay still took the echo-only 100 ms blocks
+  left above -50 dBFS from 23 % to 5 %. With it:
+  - after a response drains or is cut, the AEC keeps cancelling for 0.5 s on
+    the silent reference, as a pipeline AEC does, instead of passing the audio
+    still in the device and the room's echo straight through (~100 ms after
+    each barge-in);
+  - an output underflow is logged in VoiceChannel mode too, and the stream
+    plays fixed `block_duration_ms` blocks;
+  - the WebRTC delay is seeded from PortAudio's latencies in VoiceChannel mode
+    too, whichever stream opens last;
+  - raw PCM bytes play on the same stream, with their AEC reference (they went
+    through `sd.play()`, without one);
+  - streamed TTS queues in the speaker's bounded queue (30 s), waiting for
+    room, instead of a buffer without bound; a disconnect ends a response
+    still playing.
 
 - A `ProviderError` names the provider and the status that answered:
   `cerebras (402): Payment required…`. An OpenAI-compatible provider
