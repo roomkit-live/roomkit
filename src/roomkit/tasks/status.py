@@ -7,6 +7,7 @@ import json
 from collections.abc import Iterable
 from typing import TYPE_CHECKING, Any
 
+from roomkit.core.exceptions import UnservedToolCallError
 from roomkit.models.enums import TaskStatus
 from roomkit.orchestration.status_bus import StatusEntry, StatusLevel, post_agent_lifecycle
 from roomkit.tools.context import current_tool_room_id
@@ -133,6 +134,10 @@ class TaskStatusTool:
         }
 
     async def handler(self, name: str, arguments: dict[str, Any]) -> str:
+        # A channel chains its tools' handlers, the first to answer wins: a call
+        # for another tool is declined, so the next handler serves it.
+        if name != TASK_STATUS_TOOL:
+            raise UnservedToolCallError(f"tool {name!r} is not served here")
         room_id = current_tool_room_id()
         if room_id is None:
             return json.dumps({"error": "task_status answers only within a conversation"})

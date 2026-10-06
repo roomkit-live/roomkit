@@ -15,6 +15,7 @@ from roomkit.providers.ai.base import AIContext, AIResponse, AITool
 from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.tasks import TASK_STATUS_TOOL, TaskStatusTool
 from roomkit.tasks.status import room_tasks
+from roomkit.tools.compose import extract_tools
 from roomkit.tools.context import tool_turn_context
 from tests.conference.test_conference_realtime import until
 from tests.test_framework import SimpleChannel
@@ -175,3 +176,29 @@ def test_the_supervisor_names_task_status_only_to_an_agent_that_has_it() -> None
     with tool_turn_context(room_id="r", tools=[]):
         assert _follow_hint("follow progress") == ""
     assert _follow_hint("follow progress") == ""
+
+
+class _EchoTool:
+    """Another tool of the same channel, listed after task_status."""
+
+    @property
+    def definition(self) -> dict[str, Any]:
+        return {"name": "echo", "description": "", "parameters": {"type": "object"}}
+
+    async def handler(self, name: str, arguments: dict[str, Any]) -> str:
+        return f"echo {arguments}"
+
+
+async def test_task_status_leaves_another_tools_call_to_that_tool() -> None:
+    kit = RoomKit()
+    await kit.create_room(room_id="r")
+    _, handler = extract_tools([TaskStatusTool(kit), _EchoTool()])
+    assert handler is not None
+
+    with tool_turn_context(room_id="r"):
+        echoed = await handler("echo", {"x": 1})
+        listed = json.loads(str(await handler(TASK_STATUS_TOOL, {})))
+    await kit.close()
+
+    assert echoed == "echo {'x': 1}"
+    assert listed == {"tasks": []}

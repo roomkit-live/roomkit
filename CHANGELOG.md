@@ -55,6 +55,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `task_status` only to an agent that was given it, and says nothing of a
   tool otherwise.
 
+- `TaskStatusTool` declines a call for another tool (`UnservedToolCallError`),
+  as RoomKit's other tool objects do (RMK-538): listed before another tool in
+  a channel's `tools`, it answered that tool's calls with the task list.
+
 - On a realtime session, `activate_skill` on a name that is no skill hints
   none of the channel's human-input tools, as on a text turn (RMK-304, RFC
   §24.4).
