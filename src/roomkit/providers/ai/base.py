@@ -248,6 +248,20 @@ class ProviderError(Exception):
         self.status_code = status_code
         self.context_overflow = context_overflow
 
+    def __str__(self) -> str:
+        """The provider's message, led by the provider and the status it answered:
+        ``cerebras (402): Payment required…``. An OpenAI-compatible provider is
+        reached through the OpenAI SDK, whose message names no provider, so a log
+        line or a traceback otherwise says nothing of which one failed. A message
+        that already names its provider is left as it is."""
+        message = super().__str__()
+        if not self.provider or re.search(
+            rf"\b{re.escape(self.provider)}\b", message, re.IGNORECASE
+        ):
+            return message
+        status = f" ({self.status_code})" if self.status_code is not None else ""
+        return f"{self.provider}{status}: {message}"
+
 
 # HTTP status codes that are transient and worth retrying for any AI provider.
 # Providers may extend this set with their own (e.g. Anthropic's 529 "overloaded").

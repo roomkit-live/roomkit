@@ -66,6 +66,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A `ProviderError` names the provider and the status that answered:
+  `cerebras (402): Payment required…`. An OpenAI-compatible provider
+  (Cerebras, vLLM, OpenRouter…) is reached through the OpenAI SDK, so its
+  failure read as an `openai.APIStatusError` whose text named no provider, and
+  a log line or a traceback said nothing of which provider to look at. The
+  provider's own text stays in `args[0]`.
+
 - The Supervisor's background dispatch told its agent to "use
   check_status_bus", a tool RoomKit never provided (RMK-538): it now names
   `task_status` only to an agent that was given it, and says nothing of a

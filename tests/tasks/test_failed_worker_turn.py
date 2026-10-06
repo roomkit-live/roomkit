@@ -103,7 +103,8 @@ async def test_a_worker_turn_failed_after_a_round_keeps_its_end(wait: bool, shar
         kit, "worker", wait=wait, share_channels=["email-out"] if shared else None
     )
 
-    assert (result.status, result.error) == ("failed", "upstream 400")
+    # The error names the provider that failed (RMK-547).
+    assert (result.status, result.error) == ("failed", "mock (400): upstream 400")
     assert result.output == "Still checking."
     assert result.metadata["loop_end_reason"] == "error"
     assert completed == ["error"]
@@ -178,7 +179,7 @@ async def test_a_buffered_worker_turn_failed_after_it_began_keeps_its_end(shared
         kit, "worker", share_channels=["email-out"] if shared else None
     )
 
-    assert (result.error, result.output) == ("upstream 400", "Still checking.")
+    assert (result.error, result.output) == ("mock (400): upstream 400", "Still checking.")
     assert result.metadata["loop_end_reason"] == "error"
     assert completed == ["error"]
     await kit.close()
