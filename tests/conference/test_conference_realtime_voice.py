@@ -1,6 +1,6 @@
 """The provider's voice on the bot track (RFC §12.10.12, §12.10.4, §12.10.5).
 
-A response is an utterance like any other: floor, chunks, terminal ``is_final``
+A response is an utterance like any other: its turn, chunks, terminal ``is_final``
 — on a natural end and on a barge-in — and abandonment without a boundary when
 the channel leaves. The barge-in itself stays the lanes': the per-lane VAD is
 the interruption sensor, the scope is enforced on it, and a landed one reaches
@@ -67,7 +67,7 @@ class TestUtterances:
         assert first.data == b"first"
         assert second.data == b"second"
 
-    async def test_a_response_the_provider_never_closed_yields_the_floor(self) -> None:
+    async def test_a_response_the_provider_never_closed_yields_its_turn(self) -> None:
         """A second response_start ends an unclosed first response rather than
         queueing behind a pump that would wait forever."""
         _, channel, backend, provider = await realtime_kit()

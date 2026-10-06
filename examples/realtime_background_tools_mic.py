@@ -7,8 +7,8 @@ Ask out loud: "how many blue widgets do we have in stock?"
 
 The lookup takes six seconds on purpose. Through Gemini 3.1 that was six
 seconds of silence on the line, which on a phone call reads as a dropped
-connection. From 3.8 the tool runs in the background and the model keeps the
-floor: you hear it say it is checking, and carry on, while the terminal shows
+connection. From 3.8 the tool runs in the background and the model keeps
+talking: you hear it say it is checking, and carry on, while the terminal shows
 the call still outstanding.
 
 The terminal marks every assistant turn that happens while the tool is

@@ -1558,7 +1558,7 @@ class TestPlaybackOutlivesTheRoom:
     async def test_every_concurrent_playback_is_abandoned(self) -> None:
         """A room asked to say two things holds one utterance and queues the
         other, and the detach has to reach both. The one speaking is in a
-        publishing loop; the one queued is parked on the room's floor, holding
+        publishing loop; the one queued is parked on the room's turn, holding
         the bot session it will publish into as soon as the first releases.
         Reaching only the first leaves that answer to speak into a room the
         channel has left.

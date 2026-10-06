@@ -234,7 +234,7 @@ class TestSingleBotTrack:
 
         The wait is the new window: an answer that has not started speaking is
         not in the publishing loop the detach knows how to stop, so it has to be
-        reachable while it waits — otherwise it takes the floor the first
+        reachable while it waits — otherwise it takes the turn the first
         answer releases and publishes into a room the channel has left.
         """
         tts = _WordTTS()

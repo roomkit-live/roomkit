@@ -57,8 +57,8 @@ class OpenAIRealtimeBase(OpenAIRealtimeEventHandlersMixin):
         # Track active responses per session to avoid inject_text conflicts
         self._responding: set[str] = set()
         # Sessions whose caller is speaking: a continuation waits for the
-        # floor to come back (RFC §12.4)
-        self._floor_held: set[str] = set()
+        # caller's turn to end (RFC §12.4)
+        self._caller_speaking: set[str] = set()
         # Sessions whose caller's turn met a response in progress and is
         # still owed a request (RFC §12.4)
         self._turns_owed: set[str] = set()
@@ -426,12 +426,12 @@ class OpenAIRealtimeBase(OpenAIRealtimeEventHandlersMixin):
         await ws.send(json.dumps(event))
 
     async def send_activity_start(self, session: VoiceSession) -> None:
-        """The caller takes the floor (manual VAD mode).
+        """The caller starts speaking (manual VAD mode).
 
         Nothing goes on the wire, audio flows continuously via
-        ``input_audio_buffer.append``; a continuation waits for the floor.
+        ``input_audio_buffer.append``; a continuation waits for the caller's turn to end.
         """
-        self._floor_held.add(session.id)
+        self._caller_speaking.add(session.id)
         logger.debug("[%s] activity_start (session %s)", self._log_tag, session.id)
 
     async def send_activity_end(self, session: VoiceSession) -> None:
@@ -439,7 +439,7 @@ class OpenAIRealtimeBase(OpenAIRealtimeEventHandlersMixin):
 
         The request also covers a continuation held while the caller spoke.
         """
-        self._floor_held.discard(session.id)
+        self._caller_speaking.discard(session.id)
         ws = self._connections.get(session.id)
         if ws is None:
             return
@@ -451,7 +451,7 @@ class OpenAIRealtimeBase(OpenAIRealtimeEventHandlersMixin):
         """Drop every per-session record but the socket and the receive task."""
         self._provider_configs.pop(session_id, None)
         self._responding.discard(session_id)
-        self._floor_held.discard(session_id)
+        self._caller_speaking.discard(session_id)
         self._turns_owed.discard(session_id)
         self._pending_responses.pop(session_id, None)
         self._output_audio.pop(session_id, None)

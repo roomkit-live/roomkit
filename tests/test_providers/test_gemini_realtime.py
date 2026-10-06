@@ -1951,7 +1951,7 @@ class TestGeminiLiveProvider:
         assert ends == [session.id]
 
     async def test_barge_in_still_ends_the_response_mid_interaction(self):
-        """Interruption does not wait for IDLE: the user took the floor."""
+        """Interruption does not wait for IDLE: the user started speaking."""
         mod = _load_provider()
         provider = mod.GeminiLiveProvider(api_key="test-key", model="gemini-3.8-live")
         session = _make_session()

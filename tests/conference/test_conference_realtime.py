@@ -3,7 +3,7 @@
 The provider hears a mix and speaks on the bot track. These tests cover the
 boundary contracts around that: what a configuration refuses, when a session
 is established and what its failure costs, whose words are kept, and how a
-tool call is answered. The voice path — floor, barge-in, terminal chunks —
+tool call is answered. The voice path — turns, barge-in, terminal chunks —
 has its own file.
 """
 

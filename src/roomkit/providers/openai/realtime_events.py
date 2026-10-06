@@ -72,7 +72,7 @@ class OpenAIRealtimeEventHandlersMixin(RealtimeVoiceProvider):
     _connections: dict[str, Any]
     _responding: set[str]
     _pending_responses: dict[str, PendingResponse]
-    _floor_held: set[str]
+    _caller_speaking: set[str]
     _turns_owed: set[str]
     _provider_configs: dict[str, dict[str, Any]]
     _output_audio: dict[str, _OutputAudioState]
@@ -158,8 +158,8 @@ class OpenAIRealtimeEventHandlersMixin(RealtimeVoiceProvider):
             await getattr(self, handler_name)(session, event)
 
     async def _on_speech_started(self, session: VoiceSession, event: dict[str, Any]) -> None:
-        # Server VAD: the caller holds the floor until its speech stops
-        self._floor_held.add(session.id)
+        # Server VAD: the caller's turn lasts until its speech stops
+        self._caller_speaking.add(session.id)
         logger.info(
             "[VAD] speech_start audio_start=%sms item=%s (session %s)",
             event.get("audio_start_ms", "?"),
@@ -169,7 +169,7 @@ class OpenAIRealtimeEventHandlersMixin(RealtimeVoiceProvider):
         await self._fire(self._speech_start_callbacks, session, label="speech_start")
 
     async def _on_speech_stopped(self, session: VoiceSession, event: dict[str, Any]) -> None:
-        self._floor_held.discard(session.id)
+        self._caller_speaking.discard(session.id)
         logger.info(
             "[VAD] speech_end audio_end=%sms item=%s (session %s)",
             event.get("audio_end_ms", "?"),
@@ -362,11 +362,11 @@ class OpenAIRealtimeEventHandlersMixin(RealtimeVoiceProvider):
         if not pending.ready_to_continue or ws is None:
             del self._pending_responses[session.id]
             return
-        if session.id in self._floor_held:
+        if session.id in self._caller_speaking:
             # Held, not dropped: the request that answers the caller's turn
             # covers the results, which sit ahead of it in the conversation.
             logger.debug(
-                "[%s] continuation held: the caller has the floor (session %s)",
+                "[%s] continuation held: the caller is speaking (session %s)",
                 self._log_tag,
                 session.id,
             )
@@ -411,7 +411,7 @@ class OpenAIRealtimeEventHandlersMixin(RealtimeVoiceProvider):
         if session.id not in self._turns_owed or ws is None:
             return
         self._turns_owed.discard(session.id)
-        if session.id in self._floor_held:
+        if session.id in self._caller_speaking:
             return  # the caller speaks again: that turn's own request covers both
         await self._request_response(session, ws, "caller's turn owed", owed=True)
 

@@ -340,7 +340,7 @@ async def _speech(provider: OpenAIRealtimeBase, session: VoiceSession, edge: str
     )
 
 
-class TestTheCallerHoldsTheFloor:
+class TestTheCallerIsSpeaking:
     """RMK-288: a continuation never starts while the caller speaks (RFC §12.4)."""
 
     async def test_results_in_before_a_barge_in_wait_for_the_end_of_the_turn(

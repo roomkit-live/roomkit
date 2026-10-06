@@ -2,7 +2,7 @@
 
 One RealtimeVoiceProvider session per conference: the mixer feeds it every
 subscribed track as one stream, and its voice publishes on the bot track
-through the same floor, latch and terminal-chunk machinery as TTS — a
+through the same turn-taking, latch and terminal-chunk machinery as TTS — a
 provider response and a synthesized answer are indistinguishable to the
 backend and to a barge-in (RFC 12.10.12).
 
@@ -103,8 +103,8 @@ class _Utterance:
     """One provider response on its way to the bot track.
 
     A queue-backed bridge between two pacings: the provider pushes audio
-    deltas as it generates them, and the voice's pump pulls them through the
-    floor at the backend's pace. ``None`` on the queue is the end of the
+    deltas as it generates them, and the voice's pump pulls them through its
+    turn on the track at the backend's pace. ``None`` on the queue is the end of the
     response — the pump publishes the terminal chunk behind it.
     """
 
@@ -138,7 +138,7 @@ class _RoomRealtime:
     answer_depth: AnswerDepth = field(default_factory=AnswerDepth)
     """What the room's model heard last, which its answer's depth follows."""
     speaking: int = 0
-    """Responses still on their way through the floor to the bot track."""
+    """Responses still waiting for or taking their turn on the bot track."""
     hearing: bool = False
     """The provider's own VAD hears the room's people speak."""
     idle: asyncio.Event = field(default_factory=_idle_event)
@@ -501,7 +501,7 @@ class ConferenceRealtime:
 
     def _open_utterance(self, room: _RoomRealtime, room_id: str) -> _Utterance:
         # A response the provider never closed is closed here: its pump would
-        # otherwise wait forever on a queue nothing feeds, holding the floor
+        # otherwise wait forever on a queue nothing feeds, holding the turn
         # against the response that just started.
         previous = room.utterance
         if previous is not None and not previous.discarded:
@@ -514,7 +514,7 @@ class ConferenceRealtime:
         return utterance
 
     async def _speak(self, room: _RoomRealtime, room_id: str, utterance: _Utterance) -> None:
-        """Run one response through the voice's floor, start to terminal chunk."""
+        """Run one response through its turn on the bot track, start to terminal chunk."""
 
         def attach(playback: ConferencePlayback) -> None:
             utterance.playback = playback

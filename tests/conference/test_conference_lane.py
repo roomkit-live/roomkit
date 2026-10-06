@@ -468,7 +468,7 @@ class TestInterruption:
     async def test_being_cut_off_silences_the_answers_queued_behind(self) -> None:
         """Speaking over a room stops what the bot is saying in it — including
         the answer waiting its turn. Letting the queue drain into the silence
-        someone just asked for is not what taking the floor means.
+        someone just asked for is not what cutting in means.
         """
         tts = _GatedTTS()
         kit, channel, backend = await _kit(

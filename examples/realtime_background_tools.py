@@ -5,7 +5,7 @@
 
 Through Gemini 3.1 a tool call froze the conversation: the model asked, waited
 for the result, then spoke. From 3.8 the call runs in the background and the
-model keeps the floor, so it can say "let me check that" and carry on while the
+model keeps talking, so it can say "let me check that" and carry on while the
 work finishes. RoomKit declares the tools ``NON_BLOCKING`` and schedules the
 response with ``WHEN_IDLE`` so the result lands between sentences rather than
 cutting one in half.
@@ -167,7 +167,7 @@ async def run(api_key: str, output: Path) -> dict[str, Any]:
                 "timeline": timeline,
                 "response_ends": response_ends,
                 "assistant_turns_during_tool": speech_during_tool,
-                # The point of the example: the model held the floor while the
+                # The point of the example: the model kept talking while the
                 # call ran, and the request ended once rather than per turn.
                 "kept_talking_during_the_call": speech_during_tool > 0,
             }

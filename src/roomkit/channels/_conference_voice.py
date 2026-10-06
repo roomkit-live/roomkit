@@ -77,7 +77,7 @@ class ConferencePlayback:
     room_id: str
     text: str
     started_at: float | None = None
-    """When the utterance took the floor, or ``None`` while it still waits.
+    """When the utterance's turn began, or ``None`` while it still waits.
 
     Not the moment it was queued: an answer waiting its turn has not been heard
     by anyone, and a position measured from the queue would report a barge-in
@@ -87,7 +87,7 @@ class ConferencePlayback:
     heard_from: float | None = None
     """When the backend accepted the utterance's first chunk, or ``None``.
 
-    Where ``position_ms`` counts from: between taking the floor and the first
+    Where ``position_ms`` counts from: between its turn beginning and the first
     chunk, synthesis is still running and the room has heard nothing.
     """
 
@@ -102,7 +102,7 @@ class ConferencePlayback:
     """
 
     bot: BotSession | None = None
-    """The session this utterance publishes on, once it has taken the floor.
+    """The session this utterance publishes on, once its turn has begun.
 
     What a barge-in stops playback against: the gesture goes to the session
     that queued the audio, not to whatever session the room holds by the time
@@ -145,7 +145,7 @@ class ConferencePlayback:
     """
 
     def begin(self) -> None:
-        """Take the floor: the utterance is about to be published."""
+        """Its turn begins: the utterance is about to be published."""
         self.started_at = time.monotonic()
 
     def settle_publication(self) -> None:
@@ -170,7 +170,7 @@ class ConferencePlayback:
 
     @property
     def speaking(self) -> bool:
-        """Whether this utterance has taken the floor rather than waiting for it."""
+        """Whether this utterance's turn has begun rather than still waiting for it."""
         return self.started_at is not None
 
     @property
@@ -205,7 +205,7 @@ class _RoomVoice:
     to abandon what it thinks is the only playback.
     """
 
-    floor: asyncio.Lock = field(default_factory=asyncio.Lock)
+    turn: asyncio.Lock = field(default_factory=asyncio.Lock)
     """Held for the whole of an utterance, so only one is ever on the track.
 
     The bot has one track and the SFU mixes nothing for it, so two utterances
@@ -347,8 +347,8 @@ class ConferenceVoice:
 
         One utterance at a time. A room has a single bot track and the SFU
         mixes nothing for it, so a second answer arriving mid-sentence waits
-        for the floor rather than publishing into the same stream — see
-        :attr:`_RoomVoice.floor`. It waits rather than preempting because both
+        for its turn rather than publishing into the same stream — see
+        :attr:`_RoomVoice.turn`. It waits rather than preempting because both
         answers were produced for this room and the pipeline delivered both;
         cutting the bot off is what a *participant* does, and it has its own
         path.
@@ -359,8 +359,8 @@ class ConferenceVoice:
         queued (``stop_playback``, RFC section 12.10.3) — the latch stops the
         stream, the stop silences the transport, and together they are the
         barge-in mechanism and the reason the bot's utterance is tracked at
-        all. An utterance still waiting its turn is latched too: taking the
-        floor from the bot means the room goes quiet, not that the queue
+        all. An utterance still waiting its turn is latched too: cutting the
+        bot off means the room goes quiet, not that the queue
         starts draining into it.
 
         AFTER_TTS fires either way, so BEFORE_TTS and AFTER_TTS stay a matched
@@ -392,7 +392,7 @@ class ConferenceVoice:
         playback = ConferencePlayback(room_id=room_id, text=text)
         room.playbacks.append(playback)
         try:
-            spoken = await self._take_the_floor(room, playback, tts)
+            spoken = await self._take_its_turn(room, playback, tts)
         finally:
             self._forget(playback)
         if spoken is None or playback.abandoned:
@@ -412,12 +412,12 @@ class ConferenceVoice:
         synthesized — a realtime provider's response — so there is no text to
         run BEFORE_TTS over and nothing for AFTER_TTS to report; those are
         text-synthesis hooks and this utterance never was text. Everything
-        else is :meth:`speak`: the same floor, the same closings wait, the
+        else is :meth:`speak`: the same turn on the track, the same closings wait, the
         same latch and terminal chunk, so a provider response and a TTS
         answer are indistinguishable to the backend and to a barge-in.
 
         ``on_playback`` hands the caller the utterance's record as soon as it
-        exists — before the floor, so a barge-in landing while the response
+        exists — before its turn, so a barge-in landing while the response
         still waits its turn latches a record the caller already holds. The
         caller uses it to keep ``text`` abreast of the provider's transcript,
         which is what ON_BARGE_IN reports as ``interrupted_text``; absent a
@@ -432,7 +432,7 @@ class ConferenceVoice:
         if on_playback is not None:
             on_playback(playback)
         try:
-            async with room.floor:
+            async with room.turn:
                 if not await self._clear_to_publish(room, playback):
                     return
                 bot = await self._ensure_bot(room_id)
@@ -446,7 +446,7 @@ class ConferenceVoice:
         finally:
             self._forget(playback)
 
-    async def _take_the_floor(
+    async def _take_its_turn(
         self, room: _RoomVoice, playback: ConferencePlayback, tts: TTSProvider
     ) -> str | None:
         """Wait for the room's turn, then say one thing. Returns what was said.
@@ -458,7 +458,7 @@ class ConferenceVoice:
         answering about a room that has since moved on.
         """
         room_id = playback.room_id
-        async with room.floor:
+        async with room.turn:
             if not await self._clear_to_publish(room, playback):
                 return None
             text = await self._run_before_tts(room_id, playback.text)
@@ -472,14 +472,14 @@ class ConferenceVoice:
             return text
 
     async def _clear_to_publish(self, room: _RoomVoice, playback: ConferencePlayback) -> bool:
-        """Inside the floor: whether this utterance may go out on the track.
+        """Inside its turn: whether this utterance may go out on the track.
 
         An utterance stopped while it waited — abandoned by a detach, latched
         by a barge-in — is dropped here, before anything of it is published.
 
         The rest is the previous turn. An utterance a cancellation left to be
         closed is publishing its boundary on a task of its own, and it no
-        longer holds the floor to keep this one off. Waiting here is what
+        longer holds the turn to keep this one off. Waiting here is what
         keeps the two from interleaving — the end of the previous turn goes
         out before the start of this one.
 
@@ -828,7 +828,7 @@ class ConferenceVoice:
         """Drop a finished utterance, and the room's record once it is idle.
 
         Idle means no utterance speaking *and* none waiting: a room whose
-        record went while an answer was still queued for its floor would hand
+        record went while an answer was still queued for its turn would hand
         the next arrival a different lock, and the two would publish together.
 
         An utterance still publishing its boundary is not finished. It stays
@@ -897,15 +897,15 @@ class ConferenceVoice:
         accumulated. Once an utterance has interrupted, the playback is
         latched and the remaining frames cost a dictionary lookup.
 
-        Only an utterance that has taken the floor can be interrupted, and the
-        floor admits one at a time — so there is exactly one thing here to
+        Only an utterance whose turn has begun can be interrupted, and the
+        track gives its turn to one at a time — so there is exactly one thing here to
         decide about. A room holding an answer that has not begun is a room
         where the bot is silent: between two utterances, or while BEFORE_TTS
         decides, and conversation in that gap is not somebody talking over
         anyone.
 
         A barge-in that does land silences the whole room, the answers waiting
-        their turn included: a participant taking the floor is asking the room
+        their turn included: a participant cutting in is asking the room
         to go quiet, and letting the queue drain into the silence they just
         made is not what they asked for. They are silenced without an
         ON_BARGE_IN of their own — the event says what was cut off, and nothing
@@ -1016,7 +1016,7 @@ class ConferenceVoice:
         own reference to the playback and to the bot session, so the loops would
         go on synthesizing and publishing into a conference the channel is no
         longer part of. Marking them is what the loops read — every one of them,
-        the answers still waiting for the floor included, since one of those
+        the answers still waiting for their turn included, since one of those
         would otherwise be handed a room the channel has left.
 
         This is also where a track nothing could close becomes usable again.

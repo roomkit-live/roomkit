@@ -414,7 +414,7 @@ class ConferenceChannel(
         """Refuse a speech-to-speech configuration that cannot work.
 
         One voice per bot (RFC 12.10.12): a synthesizer and a realtime
-        provider both publish on the one bot track, and no floor discipline
+        provider both publish on the one bot track, and no turn-taking rule
         turns two intelligences into one voice. The E2EE refusal is the same
         key-holder gap as STT's — the mix would be ciphertext. And tools
         without a handler are a conversation that wedges: the provider's
