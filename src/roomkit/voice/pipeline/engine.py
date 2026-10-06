@@ -325,6 +325,12 @@ class AudioPipeline:
         if dt is not None:
             dt.tap(stage, frame)
 
+    def debug_tap(self, session_id: str, stage: str, frame: AudioFrame) -> None:
+        """Write a frame a transport produced to the session's debug tap for
+        *stage* (``transport_raw``, ``aec_reference``: a transport's own echo
+        cancellation, RFC §12.3.15), when the taps capture that stage."""
+        self._debug_tap(session_id, stage, frame)
+
     def _is_speaker_change(self, stream: str, speaker_id: str) -> bool:
         """Whether a diarization result names a speaker other than the stream's last.
 

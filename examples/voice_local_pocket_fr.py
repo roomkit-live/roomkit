@@ -68,9 +68,10 @@ Environment variables:
     --- Debugging ---
     VOICE_DEBUG         1 to log turn-taking decisions (speech start/end,
                         suppressed segments, barge-in evaluation, AI turns)
-    DEBUG_AUDIO_DIR     Directory to record the mic audio as WAV: the raw input,
-                        after echo cancellation, and each speech segment as the
-                        STT receives it (one file per segment)
+    DEBUG_AUDIO_DIR     Directory to record the mic audio as WAV: as captured
+                        (00_transport_raw), the echo reference the AEC received
+                        (08_aec_reference), after echo cancellation (01_raw), and
+                        each speech segment as the STT receives it
 
     --- Turn detection ---
     SMART_TURN_THRESHOLD
@@ -255,12 +256,20 @@ def build_turn_detector() -> SmartTurnDetector | None:
 
 
 def build_debug_taps() -> PipelineDebugTaps | None:
-    """Record what the mic heard and what the STT received, to replay it offline."""
+    """Record what the mic heard and what the STT received, to replay it offline.
+
+    The echo canceller runs in LocalAudioBackend, before the pipeline: ``raw`` is
+    already echo-cancelled, and the backend taps the mic as captured
+    (``transport_raw``) and the reference its AEC received (``aec_reference``),
+    aligned with ``raw`` sample for sample."""
     out = os.environ.get("DEBUG_AUDIO_DIR")
     if not out:
         return None
     logger.info("Recording the mic audio to %s", out)
-    return PipelineDebugTaps(output_dir=out, stages=["raw", "post_aec", "post_vad_speech"])
+    return PipelineDebugTaps(
+        output_dir=out,
+        stages=["transport_raw", "aec_reference", "raw", "post_vad_speech"],
+    )
 
 
 def build_aec() -> AECProvider | None:

@@ -12,6 +12,7 @@ developers to compare the signal before and after each transformation::
 Output files are numbered by pipeline order::
 
     debug_audio/
+      {session_id}_00_transport_raw.wav   (a transport that cancels echo itself)
       {session_id}_01_raw.wav
       {session_id}_02_post_aec.wav
       {session_id}_03_post_agc.wav
@@ -19,6 +20,10 @@ Output files are numbered by pipeline order::
       {session_id}_05_post_vad_speech_001.wav
       {session_id}_06_outbound_raw.wav
       {session_id}_07_outbound_final.wav
+      {session_id}_08_aec_reference.wav   (a transport that cancels echo itself)
+
+With an AEC in the transport, ``raw`` is already echo-cancelled: the transport's
+``transport_raw`` and ``aec_reference`` are aligned with it sample for sample.
 """
 
 from __future__ import annotations
@@ -37,6 +42,7 @@ logger = logging.getLogger("roomkit.voice.pipeline.debug_taps")
 
 # Stage name → (numeric prefix, label)
 _STAGE_ORDER: dict[str, tuple[str, str]] = {
+    "transport_raw": ("00", "transport_raw"),
     "raw": ("01", "raw"),
     "post_aec": ("02", "post_aec"),
     "post_agc": ("03", "post_agc"),
@@ -44,6 +50,7 @@ _STAGE_ORDER: dict[str, tuple[str, str]] = {
     "post_vad_speech": ("05", "post_vad_speech"),
     "outbound_raw": ("06", "outbound_raw"),
     "outbound_final": ("07", "outbound_final"),
+    "aec_reference": ("08", "aec_reference"),
 }
 
 ALL_STAGES = list(_STAGE_ORDER.keys())
@@ -61,7 +68,9 @@ class PipelineDebugTaps:
         stages: Which stages to capture — a list of stage names, or
             ``["all"]`` to capture every stage boundary. Valid names:
             ``raw``, ``post_aec``, ``post_agc``, ``post_denoiser``,
-            ``post_vad_speech``, ``outbound_raw``, ``outbound_final``.
+            ``post_vad_speech``, ``outbound_raw``, ``outbound_final``, and from
+            a transport that cancels echo itself ``transport_raw`` and
+            ``aec_reference``.
         session_scoped: Prefix files with session ID.
     """
 

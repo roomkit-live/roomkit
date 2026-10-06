@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Debug taps see a transport's own echo cancellation (RMK-552, RFC §12.3.15).
+  With the AEC in the transport (`LocalAudioBackend(aec=...)`, `NATIVE_AEC`),
+  `raw` was already echo-cancelled and `post_aec` equal to it, so the taps
+  could not tell whether the AEC worked. Two stages now come from the
+  transport: `transport_raw` (the mic as captured, `00_`) and `aec_reference`
+  (the reference its AEC received while that frame was captured, silence where
+  none, `08_`), aligned with `raw` sample for sample, written on the event loop.
+  `VoiceBackend.on_aec_tap()` is the hook a backend that cancels echo itself
+  implements; `LocalAudioBackend` does. `examples/voice_local_pocket_fr.py`
+  records them under `DEBUG_AUDIO_DIR`.
+
 - A task's hand-back names what was asked (RMK-550, RFC §23.3 step 8): its
   text says `Task: “…”`, the delegate call's `task` on one line and bounded,
   and its metadata carries `task` next to `task_id`, `agent_id` and

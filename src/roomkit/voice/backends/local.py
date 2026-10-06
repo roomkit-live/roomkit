@@ -42,6 +42,7 @@ from roomkit.core.task_utils import await_interruptible
 from roomkit.voice._sounddevice import import_sounddevice
 from roomkit.voice.audio_frame import AudioFrame
 from roomkit.voice.backends.base import (
+    AECTapCallback,
     AudioPlayedCallback,
     AudioReceivedCallback,
     PlaybackErrors,
@@ -260,6 +261,11 @@ class LocalAudioBackend(VoiceBackend):
         # --- AEC (transport-level reference feeding) ---
         self._aec = aec
         self._aec_active_sessions: set[str] = set()
+        # Debug taps of this transport's AEC (RFC §12.3.15): the reference fed
+        # since the last captured frame, by stream, for ``aec_reference``.
+        self._aec_tap_callbacks: list[AECTapCallback] = []
+        self._tap_ref: dict[str, bytearray] = {}
+        self._tap_ref_lock = threading.Lock()
         self._aec_needs_resample = aec is not None and output_sample_rate != input_sample_rate
         if aec is not None:
             # Block size in bytes at the *input* sample rate — the rate the
@@ -361,6 +367,8 @@ class LocalAudioBackend(VoiceBackend):
         self._muted_sessions.discard(session.id)
         self._aec_end_playback(session.id)
         self._ref_buffers.pop(session.id, None)
+        with self._tap_ref_lock:
+            self._tap_ref.pop(session.id, None)
         if self._aec is not None:
             self._aec.reset(session.id)
         logger.info("Local audio session ended: session=%s", session.id)
@@ -418,6 +426,9 @@ class LocalAudioBackend(VoiceBackend):
             # Transport-level AEC: run capture inline on the capture thread
             # so reference and capture timing stay synchronous.
             # The channel's pipeline skips AEC (NATIVE_AEC capability).
+            if aec_ref is not None and self._aec_tap_callbacks and loop_ref is not None:
+                reference = self._take_tap_reference(session.id, frame)
+                loop_ref.call_soon_threadsafe(self._emit_aec_tap, session, frame, reference)
             processed = aec_ref.process(frame, session.id) if aec_ref is not None else frame
 
             if loop_ref is not None and loop_ref.is_running():
@@ -844,6 +855,52 @@ class LocalAudioBackend(VoiceBackend):
 
     def on_audio_played(self, callback: AudioPlayedCallback) -> None:
         self._audio_played_callbacks.append(callback)
+
+    def on_aec_tap(self, callback: AECTapCallback) -> Callable[[], None] | None:
+        """Debug taps of this backend's AEC (RFC §12.3.15): ``transport_raw`` and
+        ``aec_reference`` for every captured frame, on the event loop."""
+        if self._aec is None:
+            return None
+        self._aec_tap_callbacks.append(callback)
+
+        def unsubscribe() -> None:
+            with contextlib.suppress(ValueError):
+                self._aec_tap_callbacks.remove(callback)
+
+        return unsubscribe
+
+    def _tap_reference(self, stream: str, data: bytes) -> None:
+        """Keep reference bytes fed to the AEC for the next captured frames' tap."""
+        if self._aec_tap_callbacks:
+            with self._tap_ref_lock:
+                self._tap_ref.setdefault(stream, bytearray()).extend(data)
+
+    def _take_tap_reference(self, stream: str, frame: AudioFrame) -> AudioFrame:
+        """The reference fed while *frame* was captured: its length, the bytes the
+        AEC received meanwhile and silence where it received none."""
+        size = len(frame.data)
+        with self._tap_ref_lock:
+            pending = self._tap_ref.get(stream)
+            taken = bytes(pending[:size]) if pending else b""
+            if pending:
+                del pending[:size]
+        return AudioFrame(
+            data=taken + bytes(size - len(taken)),
+            sample_rate=frame.sample_rate,
+            channels=frame.channels,
+            sample_width=frame.sample_width,
+        )
+
+    def _emit_aec_tap(
+        self, session: VoiceSession, frame: AudioFrame, reference: AudioFrame
+    ) -> None:
+        """Hand the taps their frames, on the event loop (never the audio threads)."""
+        for callback in list(self._aec_tap_callbacks):
+            try:
+                callback(session, "transport_raw", frame)
+                callback(session, "aec_reference", reference)
+            except Exception:
+                logger.exception("AEC debug tap failed for session %s", session.id)
 
     async def cancel_audio(self, session: VoiceSession) -> bool:
         was_playing = session.id in self._playing_sessions
@@ -1304,6 +1361,7 @@ class LocalAudioBackend(VoiceBackend):
                     stream,
                 )
                 self._aec.feed_reference(ref_frame, stream)  # ty: ignore[unresolved-attribute]
+                self._tap_reference(stream, ref_frame.data)
         else:
             block = self._aec_block_bytes
             while len(ref_buffer) >= block:
@@ -1316,3 +1374,4 @@ class LocalAudioBackend(VoiceBackend):
                     sample_width=2,
                 )
                 self._aec.feed_reference(frame, stream)  # ty: ignore[unresolved-attribute]
+                self._tap_reference(stream, frame.data)

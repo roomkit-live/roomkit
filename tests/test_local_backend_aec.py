@@ -8,6 +8,7 @@ Tests are skipped when sounddevice/numpy are not installed.
 
 from __future__ import annotations
 
+import asyncio
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -16,6 +17,7 @@ import pytest
 sd = pytest.importorskip("sounddevice")
 np = pytest.importorskip("numpy")
 
+from roomkit.voice.audio_frame import AudioFrame  # noqa: E402
 from roomkit.voice.backends.base import VoiceBackend  # noqa: E402
 from roomkit.voice.backends.local import LocalAudioBackend  # noqa: E402
 from roomkit.voice.pipeline.aec.mock import MockAECProvider  # noqa: E402
@@ -164,3 +166,44 @@ class TestAECDelayAutoConfiguration:
         backend._configure_aec_delay_from_streams(SimpleNamespace(latency=0.4))
 
         aec.set_stream_delay_ms.assert_called_once_with(500)
+
+
+class TestAECDebugTaps:
+    """RMK-552: the backend shows its own AEC to the debug taps, every captured
+    frame with the reference fed meanwhile, on the event loop."""
+
+    async def test_every_captured_frame_brings_its_reference(self):
+        aec = MockAECProvider()
+        backend = LocalAudioBackend(
+            input_sample_rate=16000,
+            output_sample_rate=16000,
+            channels=1,
+            block_duration_ms=20,
+            aec=aec,
+            mute_mic_during_playback=False,
+        )
+        backend._loop = asyncio.get_running_loop()
+        taps: list[tuple[str, bytes]] = []
+        unsubscribe = backend.on_aec_tap(lambda session, stage, f: taps.append((stage, f.data)))
+        backend.on_audio_received(lambda session, frame: None)
+        handle = backend._make_frame_handler(SimpleNamespace(id="s1"))
+        frame = AudioFrame(data=b"\x01\x00" * 320, sample_rate=16000, channels=1, sample_width=2)
+
+        handle(frame)  # nothing played yet
+        backend._aec_feed_played(bytearray(b"\x02\x00" * 320), "s1")  # 20 ms played
+        handle(frame)
+        await asyncio.sleep(0)
+
+        assert taps == [
+            ("transport_raw", frame.data),
+            ("aec_reference", bytes(640)),
+            ("transport_raw", frame.data),
+            ("aec_reference", b"\x02\x00" * 320),
+        ]
+        unsubscribe()
+        handle(frame)
+        await asyncio.sleep(0)
+        assert len(taps) == 4
+
+    def test_no_aec_no_taps(self):
+        assert LocalAudioBackend(aec=None).on_aec_tap(lambda *a: None) is None

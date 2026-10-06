@@ -7,7 +7,10 @@ import wave
 from pathlib import Path
 from unittest.mock import MagicMock
 
+from roomkit.channels.voice import VoiceChannel
 from roomkit.voice.audio_frame import AudioFrame
+from roomkit.voice.backends.mock import MockVoiceBackend
+from roomkit.voice.pipeline.config import AudioPipelineConfig
 from roomkit.voice.pipeline.debug_taps import (
     ALL_STAGES,
     DebugTapSession,
@@ -15,6 +18,8 @@ from roomkit.voice.pipeline.debug_taps import (
     _DebugWavWriter,
 )
 from roomkit.voice.pipeline.engine import AudioPipeline
+from roomkit.voice.stt.mock import MockSTTProvider
+from roomkit.voice.tts.mock import MockTTSProvider
 
 
 def _make_frame(
@@ -347,3 +352,60 @@ class TestDebugTapsEngineIntegration:
             ]
             wav_path = tmp_path / f"test-session_{prefix}_{label}.wav"
             assert wav_path.exists(), f"Missing {wav_path.name}"
+
+
+# ---------------------------------------------------------------------------
+# A transport's own echo cancellation (RMK-552, RFC §12.3.15)
+# ---------------------------------------------------------------------------
+
+
+class _AECTransport(MockVoiceBackend):
+    """A transport that cancels echo itself and hands its AEC frames to the taps."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.aec_taps: list = []
+
+    @property
+    def feeds_aec_reference(self) -> bool:
+        return True
+
+    def on_aec_tap(self, callback):
+        self.aec_taps.append(callback)
+        return lambda: self.aec_taps.remove(callback)
+
+
+class TestTransportAECTaps:
+    def test_the_stages_sort_around_the_pipeline_ones(self, tmp_path: Path) -> None:
+        dt = DebugTapSession(PipelineDebugTaps(output_dir=str(tmp_path)), "s")
+        dt.tap("transport_raw", _make_frame())
+        dt.tap("aec_reference", _make_frame(value=0))
+        dt.close()
+        names = sorted(p.name for p in tmp_path.iterdir())
+        assert names == ["s_00_transport_raw.wav", "s_08_aec_reference.wav"]
+
+    def test_a_transport_aec_reaches_the_session_taps(self, tmp_path: Path) -> None:
+        backend = _AECTransport()
+        channel = VoiceChannel(
+            "voice",
+            stt=MockSTTProvider(),
+            tts=MockTTSProvider(),
+            backend=backend,
+            pipeline=AudioPipelineConfig(debug_taps=PipelineDebugTaps(output_dir=str(tmp_path))),
+        )
+        [tap] = backend.aec_taps
+        session = MagicMock()
+        session.id = "call"
+        channel._pipeline.on_session_active(session)
+        tap(session, "transport_raw", _make_frame(n_samples=320))
+        tap(session, "aec_reference", _make_frame(n_samples=320, value=0))
+        channel._pipeline.on_session_ended(session)
+
+        for name in ("call_00_transport_raw.wav", "call_08_aec_reference.wav"):
+            with wave.open(str(tmp_path / name), "rb") as f:
+                assert f.getnframes() == 320
+
+    def test_without_taps_the_transport_aec_is_not_wired(self) -> None:
+        backend = _AECTransport()
+        VoiceChannel("voice", stt=MockSTTProvider(), tts=MockTTSProvider(), backend=backend)
+        assert backend.aec_taps == []

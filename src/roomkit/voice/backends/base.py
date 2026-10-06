@@ -26,6 +26,10 @@ AudioReceivedCallback = Callable[["VoiceSession", Any], Any]
 # can use the reference to cancel echo accurately.
 AudioPlayedCallback = Callable[["VoiceSession", Any], Any]
 
+# Callback for a transport-level AEC's debug frames (RFC §12.3.15):
+# (session, stage, frame), stage "transport_raw" or "aec_reference".
+AECTapCallback = Callable[["VoiceSession", str, Any], Any]
+
 # Callback for when a session's audio path becomes live
 SessionReadyCallback = Callable[["VoiceSession"], Any]
 
@@ -490,6 +494,21 @@ class VoiceBackend(ABC):
 
         Args:
             callback: Function called with (session, audio_frame).
+        """
+
+    def on_aec_tap(self, callback: AECTapCallback) -> Callable[[], None] | None:  # noqa: B027
+        """Register a callback for this transport's own echo cancellation, for
+        debug taps (RFC §12.3.15).
+
+        A backend that cancels echo itself (``feeds_aec_reference``) calls it for
+        every captured frame with ``"transport_raw"`` (the frame before its AEC)
+        and ``"aec_reference"`` (the reference its AEC received meanwhile, silence
+        where none), both the captured frame's length, so they align with the
+        pipeline's ``raw`` sample for sample. It calls it on the event loop, never
+        on an audio I/O thread. Default: no such frames.
+
+        Args:
+            callback: Function called with (session, stage, audio_frame).
         """
 
     # -------------------------------------------------------------------------

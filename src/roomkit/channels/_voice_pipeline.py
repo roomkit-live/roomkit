@@ -125,6 +125,17 @@ class VoicePipelineMixin:
             self._pipeline_unsubscribers.append(backend.on_audio_played(_on_audio_played))
             pipeline.enable_playback_aec_feed()
 
+        # A transport that cancels echo itself shows its AEC to the debug taps
+        # (RFC §12.3.15): the pipeline's raw is already echo-cancelled.
+        taps = config.debug_taps
+        if taps is not None and taps.output_dir and backend.feeds_aec_reference:
+
+            def _on_aec_tap(session: VoiceSession, stage: str, frame: AudioFrame) -> None:
+                if self._pipeline is not None:
+                    self._pipeline.debug_tap(session.id, stage, frame)
+
+            self._pipeline_unsubscribers.append(backend.on_aec_tap(_on_aec_tap))
+
         return pipeline
 
     def _pipeline_on_audio_received(
