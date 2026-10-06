@@ -235,6 +235,7 @@ class HelpersMixin:
     _pending_hook_tasks: set[asyncio.Task[Any]]
     _persistence_policy: Any  # PersistencePolicy | None — set by RoomKit.__init__
     _resource_lease: Any  # RoomKit._resource_lease — the close()-ordering hold on the store
+    _ensure_status_bus_subscribed: Any  # RoomKit's — the StatusBus listened to from now on
     _lanes: Any  # RoomLaneRegistry — set by RoomKit.__init__
     _room_close_epoch: int  # counted by _store_refusing_room — set by RoomKit.__init__
 
@@ -712,7 +713,12 @@ class HelpersMixin:
         connection (``store.connection()``): the recent-events limit is derived
         from the bindings just read, so the two reads cannot be merged into one
         round trip, but they need not pay two checkouts either.
+
+        Before the reads, the room's first activity in this process subscribes
+        the framework to its StatusBus, so a status naming a room fires the
+        room's ON_STATUS_POSTED hooks (RFC §19.8).
         """
+        await self._ensure_status_bus_subscribed()
         with self._resource_lease():
             async with self._store.connection():
                 room, bindings, participants = await self._store.load_room_context(room_id)

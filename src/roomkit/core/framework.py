@@ -464,10 +464,22 @@ class RoomKit(
     # -- Core infrastructure --
 
     async def _ensure_status_bus_subscribed(self) -> None:
-        """Subscribe the framework event callback to the status bus (once)."""
-        if not self._status_bus_subscribed:
+        """Subscribe the framework event callback to the status bus (once).
+
+        Run by the first room activity (every context build), so a status naming
+        a room fires its ON_STATUS_POSTED hooks on any kit, opened with
+        ``async with`` or not (RFC §19.8). Claimed before the await: activities
+        racing to be first subscribe once, and a subscription that failed is
+        tried again by the next one.
+        """
+        if self._status_bus_subscribed:
+            return
+        self._status_bus_subscribed = True
+        try:
             await self._status_bus.subscribe(self._status_bus_callback)
-            self._status_bus_subscribed = True
+        except BaseException:
+            self._status_bus_subscribed = False
+            raise
 
     def _get_router(self) -> EventRouter:
         if self._event_router is None:

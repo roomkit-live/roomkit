@@ -207,8 +207,8 @@ class TestTriggersThatReachHooks:
         async def on_status(event, context):  # noqa: ANN001
             posted.append(event)
 
-        # The framework subscribes to the bus lazily, on first room activity.
-        await kit._ensure_status_bus_subscribed()
+        # The framework subscribes to the bus lazily, on first room activity
+        # (attach_channel above): no private call is needed (RMK-541).
         await kit.status_bus.post_async(
             agent_id="agent-1",
             action="working",

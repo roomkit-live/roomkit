@@ -55,6 +55,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `task_status` only to an agent that was given it, and says nothing of a
   tool otherwise.
 
+- A status naming a room fires the room's `ON_STATUS_POSTED` hooks on a kit
+  that is not opened with `async with` (RMK-541, RFC §19.8). The framework
+  subscribed to its StatusBus only as a context manager, on `send_event`, or on a
+  WebSocket registration, so a kit driven by `create_room`, `process_inbound` or
+  `delegate` posted its entries to the bus and no room hook ever heard of them.
+  The room's first activity (its first context build) now subscribes, once.
+
 - In continuous mode, the words that cut the agent off reach the room (RMK-543,
   RFC §12.3.13): the STT's final for the speech that claimed the barge-in was
   taken for echo while the cut, a task of its own, had not removed the playback
