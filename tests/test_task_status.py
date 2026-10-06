@@ -8,6 +8,7 @@ from typing import Any
 
 from roomkit import HookExecution, HookResult, HookTrigger, RoomKit
 from roomkit.channels.agent import Agent
+from roomkit.core.mixins.delegation import task_name
 from roomkit.models.enums import ChannelCategory, EventType, TaskStatus
 from roomkit.orchestration.status_bus import StatusEntry, StatusLevel
 from roomkit.orchestration.strategies.supervisor._inject_strategy import _follow_hint
@@ -108,9 +109,46 @@ async def test_the_hand_back_names_its_task() -> None:
     await until(lambda: bool(seen) and bool(delivered), timeout=5)
     await kit.close()
 
-    expected = {"task_id": task.id, "agent_id": "worker", "task_status": "completed"}
+    expected = {
+        "task_id": task.id,
+        "agent_id": "worker",
+        "task_status": "completed",
+        "task": "La météo ?",
+    }
     assert expected.items() <= seen[0].items()
     assert expected.items() <= delivered[0].items()
+
+
+async def test_the_hand_back_says_what_was_asked() -> None:
+    """A result back after the conversation moved on is said for what was asked
+    (RMK-550: Québec's weather was said as Montréal's)."""
+    kit = await _room(Agent("worker", provider=MockAIProvider(responses=["8°C, averses."])))
+    texts: list[str] = []
+
+    @kit.hook(HookTrigger.BEFORE_BROADCAST, event_types={EventType.INSTRUCTION})
+    async def capture(event: Any, ctx: Any) -> HookResult:
+        texts.append(event.content.body)
+        return HookResult.allow()
+
+    asked = "Météo de demain\nà Québec, " + "en détail " * 40
+    task = await kit.delegate("r", "worker", asked, notify="speaker")
+    await task.wait()
+    await until(lambda: bool(texts), timeout=5)
+    await kit.close()
+
+    header = texts[0].splitlines()[0]
+    assert header.startswith(
+        "[Background task from worker completed. Task: \u201cMétéo de demain à Québec, en détail"
+    )
+    named = header.split("\u201c")[1].split("\u201d")[0]
+    assert len(named) <= 200 and named.endswith("…")  # one line, bounded
+    assert header.endswith("Share the outcome with the user.]")
+    assert "8°C, averses." in texts[0]
+
+
+def test_a_task_is_named_on_one_line_and_bounded() -> None:
+    assert task_name("  La météo\n à  Québec ? ") == "La météo à Québec ?"
+    assert len(task_name("x" * 500)) == 200
 
 
 async def test_task_status_lists_the_room_tasks_only() -> None:

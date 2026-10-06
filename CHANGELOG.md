@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A task's hand-back names what was asked (RMK-550, RFC §23.3 step 8): its
+  text says `Task: “…”`, the delegate call's `task` on one line and bounded,
+  and its metadata carries `task` next to `task_id`, `agent_id` and
+  `task_status`. A result that comes back after the conversation moved on is
+  said for what was asked: measured on "Québec… no, Montréal" without
+  cancelling, Québec's result was said as Montréal's 3 times in 9 runs, from 6.
+
 - An agent can cancel a background task the person no longer wants (RMK-549,
   RFC §23.3, §23.4): `CancelTaskTool` (`cancel_task`), given on its own like
   `TaskStatusTool`, cancels one task of the room of the call by its `task_id`.

@@ -214,15 +214,32 @@ class DelegationHost(Protocol):
     _task_cancelled_by: dict[str, str]
 
 
-def _delegation_result_text(result: DelegatedTaskResult) -> str:
-    """What the notified agent receives of a finished background delegation."""
+_TASK_NAME_CHARS = 200
+"""How much of what was asked a hand-back names: enough to tell one request from
+another, short enough to stay a name."""
+
+
+def task_name(task: str) -> str:
+    """*task* as a hand-back names it: on one line, bounded (RFC §23.3 step 8)."""
+    one_line = " ".join(task.split())
+    if len(one_line) <= _TASK_NAME_CHARS:
+        return one_line
+    return one_line[: _TASK_NAME_CHARS - 1].rstrip() + "…"
+
+
+def _delegation_result_text(result: DelegatedTaskResult, task: str = "") -> str:
+    """What the notified agent receives of a finished background delegation: its
+    outcome, what was asked (*task*, so a result back after the conversation moved
+    on is said for what was asked), then the worker's output."""
     # A failed task's error is an exception's message: for the logs and
     # ON_TASK_COMPLETED, never for a model (RFC §9.3).
     outcome = {TaskStatus.COMPLETED: "completed", TaskStatus.CANCELLED: "cancelled"}.get(
         result.status, "failed"
     )
+    asked = f" Task: “{task_name(task)}”." if task.strip() else ""
     return result_text(
-        f"[Background task from {result.agent_id} {outcome}. Share the outcome with the user.]",
+        f"[Background task from {result.agent_id} {outcome}.{asked} "
+        "Share the outcome with the user.]",
         bounded(task_work(result) or "No output"),
     )
 
@@ -595,7 +612,9 @@ class DelegationMixin(HelpersMixin):
             if notify_channel != CALLER_HANDS_BACK and not self._cancelled_by_notified(
                 result, notify_channel
             ):
-                await self._hand_back_held(result, notify_channel, chain_depth, session_id)
+                await self._hand_back_held(
+                    result, notify_channel, chain_depth, session_id, handle.task
+                )
             if on_complete:
                 await on_complete(result)
 
@@ -684,13 +703,14 @@ class DelegationMixin(HelpersMixin):
         notify_channel_id: str,
         chain_depth: int,
         session_id: str | None,
+        task: str = "",
     ) -> None:
         """Hand a background delegation's result back in a task the kit holds,
         so its ``close()`` cuts it as it cuts a strategy's hand-back: the turn
         it started is cancelled and the cut logged, and the task's end goes
         on (RFC §23.3 step 8)."""
         delivery = self._deliver_delegation_result(
-            result, notify_channel_id, chain_depth, session_id
+            result, notify_channel_id, chain_depth, session_id, task
         )
         if await await_interruptible(hold_task(self, delivery)):
             _tasks_logger.info(
@@ -703,6 +723,7 @@ class DelegationMixin(HelpersMixin):
         notify_channel_id: str,
         chain_depth: int,
         session_id: str | None = None,
+        task: str = "",
     ) -> None:
         """Hand a background delegation's result back to its room, at *chain_depth*.
 
@@ -711,9 +732,9 @@ class DelegationMixin(HelpersMixin):
         again ends at ``max_chain_depth``. A task that did not complete is
         handed back whatever it left, a failure says it failed (§23.3 step 8);
         only a completed task with nothing to say is not. A realtime voice
-        channel is told in *session_id*, the session that delegated. An
-        inline delegation never comes here: its caller presents the result
-        itself.
+        channel is told in *session_id*, the session that delegated. The
+        result names *task*, what was asked. An inline delegation never comes
+        here: its caller presents the result itself.
         """
         if result.status == TaskStatus.COMPLETED and not result.output:
             return
@@ -722,13 +743,14 @@ class DelegationMixin(HelpersMixin):
                 self,  # ty: ignore[invalid-argument-type]
                 result.parent_room_id,
                 notify_channel_id,
-                _delegation_result_text(result),
+                _delegation_result_text(result, task),
                 chain_depth,
                 session_id=session_id,
                 metadata={
                     "task_id": result.task_id,
                     "agent_id": result.agent_id,
                     "task_status": str(result.status),
+                    "task": task_name(task),
                 },
             )
         except Exception:
