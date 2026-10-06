@@ -44,7 +44,7 @@ from roomkit.models.task import Observation, Task
 from roomkit.models.voice_delivery import VoiceDeliveryRecord
 from roomkit.store.base import ConversationStore
 
-_SCHEMA_VERSION = 3
+_SCHEMA_VERSION = 4
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS rooms(
@@ -68,7 +68,8 @@ CREATE TABLE IF NOT EXISTS events(
     parent_event_id TEXT,
     idempotency_key TEXT,
     created_ts REAL NOT NULL,
-    data TEXT NOT NULL
+    data TEXT NOT NULL,
+    responds_to TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_events_room ON events(room_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_events_room_idx ON events(room_id, idx);
@@ -201,9 +202,16 @@ def _populate_event_sequences(conn: sqlite3.Connection) -> None:
         )
 
 
+_RESPONDS_TO_INDEX = (
+    "CREATE INDEX IF NOT EXISTS idx_events_room_responds_to ON events(room_id, responds_to);"
+)
+"""Kept out of ``_SCHEMA``: the older migrations replay it on an events table that
+has no ``responds_to`` column yet, which an index on it would fail."""
+
+
 def _create_schema(conn: sqlite3.Connection) -> None:
     try:
-        conn.executescript(f"BEGIN IMMEDIATE;\n{_SCHEMA}")
+        conn.executescript(f"BEGIN IMMEDIATE;\n{_SCHEMA}\n{_RESPONDS_TO_INDEX}")
         _populate_event_sequences(conn)
         conn.execute(f"PRAGMA user_version={_SCHEMA_VERSION}")
         conn.execute("COMMIT")
@@ -239,7 +247,7 @@ def _migrate_v1_to_v2(conn: sqlite3.Connection) -> None:
         migration = "BEGIN IMMEDIATE;\nDROP INDEX IF EXISTS idx_events_room_idx;\n" + _SCHEMA
         conn.executescript(migration)
         _populate_event_sequences(conn)
-        conn.execute(f"PRAGMA user_version={_SCHEMA_VERSION}")
+        conn.execute("PRAGMA user_version=2")
         conn.execute("COMMIT")
     except BaseException:
         if conn.in_transaction:
@@ -274,6 +282,24 @@ ALTER TABLE identity_addresses_v3 RENAME TO identity_addresses;
 """
     try:
         conn.executescript(rebuild + _SCHEMA)
+        conn.execute("PRAGMA user_version=3")
+        conn.execute("COMMIT")
+    except BaseException:
+        if conn.in_transaction:
+            conn.execute("ROLLBACK")
+        raise
+
+
+def _migrate_v3_to_v4(conn: sqlite3.Connection) -> None:
+    """An answer names the event it answers (RFC §8.5): ``events`` gains a
+    ``responds_to`` column, indexed per room. No event written before v4 carries
+    one, so there is nothing to backfill: old rows read ``NULL``."""
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(events)")}
+        if "responds_to" not in columns:
+            conn.execute("ALTER TABLE events ADD COLUMN responds_to TEXT")
+        conn.execute(_RESPONDS_TO_INDEX)
         conn.execute(f"PRAGMA user_version={_SCHEMA_VERSION}")
         conn.execute("COMMIT")
     except BaseException:
@@ -294,12 +320,16 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
     elif version == 1:
         _migrate_v1_to_v2(conn)
         _migrate_v2_to_v3(conn)
+        _migrate_v3_to_v4(conn)
     elif version == 2:
         _migrate_v2_to_v3(conn)
+        _migrate_v3_to_v4(conn)
+    elif version == 3:
+        _migrate_v3_to_v4(conn)
     elif version == _SCHEMA_VERSION:
-        # Additive repair for a partially initialized v2 file. The version is
+        # Additive repair for a partially initialized file. The version is
         # never rewritten, and all statements are idempotent.
-        conn.executescript(_SCHEMA)
+        conn.executescript(f"{_SCHEMA}\n{_RESPONDS_TO_INDEX}")
         _populate_event_sequences(conn)
     else:
         raise SQLiteSchemaError(f"Unsupported SQLite schema version {version}")
@@ -433,14 +463,16 @@ class SQLiteStore(ConversationStore):
     _EVENT_INSERT = """
         INSERT INTO events(id, room_id, idx, type, visibility, source_channel_id,
                            source_channel_type, participant_id, correlation_id,
-                           parent_event_id, idempotency_key, created_ts, data)
-        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                           parent_event_id, idempotency_key, created_ts, data,
+                           responds_to)
+        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """
     _EVENT_UPSERT = """
         INSERT INTO events(id, room_id, idx, type, visibility, source_channel_id,
                            source_channel_type, participant_id, correlation_id,
-                           parent_event_id, idempotency_key, created_ts, data)
-        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                           parent_event_id, idempotency_key, created_ts, data,
+                           responds_to)
+        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
             room_id=excluded.room_id, idx=excluded.idx, type=excluded.type,
             visibility=excluded.visibility,
@@ -450,7 +482,8 @@ class SQLiteStore(ConversationStore):
             correlation_id=excluded.correlation_id,
             parent_event_id=excluded.parent_event_id,
             idempotency_key=excluded.idempotency_key,
-            created_ts=excluded.created_ts, data=excluded.data
+            created_ts=excluded.created_ts, data=excluded.data,
+            responds_to=excluded.responds_to
     """
 
     def _write_event_row(
@@ -473,6 +506,7 @@ class SQLiteStore(ConversationStore):
                 event.idempotency_key,
                 _ts(event.created_at),
                 event.model_dump_json(),
+                event.responds_to,
             ),
         )
         if event.idempotency_key:
@@ -953,6 +987,9 @@ class SQLiteStore(ConversationStore):
         if ef.correlation_id is not None:
             where.append("correlation_id = ?")
             params.append(ef.correlation_id)
+        if ef.responds_to is not None:
+            where.append("responds_to = ?")
+            params.append(ef.responds_to)
         if ef.participant_id is not None:
             where.append("participant_id = ?")
             params.append(ef.participant_id)

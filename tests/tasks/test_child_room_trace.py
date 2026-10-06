@@ -47,6 +47,15 @@ def _recording_store() -> MagicMock:
     return store
 
 
+# The task's message in its child room: what the delegated turn answers.
+_TASK_MESSAGE = RoomEvent(
+    id="task-message",
+    room_id="parent::task-3",
+    source=EventSource(channel_id="system", channel_type=ChannelType.SYSTEM),
+    content=TextContent(body="Do the task."),
+)
+
+
 def _sr(stream: Any) -> SimpleNamespace:
     return SimpleNamespace(
         stream=stream,
@@ -54,6 +63,7 @@ def _sr(stream: Any) -> SimpleNamespace:
         source_channel_type=ChannelType.AI,
         response_metadata={},
         turn_record=None,
+        trigger_event=_TASK_MESSAGE,
     )
 
 
@@ -153,6 +163,8 @@ class TestPersistChildStream:
         assert text == "just text"
         assert len(kit.store.added) == 1
         assert kit.store.added[0].content.body == "just text"
+        # The child room's rows name the task message they answer (RFC §8.5).
+        assert kit.store.added[0].responds_to == "task-message"
 
 
 class TestAChildTraceCutShort:

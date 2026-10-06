@@ -56,6 +56,7 @@ class AIGenerationMixin(_AIChannelContract):
             ai_context=ai_context,
             channel_id=self.channel_id,
             room_id=event.room_id,
+            trigger=event,
             provider_name=self.provider_name,
         )
         # Read before the hook runs: it may edit the list in place.

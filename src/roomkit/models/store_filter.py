@@ -39,6 +39,10 @@ class EventFilter(BaseModel):
     participant_id: str | None = None
     """Filter by participant ID in the event source."""
 
+    responds_to: str | None = None
+    """Return the answers to this event: the events whose ``responds_to``
+    equals this id (RFC §8.5)."""
+
     parent_event_id: str | None = None
     """Return the replies of this thread root — events whose
     ``parent_event_id`` equals this id (flat two-level threading)."""

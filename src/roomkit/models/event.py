@@ -258,6 +258,10 @@ class RoomEvent(BaseModel):
     # normalises any parent reference to the root, so this is always a root id.
     # Distinct from ``channel_data.thread_id`` (provider-native reference).
     parent_event_id: str | None = None
+    # The event this one answers (RFC §8.5): every event an intelligence
+    # channel produces for a turn names the event that triggered the turn, so
+    # an answer is tied to its request. Unrelated to the thread above.
+    responds_to: str | None = None
     correlation_id: str | None = None
     idempotency_key: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))

@@ -967,3 +967,46 @@ class TestEventFromRow:
             )
 
         assert PostgresStore.event_from_row(row) == await store.get_event(committed.id)
+
+
+# -- RFC §8.5: an answer names the event it answers ---------------------------
+
+
+async def test_an_answer_keeps_and_finds_the_event_it_answers(store) -> None:
+    from roomkit.models.store_filter import EventFilter
+
+    await store.create_room(Room(id="r1"))
+    asked = await store.add_event(_make_event(body="la météo ?"))
+    answer = await store.add_event(_make_event(body="8 degrés", responds_to=asked.id))
+    await store.add_event(_make_event(body="autre chose"))
+
+    stored = await store.get_event(answer.id)
+    answers = await store.list_events(
+        "r1", offset=0, limit=10, event_filter=EventFilter(responds_to=asked.id)
+    )
+    assert stored is not None and stored.responds_to == asked.id
+    assert [e.id for e in answers] == [answer.id]
+
+
+async def test_init_adds_the_column_to_an_events_table_without_it(store) -> None:
+    from roomkit.store.postgres import PostgresStore
+
+    await store.create_room(Room(id="r1"))
+    old = await store.add_event(_make_event(body="avant"))
+    async with store._pool.acquire() as conn:
+        await conn.execute("DROP INDEX IF EXISTS idx_events_room_responds_to")
+        await conn.execute("ALTER TABLE events DROP COLUMN responds_to")
+
+    upgraded = PostgresStore(dsn=POSTGRES_DSN)
+    await upgraded.init(min_size=1, max_size=2)
+    try:
+        kept = await upgraded.get_event(old.id)
+        async with upgraded._pool.acquire() as conn:
+            column = await conn.fetchval(
+                "SELECT 1 FROM information_schema.columns"
+                " WHERE table_name = 'events' AND column_name = 'responds_to'"
+            )
+    finally:
+        await upgraded.close()
+    assert column == 1
+    assert kept is not None and kept.responds_to is None

@@ -181,7 +181,9 @@ def _results_event(event: RoomEvent, body: str) -> RoomEvent:
     """The workers' results, standing in for the event the supervisor answers.
 
     As deep as the event and in its thread, so the supervisor's answer stays
-    one deeper than the event it answers (RFC §8.3, §19.7.3).
+    one deeper than the event it answers (RFC §8.3, §19.7.3); naming that
+    event in ``responds_to``, so the pass that is handed the stand-in can tell
+    what it answers (RFC §8.5).
     """
     return RoomEvent(
         room_id=event.room_id,
@@ -190,6 +192,7 @@ def _results_event(event: RoomEvent, body: str) -> RoomEvent:
         content=TextContent(body=body),
         chain_depth=event.chain_depth,
         parent_event_id=event.parent_event_id,
+        responds_to=event.id,
     )
 
 
@@ -377,6 +380,7 @@ def _pass1_answer(supervisor: Agent, event: RoomEvent, pass1: _Pass1) -> Channel
         content=TextContent(body=FALLBACK_FAILED),
         chain_depth=event.chain_depth + 1,
         parent_event_id=event.parent_event_id,
+        responds_to=event.id,
         # The turn's whole record, as its last message would carry it (§6.4).
         metadata={**pass1.record, "loop_end_reason": pass1.end},
     )

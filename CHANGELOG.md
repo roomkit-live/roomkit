@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- An answer names the event it answers (RMK-545, RFC §8.5): every event an
+  intelligence channel produces for a turn (its messages, streamed segments
+  and tool rows, a blocked stand-in, the ON_ERROR event of a failed turn)
+  carries `RoomEvent.responds_to`, the id of the event that triggered the
+  turn: a participant's message, an instruction (never stored, but it has an
+  id) or a hand-back. `BEFORE_AI_GENERATION` receives that event as
+  `AIGenerationEvent.trigger`, and `EventFilter(responds_to=...)` lists the
+  answers to an event. A buffered answer a channel already named keeps its
+  name; a supervisor's workers'-results stand-in names the event it stands
+  for. Speech-to-speech channels are not covered yet (RMK-546). Stores:
+  SQLite schema v4 adds an indexed `responds_to` column (a v1-v3 file is
+  migrated on open; each migration step now writes its own version), Postgres
+  adds the column and its index additively at `init()`. The RFC's RoomEvent
+  table described `parent_event_id` as "event this is responding to"; it is
+  the in-app thread root, unrelated to `responds_to`.
+
 - Delegated tasks are followed on `kit.status_bus` (RMK-537, RFC §23.3):
   `kit.delegate()` posts `pending` once the task's child room is ready, then
   `completed` with its result, or `failed` for a task that failed or was

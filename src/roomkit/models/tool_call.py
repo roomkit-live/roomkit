@@ -12,6 +12,7 @@ from roomkit.models.enums import ChannelType
 from roomkit.models.streaming import LoopEndReason
 
 if TYPE_CHECKING:
+    from roomkit.models.event import RoomEvent
     from roomkit.providers.ai.base import AIContext, AITool, AIToolCall, AIToolResultPart
     from roomkit.voice.base import VoiceSession
 
@@ -474,6 +475,11 @@ class AIGenerationEvent:
 
     room_id: str | None = None
     """Room where generation is happening."""
+
+    trigger: RoomEvent | None = None
+    """The event the turn answers (RFC §8.5): what its answer's ``responds_to``
+    names. A stand-in an orchestration strategy hands the turn (a supervisor's
+    workers' results) names the event it stands for in its own ``responds_to``."""
 
     provider_name: str | None = None
     """Name of the AI provider that will be invoked."""

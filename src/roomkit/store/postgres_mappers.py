@@ -78,6 +78,7 @@ def _row_to_event(row: Any) -> RoomEvent:
         chain_depth=row["chain_depth"],
         correlation_id=row["correlation_id"],
         parent_event_id=row["parent_event_id"],
+        responds_to=row["responds_to"],
         idempotency_key=row["idempotency_key"],
         blocked_by=row["blocked_by"],
         metadata=metadata_raw,

@@ -441,6 +441,8 @@ class SegmentWriter:
             response_visibility=self._response_visibility,
             correlation_id=self._correlation_id,
             parent_event_id=self._parent_event_id,
+            # Every row of the turn names the event it answers (RFC §8.5).
+            responds_to=self._sr.trigger_event.id,
             metadata=metadata or {},
         )
 

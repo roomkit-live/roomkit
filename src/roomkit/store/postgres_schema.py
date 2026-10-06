@@ -173,6 +173,8 @@ CREATE TABLE IF NOT EXISTS events (
     chain_depth         INTEGER NOT NULL DEFAULT 0,
     correlation_id      TEXT,
     parent_event_id     TEXT,
+    -- The event this one answers (RFC §8.5); NULL for an event that answers none.
+    responds_to         TEXT,
     idempotency_key     TEXT,
     blocked_by          TEXT,
     metadata            JSONB NOT NULL DEFAULT '{}',
@@ -183,6 +185,9 @@ CREATE TABLE IF NOT EXISTS events (
 -- existing row is unaddressed (NULL), which is exactly the behaviour it was
 -- stored under, so there is nothing to backfill and re-running is a no-op.
 ALTER TABLE events ADD COLUMN IF NOT EXISTS addressed_to TEXT[];
+-- An answer names the event it answers (RFC §8.5). Additive like addressed_to:
+-- no event stored before it named one, so existing rows are NULL and correct.
+ALTER TABLE events ADD COLUMN IF NOT EXISTS responds_to TEXT;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_events_room_index ON events(room_id, index);
 CREATE INDEX IF NOT EXISTS idx_events_room_created ON events(room_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_events_room_type ON events(room_id, type);
@@ -198,6 +203,9 @@ CREATE INDEX IF NOT EXISTS idx_events_correlation
 CREATE INDEX IF NOT EXISTS idx_events_parent_index
     ON events(parent_event_id, index) WHERE parent_event_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_events_source ON events(source_channel_id);
+-- A request's answers: the events of a room that answer a given event.
+CREATE INDEX IF NOT EXISTS idx_events_room_responds_to
+    ON events(room_id, responds_to) WHERE responds_to IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_events_idempotency
     ON events(room_id, idempotency_key) WHERE idempotency_key IS NOT NULL;
 

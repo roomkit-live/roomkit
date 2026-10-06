@@ -166,6 +166,7 @@ def _event_row(event: RoomEvent) -> dict:
         "chain_depth": event.chain_depth,
         "correlation_id": event.correlation_id,
         "parent_event_id": event.parent_event_id,
+        "responds_to": event.responds_to,
         "idempotency_key": event.idempotency_key,
         "blocked_by": event.blocked_by,
         "metadata": event.metadata,

@@ -813,6 +813,7 @@ class LaneExecutionMixin(HelpersMixin):
                 chain_depth=event.chain_depth + 1,
                 visibility=event.response_visibility or "all",
                 parent_event_id=event.parent_event_id,
+                responds_to=event.id,
             )
 
     async def _commit_blocked_events(self, room_id: str, result: BroadcastResult) -> None:

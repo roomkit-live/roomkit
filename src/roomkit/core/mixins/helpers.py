@@ -382,6 +382,7 @@ class HelpersMixin:
         visibility: str = "all",
         correlation_id: str | None = None,
         parent_event_id: str | None = None,
+        responds_to: str | None = None,
     ) -> None:
         """Hand a turn-level failure to the ON_ERROR hooks.
 
@@ -403,6 +404,7 @@ class HelpersMixin:
             visibility=visibility,
             correlation_id=correlation_id,
             parent_event_id=parent_event_id,
+            responds_to=responds_to,
         )
         await self._hook_engine.run_async_hooks(
             room_id, HookTrigger.ON_ERROR, error_event, context

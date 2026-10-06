@@ -249,6 +249,7 @@ class InboundStreamingMixin(HelpersMixin):
             visibility=scope.visibility,
             correlation_id=correlation_id,
             parent_event_id=scope.parent_event_id,
+            responds_to=sr.trigger_event.id,
         )
 
     async def _stream_to_target(
@@ -425,6 +426,7 @@ class InboundStreamingMixin(HelpersMixin):
             visibility=sr.trigger_event.response_visibility or "all",
             correlation_id=correlation_id,
             parent_event_id=sr.trigger_event.parent_event_id,
+            responds_to=sr.trigger_event.id,
         )
 
     def _find_streaming_targets(

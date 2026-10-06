@@ -420,6 +420,8 @@ class InMemoryStore(ConversationStore):
             events = [e for e in events if e.source.channel_type == ef.source_channel_type]
         if ef.correlation_id is not None:
             events = [e for e in events if e.correlation_id == ef.correlation_id]
+        if ef.responds_to is not None:
+            events = [e for e in events if e.responds_to == ef.responds_to]
         if ef.participant_id is not None:
             events = [e for e in events if e.source.participant_id == ef.participant_id]
         if ef.parent_event_id is not None:

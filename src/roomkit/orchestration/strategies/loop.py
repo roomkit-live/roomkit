@@ -369,6 +369,7 @@ async def _run_loop(
         content=TextContent(body=outcome.output),
         chain_depth=event.chain_depth + 1,
         parent_event_id=event.parent_event_id,
+        responds_to=event.id,
         metadata={
             "approved": outcome.approved,
             "iteration": outcome.iteration,

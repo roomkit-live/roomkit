@@ -111,7 +111,18 @@ def unanswered(trigger: RoomEvent, channel_id: str, channel_type: Any) -> RoomEv
         chain_depth=trigger.chain_depth + 1,
         visibility=trigger.response_visibility or Visibility.ALL,
         parent_event_id=trigger.parent_event_id,
+        responds_to=trigger.id,
     )
+
+
+def _answering(responses: list[RoomEvent], trigger: RoomEvent) -> list[RoomEvent]:
+    """*responses*, each naming *trigger* as the event it answers when it named none."""
+    return [
+        resp
+        if resp.responds_to is not None
+        else resp.model_copy(update={"responds_to": trigger.id})
+        for resp in responses
+    ]
 
 
 def chain_depth_exceeded(blocked: RoomEvent, max_chain_depth: int) -> Observation:
@@ -531,6 +542,10 @@ class EventRouter:
                 # records what the muted brain wanted to say and what its
                 # hooks decided, and nothing is broadcast.
                 if output.responded:
+                    # A buffered answer names the event it answers (RFC §8.5),
+                    # unless its channel named one itself; written back so every
+                    # reader of the output (a delegated turn's) sees it.
+                    output.response_events = _answering(output.response_events, event)
                     for resp in output.response_events:
                         if resp.chain_depth < self._max_chain_depth:
                             tr.reentry_events.append(resp)
