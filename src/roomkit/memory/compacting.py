@@ -17,7 +17,6 @@ from roomkit.memory.token_estimator import (
     estimate_tokens,
 )
 from roomkit.models.context import RoomContext
-from roomkit.models.enums import ChannelType
 from roomkit.models.event import RoomEvent, TextContent
 from roomkit.providers.ai.base import AIContext, AIMessage, AIProvider
 
@@ -121,11 +120,7 @@ class CompactingMemory(_MemoryWrapper):
         self, room_id: str, events: list[RoomEvent], channel_id: str | None = None
     ) -> str:
         # Generate summary
-        event_texts: list[str] = []
-        for e in events:
-            role = "assistant" if e.source and e.source.channel_type == ChannelType.AI else "user"
-            text = e.content.body if isinstance(e.content, TextContent) else str(e.content)
-            event_texts.append(summarized_line(role, text))
+        event_texts = [summarized_line(e) for e in events]
 
         prompt = (
             "Summarize this conversation concisely. Focus on: decisions made, "

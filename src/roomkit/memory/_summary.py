@@ -5,6 +5,9 @@ shared by :class:`~roomkit.memory.summarizing.SummarizingMemory` and
 from __future__ import annotations
 
 from roomkit._text import CONVERSATION_SUMMARY_TAG, fence, quoted
+from roomkit.memory.token_estimator import extract_event_text
+from roomkit.models.enums import ChannelType
+from roomkit.models.event import RoomEvent
 from roomkit.providers.ai.base import AIMessage
 
 SUMMARY_MARK = "[Conversation summary"
@@ -18,10 +21,12 @@ EVENT_TEXT_LIMIT = 2000
 """Characters of one event the summarizer reads."""
 
 
-def summarized_line(role: str, text: str) -> str:
-    """One event as a summarizer reads it: its *role*, then its *text* quoted on
-    one line, so no event can write a line of another."""
-    return f"[{role}]: {quoted(text, EVENT_TEXT_LIMIT)}"
+def summarized_line(event: RoomEvent) -> str:
+    """*event* as a summarizer reads it: whether an agent or a user said it, then
+    its text as the memory layer reads it, quoted on one line, so no event can
+    write a line of another."""
+    role = "assistant" if event.source.channel_type == ChannelType.AI else "user"
+    return f"[{role}]: {quoted(extract_event_text(event), EVENT_TEXT_LIMIT)}"
 
 
 def summary_message(summary: str) -> AIMessage:

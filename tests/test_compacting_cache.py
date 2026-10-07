@@ -8,6 +8,7 @@ from unittest.mock import patch
 from roomkit.memory.compacting import CompactingMemory
 from roomkit.memory.sliding_window import SlidingWindowMemory
 from roomkit.models.context import RoomContext
+from roomkit.models.event import RichContent
 from roomkit.models.room import Room
 from roomkit.providers.ai.base import AIContext, AIResponse
 from roomkit.providers.ai.mock import MockAIProvider
@@ -99,3 +100,20 @@ async def test_clear_during_generation_does_not_restore_cache() -> None:
     finish.set()
     await task
     assert not memory._summary_cache
+
+
+async def test_the_summarizer_reads_rich_content_by_its_text() -> None:
+    """Both summarizing memories read an event through the same line (RMK-589):
+    rich content by its text, never by its model's repr."""
+    provider = MockAIProvider(responses=["summary"])
+    memory = CompactingMemory(SlidingWindowMemory(), provider, 100, min_events=1)
+    rich = make_event(body="x").model_copy(
+        update={"content": RichContent(body="**ship Thursday** " * 50)}
+    )
+    room = RoomContext(room=Room(id="r1"), recent_events=[rich, *context("later").recent_events])
+
+    await memory.retrieve("r1", make_event(body="now"), room, channel_id="a")
+
+    prompt = str(provider.calls[0].messages[0].content)
+    assert "[user]: “**ship Thursday**" in prompt
+    assert "body=" not in prompt and "format=" not in prompt

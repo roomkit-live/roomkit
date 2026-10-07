@@ -115,7 +115,7 @@ QUOTED: dict[str, Callable[[str], str]] = {
     "thinker transcript": _thinker,
     "compaction summary": _compaction,
     "acp room context": _acp,
-    "memory summarizer line": lambda text: summarized_line("user", text),
+    "memory summarizer line": lambda text: summarized_line(make_event(body=text)),
     "tools digest": _tools_digest,
 }
 
