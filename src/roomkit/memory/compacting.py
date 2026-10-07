@@ -156,7 +156,7 @@ class CompactingMemory(_MemoryWrapper):
                     max_tokens=1000,
                 )
             )
-            summary = response.content or "[Summary generation failed]"
+            summary = response.content.strip() or "[Summary generation failed]"
         except Exception as exc:
             logger.warning("Failed to generate summary: %s", exc)
             summary = f"[Earlier conversation with {len(events)} messages — summary unavailable]"

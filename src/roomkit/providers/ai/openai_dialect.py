@@ -350,8 +350,8 @@ def extract_think_tags(text: str) -> tuple[str | None, str]:
     before closing (the output cap) is reasoning too, never answer.
 
     Returns:
-        ``(thinking, text)`` — *thinking* is ``None`` when no tags are
-        present.
+        ``(thinking, text)`` — *thinking* is ``None`` when the response
+        carries no reasoning (no tags, or an empty block).
     """
     if ThinkTagParser._OPEN not in text:
         return None, text
@@ -377,7 +377,14 @@ def choice_refusal(choice: Any) -> str | None:
     dialect; a content filter (Azure's, and some compatible servers') says the
     same through the finish reason instead.
     """
-    refusal = getattr(getattr(choice, "message", None), "refusal", None)
+    refusal = message_refusal(getattr(choice, "message", None))
     if refusal:
         return refusal
     return "content_filter" if getattr(choice, "finish_reason", None) == "content_filter" else None
+
+
+def message_refusal(message: Any) -> str | None:
+    """The refusal text a message carries, if it carries one as text, as the
+    stream reads it from its deltas."""
+    refusal = getattr(message, "refusal", None)
+    return refusal if isinstance(refusal, str) and refusal else None

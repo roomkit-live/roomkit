@@ -16,8 +16,8 @@ LABELS = {wire.label for wire in wires()}
 OPENAI = [wire for wire in http_wires() if wire.label in LABELS]
 
 
-def _completion() -> dict[str, object]:
-    message = {"role": "assistant", "content": None, "refusal": REFUSAL}
+def _completion(refusal: object = REFUSAL) -> dict[str, object]:
+    message = {"role": "assistant", "content": None, "refusal": refusal}
     return {
         "id": "chatcmpl-0",
         "object": "chat.completion",
@@ -58,3 +58,14 @@ async def test_a_refusal_reads_the_same_streamed_or_not(wire: HttpWire, mode: st
 
     assert text == ""
     assert metadata.get("refusal") == REFUSAL
+
+
+@pytest.mark.parametrize("wire", OPENAI, ids=[wire.label for wire in OPENAI])
+async def test_a_refusal_that_is_not_text_is_not_reported(wire: HttpWire) -> None:
+    """A server that sends something else than text under ``refusal`` sends
+    no refusal, as the stream reads it."""
+    provider = wire.build(lambda request: httpx.Response(200, json=_completion(refusal=True)))
+    response = await provider.generate(CONTEXT)
+    await provider.close()
+
+    assert "refusal" not in response.metadata

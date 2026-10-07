@@ -250,7 +250,7 @@ class SummarizingMemory(_MemoryWrapper):
                     max_tokens=self._summary_max_tokens,
                 )
             )
-            summary = response.content or "[Summary generation failed]"
+            summary = response.content.strip() or "[Summary generation failed]"
         except Exception as exc:
             logger.warning("Failed to generate summary: %s", exc)
             summary = (

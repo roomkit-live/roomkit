@@ -209,7 +209,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   change:** `generate()` no longer strips the spaces around the reasoning
   and the answer, nor joins reasoning blocks on a newline. An OpenAI refusal
   is in `metadata["refusal"]` from `generate()` too, as at the end of a
-  stream. Anthropic omits a cache counter at zero, as every other provider.
+  stream (a refusal that is not text is no refusal, in both modes).
+  **Behaviour change:** Anthropic omits a cache counter at zero, as every
+  other provider: a host that reads `usage["cache_read_input_tokens"]` on an
+  Anthropic turn without cache reads it with `.get()`.
 
 - A failed generation reads the same on every text provider, whatever form
   the server gave the failure (RMK-524, RFC §6.7). An error written into a

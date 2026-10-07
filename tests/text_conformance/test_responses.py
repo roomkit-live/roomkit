@@ -386,6 +386,8 @@ class TestUsage:
         answer = await generation(driver, script, mode, tool_context(LOOKUP))
 
         assert (answer.usage["input_tokens"], answer.usage["output_tokens"]) == (11, 7)
+        # A counter the response did not report is absent, on every wire.
+        assert set(answer.usage) == {"input_tokens", "output_tokens"}
 
     async def test_usage_on_a_chunk_of_its_own_reaches_the_loop(self, driver: Driver) -> None:
         """Read wherever it arrives: a chunk with no choice counts too

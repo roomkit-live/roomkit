@@ -48,6 +48,7 @@ from roomkit.providers.ai.openai_dialect import (
     field_reasoning,
     json_schema_format,
     merge_thinking,
+    message_refusal,
     message_tool_calls,
     overflow_fact,
 )
@@ -442,7 +443,12 @@ class OpenAIAIProvider(AIProvider):
             kwargs["tools"] = self._declare_tools(context.tools)
 
         response = await self._complete(kwargs)
+        return self._response_of(response, context)
 
+    def _response_of(self, response: Any, context: AIContext) -> AIResponse:
+        """What the loop reads of a completion that is not streamed: its
+        usage, its answer and reasoning as the stream reads them, its calls
+        and any refusal, its constrained answer checked (RFC §6.7)."""
         # What the request cost, read before anything else: a response with
         # no choice still billed its input.
         usage = self._usage_from(response.usage) if response.usage else {}
@@ -466,9 +472,7 @@ class OpenAIAIProvider(AIProvider):
             thinking=thinking,
             finish_reason=choice.finish_reason,
             usage=usage,
-            metadata=answered_by(
-                response.model, self._config.model, getattr(message, "refusal", None)
-            ),
+            metadata=answered_by(response.model, self._config.model, message_refusal(message)),
             tool_calls=tool_calls,
         )
 
