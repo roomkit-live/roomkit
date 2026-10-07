@@ -186,7 +186,10 @@ class TestEditing:
 
 
 class TestErrors:
-    @pytest.mark.parametrize(("status", "retryable"), [(402, False), (429, True), (503, True)])
+    @pytest.mark.parametrize(
+        ("status", "retryable"),
+        [(402, False), (408, True), (429, True), (503, True), (500, False), (504, False)],
+    )
     async def test_status_errors(self, status: int, retryable: bool) -> None:
         provider = _provider()
         provider._client.images.generate = AsyncMock(

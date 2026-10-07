@@ -299,8 +299,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is in `metadata["refusal"]` from `generate()` too, as at the end of a
   stream (a refusal that is not text is no refusal, in both modes).
   **Behaviour change:** Anthropic omits a cache counter at zero, as every
-  other provider: a host that reads `usage["cache_read_input_tokens"]` on an
-  Anthropic turn without cache reads it with `.get()`.
+  other provider, now the RFC's rule for a text turn (§6.7): a host that
+  reads `usage["cache_read_input_tokens"]` on an Anthropic turn without
+  cache reads it with `.get()`.
 
 - A failed generation reads the same on every text provider, whatever form
   the server gave the failure (RMK-524, RFC §6.7). An error written into a
@@ -308,8 +309,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Mistral) was final where the same failure as an HTTP status was retried;
   it now reads as the status it describes, and a 200 whose body is an error
   object reads as the status it names. **Behaviour change:** 408, 409 and
-  every 5xx are retried (504 was final), on the image providers that read
-  the same list too (xAI, Meta, OpenRouter). A failure with no status is
+  every 5xx are retried (504 was final). A paid image generation (xAI, Meta,
+  OpenRouter) is marked `retryable` only where the vendor did not run it:
+  408, 409, 429 and 503; a 500, 502 or 504 may follow a generation it billed
+  and is final (RFC §25.2), 500 and 502 having been `retryable` before. A
+  failure with no status is
   retried only when it is a lost connection or its message names a retried
   status, a rate limit or an overload as whole words (a failure "to
   generate" named a "rate" before); Ollama and PolarGrid no longer retry an

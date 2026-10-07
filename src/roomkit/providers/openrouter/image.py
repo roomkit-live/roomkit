@@ -20,12 +20,12 @@ import binascii
 from typing import Any
 
 from roomkit.providers.ai.base import (
-    RETRYABLE_STATUS_CODES,
     AIImagePart,
     ModelInfo,
     ProviderError,
 )
 from roomkit.providers.image.base import (
+    PAID_GENERATION_RETRYABLE,
     ImageProvider,
     ImageResult,
     parse_data_uri,
@@ -178,7 +178,7 @@ class OpenRouterImageProvider(ImageProvider):
             status = exc.response.status_code
             raise ProviderError(
                 f"OpenRouter images API returned {status}: {exc.response.text[:500]}",
-                retryable=status in RETRYABLE_STATUS_CODES,
+                retryable=status in PAID_GENERATION_RETRYABLE,
                 provider="openrouter",
                 status_code=status,
             ) from exc

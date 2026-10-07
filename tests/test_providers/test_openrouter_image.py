@@ -249,7 +249,19 @@ def _status_response(provider: Any, status: int, text: str = "err") -> None:
     provider._http.post = AsyncMock(return_value=response)
 
 
-@pytest.mark.parametrize(("status", "retryable"), [(429, True), (503, True), (400, False)])
+@pytest.mark.parametrize(
+    ("status", "retryable"),
+    [
+        (408, True),
+        (409, True),
+        (429, True),
+        (503, True),
+        (500, False),
+        (502, False),
+        (504, False),
+        (400, False),
+    ],
+)
 async def test_status_errors_map_to_retryability(status: int, retryable: bool) -> None:
     provider = _provider()
     _status_response(provider, status, "the model refused")

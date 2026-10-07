@@ -16,12 +16,12 @@ from math import gcd
 from typing import Any
 
 from roomkit.providers.ai.base import (
-    RETRYABLE_STATUS_CODES,
     AIImagePart,
     ModelInfo,
     ProviderError,
 )
 from roomkit.providers.image.base import (
+    PAID_GENERATION_RETRYABLE,
     ImageProvider,
     ImageResult,
     parse_data_uri,
@@ -154,7 +154,7 @@ class XAIImageProvider(ImageProvider):
         except self._api_status_error as exc:
             raise ProviderError(
                 str(exc),
-                retryable=exc.status_code in RETRYABLE_STATUS_CODES,
+                retryable=exc.status_code in PAID_GENERATION_RETRYABLE,
                 provider="xai",
                 status_code=exc.status_code,
             ) from exc

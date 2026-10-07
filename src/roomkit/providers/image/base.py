@@ -36,6 +36,11 @@ to tell them apart. It is there for a consumer that deliberately merges the two
 lists and then has to.
 """
 
+PAID_GENERATION_RETRYABLE: frozenset[int] = frozenset({408, 409, 429, 503})
+"""The statuses a failed image generation is marked ``retryable`` for: the
+vendor did not run the generation. A 500, 502 or 504 may follow one it ran and
+billed, so it stays final, and the host decides (RFC §25.2)."""
+
 _SIZE_RE = re.compile(r"^(\d+)x(\d+)$")
 
 

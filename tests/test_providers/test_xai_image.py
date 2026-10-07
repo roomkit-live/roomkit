@@ -323,8 +323,22 @@ async def test_a_connection_failure_is_retryable() -> None:
     assert exc_info.value.provider == "xai"
 
 
-@pytest.mark.parametrize(("status", "retryable"), [(429, True), (503, True), (400, False)])
+@pytest.mark.parametrize(
+    ("status", "retryable"),
+    [
+        (408, True),
+        (409, True),
+        (429, True),
+        (503, True),
+        (500, False),
+        (502, False),
+        (504, False),
+        (400, False),
+    ],
+)
 async def test_status_errors_map_to_retryability(status: int, retryable: bool) -> None:
+    """Retryable only where the vendor did not run the paid generation
+    (RFC §25.2)."""
     provider = _provider()
     provider._client.images.generate = AsyncMock(
         side_effect=_FakeAPIStatusError("boom", status_code=status)
