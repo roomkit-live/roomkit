@@ -87,7 +87,8 @@ def room_tasks(entries: Iterable[StatusEntry]) -> list[dict[str, Any]]:
         status = str(entry.metadata.get("task_status") or entry.status)
         line.update(status=status, ended=entry.ts)
         if status == str(TaskStatus.COMPLETED):
-            line["result"] = entry.detail
+            # The whole outcome when the summary was cut (RFC §19.8).
+            line["result"] = entry.metadata.get("result", entry.detail)
     return list(tasks.values())
 
 

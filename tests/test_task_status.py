@@ -10,7 +10,12 @@ from roomkit import HookExecution, HookResult, HookTrigger, RoomKit
 from roomkit.channels.agent import Agent
 from roomkit.core.mixins.delegation import task_name
 from roomkit.models.enums import ChannelCategory, EventType, TaskStatus
-from roomkit.orchestration.status_bus import StatusEntry, StatusLevel
+from roomkit.orchestration.status_bus import (
+    RESULT_LIMIT,
+    StatusEntry,
+    StatusLevel,
+    bounded_text,
+)
 from roomkit.orchestration.strategies.supervisor._inject_strategy import _follow_hint
 from roomkit.providers.ai.base import AIContext, AIResponse, AITool
 from roomkit.providers.ai.mock import MockAIProvider
@@ -64,6 +69,40 @@ async def test_a_delegation_posts_pending_then_completed_with_its_task() -> None
         assert entry.metadata["child_room_id"] == task.child_room_id
     assert done.metadata["task_status"] == "completed"
     assert "duration_ms" in done.metadata
+
+
+_FORECAST = (
+    "À Montréal, il fait actuellement 6,5 °C avec un ciel dégagé et un vent de 12,7 km/h. "
+    "Demain, mercredi 7 octobre, on attend de la pluie, avec 42 % de risque, une minimale "
+    "de 4,9 °C et une maximale de 14,9 °C."
+)
+
+
+async def test_task_status_gives_the_whole_result_the_summary_cut() -> None:
+    """RMK-556: the bus summary stopped at « une maximale de 1 », read back as 1 °C."""
+    kit = await _room(Agent("worker", provider=MockAIProvider(responses=[_FORECAST])))
+    task = await kit.delegate("r", "worker", "La météo ?", notify="speaker")
+    await task.wait()
+    await until(lambda: task.result is not None, timeout=5)
+    [_, done] = await _task_entries(kit)
+    with tool_turn_context(room_id="r"):
+        answer = json.loads(await TaskStatusTool(kit).handler(TASK_STATUS_TOOL, {}))
+    await kit.close()
+
+    assert len(done.detail) <= 200
+    assert done.detail.endswith("…")
+    assert done.metadata["result"] == _FORECAST
+    assert answer["tasks"][0]["result"] == _FORECAST
+
+
+def test_a_bounded_text_is_cut_at_a_word_and_marked() -> None:
+    assert bounded_text("court", 200) == "court"
+    cut = bounded_text(_FORECAST, 200)
+    assert cut.endswith("…") and len(cut) <= 200
+    assert _FORECAST.startswith(cut[:-1])
+    assert cut[:-1].split()[-1] in _FORECAST.split()  # a whole word, not « 1 » of « 14,9 »
+    assert bounded_text("x" * 300, 200) == "x" * 199 + "…"  # no word to cut at
+    assert len(bounded_text(_FORECAST * 40, RESULT_LIMIT)) <= RESULT_LIMIT
 
 
 async def test_a_failed_task_is_posted_failed_without_its_error_text() -> None:

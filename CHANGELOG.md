@@ -111,6 +111,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `task_status` gives a task's whole result (RMK-556, RFC §19.8, §23.3,
+  §23.4). It read the result from the task's `completed` entry on the status
+  bus, whose detail the framework cut at 200 characters, mid-word and unmarked:
+  live, a forecast's « une maximale de 14,9 °C » came back as « une maximale
+  de 1 », and the agent said 1 °C. The framework's posts now cut a detail at a
+  word and end the cut with "…", and a `completed` entry so cut keeps the whole
+  outcome in `metadata["result"]` (bounded at 4,000 characters, marked the same
+  way), which `task_status` returns. An orchestration worker run's terminal
+  entry, which carries its output, gets the same.
+
 - `LocalAudioBackend` plays every response through one output stream kept open
   for the session (RMK-551, RFC §12.3.4). In VoiceChannel mode it opened a
   stream per response: each started at a new echo delay, which PipeWire then

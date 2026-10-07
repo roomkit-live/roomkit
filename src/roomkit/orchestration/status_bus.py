@@ -367,6 +367,28 @@ class StatusBus:
 # ---------------------------------------------------------------------------
 
 
+DETAIL_LIMIT = 200
+"""A framework post's ``detail``: a summary for whoever follows the bus."""
+
+RESULT_LIMIT = 4_000
+"""A completed entry's whole outcome, in ``metadata["result"]`` when its detail was cut."""
+
+
+def bounded_text(text: str, limit: int) -> str:
+    """*text* within *limit* characters: cut at a word, the cut ending in "…".
+
+    Never in the middle of a word or a number: a forecast's "14,9 °C" cut to "1"
+    was read back as a temperature (RMK-556).
+    """
+    if len(text) <= limit:
+        return text
+    cut = text[: limit - 1]
+    space = cut.rfind(" ")
+    if space > limit // 2:
+        cut = cut[:space]
+    return cut.rstrip() + "…"
+
+
 def post_agent_lifecycle(
     kit: Any,
     agent_id: str,
@@ -390,7 +412,11 @@ def post_agent_lifecycle(
       ``"handoff"`` for handoff hops, ``"iteration"`` and ``"review"`` for
       a loop's producer and reviewers, ``"pipeline"``, ``"loop"`` and
       ``"worker"`` for a background run's terminal entry.
-    - ``detail``: human-readable summary, truncated to 200 chars.
+    - ``detail``: human-readable summary, bounded at 200 characters, cut at a
+      word and the cut marked "…". A ``COMPLETED`` entry whose detail was cut
+      keeps the whole outcome in ``metadata["result"]`` (bounded at 4,000
+      characters, marked the same way): an agent reads it back from there
+      (``task_status``), never from the summary (RFC §19.8).
     - ``metadata``: structured context (``room_id``, ``strategy``,
       ``task_id``, etc.).
 
@@ -398,12 +424,10 @@ def post_agent_lifecycle(
     blocks real orchestration work.
     """
     try:
-        kit.status_bus.post(
-            agent_id,
-            action,
-            level,
-            detail=detail[:200],
-            metadata=metadata or {},
-        )
+        metadata = dict(metadata or {})
+        summary = bounded_text(detail, DETAIL_LIMIT)
+        if level == StatusLevel.COMPLETED and summary != detail:
+            metadata.setdefault("result", bounded_text(detail, RESULT_LIMIT))
+        kit.status_bus.post(agent_id, action, level, detail=summary, metadata=metadata)
     except Exception:
         logger.debug("status_bus.post failed for %s", agent_id, exc_info=True)
