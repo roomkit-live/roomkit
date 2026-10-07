@@ -41,6 +41,24 @@ PAID_GENERATION_RETRYABLE: frozenset[int] = frozenset({408, 409, 429, 503})
 vendor did not run the generation. A 500, 502 or 504 may follow one it ran and
 billed, so it stays final, and the host decides (RFC §25.2)."""
 
+
+def never_sent(exc: BaseException, httpx: Any) -> bool:
+    """Whether a transport failure *exc* happened before its request left:
+    the *httpx* client could not connect (a connect error, a connect or pool
+    timeout), here or on its cause chain. The vendor ran nothing, so the
+    failure may be retried; a timeout or a connection lost once the request
+    went out is ambiguous, and final (RFC §25.2)."""
+    unsent = (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout)
+    seen: BaseException | None = exc
+    visited: set[int] = set()
+    while seen is not None and id(seen) not in visited:
+        if isinstance(seen, unsent):
+            return True
+        visited.add(id(seen))
+        seen = seen.__cause__
+    return False
+
+
 _SIZE_RE = re.compile(r"^(\d+)x(\d+)$")
 
 

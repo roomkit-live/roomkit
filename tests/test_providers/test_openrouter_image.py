@@ -273,13 +273,25 @@ async def test_status_errors_map_to_retryability(status: int, retryable: bool) -
     assert exc_info.value.provider == "openrouter"
 
 
-async def test_a_transport_failure_is_retryable() -> None:
+@pytest.mark.parametrize(
+    ("failure", "retryable"),
+    [
+        (httpx.ConnectError("refused"), True),
+        (httpx.PoolTimeout("no connection free"), True),
+        (httpx.ReadTimeout("slow"), False),
+        (httpx.RemoteProtocolError("dropped"), False),
+    ],
+    ids=["connect-error", "pool-timeout", "read-timeout", "dropped"],
+)
+async def test_a_transport_failure_is_retryable_only_unsent(
+    failure: Exception, retryable: bool
+) -> None:
     provider = _provider()
-    provider._http.post = AsyncMock(side_effect=httpx.ConnectError("down"))
+    provider._http.post = AsyncMock(side_effect=failure)
 
     with pytest.raises(ProviderError) as exc_info:
         await provider.generate("a fox")
-    assert exc_info.value.retryable is True
+    assert exc_info.value.retryable is retryable
 
 
 async def test_an_unexpected_error_is_wrapped_not_retryable() -> None:

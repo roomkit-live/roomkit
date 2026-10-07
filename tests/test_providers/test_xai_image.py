@@ -13,6 +13,7 @@ from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 
 from roomkit.providers.ai.base import AIImagePart, ProviderError
@@ -313,13 +314,30 @@ async def test_usage_is_empty_when_the_vendor_reports_none() -> None:
 # --- Errors --------------------------------------------------------------------
 
 
-async def test_a_connection_failure_is_retryable() -> None:
+@pytest.mark.parametrize(
+    ("cause", "retryable"),
+    [
+        (httpx.ConnectError("refused"), True),
+        (httpx.ConnectTimeout("no route"), True),
+        (httpx.ReadTimeout("slow"), False),
+        (httpx.RemoteProtocolError("dropped"), False),
+        (None, False),
+    ],
+    ids=["connect-error", "connect-timeout", "read-timeout", "dropped", "unknown"],
+)
+async def test_a_connection_failure_is_retryable_only_unsent(
+    cause: BaseException | None, retryable: bool
+) -> None:
+    """Only a request that never left may be retried: a paid generation may
+    have run behind any other transport failure (RFC §25.2)."""
     provider = _provider()
-    provider._client.images.generate = AsyncMock(side_effect=_FakeAPIConnectionError("down"))
+    error = _FakeAPIConnectionError("down")
+    error.__cause__ = cause
+    provider._client.images.generate = AsyncMock(side_effect=error)
 
     with pytest.raises(ProviderError) as exc_info:
         await provider.generate("a fox")
-    assert exc_info.value.retryable is True
+    assert exc_info.value.retryable is retryable
     assert exc_info.value.provider == "xai"
 
 

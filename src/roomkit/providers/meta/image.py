@@ -36,6 +36,7 @@ from roomkit.providers.image.base import (
     PAID_GENERATION_RETRYABLE,
     ImageProvider,
     ImageResult,
+    never_sent,
     parse_data_uri,
     parse_size,
     sniff_mime_type,
@@ -54,6 +55,7 @@ class MetaImageProvider(ImageProvider):
 
     def __init__(self, config: MetaImageConfig) -> None:
         try:
+            import httpx as _httpx
             import openai as _openai
         except ImportError as exc:
             raise ImportError(
@@ -63,6 +65,7 @@ class MetaImageProvider(ImageProvider):
         self._config = config
         self._api_status_error = _openai.APIStatusError
         self._api_connection_error = _openai.APIConnectionError
+        self._httpx = _httpx
         self._images_response_cls = _openai.types.ImagesResponse
         self._client = _openai.AsyncOpenAI(
             api_key=config.api_key.get_secret_value(),
@@ -195,7 +198,9 @@ class MetaImageProvider(ImageProvider):
             }
             return await self._client.images.generate(**generation, extra_body=extra)
         except self._api_connection_error as exc:
-            raise ProviderError(str(exc), retryable=True, provider="meta") from exc
+            raise ProviderError(
+                str(exc), retryable=never_sent(exc, self._httpx), provider="meta"
+            ) from exc
         except self._api_status_error as exc:
             raise ProviderError(
                 str(exc),

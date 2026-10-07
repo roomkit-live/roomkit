@@ -28,6 +28,7 @@ from roomkit.providers.image.base import (
     PAID_GENERATION_RETRYABLE,
     ImageProvider,
     ImageResult,
+    never_sent,
     parse_data_uri,
     parse_size,
     sniff_mime_type,
@@ -52,6 +53,7 @@ class OpenRouterImageProvider(ImageProvider):
         self._config = config
         self._status_error = _httpx.HTTPStatusError
         self._transport_error = _httpx.TransportError
+        self._httpx = _httpx
         self._http = _httpx.AsyncClient(
             base_url=config.base_url.rstrip("/"),
             timeout=http_timeout(config),
@@ -183,7 +185,9 @@ class OpenRouterImageProvider(ImageProvider):
                 status_code=status,
             ) from exc
         except self._transport_error as exc:
-            raise ProviderError(str(exc), retryable=True, provider="openrouter") from exc
+            raise ProviderError(
+                str(exc), retryable=never_sent(exc, self._httpx), provider="openrouter"
+            ) from exc
         except Exception as exc:
             raise ProviderError(str(exc), retryable=False, provider="openrouter") from exc
         if not isinstance(payload, dict):

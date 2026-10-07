@@ -12,6 +12,7 @@ from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 from pydantic import SecretStr
 
@@ -200,12 +201,21 @@ class TestErrors:
         assert info.value.status_code == status
         assert info.value.retryable is retryable
 
-    async def test_connection_errors_are_retryable(self) -> None:
+    @pytest.mark.parametrize(
+        ("cause", "retryable"),
+        [(httpx.ConnectError("refused"), True), (httpx.ReadTimeout("slow"), False), (None, False)],
+        ids=["connect-error", "read-timeout", "unknown"],
+    )
+    async def test_connection_errors_are_retryable_only_unsent(
+        self, cause: BaseException | None, retryable: bool
+    ) -> None:
         provider = _provider()
-        provider._client.images.generate = AsyncMock(side_effect=_FakeAPIConnectionError("down"))
+        error = _FakeAPIConnectionError("down")
+        error.__cause__ = cause
+        provider._client.images.generate = AsyncMock(side_effect=error)
         with pytest.raises(ProviderError) as info:
             await provider.generate("x")
-        assert info.value.retryable is True
+        assert info.value.retryable is retryable
 
 
 def test_a_key_no_header_can_carry_is_refused_without_echoing_it() -> None:

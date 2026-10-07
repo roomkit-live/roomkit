@@ -118,8 +118,13 @@ async def test_a_uri_delivered_image_is_refused_by_its_own_name() -> None:
     )
     _arm(provider, linked)
 
-    with pytest.raises(ProviderError, match="URI"):
+    with pytest.raises(ProviderError, match="URI") as caught:
         await provider.generate("a fox")
+    # Generated and billed: final, the vendor call's own failure included;
+    # generating it again is the host's call (§25.2).
+    assert caught.value.retryable is False
+    assert isinstance(caught.value.__cause__, ProviderError)
+    assert caught.value.__cause__.retryable is False
 
 
 async def test_the_prompt_becomes_a_text_content_block() -> None:

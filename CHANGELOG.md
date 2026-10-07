@@ -327,7 +327,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   OpenRouter) is marked `retryable` only where the vendor did not run it:
   408, 409, 429 and 503; a 500, 502 or 504 may follow a generation it billed
   and is final (RFC §25.2), 500 and 502 having been `retryable` before. A
-  failure with no status is
+  transport failure on such a generation is `retryable` only when the
+  request never left (the client could not connect); a timeout or a
+  connection lost once it went out is final, and so is Gemini's image
+  delivered as a URI, already generated and billed. A failure with no
+  status is
   retried only when it is a lost connection or its message names a retried
   status, a rate limit or an overload as whole words (a failure "to
   generate" named a "rate" before); Ollama and PolarGrid no longer retry an

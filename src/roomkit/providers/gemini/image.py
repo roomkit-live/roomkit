@@ -332,15 +332,15 @@ class GeminiImageProvider(ImageProvider):
         if not payload:
             # A link instead of bytes is its own failure, and worth its own
             # words: it is where RFC §25.3 is enforced, the request having no
-            # say in the delivery mode (see :meth:`_build_request`). Reported
-            # as retryable — the vendor chose the mode, and the same request
-            # may well come back inline.
+            # say in the delivery mode (see :meth:`_build_request`). Final: the
+            # image was generated and billed, and generating it again is the
+            # host's call (RFC §25.2).
             if image is not None and getattr(image, "uri", None):
                 raise ProviderError(
                     "Gemini delivered the image as a URI; roomkit returns inline bytes "
                     "only, since a link expires while an ImageResult is expected to "
                     "outlive the call",
-                    retryable=True,
+                    retryable=False,
                     provider="gemini",
                 )
             raise ProviderError(
