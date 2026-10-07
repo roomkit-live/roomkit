@@ -10,7 +10,13 @@ from functools import partial
 from typing import TYPE_CHECKING, Any
 
 from roomkit.core._failure_log import log_failure
-from roomkit.core.task_utils import cancel_and_wait, log_task_exception, shielded
+from roomkit.core.task_utils import (
+    cancel_and_wait,
+    held_runs,
+    log_task_exception,
+    shielded,
+    start_named,
+)
 from roomkit.models.enums import TaskStatus
 from roomkit.tasks._child_status import record_task_end
 from roomkit.tasks.base import OnCompleteCallback, TaskRunner
@@ -48,7 +54,7 @@ class InMemoryTaskRunner(TaskRunner):
     ) -> None:
         fields = cancelled_task_fields(context)
         end = partial(self._finish, kit, task, fields, time.monotonic(), on_complete)
-        bg = asyncio.create_task(
+        bg = start_named(
             self._execute(kit, task, context=context, on_complete=on_complete),
             name=f"delegate:{task.id}",
         )
@@ -75,8 +81,11 @@ class InMemoryTaskRunner(TaskRunner):
 
     async def close(self) -> None:
         # A task's end may delegate again: that task is cancelled in turn.
-        while self._tasks:
-            for task_id in list(self._tasks):
+        # The ones this close runs under (a worker's tool closing the kit)
+        # are spared: cancelling one would wait for itself.
+        spared = set(held_runs())
+        while running := [tid for tid, bg in self._tasks.items() if bg not in spared]:
+            for task_id in running:
                 await self.cancel(task_id)
 
     async def _execute(

@@ -239,9 +239,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   two spurious warnings. **Behaviour change:** `close()` waits for an inline
   task's completion, its `on_complete` included, as it already waits for the
   background ones, and ON_AI_RESPONSE no longer fires for a turn the close
-  cut on the awaited door, as on the deferred one. A `close()` called from
-  inside work the kit holds (a strategy's run, a hand-back, an inline
-  worker's tool) no longer waits for that work: it hung.
+  cut on the awaited door, as on the deferred one. A task the close finds
+  announced but not yet running ends `cancelled` on both doors; a
+  background one ran its worker on the closed kit. A `close()` called from
+  inside work the kit holds no longer waits for that work: from a strategy's
+  run, a hand-back or a background worker's tool it hung, and from a tool
+  during an awaited turn it must not start to.
 
 - `generate()` and the stream hand the loop the same answer (RMK-531, RFC
   §6.4). On OpenAI and its derivatives and on PolarGrid, a response with

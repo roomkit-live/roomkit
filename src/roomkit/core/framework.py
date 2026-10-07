@@ -510,6 +510,18 @@ class RoomKit(
             # A run's end may start another: it is cancelled in turn.
             runs = {run for run in self._background_runs if not run.done()} - spared
 
+    async def _cancel_pending_tasks(self) -> None:
+        """Cancel the pending hook tasks and the stream readers the kit holds
+        and wait for their ends, but the ones this close runs under: waiting
+        for them would wait for itself."""
+        spared = set(held_runs())
+        pending = [task for task in self._pending_hook_tasks if task not in spared]
+        for task in pending:
+            task.cancel()
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
+        self._pending_hook_tasks.difference_update(pending)
+
     async def close(self) -> None:
         """Close every channel, then release what they share.
 
@@ -554,12 +566,7 @@ class RoomKit(
         # way, then delegated tasks.
         await self._cancel_background_runs()
         await self._task_runner.close()
-        # Cancel pending trace hook tasks
-        for task in self._pending_hook_tasks:
-            task.cancel()
-        if self._pending_hook_tasks:
-            await asyncio.gather(*self._pending_hook_tasks, return_exceptions=True)
-            self._pending_hook_tasks.clear()
+        await self._cancel_pending_tasks()
         # Stop all event sources
         for channel_id in list(self._sources.keys()):
             await self.detach_source(channel_id)

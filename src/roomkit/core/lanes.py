@@ -37,6 +37,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from roomkit.core.locks import _has_room_lock, _held_rooms
+from roomkit.core.task_utils import start_named
 from roomkit.models.response_metadata import ResponseMetadata
 from roomkit.providers.utils import _aclose_stream
 from roomkit.telemetry.context import restored_span
@@ -223,7 +224,7 @@ class DeliveryCascade:
         if self.cancelled is not None:
             work.close()
             raise asyncio.CancelledError
-        task = asyncio.create_task(work)
+        task = start_named(work)
         self.track(task)
         if on_task is not None:
             on_task(task)

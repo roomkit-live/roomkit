@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from roomkit.channels._realtime_context import get_current_voice_session
 from roomkit.core._failure_log import log_failure
-from roomkit.core.exceptions import ChannelNotRegisteredError, RoomKitError
+from roomkit.core.exceptions import ChannelNotRegisteredError
 
 # _persist_child_stream and _run_with_structured_result are re-exported (self-
 # aliased) for the test suite, which imports them from this module.
@@ -374,6 +374,11 @@ class DelegationMixin(HelpersMixin):
             announced = True
             await self._announce_task(handle)
             started = True
+            if self._closed:
+                # The kit's close began while the task was being set up: it
+                # ends as the close ends a running one, on both doors.
+                await self._end_inline_cancelled(handle, context, on_complete, span, start)
+                return handle
             if wait:
                 return await self._run_inline(
                     handle,
@@ -519,13 +524,6 @@ class DelegationMixin(HelpersMixin):
         cancellation is raised once the task has ended."""
         handle.status = TaskStatus.IN_PROGRESS
         start = time.monotonic()
-        try:
-            check_open(self, "delegation")
-        except RoomKitError:
-            # The kit's close began once the task was announced: it ends as
-            # the close would have ended it running.
-            await self._end_inline_cancelled(handle, context, on_complete, span, start)
-            return handle
         run = hold_task(
             self,
             self._inline_task(
@@ -538,6 +536,8 @@ class DelegationMixin(HelpersMixin):
                 max_result_retries=max_result_retries,
                 result_tool=result_tool,
             ),
+            awaited=True,
+            eager=True,
         )
         await await_interruptible(run)
         return handle

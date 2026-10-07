@@ -43,24 +43,50 @@ def hold_task(
     work: Coroutine[Any, Any, None],
     *,
     context: contextvars.Context | None = None,
+    awaited: bool = False,
+    eager: bool = False,
 ) -> asyncio.Task[None]:
     """Run *work* as a task *kit* holds until it ends, so its ``close()``
-    cancels it with the other background work (RFC §19.7.3, §23.3 step 8);
-    an exception it ends on is logged. *context*, when given, is the one it
-    runs in instead of a copy of the caller's. What runs under it reads it
-    in :func:`held_runs`."""
-    # The run is named in its own context before it starts, so what runs
-    # under it reads it from its first step (a cell, since the task does not
-    # exist until it is created).
-    run_context = context if context is not None else contextvars.copy_context()
-    cell: list[asyncio.Task[Any]] = []
-    run_context.run(_HELD_RUNS.set, (*run_context.get(_HELD_RUNS, ()), cell))
-    task = asyncio.create_task(work, context=run_context)
-    cell.append(task)
+    cancels it with the other background work and waits for its end (RFC
+    §19.7.3, §23.3). *eager* starts it at once (:func:`start_named`), for
+    work whose end runs in its own cancellation handler: a close then never
+    finds it unstarted, its end never run. An exception it ends on is
+    logged, unless its caller *awaited* it and receives it. *context*, when
+    given, is the one it runs in instead of a copy of the caller's."""
+    task = start_named(work, context=context, eager=eager)
     runs = kit._background_runs  # noqa: SLF001
     runs.add(task)
     task.add_done_callback(runs.discard)
-    task.add_done_callback(log_task_exception)
+    if not awaited:
+        task.add_done_callback(log_task_exception)
+    return task
+
+
+def start_named[T](
+    work: Coroutine[Any, Any, T],
+    *,
+    name: str | None = None,
+    context: contextvars.Context | None = None,
+    eager: bool = False,
+) -> asyncio.Task[T]:
+    """Start *work* as a task named in its own context, so the code it runs
+    and every task it starts read it in :func:`held_runs`: a ``close()`` from
+    under it spares it rather than wait for itself. *eager* runs its first
+    step at once. *context*, when given, is the one it runs in instead of a
+    copy of the caller's."""
+    # Named before it starts (a cell, since the task does not exist until it
+    # is created), so what runs under it reads it from its first step on.
+    run_context = context if context is not None else contextvars.copy_context()
+    cell: list[asyncio.Task[Any]] = []
+    run_context.run(_HELD_RUNS.set, (*run_context.get(_HELD_RUNS, ()), cell))
+    task = asyncio.Task(
+        work,
+        loop=asyncio.get_running_loop(),
+        name=name,
+        context=run_context,
+        eager_start=eager,
+    )
+    cell.append(task)
     return task
 
 

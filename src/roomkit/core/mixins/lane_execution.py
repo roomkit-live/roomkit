@@ -25,7 +25,7 @@ from roomkit.core.mixins.helpers import (
     _refuses_writes,
 )
 from roomkit.core.mixins.inbound_locked import _Blocked, _Ready
-from roomkit.core.task_utils import await_unless_cut
+from roomkit.core.task_utils import await_unless_cut, start_named
 from roomkit.models.delivery import DeliveryError, DeliveryResult
 from roomkit.models.enums import ChannelCategory, EventStatus, EventType, HookTrigger
 from roomkit.models.event import EventSource, RoomEvent
@@ -563,7 +563,7 @@ class LaneExecutionMixin(HelpersMixin):
                 attributes={"streams": len(cascade.streams)},
             )
 
-        task = asyncio.get_running_loop().create_task(
+        task = start_named(
             _consume(),
             name=f"roomkit-detached-streams-{room_id}",
             context=contextvars.Context(),
