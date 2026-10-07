@@ -228,8 +228,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `RoomKitError("The producer's task failed: ...")`; code that caught
   `RoomKitError` on a Loop now receives the `ProviderError`. A delegated
   task carries its worker's turn record under `metadata["turns"]` however
-  its turn ended, and a failed one keeps the failure itself in the new
-  `DelegatedTaskResult.exception` (in memory, never serialized).
+  its turn ended, the last turn's when a result tool re-prompted it, and a
+  failed one keeps the failure itself in the new
+  `DelegatedTaskResult.exception` (in memory, never serialized), marked
+  reported where its turn reported it. A task result holding a cut copies
+  and pickles: the turn errors rebuild from their own arguments.
 
 - The record a voice channel writes when a barge-in cuts the agent is the
   agent's words, not the listener's (RMK-533, RFC §12.3.13): it no longer

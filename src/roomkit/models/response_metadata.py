@@ -97,6 +97,10 @@ TURNS_KEY = "turns"
 """The caller's record key under which each replying channel's turn end is
 kept (RFC §6.4). RoomKit's own: a channel's record never carries it there."""
 
+TurnEntries = dict[str, dict[str, Any]]
+"""Each replying channel's turn entry (its end, its usage), by channel id, as
+a caller reads them under ``turns`` (RFC §6.4)."""
+
 
 def recorded_turn_end(record: Mapping[str, Any]) -> str | None:
     """How a turn ended, as its record names it (RFC §6.4): an AI channel's

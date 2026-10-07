@@ -1,8 +1,8 @@
 """A Loop whose producer's task failed says so (RMK-435, RMK-529, RFC
 §19.7.4, §23.3).
 
-The sync Loop no longer publishes an empty producer message: with no output
-at all the turn has no answer; with an earlier output, that output goes out,
+The sync Loop publishes no empty producer message: with no output at all
+the turn has no answer; with an earlier output, that output goes out,
 not approved, with why the loop stopped. Either way the caller reads how the
 producer's last turn ended under ``turns``, a cut there and no error, and a
 turn that failed as the error it raised, its type kept. The async Loop's

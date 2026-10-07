@@ -428,14 +428,13 @@ def _producer_failure(outcome: _LoopOutcome) -> Exception | None:
     if outcome.cut_reason:
         return None
     task = outcome.failure
-    failure = task.exception if task is not None else None
-    if failure is None:
-        error = task.error if task is not None else None
-        failure = RoomKitError(
-            f"The producer's task failed: {error}"
-            if error
-            else "The producer's task gave no output"
-        )
+    if task is not None and task.exception is not None:
+        # Marked reported where its turn reported it.
+        return task.exception
+    error = task.error if task is not None else None
+    failure = RoomKitError(
+        f"The producer's task failed: {error}" if error else "The producer's task gave no output"
+    )
     return mark_reported(failure) if _failed_in_its_turn(task) else failure
 
 

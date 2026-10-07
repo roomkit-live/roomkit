@@ -8,11 +8,12 @@ import time
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
+from pydantic.json_schema import SkipJsonSchema
 
-from roomkit.core._failure_log import was_reported
+from roomkit.core._failure_log import mark_reported, was_reported
 from roomkit.core.exceptions import TaskCutShortError, TaskTurnFailedError
 from roomkit.models.enums import TaskStatus
-from roomkit.models.response_metadata import TURNS_KEY
+from roomkit.models.response_metadata import TURNS_KEY, TurnEntries
 
 logger = logging.getLogger("roomkit.tasks")
 
@@ -29,7 +30,7 @@ class DelegatedTaskResult(BaseModel):
     status: TaskStatus = TaskStatus.COMPLETED
     output: str | None = None
     error: str | None = None
-    exception: Exception | None = Field(default=None, exclude=True)
+    exception: SkipJsonSchema[Exception | None] = Field(default=None, exclude=True)
     """The failure itself, its type kept (what the worker's turn raised),
     for a caller that hands it on; held in memory, never serialized (RFC
     §23.3 step 6)."""
@@ -148,7 +149,7 @@ def finished_task_fields(
     response: str | None,
     failure: BaseException | None,
     context: dict[str, Any] | None,
-    turns: dict[str, dict[str, Any]] | None = None,
+    turns: TurnEntries | None = None,
 ) -> dict[str, Any]:
     """The outcome of a delegated task that ran: completed with the worker's
     *response*, or failed with *failure*, kept as raised. A worker cut short
@@ -176,7 +177,9 @@ def finished_task_fields(
 
 def _as_raised(failure: BaseException | None) -> Exception | None:
     """What the worker's turn raised: a failed turn's own error, not the
-    wrapper that carries its end and narration."""
+    wrapper that carries its end and narration, marked reported when the
+    wrapper was, so whoever hands it on reports it no second time."""
     if isinstance(failure, TaskTurnFailedError) and isinstance(failure.__cause__, Exception):
-        return failure.__cause__
+        cause = failure.__cause__
+        return mark_reported(cause) if was_reported(failure) else cause
     return failure if isinstance(failure, Exception) else None

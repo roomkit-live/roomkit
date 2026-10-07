@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 from uuid import uuid4
 
 from roomkit.core._failure_log import log_failure
-from roomkit.core.event_router import stream_record, unanswered
+from roomkit.core.event_router import stream_turn_entry, unanswered
 from roomkit.core.lanes import DeliveryCascade
 from roomkit.core.mixins._response_reader import ResponseReader
 from roomkit.core.mixins._streaming_segments import LaneSink, SegmentWriter, TurnScope
@@ -28,7 +28,6 @@ from roomkit.models.response_metadata import (
     add_turn_entry,
     merge_caller_record,
     merge_channel_record,
-    turn_summary,
 )
 from roomkit.providers.utils import _aclose_stream
 
@@ -579,4 +578,4 @@ def _record_cancelled_read(
 
 def _add_turn(record: MutableMapping[str, Any], sr: StreamingResponse) -> None:
     """Put how *sr*'s turn ended under its channel in *record*'s ``turns``."""
-    add_turn_entry(record, sr.source_channel_id, turn_summary(stream_record(sr)))
+    add_turn_entry(record, sr.source_channel_id, stream_turn_entry(sr))

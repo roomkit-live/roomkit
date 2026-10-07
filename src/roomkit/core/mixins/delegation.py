@@ -40,6 +40,7 @@ from roomkit.models.enums import (
     Visibility,
 )
 from roomkit.models.event import EventSource, RoomEvent, TextContent
+from roomkit.models.response_metadata import TurnEntries
 from roomkit.tasks._child_status import record_task_end
 from roomkit.tasks.handback import CALLER_HANDS_BACK, bounded, hand_back, result_text
 from roomkit.tasks.models import (
@@ -559,7 +560,7 @@ class DelegationMixin(HelpersMixin):
         """Run an inline task's turn and end it, as one run the kit holds: a
         cut from its caller or from the kit's close ends it cancelled, its
         completion run to its end (RFC §23.3)."""
-        turns: dict[str, dict[str, Any]] = {}
+        turns: TurnEntries = {}
         turn = self._child_turn(
             handle,
             require_structured_result=require_structured_result,
@@ -611,7 +612,7 @@ class DelegationMixin(HelpersMixin):
         require_structured_result: bool,
         max_result_retries: int,
         result_tool: ResultTool | None,
-        turns: dict[str, dict[str, Any]],
+        turns: TurnEntries,
     ) -> asyncio.Task[str | None]:
         """The delegated turn, in a task of its own: the worker's turn sets
         its tool-loop context in a copy of the caller's, so a cut that ends

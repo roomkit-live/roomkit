@@ -18,6 +18,7 @@ from roomkit.core.task_utils import (
     start_named,
 )
 from roomkit.models.enums import TaskStatus
+from roomkit.models.response_metadata import TurnEntries
 from roomkit.tasks._child_status import record_task_end
 from roomkit.tasks.base import OnCompleteCallback, TaskRunner
 from roomkit.tasks.models import (
@@ -111,7 +112,7 @@ class InMemoryTaskRunner(TaskRunner):
         """Run the worker in the task's child room: the task's outcome."""
         agent_response: str | None = None
         failure: Exception | None = None
-        turns: dict[str, dict[str, Any]] = {}
+        turns: TurnEntries = {}
         try:
             # Update child room status
             room = await kit.get_room(task.child_room_id)

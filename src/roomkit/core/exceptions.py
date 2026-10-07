@@ -301,6 +301,11 @@ class TurnCutShortError(RoomKitError):
         super().__init__(message)
         self.reason = reason
 
+    def __reduce__(self) -> tuple[Any, ...]:
+        # Rebuilt from its own arguments, so a copy or a pickle of a task's
+        # result holds it.
+        return type(self), (str(self), self.reason), self.__dict__
+
 
 class TaskCutShortError(TurnCutShortError):
     """A delegated worker's turn ended before its answer (RFC §23.3).
@@ -320,6 +325,9 @@ class TaskCutShortError(TurnCutShortError):
     def __init__(self, reason: str, narration: str | None) -> None:
         super().__init__(self.message_for(reason), reason)
         self.narration = narration
+
+    def __reduce__(self) -> tuple[Any, ...]:
+        return type(self), (self.reason, self.narration), self.__dict__
 
     @staticmethod
     def message_for(reason: str) -> str:
@@ -345,3 +353,7 @@ class TaskTurnFailedError(RoomKitError):
         self.reason = reason
         self.narration = narration
         self.__cause__ = error
+
+    def __reduce__(self) -> tuple[Any, ...]:
+        cause = self.__cause__ if self.__cause__ is not None else RoomKitError(str(self))
+        return type(self), (cause, self.reason, self.narration), self.__dict__

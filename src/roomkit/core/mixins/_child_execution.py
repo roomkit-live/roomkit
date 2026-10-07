@@ -39,7 +39,7 @@ from roomkit.models.event import (
     TextContent,
     answer_text,
 )
-from roomkit.models.response_metadata import recorded_turn_end
+from roomkit.models.response_metadata import TurnEntries, recorded_turn_end
 from roomkit.models.store_filter import EventFilter
 from roomkit.providers.utils import _aclose_stream
 
@@ -52,10 +52,6 @@ if TYPE_CHECKING:
 
 
 _tasks_logger = logging.getLogger("roomkit.tasks")
-
-_Turns = dict[str, dict[str, Any]]
-"""Each responder's turn entry, by channel id, as a room turn's caller reads
-it under ``turns`` (RFC §6.4)."""
 
 
 class _TraceSink:
@@ -268,12 +264,15 @@ async def _child_context(kit: RoomKit, room: Room, bindings: list[ChannelBinding
 
 
 async def _broadcast_and_collect(
-    kit: RoomKit, child_room_id: str, message_body: str, *, turns: _Turns | None = None
+    kit: RoomKit, child_room_id: str, message_body: str, *, turns: TurnEntries | None = None
 ) -> str | None:
     """One delegated turn: store *message_body* as a system message, broadcast it,
     persist the agent's full trace (tool calls + messages), and return its text.
-    *turns* receives each responder's turn entry however the turn ended
-    (RFC §23.3 step 6)."""
+    *turns* holds each responder's entry for this turn, however it ended, in
+    place of the turn before (RFC §23.3 step 6: a re-prompted agent's record
+    is its last turn's)."""
+    if turns is not None:
+        turns.clear()
     room = await kit.get_room(child_room_id)
     bindings = await kit.store.list_bindings(child_room_id)
 
@@ -320,7 +319,7 @@ async def _answer_of_broadcast(
     result: BroadcastResult,
     bindings: list[ChannelBinding],
     child_depth: int,
-    turns: _Turns | None,
+    turns: TurnEntries | None,
 ) -> str | None:
     """A delegated broadcast's answer, by the room's path when a transport
     is shared, else the trace's; each responder's turn entry goes to *turns*
@@ -590,7 +589,7 @@ async def _run_with_structured_result(
     max_result_retries: int,
     result_tool: ResultTool | None = None,
     *,
-    turns: _Turns | None = None,
+    turns: TurnEntries | None = None,
 ) -> str:
     """Run a delegated agent that must hand its work back via a result tool
     (*result_tool*, ``submit_result`` by default). Injects the tool (for
@@ -647,7 +646,7 @@ async def _owed_result(
     worker_id: str,
     tool: ResultTool,
     *,
-    turns: _Turns | None = None,
+    turns: TurnEntries | None = None,
 ) -> tuple[dict[str, Any] | None, str | None]:
     """One turn of a worker that owes a result: what it submitted, and its
     text. A turn cut short, or failed after it began, keeps a result it
@@ -670,7 +669,7 @@ async def run_agent_in_child_room(
     require_structured_result: bool = False,
     max_result_retries: int = 3,
     result_tool: ResultTool | None = None,
-    turns: _Turns | None = None,
+    turns: TurnEntries | None = None,
 ) -> str | None:
     """Send a task to a child room and collect the attached agent's response.
 

@@ -43,7 +43,7 @@ from roomkit.models.event import (
     is_interruption_marker,
     is_tool_call_record,
 )
-from roomkit.models.response_metadata import turn_summary
+from roomkit.models.response_metadata import TurnEntries, turn_summary
 from roomkit.models.task import Observation, Task
 from roomkit.providers.utils import _aclose_stream
 
@@ -185,6 +185,12 @@ def stream_record(sr: StreamingResponse) -> dict[str, Any]:
     return {**sr.response_metadata, **(sr.turn_record or {})}
 
 
+def stream_turn_entry(sr: StreamingResponse) -> dict[str, Any] | None:
+    """A stream's entry under the caller's ``turns`` once read: its end and
+    usage (RFC §6.4)."""
+    return turn_summary(stream_record(sr))
+
+
 def reply_turn_entry(output: ChannelOutput) -> dict[str, Any] | None:
     """A buffered reply's entry under the caller's ``turns``: its end and
     usage, read off its record or else its last message (RFC §6.4)."""
@@ -196,7 +202,7 @@ def reply_turn_entry(output: ChannelOutput) -> dict[str, Any] | None:
     return turn_summary(output.response_metadata, *messages)
 
 
-def responder_turn_entries(result: BroadcastResult) -> dict[str, dict[str, Any]]:
+def responder_turn_entries(result: BroadcastResult) -> TurnEntries:
     """Each responder's entry under the caller's ``turns``, by its channel
     id: a buffered reply's, or a stream's once read (RFC §6.4)."""
     entries = {
@@ -205,8 +211,7 @@ def responder_turn_entries(result: BroadcastResult) -> dict[str, dict[str, Any]]
         if out.response_stream is None
     }
     entries.update(
-        (sr.source_channel_id, turn_summary(stream_record(sr)))
-        for sr in result.streaming_responses
+        (sr.source_channel_id, stream_turn_entry(sr)) for sr in result.streaming_responses
     )
     return {cid: entry for cid, entry in entries.items() if entry is not None}
 
