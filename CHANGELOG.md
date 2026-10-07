@@ -18,7 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   latest six tasks in its notes, read from the bus as the turn is built: what
   each was asked, how long it has run, its latest progress and that no result
   has come back, or how it ended; what a worker wrote is quoted on one line and
-  bounded, between quote marks it cannot close. A standalone turn carries none. Example:
+  bounded, between quote marks it cannot close; a worker's name keeps to an
+  identifier's characters and a task's ending to a known word. A standalone
+  turn carries none. Example:
   `examples/task_progress_note.py`.
 
 - An agent knows its answer was cut off (RMK-563, RFC §6.4). When a barge-in
