@@ -244,7 +244,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   failed one keeps the failure itself in the new
   `DelegatedTaskResult.exception` (in memory, never serialized), marked
   reported where its turn reported it. A task result holding a cut copies
-  and pickles: the turn errors rebuild from their own arguments.
+  and pickles: the turn errors rebuild from their own arguments. A task
+  cancelled from outside (a caller's timeout, `cancel_task`, `close()`) once
+  its worker's turn began carries it under `turns` as `cancelled`, as a room
+  turn's caller reads a cancelled read; one cut before its turn carries none.
 
 - The record a voice channel writes when a barge-in cuts the agent is the
   agent's words, not the listener's (RMK-533, RFC §12.3.13): it no longer

@@ -53,10 +53,12 @@ class InMemoryTaskRunner(TaskRunner):
         context: dict[str, Any] | None = None,
         on_complete: OnCompleteCallback | None = None,
     ) -> None:
-        fields = cancelled_task_fields(context)
-        end = partial(self._finish, kit, task, fields, time.monotonic(), on_complete)
+        turns: TurnEntries = {}
+        end = partial(
+            self._end_cancelled, kit, task, context, turns, time.monotonic(), on_complete
+        )
         bg = start_named(
-            self._execute(kit, task, context=context, on_complete=on_complete),
+            self._execute(kit, task, context=context, on_complete=on_complete, turns=turns),
             name=f"delegate:{task.id}",
         )
         bg.add_done_callback(log_task_exception)
@@ -96,23 +98,43 @@ class InMemoryTaskRunner(TaskRunner):
         *,
         context: dict[str, Any] | None = None,
         on_complete: OnCompleteCallback | None = None,
+        turns: TurnEntries,
     ) -> None:
         start = time.monotonic()
         task.status = TaskStatus.IN_PROGRESS
-        fields = await self._run(kit, task, context)
+        fields = await self._run(kit, task, context, turns)
         if self._cancelled_ends.pop(task.id, None) is None:
             # ``cancel`` took its end: it ends the task, cancelled.
             return
         # Its work ran: it ends as it stands, whatever cancels it now.
         await shielded(self._finish(kit, task, fields, start, on_complete))
 
+    async def _end_cancelled(
+        self,
+        kit: RoomKit,
+        task: DelegatedTask,
+        context: dict[str, Any] | None,
+        turns: TurnEntries,
+        start: float,
+        on_complete: OnCompleteCallback | None,
+    ) -> None:
+        """End a task cancelled from outside: cancelled, with no output, its
+        worker's turn under ``turns`` once its run had begun (RFC §23.3)."""
+        began = task.status == TaskStatus.IN_PROGRESS
+        fields = cancelled_task_fields(context, turns, worker=task.agent_id if began else None)
+        await self._finish(kit, task, fields, start, on_complete)
+
     async def _run(
-        self, kit: RoomKit, task: DelegatedTask, context: dict[str, Any] | None
+        self,
+        kit: RoomKit,
+        task: DelegatedTask,
+        context: dict[str, Any] | None,
+        turns: TurnEntries,
     ) -> dict[str, Any]:
-        """Run the worker in the task's child room: the task's outcome."""
+        """Run the worker in the task's child room, its turn's record into
+        *turns*: the task's outcome."""
         agent_response: str | None = None
         failure: Exception | None = None
-        turns: TurnEntries = {}
         try:
             # Update child room status
             room = await kit.get_room(task.child_room_id)

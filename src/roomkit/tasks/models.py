@@ -122,15 +122,28 @@ def task_work(result: Any) -> str:
     return getattr(result, "output", None) or ""
 
 
-def cancelled_task_fields(context: dict[str, Any] | None) -> dict[str, Any]:
+def cancelled_task_fields(
+    context: dict[str, Any] | None,
+    turns: TurnEntries | None = None,
+    *,
+    worker: str | None = None,
+) -> dict[str, Any]:
     """The outcome of a delegated task cancelled from outside (its caller's
-    timeout, the runner's ``cancel`` or ``close``): cancelled, with no output
-    (RFC §23.3)."""
+    timeout, the runner's ``cancel`` or ``close``): cancelled, with no output.
+    A task whose worker's turn had begun (*worker*) carries it under
+    ``turns``, ``cancelled``, over what its record held (*turns*), as a room
+    turn's caller reads a cancelled read; one cut before carries none (RFC
+    §23.3)."""
+    metadata = dict(context or {})
+    if worker is not None:
+        entries = dict(turns or {})
+        entries[worker] = {**entries.get(worker, {}), "loop_end_reason": "cancelled"}
+        metadata[TURNS_KEY] = entries
     return {
         "status": TaskStatus.CANCELLED,
         "output": None,
         "error": "cancelled",
-        "metadata": dict(context or {}),
+        "metadata": metadata,
     }
 
 

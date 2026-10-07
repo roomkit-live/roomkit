@@ -1,10 +1,12 @@
 """A delegated task carries its worker's turn record under ``turns`` however
-the turn ended, its last turn's when a result tool re-prompted it, and a
-failed one keeps the error its turn raised, its type unchanged and marked
-reported where its turn reported it (RMK-529, RFC §23.3 step 6)."""
+the turn ended, its last turn's when a result tool re-prompted it, ``cancelled``
+when a cut from outside lands once it began, and a failed one keeps the error
+its turn raised, its type unchanged and marked reported where its turn
+reported it (RMK-529, RFC §23.3)."""
 
 from __future__ import annotations
 
+import asyncio
 import copy
 import pickle
 from typing import Any
@@ -20,6 +22,7 @@ from roomkit.providers.ai.base import AIContext, AIResponse, AITool, AIToolCall,
 from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.tasks.models import DelegatedTaskResult
 from tests.test_framework import SimpleChannel
+from tests.test_kit_close_doors import _SlowWords
 
 DOORS = pytest.mark.parametrize("wait", [True, False], ids=["inline", "background"])
 PATHS = pytest.mark.parametrize(
@@ -132,3 +135,46 @@ async def test_a_cut_tasks_result_copies_and_pickles() -> None:
         assert isinstance(copied.exception, TaskCutShortError)
         assert (copied.exception.reason, copied.exception.narration) == ("max_rounds", "Checking.")
     assert "exception" not in DelegatedTaskResult.model_json_schema()["properties"]
+
+
+# -- a task cancelled from outside -------------------------------------------------
+
+
+async def _cut_kit(started: asyncio.Event) -> RoomKit:
+    kit = RoomKit()
+    kit.register_channel(SimpleChannel("sms"))
+    kit.register_channel(Agent("worker", provider=_SlowWords(started)))
+    await kit.create_room(room_id="r")
+    await kit.attach_channel("r", "sms")
+    return kit
+
+
+@pytest.mark.parametrize("cut", ["close-inline", "close-background", "cancel-task"])
+async def test_a_task_cut_mid_turn_carries_its_turn_cancelled(cut: str) -> None:
+    """Read as a room turn's caller reads a read cancelled from outside
+    (RFC §23.3, §6.4)."""
+    started = asyncio.Event()
+    kit = await _cut_kit(started)
+    call = asyncio.ensure_future(kit.delegate("r", "worker", "Go.", wait=cut == "close-inline"))
+    task = None if cut == "close-inline" else await call
+    await started.wait()
+    if cut == "cancel-task":
+        assert task is not None
+        await kit.cancel_task(task.id)
+    await kit.close()
+    task = task or await asyncio.wait_for(call, timeout=5.0)
+
+    assert task.result is not None
+    assert task.result.status == TaskStatus.CANCELLED
+    assert task.result.metadata["turns"] == {"worker": {"loop_end_reason": "cancelled"}}
+
+
+async def test_a_task_cut_before_its_turn_began_carries_none() -> None:
+    kit = await _cut_kit(asyncio.Event())
+    task = await kit.delegate("r", "worker", "Go.", wait=False)
+    await kit.cancel_task(task.id)
+    await kit.close()
+
+    assert task.result is not None
+    assert task.result.status == TaskStatus.CANCELLED
+    assert "turns" not in task.result.metadata

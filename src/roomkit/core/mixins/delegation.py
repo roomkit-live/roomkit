@@ -590,8 +590,10 @@ class DelegationMixin(HelpersMixin):
         except asyncio.CancelledError:
             # A cut from outside (a supervisor's per-task timeout through
             # asyncio.wait_for, the kit's close): the task ends as any task
-            # does, then the cancellation goes on.
-            await self._end_inline_cancelled(handle, context, on_complete, span, start)
+            # does, its begun turn on it, then the cancellation goes on.
+            await self._end_inline_cancelled(
+                handle, context, on_complete, span, start, turns=turns
+            )
             raise
         if failure is not None:
             log_failure(_tasks_logger, failure, f"Inline task {handle.id}")
@@ -613,13 +615,16 @@ class DelegationMixin(HelpersMixin):
         on_complete: Any | None,
         span: _DelegationSpan,
         start: float,
+        *,
+        turns: TurnEntries | None = None,
     ) -> None:
         """End an inline task cut before its answer: cancelled, with no
-        output, its completion run to its end whatever cancels it again."""
+        output, the worker's turn under ``turns`` when it had begun (*turns*
+        given), its completion run to its end whatever cancels it again."""
         elapsed = (time.monotonic() - start) * 1000
-        cancelled = _result_from_handle(
-            handle, duration_ms=elapsed, **cancelled_task_fields(context)
-        )
+        worker = handle.agent_id if turns is not None else None
+        fields = cancelled_task_fields(context, turns, worker=worker)
+        cancelled = _result_from_handle(handle, duration_ms=elapsed, **fields)
         await _finish_cleanup(self._complete_inline(handle, cancelled, on_complete, span))
 
     def _child_turn(
