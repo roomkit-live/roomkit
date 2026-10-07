@@ -119,6 +119,11 @@ class PhraseBackchannelDetector(BackchannelDetector):
             regardless of punctuation. Defaults to English and French.
         max_words: Longer utterances are never backchannels, whatever their
             words ("yeah yeah yeah, okay, sure, right" is someone talking).
+        cut_without_words: Whether an utterance without words may cut the bot
+            (the default): judged no backchannel, the strategy falls back on
+            its duration. ``False`` judges it a backchannel, so only words
+            interrupt: echo an AEC left, a cough or room noise never cut the
+            bot, and neither does a wordless interruption (RFC §12.3.13).
     """
 
     def __init__(
@@ -126,10 +131,12 @@ class PhraseBackchannelDetector(BackchannelDetector):
         phrases: Iterable[str] = ENGLISH_BACKCHANNELS + FRENCH_BACKCHANNELS,
         *,
         max_words: int = 4,
+        cut_without_words: bool = True,
     ) -> None:
         self._phrases = frozenset(words for phrase in phrases if (words := _words(phrase)))
         self._longest = max((len(p) for p in self._phrases), default=0)
         self._max_words = max_words
+        self._cut_without_words = cut_without_words
 
     @property
     def name(self) -> str:
@@ -138,7 +145,9 @@ class PhraseBackchannelDetector(BackchannelDetector):
     def classify(self, context: BackchannelContext) -> BackchannelDecision:
         words = _words(context.transcript or "")
         if not words:
-            return BackchannelDecision(is_backchannel=False, confidence=0.5, label="no words")
+            return BackchannelDecision(
+                is_backchannel=not self._cut_without_words, confidence=0.5, label="no words"
+            )
         if len(words) <= self._max_words and self._made_of_phrases(words):
             return BackchannelDecision(is_backchannel=True, label="acknowledgement")
         return BackchannelDecision(is_backchannel=False, label="interruption")

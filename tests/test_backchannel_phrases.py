@@ -68,6 +68,20 @@ def test_anything_else_is_an_interruption(text: str) -> None:
     assert not _is_backchannel(text)
 
 
+@pytest.mark.parametrize("text", [None, "", "  ", "..."])
+def test_without_words_the_duration_decides_by_default(text: str | None) -> None:
+    assert not _is_backchannel(text)
+
+
+@pytest.mark.parametrize("text", [None, "", "  ", "..."])
+def test_only_words_interrupt_when_asked(text: str | None) -> None:
+    """RMK-559: echo or noise the STT made no words of does not cut the bot."""
+    words_only = PhraseBackchannelDetector(cut_without_words=False)
+    assert _is_backchannel(text, words_only)
+    assert not _is_backchannel("Attends, stop", words_only)
+    assert _is_backchannel("Okay", words_only)
+
+
 def test_an_acknowledgement_growing_into_a_question_stops_being_one() -> None:
     """The channel classifies each partial: the later words decide."""
     assert _is_backchannel("Okay,")

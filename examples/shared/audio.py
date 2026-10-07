@@ -244,27 +244,35 @@ def build_vad(sample_rate: int = 24000, *, default: str = "energy") -> object | 
 def build_interruption(*, default: str = "semantic") -> InterruptionConfig:
     """Build the barge-in policy based on the ``INTERRUPTION`` env var.
 
-    Env: ``INTERRUPTION=semantic|confirmed|immediate|disabled`` (default from
-    *default*); ``INTERRUPTION_WAIT_MS`` for how long ``semantic`` waits for
-    the first words (default 2000).
+    Env: ``INTERRUPTION=semantic|words|confirmed|immediate|disabled`` (default
+    from *default*); ``INTERRUPTION_WAIT_MS`` for how long ``semantic`` and
+    ``words`` wait for the first words (default 2000).
 
     * ``semantic`` — the bot keeps talking through an acknowledgement
       ("okay", "mm-hmm", "d'accord") and stops for anything else, judged on
       the words a streaming STT hears (``PhraseBackchannelDetector``)
+    * ``words`` — as ``semantic``, and sound without words (echo, a cough,
+      room noise) never stops it: only words interrupt
     * ``confirmed`` — stops once the user has spoken for 300 ms
     * ``immediate`` — stops at the first sound taken for speech
     * ``disabled`` — never stops; the user's speech waits its turn
 
     Returns an :class:`InterruptionConfig` for ``VoiceChannel(interruption=...)``.
     """
-    strategy = InterruptionStrategy(os.environ.get("INTERRUPTION", default).lower())
-    detector = PhraseBackchannelDetector() if strategy == InterruptionStrategy.SEMANTIC else None
+    mode = os.environ.get("INTERRUPTION", default).lower()
+    words_only = mode == "words"
+    strategy = InterruptionStrategy.SEMANTIC if words_only else InterruptionStrategy(mode)
+    detector = (
+        PhraseBackchannelDetector(cut_without_words=not words_only)
+        if strategy == InterruptionStrategy.SEMANTIC
+        else None
+    )
     # How long SEMANTIC waits for the first words before judging on duration.
     # A streaming transducer gives a short word ("okay", "no") 1-1.5 s after it
     # starts, or only at the end (Nemotron, measured): speech that ends sooner
     # is judged on its final words instead.
     wait_ms = int(os.environ.get("INTERRUPTION_WAIT_MS", "2000"))
-    logger.info("Barge-in: %s (words awaited up to %d ms)", strategy.value, wait_ms)
+    logger.info("Barge-in: %s (words awaited up to %d ms)", mode, wait_ms)
     return InterruptionConfig(
         strategy=strategy, backchannel_detector=detector, transcript_wait_ms=wait_ms
     )

@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Only words interrupt, if asked (RMK-559, RFC §12.3.13):
+  `PhraseBackchannelDetector(cut_without_words=False)` judges an utterance the
+  STT made no words of a backchannel, so echo an AEC left, a cough or room noise
+  never cut the bot under SEMANTIC barge-in, however long it lasts (a wordless
+  interruption does not either). The default is unchanged: without words,
+  the duration decides. The examples' `INTERRUPTION=words` sets it.
+
 - Debug taps see a transport's own echo cancellation (RMK-552, RFC §12.3.15).
   With the AEC in the transport (`LocalAudioBackend(aec=...)`, `NATIVE_AEC`),
   `raw` was already echo-cancelled and `post_aec` equal to it, so the taps
