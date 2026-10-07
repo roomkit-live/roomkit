@@ -272,17 +272,23 @@ class InboundMixin(HelpersMixin):
             defer_delivery=defer_delivery,
         )
 
-    async def _refuse_on_timeout(self, room_id: str, channel_id: str) -> InboundResult:
+    async def _refuse_on_timeout(
+        self, room_id: str, channel_id: str | None, *, operation: str = "inbound"
+    ) -> InboundResult:
+        """Refuse what ``process_timeout`` stopped before its commit point
+        (RFC §13.6): an inbound event, or a regeneration still waiting for
+        the room lock (``operation="regenerate"``)."""
         logger.error(
-            "Inbound pre-commit timed out after %.1fs",
+            "Pre-commit of %s timed out after %.1fs",
+            operation,
             self._process_timeout,
             extra={"room_id": room_id, "channel_id": channel_id},
         )
+        data: dict[str, Any] = {"timeout": self._process_timeout}
+        if operation != "inbound":
+            data["operation"] = operation
         await self._emit_framework_event(
-            "process_timeout",
-            room_id=room_id,
-            channel_id=channel_id,
-            data={"timeout": self._process_timeout},
+            "process_timeout", room_id=room_id, channel_id=channel_id, data=data
         )
         return InboundResult(blocked=True, reason="process_timeout")
 
@@ -392,10 +398,7 @@ class InboundMixin(HelpersMixin):
         except BaseException:
             # The caller owns this cascade even if setup failed after commit,
             # before it could receive a deferred handle. Drain off the lock.
-            if cascade.waiter_would_deadlock():
-                cascade.cancel("caller_cancelled")
-            else:
-                await cascade.cancel_and_wait("caller_cancelled")
+            await cascade.abandon("caller_cancelled")
             raise
 
     async def _complete_inbound_delivery(

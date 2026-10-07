@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from contextlib import AsyncExitStack
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from roomkit.core.exceptions import RoomClosedError
@@ -15,7 +16,6 @@ from roomkit.models.event import RoomEvent
 from roomkit.models.response_metadata import merge_caller_record
 
 if TYPE_CHECKING:
-    from roomkit.core.event_router import BroadcastResult
     from roomkit.core.locks import RoomLockManager
     from roomkit.models.channel import ChannelBinding
     from roomkit.models.context import RoomContext
@@ -31,15 +31,15 @@ class RegenerateHost(Protocol):
     Attributes provided by the host's ``__init__``:
         _store: Conversation persistence backend.
         _lock_manager: Per-room lock for serialised mutation.
-        _process_timeout: Timeout in seconds for locked processing.
+        _process_timeout: Bound on the wait for the room lock and the choice
+            of the event to replay (RFC §13.6).
         _max_chain_depth: Chain depth ceiling, which sizes the reentry budget.
 
     Cross-mixin methods (provided by other mixins in the MRO):
         _get_router: From :class:`InboundLockedMixin`.
-        _commit_responses: From :class:`LaneExecutionMixin`.
-        _commit_blocked_events: From :class:`LaneExecutionMixin`.
+        _enqueue_exec: From :class:`LaneExecutionMixin`.
         _finish_cascade: From :class:`LaneExecutionMixin`.
-        _settle_buffered_replies: From :class:`LaneExecutionMixin`.
+        _refuse_on_timeout: From :class:`InboundMixin`.
     """
 
     _store: ConversationStore
@@ -61,10 +61,9 @@ class RegenerateMixin(HelpersMixin):
 
     # Cross-mixin methods — attribute annotations avoid MRO shadowing
     _get_router: Any  # see RegenerateHost
-    _commit_responses: Any  # see RegenerateHost
-    _commit_blocked_events: Any  # see RegenerateHost
+    _enqueue_exec: Any  # see RegenerateHost
     _finish_cascade: Any  # see RegenerateHost
-    _settle_buffered_replies: Any  # see RegenerateHost
+    _refuse_on_timeout: Any  # see RegenerateHost
 
     async def regenerate_target(self, room_id: str) -> RoomEvent | None:
         """The event :meth:`regenerate_response` would re-run the agent on.
@@ -151,13 +150,16 @@ class RegenerateMixin(HelpersMixin):
 
         Produces a fresh response to the most recent transport (human) message
         *without* ingesting a new inbound event — the triggering message keeps
-        its identity, index, and timestamp. The existing broadcast + streaming
-        pipeline is reused, so the new response re-enters like a first-time
-        turn's (RFC §10.1 step 14): its BEFORE_BROADCAST hooks run, its
-        source's right to write is checked, it counts against the reentry
+        its identity, index, and timestamp. The re-broadcast runs in the
+        room's delivery lane, off the room lock and unbounded, as an inbound
+        event's broadcast does (RFC §13.5, §13.6): a strategy that works in
+        ``on_event`` (a Loop, a Supervisor's delegation) goes to its end, and
+        the room takes messages meanwhile. The new response re-enters like a
+        first-time turn's (RFC §10.1 step 14): its BEFORE_BROADCAST hooks run,
+        its source's right to write is checked, it counts against the reentry
         budget, it is persisted, streamed, and runs its AFTER_BROADCAST hooks,
         and it comes back in ``response_events``. The trigger message's own
-        hooks are not re-run.
+        hooks are not re-run, nor its delivery report or ``event_processed``.
 
         Replacement semantics are the caller's concern: any responses already
         present after the last inbound message should be removed *before* calling
@@ -184,7 +186,10 @@ class RegenerateMixin(HelpersMixin):
         when there is no inbound message to regenerate (no transport message, or
         its source binding can no longer write) — with ``trigger_id`` set, that
         same state is a moved trigger and comes back blocked instead of
-        ``None``. A room whose status refuses
+        ``None``. ``process_timeout`` bounds only the wait for the room lock
+        and the choice of the trigger: past it, the call returns
+        ``InboundResult(blocked=True, reason="process_timeout")`` without
+        running the agent. A room whose status refuses
         new events (RFC §5.1) is refused *before* the agent runs, with
         ``InboundResult(blocked=True, reason="room_closed")`` and a
         ``room_refused_event`` framework event — exactly as
@@ -197,101 +202,106 @@ class RegenerateMixin(HelpersMixin):
         intelligence-channel path; orchestrated rooms (routing installed as
         BEFORE_BROADCAST hooks) are not re-routed here.
         """
-        pending_streams: list[Any] = []
-        regenerated: list[RoomEvent] = []
-        trigger: RoomEvent | None = None
+        cascade = DeliveryCascade(room_id, reentry_budget=self._max_chain_depth * 10)
+        try:
+            planned = await self._plan_regeneration(room_id, trigger_id, cascade)
+            if not isinstance(planned, RoomEvent):
+                return planned
+            return await self._finish_regeneration(room_id, planned, cascade)
+        except BaseException:
+            # The caller owns the cascade: a caller cancelled stops its
+            # delivery tail, off the lock, as on the inbound path.
+            await cascade.abandon("caller_cancelled")
+            raise
 
-        async with self._lock_manager.locked(room_id):
-            context, found = await self._regenerate_target(room_id)
-
-            # RFC §5.1 — the regenerated answer would be refused at commit, so
-            # refuse here, before the agent runs: a closed room must not cost
-            # a generation (tools, tokens) for an answer nothing can persist.
-            # Under the lock for the same reason as the inbound gate (§10.1
-            # step 6): close_room() takes it, and a status read before it can
-            # be stale by the time the turn would commit. Nothing is written.
-            if context.room.status in _REFUSING_STATUSES:
-                return await self._refuse_closed_room(
-                    room_id,
-                    status=context.room.status,
-                    operation="regenerate",
-                    event=found[0] if found is not None else None,
-                )
-
-            # The compare half of a compare-and-regenerate: the host prepared
-            # for one trigger, and the selection under the lock is the truth.
-            if trigger_id is not None and (found is None or found[0].id != trigger_id):
-                logger.info(
-                    "Regenerate refused: trigger %s is no longer the selection of room %s",
-                    trigger_id,
-                    room_id,
-                    extra={"room_id": room_id, "event_id": trigger_id},
-                )
-                return InboundResult(blocked=True, reason="trigger_moved")
-
-            if found is None:
-                return None
+    async def _plan_regeneration(
+        self, room_id: str, trigger_id: str | None, cascade: DeliveryCascade
+    ) -> RoomEvent | InboundResult | None:
+        """Choose the event to replay under the room lock and put its
+        re-broadcast in the room's lane: the trigger, or what the call
+        returns instead (a refusal, ``None`` when nothing qualifies). The
+        wait for the lock and the choice are bounded by ``process_timeout``,
+        the broadcast is not (RFC §13.6)."""
+        async with AsyncExitStack() as stack:
+            try:
+                async with asyncio.timeout(self._process_timeout):
+                    await stack.enter_async_context(self._lock_manager.locked(room_id))
+                    context, found = await self._regenerate_target(room_id)
+            except TimeoutError:
+                return await self._refuse_on_timeout(room_id, None, operation="regenerate")
+            refusal = await self._refuse_regeneration(room_id, context, found, trigger_id)
+            if refusal is not None or found is None:
+                return refusal
             trigger, source_binding = found
+            self._enqueue_regeneration(room_id, trigger, source_binding, context, cascade)
+            return trigger
 
-            # Scope the re-broadcast to intelligence channels: only the agent
-            # regenerates, no transport re-delivery of the user's message.
-            intel_trigger = trigger.model_copy(update={"visibility": "intelligence"})
-
-            router = self._get_router()
-            broadcast_result = await asyncio.wait_for(
-                router.broadcast(intel_trigger, source_binding, context),
-                timeout=self._process_timeout,
-            )
-
-            pending_streams.extend(broadcast_result.streaming_responses)
-
-            # Non-streaming providers return the response as reentry events.
-            # Each takes its own commit pass after the lock (below), as any
-            # response does (RFC §10.1 step 14): the delivery cursor must not
-            # reach a regenerated answer before the room's lane has actually
-            # delivered it (RFC §10.2).
-            regenerated = list(broadcast_result.reentry_events)
-
-        return await self._finish_regeneration(
-            room_id,
-            context,
-            trigger,
-            broadcast_result,
-            regenerated,
-            pending_streams,
-        )
-
-    async def _finish_regeneration(
+    async def _refuse_regeneration(
         self,
         room_id: str,
         context: RoomContext,
-        trigger: RoomEvent,
-        broadcast_result: BroadcastResult,
-        regenerated: list[RoomEvent],
-        pending_streams: list[Any],
-    ) -> InboundResult:
-        """Deliver what a regeneration produced, off the room lock, and report it."""
-        # Outside the room lock (RFC §10.1): the regenerated answers reach
-        # transports through the room's delivery lane — which also fires their
-        # AFTER_BROADCAST hooks once each delivery set completes (step 16) —
-        # then streaming delivery (which can take seconds). One cascade for
-        # the whole regeneration: what the other agents answer to the new
-        # answer is read with it (RFC §8.3), the regenerated stream first.
-        cascade = DeliveryCascade(room_id, reentry_budget=self._max_chain_depth * 10)
-        cascade.add_streams(pending_streams)
-        # What the re-broadcast blocked is stored and announced, and its side
-        # effects kept, as the inbound path does (RFC §8.3).
-        await self._commit_blocked_events(room_id, broadcast_result)
-        await self._persist_side_effects(
-            room_id, broadcast_result.tasks, broadcast_result.observations, trigger, context
-        )
-        await self._commit_responses(room_id, regenerated, trigger.response_visibility, cascade)
-        # The buffered replies settle as on the inbound path: an error card
-        # per failed agent, the buffered failure the caller's first, each
-        # reply's end under ``turns`` (RFC §6.4, §10.1 step 18).
-        await self._settle_buffered_replies(cascade, trigger, context, broadcast_result, root=True)
-        stream_error, stream_meta = await self._finish_cascade(cascade, room_id, caller_logs=True)
+        found: tuple[RoomEvent, ChannelBinding] | None,
+        trigger_id: str | None,
+    ) -> InboundResult | None:
+        """What refuses the regeneration under the lock, before the agent
+        runs: a room that accepts no new event, or a trigger that moved."""
+        # RFC §5.1 — the regenerated answer would be refused at commit, so
+        # refuse here, before the agent runs: a closed room must not cost
+        # a generation (tools, tokens) for an answer nothing can persist.
+        # Under the lock for the same reason as the inbound gate (§10.1
+        # step 6): close_room() takes it, and a status read before it can
+        # be stale by the time the turn would commit. Nothing is written.
+        if context.room.status in _REFUSING_STATUSES:
+            return await self._refuse_closed_room(
+                room_id,
+                status=context.room.status,
+                operation="regenerate",
+                event=found[0] if found is not None else None,
+            )
+        # The compare half of a compare-and-regenerate: the host prepared
+        # for one trigger, and the selection under the lock is the truth.
+        if trigger_id is not None and (found is None or found[0].id != trigger_id):
+            logger.info(
+                "Regenerate refused: trigger %s is no longer the selection of room %s",
+                trigger_id,
+                room_id,
+                extra={"room_id": room_id, "event_id": trigger_id},
+            )
+            return InboundResult(blocked=True, reason="trigger_moved")
+        return None
 
+    def _enqueue_regeneration(
+        self,
+        room_id: str,
+        trigger: RoomEvent,
+        source_binding: ChannelBinding,
+        context: RoomContext,
+        cascade: DeliveryCascade,
+    ) -> None:
+        """Put *trigger*'s re-broadcast in the room's lane, behind every
+        event committed so far, as a rerun (``DeliveryPlan.rerun``)."""
+        # Scope the re-broadcast to intelligence channels: only the agent
+        # regenerates, no transport re-delivery of the user's message.
+        intel_trigger = trigger.model_copy(update={"visibility": "intelligence"})
+        plan = self._get_router().plan(intel_trigger, source_binding, context)
+        plan.rerun = True
+        plan.fire_after_broadcast = False
+        plan.response_visibility = trigger.response_visibility
+        cascade.retain()
+        self._enqueue_exec(
+            room_id, plan, cascade, index=None, after_index=context.room.latest_index
+        )
+
+    async def _finish_regeneration(
+        self, room_id: str, trigger: RoomEvent, cascade: DeliveryCascade
+    ) -> InboundResult:
+        """The regeneration's result once its cascade ends: the trigger, the
+        new answers and what they ended with (RFC §10.1 step 18)."""
+        # The lane delivers the new answers — their commit passes, their
+        # AFTER_BROADCAST hooks, what the other agents answer to them (RFC
+        # §8.3) — then the streams the regeneration started are read here,
+        # outside the lock (TTS delivery can take seconds).
+        stream_error, stream_meta = await self._finish_cascade(cascade, room_id, caller_logs=True)
         result = InboundResult(event=trigger)
         result.report_cascade(cascade)
         if stream_error is not None and result.error is None:

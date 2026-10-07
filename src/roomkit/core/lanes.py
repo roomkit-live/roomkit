@@ -116,6 +116,16 @@ class DeliveryPlan:
     # True on the root pass of an inbound/send_event call: emits
     # ``event_processed`` once the delivery set has executed.
     emit_processed: bool = False
+    # A committed event broadcast again (a regeneration, RFC §13.6): the
+    # caller reads its replies as a root pass's, its side effects are kept,
+    # and nothing of its first pass is repeated (its delivery report, its
+    # AFTER_BROADCAST, ``event_processed``).
+    rerun: bool = False
+
+    @property
+    def answers_caller(self) -> bool:
+        """Whether the pass's replies are the caller's own (RFC §10.1 step 18)."""
+        return self.emit_processed or self.rerun
 
 
 class DeliveryCascade:
@@ -227,6 +237,15 @@ class DeliveryCascade:
         # step. No generator is closed concurrently with its running task.
         for response in self.streams:
             await _aclose_stream(response.stream)
+
+    async def abandon(self, reason: str) -> None:
+        """Stop the delivery tail of a cascade its caller left (cancelled or
+        failed): drained within :meth:`cancel_and_wait`'s budget, or only
+        cancelled when the caller is the lane or holds the room lock."""
+        if self.waiter_would_deadlock():
+            self.cancel(reason)
+        else:
+            await self.cancel_and_wait(reason)
 
     async def cancel_and_wait(self, reason: str, timeout: float = 5.0) -> None:
         """Request cancellation once and join cleanup within one fixed budget.

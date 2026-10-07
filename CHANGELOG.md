@@ -187,6 +187,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `regenerate_response` runs its re-broadcast as an inbound event's runs, in
+  the room's delivery lane, off the room lock and unbounded (RMK-525, RFC
+  §13.5, §13.6). It held the room lock for the whole broadcast and cut it at
+  `process_timeout`: a strategy that works in `on_event` (a synchronous Loop, a
+  Supervisor's delegation) was cancelled at 30 s and the call raised a bare
+  `TimeoutError`, while no message could enter the room. `process_timeout` now
+  bounds only the wait for the room lock and the choice of the trigger; past
+  it the call returns `InboundResult(blocked=True, reason="process_timeout")`
+  and emits `process_timeout` with `operation = "regenerate"`. The trigger's
+  own `AFTER_BROADCAST`, delivery report and `event_processed` are still not
+  repeated; its side effects are kept.
+
 - A conference with a realtime model keeps three contracts a realtime voice
   channel keeps with the same provider (RMK-523, RFC §12.10.12, §12.4, §7.5).
   Under a `muted` or `output_muted` binding, a broadcast is injected silently

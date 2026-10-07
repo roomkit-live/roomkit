@@ -694,15 +694,19 @@ class LaneExecutionMixin(HelpersMixin):
             # reporting and the caller-facing error all describe the
             # trigger's own delivery set, never a reentry's.
             await self._report_root_pass(plan, result, cascade)
+        elif plan.rerun:
+            # A regeneration's delivery set was reported on its first pass;
+            # its replies are the caller's (RFC §10.1 step 18).
+            await self._settle_buffered_replies(cascade, event, context, result, root=True)
 
         # A stream any pass started is read by the caller (RFC §8.3); one a
         # reentry pass or a streamed segment's delivery started answers an
         # answer, and is chained.
-        cascade.add_streams(result.streaming_responses, chained=not plan.emit_processed)
+        cascade.add_streams(result.streaming_responses, chained=not plan.answers_caller)
 
         await self._commit_blocked_events(room_id, result)
 
-        if plan.fire_after_broadcast:
+        if plan.fire_after_broadcast or plan.rerun:
             await self._persist_side_effects(
                 room_id,
                 plan.hook_tasks + result.tasks,
@@ -710,6 +714,7 @@ class LaneExecutionMixin(HelpersMixin):
                 event,
                 context,
             )
+        if plan.fire_after_broadcast:
             await self._hook_engine.run_async_hooks(
                 room_id, HookTrigger.AFTER_BROADCAST, event, context
             )
