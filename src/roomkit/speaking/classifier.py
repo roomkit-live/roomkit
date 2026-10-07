@@ -68,8 +68,8 @@ ANSWERED = YesNoQuestion(
     "`last_turn` answer it, even with 'no', 'never mind' or 'it was just a test'?"
 )
 """An answer to the assistant's question neither names it nor asks it anything:
-judged on ``last_turn`` alone, "Non, c'était un test" read directness 0.4 and
-request 0.07."""
+judged on ``last_turn`` alone, an answer such as "No, it was just a test" read
+directness 0.4 and request 0.07."""
 
 ANSWERS = YesNoQuestion(
     "Does one of `assistant_thought.want_to_say` answer a question asked, or a need "
@@ -106,8 +106,8 @@ LANGUAGE_INSTRUCTIONS = (
     "exclamation, maybe misheard by the speech recognizer, does not change it; a whole "
     "sentence in another language, or a request to switch, does."
 )
-"""Judged over the recent turns: alone, a « Quoi ? » transcribed « What? » switched
-a French conversation to English."""
+"""Judged over the recent turns: alone, one word the speech recognizer heard as
+English ("What?") switched a conversation in another language to English."""
 
 _OTHER_LANGUAGE = "other"
 
@@ -196,7 +196,7 @@ class ClassifierSpeakPolicy(SpeakPolicy):
             them for a :meth:`compose` of your own.
         languages: The languages the agent answers in, each with the line its
             turn's notes carry when the speaker speaks it, best written in that
-            language (``{"French": "Réponds en français uniquement."}``). Empty:
+            language (``{"English": "Answer in English only."}``). Empty:
             the language is not judged.
         history: How many turns before the event the classifier reads.
         proactivity: How sure the policy must be that what the agent wants to

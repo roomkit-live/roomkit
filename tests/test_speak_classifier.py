@@ -114,11 +114,11 @@ def _turn(*recent: Any, event: Any, people: tuple[str, ...] = ("Sylvain", "Paul"
 async def test_the_classifier_reads_the_turns_by_speaker_the_agent_under_its_name() -> None:
     classifier = MockClassifier({"directness": 3.0})
     policy = ClassifierSpeakPolicy(classifier, agent_name="Nova", agent_role="meeting assistant")
-    question = _said("Nova, tu peux résumer ?")
+    question = _said("Nova, can you sum up?")
     turn = _turn(
-        (_said("On parle du budget", pid="p2"), "Paul"),
-        (_said("Je résume ?", pid=None, channel_id="ai1"), ""),
-        (_said("Une image", pid="p3"), ""),
+        (_said("We are talking about the budget", pid="p2"), "Paul"),
+        (_said("Shall I sum up?", pid=None, channel_id="ai1"), ""),
+        (_said("A picture", pid="p3"), ""),
         event=question,
     )
 
@@ -130,11 +130,11 @@ async def test_the_classifier_reads_the_turns_by_speaker_the_agent_under_its_nam
         "agent": {"name": "Nova", "role": "meeting assistant"},
         "people": ["Sylvain", "Paul"],
         "recent_turns": [
-            {"speaker": "Paul", "text": "On parle du budget"},
-            {"speaker": "Nova", "text": "Je résume ?"},
-            {"speaker": "someone", "text": "Une image"},
+            {"speaker": "Paul", "text": "We are talking about the budget"},
+            {"speaker": "Nova", "text": "Shall I sum up?"},
+            {"speaker": "someone", "text": "A picture"},
         ],
-        "last_turn": {"speaker": "Sylvain", "text": "Nova, tu peux résumer ?"},
+        "last_turn": {"speaker": "Sylvain", "text": "Nova, can you sum up?"},
     }
     assert set(questions) == set(QUESTIONS)
     assert decision.judgments["directness"] == 3.0
@@ -144,10 +144,10 @@ async def test_the_classifier_reads_the_turns_by_speaker_the_agent_under_its_nam
 async def test_history_bounds_the_turns_read() -> None:
     classifier = MockClassifier()
     policy = ClassifierSpeakPolicy(classifier, agent_name="Nova", history=2)
-    earlier = [(_said(f"tour {i}"), "Sylvain") for i in range(5)]
-    await policy.decide(_turn(*earlier, event=_said("et alors")))
+    earlier = [(_said(f"turn {i}"), "Sylvain") for i in range(5)]
+    await policy.decide(_turn(*earlier, event=_said("and then")))
     state, _ = classifier.calls[0]
-    assert [t["text"] for t in state["recent_turns"]] == ["tour 3", "tour 4"]
+    assert [t["text"] for t in state["recent_turns"]] == ["turn 3", "turn 4"]
     assert "role" not in state["agent"]
 
 
@@ -161,21 +161,23 @@ async def test_one_person_makes_any_request_the_agents() -> None:
 
 
 async def test_the_language_is_judged_and_named_in_the_notes() -> None:
-    languages = {"French": "Réponds en français uniquement.", "English": "Answer in English only."}
-    classifier = MockClassifier({"directness": 3.0, "language": "French"})
+    languages = {"English": "Answer in English only.", "German": "Answer in German only."}
+    classifier = MockClassifier({"directness": 3.0, "language": "German"})
     policy = ClassifierSpeakPolicy(classifier, agent_name="Nova", languages=languages)
 
     decision = await policy.decide(_turn(event=_said("Nova ?")))
 
     _, questions = classifier.calls[0]
-    assert set(questions["language"].options) == {"French", "English", "other"}  # type: ignore[union-attr]
-    assert decision.notes == ("Réponds en français uniquement.",)
-    assert decision.judgments["language=French"] == 1.0
+    assert set(questions["language"].options) == {"English", "German", "other"}  # type: ignore[union-attr]
+    assert decision.notes == ("Answer in German only.",)
+    assert decision.judgments["language=German"] == 1.0
 
 
 async def test_another_language_adds_no_note() -> None:
     classifier = MockClassifier({"directness": 3.0, "language": "other"})
-    policy = ClassifierSpeakPolicy(classifier, agent_name="Nova", languages={"French": "fr"})
+    policy = ClassifierSpeakPolicy(
+        classifier, agent_name="Nova", languages={"English": "Answer in English only."}
+    )
     assert (await policy.decide(_turn(event=_said("Nova ?")))).notes == ()
 
 
@@ -185,7 +187,7 @@ def test_other_is_not_a_language_name() -> None:
 
 
 async def test_a_question_is_replaced_by_name_and_compose_overridden() -> None:
-    hush = YesNoQuestion("Does `last_turn` say « chut » to the assistant?")
+    hush = YesNoQuestion("Does `last_turn` say 'shh' to the assistant?")
     urgency = ScoreQuestion("How urgent?", ("later", "now"))
     classifier = MockClassifier({"urgency": 1.0})
 
@@ -197,7 +199,7 @@ async def test_a_question_is_replaced_by_name_and_compose_overridden() -> None:
             return decision
 
     policy = Urgent(classifier, agent_name="Nova", questions={"hush": hush, "urgency": urgency})
-    decision = await policy.decide(_turn(event=_said("Il y a le feu")))
+    decision = await policy.decide(_turn(event=_said("The building is on fire")))
 
     _, questions = classifier.calls[0]
     assert questions["hush"] is hush
@@ -218,7 +220,7 @@ async def test_an_event_without_text_is_not_judged() -> None:
 
 
 def _channel(classifier: MockClassifier) -> tuple[AIChannel, MockAIProvider]:
-    provider = MockAIProvider(responses=["Oui ?"])
+    provider = MockAIProvider(responses=["Yes?"])
     policy = ClassifierSpeakPolicy(classifier, agent_name="Nova")
     return AIChannel("ai1", provider=provider, speak_policy=policy), provider
 
@@ -235,7 +237,7 @@ def _context(*events: Any, participants: list[Participant] | None = None) -> Roo
 
 async def test_on_the_channel_a_turn_for_someone_else_runs_nothing() -> None:
     channel, provider = _channel(MockClassifier({"directness": 0.1}))
-    event = _said("Paul, tu as les chiffres ?")
+    event = _said("Paul, do you have the numbers?")
     output = await channel.on_event(event, _BINDING, _context(event))
     assert output.responded is False
     assert provider.calls == []
@@ -245,15 +247,15 @@ async def test_on_the_channel_a_failing_classifier_lets_the_agent_speak() -> Non
     channel, provider = _channel(MockClassifier(error=ClassifierError("down")))
     event = _said("Nova ?")
     run = await respond(channel, event, _BINDING, _context(event))
-    assert run.text == "Oui ?"
+    assert run.text == "Yes?"
 
 
 # -- the turn the channel builds ------------------------------------------------------
 
 
 def test_the_turn_names_speakers_and_marks_the_agents_answers() -> None:
-    before = _said("Bonjour", pid="p2")
-    answer = _said("Bonjour Paul", pid=None, channel_id="ai1")
+    before = _said("Hello", pid="p2")
+    answer = _said("Hello Paul", pid=None, channel_id="ai1")
     stamped = _said("Et moi", pid="p1", metadata={"sender_name": "Marie"})
     event = _said("Nova ?")
     turn = _speak_turn(event, _context(before, answer, stamped, event), "ai1")
@@ -279,8 +281,8 @@ def test_people_leave_out_agents_bots_and_the_agents_channel() -> None:
 
 def test_people_count_the_voices_of_one_microphone() -> None:
     voices = [
-        _said("Salut", metadata={"sender_name": "Speaker 1"}),
-        _said("Salut à toi", metadata={"sender_name": "Speaker 2"}),
+        _said("Hi", metadata={"sender_name": "Speaker 1"}),
+        _said("Hello to you", metadata={"sender_name": "Speaker 2"}),
     ]
     event = _said("Nova ?", metadata={"sender_name": "Speaker 1"})
     turn = _speak_turn(event, _context(*voices, event, participants=[_person("p1", "Mic")]), "ai1")
@@ -291,9 +293,9 @@ def test_the_turn_holds_only_what_the_channel_may_know() -> None:
     """RFC §7.5 rule 8: an event withheld from the AI channel at delivery does not
     reach its policy, which may send the turn to a classifier outside."""
     shown = _said("Le budget est de 40 000 $")
-    to_sms_only = _said("Le code d'accès est 4417", visibility="sms1")
+    to_sms_only = _said("The access code is 4417", visibility="sms1")
     internal = _said("note interne", visibility="internal")
-    own = _said("Je note.", pid=None, channel_id="ai1", visibility="sms1")
+    own = _said("Noted.", pid=None, channel_id="ai1", visibility="sms1")
     event = _said("Nova ?")
 
     turn = _speak_turn(event, _context(shown, to_sms_only, internal, own, event), "ai1")

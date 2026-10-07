@@ -46,7 +46,7 @@ _SMS = ChannelBinding(
 
 
 def _channel(policy: Any, **kwargs: Any) -> tuple[AIChannel, MockAIProvider]:
-    provider = MockAIProvider(responses=["Oui ?"])
+    provider = MockAIProvider(responses=["Yes?"])
     return AIChannel("ai1", provider=provider, speak_policy=policy, **kwargs), provider
 
 
@@ -80,7 +80,7 @@ class _Memory(SlidingWindowMemory):
 async def test_silent_runs_no_turn_but_the_memory_learns_the_event() -> None:
     memory = _Memory()
     channel, provider = _channel(MockSpeakPolicy(["silent"]), memory=memory)
-    event = make_event(body="Paul, tu as les chiffres ?", channel_id="sms1", room_id="r1")
+    event = make_event(body="Paul, do you have the numbers?", channel_id="sms1", room_id="r1")
 
     output = await channel.on_event(event, _BINDING, _context())
 
@@ -97,7 +97,7 @@ async def test_speak_runs_the_turn_with_the_decision_notes() -> None:
         channel, make_event(body="Nova ?", channel_id="sms1", room_id="r1"), _BINDING, _context()
     )
 
-    assert run.text == "Oui ?"
+    assert run.text == "Yes?"
     assert "Answer in French only." in _last_input(provider)
 
 
@@ -106,7 +106,7 @@ async def test_offer_asks_to_offer_rather_than_answer() -> None:
 
     await respond(
         channel,
-        make_event(body="On cherche le chiffre.", channel_id="sms1", room_id="r1"),
+        make_event(body="We are looking for the figure.", channel_id="sms1", room_id="r1"),
         _BINDING,
         _context(),
     )
@@ -117,8 +117,8 @@ async def test_offer_asks_to_offer_rather_than_answer() -> None:
 async def test_the_policy_reads_the_conversation_before_the_event_and_who_is_there() -> None:
     policy = MockSpeakPolicy(["speak"])
     channel, _ = _channel(policy)
-    before = make_event(body="Bonjour", channel_id="sms1", room_id="r1")
-    event = make_event(body="Nova, une question", channel_id="sms1", room_id="r1")
+    before = make_event(body="Hello", channel_id="sms1", room_id="r1")
+    event = make_event(body="Nova, a question", channel_id="sms1", room_id="r1")
 
     await respond(channel, event, _BINDING, _context(before, event, people=("Sylvain", "Paul")))
 
@@ -138,7 +138,7 @@ async def test_an_instruction_is_not_submitted_to_the_policy() -> None:
     run = await respond(channel, instruction, _BINDING, _context())
 
     assert policy.turns == []
-    assert run.text == "Oui ?"
+    assert run.text == "Yes?"
 
 
 @pytest.mark.parametrize(
@@ -162,7 +162,7 @@ async def test_a_policy_that_fails_or_is_late_does_not_silence_the_agent(
             _context(),
         )
 
-    assert run.text == "Oui ?"
+    assert run.text == "Yes?"
     assert decisions[0].decision.reason == "fallback"
     assert "speaking" in caplog.text
 
@@ -185,7 +185,7 @@ async def _kit(policy: Any) -> tuple[RoomKit, MockAIProvider]:
     from roomkit.providers.sms.mock import MockSMSProvider
 
     kit = RoomKit()
-    provider = MockAIProvider(responses=["Oui ?"])
+    provider = MockAIProvider(responses=["Yes?"])
     kit.register_channel(AIChannel("ai1", provider=provider, speak_policy=policy))
     kit.register_channel(SMSChannel("sms1", provider=MockSMSProvider()))
     await kit.create_room(room_id="r1")
@@ -212,7 +212,7 @@ async def test_every_decision_reaches_on_speak_decision(advance: Any) -> None:
 
     await kit.process_inbound(
         InboundMessage(
-            channel_id="sms1", sender_id="u1", content=TextContent(body="Paul, tu viens ?")
+            channel_id="sms1", sender_id="u1", content=TextContent(body="Paul, are you coming?")
         )
     )
     await advance()
@@ -234,7 +234,7 @@ async def test_without_a_policy_nothing_is_decided(advance: Any) -> None:
         seen.append(event)
 
     await kit.process_inbound(
-        InboundMessage(channel_id="sms1", sender_id="u1", content=TextContent(body="Bonjour"))
+        InboundMessage(channel_id="sms1", sender_id="u1", content=TextContent(body="Hello"))
     )
     await advance()
     await kit.close()
@@ -252,7 +252,7 @@ async def test_always_speak_answers_and_reports_each_decision(advance: Any) -> N
         seen.append(event)
 
     await kit.process_inbound(
-        InboundMessage(channel_id="sms1", sender_id="u1", content=TextContent(body="Bonjour"))
+        InboundMessage(channel_id="sms1", sender_id="u1", content=TextContent(body="Hello"))
     )
     await advance()
     await kit.close()

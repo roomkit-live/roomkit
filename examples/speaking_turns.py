@@ -4,10 +4,10 @@ Two people talk in one room with an agent, Nova. Nova speaks when someone names
 her, offers when a question goes to nobody in particular, and otherwise listens
 (RFC §6.4):
 
-1. "Paul, tu as les chiffres de septembre ?" goes to Paul: Nova stays silent.
+1. "Paul, do you have the September numbers?" goes to Paul: Nova stays silent.
    No turn runs, nothing is generated, and the message is stored all the same.
-2. "Nova, tu peux résumer ?" names her: she speaks.
-3. "Quelqu'un sait quand est la démo ?" asks nobody in particular: she offers,
+2. "Nova, can you sum up?" names her: she speaks.
+3. "Does anyone know when the demo is?" asks nobody in particular: she offers,
    in one short sentence, what she could add, without giving it.
 
 Every decision reaches ``ON_SPEAK_DECISION`` with its reason and what the policy
@@ -78,14 +78,14 @@ async def main() -> None:
     kit = RoomKit()
     model = MockAIProvider(
         responses=[
-            "On a parlé des chiffres de septembre, que Paul doit envoyer.",
-            "Je peux retrouver la date de la démo si vous voulez.",
+            "We talked about the September numbers, which Paul will send.",
+            "I can look up the demo date if you like.",
         ]
     )
     nova = AIChannel(
         "nova",
         provider=model,
-        system_prompt="Tu es Nova, l'assistante de l'équipe.",
+        system_prompt="You are Nova, the team's assistant.",
         speak_policy=SpeaksWhenNamed("Nova", people=("Paul", "Sylvain")),
     )
     kit.register_channel(nova)
@@ -98,7 +98,7 @@ async def main() -> None:
     async def on_decision(event: SpeakDecisionEvent, ctx: object) -> None:
         body = getattr(event.event.content, "body", "")
         logger.info(
-            "%-6s %-22s « %s » %s",
+            '%-6s %-22s "%s" %s',
             event.decision.mode,
             event.decision.reason,
             body,
@@ -106,10 +106,10 @@ async def main() -> None:
         )
 
     lines = [
-        ("sylvain", "Paul, tu as les chiffres de septembre ?"),
-        ("paul", "Je les envoie demain matin."),
-        ("sylvain", "Nova, tu peux résumer ?"),
-        ("paul", "Quelqu'un sait quand est la démo ?"),
+        ("sylvain", "Paul, do you have the September numbers?"),
+        ("paul", "I'll send them tomorrow morning."),
+        ("sylvain", "Nova, can you sum up?"),
+        ("paul", "Does anyone know when the demo is?"),
     ]
     for sender, body in lines:
         await kit.process_inbound(

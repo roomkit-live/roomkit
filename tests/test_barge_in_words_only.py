@@ -83,7 +83,7 @@ async def _cut(words: str | None, *, cut_without_words: bool) -> bool:
 
     channel._playing_sessions[session.id] = TTSPlaybackState(
         session_id=session.id,
-        text="Voici le récapitulatif complet de la discussion.",
+        text="Here is the full summary of the discussion.",
         started_at=datetime.now(UTC) - timedelta(seconds=2),
     )
     try:

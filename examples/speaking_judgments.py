@@ -6,13 +6,13 @@ questions about it (how directly is Nova brought in, did the speaker finish,
 are they asking her to keep quiet, does a request to keep quiet still stand...)
 and plain code composes the answers (RFC §6.4):
 
-1. "Paul, tu as les chiffres de septembre ?" goes to Paul: silent.
-2. "Nova, tu peux résumer où on en est ?" asks her: she speaks.
-3. "Peut-être que Nova a la date de la démo quelque part." only wonders about
-   her: she offers.
-4. "Nova, ne réponds pas, écoute juste pour l'instant." asks for quiet: silent.
-5. "Bon, le budget, on le passe à combien ?" goes to the room, not to her:
-   silent, and the quiet asked for still stands.
+1. "Paul, do you have the September numbers?" goes to Paul: silent.
+2. "Nova, can you sum up where we are?" asks her: she speaks.
+3. "Maybe Nova has the demo date somewhere." only wonders about her: she
+   offers.
+4. "Nova, don't answer, just listen for now." asks for quiet: silent.
+5. "Right, the budget, how much do we set it to?" asks the room, not her:
+   silent.
 
 Every decision reaches ``ON_SPEAK_DECISION`` with its reason and each judgment.
 Told the languages Nova answers in, the policy also judges the speaker's, and
@@ -68,33 +68,31 @@ from roomkit.providers.sms.mock import MockSMSProvider
 logger = setup_logging("example.speaking_judgments")
 
 LINES = [
-    ("Sylvain", "Paul, tu as les chiffres de septembre ?"),
-    ("Paul", "Nova, tu peux résumer où on en est ?"),
-    ("Sylvain", "Peut-être que Nova a la date de la démo quelque part."),
-    ("Paul", "Nova, ne réponds pas, écoute juste pour l'instant."),
-    ("Sylvain", "Bon, le budget, on le passe à combien ?"),
+    ("Sylvain", "Paul, do you have the September numbers?"),
+    ("Paul", "Nova, can you sum up where we are?"),
+    ("Sylvain", "Maybe Nova has the demo date somewhere."),
+    ("Paul", "Nova, don't answer, just listen for now."),
+    ("Sylvain", "Right, the budget, how much do we set it to?"),
 ]
 
 # What Jev answered on these lines, for the mock.
 SCRIPT = [
-    {"directness": 0.21, "request": 0.30, "language": "French"},
-    {"directness": 2.95, "request": 0.95, "language": "French"},
-    {"directness": 1.01, "unfinished": 0.32, "request": 0.21, "language": "French"},
+    {"directness": 0.15, "request": 0.17, "language": "English"},
+    {"directness": 2.98, "request": 0.95, "language": "English"},
+    {"directness": 1.02, "unfinished": 0.29, "request": 0.28, "language": "English"},
     {
-        "directness": 2.97,
-        "deferred": 0.47,
+        "directness": 2.98,
+        "deferred": 0.55,
         "hush": 0.95,
-        "quiet_rule": 0.51,
-        "request": 0.63,
-        "language": "French",
+        "quiet_rule": 0.62,
+        "request": 0.48,
+        "language": "English",
     },
-    {"quiet_rule": 0.95, "request": 0.47, "unfinished": 0.16, "language": "French"},
+    {"quiet_rule": 0.95, "request": 0.57, "unfinished": 0.09, "language": "English"},
 ]
 
-LANGUAGES = {
-    "French": "Réponds en français uniquement.",
-    "English": "Answer in English only.",
-}
+LANGUAGES = {"English": "Answer in English only."}
+"""One line per language Nova answers in, each written in its own language."""
 
 
 def make_classifier(kind: str) -> Classifier:
@@ -115,11 +113,11 @@ async def main() -> None:
         "nova",
         provider=MockAIProvider(
             responses=[
-                "On a vu les chiffres de septembre : Paul les envoie demain.",
-                "Je peux retrouver la date de la démo si vous voulez.",
+                "We went through the September numbers: Paul sends them tomorrow.",
+                "I can look up the demo date if you like.",
             ]
         ),
-        system_prompt="Tu es Nova, l'assistante de l'équipe.",
+        system_prompt="You are Nova, the team's assistant.",
         speak_policy=ClassifierSpeakPolicy(
             classifier, agent_name="Nova", agent_role="the team's assistant", languages=LANGUAGES
         ),
@@ -135,7 +133,7 @@ async def main() -> None:
     async def on_decision(event: SpeakDecisionEvent, ctx: object) -> None:
         decision = event.decision
         judged = " ".join(f"{k}={v:.2f}" for k, v in decision.judgments.items() if v >= 0.05)
-        logger.info("« %s »", getattr(event.event.content, "body", ""))
+        logger.info('"%s"', getattr(event.event.content, "body", ""))
         logger.info("  → %s (%s) %s %s", decision.mode, decision.reason, judged, decision.notes)
 
     for name, body in LINES:

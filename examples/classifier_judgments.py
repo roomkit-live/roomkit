@@ -74,20 +74,20 @@ QUESTIONS = {
 }
 
 TURNS = [
-    ("Sylvain", "Paul, tu as les chiffres de septembre ?"),
-    ("Paul", "Nova, tu peux résumer où on en est ?"),
-    ("Sylvain", "Quelqu'un sait quand est la démo ?"),
-    ("Paul", "Il y a de la fumée dans la salle serveur, il faut appeler quelqu'un, vite !"),
-    ("Sylvain", "Bon, je pense qu'on avance bien."),
+    ("Sylvain", "Paul, do you have the September numbers?"),
+    ("Paul", "Nova, can you sum up where we are?"),
+    ("Sylvain", "Does anyone know when the demo is?"),
+    ("Paul", "There's smoke in the server room, someone has to call for help, now!"),
+    ("Sylvain", "Well, I think we're making good progress."),
 ]
 
 # What Jev answered on these turns, for the mock.
 SCRIPT = [
-    {"addressee": "person", "asks": 0.97, "urgency": 0.7},
+    {"addressee": "person", "asks": 0.97, "urgency": 0.6},
     {"addressee": "nova", "asks": 0.97, "urgency": 1.0},
-    {"addressee": "nobody", "asks": 0.96, "urgency": 0.7},
-    {"addressee": "nobody", "asks": 0.89, "urgency": 2.0},
-    {"addressee": "nobody", "asks": 0.06, "urgency": 0.0},
+    {"addressee": "nobody", "asks": 0.96, "urgency": 0.6},
+    {"addressee": "nobody", "asks": 0.92, "urgency": 2.0},
+    {"addressee": "nobody", "asks": 0.06, "urgency": 0.1},
 ]
 
 
@@ -142,7 +142,7 @@ async def main() -> None:
         finally:
             await classifier.close()
         mode, reason = decide(answers)
-        logger.info("%s: « %s »", speaker, text)
+        logger.info('%s: "%s"', speaker, text)
         logger.info("  %s (%.0f ms)", describe(answers), elapsed)
         logger.info("  → %s: %s", mode, reason)
         history.append({"from": speaker, "text": text})

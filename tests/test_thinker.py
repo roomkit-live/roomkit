@@ -76,7 +76,7 @@ def _context(*events: Any) -> RoomContext:
 def _channel(
     policy: Any, thinker: Any, *, think_wait: float = 1.0, **kwargs: Any
 ) -> tuple[AIChannel, MockAIProvider]:
-    provider = MockAIProvider(responses=["Oui ?"])
+    provider = MockAIProvider(responses=["Yes?"])
     channel = AIChannel(
         "ai1",
         provider=provider,
@@ -173,10 +173,10 @@ def test_thinker_input_leaves_the_turn_notes_out() -> None:
 
 async def test_llm_thinker_replaces_its_instructions_and_fails_on_no_json() -> None:
     provider = MockAIProvider(["not json"], response_schema=True)
-    thinker = LLMThinker(provider, instructions="Pense en français, {max} choses au plus.")
+    thinker = LLMThinker(provider, instructions="Think briefly, {max} items at most.")
     with pytest.raises(ProviderError, match="JSON"):
         await thinker.think(Thought(), AIContext(messages=[]))
-    assert provider.calls[0].system_prompt == "Pense en français, 3 choses au plus."
+    assert provider.calls[0].system_prompt == "Think briefly, 3 items at most."
 
 
 def test_llm_thinker_refuses_a_provider_without_response_schema() -> None:
@@ -203,7 +203,7 @@ def test_a_thinker_needs_a_speak_policy() -> None:
 async def test_a_silent_turn_is_thought_about_from_its_context() -> None:
     thinker = MockThinker([Thought("Paul has the figures.")])
     channel, provider = _channel(MockSpeakPolicy(["silent"]), thinker)
-    event = _said("Paul, tu as les chiffres ?")
+    event = _said("Paul, do you have the numbers?")
 
     output = await channel.on_event(event, _BINDING, _context(event))
 
@@ -212,18 +212,18 @@ async def test_a_silent_turn_is_thought_about_from_its_context() -> None:
     [(previous, context)] = thinker.calls
     assert previous == Thought()
     assert context.system_prompt is not None and "You are Nova." in context.system_prompt
-    assert "Paul, tu as les chiffres ?" in str(context.messages[-1].content)
+    assert "Paul, do you have the numbers?" in str(context.messages[-1].content)
     assert channel._thought_of("r1") == Thought("Paul has the figures.")
 
 
 async def test_with_something_to_say_in_time_the_agent_raises_its_hand() -> None:
     policy = MockSpeakPolicy(["silent", "offer"])
     channel, provider = _channel(policy, MockThinker([PRICE]))
-    event = _said("On cherche le prix de la licence.")
+    event = _said("We are looking for the licence price.")
 
     run = await respond(channel, event, _BINDING, _context(event))
 
-    assert run.text == "Oui ?"
+    assert run.text == "Yes?"
     assert [t.thought for t in policy.turns] == [Thought(), PRICE]
     assert "- “It costs 1,200 $ a year.”" in _notes(provider)
     assert channel._thought_of("r1") == PRICE.said()
@@ -233,14 +233,14 @@ async def test_a_late_thought_waits_for_the_next_turn() -> None:
     policy = MockSpeakPolicy(["silent", "speak"])
     thinker = MockThinker([PRICE], delay=0.2)
     channel, provider = _channel(policy, thinker, think_wait=0.01)
-    first = _said("On cherche le prix.")
+    first = _said("We are looking for the price.")
 
     assert (await channel.on_event(first, _BINDING, _context(first))).responded is False
     await asyncio.sleep(0.3)
-    second = _said("Nova, une idée ?")
+    second = _said("Nova, any idea?")
     run = await respond(channel, second, _BINDING, _context(first, second))
 
-    assert run.text == "Oui ?"
+    assert run.text == "Yes?"
     assert policy.turns[-1].thought == PRICE
     assert "- “It costs 1,200 $ a year.”" in _notes(provider)
     assert channel._thought_of("r1") == PRICE.said()
@@ -249,7 +249,7 @@ async def test_a_late_thought_waits_for_the_next_turn() -> None:
 async def test_one_call_at_a_time_from_the_latest_context() -> None:
     thinker = MockThinker([Thought("one"), Thought("two")], delay=0.1)
     channel, _ = _channel(MockSpeakPolicy(["silent"]), thinker, think_wait=0)
-    events = [_said(f"tour {i}") for i in range(3)]
+    events = [_said(f"turn {i}") for i in range(3)]
     for i, event in enumerate(events):
         await channel.on_event(event, _BINDING, _context(*events[: i + 1]))
         if i == 0:
@@ -257,7 +257,7 @@ async def test_one_call_at_a_time_from_the_latest_context() -> None:
     await asyncio.sleep(0.35)
 
     assert len(thinker.calls) == 2
-    assert "tour 2" in str(thinker.calls[1][1].messages[-1].content)
+    assert "turn 2" in str(thinker.calls[1][1].messages[-1].content)
     assert thinker.calls[1][0] == Thought("one")
     assert channel._thought_of("r1") == Thought("two")
 
@@ -266,7 +266,7 @@ async def test_what_it_says_meanwhile_does_not_come_back() -> None:
     policy = MockSpeakPolicy(["silent", "speak"])
     thinker = MockThinker([PRICE], delay=0.1)
     channel, _ = _channel(policy, thinker, think_wait=0)
-    first = _said("On cherche le prix.")
+    first = _said("We are looking for the price.")
     await channel.on_event(first, _BINDING, _context(first))
     # It speaks while the thinker call runs: the thought that comes back is said.
     channel._minds["r1"].thought = PRICE
@@ -279,7 +279,7 @@ async def test_what_it_says_meanwhile_does_not_come_back() -> None:
 async def test_a_failing_thinker_keeps_the_thought(caplog: pytest.LogCaptureFixture) -> None:
     channel, _ = _channel(MockSpeakPolicy(["silent"]), MockThinker(error=RuntimeError("down")))
     channel._think_wait = 0.2
-    event = _said("Bon.")
+    event = _said("Right.")
     with caplog.at_level(logging.WARNING, logger="roomkit.channels.ai"):
         await channel.on_event(event, _BINDING, _context(event))
     assert channel._thought_of("r1") == Thought()
@@ -299,14 +299,14 @@ async def test_the_memory_learns_a_turn_once_when_the_agent_speaks_after_thinkin
     channel, _ = _channel(
         MockSpeakPolicy(["silent", "speak"]), MockThinker([PRICE]), memory=memory
     )
-    event = _said("On cherche le prix.")
+    event = _said("We are looking for the price.")
     await respond(channel, event, _BINDING, _context(event))
     assert memory.ingested == [event.id]
 
 
 async def test_an_instruction_carries_no_thought_and_empties_nothing() -> None:
     channel, provider = _channel(MockSpeakPolicy(["silent"]), MockThinker())
-    first = _said("On cherche le prix.")
+    first = _said("We are looking for the price.")
     await channel.on_event(first, _BINDING, _context(first))
     channel._minds["r1"].thought = PRICE
     instruction = make_event(
@@ -321,7 +321,7 @@ async def test_an_instruction_carries_no_thought_and_empties_nothing() -> None:
 
 async def test_a_room_attached_again_starts_from_an_empty_thought() -> None:
     channel, _ = _channel(MockSpeakPolicy(["silent"]), MockThinker([PRICE]))
-    event = _said("On cherche le prix.")
+    event = _said("We are looking for the price.")
     await channel.on_event(event, _BINDING, _context(event))
     assert channel._thought_of("r1") == PRICE
 
@@ -335,7 +335,7 @@ async def test_a_room_attached_again_starts_from_an_empty_thought() -> None:
 async def test_close_stops_a_running_thinker() -> None:
     thinker = MockThinker([PRICE], delay=5)
     channel, _ = _channel(MockSpeakPolicy(["silent"]), thinker, think_wait=0)
-    event = _said("Bon.")
+    event = _said("Right.")
     await channel.on_event(event, _BINDING, _context(event))
     await asyncio.wait_for(channel.close(), 1)
     assert channel._minds == {}
@@ -347,11 +347,11 @@ async def test_the_classifier_policy_offers_what_the_thought_answers() -> None:
     )
     policy = ClassifierSpeakPolicy(classifier, agent_name="Nova")
     channel, provider = _channel(policy, MockThinker([PRICE]))
-    event = _said("On cherche le prix de la licence.")
+    event = _said("We are looking for the licence price.")
 
     run = await respond(channel, event, _BINDING, _context(event))
 
-    assert run.text == "Oui ?"
+    assert run.text == "Yes?"
     first, second = classifier.calls
     assert "answers" not in first[1] and "assistant_thought" in first[0]  # type: ignore[operator]
     assert {"answers", "corrects"} <= set(second[1])
@@ -382,7 +382,7 @@ async def test_the_thinker_reads_what_before_ai_generation_left() -> None:
     # The first message is decided twice: as heard, then with the thought.
     policy = MockSpeakPolicy(["silent", "silent", "silent", "speak"])
     nova = AIChannel(
-        "nova", provider=MockAIProvider(["Oui ?"]), speak_policy=policy, thinker=thinker
+        "nova", provider=MockAIProvider(["Yes?"]), speak_policy=policy, thinker=thinker
     )
     kit = await _meeting(nova)
     purposes: list[str] = []
@@ -398,8 +398,8 @@ async def test_the_thinker_reads_what_before_ai_generation_left() -> None:
                 message.content = message.content.replace("4417", "[redacted]")
         return HookResult.allow()
 
-    await _say(kit, "Le code est 4417.")
-    await _say(kit, "Un secret entre nous.")
+    await _say(kit, "The code is 4417.")
+    await _say(kit, "A secret between us.")
     await _say(kit, "Nova ?")
     await kit.close()
 
@@ -441,7 +441,7 @@ async def test_every_new_thought_reaches_on_thought() -> None:
     kit = RoomKit()
     nova = AIChannel(
         "nova",
-        provider=MockAIProvider(["Oui ?"]),
+        provider=MockAIProvider(["Yes?"]),
         speak_policy=MockSpeakPolicy(["silent"]),
         thinker=MockThinker([PRICE]),
     )
@@ -457,7 +457,7 @@ async def test_every_new_thought_reaches_on_thought() -> None:
         seen.append(event)
 
     await kit.process_inbound(
-        InboundMessage(channel_id="sms", sender_id="paul", content=TextContent(body="Bon."))
+        InboundMessage(channel_id="sms", sender_id="paul", content=TextContent(body="Right."))
     )
     for _ in range(50):
         if seen:
@@ -474,7 +474,7 @@ async def test_speaking_reports_the_emptied_thought() -> None:
     policy = MockSpeakPolicy(["silent", "silent", "speak"])
     nova = AIChannel(
         "nova",
-        provider=MockAIProvider(["Oui ?"]),
+        provider=MockAIProvider(["Yes?"]),
         speak_policy=policy,
         thinker=MockThinker([PRICE]),
     )
@@ -485,7 +485,7 @@ async def test_speaking_reports_the_emptied_thought() -> None:
     async def on_thought(event: ThoughtEvent, ctx: object) -> None:
         seen.append(event)
 
-    await _say(kit, "On cherche le prix.")
+    await _say(kit, "We are looking for the price.")
     await _say(kit, "Nova ?")
     for _ in range(50):
         if len(seen) == 2:
