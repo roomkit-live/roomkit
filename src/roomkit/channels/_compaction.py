@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from roomkit._text import quoted
 from roomkit.channels._tool_eviction import (
     REREAD_TOOL,
     ToolEviction,
@@ -67,8 +68,8 @@ def summary_text(messages: list[AIMessage]) -> str | None:
 
 
 def _quoted(message: AIMessage) -> str:
-    """What the summary quotes of *message*: its text, cut short, a delimited
-    block named rather than quoted."""
+    """What the summary quotes of *message*: its text, cut short and quoted on
+    one line (RFC §6.4), a delimited block named rather than quoted."""
     if isinstance(message.content, str):
         text = message.content
     else:
@@ -78,7 +79,7 @@ def _quoted(message: AIMessage) -> str:
             else f"[{part.type}]"
             for part in message.content
         )
-    return named_blocks(text)[:_SUMMARY_MESSAGE_CHARS]
+    return quoted(named_blocks(text), _SUMMARY_MESSAGE_CHARS)
 
 
 def with_results_stored(messages: list[AIMessage], eviction: ToolEviction) -> list[AIMessage]:

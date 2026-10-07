@@ -7,6 +7,7 @@ import logging
 import time
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
+from roomkit._text import bounded_text, identifier, one_line, quoted
 from roomkit.channels._realtime_context import get_current_voice_session
 from roomkit.core._failure_log import log_failure
 from roomkit.core.exceptions import ChannelNotRegisteredError
@@ -233,11 +234,9 @@ another, short enough to stay a name."""
 
 
 def task_name(task: str) -> str:
-    """*task* as a hand-back names it: on one line, bounded (RFC §23.3 step 8)."""
-    one_line = " ".join(task.split())
-    if len(one_line) <= _TASK_NAME_CHARS:
-        return one_line
-    return one_line[: _TASK_NAME_CHARS - 1].rstrip() + "…"
+    """*task* as a hand-back's metadata names it: on one line, bounded (RFC §23.3
+    step 8)."""
+    return bounded_text(one_line(task), _TASK_NAME_CHARS)
 
 
 def _delegation_result_text(result: DelegatedTaskResult, task: str = "") -> str:
@@ -249,10 +248,11 @@ def _delegation_result_text(result: DelegatedTaskResult, task: str = "") -> str:
     outcome = {TaskStatus.COMPLETED: "completed", TaskStatus.CANCELLED: "cancelled"}.get(
         result.status, "failed"
     )
-    asked = f" Task: “{task_name(task)}”." if task.strip() else ""
+    # What was asked is quoted, the worker named by an identifier (RFC §6.4).
+    asked = f" Task: {quoted(task, _TASK_NAME_CHARS)}." if task.strip() else ""
+    worker = identifier(result.agent_id, "worker")
     return result_text(
-        f"[Background task from {result.agent_id} {outcome}.{asked} "
-        "Share the outcome with the user.]",
+        f"[Background task from {worker} {outcome}.{asked} Share the outcome with the user.]",
         bounded(task_work(result) or "No output"),
     )
 

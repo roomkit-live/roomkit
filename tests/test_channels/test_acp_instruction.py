@@ -219,7 +219,7 @@ async def test_the_rooms_session_catches_up_on_a_standalone_reply(tmp_path: Any)
     following = make_event(room_id=ROOM, body="next request", index=2)
     await _prompt(channel, following, _context(*history, reply, following))
 
-    assert "you (in a separate session): The summary." in _sent(connection, turn=2)
+    assert "you (in a separate session): “The summary.”" in _sent(connection, turn=2)
     await channel.close()
 
 

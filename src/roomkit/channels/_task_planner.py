@@ -8,6 +8,7 @@ from collections import OrderedDict
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+from roomkit._text import one_of, quoted
 from roomkit.providers.ai.base import AITool
 from roomkit.realtime.base import EphemeralEvent, EphemeralEventType, RealtimeBackend
 
@@ -141,13 +142,13 @@ class TaskPlanner:
 
     @staticmethod
     def format_plan_prompt(tasks: list[dict[str, Any]]) -> str:
-        """Format the current plan as a block of the turn's notes (RFC §6.4)."""
+        """Format the current plan as a block of the turn's notes (RFC §6.4):
+        each title, the model's own words, quoted; each status a known one."""
         lines = ["## Current Task Plan"]
         for t in tasks:
-            icon = _STATUS_ICONS.get(t.get("status", "pending"), "[ ]")
-            title = t.get("title", "Untitled")
-            status = t.get("status", "pending")
-            lines.append(f"- {icon} {title} ({status})")
+            status = one_of(t.get("status", "pending"), _STATUS_ICONS, "pending")
+            title = quoted(t.get("title", "Untitled"), _MAX_TITLE_LENGTH)
+            lines.append(f"- {_STATUS_ICONS[status]} {title} ({status})")
         return "\n".join(lines)
 
     @staticmethod

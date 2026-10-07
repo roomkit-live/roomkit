@@ -12,9 +12,11 @@ import json
 from abc import ABC, abstractmethod
 from typing import Any
 
+from roomkit._text import quoted
 from roomkit.channels._turn_notes import split_turn_notes
 from roomkit.providers.ai.base import AIContext, AIMessage, AIProvider, ProviderError
 from roomkit.speaking.thought import MAX_WANT_TO_SAY, Thought
+from roomkit.tools.fence import fence
 
 INSTRUCTIONS = """\
 You are the inner thought of the agent described below, while it listens without \
@@ -40,6 +42,9 @@ What you write is said to no one: it is your thought, not an answer."""
 """The default instructions; ``{max}`` is the most items ``want_to_say`` holds."""
 
 _AGENT = "The agent, as it is described (who it is, what it knows, what it can do):"
+
+LINE_LIMIT = 2000
+"""Characters of one message the thinker reads."""
 
 _SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -103,7 +108,7 @@ class LLMThinker(Thinker):
     async def think(self, previous: Thought, context: AIContext) -> Thought:
         system = self._instructions.replace("{max}", str(MAX_WANT_TO_SAY))
         if context.system_prompt:
-            system += f"\n\n{_AGENT}\n<agent>\n{context.system_prompt}\n</agent>"
+            system += f"\n\n{_AGENT}\n{fence('agent', context.system_prompt)}"
         request = AIContext(
             system_prompt=system,
             messages=[AIMessage(role="user", content=thinker_input(previous, context.messages))],
@@ -138,9 +143,10 @@ def thinker_input(previous: Thought, messages: list[AIMessage]) -> str:
 
 
 def transcript_line(message: AIMessage) -> str:
-    """One message as a line of the conversation: the agent's own as ``You:``, a
-    user message as the context wrote it (the speaker's name first when several
-    people talk), tool traffic and the turn notes left out."""
+    """One message as a line of the conversation, quoted (RFC §6.4): the agent's
+    own after ``You:``, a user message as the context wrote it (the speaker's
+    name first when several people talk), tool traffic and the turn notes left
+    out."""
     if message.role == "tool":
         return ""
     if isinstance(message.content, str):
@@ -150,4 +156,5 @@ def transcript_line(message: AIMessage) -> str:
     text = split_turn_notes(text)[0].strip()
     if not text:
         return ""
-    return f"You: {text}" if message.role == "assistant" else text
+    line = quoted(text, LINE_LIMIT)
+    return f"You: {line}" if message.role == "assistant" else line

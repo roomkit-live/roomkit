@@ -15,6 +15,7 @@ import hashlib
 import logging
 from dataclasses import replace
 
+from roomkit._text import quoted
 from roomkit.memory._wrapper import _MemoryWrapper
 from roomkit.memory.base import MemoryProvider, MemoryResult
 from roomkit.memory.token_estimator import (
@@ -27,10 +28,34 @@ from roomkit.models.context import RoomContext
 from roomkit.models.enums import ChannelType
 from roomkit.models.event import RoomEvent, TextContent
 from roomkit.providers.ai.base import AIContext, AIMessage, AIProvider
+from roomkit.tools.fence import fence
 
 logger = logging.getLogger("roomkit.memory.summarizing")
 
 _MAX_CACHE_ENTRIES = 200
+
+SUMMARY_HEADER = "[Conversation summary \u2014 earlier messages compacted]"
+"""Opens the message a summarizing memory puts in place of the events it
+summarized; a later summary finds the earlier one by it."""
+
+SUMMARY_TAG = "conversation_summary"
+"""The tag the summary is set apart in: a model's rewriting of what people
+said, so whatever they said can reach it (RFC §6.4)."""
+
+EVENT_TEXT_LIMIT = 2000
+"""Characters of one event the summarizer reads."""
+
+
+def summarized_line(role: str, text: str) -> str:
+    """One event as a summarizer reads it: its *role*, then its *text* quoted on
+    one line (RFC §6.4), so no event can write a line of another."""
+    return f"[{role}]: {quoted(text, EVENT_TEXT_LIMIT)}"
+
+
+def summary_message(summary: str) -> AIMessage:
+    """The message that stands for the summarized events: :data:`SUMMARY_HEADER`,
+    then *summary* fenced as data (RFC §6.4)."""
+    return AIMessage(role="user", content=f"{SUMMARY_HEADER}\n{fence(SUMMARY_TAG, summary)}")
 
 
 class SummarizingMemory(_MemoryWrapper):
@@ -185,18 +210,13 @@ class SummarizingMemory(_MemoryWrapper):
         prior_summary = self._extract_prior_summary(prior_messages)
         summary = await self._get_or_create_summary(room_id, trimmed, prior_summary)
 
-        summary_message = AIMessage(
-            role="user",
-            content=f"[Conversation summary \u2014 earlier messages compacted]\n{summary}",
-        )
-
         # Preserve non-summary prior messages from the inner provider
         non_summary = [
             m
             for m in prior_messages
             if not (isinstance(m.content, str) and "[Conversation summary" in m.content)
         ]
-        return replace(inner, messages=non_summary + [summary_message], events=kept)
+        return replace(inner, messages=[*non_summary, summary_message(summary)], events=kept)
 
     async def _get_or_create_summary(
         self,
@@ -227,8 +247,7 @@ class SummarizingMemory(_MemoryWrapper):
         event_texts: list[str] = []
         for e in events:
             role = "assistant" if e.source and e.source.channel_type == ChannelType.AI else "user"
-            text = extract_event_text(e)
-            event_texts.append(f"[{role}]: {text[:2000]}")
+            event_texts.append(summarized_line(role, extract_event_text(e)))
 
         prompt_parts = [
             "Summarize this conversation concisely. Focus on: decisions made, "

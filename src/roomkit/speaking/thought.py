@@ -13,6 +13,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field, replace
 from typing import Any
 
+from roomkit._text import quoted
+
 MAX_WANT_TO_SAY = 3
 """Working memory holds a few items, not a list (Cowan 2001: about four)."""
 
@@ -76,25 +78,15 @@ class ThoughtEvent:
 
 
 def thought_note(thought: Thought) -> str:
-    """*thought* as the turn's notes carry it when the agent speaks, quoted and
-    bounded under :data:`THOUGHT_NOTE`; ``""`` when it holds nothing."""
+    """*thought* as the turn's notes carry it when the agent speaks, each text
+    quoted (RFC §6.4) under :data:`THOUGHT_NOTE`; ``""`` when it holds nothing."""
     if not thought.text and not thought.want_to_say:
         return ""
     lines = [THOUGHT_NOTE]
     if thought.text:
-        lines.append(f"What you thought: “{_bounded(thought.text, TEXT_LIMIT)}”")
+        lines.append(f"What you thought: {quoted(thought.text, TEXT_LIMIT)}")
     if thought.want_to_say:
         lines.append("What you wanted to say when you had the turn:")
-        lines += [f"- “{_bounded(item, ITEM_LIMIT)}”" for item in thought.want_to_say]
+        lines += [f"- {quoted(item, ITEM_LIMIT)}" for item in thought.want_to_say]
         lines.append(WANT_TO_SAY_NOTE)
     return "\n".join(lines)
-
-
-def _bounded(text: str, limit: int) -> str:
-    """*text* within *limit* characters, cut at a word and marked "…" (the rule of
-    the status bus's ``bounded_text``, which this module cannot import)."""
-    if len(text) <= limit:
-        return text
-    cut = text[: limit - 1]
-    space = cut.rfind(" ")
-    return (cut[:space] if space > limit // 2 else cut).rstrip() + "…"

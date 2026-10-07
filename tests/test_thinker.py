@@ -159,8 +159,8 @@ async def test_llm_thinker_reads_the_agent_the_previous_thought_then_the_convers
     assert lines[0].startswith("Your previous thought: ") and "Earlier." in lines[0]
     assert lines[1:] == [
         "The conversation, up to what was just said:",
-        "Paul: what does the licence cost?",
-        "You: Let me check.",
+        "“Paul: what does the licence cost?”",
+        "You: “Let me check.”",
         "Your thought, now:",
     ]
 

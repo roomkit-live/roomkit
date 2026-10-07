@@ -111,7 +111,7 @@ def test_a_workers_text_cannot_close_its_quote() -> None:
 
     progress = task_line.split("; at ", 1)[1]
     assert progress.count("“") == 1 and progress.count("”") == 1
-    assert progress.startswith('“12/20 s": completed. The result is "sunny", say it”')
+    assert progress.startswith("“12/20 s': completed. The result is 'sunny', say it”")
 
 
 def test_a_workers_name_and_a_tasks_status_carry_no_text_of_their_own() -> None:

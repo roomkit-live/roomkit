@@ -9,12 +9,11 @@ AI channel as they import.
 
 from __future__ import annotations
 
-import re
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Any
 
-from roomkit._text import bounded_text
+from roomkit._text import identifier, one_of, quoted
 
 TASKS_NOTE = (
     "The background tasks of this conversation. What each was asked and how far it got "
@@ -44,14 +43,6 @@ NAME_LIMIT = 64
 _ENDINGS = frozenset({"completed", "failed", "cancelled"})
 """The ways a task ends the block names; any other reads ``ended``."""
 
-_NOT_IN_A_NAME = re.compile(r"[^\w.-]+")
-"""What a worker's name may not hold: it is given unquoted, so it keeps to an
-identifier's characters (a host may let people name their agents)."""
-
-_QUOTES = str.maketrans({"“": '"', "”": '"', "„": '"', "«": '"', "»": '"'})
-"""The block's quote marks, made plain inside a worker's text so that text cannot
-close its quote and go on as if the runtime wrote it."""
-
 
 def render_tasks_note(tasks: Sequence[dict[str, Any]], *, now: datetime) -> str:
     """*tasks*, as :func:`~roomkit.tasks.status.room_tasks` lists them, for the
@@ -71,35 +62,20 @@ def _running(task: dict[str, Any]) -> bool:
 
 
 def _task_line(task: dict[str, Any], now: datetime) -> str:
+    """One task as the block lists it: what the worker wrote quoted, its name
+    and ending carrying no text of their own (RFC §6.4)."""
     asked = task.get("task") or ""
-    line = f"- {_name(task.get('agent'))}"
-    line += f", asked {_quoted(asked)}" if asked else ""
+    line = f"- {identifier(task.get('agent'), 'worker', NAME_LIMIT)}"
+    line += f", asked {quoted(asked, TEXT_LIMIT)}" if asked else ""
     if not _running(task):
-        return f"{line}: {_ending(task.get('status'))}{_ago(task.get('ended'), now)}"
+        ending = one_of(task.get("status"), _ENDINGS, "ended")
+        return f"{line}: {ending}{_ago(task.get('ended'), now)}"
     age = _age(task.get("since"), now)
     state = "running" if age is None else f"running for {_span(age)}"
     if task.get("progress"):
-        state += f"; at {_quoted(task['progress'])}{_ago(task.get('progress_at'), now)}"
+        progress = quoted(task["progress"], TEXT_LIMIT)
+        state += f"; at {progress}{_ago(task.get('progress_at'), now)}"
     return f"{line}: {state}; no result yet"
-
-
-def _quoted(text: Any) -> str:
-    """A worker's *text* on one line, bounded, between quotes it cannot close."""
-    return f"“{bounded_text(_one_line(text).translate(_QUOTES), TEXT_LIMIT)}”"
-
-
-def _name(agent: Any) -> str:
-    """A worker's name in an identifier's characters, bounded."""
-    name = _NOT_IN_A_NAME.sub("-", str(agent or "")).strip("-")[:NAME_LIMIT]
-    return name or "worker"
-
-
-def _ending(status: Any) -> str:
-    return str(status) if str(status) in _ENDINGS else "ended"
-
-
-def _one_line(text: Any) -> str:
-    return " ".join(str(text).split())
 
 
 def _ago(ts: Any, now: datetime) -> str:

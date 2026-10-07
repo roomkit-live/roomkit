@@ -10,6 +10,7 @@ from dataclasses import replace
 
 from roomkit.memory._wrapper import _MemoryWrapper
 from roomkit.memory.base import MemoryProvider, MemoryResult
+from roomkit.memory.summarizing import summarized_line, summary_message
 from roomkit.memory.token_estimator import (
     estimate_message_tokens,
     estimate_notes_tokens,
@@ -105,13 +106,10 @@ class CompactingMemory(_MemoryWrapper):
         # Summarize trimmed events
         summary = await self._get_or_create_summary(room_id, trimmed_events, channel_id)
 
-        summary_message = AIMessage(
-            role="user",
-            content=f"[Conversation summary — earlier messages compacted]\n{summary}",
-        )
-
         return replace(
-            inner_result, messages=inner_result.messages + [summary_message], events=kept_events
+            inner_result,
+            messages=[*inner_result.messages, summary_message(summary)],
+            events=kept_events,
         )
 
     @staticmethod
@@ -127,7 +125,7 @@ class CompactingMemory(_MemoryWrapper):
         for e in events:
             role = "assistant" if e.source and e.source.channel_type == ChannelType.AI else "user"
             text = e.content.body if isinstance(e.content, TextContent) else str(e.content)
-            event_texts.append(f"[{role}]: {text[:2000]}")
+            event_texts.append(summarized_line(role, text))
 
         prompt = (
             "Summarize this conversation concisely. Focus on: decisions made, "

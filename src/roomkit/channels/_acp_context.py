@@ -26,6 +26,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Awaitable, Callable, Sequence
 
+from roomkit._text import quoted
 from roomkit.channels._speaker import speaker_label
 from roomkit.channels.base import Channel
 from roomkit.core.visibility import visible_events
@@ -37,6 +38,9 @@ logger = logging.getLogger("roomkit.channels.acp")
 
 _SKIPPED_TYPES = frozenset({EventType.TOOL_CALL_START, EventType.TOOL_CALL_END})
 """Another agent's tool calls are its business, not room conversation."""
+
+ENTRY_LIMIT = 4000
+"""Characters of one message the room context quotes."""
 
 ACPContextContributor = Callable[[RoomContext, RoomEvent], Awaitable[Sequence[str]]]
 """What a host adds to one turn's prompt: blocks, for this request, right now."""
@@ -125,8 +129,11 @@ def room_context_block(
         )
 
     shown = missed[-limit:]
+    # Each message quoted on its line: it cannot end the block nor start a
+    # line of its own (RFC §6.4).
     lines = [
-        f"[{position}] {_label(event, context, channel_id)}: {acp_event_text(event).strip()}"
+        f"[{position}] {_label(event, context, channel_id)}: "
+        f"{quoted(acp_event_text(event), ENTRY_LIMIT)}"
         for position, event in enumerate(shown, start=1)
     ]
     header = _header(len(shown), len(missed), unloaded)

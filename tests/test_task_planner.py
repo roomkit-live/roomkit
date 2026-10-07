@@ -322,10 +322,10 @@ class TestFormatPlanPrompt:
         result = TaskPlanner.format_plan_prompt(tasks)
 
         assert "## Current Task Plan" in result
-        assert "- [x] Analyze data (completed)" in result
-        assert "- [-] Write report (in_progress)" in result
-        assert "- [ ] Review (pending)" in result
-        assert "- [!] Blocked task (blocked)" in result
+        assert "- [x] “Analyze data” (completed)" in result
+        assert "- [-] “Write report” (in_progress)" in result
+        assert "- [ ] “Review” (pending)" in result
+        assert "- [!] “Blocked task” (blocked)" in result
 
     def test_empty_tasks(self) -> None:
         result = TaskPlanner.format_plan_prompt([])
@@ -337,14 +337,15 @@ class TestFormatPlanPrompt:
     def test_missing_status_defaults_to_pending(self) -> None:
         tasks = [{"title": "No status"}]
         result = TaskPlanner.format_plan_prompt(tasks)
-        assert "- [ ] No status (pending)" in result
+        assert "- [ ] “No status” (pending)" in result
 
     def test_missing_title_defaults_to_untitled(self) -> None:
         tasks = [{"status": "completed"}]
         result = TaskPlanner.format_plan_prompt(tasks)
-        assert "- [x] Untitled (completed)" in result
+        assert "- [x] “Untitled” (completed)" in result
 
-    def test_unknown_status_uses_default_icon(self) -> None:
+    def test_unknown_status_reads_pending(self) -> None:
+        # A status is given unquoted, so only a known one is (RFC §6.4).
         tasks = [{"title": "Weird", "status": "unknown_status"}]
         result = TaskPlanner.format_plan_prompt(tasks)
-        assert "- [ ] Weird (unknown_status)" in result
+        assert "- [ ] “Weird” (pending)" in result

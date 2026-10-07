@@ -6,6 +6,7 @@ import logging
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
+from roomkit._text import person_name
 from roomkit.channels._ai_cuts import CUT_MARK, cut_answer_ids, cut_records
 from roomkit.channels._ai_policy import policy_check
 from roomkit.channels._dangling_recovery import patch_dangling_tool_calls
@@ -853,21 +854,24 @@ class AIContextMixin(_AIChannelContract):
 
 
 def event_speaker(event: RoomEvent, context: RoomContext) -> str | None:
-    """Display name of whoever is behind an event, or ``None``.
+    """Display name of whoever is behind an event, kept to a name's characters
+    (RFC §6.4), or ``None``.
 
     ``metadata["sender_name"]`` is the stamp transports and hosts write at
     ingress (the Teams/WhatsApp providers do, and so does a host's session
     ingress); the room's participant record is the fallback for transports
-    that register named participants without stamping events.
+    that register named participants without stamping events. Either is
+    written by whoever sends: given unquoted before their words, a name must
+    not open a line or a frame of its own.
     """
     name = event.metadata.get("sender_name")
-    if isinstance(name, str) and name.strip():
-        return name.strip()
+    if isinstance(name, str) and (kept := person_name(name)):
+        return kept
     participant_id = event.source.participant_id
     if participant_id:
         for participant in context.participants:
             if participant.id == participant_id and participant.display_name:
-                return participant.display_name
+                return person_name(participant.display_name) or None
     return None
 
 
