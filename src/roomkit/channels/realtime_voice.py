@@ -87,6 +87,7 @@ from roomkit.tools.human_input import HumanInputToolHandler
 from roomkit.tools.timeout import ToolTimeouts
 from roomkit.voice.backends.base import VoiceBackend
 from roomkit.voice.base import VoiceSession, VoiceSessionState
+from roomkit.voice.realtime.injection import VoiceInjectionResult
 
 try:
     from websockets.exceptions import ConnectionClosed as _ConnectionClosed
@@ -103,7 +104,6 @@ if TYPE_CHECKING:
     from roomkit.tools.policy import ToolPolicy
     from roomkit.voice.pipeline.config import AudioPipelineConfig
     from roomkit.voice.pipeline.engine import AudioPipeline
-    from roomkit.voice.realtime.injection import VoiceInjectionResult
     from roomkit.voice.realtime.provider import RealtimeVoiceProvider
     from roomkit.voice.realtime.reasoning import ReasoningBackend
 
@@ -952,14 +952,41 @@ class RealtimeVoiceChannel(
             chain_depth: The chain depth of what the text stands for; the
                 model's answer to it is one deeper (RFC §12.4). 0, the
                 default, for text that opens a chain.
+
+        A session the channel no longer serves is not sent to:
+        ``not_sent`` / ``realtime_session_gone``, as on a conference.
         """
+        return await self._inject(
+            session,
+            text,
+            role=role,
+            silent=silent,
+            start_audio_stream=start_audio_stream,
+            chain_depth=chain_depth,
+        )
+
+    async def _inject(
+        self,
+        session: VoiceSession,
+        text: str,
+        *,
+        role: str,
+        silent: bool,
+        start_audio_stream: bool = False,
+        chain_depth: int = 0,
+        injected_from: RoomEvent | None = None,
+    ) -> VoiceInjectionResult | None:
+        """Inject *text* into a session the channel serves and announce it
+        (RFC §12.4, §12.5); a session it no longer serves is not sent to."""
+        if not self._serves(session):
+            return VoiceInjectionResult(status="not_sent", reason="realtime_session_gone")
         if start_audio_stream:
             await self._provider.start_audio_stream(session)
         result = await self._provider.inject_text(session, text, role=role, silent=silent)
         if result is not None and result.status == "sent":
             if not silent:
                 self._session_answer_depth(session.id).injected(chain_depth)
-            await self._fire_text_injected(session, text, role=role)
+            await self._fire_text_injected(session, text, role=role, injected_from=injected_from)
         logger.info(
             "Text injection into session %s: %s (role=%s, silent=%s, len=%d)",
             session.id,
@@ -970,7 +997,20 @@ class RealtimeVoiceChannel(
         )
         return result
 
-    async def _fire_text_injected(self, session: VoiceSession, text: str, *, role: str) -> None:
+    def _serves(self, session: VoiceSession) -> bool:
+        """Whether *session* is one of the channel's live sessions."""
+        with self._state_lock:
+            held = self._sessions.get(session.id) is session
+        return held and session.state != VoiceSessionState.ENDED
+
+    async def _fire_text_injected(
+        self,
+        session: VoiceSession,
+        text: str,
+        *,
+        role: str,
+        injected_from: RoomEvent | None = None,
+    ) -> None:
         """Announce a text injection to ON_REALTIME_TEXT_INJECTED (RFC §12.5),
         under the session's span. A caller reaching for ``inject_text``
         directly is exactly the case that audit exists for."""
@@ -982,7 +1022,9 @@ class RealtimeVoiceChannel(
         )
         _, _tok = self._rt_span_ctx(session.id)
         try:
-            await fire_text_injected(self._framework, source, session, text, role=role)
+            await fire_text_injected(
+                self._framework, source, session, text, role=role, injected_from=injected_from
+            )
         finally:
             if _tok is not None:
                 reset_span(_tok)
@@ -2026,41 +2068,18 @@ class RealtimeVoiceChannel(
         if event.metadata and isinstance(event.metadata, dict):
             inject_role = event.metadata.get("inject_role", "system")
 
-        room_id = event.room_id
-
+        # Into every live session of the room, as any injection goes: silent
+        # under a muted binding, one deeper than the event, announced once.
         silent = injection_silent(binding)
-        # Inject text into all active sessions for this room
-        for session in self.get_room_sessions(room_id):
+        for session in self.get_room_sessions(event.room_id):
             try:
-                result = await self._provider.inject_text(
-                    session, text, role=inject_role, silent=silent
-                )
-                if result is None or result.status != "sent":
-                    logger.debug("Text injection unconfirmed for session %s", session.id)
-                    continue
-                if not silent:
-                    self._session_answer_depth(session.id).injected(event.chain_depth)
-
-                # Fire ON_REALTIME_TEXT_INJECTED hook (async)
-                if self._framework:
-                    _, _tok = self._rt_span_ctx(session.id)
-                    try:
-                        await self._framework.hook_engine.run_async_hooks(
-                            room_id,
-                            HookTrigger.ON_REALTIME_TEXT_INJECTED,
-                            event,
-                            context,
-                            skip_event_filter=True,
-                        )
-                    finally:
-                        if _tok is not None:
-                            reset_span(_tok)
-
-                logger.info(
-                    "Injected text into session %s from channel %s: %.50s",
-                    session.id,
-                    event.source.channel_id,
+                await self._inject(
+                    session,
                     text,
+                    role=inject_role,
+                    silent=silent,
+                    chain_depth=event.chain_depth,
+                    injected_from=event,
                 )
             except Exception:
                 logger.exception(

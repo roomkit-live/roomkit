@@ -63,7 +63,7 @@ from roomkit.channels._tool_registry import schema_tool
 from roomkit.core.exceptions import UnservedToolCallError
 from roomkit.core.task_utils import log_task_exception
 from roomkit.models.enums import ChannelType
-from roomkit.models.event import EventSource, TextContent
+from roomkit.models.event import EventSource, RoomEvent, TextContent
 from roomkit.models.tool_call import ToolCallEvent
 from roomkit.tools._human_input_channel import ChannelHumanInput
 from roomkit.tools._outcome import ToolOutcome
@@ -457,7 +457,14 @@ class ConferenceRealtime:
             await config.provider.send_audio(session, data)
 
     async def deliver_text(
-        self, room_id: str, text: str, *, role: str, silent: bool, chain_depth: int = 0
+        self,
+        room_id: str,
+        text: str,
+        *,
+        role: str,
+        silent: bool,
+        chain_depth: int = 0,
+        injected_from: RoomEvent | None = None,
     ) -> None:
         """Inject a broadcast text event into the provider's context.
 
@@ -475,7 +482,12 @@ class ConferenceRealtime:
             return
         try:
             await self.inject_text(
-                session, text, role=role, silent=silent, chain_depth=chain_depth
+                session,
+                text,
+                role=role,
+                silent=silent,
+                chain_depth=chain_depth,
+                injected_from=injected_from,
             )
         except Exception:
             logger.warning(
@@ -494,10 +506,12 @@ class ConferenceRealtime:
         role: str,
         silent: bool = False,
         chain_depth: int = 0,
+        injected_from: RoomEvent | None = None,
     ) -> VoiceInjectionResult | None:
         """Inject *text* into the room session *session*, as a realtime voice
         channel injects into its own (RFC §12.4): the model's answer is one
-        deeper than *chain_depth* unless *silent*. Not sent when the session
+        deeper than *chain_depth* unless *silent*; a broadcast names the event
+        it came from to the hook (*injected_from*). Not sent when the session
         is no longer the room's (an unplug, a detach, a reconnect)."""
         config = self._config
         if config is None or self._guarded(session) is None:
@@ -512,7 +526,9 @@ class ConferenceRealtime:
         if room is not None and not silent:
             room.answer_depth.injected(chain_depth)
         source = self._source(config, session)
-        await fire_text_injected(self._framework, source, session, text, role=role)
+        await fire_text_injected(
+            self._framework, source, session, text, role=role, injected_from=injected_from
+        )
         return result
 
     # -------------------------------------------------------------------------

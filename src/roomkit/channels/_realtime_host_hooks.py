@@ -25,8 +25,12 @@ async def fire_text_injected(
     text: str,
     *,
     role: str,
+    injected_from: RoomEvent | None = None,
 ) -> None:
-    """Announce *text* injected into *session* with the intent *role*.
+    """Announce *text* injected into *session* with the intent *role*, the
+    event of the injection itself on every host: its source the host, its
+    ``injected_role`` and ``session_id``, and for a broadcast the event it
+    came from (``injected_from``: its channel and its id).
 
     Fired wherever text enters the model's conversation context, not only
     where an inbound event drove it: the hook is how an integrator audits
@@ -35,11 +39,17 @@ async def fire_text_injected(
     """
     if framework is None or not session.room_id:
         return
+    metadata: dict[str, object] = {"injected_role": role, "session_id": session.id}
+    if injected_from is not None:
+        metadata["injected_from"] = {
+            "channel_id": injected_from.source.channel_id,
+            "event_id": injected_from.id,
+        }
     event = RoomEvent(
         room_id=session.room_id,
         source=source,
         content=TextContent(body=text),
-        metadata={"injected_role": role, "session_id": session.id},
+        metadata=metadata,
     )
     try:
         context = await framework._build_context(session.room_id)  # noqa: SLF001

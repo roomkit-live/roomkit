@@ -1225,6 +1225,7 @@ class ConferenceChannel(
                 role=str(event.metadata.get("inject_role", "system")),
                 silent=injection_silent(binding),
                 chain_depth=event.chain_depth,
+                injected_from=event,
             )
             return ChannelOutput.empty()
         await self._voice.speak(event.room_id, event.content.body)

@@ -187,6 +187,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- ON_REALTIME_TEXT_INJECTED hears the same event for a broadcast on a
+  realtime voice channel as on a conference (RMK-530, RFC §12.5): the event
+  of the injection, its source the host, `injected_role` and `session_id`,
+  and the broadcast event it came from in `injected_from` (`channel_id`,
+  `event_id`). **Behaviour change:** on a realtime voice channel the hook's
+  `event.source` is now the channel itself, the emitter moved to
+  `injected_from`. `RealtimeVoiceChannel.on_event` goes through
+  `inject_text` (one announcement, silent under a muted binding), and
+  `inject_text` on a session the channel no longer serves returns
+  `not_sent` / `realtime_session_gone` without calling the provider or the
+  hook, as a conference does.
+
 - `kit.close()` ends a turn someone awaits as it ends the same turn on the
   neighbouring door (RMK-526, RFC §23.3, §10.1 step 18). An inline delegation
   (`delegate(wait=True)`) is now held by the kit like a background one: the

@@ -446,3 +446,63 @@ async def test_the_conference_reconnects_once_the_provider_ended_its_session(
     await rt.kit.close()
 
     assert again is not None and again is not session
+
+
+# -- an injection, as the hook hears it ---------------------------------------
+
+
+@HOSTS
+async def test_a_broadcast_is_announced_as_the_injection_it_is(host: str) -> None:
+    """RMK-530: one event on every host, naming the session, the role and
+    the event the broadcast came from."""
+    provider = _Provider()
+    rt = _Host(host, provider, [])
+    await rt.attach()
+    session = await rt.start()
+    assert session is not None
+    heard: list[Any] = []
+
+    @rt.kit.hook(HookTrigger.ON_REALTIME_TEXT_INJECTED, execution=HookExecution.ASYNC)
+    async def audit(event: Any, ctx: Any) -> None:
+        heard.append(event)
+
+    sent = await rt.kit.send_event(ROOM, "src", TextContent(body="hello"), chain_depth=1)
+    await until(lambda: bool(heard))
+    await rt.kit.close()
+
+    [event] = heard
+    assert event.source.channel_id == "host"
+    assert event.metadata == {
+        "injected_role": "system",
+        "session_id": session.id,
+        "injected_from": {"channel_id": "src", "event_id": sent.id},
+    }
+
+
+@HOSTS
+async def test_an_injection_into_an_ended_session_is_not_sent(host: str) -> None:
+    provider = _Provider()
+    rt = _Host(host, provider, [])
+    await rt.attach()
+    session = await rt.start()
+    assert session is not None
+    heard: list[Any] = []
+
+    @rt.kit.hook(HookTrigger.ON_REALTIME_TEXT_INJECTED, execution=HookExecution.ASYNC)
+    async def audit(event: Any, ctx: Any) -> None:
+        heard.append(event)
+
+    if host == "voice":
+        await rt.channel.end_session(session)
+        inject = rt.channel.inject_text
+    else:
+        session.state = VoiceSessionState.ENDED
+        rt.channel._realtime.detach_room(ROOM)
+        inject = rt.channel._realtime.inject_text
+    result = await inject(session, "late", role="system")
+    await _settle()
+    await rt.kit.close()
+
+    assert (result.status, result.reason) == ("not_sent", "realtime_session_gone")
+    assert provider.injections == []
+    assert heard == []
