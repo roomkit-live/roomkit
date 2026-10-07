@@ -340,18 +340,7 @@ class InboundLockedMixin(HelpersMixin):
                 timeout=remaining,
             )
         except TimeoutError:
-            logger.error(
-                "Inbound pre-commit timed out after %.1fs",
-                self._process_timeout,
-                extra={"room_id": room_id, "event_id": event.id},
-            )
-            await self._emit_framework_event(
-                "process_timeout",
-                room_id=room_id,
-                event_id=event.id,
-                data={"timeout": self._process_timeout},
-            )
-            return InboundResult(blocked=True, reason="process_timeout")
+            return await self._refuse_on_timeout(room_id, event_id=event.id)
 
         # --- past this line nothing is cancellable by ``process_timeout`` ---
         if isinstance(decision, InboundResult):

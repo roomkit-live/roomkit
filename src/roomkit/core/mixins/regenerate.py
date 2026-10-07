@@ -8,7 +8,7 @@ from contextlib import AsyncExitStack
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from roomkit.core.exceptions import RoomClosedError
-from roomkit.core.lanes import DeliveryCascade
+from roomkit.core.lanes import DeliveryCascade, DeliveryPlan
 from roomkit.core.mixins.helpers import _REFUSING_STATUSES, HelpersMixin
 from roomkit.models.delivery import InboundResult
 from roomkit.models.enums import ChannelCategory, EventStatus
@@ -39,7 +39,6 @@ class RegenerateHost(Protocol):
         _get_router: From :class:`InboundLockedMixin`.
         _enqueue_exec: From :class:`LaneExecutionMixin`.
         _finish_cascade: From :class:`LaneExecutionMixin`.
-        _refuse_on_timeout: From :class:`InboundMixin`.
     """
 
     _store: ConversationStore
@@ -63,7 +62,6 @@ class RegenerateMixin(HelpersMixin):
     _get_router: Any  # see RegenerateHost
     _enqueue_exec: Any  # see RegenerateHost
     _finish_cascade: Any  # see RegenerateHost
-    _refuse_on_timeout: Any  # see RegenerateHost
 
     async def regenerate_target(self, room_id: str) -> RoomEvent | None:
         """The event :meth:`regenerate_response` would re-run the agent on.
@@ -205,9 +203,10 @@ class RegenerateMixin(HelpersMixin):
         cascade = DeliveryCascade(room_id, reentry_budget=self._max_chain_depth * 10)
         try:
             planned = await self._plan_regeneration(room_id, trigger_id, cascade)
-            if not isinstance(planned, RoomEvent):
+            if not isinstance(planned, tuple):
                 return planned
-            return await self._finish_regeneration(room_id, planned, cascade)
+            trigger, plan = planned
+            return await self._finish_regeneration(room_id, trigger, plan, cascade)
         except BaseException:
             # The caller owns the cascade: a caller cancelled stops its
             # delivery tail, off the lock, as on the inbound path.
@@ -216,25 +215,25 @@ class RegenerateMixin(HelpersMixin):
 
     async def _plan_regeneration(
         self, room_id: str, trigger_id: str | None, cascade: DeliveryCascade
-    ) -> RoomEvent | InboundResult | None:
+    ) -> tuple[RoomEvent, DeliveryPlan] | InboundResult | None:
         """Choose the event to replay under the room lock and put its
-        re-broadcast in the room's lane: the trigger, or what the call
-        returns instead (a refusal, ``None`` when nothing qualifies). The
-        wait for the lock and the choice are bounded by ``process_timeout``,
-        the broadcast is not (RFC §13.6)."""
+        re-broadcast in the room's lane: the trigger and its plan, or what
+        the call returns instead (a refusal, ``None`` when nothing qualifies). The wait for
+        the lock and the choice are bounded by ``process_timeout``, the
+        broadcast is not (RFC §13.6)."""
         async with AsyncExitStack() as stack:
             try:
                 async with asyncio.timeout(self._process_timeout):
                     await stack.enter_async_context(self._lock_manager.locked(room_id))
                     context, found = await self._regenerate_target(room_id)
             except TimeoutError:
-                return await self._refuse_on_timeout(room_id, None, operation="regenerate")
+                return await self._refuse_on_timeout(room_id, operation="regenerate")
             refusal = await self._refuse_regeneration(room_id, context, found, trigger_id)
             if refusal is not None or found is None:
                 return refusal
             trigger, source_binding = found
-            self._enqueue_regeneration(room_id, trigger, source_binding, context, cascade)
-            return trigger
+            plan = self._enqueue_regeneration(room_id, trigger, source_binding, context, cascade)
+            return trigger, plan
 
     async def _refuse_regeneration(
         self,
@@ -277,31 +276,34 @@ class RegenerateMixin(HelpersMixin):
         source_binding: ChannelBinding,
         context: RoomContext,
         cascade: DeliveryCascade,
-    ) -> None:
+    ) -> DeliveryPlan:
         """Put *trigger*'s re-broadcast in the room's lane, behind every
-        event committed so far, as a rerun (``DeliveryPlan.rerun``)."""
+        event committed so far, as a rerun (``DeliveryPlan.rerun``); its plan."""
         # Scope the re-broadcast to intelligence channels: only the agent
         # regenerates, no transport re-delivery of the user's message.
         intel_trigger = trigger.model_copy(update={"visibility": "intelligence"})
         plan = self._get_router().plan(intel_trigger, source_binding, context)
         plan.rerun = True
-        plan.fire_after_broadcast = False
         plan.response_visibility = trigger.response_visibility
         cascade.retain()
         self._enqueue_exec(
             room_id, plan, cascade, index=None, after_index=context.room.latest_index
         )
+        return plan
 
     async def _finish_regeneration(
-        self, room_id: str, trigger: RoomEvent, cascade: DeliveryCascade
+        self, room_id: str, trigger: RoomEvent, plan: DeliveryPlan, cascade: DeliveryCascade
     ) -> InboundResult:
         """The regeneration's result once its cascade ends: the trigger, the
-        new answers and what they ended with (RFC §10.1 step 18)."""
+        new answers and what they ended with (RFC §10.1 step 18), or the
+        refusal of a room that closed while it waited in the lane."""
         # The lane delivers the new answers — their commit passes, their
         # AFTER_BROADCAST hooks, what the other agents answer to them (RFC
         # §8.3) — then the streams the regeneration started are read here,
         # outside the lock (TTS delivery can take seconds).
         stream_error, stream_meta = await self._finish_cascade(cascade, room_id, caller_logs=True)
+        if plan.refusal is not None:
+            return plan.refusal
         result = InboundResult(event=trigger)
         result.report_cascade(cascade)
         if stream_error is not None and result.error is None:

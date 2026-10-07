@@ -42,6 +42,7 @@ from roomkit.core.hooks import (
     IdentityHookRegistration,
 )
 from roomkit.core.inbound_router import DefaultInboundRoomRouter, InboundRoomRouter
+from roomkit.core.lanes import DeliveryCascade
 from roomkit.core.locks import InMemoryLockManager, RoomLockManager
 from roomkit.core.mixins import (
     ChannelOpsMixin,
@@ -889,6 +890,7 @@ class RoomKit(
             attributes={"event_type": str(event_type)},
         )
         token = set_current_span(span_id, telemetry_ctx=telemetry.get_span_context(span_id))
+        cascade = DeliveryCascade(room_id, reentry_budget=self._max_chain_depth * 10)
         try:
             # Direct injection traverses the SAME pipeline as an inbound
             # message (RFC §10.5): index assignment, BEFORE_BROADCAST hooks,
@@ -897,9 +899,6 @@ class RoomKit(
             # lane, reentry passes, and AFTER_BROADCAST hooks. This keeps a
             # single validation/hooks/indexing/persistence model across entry
             # points.
-            from roomkit.core.lanes import DeliveryCascade
-
-            cascade = DeliveryCascade(room_id, reentry_budget=self._max_chain_depth * 10)
             # The off-lock check (RFC §9.5.1) runs before the lock, when a
             # needs_lock=False hook applies; its ticket is held until the
             # locked pass has committed. The check and the wait for the turn
@@ -934,7 +933,10 @@ class RoomKit(
             await self._finish_cascade(cascade, room_id)
 
             telemetry.end_span(span_id)
-        except Exception as exc:
+        except BaseException as exc:
+            # The caller owns the cascade: a caller cancelled stops its
+            # delivery tail, off the lock, as on the inbound path.
+            await cascade.abandon("caller_cancelled")
             telemetry.end_span(span_id, status="error", error_message=str(exc))
             raise
         finally:

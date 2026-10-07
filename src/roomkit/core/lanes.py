@@ -46,6 +46,7 @@ if TYPE_CHECKING:
     from roomkit.core.locks import RoomLockManager
     from roomkit.models.channel import ChannelBinding
     from roomkit.models.context import RoomContext
+    from roomkit.models.delivery import InboundResult
     from roomkit.models.enums import HookTrigger
     from roomkit.models.event import RoomEvent
     from roomkit.models.task import Observation, Task
@@ -104,7 +105,8 @@ class DeliveryPlan:
     hook_observations: list[Observation] = field(default_factory=list)
     # Whether the event's AFTER_BROADCAST hooks (and side-effect persistence)
     # fire after its set executes. False preserves the paths that never fired
-    # them: injected events and a trigger without a source binding.
+    # them: injected events and a trigger without a source binding. A rerun
+    # keeps its side effects and never repeats its AFTER_BROADCAST.
     fire_after_broadcast: bool = True
     # Trace continuity across the lane boundary: the caller's current span
     # (and its backend context), captured at plan time. The lane executor
@@ -119,8 +121,10 @@ class DeliveryPlan:
     # A committed event broadcast again (a regeneration, RFC §13.6): the
     # caller reads its replies as a root pass's, its side effects are kept,
     # and nothing of its first pass is repeated (its delivery report, its
-    # AFTER_BROADCAST, ``event_processed``).
+    # AFTER_BROADCAST, ``event_processed``). The room's status is read again
+    # when the lane takes it; ``refusal`` is what refused it then.
     rerun: bool = False
+    refusal: InboundResult | None = None
 
     @property
     def answers_caller(self) -> bool:

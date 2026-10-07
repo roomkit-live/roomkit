@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from roomkit.core._failure_log import needs_reporting
-from roomkit.core.event_router import CHAIN_DEPTH_LIMIT
+from roomkit.core.event_router import CHAIN_DEPTH_LIMIT, BroadcastResult
 from roomkit.core.exceptions import RoomNotFoundError
 from roomkit.core.mixins.helpers import (
     _RECENT_EVENTS_LIMIT,
@@ -104,6 +104,22 @@ def scoped(response: RoomEvent, scope: str | None) -> RoomEvent:
     if not scope:
         return response
     return response.model_copy(update={"visibility": scope, "response_visibility": scope})
+
+
+def _unavailable_targets(plan: DeliveryPlan, result: BroadcastResult) -> list[str]:
+    """The targets the event addressed that no intelligence of the set
+    reached (RFC §10.1 step 18)."""
+    intelligence = {
+        target.channel_id
+        for target in plan.targets
+        if target.category == ChannelCategory.INTELLIGENCE
+    }
+    reached = result.outputs.keys() | result.errors.keys()
+    return [
+        target
+        for target in plan.event.addressed_to or []
+        if target not in intelligence or target not in reached
+    ]
 
 
 @dataclass(slots=True, frozen=True)
@@ -604,7 +620,25 @@ class LaneExecutionMixin(HelpersMixin):
         """Execute one plan's delivery set (called by the lane executor)."""
         if plan.injected:
             return await self._execute_injected_plan(plan)
+        if plan.rerun and await self._refuse_closed_rerun(plan):
+            return BroadcastResult()
         return await self._get_router().execute_plan(plan)
+
+    async def _refuse_closed_rerun(self, plan: DeliveryPlan) -> bool:
+        """Whether the room closed while a regeneration waited in its lane:
+        it is then refused as at its start, before the agent runs (RFC
+        §13.6, §5.1), the refusal kept on the plan for its caller."""
+        room_id = plan.event.room_id
+        room = await self._store.get_room(room_id)
+        if not _refuses_writes(room):
+            return False
+        plan.refusal = await self._refuse_closed_room(
+            room_id,
+            status=room.status if room is not None else None,
+            operation="regenerate",
+            event=plan.event,
+        )
+        return True
 
     async def _execute_injected_plan(self, plan: DeliveryPlan) -> BroadcastResult:
         """Deliver an injected event to its named channels.
@@ -676,7 +710,9 @@ class LaneExecutionMixin(HelpersMixin):
         mutation before the edit/delete event's own AFTER_BROADCAST), then —
         on the root pass — delivery reporting and the intelligence ON_ERROR
         funnel, then blocked-event commits, side effects and AFTER_BROADCAST
-        (RFC §10.1 step 16: after the event's delivery set completes).
+        (RFC §10.1 step 16: after the event's delivery set completes). A
+        rerun (a regeneration) reports only its replies and keeps its side
+        effects; it repeats nothing else of its first pass.
         """
         event = plan.event
         context = plan.context
@@ -706,7 +742,7 @@ class LaneExecutionMixin(HelpersMixin):
 
         await self._commit_blocked_events(room_id, result)
 
-        if plan.fire_after_broadcast or plan.rerun:
+        if plan.fire_after_broadcast:
             await self._persist_side_effects(
                 room_id,
                 plan.hook_tasks + result.tasks,
@@ -714,7 +750,7 @@ class LaneExecutionMixin(HelpersMixin):
                 event,
                 context,
             )
-        if plan.fire_after_broadcast:
+        if plan.fire_after_broadcast and not plan.rerun:
             await self._hook_engine.run_async_hooks(
                 room_id, HookTrigger.AFTER_BROADCAST, event, context
             )
@@ -729,7 +765,17 @@ class LaneExecutionMixin(HelpersMixin):
         framework events, the failed deliveries, the addressed targets that
         no intelligence reached, and the buffered replies (RFC §10.1 step 18)."""
         event = plan.event
-        context = plan.context
+        await self._emit_delivery_events(event, result)
+        cascade.delivery_results = _delivery_results(result)
+        cascade.unavailable_targets = _unavailable_targets(plan, result)
+        await self._record_failed_deliveries(event, cascade.delivery_results)
+        await self._settle_buffered_replies(
+            cascade, event, plan.context, result, root=plan.emit_processed
+        )
+
+    async def _emit_delivery_events(self, event: RoomEvent, result: BroadcastResult) -> None:
+        """The framework events of *event*'s delivery set: each delivery that
+        succeeded or failed, and a partial failure (RFC §8.2)."""
         room_id = event.room_id
         if result.errors:
             total = len(result.delivery_outputs) + len(result.errors)
@@ -756,22 +802,6 @@ class LaneExecutionMixin(HelpersMixin):
                 channel_id=ch_id,
                 data={"error": error_msg},
             )
-        cascade.delivery_results = _delivery_results(result)
-        intelligence = {
-            target.channel_id
-            for target in plan.targets
-            if target.category == ChannelCategory.INTELLIGENCE
-        }
-        reached = result.outputs.keys() | result.errors.keys()
-        cascade.unavailable_targets = [
-            target
-            for target in event.addressed_to or []
-            if target not in intelligence or target not in reached
-        ]
-        await self._record_failed_deliveries(event, cascade.delivery_results)
-        await self._settle_buffered_replies(
-            cascade, event, context, result, root=plan.emit_processed
-        )
 
     async def _settle_buffered_replies(
         self,
@@ -783,8 +813,8 @@ class LaneExecutionMixin(HelpersMixin):
         root: bool,
     ) -> None:
         """What a delivery set's buffered replies leave their caller (RFC
-        §10.1 step 18), on every path that waits for one (the lane, a
-        regeneration): each failure to ON_ERROR, the first as the cascade's
+        §10.1 step 18), on the root pass and a regeneration's: each failure
+        to ON_ERROR, the first as the cascade's
         error, before any stream's; each reply's end under ``turns``.
 
         A non-streaming channel has finished generation before the delivery

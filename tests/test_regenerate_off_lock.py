@@ -29,13 +29,16 @@ PROCESS_TIMEOUT = 0.2
 
 
 class _Slow(MockAIProvider):
-    """Answers after *pause*, longer than ``process_timeout``."""
+    """Answers after *pause*, longer than ``process_timeout``; counts the
+    generations it started."""
 
     def __init__(self, text: str = "draft", pause: float = 0.5) -> None:
         super().__init__(responses=[text], streaming=True)
         self.pause = pause
+        self.started = 0
 
     async def generate(self, context: AIContext) -> AIResponse:
+        self.started += 1
         await asyncio.sleep(self.pause)
         return await super().generate(context)
 
@@ -45,11 +48,17 @@ def _message(body: str = "Write.") -> InboundMessage:
 
 
 async def _kit(kind: str, pause: float = 0.5) -> tuple[RoomKit, list[str]]:
+    kit, tasks, _ = await _kit_with(kind, pause)
+    return kit, tasks
+
+
+async def _kit_with(kind: str, pause: float = 0.5) -> tuple[RoomKit, list[str], _Slow]:
     """A room whose agent answers after *pause*: a plain AI room, or a
     synchronous Loop whose producer is delegated."""
     kit = RoomKit(process_timeout=PROCESS_TIMEOUT)
     kit.register_channel(SimpleChannel("sms"))
-    producer = Agent("producer", provider=_Slow(pause=pause))
+    slow = _Slow(pause=pause)
+    producer = Agent("producer", provider=slow)
     kit.register_channel(producer)
     tasks: list[str] = []
 
@@ -66,7 +75,7 @@ async def _kit(kind: str, pause: float = 0.5) -> tuple[RoomKit, list[str]]:
             room_id="r", orchestration=Loop(agent=producer, reviewer=reviewer, max_iterations=2)
         )
     await kit.attach_channel("r", "sms")
-    return kit, tasks
+    return kit, tasks, slow
 
 
 @pytest.mark.parametrize("door", ["inbound", "regenerate"])
@@ -125,7 +134,8 @@ async def test_a_room_lock_held_past_process_timeout_refuses_the_regeneration() 
 
     holder = asyncio.create_task(hold_the_lock())
     await held.wait()
-    result = await kit.regenerate_response("r")
+    # Bounded here too: an unbounded wait for the lock would hang the test.
+    result = await asyncio.wait_for(kit.regenerate_response("r"), timeout=5.0)
     release.set()
     await holder
     await kit.close()
@@ -157,3 +167,51 @@ async def test_a_regeneration_repeats_nothing_of_its_triggers_first_pass() -> No
     assert processed.count(first.event.id) == 1
     # The trigger's own AFTER_BROADCAST ran once; each answer ran its own.
     assert after_broadcast == ["Write.", "draft", "draft"]
+
+
+async def test_a_room_closed_while_the_regeneration_waits_refuses_it_before_the_agent_runs() -> (
+    None
+):
+    kit, _, slow = await _kit_with("loop", pause=0.3)
+    refused: list[FrameworkEvent] = []
+
+    @kit.on("room_refused_event")
+    async def on_refused(event: FrameworkEvent) -> None:
+        refused.append(event)
+
+    await kit.process_inbound(_message("first"))
+    # A second message keeps the lane busy: the regeneration waits behind it.
+    second = await kit.process_inbound(_message("second"), defer_delivery=True)
+    regeneration = asyncio.create_task(kit.regenerate_response("r"))
+    await asyncio.sleep(0.05)
+    await kit.close_room("r")
+    started_at_close = slow.started
+    result = await asyncio.wait_for(regeneration, timeout=5.0)
+    assert second.delivery is not None
+    await second.delivery.wait()
+    await kit.close()
+
+    assert result is not None
+    assert (result.blocked, result.reason) == (True, "room_closed")
+    assert slow.started == started_at_close
+    assert "regenerate" in [e.data.get("operation") for e in refused]
+
+
+@pytest.mark.parametrize("door", ["regenerate", "send_event"])
+async def test_a_caller_cancelled_cuts_the_turn_it_was_waiting_for(door: str) -> None:
+    kit, tasks = await _kit("loop", pause=0.5)
+    await kit.process_inbound(_message())
+    tasks.clear()
+
+    if door == "regenerate":
+        call = asyncio.create_task(kit.regenerate_response("r"))
+    else:
+        call = asyncio.create_task(kit.send_event("r", "sms", TextContent(body="Again.")))
+    await asyncio.sleep(0.1)  # the producer is generating
+    call.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await call
+    await asyncio.sleep(0.6)  # past the producer's answer, had it run on
+    await kit.close()
+
+    assert tasks == ["producer:cancelled"]

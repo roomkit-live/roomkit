@@ -256,7 +256,7 @@ class InboundMixin(HelpersMixin):
                 message, channel, room_id, room_just_created, deadline, telemetry
             )
         except TimeoutError:
-            return await self._refuse_on_timeout(room_id, message.channel_id)
+            return await self._refuse_on_timeout(room_id, channel_id=message.channel_id)
         if isinstance(prepared, InboundResult):
             return prepared
         event, context, resolved_identity, pending_id_result = prepared
@@ -271,26 +271,6 @@ class InboundMixin(HelpersMixin):
             deadline,
             defer_delivery=defer_delivery,
         )
-
-    async def _refuse_on_timeout(
-        self, room_id: str, channel_id: str | None, *, operation: str = "inbound"
-    ) -> InboundResult:
-        """Refuse what ``process_timeout`` stopped before its commit point
-        (RFC §13.6): an inbound event, or a regeneration still waiting for
-        the room lock (``operation="regenerate"``)."""
-        logger.error(
-            "Pre-commit of %s timed out after %.1fs",
-            operation,
-            self._process_timeout,
-            extra={"room_id": room_id, "channel_id": channel_id},
-        )
-        data: dict[str, Any] = {"timeout": self._process_timeout}
-        if operation != "inbound":
-            data["operation"] = operation
-        await self._emit_framework_event(
-            "process_timeout", room_id=room_id, channel_id=channel_id, data=data
-        )
-        return InboundResult(blocked=True, reason="process_timeout")
 
     async def _prepare_event(
         self,
@@ -427,7 +407,7 @@ class InboundMixin(HelpersMixin):
                     )
                     await stack.enter_async_context(self._lock_manager.locked(room_id))
             except TimeoutError:
-                return await self._refuse_on_timeout(room_id, message.channel_id)
+                return await self._refuse_on_timeout(room_id, channel_id=message.channel_id)
             result: InboundResult = await self._process_locked(
                 event,
                 room_id,

@@ -242,6 +242,7 @@ class HelpersMixin:
     _ensure_status_bus_subscribed: Any  # RoomKit's — the StatusBus listened to from now on
     _lanes: Any  # RoomLaneRegistry — set by RoomKit.__init__
     _room_close_epoch: int  # counted by _store_refusing_room — set by RoomKit.__init__
+    _process_timeout: float  # the pre-commit bound (RFC §13.6) — set by RoomKit.__init__
 
     # -- Persistence helpers (policy-aware) --
     #
@@ -281,6 +282,36 @@ class HelpersMixin:
         stored = await self._store.update_room(room)
         self._room_close_epoch += 1
         return stored
+
+    async def _refuse_on_timeout(
+        self,
+        room_id: str,
+        *,
+        channel_id: str | None = None,
+        event_id: str | None = None,
+        operation: _RefusedOperation = "inbound",
+    ) -> InboundResult:
+        """Refuse what ``process_timeout`` stopped before its commit point
+        (RFC §13.6), with the ``process_timeout`` framework event: an inbound
+        event before the room lock (*channel_id*) or under it (*event_id*),
+        or a regeneration still waiting for the lock (``operation``)."""
+        logger.error(
+            "Pre-commit of %s timed out after %.1fs",
+            operation,
+            self._process_timeout,
+            extra={"room_id": room_id, "channel_id": channel_id, "event_id": event_id},
+        )
+        data: dict[str, Any] = {"timeout": self._process_timeout}
+        if operation != "inbound":
+            data["operation"] = operation
+        await self._emit_framework_event(
+            "process_timeout",
+            room_id=room_id,
+            channel_id=channel_id,
+            event_id=event_id,
+            data=data,
+        )
+        return InboundResult(blocked=True, reason="process_timeout")
 
     async def _refuse_closed_room(
         self,
