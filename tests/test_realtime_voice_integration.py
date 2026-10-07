@@ -54,7 +54,9 @@ class ObserverChannel(Channel):
 
 class TestSupervisorTextInjection:
     async def test_supervisor_text_injection_e2e(self) -> None:
-        """Supervisor sends text via WebSocket dashboard → injected into realtime AI."""
+        """A supervisor's broadcast reaches the realtime AI as the supervisor's
+        quoted words; the application directs it with an instruction delivery
+        (RFC §12.4, §22.1)."""
         provider = MockRealtimeProvider()
         transport = MockRealtimeTransport()
 
@@ -87,10 +89,18 @@ class TestSupervisorTextInjection:
         )
         await asyncio.sleep(0.1)
 
-        # Verify the text was injected into the realtime provider
+        # Content its author wrote, never the application's instruction
         assert len(provider.injected_texts) == 1
-        assert provider.injected_texts[0][1] == "Offer the customer a 20% discount"
-        assert provider.injected_texts[0][2] == "system"
+        assert provider.injected_texts[0][1:] == (
+            "supervisor: “Offer the customer a 20% discount”",
+            "user",
+        )
+
+        await kit.deliver(
+            room.id, "Offer the customer a 20% discount", channel_id="rt-voice", instruction=True
+        )
+
+        assert provider.injected_texts[-1][1:] == ("Offer the customer a 20% discount", "system")
 
         await kit.close()
 
@@ -173,6 +183,6 @@ class TestMutedChannelStillReceivesEvents:
         # on_event is still called on muted channels (per EventRouter)
         # So text should still be injected into the provider
         assert len(provider.injected_texts) == 1
-        assert provider.injected_texts[0][1] == "Muted but still injecting"
+        assert provider.injected_texts[0][1] == "supervisor: “Muted but still injecting”"
 
         await kit.close()

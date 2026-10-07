@@ -6,6 +6,11 @@ from typing import Literal
 
 from pydantic import BaseModel
 
+from roomkit._text import quoted
+
+LINE_LIMIT = 2000
+"""The characters of an ``assistant`` line an instruction quotes."""
+
 
 class VoiceInjectionResult(BaseModel):
     """Report what the provider knows after ``inject_text``.
@@ -27,6 +32,7 @@ def say_line_instruction(line: str) -> str:
 
     For a provider with no primitive that makes the agent speak a given text:
     the line reaches the model as a direction, never as something the user
-    said, which the model would answer.
+    said, which the model would answer. The line is quoted (RFC §6.4): it
+    cannot end the quote and add to the direction.
     """
-    return f'Say this to the user now, as your next words, then listen: "{line}"'
+    return f"Say this to the user now, as your next words, then listen: {quoted(line, LINE_LIMIT)}"

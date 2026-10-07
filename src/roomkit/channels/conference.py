@@ -61,6 +61,7 @@ from roomkit.channels._conference_session import ConferenceSessionMixin
 from roomkit.channels._conference_shutdown import CloseStatus, ConferenceShutdownCoordinator
 from roomkit.channels._conference_subscription import ConferenceSubscriptionMixin
 from roomkit.channels._conference_voice import ConferenceVoice
+from roomkit.channels._realtime_host_hooks import broadcast_text
 from roomkit.channels._served_tools import (
     dict_tool_name,
     refuse_host_tools,
@@ -1223,10 +1224,11 @@ class ConferenceChannel(
             # The realtime counterpart of speaking: the provider is the
             # room's voice, so a text event joins its conversation context
             # rather than being synthesized over it (RFC 12.10.12).
+            # As content its author wrote, never as the application's
+            # instruction (RFC §12.4), as on a realtime voice channel.
             await self._realtime.deliver_text(
                 event.room_id,
-                event.content.body,
-                role=str(event.metadata.get("inject_role", "system")),
+                broadcast_text(event, event.content.body, context),
                 silent=injection_silent(binding),
                 chain_depth=event.chain_depth,
                 injected_from=event,

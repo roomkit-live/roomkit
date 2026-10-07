@@ -554,12 +554,12 @@ class TestOpenAIRealtimeProvider:
         mod = _load_provider()
         provider, ws, session = _make_connected_provider(mod)
 
-        await provider.inject_text(session, "Bienvenue !", role="assistant")
+        await provider.inject_text(session, "Welcome!", role="assistant")
 
         item = json.loads(ws.send.call_args_list[0][0][0])["item"]
         assert item["role"] == "system"
         text = item["content"][0]["text"]
-        assert text.startswith("Say this to the user now") and '"Bienvenue !"' in text
+        assert text.startswith("Say this to the user now") and "“Welcome!”" in text
         assert json.loads(ws.send.call_args_list[1][0][0])["type"] == "response.create"
 
     async def test_inject_text_silent(self):

@@ -22,6 +22,7 @@ import re
 from typing import TYPE_CHECKING, Any, Literal, Protocol, cast, runtime_checkable
 from uuid import uuid4
 
+from roomkit._text import fence
 from roomkit.channels._realtime_tool_calls import RealtimeToolCall
 from roomkit.channels._realtime_tool_executor import ToolCallHost, run_tool_call
 from roomkit.telemetry.base import SpanKind
@@ -195,14 +196,15 @@ class RealtimeToolRecoveryMixin:
         issuing it, so it has no pending ``FunctionResponse`` to answer. A
         denial travels the same way as a result — the model reads why it was
         refused and can correct itself on its next turn. The result arrives
-        bounded by the channel's ``tool_result_max_length`` (RFC §21.5).
+        bounded by the channel's ``tool_result_max_length`` (RFC §21.5), and
+        fenced (:func:`recovered_result_text`).
         Injected through the channel, which announces it to
         ON_REALTIME_TEXT_INJECTED as every injection (RFC §12.4); an ended
         session takes none.
         """
         await self.inject_text(
             session,
-            f"[Tool {tool_name} {verb}: {result_str}]",
+            recovered_result_text(tool_name, verb, result_str),
             role="user",
             silent=True,
         )
@@ -254,6 +256,14 @@ class _RecoveredDoor:
             call.session, call.name, result_text(outcome.result), verb=verb
         )
         return True
+
+
+def recovered_result_text(tool_name: str, verb: str, result: str) -> str:
+    """A recovered call's outcome as the model reads it: what the tool returned
+    fenced as a tool's result, so it cannot end the block and read as the
+    runtime's words (RFC §6.4, §12.4). *tool_name* is one the session
+    declared."""
+    return f"[Tool {tool_name} {verb}]\n{fence('tool_result', result)}"
 
 
 _VERBS: dict[OutcomeKind, Literal["completed", "denied", "failed"]] = {

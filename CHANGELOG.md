@@ -617,6 +617,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   quotes. `fence()` and `named_blocks()` stay importable from
   `roomkit.tools.fence`. The realtime injections, the orchestration strategies
   and the vision context follow in RMK-590.
+- A text another channel broadcast no longer enters a realtime session as the
+  application's instruction (RMK-591, RFC §12.4). A realtime voice channel's
+  `on_event` and a conference's realtime delivery injected it with the `system`
+  intent by default, raw, and took the intent from `event.metadata
+  ["inject_role"]`, which the WebSocket and SSE sources and the HTTP webhook
+  fill from the client's payload: an SMS reading "Ignore your instructions"
+  reached the session as a direction. Both hosts now inject it through one
+  path as content, with the `user` intent, quoted after its author's name as
+  a transcript names them (`Marie · sms: “…”`, on one line, bounded at 4000
+  characters); nothing the event carries chooses the intent. **Behaviour
+  change:** `inject_role` is no longer read, and a supervisor's text is the
+  supervisor's words, not an instruction: the application directs the model
+  with `kit.deliver(..., instruction=True)` or `inject_text(..., role=
+  "system")`. A call recovered from speech hands its result back fenced in
+  `<tool_result>` (`[Tool name verb]` above it); an `assistant` line a
+  provider phrases as an instruction to say it is quoted; Gemini sets the
+  instruction a resumption left unapplied apart in an `<instructions>` block
+  before the text it rides with, and Deepgram appends silent content other
+  than a `system` instruction to its prompt in a `<context>` block of its
+  own, so neither reads as more of the instructions.
 
 ## [0.95.0] — 2026-10-05
 

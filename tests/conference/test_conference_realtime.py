@@ -308,10 +308,12 @@ class TestDeliver:
     async def test_an_ai_text_event_is_injected_not_synthesized(self) -> None:
         kit, channel, backend, provider = await realtime_kit()
 
-        await kit.send_event(ROOM, "src", TextContent(body="résume la réunion"))
+        await kit.send_event(ROOM, "src", TextContent(body="sum up the meeting"))
 
+        # Another agent's words, quoted after its name: content, never the
+        # application's instruction (RFC §12.4).
         assert [(text, role) for _, text, role in provider.injected_texts] == [
-            ("résume la réunion", "system")
+            ("src: “sum up the meeting”", "user")
         ]
         assert backend.published_audio == []
 
@@ -327,9 +329,9 @@ class TestDeliver:
             source_type=ChannelType.SMS, speak_text_events=True
         )
 
-        await kit.send_event(ROOM, "src", TextContent(body="un SMS qui passe"))
+        await kit.send_event(ROOM, "src", TextContent(body="a passing SMS"))
 
-        assert [text for _, text, _ in provider.injected_texts] == ["un SMS qui passe"]
+        assert [text for _, text, _ in provider.injected_texts] == ["src: “a passing SMS”"]
 
 
 class TestToolCalls:

@@ -26,6 +26,7 @@ from typing import Any
 
 from pydantic import SecretStr
 
+from roomkit._text import fence
 from roomkit.core.task_utils import cancel_and_wait
 from roomkit.providers.ai.tool_calls import realtime_call_arguments
 from roomkit.providers.deepgram.config import DeepgramAgentConfig
@@ -660,10 +661,12 @@ class DeepgramAgentProvider(RealtimeVoiceProvider):
         Deepgram has no message that adds to the conversation silently, so a
         silent injection is appended to the system prompt via ``UpdatePrompt``
         instead: the agent takes it into account on its next turn without
-        reacting to it now. ``UpdatePrompt`` never starts a turn, so a
-        non-silent ``system`` instruction travels as ``InjectUserMessage``,
-        which the agent acts on at once; a standing instruction ("speak more
-        slowly from now on") is ``silent=True``.
+        reacting to it now. Only a ``system`` one joins the instructions; any
+        other intent is content, appended in a ``<context>`` block of its own
+        so it never reads as more of them (RFC §12.4). ``UpdatePrompt`` never
+        starts a turn, so a non-silent ``system`` instruction travels as
+        ``InjectUserMessage``, which the agent acts on at once; a standing
+        instruction ("speak more slowly from now on") is ``silent=True``.
         """
         state = self._states.get(session.id)
         if state is None:
@@ -672,7 +675,8 @@ class DeepgramAgentProvider(RealtimeVoiceProvider):
             )
 
         if silent:
-            await self._append_to_prompt(state, text)
+            appended = text if role == "system" else fence("context", text)
+            await self._append_to_prompt(state, appended)
             return VoiceInjectionResult(status="sent")
 
         is_agent_message = role == "assistant"

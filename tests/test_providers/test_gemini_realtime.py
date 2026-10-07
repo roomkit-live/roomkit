@@ -755,12 +755,12 @@ class TestGeminiLiveProvider:
         )
         provider._sessions[session.id] = state
 
-        await provider.inject_text(session, "Bienvenue !", role="assistant")
+        await provider.inject_text(session, "Welcome!", role="assistant")
 
         turns = mock_live_session.send_client_content.call_args[1]["turns"]
         text = turns.parts[0].text
         assert text.startswith("Say this to the user now")
-        assert '"Bienvenue !"' in text
+        assert "“Welcome!”" in text
 
     async def test_inject_text_no_session(self):
         mod = _load_provider()

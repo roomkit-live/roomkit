@@ -26,7 +26,12 @@ from roomkit.channels._realtime_context import (
 )
 from roomkit.channels._realtime_delegation import RealtimeDelegationMixin
 from roomkit.channels._realtime_endings import SparedCalls, cut_tasks, interrupt_for_ending
-from roomkit.channels._realtime_host_hooks import fire_text_injected, serves
+from roomkit.channels._realtime_host_hooks import (
+    BROADCAST_INTENT,
+    broadcast_text,
+    fire_text_injected,
+    serves,
+)
 from roomkit.channels._realtime_response import RealtimeResponseMixin
 from roomkit.channels._realtime_speech import RealtimeSpeechMixin
 from roomkit.channels._realtime_tool_calls import ToolCallBook
@@ -2057,9 +2062,12 @@ class RealtimeVoiceChannel(
     ) -> ChannelOutput:
         """React to events from other channels — TEXT INJECTION.
 
-        When a supervisor or other channel sends a message, extract the text
-        and inject it into the provider session so the AI incorporates it.
-        Skips events from this channel (self-loop prevention).
+        A text another channel broadcast enters each session of the room as
+        content its author wrote, quoted after their name, never as the
+        application's instruction, whatever the event carries (RFC §12.4).
+        The application directs the model with ``inject_text`` and the
+        ``system`` intent, or ``kit.deliver(..., instruction=True)``. Skips
+        events from this channel (self-loop prevention).
         """
         # Self-loop prevention: skip our own events
         if event.source.channel_id == self.channel_id:
@@ -2068,11 +2076,7 @@ class RealtimeVoiceChannel(
         text = self.extract_text(event)
         if not text:
             return ChannelOutput.empty()
-
-        # Determine injection role from event metadata
-        inject_role = "system"
-        if event.metadata and isinstance(event.metadata, dict):
-            inject_role = event.metadata.get("inject_role", "system")
+        text = broadcast_text(event, text, context)
 
         # Into every live session of the room, as any injection goes: silent
         # under a muted binding, one deeper than the event, announced once.
@@ -2082,7 +2086,7 @@ class RealtimeVoiceChannel(
                 await self._inject(
                     session,
                     text,
-                    role=inject_role,
+                    role=BROADCAST_INTENT,
                     silent=silent,
                     chain_depth=event.chain_depth,
                     injected_from=event,

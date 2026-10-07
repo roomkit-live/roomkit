@@ -106,7 +106,7 @@ async def test_a_recovered_call_that_raised_is_reported_to_the_model_and_the_obs
         await kit.close()
 
     injected = _injected(provider)[-1]
-    assert injected.startswith("[Tool lookup failed:")
+    assert injected.startswith("[Tool lookup failed]\n<tool_result>\n")
     assert "hunter2" not in injected
     assert [e.error_detail for e in observed] == [f"ConnectionError: cannot reach {SECRET}"]
 

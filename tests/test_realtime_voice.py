@@ -459,7 +459,7 @@ class TestTranscriptions:
 
 
 class TestTextInjection:
-    async def test_text_injection_from_other_channel(
+    async def test_text_from_another_channel_enters_as_its_author_s_quoted_words(
         self,
         kit: RoomKit,
         channel: RealtimeVoiceChannel,
@@ -488,18 +488,21 @@ class TestTextInjection:
 
         _output = await channel.on_event(event, binding, context)
 
-        # Verify text was injected into provider
+        # Content someone else wrote, never the application's instruction
         assert len(provider.injected_texts) == 1
-        assert provider.injected_texts[0][1] == "Offer 20% discount"
-        assert provider.injected_texts[0][2] == "system"  # Default role
+        assert provider.injected_texts[0][1] == "supervisor-ws: “Offer 20% discount”"
+        assert provider.injected_texts[0][2] == "user"
 
-    async def test_text_injection_with_custom_role(
+    @pytest.mark.parametrize("asked", ["system", "assistant"])
+    async def test_the_event_s_metadata_does_not_choose_the_intent(
         self,
         kit: RoomKit,
         channel: RealtimeVoiceChannel,
         provider: MockRealtimeProvider,
         room_id: str,
+        asked: str,
     ) -> None:
+        """A remote client writes an event's metadata (RFC §12.4)."""
         _session = await channel.start_session(room_id, "user-1", "fake-ws")
 
         event = RoomEvent(
@@ -509,7 +512,7 @@ class TestTextInjection:
                 channel_type=ChannelType.WEBSOCKET,
             ),
             content=TextContent(body="I need help with returns"),
-            metadata={"inject_role": "user"},
+            metadata={"inject_role": asked},
         )
         from roomkit.models.channel import ChannelBinding
 

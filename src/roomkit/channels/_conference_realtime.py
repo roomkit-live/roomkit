@@ -45,6 +45,7 @@ from roomkit.channels._conference_tools import (
 )
 from roomkit.channels._realtime_endings import SparedCalls, abandon_calls, interrupt_for_ending
 from roomkit.channels._realtime_host_hooks import (
+    BROADCAST_INTENT,
     FALLBACK_NO_BACKEND,
     fire_delegation,
     fire_session_error,
@@ -503,12 +504,12 @@ class ConferenceRealtime:
         room_id: str,
         text: str,
         *,
-        role: str,
         silent: bool,
         chain_depth: int = 0,
         injected_from: RoomEvent | None = None,
     ) -> None:
-        """Inject a broadcast text event into the provider's context.
+        """Inject a broadcast text event, rendered by ``broadcast_text``, into
+        the provider's context with the broadcast intent (RFC §12.4).
 
         The realtime counterpart of speaking it: a 1:1 realtime channel
         injects rather than synthesizes, and the conference follows suit.
@@ -526,7 +527,7 @@ class ConferenceRealtime:
             await self.inject_text(
                 session,
                 text,
-                role=role,
+                role=BROADCAST_INTENT,
                 silent=silent,
                 chain_depth=chain_depth,
                 injected_from=injected_from,

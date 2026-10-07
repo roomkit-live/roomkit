@@ -457,10 +457,10 @@ class TestDisconnect:
         mock_conversation = AsyncMock()
         provider._conversations[session.id] = mock_conversation
 
-        await provider.inject_text(session, "Bienvenue !", role="assistant")
+        await provider.inject_text(session, "Welcome!", role="assistant")
 
         (text,) = mock_conversation.send_user_message.await_args.args
-        assert text.startswith("Say this to the user now") and '"Bienvenue !"' in text
+        assert text.startswith("Say this to the user now") and "“Welcome!”" in text
 
     async def test_close_disconnects_all(
         self, provider: ElevenLabsRealtimeProvider, session: VoiceSession

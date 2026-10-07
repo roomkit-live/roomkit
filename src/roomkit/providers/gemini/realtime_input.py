@@ -12,6 +12,7 @@ import re
 from collections.abc import Callable
 from typing import Any
 
+from roomkit._text import fence
 from roomkit.providers.gemini.realtime_config import genai_types
 from roomkit.providers.gemini.realtime_state import _GeminiSessionState
 from roomkit.voice.base import VoiceSession, VoiceSessionState
@@ -45,15 +46,17 @@ def _into_conversation(state: _GeminiSessionState, text: str, silent: bool) -> s
 
     Sending it gives the session a conversation. A non-silent injection also
     carries the instruction a resumption left unapplied (RFC §12.4): the
-    model follows an instruction it is handed in a turn.
+    model follows an instruction it is handed in a turn. The instruction is
+    set apart in a block of its own before the text, so the text never reads
+    as more of it.
     """
     state.has_conversation = True
     if silent or state.pending_instructions is None:
         return text
     instructions, state.pending_instructions = state.pending_instructions, None
     return (
-        "Your instructions have been replaced. From now on, follow only these:\n"
-        f"{instructions}\n\n{text}"
+        "Your instructions have been replaced. From now on, follow only the ones "
+        f"in this block:\n{fence('instructions', instructions)}\n\n{text}"
     )
 
 

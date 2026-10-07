@@ -4,13 +4,16 @@ plugged in (RFC §12.5). ON_REALTIME_TEXT_INJECTED for text entering the
 model's context, ON_ERROR for a failure of its session,
 ON_REALTIME_DELEGATION for a delegation, and what both hosts share around
 them: the spoken fallback a delegation is answered with when nothing else
-answers it, and the one test of whether a session still takes text."""
+answers it, the one test of whether a session still takes text, and what a
+text another channel broadcast becomes in a session."""
 
 from __future__ import annotations
 
 import logging
 from typing import TYPE_CHECKING, Literal
 
+from roomkit._text import quoted
+from roomkit.channels._speaker import speaker_label
 from roomkit.models.enums import HookTrigger
 from roomkit.models.event import EventSource, RoomEvent, TextContent
 from roomkit.voice.base import VoiceSessionState
@@ -18,6 +21,7 @@ from roomkit.voice.realtime.events import RealtimeDelegationEvent
 
 if TYPE_CHECKING:
     from roomkit.core.framework import RoomKit
+    from roomkit.models.context import RoomContext
     from roomkit.voice.base import VoiceSession
     from roomkit.voice.realtime.provider import RealtimeVoiceProvider
 
@@ -26,6 +30,23 @@ logger = logging.getLogger("roomkit.channels.realtime_host_hooks")
 FALLBACK_NO_BACKEND = "No backend is available to handle delegated work in this session."
 FALLBACK_NO_OUTPUT = "The delegated work finished without an answer."
 FALLBACK_TIMEOUT = "The delegated work took too long and was abandoned."
+
+BROADCAST_INTENT = "user"
+"""The intent a text another channel broadcast enters a realtime session with:
+content someone else wrote, never the application's instruction, whatever the
+event carries (RFC §12.4)."""
+
+BROADCAST_TEXT_LIMIT = 4000
+"""The characters of a broadcast text a session takes, as an ACP agent's room
+context takes a message."""
+
+
+def broadcast_text(event: RoomEvent, text: str, context: RoomContext) -> str:
+    """*text*, which *event* broadcast, as a realtime host injects it: quoted
+    after its author's name, as a transcript names them (RFC §6.4, §12.4).
+    ``Marie · sms: “…”``: on one line, it cannot end its quote nor add a line
+    of its own."""
+    return f"{speaker_label(event, context)}: {quoted(text, BROADCAST_TEXT_LIMIT)}"
 
 
 def serves(held: VoiceSession | None, session: VoiceSession) -> bool:

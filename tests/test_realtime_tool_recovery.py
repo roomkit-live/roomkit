@@ -345,7 +345,7 @@ class TestRecoveredResultsFollowChannelPolicy:
         await asyncio.sleep(0.1)
 
         injected = _injected(provider)[-1]
-        assert injected.startswith("[Tool lookup failed:")
+        assert injected.startswith("[Tool lookup failed]\n<tool_result>\n")
         assert "hook is broken" not in injected
 
     async def test_a_handler_result_outranks_a_broken_hook(

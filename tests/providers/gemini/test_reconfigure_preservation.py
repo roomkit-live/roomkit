@@ -326,6 +326,27 @@ class TestReconfigureResumption:
         assert ("You are Bill." in sent[0]) is carried
         assert "You are Bill." not in sent[1]  # carried once
 
+    async def test_the_text_never_reads_as_more_of_the_instructions_it_carries(
+        self, provider: GeminiLiveProvider
+    ) -> None:
+        """The instruction a resumption left unapplied is set apart in a block
+        of its own before the text it rides with (RFC §12.4, RMK-591)."""
+        provider._model = "gemini-3.8-live"
+        state = _populate_session_state(provider, _make_session())
+        state.resumption_handle = "handle-1"
+        state.has_conversation = True
+        state.live_session = AsyncMock()
+
+        await provider.reconfigure(state.session, system_prompt="You are Bill.")
+        await provider.inject_text(state.session, "Marie · sms: “hello”", role="user")
+
+        [call] = state.live_session.send_client_content.call_args_list
+        assert call.kwargs["turns"].parts[0].text == (
+            "Your instructions have been replaced. From now on, follow only the ones in "
+            "this block:\n<instructions>\nYou are Bill.\n</instructions>\n\n"
+            "Marie · sms: “hello”"
+        )
+
     async def test_a_fresh_session_carries_no_instructions(
         self, provider: GeminiLiveProvider
     ) -> None:
