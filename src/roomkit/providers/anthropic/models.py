@@ -9,7 +9,8 @@ Sourced from the Anthropic models overview
 (platform.claude.com/docs/en/about-claude/models), verified 2026-09-03.
 
 All current Claude models accept image input; context windows are 1M for the
-4.6+/Opus 5/Fable/Mythos tier on the Claude API and 200K for the rest. Dated
+4.6+/Opus 5/Fable/Mythos tier and Haiku 5.5 on the Claude API and 200K for the
+rest. Dated
 snapshot ids and their dateless aliases are both listed so either form
 resolves here.
 
@@ -22,7 +23,10 @@ every model but three: Claude Fable 5.1 and Claude Mythos 5.1, where a hit
 bills 0.025x ($0.25 per million), and Claude Opus 5.5, where it bills 0.05x
 ($0.20 per million; pricing page, read 2026-09-22). Modifiers that are per-request rather than
 per-model are absent by construction: the Batch API's 50%, fast mode's 2x,
-and the 1.1x for ``inference_geo: "us"``.
+and the 1.1x for ``inference_geo: "us"``. Claude Haiku 5.5 is the one model
+priced by prompt length: $0.10 / $0.50 per million up to 100,000 input tokens,
+five times that above (pricing page, read 2026-10-07), which its
+``long_context_*`` fields carry.
 
 One rate here outlived its expiry: Claude Sonnet 5 launched at $2/$10 as
 introductory pricing through 2026-08-31, with $3/$15 scheduled from
@@ -185,6 +189,25 @@ MODELS: list[ModelInfo] = [
             cache_read_per_million=0.3,
             cache_write_per_million=3.75,
             verified=_VERIFIED,
+        ),
+    ),
+    ModelInfo(
+        id="claude-haiku-5-5",
+        display_name="Claude Haiku 5.5",
+        context_window=1_000_000,
+        supports_vision=True,
+        capabilities=["thinking", "deferred_tools"],
+        # Priced by prompt length: up to 100,000 input tokens at the rates
+        # below, five times them above (pricing page, read 2026-10-07).
+        pricing=ModelPricing(
+            input_per_million=0.10,
+            output_per_million=0.50,
+            cache_read_per_million=0.01,
+            cache_write_per_million=0.125,
+            long_context_threshold_tokens=100_000,
+            long_context_input_multiplier=5.0,
+            long_context_output_multiplier=5.0,
+            verified=date(2026, 10, 7),
         ),
     ),
     ModelInfo(

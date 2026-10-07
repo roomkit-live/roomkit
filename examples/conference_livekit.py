@@ -35,7 +35,7 @@ Environment, per mode (every variable is optional; extras add to ``livekit``):
     TTS         ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID         roomkit[elevenlabs]
                 — without the key, a 440 Hz beep
     AI          ANTHROPIC_API_KEY, ANTHROPIC_MODEL              roomkit[anthropic]
-                (claude-haiku-4-5)
+                (claude-haiku-5-5)
     Realtime    ROOMKIT_REALTIME=1 with GEMINI_API_KEY          roomkit[realtime-gemini]
                 (GEMINI_MODEL, default gemini-3.8-live) or OPENAI_API_KEY
                 (OPENAI_MODEL, default the provider's)           roomkit[realtime-openai]
@@ -61,7 +61,7 @@ version of this loop is ``conference_ai_meeting.py``). Typed text then becomes
 a silent prompt to the model instead of the bot's script. All three keys
 together make it a conversation; without the AI key, what you type is what
 the bot says. Two knobs: ``ANTHROPIC_MODEL`` picks the model (default
-``claude-haiku-4-5`` — a spoken answer is judged by its latency first) and
+``claude-haiku-5-5`` — a spoken answer is judged by its latency first) and
 ``DEEPGRAM_LANGUAGE`` the STT language (default ``en`` — set ``fr`` to speak
 French; the assistant answers in the language it is addressed in):
 
@@ -341,7 +341,7 @@ def build_ai(notes: list[str]) -> Any | None:
     # Named explicitly rather than left to the provider default, and defaulted
     # to Haiku: a spoken answer is judged by its latency before its depth, and
     # the model is the caller's call anyway — ANTHROPIC_MODEL overrides.
-    model = os.getenv("ANTHROPIC_MODEL", "claude-haiku-4-5")
+    model = os.getenv("ANTHROPIC_MODEL", "claude-haiku-5-5")
     notes.append(f"AI: Anthropic {model} — speak to the meeting and the bot answers out loud")
     return AIChannel(
         "ai",

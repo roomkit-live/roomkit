@@ -98,7 +98,7 @@ def make_classifier() -> Classifier:
 def make_thinker() -> Thinker:
     if os.environ.get("THINKER", "mock") == "anthropic":
         key = require_env("ANTHROPIC_API_KEY")["ANTHROPIC_API_KEY"]
-        config = AnthropicConfig(api_key=key, model="claude-haiku-4-5-20251001")
+        config = AnthropicConfig(api_key=key, model="claude-haiku-5-5")
         return LLMThinker(AnthropicAIProvider(config))
     return MockThinker([PRICE])
 

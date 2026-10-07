@@ -597,3 +597,14 @@ async def test_mistral_list_models_maps_and_merges() -> None:
     assert models["ft:xyz"].display_name is None
     assert models["voxtral-mini-transcribe-realtime-2602"].capabilities == ["transcription"]
     assert models["voxtral-mini-tts-latest"].capabilities == ["speech"]
+
+
+def test_claude_haiku_5_5_is_priced_by_prompt_length() -> None:
+    """RMK-578: up to 100,000 input tokens at $0.10 / $0.50, five times that above."""
+    haiku = next(m for m in AnthropicAIProvider.available_models() if m.id == "claude-haiku-5-5")
+    assert haiku.pricing is not None
+    assert haiku.context_window == 1_000_000
+    short = {"input_tokens": 50_000, "output_tokens": 1_000, "cache_read_input_tokens": 10_000}
+    long = {"input_tokens": 150_000, "output_tokens": 1_000, "cache_read_input_tokens": 10_000}
+    assert haiku.pricing.cost_for(short) == pytest.approx(0.005 + 0.0005 + 0.0001)
+    assert haiku.pricing.cost_for(long) == pytest.approx(0.075 + 0.0025 + 0.0005)

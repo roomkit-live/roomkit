@@ -100,7 +100,7 @@ async def main() -> None:
 
     # Lightweight provider for summarization (Haiku — fast and cheap)
     summary_provider = AnthropicAIProvider(
-        AnthropicConfig(api_key=api_key, model="claude-haiku-4-5-20251001")
+        AnthropicConfig(api_key=api_key, model="claude-haiku-5-5")
     )
 
     # Tight budget so compression is visible after a few exchanges.

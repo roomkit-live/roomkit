@@ -219,7 +219,7 @@ def build_ai_provider() -> Any:
     if api_key := os.environ.get("ANTHROPIC_API_KEY"):
         from roomkit.providers.anthropic import AnthropicAIProvider, AnthropicConfig
 
-        return AnthropicAIProvider(AnthropicConfig(api_key=api_key, model="claude-haiku-4-5"))
+        return AnthropicAIProvider(AnthropicConfig(api_key=api_key, model="claude-haiku-5-5"))
     return MockAIProvider(
         ai_responses=[
             AIResponse(

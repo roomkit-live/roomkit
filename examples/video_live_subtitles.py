@@ -184,7 +184,7 @@ async def main() -> None:
     translator = AnthropicAIProvider(
         AnthropicConfig(
             api_key=env["ANTHROPIC_API_KEY"],
-            model="claude-haiku-4-5-20251001",
+            model="claude-haiku-5-5",
         )
     )
 

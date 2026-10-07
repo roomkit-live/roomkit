@@ -351,9 +351,10 @@ class TestAnthropicAIProvider:
 
     # Anthropic's own per-model table (extended-thinking troubleshooting and
     # the sampling-parameter rule, read 2026-09-22; Sonnet 5.5 from the model
-    # reference, 2026-09-30): these refuse temperature and budget_tokens with
-    # HTTP 400.
+    # reference, 2026-09-30; Haiku 5.5 measured on the API, 2026-10-07): these
+    # refuse temperature and budget_tokens with HTTP 400.
     _MODERN = {
+        "claude-haiku-5-5",
         "claude-opus-5-5",
         "claude-opus-5",
         "claude-opus-4-8",

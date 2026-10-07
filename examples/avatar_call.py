@@ -28,7 +28,7 @@ Environment variables:
     DEEPGRAM_MODEL       Deepgram model (default: nova-2)
     VOICE_LANGUAGE       Speech language (default: en)
     ELEVENLABS_VOICE_ID  ElevenLabs voice (default: Rachel)
-    AI_MODEL             Claude model (default: claude-haiku-4-5-20251001)
+    AI_MODEL             Claude model (default: claude-haiku-5-5)
     SYSTEM_PROMPT        System prompt override
     RECORDING_DIR        Record each call (MP4) into this directory;
                          unset = no recording
@@ -180,7 +180,7 @@ async def main() -> None:
 
     # --- AI: Claude -------------------------------------------------------------
     # A fast model: replies are one or two spoken sentences (256 tokens).
-    ai_model = os.environ.get("AI_MODEL", "claude-haiku-4-5-20251001")
+    ai_model = os.environ.get("AI_MODEL", "claude-haiku-5-5")
     ai_provider = AnthropicAIProvider(
         AnthropicConfig(
             api_key=anthropic_key,

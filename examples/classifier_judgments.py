@@ -110,7 +110,7 @@ def classifier_for(turn: int) -> Classifier:
         return JevClassifier(require_env("TYPESAFE_API_KEY")["TYPESAFE_API_KEY"])
     if kind == "anthropic":
         key = require_env("ANTHROPIC_API_KEY")["ANTHROPIC_API_KEY"]
-        config = AnthropicConfig(api_key=key, model="claude-haiku-4-5-20251001")
+        config = AnthropicConfig(api_key=key, model="claude-haiku-5-5")
         return LLMClassifier(AnthropicAIProvider(config))
     return MockClassifier(SCRIPT[turn])
 

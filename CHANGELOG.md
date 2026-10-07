@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Claude Haiku 5.5 (`claude-haiku-5-5`, released 2026-10-07) in the Anthropic
+  catalog (RMK-578): 1M context, adaptive thinking and effort (the provider
+  already treats it as a modern model: no `temperature`, no `budget_tokens`),
+  priced by prompt length, $0.10 / $0.50 per million up to 100,000 input
+  tokens and five times that above, which `ModelPricing`'s long-context fields
+  carry. The examples that ran on Claude Haiku 4.5 now run on Haiku 5.5.
+
 - Thinking while listening (RMK-562, RFC §6.4): `AIChannel(thinker=...,
   think_wait=1.5)` keeps, per room and in memory, the agent's `Thought` (what it
   thinks, what it would say if given the turn, whether that cannot wait). On an
