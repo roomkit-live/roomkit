@@ -50,11 +50,12 @@ from roomkit.tasks.models import (
     finished_task_fields,
     task_work,
 )
-from roomkit.tasks.status import post_task_ended, post_task_pending
+from roomkit.tasks.status import post_task_ended, post_task_pending, room_task_lines
 from roomkit.telemetry.base import Attr, SpanKind
 from roomkit.tools.context import _current_turn_chain_depth
 
 if TYPE_CHECKING:
+    from roomkit.channels._ai_callbacks import RoomTasksLoader
     from roomkit.channels.base import Channel
     from roomkit.core.hooks import HookEngine
     from roomkit.orchestration.result import ResultTool
@@ -64,6 +65,9 @@ if TYPE_CHECKING:
 
 
 _tasks_logger = logging.getLogger("roomkit.tasks")
+
+_ROOM_TASKS_WINDOW = 500
+"""Bus entries an AI channel reads for its room's tasks, as ``task_status`` does."""
 
 
 # ---------------------------------------------------------------------------
@@ -272,6 +276,18 @@ class DelegationMixin(HelpersMixin):
     attach_channel: Any  # see DelegationHost
     deliver: Any  # see DelegationHost
 
+    def _build_room_tasks_loader(self) -> RoomTasksLoader:
+        """Build the loader an AI channel reads its room's background tasks with,
+        for the turn's notes (RFC §23.4): the StatusBus's lines for the room, as
+        ``task_status`` reads them."""
+        kit_ref = self
+
+        async def _load(room_id: str) -> list[dict[str, Any]]:
+            bus = kit_ref.status_bus  # ty: ignore[unresolved-attribute]  # RoomKit's
+            return await room_task_lines(bus, room_id, _ROOM_TASKS_WINDOW)
+
+        return _load
+
     async def delegate(
         self,
         room_id: str,
@@ -446,6 +462,7 @@ class DelegationMixin(HelpersMixin):
                 **inherited_metadata,
                 "_child_metadata": inherited_metadata,
                 "parent_room_id": room_id,
+                "task_id": handle.id,
                 "task_agent_id": agent_id,
                 "task_input": task,
                 "task_context": context or {},

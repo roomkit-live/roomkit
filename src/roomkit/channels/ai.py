@@ -425,6 +425,9 @@ class AIChannel(
         # (restarts, cache expiry) — the in-memory store dies with the object
         # while conversations outlive it.
         self._tool_usage_loader = None
+        # The room's background tasks for the turn's notes (RFC §23.4), read
+        # from the framework's StatusBus: wired at registration.
+        self._room_tasks_loader = None
 
     @property
     def tool_handler(self) -> ToolHandler | None:

@@ -37,3 +37,7 @@ ThoughtHook = Callable[["ThoughtEvent"], Awaitable[None]]
 
 ToolUsageLoader = Callable[[str], Awaitable[list[dict[str, Any]]]]
 """A room's stored tool calls, read to rebuild the channel's tool memory."""
+
+RoomTasksLoader = Callable[[str], Awaitable[list[dict[str, Any]]]]
+"""A room's background tasks as the StatusBus lists them, read for the turn's
+notes (RFC §23.4)."""

@@ -37,6 +37,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from roomkit._text import bounded_text
 from roomkit.core.task_utils import log_task_exception
 
 logger = logging.getLogger("roomkit.orchestration.status_bus")
@@ -372,21 +373,6 @@ DETAIL_LIMIT = 200
 
 RESULT_LIMIT = 4_000
 """A completed entry's whole outcome, in ``metadata["result"]`` when its detail was cut."""
-
-
-def bounded_text(text: str, limit: int) -> str:
-    """*text* within *limit* characters: cut at a word, the cut ending in "…".
-
-    Never in the middle of a word or a number: a forecast's "14,9 °C" cut to "1"
-    was read back as a temperature (RMK-556).
-    """
-    if len(text) <= limit:
-        return text
-    cut = text[: limit - 1]
-    space = cut.rfind(" ")
-    if space > limit // 2:
-        cut = cut[:space]
-    return cut.rstrip() + "…"
 
 
 def post_agent_lifecycle(

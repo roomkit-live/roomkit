@@ -16,6 +16,7 @@ from roomkit.tasks.status import (
     TASK_STATUS_TOOL,
     CancelTaskTool,
     TaskStatusTool,
+    post_task_progress,
 )
 
 __all__ = [
@@ -32,6 +33,7 @@ __all__ = [
     "TaskRunner",
     "TaskStatusTool",
     "build_delegate_tool",
+    "post_task_progress",
     "setup_delegation",
     "setup_realtime_delegation",
 ]

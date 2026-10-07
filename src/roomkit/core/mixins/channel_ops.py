@@ -71,6 +71,7 @@ class ChannelOpsHost(Protocol):
         send_greeting: From :class:`GreetingMixin`.
         _clear_greeting_gate: From :class:`GreetingMixin`.
         _force_clear_greeting_gate: From :class:`GreetingMixin`.
+        _build_room_tasks_loader: From :class:`DelegationMixin`.
     """
 
     _store: ConversationStore
@@ -103,6 +104,7 @@ class ChannelOpsMixin(HelpersMixin):
     send_greeting: Any  # see ChannelOpsHost
     _clear_greeting_gate: Any  # see ChannelOpsHost
     _force_clear_greeting_gate: Any  # see ChannelOpsHost
+    _build_room_tasks_loader: Any  # see ChannelOpsHost
 
     def register_channel(self, channel: Channel) -> None:
         """Register a channel implementation by its ID.
@@ -203,6 +205,7 @@ class ChannelOpsMixin(HelpersMixin):
         channel._tool_report_hook = self._build_tool_report_hook(channel.channel_id)
         channel._before_tool_call_hook = self._build_before_tool_call_hook(channel.channel_id)
         channel._tool_usage_loader = self._build_tool_usage_loader(channel.channel_id)
+        channel._room_tasks_loader = self._build_room_tasks_loader()
         channel._before_generation_hook = self._build_before_generation_hook(channel.channel_id)
         channel._after_tool_round_hook = self._build_after_tool_round_hook()
         channel._thinking_hook = self._build_thinking_hook(channel.channel_id)

@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- An agent knows its room's background tasks and how far each got without a
+  tool call (RMK-564, RMK-544, RFC §23.3, §23.4). A worker's tool says how far
+  its task got with `roomkit.tasks.post_task_progress(kit, detail)`: an `info`
+  entry on the StatusBus under `action="task"`, which never ends the task
+  (`task_status` gives it as `progress` and `progress_at`); the child room's
+  metadata now names its `task_id`. Every AI channel's turn carries the room's
+  latest six tasks in its notes, read from the bus as the turn is built: what
+  each was asked, how long it has run, its latest progress and that no result
+  has come back, or how it ended; what a worker wrote is quoted on one line and
+  bounded, between quote marks it cannot close. A standalone turn carries none. Example:
+  `examples/task_progress_note.py`.
+
 - An agent knows its answer was cut off (RMK-563, RFC §6.4). When a barge-in
   cuts the agent, the context its next turn reads marks that answer as
   interrupted ("the person may not have heard the end of it") instead of heard

@@ -16,7 +16,7 @@ from typing import Any
 
 import pytest
 
-from roomkit import ChannelCategory, HookResult, HookTrigger, RoomKit
+from roomkit import ChannelCategory, HookResult, HookTrigger, RoomKit, split_turn_notes
 from roomkit.channels._realtime_context import _current_voice_session
 from roomkit.channels.agent import Agent
 from roomkit.channels.ai import AIChannel
@@ -63,11 +63,13 @@ async def _kit(worker_output: str, kit: RoomKit | None = None) -> tuple[RoomKit,
 
 
 async def _told(agent: AIChannel, count: int) -> list[str]:
+    """What each of *agent*'s turns was told, apart from the turn's notes (the
+    room's tasks among them, RFC §23.4)."""
     for _ in range(100):
         if len(agent._provider.calls) >= count:
             break
         await asyncio.sleep(0.01)
-    return [str(call.messages[-1].content) for call in agent._provider.calls]
+    return [split_turn_notes(str(call.messages[-1].content))[0] for call in agent._provider.calls]
 
 
 async def test_delegations_leave_the_notified_agent_s_prompt_as_configured() -> None:

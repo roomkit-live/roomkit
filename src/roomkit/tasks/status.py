@@ -1,5 +1,5 @@
-"""A delegated task on the framework's StatusBus, and the tools that read a room's
-tasks and cancel one of them (RFC §23.3, §23.4)."""
+"""A delegated task on the framework's StatusBus, its progress, and the tools that
+read a room's tasks and cancel one of them (RFC §23.3, §23.4)."""
 
 from __future__ import annotations
 
@@ -7,9 +7,14 @@ import json
 from collections.abc import Iterable
 from typing import TYPE_CHECKING, Any
 
-from roomkit.core.exceptions import UnservedToolCallError
+from roomkit.core.exceptions import RoomNotFoundError, UnservedToolCallError
 from roomkit.models.enums import TaskStatus
-from roomkit.orchestration.status_bus import StatusEntry, StatusLevel, post_agent_lifecycle
+from roomkit.orchestration.status_bus import (
+    StatusBus,
+    StatusEntry,
+    StatusLevel,
+    post_agent_lifecycle,
+)
 from roomkit.tools.context import current_tool_call, current_tool_room_id
 
 if TYPE_CHECKING:
@@ -61,9 +66,40 @@ def post_task_ended(kit: RoomKit, result: DelegatedTaskResult) -> None:
     )
 
 
+async def post_task_progress(kit: RoomKit, detail: str) -> bool:
+    """From a tool a worker calls in its task's child room: say how far the task
+    got ("12/30 s", "3 sources of 5"), for the room that delegated it (RFC §23.3).
+
+    Posts an ``info`` entry under the worker, action ``task``, with the task's
+    metadata; it does not end the task. Returns whether it posted: a call
+    outside a task's child room posts nothing.
+    """
+    child_room_id = current_tool_room_id()
+    if child_room_id is None:
+        return False
+    try:
+        room = await kit.get_room(child_room_id)
+    except RoomNotFoundError:
+        return False
+    metadata = room.metadata
+    parent_room_id, task_id = metadata.get("parent_room_id"), metadata.get("task_id")
+    if not parent_room_id or not task_id:
+        return False
+    post_agent_lifecycle(
+        kit,
+        str(metadata.get("task_agent_id") or "worker"),
+        StatusLevel.INFO,
+        action=TASK_ACTION,
+        detail=detail,
+        metadata=_task_metadata(str(parent_room_id), str(task_id), child_room_id),
+    )
+    return True
+
+
 def room_tasks(entries: Iterable[StatusEntry]) -> list[dict[str, Any]]:
     """One line per task, from its entries in posting order: the task from its
-    ``pending`` entry, its state and result from its latest.
+    ``pending`` entry, its state and result from its latest terminal one, its
+    progress from its latest ``info`` one, which never ends it.
 
     An orchestration worker run posts its ``pending`` entry before its task has
     an id: the run's terminal entry, which names the task, joins it.
@@ -83,6 +119,9 @@ def room_tasks(entries: Iterable[StatusEntry]) -> list[dict[str, Any]]:
             line.update(task=entry.detail, status="running", since=entry.ts)
             line.pop("result", None)
             line.pop("ended", None)
+            continue
+        if entry.status == StatusLevel.INFO:
+            line.update(progress=entry.detail, progress_at=entry.ts)
             continue
         status = str(entry.metadata.get("task_status") or entry.status)
         line.update(status=status, ended=entry.ts)
@@ -143,7 +182,7 @@ class TaskStatusTool:
         room_id = current_tool_room_id()
         if room_id is None:
             return json.dumps({"error": "task_status answers only within a conversation"})
-        tasks = await _room_task_lines(self._kit, room_id, self._window)
+        tasks = await room_task_lines(self._kit.status_bus, room_id, self._window)
         wanted = str(arguments.get("task_id") or "")
         if wanted:
             tasks = [t for t in tasks if t["task_id"] == wanted]
@@ -152,9 +191,9 @@ class TaskStatusTool:
         return json.dumps({"tasks": tasks[-self._limit :]}, ensure_ascii=False)
 
 
-async def _room_task_lines(kit: RoomKit, room_id: str, window: int) -> list[dict[str, Any]]:
-    """The tasks the bus lists for *room_id*, read from its latest *window* entries."""
-    entries = await kit.status_bus.recent(window)
+async def room_task_lines(bus: StatusBus, room_id: str, window: int) -> list[dict[str, Any]]:
+    """The tasks *bus* lists for *room_id*, read from its latest *window* entries."""
+    entries = await bus.recent(window)
     return room_tasks(
         e for e in entries if e.action == TASK_ACTION and e.metadata.get("room_id") == room_id
     )
@@ -224,7 +263,7 @@ class CancelTaskTool:
         return _answer(task_id, str(ended.get("status")), "The task had already ended.")
 
     async def _line(self, room_id: str, task_id: str) -> dict[str, Any] | None:
-        lines = await _room_task_lines(self._kit, room_id, self._window)
+        lines = await room_task_lines(self._kit.status_bus, room_id, self._window)
         return next((t for t in lines if t["task_id"] == task_id), None)
 
     async def _cancel(self, task_id: str) -> bool:
