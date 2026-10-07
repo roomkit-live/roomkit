@@ -14,6 +14,7 @@ import email
 import email.policy
 import io
 import json
+import time
 import wave
 from collections.abc import AsyncIterator, Awaitable, Callable
 from http import HTTPStatus
@@ -362,6 +363,24 @@ class TestStreaming:
         assert record.handshake["mode"] == "PUSH_TO_TALK"
         assert [r.is_final for r in results] == [False, True]
         assert results[-1].text == "Bonjour, une table."
+
+    async def test_a_backlog_is_paced_not_sent_at_once(self) -> None:
+        """A stream that opens on a backlog sends a burst, then catches up at a
+        bounded speed (RFC §12.2): the service refuses 7 s of audio at once."""
+        record = _Record()
+        backlog = [AudioChunk(data=_PCM_16K, sample_rate=16000) for _ in range(12)]
+        with (
+            patch("roomkit.voice.stt.meta._BURST_S", 0.2),
+            patch("roomkit.voice.stt.meta._CATCH_UP_SPEED", 10.0),
+        ):
+            async with _server(_scripted(record, [_END_OF_STREAM])) as url:
+                start = time.monotonic()
+                await _collect(_provider(url), *backlog)
+                elapsed = time.monotonic() - start
+
+        assert bytes(record.audio) == _PCM_16K * 12
+        # 1.2 s of audio: 0.2 s at once, then 1 s at ten times real time.
+        assert elapsed >= 0.1
 
     async def test_24khz_goes_through_untouched(self) -> None:
         record = _Record()

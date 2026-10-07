@@ -72,9 +72,34 @@ def _with_hook_sender_name(speaker: SpeakerAttribution, hook_event: Any) -> Spea
     return speaker
 
 
+_CARRY_OVER_MAX_S = 5.0
+"""Audio carried from one continuous STT stream into the next at most (RFC
+§12.2): a reconnect that waits on a silent service gathers a backlog the next
+stream's service may refuse (Meta: 7 s at once), and speech older than this is
+past answering anyway."""
+
+
 def _duration(chunk: AudioChunk) -> float:
     """Seconds of 16-bit PCM in ``chunk``."""
     return len(chunk.data) / (2 * max(chunk.channels, 1) * chunk.sample_rate)
+
+
+def _carry_over(old: asyncio.Queue[Any], new: asyncio.Queue[Any]) -> float:
+    """Move what *old* holds into *new*, keeping the most recent
+    ``_CARRY_OVER_MAX_S`` of audio; the seconds dropped."""
+    held: list[Any] = []
+    while not old.empty():
+        held.append(old.get_nowait())
+    excess = sum(_duration(item) for item in held if item is not None) - _CARRY_OVER_MAX_S
+    dropped = 0.0
+    # The tolerance keeps a float sum of chunk durations from dropping one too many.
+    while held and dropped < excess - 1e-6:
+        item = held.pop(0)
+        if item is not None:
+            dropped += _duration(item)
+    for item in held:
+        new.put_nowait(item)
+    return dropped
 
 
 def _segments_of(result: TranscriptionResult) -> list[SpeakerSegment]:
@@ -711,13 +736,15 @@ class VoiceSTTMixin:
                 # and will be flushed to the new queue on the next frame.
                 old_queue = state.queue
                 state.queue = asyncio.Queue[Any](maxsize=500)
-                # Drain frames from old queue into new queue so they are not lost
-                while not old_queue.empty():
-                    try:
-                        frame = old_queue.get_nowait()
-                        state.queue.put_nowait(frame)
-                    except (asyncio.QueueEmpty, asyncio.QueueFull):
-                        break
+                dropped = _carry_over(old_queue, state.queue)
+                if dropped:
+                    logger.warning(
+                        "STT reconnect for %s: dropped %.1fs of buffered audio, "
+                        "kept the last %.0fs",
+                        session.id,
+                        dropped,
+                        _CARRY_OVER_MAX_S,
+                    )
                 cur_queue = state.queue
 
                 async def audio_gen(

@@ -40,6 +40,7 @@ from roomkit.providers.utils import parse_data_uri
 from roomkit.voice.audio_frame import AudioFrame
 from roomkit.voice.base import AudioChunk, TranscriptionResult
 from roomkit.voice.pipeline.resampler.linear import LinearResamplerProvider
+from roomkit.voice.stt._pacing import AudioPace
 from roomkit.voice.stt.base import STTProvider
 from roomkit.voice.stt.meta_protocol import (
     WAV_MIME_TYPES,
@@ -60,6 +61,16 @@ if TYPE_CHECKING:
 logger = logging.getLogger("roomkit.voice.stt.meta")
 
 DEFAULT_MODEL = "muse-voice-transcribe-1.0"
+
+_BURST_S = 3.0
+"""Audio a stream sends at once at most. The realtime service refuses a stream
+sent 7 s or more ahead at once ("Audio processing backlog too large"; 6 s
+passes, measured 2026-10-07)."""
+
+_CATCH_UP_SPEED = 2.0
+"""How much faster than real time a backlog goes out past the burst: the
+service keeps up at 4x (20 s accepted) and not at 8x (refused after 3 s),
+measured 2026-10-07."""
 
 SUPPORTED_LANGUAGES: frozenset[str] = frozenset(
     {
@@ -343,16 +354,23 @@ class MetaSTTProvider(STTProvider):
     ) -> None:
         """Send the audio as binary frames, then ``endStream`` once it ends.
 
+        The audio is paced (RFC §12.2): a stream that opens on a backlog, after
+        a reconnect, would otherwise send it at once, and the service refuses
+        more unprocessed audio than it holds. The pace holds back reading from
+        the source, so the audio it has not reached stays there, for the next
+        stream if this one ends first.
+
         A failing audio source still ends the stream, so the service answers
         with the transcript of what it heard instead of waiting for more.
         """
         _, exceptions = _import_websockets()
+        pace = AudioPace(_BURST_S, _CATCH_UP_SPEED)
         try:
-            await ws.send(self._chunk_pcm(first, rate))
+            await _send_paced(ws, self._chunk_pcm(first, rate), rate, pace)
             if not first.is_final:
                 async for chunk in audio_stream:
                     if chunk.data:
-                        await ws.send(self._chunk_pcm(chunk, rate))
+                        await _send_paced(ws, self._chunk_pcm(chunk, rate), rate, pace)
                     if chunk.is_final:
                         break
         except exceptions.ConnectionClosed:
@@ -388,6 +406,14 @@ def _clip_pcm(audio: AudioContent | AudioChunk | AudioFrame) -> tuple[bytes, int
     if mime not in WAV_MIME_TYPES:
         raise ValueError(f"Meta transcribes WAV only, got {mime}")
     return read_wav(payload)
+
+
+async def _send_paced(ws: Any, pcm: bytes, rate: int, pace: AudioPace) -> None:
+    """Send ``pcm`` (mono 16-bit at ``rate``) once *pace* allows it."""
+    delay = pace.delay(len(pcm) / (2 * rate))
+    if delay:
+        await asyncio.sleep(delay)
+    await ws.send(pcm)
 
 
 async def _first_audio(audio_stream: AsyncIterator[AudioChunk]) -> AudioChunk | None:

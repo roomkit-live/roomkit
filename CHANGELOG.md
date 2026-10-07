@@ -207,6 +207,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A continuous STT stream that reconnects on a backlog no longer loses it to
+  Meta's refusal (RMK-581, RFC §12.2). A handshake Meta did not answer held a
+  stream for 10 s while the microphone audio queued up; the next stream sent
+  it all at once, and Meta refuses 7 s or more ahead of real time ("Audio
+  processing backlog too large", 6 s passes), so the audio was lost and the
+  agent stayed deaf about 17 s. `MetaSTTProvider` now paces what it sends: at
+  most 3 s at once, then twice real time until caught up (a 20 s backlog goes
+  through on the live service). A continuous `VoiceChannel` carries at most the
+  last 5 s of audio into the next stream and logs a warning with the seconds
+  it dropped.
+
 - A synchronous Loop answers as a room turn does (RMK-529, RFC §19.7.4,
   §23.3): its result carries how the producer's last turn ended under
   `turns["<producer>"]` (`loop_end_reason`, `ai_usage`), a cut producer
