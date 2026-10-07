@@ -1041,10 +1041,15 @@ class TestExtractThinkTags:
         assert thinking is None
         assert text == "answer"
 
-    def test_whitespace_only_think_block(self) -> None:
+    def test_a_response_reads_as_its_stream_reads(self) -> None:
+        """What the parser hands a stream, spaces included (RFC §6.4)."""
         thinking, text = extract_think_tags("<think>  \n  </think>answer")
-        assert thinking is None
+        assert thinking == "  \n  "
         assert text == "answer"
+
+        thinking, text = extract_think_tags("<think> weighing it \n</think>\n\nThe answer.  ")
+        assert thinking == " weighing it \n"
+        assert text == "\n\nThe answer.  "
 
 
 class TestOpenAIHeadersAndExtraBody:

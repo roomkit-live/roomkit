@@ -187,6 +187,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `generate()` and the stream hand the loop the same answer (RMK-531, RFC
+  §6.4). On OpenAI and its derivatives and on PolarGrid, a response with
+  `<think>` tags is now split exactly as the stream splits it: **behaviour
+  change:** `generate()` no longer strips the spaces around the reasoning
+  and the answer, nor joins reasoning blocks on a newline. An OpenAI refusal
+  is in `metadata["refusal"]` from `generate()` too, as at the end of a
+  stream. Anthropic omits a cache counter at zero, as every other provider.
+
 - A failed generation reads the same on every text provider, whatever form
   the server gave the failure (RMK-524, RFC §6.7). An error written into a
   200 stream (OpenAI and its ten derivatives, Anthropic's `overloaded_error`,

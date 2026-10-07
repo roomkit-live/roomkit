@@ -345,20 +345,21 @@ def message_tool_calls(message: Any, finish_reason: str | None) -> list[AIToolCa
 
 def extract_think_tags(text: str) -> tuple[str | None, str]:
     """Split a whole response's *text* into its ``<think>`` reasoning and its
-    answer, as :class:`ThinkTagParser` splits a stream: a block the response
-    stopped before closing (the output cap) is reasoning too, never answer.
+    answer exactly as :class:`ThinkTagParser` splits a stream, so a response
+    reads the same streamed or not (RFC §6.4): a block the response stopped
+    before closing (the output cap) is reasoning too, never answer.
 
     Returns:
-        ``(thinking, clean_text)`` — *thinking* is ``None`` when no tags
-        are present.
+        ``(thinking, text)`` — *thinking* is ``None`` when no tags are
+        present.
     """
     if ThinkTagParser._OPEN not in text:
         return None, text
     parser = ThinkTagParser()
     segments = parser.feed(text) + parser.flush()
-    thinking = "\n".join(c.strip() for kind, c in segments if kind == "thinking" and c.strip())
-    clean = "".join(c for kind, c in segments if kind == "text").strip()
-    return thinking or None, clean
+    thinking = "".join(c for kind, c in segments if kind == "thinking")
+    answer = "".join(c for kind, c in segments if kind == "text")
+    return thinking or None, answer
 
 
 def json_schema_format(schema: dict[str, Any]) -> dict[str, Any]:

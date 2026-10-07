@@ -26,6 +26,7 @@ from roomkit.providers.ai.response_schema import ResponseSchemaError
 from roomkit.providers.anthropic.config import AnthropicConfig
 from roomkit.providers.anthropic.models import MODELS as ANTHROPIC_MODELS
 from roomkit.providers.anthropic.request import build_kwargs, format_content
+from roomkit.providers.anthropic.stream_events import done_event
 
 
 class _FakeAPIStatusError(Exception):
@@ -1498,3 +1499,28 @@ class TestAgainstInstalledSDK:
 
         assert kwargs["extra_body"] == {"temperature": 0.2}
         assert "temperature" not in kwargs
+
+
+class TestAnthropicUsageCounters:
+    """A cache counter at zero is omitted, as on every other provider (RMK-531)."""
+
+    @staticmethod
+    def _final(cache_write: int | None, cache_read: int | None) -> SimpleNamespace:
+        usage = SimpleNamespace(input_tokens=11, output_tokens=7)
+        if cache_write is not None:
+            usage.cache_creation_input_tokens = cache_write
+        if cache_read is not None:
+            usage.cache_read_input_tokens = cache_read
+        return SimpleNamespace(content=[], usage=usage, stop_reason="end_turn", model="m")
+
+    @pytest.mark.parametrize(("write", "read"), [(0, 0), (None, None)])
+    def test_no_cache_counter_reads_as_none(self, write: int | None, read: int | None) -> None:
+        done = done_event(self._final(write, read), "m")
+
+        assert done.usage == {"input_tokens": 11, "output_tokens": 7}
+
+    def test_a_cache_counter_is_kept(self) -> None:
+        done = done_event(self._final(5, 3), "m")
+
+        assert done.usage["cache_creation_input_tokens"] == 5
+        assert done.usage["cache_read_input_tokens"] == 3

@@ -466,7 +466,9 @@ class OpenAIAIProvider(AIProvider):
             thinking=thinking,
             finish_reason=choice.finish_reason,
             usage=usage,
-            metadata=answered_by(response.model, self._config.model),
+            metadata=answered_by(
+                response.model, self._config.model, getattr(message, "refusal", None)
+            ),
             tool_calls=tool_calls,
         )
 

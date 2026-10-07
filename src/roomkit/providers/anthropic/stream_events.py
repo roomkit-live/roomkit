@@ -51,10 +51,11 @@ def done_event(final: Any, asked: str) -> StreamDone:
         "input_tokens": final.usage.input_tokens,
         "output_tokens": final.usage.output_tokens,
     }
-    if hasattr(final.usage, "cache_creation_input_tokens"):
-        usage["cache_creation_input_tokens"] = final.usage.cache_creation_input_tokens or 0
-    if hasattr(final.usage, "cache_read_input_tokens"):
-        usage["cache_read_input_tokens"] = final.usage.cache_read_input_tokens or 0
+    # A cache counter at zero is omitted, as every other provider omits it.
+    if cache_write := getattr(final.usage, "cache_creation_input_tokens", None):
+        usage["cache_creation_input_tokens"] = cache_write
+    if cache_read := getattr(final.usage, "cache_read_input_tokens", None):
+        usage["cache_read_input_tokens"] = cache_read
     # A detail of output_tokens, which already counts it.
     details = getattr(final.usage, "output_tokens_details", None)
     thinking = (getattr(details, "thinking_tokens", 0) if details else 0) or 0

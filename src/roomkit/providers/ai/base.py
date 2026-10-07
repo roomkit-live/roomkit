@@ -788,11 +788,15 @@ StreamEvent = (
 )
 
 
-def answered_by(answered: str | None, asked: str) -> dict[str, str]:
+def answered_by(answered: str | None, asked: str, refusal: str | None = None) -> dict[str, str]:
     """A response's ``metadata`` naming its model (RFC §6.7): the one that
-    answered, as the response names it, else the one asked for. One rule for
-    a response and for the end of a stream, so both modes report the same."""
-    return {"model": answered or asked}
+    answered, as the response names it, else the one asked for; and the
+    refusal the response carried, when it carried one. One rule for a
+    response and for the end of a stream, so both modes report the same."""
+    metadata = {"model": answered or asked}
+    if refusal:
+        metadata["refusal"] = refusal
+    return metadata
 
 
 def stream_done(
@@ -802,11 +806,9 @@ def stream_done(
     asked: str,
     refusal: str = "",
 ) -> StreamDone:
-    """A stream's end: its stop reason, its usage, its model as
-    :func:`answered_by` names it, and any refusal the stream carried."""
-    metadata = answered_by(answered, asked)
-    if refusal:
-        metadata["refusal"] = refusal
+    """A stream's end: its stop reason, its usage, and its model and any
+    refusal the stream carried, as :func:`answered_by` names them."""
+    metadata = answered_by(answered, asked, refusal)
     return StreamDone(finish_reason=finish_reason, usage=usage, metadata=metadata)
 
 

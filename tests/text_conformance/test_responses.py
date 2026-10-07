@@ -359,6 +359,19 @@ class TestReasoningReceived:
         assert [p.thinking for p in answer.reasoning] == ["still weighing the options"]
         assert answer.text == ""
 
+    async def test_a_think_block_reads_the_same_streamed_or_not(
+        self, driver: Driver, mode: str
+    ) -> None:
+        """The reasoning and the answer of a response with ``<think>`` tags
+        are what the stream reads, spaces included, in both modes (RMK-531)."""
+        driver.require(THINK_TAGS)
+        script = Script(text="<think> weighing it \n</think>\n\nThe answer.  ")
+
+        answer = await generation(driver, script, mode, tool_context(LOOKUP))
+
+        assert [p.thinking for p in answer.reasoning] == [" weighing it \n"]
+        assert answer.text == "\n\nThe answer.  "
+
 
 def _usage_mode(driver: Driver, mode: str) -> None:
     if mode == "stream":
