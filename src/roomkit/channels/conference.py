@@ -246,16 +246,7 @@ class ConferenceChannel(
         # activated by configuration: its mixer taps every lane either way,
         # which is what lets a provider plugged mid-meeting hear the tracks
         # already open.
-        self._realtime = ConferenceRealtime(
-            channel_id=channel_id,
-            bot_identity=bot_identity,
-            voice=self._voice,
-            operations=self._operations,
-            ensure_bot=self._ensure_bot,
-            binding_of=self._binding_of,
-        )
-        if realtime is not None:
-            self._realtime.configure(realtime)
+        self._realtime = self._compose_realtime(bot_identity, realtime)
         self._roster = ConferenceRoster(channel_id)
         # `identity_trusts_unasserted_metadata` widens what an arrival may be
         # identified on, from what the SFU asserts to every attribute it
@@ -1238,6 +1229,22 @@ class ConferenceChannel(
             return ChannelOutput.empty()
         await self._voice.speak(event.room_id, event.content.body)
         return ChannelOutput.empty()
+
+    def _compose_realtime(
+        self, bot_identity: str, realtime: ConferenceRealtimeConfig | None
+    ) -> ConferenceRealtime:
+        """The speech-to-speech composition, configured when *realtime* is given."""
+        composed = ConferenceRealtime(
+            channel_id=self.channel_id,
+            bot_identity=bot_identity,
+            voice=self._voice,
+            operations=self._operations,
+            ensure_bot=self._ensure_bot,
+            binding_of=self._binding_of,
+        )
+        if realtime is not None:
+            composed.configure(realtime)
+        return composed
 
     def _binding_of(self, room_id: str) -> ChannelBinding | None:
         """The room's binding as last seen, ``None`` before the first."""

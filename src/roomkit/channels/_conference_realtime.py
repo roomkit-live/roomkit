@@ -29,6 +29,7 @@ import json
 import logging
 import uuid
 from collections.abc import Awaitable, Callable
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from functools import partial
 from typing import TYPE_CHECKING, Any
@@ -102,6 +103,12 @@ The mixer asks again every window; without this a provider outage would be
 retried fifty times a second from every conference the channel serves.
 """
 
+_RUNNING_REPORT: ContextVar[asyncio.Task[Any] | None] = ContextVar(
+    "conference_running_report", default=None
+)
+"""The tracked report (or announcement) the current code runs under, so a
+teardown its hook starts never waits for the report that is running it."""
+
 
 @dataclass
 class _Utterance:
@@ -153,6 +160,10 @@ class _RoomRealtime:
     """The provider's own VAD hears the room's people speak."""
     idle: asyncio.Event = field(default_factory=_idle_event)
     """Set while nothing is in flight in the room (RFC §22.2)."""
+
+    def hold_off(self) -> None:
+        """Hold further connect attempts off for the cooldown."""
+        self.next_connect_at = asyncio.get_running_loop().time() + CONNECT_COOLDOWN_S
 
     def settle(self) -> None:
         """Idle when no response is open or still published and nobody is heard."""
@@ -330,7 +341,7 @@ class ConferenceRealtime:
             try:
                 bot = await self._ensure_bot(room_id)
             except Exception:
-                room.next_connect_at = loop.time() + CONNECT_COOLDOWN_S
+                room.hold_off()
                 logger.debug(
                     "Conference channel %r has no bot to hang a realtime session on in "
                     "room %s; the provider stays unconnected",
@@ -342,7 +353,7 @@ class ConferenceRealtime:
             session = await self._connect_provider(config, room, room_id, bot)
             if session is not None:
                 room.session = session
-            self._settle_start_calls(room, session)
+                self._serve_start_calls(room)
             return session
 
     async def _connect_provider(
@@ -353,9 +364,9 @@ class ConferenceRealtime:
         bot: BotSession,
     ) -> VoiceSession | None:
         """Connect the provider for a new session of *room_id*: the session,
-        or ``None`` with the cooldown armed when the provider failed it. The
-        calls it issues meanwhile wait in ``room.start_calls``."""
-        loop = asyncio.get_running_loop()
+        or ``None`` once a start that failed is let go. The calls it issues
+        meanwhile wait in ``room.start_calls``; a start cancelled is let go
+        the same way before the cancellation goes on."""
         session = VoiceSession(
             id=f"conf-rt-{uuid.uuid4().hex}",
             room_id=room_id,
@@ -365,24 +376,11 @@ class ConferenceRealtime:
         )
         room.starting = session
         try:
-            with self._operations.use(
-                ConferenceResource.REALTIME,
-                what=f"connecting the realtime provider for room {room_id}",
-            ):
-                self._human_input.warn_unoffered(catalogue(config) or [], self._channel_id)
-                await config.provider.connect(
-                    session,
-                    system_prompt=config.system_prompt,
-                    voice=config.voice,
-                    tools=declared_tools(config, self._collisions),
-                    temperature=config.temperature,
-                    input_sample_rate=config.input_sample_rate,
-                    output_sample_rate=config.output_sample_rate,
-                    server_vad=config.server_vad,
-                    provider_config=config.provider_config,
-                )
+            await self._connect(config, session)
+        except asyncio.CancelledError:
+            self._fail_start(config, room, session)
+            raise
         except Exception:
-            room.next_connect_at = loop.time() + CONNECT_COOLDOWN_S
             logger.warning(
                 "Conference channel %r could not connect its realtime provider for "
                 "room %s; retrying on the next need after %.0fs",
@@ -391,25 +389,52 @@ class ConferenceRealtime:
                 CONNECT_COOLDOWN_S,
                 exc_info=True,
             )
+            self._fail_start(config, room, session)
             return None
         finally:
             room.starting = None
         if session.state == VoiceSessionState.ENDED:
             # The provider ended it while connecting, and said so through its
             # error callback: there is no session to hold.
-            room.next_connect_at = loop.time() + CONNECT_COOLDOWN_S
+            self._fail_start(config, room, session)
             return None
         return session
 
-    def _settle_start_calls(self, room: _RoomRealtime, session: VoiceSession | None) -> None:
-        """Serve the calls the provider issued while *session* started, now
-        that it is the room's; report each cancelled when the start failed
-        (RFC §12.4), as a realtime voice channel does."""
+    async def _connect(self, config: ConferenceRealtimeConfig, session: VoiceSession) -> None:
+        """Open *session* on the provider with the configuration in force."""
+        with self._operations.use(
+            ConferenceResource.REALTIME,
+            what=f"connecting the realtime provider for room {session.room_id}",
+        ):
+            self._human_input.warn_unoffered(catalogue(config) or [], self._channel_id)
+            await config.provider.connect(
+                session,
+                system_prompt=config.system_prompt,
+                voice=config.voice,
+                tools=declared_tools(config, self._collisions),
+                temperature=config.temperature,
+                input_sample_rate=config.input_sample_rate,
+                output_sample_rate=config.output_sample_rate,
+                server_vad=config.server_vad,
+                provider_config=config.provider_config,
+            )
+
+    def _fail_start(
+        self, config: ConferenceRealtimeConfig, room: _RoomRealtime, session: VoiceSession
+    ) -> None:
+        """Let a start that failed go, as a realtime voice channel rolls one
+        back: the cooldown armed, each call the provider issued meanwhile
+        reported once, cancelled (RFC §12.4), the provider told to disconnect."""
+        room.hold_off()
         calls, room.start_calls = room.start_calls, []
-        if session is None:
-            if calls:
-                self._track_report(report_interrupted_calls(self, calls, SESSION_ENDED))
-            return
+        if calls:
+            self._track_report(report_interrupted_calls(self, calls, SESSION_ENDED))
+        self._track_report(self._disconnect(config.provider, session))
+
+    def _serve_start_calls(self, room: _RoomRealtime) -> None:
+        """Serve the calls the provider issued while the room's session
+        started, now that it is the room's (RFC §12.4)."""
+        calls, room.start_calls = room.start_calls, []
         for call in calls:
             self._take_call(call)
 
@@ -486,12 +511,7 @@ class ConferenceRealtime:
         room = self._rooms.get(session.room_id)
         if room is not None and not silent:
             room.answer_depth.injected(chain_depth)
-        source = EventSource(
-            channel_id=self._channel_id,
-            channel_type=ChannelType.CONFERENCE,
-            participant_id=session.participant_id,
-            provider=config.provider.name,
-        )
+        source = self._source(config, session)
         await fire_text_injected(self._framework, source, session, text, role=role)
         return result
 
@@ -749,24 +769,34 @@ class ConferenceRealtime:
             code,
             message,
         )
-        source = EventSource(
-            channel_id=self._channel_id,
-            channel_type=ChannelType.CONFERENCE,
-            participant_id=session.participant_id,
-            provider=config.provider.name,
-        )
+        self._announce_error(config, session, code, message)
+        if session.state == VoiceSessionState.ENDED and room.session is session:
+            self._drop_ended_session(config, room, session)
+
+    def _announce_error(
+        self, config: ConferenceRealtimeConfig, session: VoiceSession, code: str, message: str
+    ) -> None:
+        """Fire ON_ERROR (``realtime_provider``) for the provider's failure of
+        *session*, beside the teardown."""
         self._track_report(
             fire_session_error(
                 self._framework,
-                source,
+                self._source(config, session),
                 session,
                 error=message,
                 error_type=code,
                 category="realtime_provider",
             )
         )
-        if session.state == VoiceSessionState.ENDED and room.session is session:
-            self._drop_ended_session(config, room, session)
+
+    def _source(self, config: ConferenceRealtimeConfig, session: VoiceSession) -> EventSource:
+        """The conference as the source of what its realtime session does."""
+        return EventSource(
+            channel_id=self._channel_id,
+            channel_type=ChannelType.CONFERENCE,
+            participant_id=session.participant_id,
+            provider=config.provider.name,
+        )
 
     def _drop_ended_session(
         self, config: ConferenceRealtimeConfig, room: _RoomRealtime, session: VoiceSession
@@ -776,7 +806,7 @@ class ConferenceRealtime:
         cooldown."""
         self._end_room_session(room, SESSION_ENDED, [])
         room.hearing = False
-        room.next_connect_at = asyncio.get_running_loop().time() + CONNECT_COOLDOWN_S
+        room.hold_off()
         room.settle()
         self._track_report(self._disconnect(config.provider, session))
 
@@ -784,6 +814,8 @@ class ConferenceRealtime:
         """The model will not read these calls' results: interrupt them as a
         realtime voice channel does (:func:`abandon_calls`), send nothing, and
         report each to ON_TOOL_CALL's observers as cancelled (RFC §12.4)."""
+        if self._abandon_start_calls(session, call_ids):
+            return
         if self._guarded(session) is None:
             return
         for call in abandon_calls(self._tool_calls, session.id, call_ids):
@@ -791,6 +823,20 @@ class ConferenceRealtime:
             # interruption it reports. Tracked beside the teardown, as a
             # detach's reports are: a detach does not cut it.
             self._track_report(report_cancelled_call(self, call, ABANDONED_BY_PROVIDER))
+
+    def _abandon_start_calls(self, session: VoiceSession, call_ids: list[str]) -> bool:
+        """Whether *session* is still starting; its held calls the provider
+        abandoned then leave the hold unserved, each reported once, cancelled
+        (RFC §12.4), as a realtime voice channel's start journal plays them."""
+        room = self._rooms.get(session.room_id)
+        if self._config is None or room is None or room.starting is not session:
+            return False
+        ids = set(call_ids)
+        abandoned = [call for call in room.start_calls if call.call_id in ids]
+        room.start_calls = [call for call in room.start_calls if call.call_id not in ids]
+        for call in abandoned:
+            self._track_report(report_cancelled_call(self, call, ABANDONED_BY_PROVIDER))
+        return True
 
     async def _answer_tool(self, call: RealtimeToolCall) -> None:
         """Answer one tool call through the realtime tool executor.
@@ -959,10 +1005,11 @@ class ConferenceRealtime:
         its calls and *tasks* cut but the call that caused the ending, each
         cut call reported once, cancelled (RFC §12.4). The session ended.
 
-        The reports run beside the teardown; the disconnect that follows waits
-        for them, so none races the store's release at close.
+        The reports run beside the teardown; a disconnect of the channel's
+        (a detach's, an unplug's, the close's) waits for them, so none races
+        the store's release at close.
         """
-        utterance = room.utterance
+        utterance, room.utterance = room.utterance, None
         if utterance is not None and not utterance.discarded:
             utterance.discarded = True
             utterance.finish()
@@ -982,8 +1029,9 @@ class ConferenceRealtime:
         self._track_report(report_cancelled_call(self, call, _LEFT_THE_ROOM))
 
     def _track_report(self, coro: Awaitable[None]) -> None:
-        """Run a report beside the teardown; the disconnect waits for it."""
-        report = asyncio.ensure_future(coro)
+        """Run a report, an announcement or a disconnect beside the teardown;
+        a disconnect of the channel's waits for it."""
+        report = asyncio.ensure_future(_run_tracked(coro))
         self._reports.add(report)
         report.add_done_callback(self._reports.discard)
         report.add_done_callback(log_task_exception)
@@ -994,10 +1042,14 @@ class ConferenceRealtime:
         await self._spared_calls.settle(self, _LEFT_THE_ROOM)
 
     async def _settle_reports(self) -> None:
-        """Wait for the reports of the calls detaches interrupted. A wait
-        cancelled leaves them running: they are not this waiter's to cut."""
-        if self._reports:
-            await asyncio.wait(list(self._reports))
+        """Wait for the tracked reports, but the one this code runs under: a
+        hook that unplugs or closes from an ON_ERROR announcement would wait
+        for itself. A wait cancelled leaves them running: they are not this
+        waiter's to cut."""
+        running = _RUNNING_REPORT.get()
+        pending = [report for report in self._reports if report is not running]
+        if pending:
+            await asyncio.wait(pending)
 
     def abandon_all(self) -> list[VoiceSession]:
         """Every room off the books at once — the channel is closing."""
@@ -1057,6 +1109,12 @@ class ConferenceRealtime:
         config = self._config
         if config is not None:
             await config.provider.close()
+
+
+async def _run_tracked(coro: Awaitable[None]) -> None:
+    """Run a tracked report, naming its task to what runs under it."""
+    _RUNNING_REPORT.set(asyncio.current_task())
+    await coro
 
 
 class _ConferenceDoor:

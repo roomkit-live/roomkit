@@ -22,6 +22,7 @@ from roomkit import (
     MockConferenceBackend,
     RoomKit,
 )
+from roomkit.channels import _conference_realtime
 from roomkit.channels.conference import ConferenceChannel
 from roomkit.channels.realtime_voice import RealtimeVoiceChannel
 from roomkit.models.enums import ChannelType
@@ -45,21 +46,47 @@ _TOOLS = [
 
 
 class _Provider(MockRealtimeProvider):
-    """Records each injection's silence; may issue a call from ``connect()``
-    (a receive loop the connect started can) and then fail the start."""
+    """Records each injection's silence. From ``connect()`` (a receive loop
+    the connect started can) it may issue a call, abandon it, end the
+    session, wait on *hold*, then fail the start."""
 
-    def __init__(self, *, call_on_connect: bool = False, fail_connect: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        call_on_connect: bool = False,
+        cancel_on_connect: bool = False,
+        end_on_connect: bool = False,
+        hold: asyncio.Event | None = None,
+        fail_connect: bool = False,
+    ) -> None:
         super().__init__()
         self.injections: list[tuple[str, bool]] = []
+        self.connecting = asyncio.Event()
         self._call_on_connect = call_on_connect
+        self._cancel_on_connect = cancel_on_connect
+        self._end_on_connect = end_on_connect
+        self._hold = hold
         self._fail_connect = fail_connect
 
     async def connect(self, session: VoiceSession, **kwargs: Any) -> None:
         await super().connect(session, **kwargs)
         if self._call_on_connect:
             await self.simulate_tool_call(session, "c0", "lookup", {"q": "first"})
+        if self._cancel_on_connect:
+            await self.simulate_tool_call_cancellation(session, ["c0"])
+        if self._end_on_connect:
+            # From the receive loop the connect started, while the handshake
+            # still waits on the server.
+            await asyncio.ensure_future(self._end(session))
+        self.connecting.set()
+        if self._hold is not None:
+            await self._hold.wait()
         if self._fail_connect:
             raise ConnectionError("handshake refused")
+
+    async def _end(self, session: VoiceSession) -> None:
+        session.state = VoiceSessionState.ENDED
+        await self.simulate_error(session, "ws_1008", "policy violation")
 
     async def inject_text(  # type: ignore[override]
         self, session: VoiceSession, text: str, *, role: str = "user", silent: bool = False
@@ -115,7 +142,7 @@ class _Host:
         if self.kind == "voice":
             try:
                 return await self.channel.start_session(ROOM, "u1", "ws")
-            except ConnectionError:
+            except (ConnectionError, RuntimeError):
                 return None
         return await self.channel._realtime.ensure_session(ROOM)
 
@@ -124,6 +151,13 @@ class _Host:
             return list(self.channel.get_room_sessions(ROOM))
         session = self.channel._realtime.session_for(ROOM)
         return [] if session is None else [session]
+
+    def serve_with(self, handler: Any) -> None:
+        """Serve the room's calls with *handler* from now on."""
+        if self.kind == "voice":
+            self.channel._tool_handler = handler
+        else:
+            self.channel._realtime.config.tool_handler = handler
 
     def audio_heard(self) -> int:
         if self.kind == "voice":
@@ -289,10 +323,7 @@ async def test_a_session_the_provider_ended_is_let_go_and_its_call_reported(
         await gate.wait()
         return "late"
 
-    if host == "voice":
-        rt.channel._tool_handler = block
-    else:
-        rt.channel._realtime.config.tool_handler = block
+    rt.serve_with(block)
     await provider.simulate_tool_call(session, "c1", "lookup", {"q": "x"})
     await until(lambda: bool(channel_handler_ran))
 
@@ -306,3 +337,112 @@ async def test_a_session_the_provider_ended_is_let_go_and_its_call_reported(
     assert [(e.tool_call_id, e.cancelled) for e in observed] == [("c1", True)]
     assert provider.tool_results == []
     assert session.id in disconnected
+
+
+# -- what a start that does not go through leaves --------------------------------
+
+
+async def _never(*args: Any) -> str:
+    await asyncio.Event().wait()
+    return "never"
+
+
+@HOSTS
+async def test_a_call_the_provider_abandons_while_it_starts_is_never_answered(host: str) -> None:
+    provider = _Provider(call_on_connect=True, cancel_on_connect=True)
+    rt = _Host(host, provider, [])
+    rt.serve_with(_never)
+    await rt.attach()
+    observed = _observe_calls(rt.kit)
+
+    assert await rt.start() is not None
+    await until(lambda: bool(observed))
+    await _settle()
+    await rt.kit.close()
+
+    assert provider.tool_results == []
+    assert [(e.tool_call_id, e.cancelled) for e in observed] == [("c0", True)]
+
+
+@HOSTS
+async def test_a_start_cancelled_reports_its_call_and_disconnects(host: str) -> None:
+    provider = _Provider(call_on_connect=True, hold=asyncio.Event())
+    rt = _Host(host, provider, [])
+    rt.serve_with(_never)
+    await rt.attach()
+    observed = _observe_calls(rt.kit)
+
+    start = asyncio.ensure_future(rt.start())
+    await provider.connecting.wait()
+    start.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await start
+    await until(lambda: bool(observed))
+    disconnects = [c for c in provider.calls if c.method == "disconnect"]
+    await rt.kit.close()
+
+    assert provider.tool_results == []
+    assert [(e.tool_call_id, e.cancelled) for e in observed] == [("c0", True)]
+    assert disconnects
+
+
+@HOSTS
+async def test_a_session_the_provider_ends_while_it_starts_is_not_held(host: str) -> None:
+    provider = _Provider(end_on_connect=True)
+    rt = _Host(host, provider, [])
+    await rt.attach()
+    heard = _observe_errors(rt.kit)
+
+    assert await rt.start() is None
+    await until(lambda: bool(heard))
+    sessions = rt.sessions()
+    await rt.kit.close()
+
+    assert heard[0]["error_type"] == "ws_1008"
+    assert sessions == []
+
+
+@HOSTS
+async def test_an_on_error_hook_that_ends_the_session_does_not_wait_for_itself(
+    host: str,
+) -> None:
+    provider = _Provider()
+    rt = _Host(host, provider, [])
+    await rt.attach()
+    session = await rt.start()
+    assert session is not None
+    ended = asyncio.Event()
+
+    @rt.kit.hook(HookTrigger.ON_ERROR, execution=HookExecution.ASYNC)
+    async def tear_down(event: Any, ctx: Any) -> None:
+        if host == "voice":
+            await rt.channel.end_session(session)
+        else:
+            await rt.channel.unplug_realtime()
+        ended.set()
+
+    await provider.simulate_error(session, "rate_limited", "slow down")
+    await asyncio.wait_for(ended.wait(), timeout=2.0)
+    sessions = rt.sessions()
+    await rt.kit.close()
+
+    assert sessions == []
+
+
+async def test_the_conference_reconnects_once_the_provider_ended_its_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(_conference_realtime, "CONNECT_COOLDOWN_S", 0.0)
+    provider = _Provider()
+    rt = _Host("conference", provider, [])
+    await rt.attach()
+    session = await rt.start()
+    assert session is not None
+
+    session.state = VoiceSessionState.ENDED
+    await provider.simulate_error(session, "ws_1011", "server error")
+    await until(lambda: not rt.sessions())
+    again = await rt.start()
+    await rt.kit.close()
+
+    assert again is not None and again is not session

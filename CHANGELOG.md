@@ -202,15 +202,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A conference with a realtime model keeps three contracts a realtime voice
   channel keeps with the same provider (RMK-523, RFC §12.10.12, §12.4, §7.5).
   Under a `muted` or `output_muted` binding, a broadcast is injected silently
-  (the model hears it and does not answer) and the provider's audio no longer
-  reaches the bot track; it was answered aloud. A tool call the provider issues
+  (the model hears it and does not answer); it was answered aloud. Under
+  `output_muted`, the provider's audio no longer reaches the bot track. A tool call the provider issues
   while `connect()` runs is served once the session is up, and reported
   cancelled if the start fails; it was reported cancelled as "the conference
   left the room" and never answered. A provider error now fires `ON_ERROR`
   (`realtime_provider`), and a session the provider ended is let go: its calls
   are cut and reported, it is disconnected, and the next need reconnects after
-  the cooldown; nothing was wired before. The three rules are shared by both
-  hosts (`injection_silent`, `fire_session_error`).
+  the cooldown; nothing was wired before. A start that fails or is cancelled
+  reports the calls it held and disconnects, and a call the provider abandons
+  while it starts is reported cancelled, never served. The three rules are
+  shared by both hosts (`injection_silent`, `fire_session_error`).
 
 - A `BEFORE_AI_GENERATION` hook that hands back a replacement event
   (`HookResult.modify(event)`) rather than editing it in place is no longer
