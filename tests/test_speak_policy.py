@@ -37,6 +37,12 @@ _BINDING = ChannelBinding(
     channel_type=ChannelType.AI,
     category=ChannelCategory.INTELLIGENCE,
 )
+_SMS = ChannelBinding(
+    channel_id="sms1",
+    room_id="r1",
+    channel_type=ChannelType.SMS,
+    category=ChannelCategory.TRANSPORT,
+)
 
 
 def _channel(policy: Any, **kwargs: Any) -> tuple[AIChannel, MockAIProvider]:
@@ -49,7 +55,12 @@ def _context(*events: Any, people: tuple[str, ...] = ("Sylvain",)) -> RoomContex
         Participant(id=f"p{i}", room_id="r1", channel_id="sms1", display_name=n)
         for i, n in enumerate(people)
     ]
-    return RoomContext(room=Room(id="r1"), participants=participants, recent_events=list(events))
+    return RoomContext(
+        room=Room(id="r1"),
+        bindings=[_BINDING, _SMS],
+        participants=participants,
+        recent_events=list(events),
+    )
 
 
 def _last_input(provider: MockAIProvider) -> str:

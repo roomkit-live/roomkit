@@ -22,7 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   line joins the turn's notes. `SpeakTurn` gains `channel_id` (`by_agent()`
   tells the agent's own answers) and `speakers` (who said each event, as the AI
   context names speakers), and its `people` now leave out agents, bots and the
-  agent's own channel, and count the diarized voices of one microphone.
+  agent's own channel, and count the diarized voices of one microphone. Its
+  `recent` holds only the events the channel may know, as the AI context has
+  them (RFC §7.5 rule 8): it held every recent event, so a policy could hand a
+  classifier outside a message whose visibility withheld it from the agent.
   `MockClassifier` takes a list of scripts, one per call. Example:
   `examples/speaking_judgments.py`.
 

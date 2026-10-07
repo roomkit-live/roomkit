@@ -8,6 +8,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from roomkit.channels._ai_context import event_speaker
+from roomkit.core.visibility import visible_events
 from roomkit.models.enums import EventType, ParticipantRole, ParticipantStatus
 from roomkit.models.event import is_tool_call_record
 from roomkit.speaking.base import SpeakDecision, SpeakDecisionEvent, SpeakPolicy, SpeakTurn
@@ -100,11 +101,12 @@ def speak_notes(decision: SpeakDecision | None) -> tuple[str, ...]:
 
 
 def _speak_turn(event: RoomEvent, context: RoomContext, channel_id: str) -> SpeakTurn:
-    """What the policy judges: the room's messages before *event*, who said each,
-    and the people taking part besides the agent."""
+    """What the policy judges: the room's messages before *event* that the channel
+    may know (RFC §7.5 rule 8: a policy may send them to a classifier outside),
+    who said each, and the people taking part besides the agent."""
     recent = tuple(
         e
-        for e in context.recent_events
+        for e in visible_events(context, channel_id)
         if e.id != event.id and e.type == EventType.MESSAGE and not is_tool_call_record(e)
     )
     speakers = {

@@ -35,6 +35,12 @@ _BINDING = ChannelBinding(
     channel_type=ChannelType.AI,
     category=ChannelCategory.INTELLIGENCE,
 )
+_SMS = ChannelBinding(
+    channel_id="sms1",
+    room_id="r1",
+    channel_type=ChannelType.SMS,
+    category=ChannelCategory.TRANSPORT,
+)
 
 
 def _person(pid: str, name: str, **kwargs: Any) -> Participant:
@@ -219,7 +225,12 @@ def _channel(classifier: MockClassifier) -> tuple[AIChannel, MockAIProvider]:
 
 def _context(*events: Any, participants: list[Participant] | None = None) -> RoomContext:
     people = participants or [_person("p1", "Sylvain"), _person("p2", "Paul")]
-    return RoomContext(room=Room(id="r1"), participants=people, recent_events=list(events))
+    return RoomContext(
+        room=Room(id="r1"),
+        bindings=[_BINDING, _SMS],
+        participants=people,
+        recent_events=list(events),
+    )
 
 
 async def test_on_the_channel_a_turn_for_someone_else_runs_nothing() -> None:
@@ -274,3 +285,17 @@ def test_people_count_the_voices_of_one_microphone() -> None:
     event = _said("Nova ?", metadata={"sender_name": "Speaker 1"})
     turn = _speak_turn(event, _context(*voices, event, participants=[_person("p1", "Mic")]), "ai1")
     assert turn.people == ("Speaker 1", "Speaker 2")
+
+
+def test_the_turn_holds_only_what_the_channel_may_know() -> None:
+    """RFC §7.5 rule 8: an event withheld from the AI channel at delivery does not
+    reach its policy, which may send the turn to a classifier outside."""
+    shown = _said("Le budget est de 40 000 $")
+    to_sms_only = _said("Le code d'accès est 4417", visibility="sms1")
+    internal = _said("note interne", visibility="internal")
+    own = _said("Je note.", pid=None, channel_id="ai1", visibility="sms1")
+    event = _said("Nova ?")
+
+    turn = _speak_turn(event, _context(shown, to_sms_only, internal, own, event), "ai1")
+
+    assert [e.id for e in turn.recent] == [shown.id, own.id]
