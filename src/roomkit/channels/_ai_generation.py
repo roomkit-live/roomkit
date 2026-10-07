@@ -74,6 +74,12 @@ class AIGenerationMixin(_AIChannelContract):
                 sync_result.blocked_by,
             )
             return ai_context, True
+        # A hook may hand back a replacement (HookResult.modify) rather than
+        # editing the event in place: the turn, or the thought, reads what the
+        # hooks left. Reading the original here would publish the very content
+        # a redaction hook replaced (RFC §9.3).
+        if isinstance(sync_result.event, AIGenerationEvent):
+            gen_event = sync_result.event
         # A hook that REPLACES the context (rather than mutating it) brings a
         # record of its own. The turn has one record — the one the events are
         # built from — so the loop context adopts the hook's: a tool handler's

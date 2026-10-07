@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import dataclasses
+
 from roomkit.channels.ai import AIChannel
 from roomkit.core.framework import RoomKit
 from roomkit.core.hooks import SyncPipelineResult
@@ -244,6 +246,33 @@ class TestBeforeGenerationHookIntegration:
 
         assert len(ai_provider.calls) == 1
         assert ai_provider.calls[0].system_prompt == "You are a pirate"
+
+    async def test_a_replacement_event_is_what_the_generation_reads(self, advance):
+        """RMK-565: a hook that hands back a redacted event (HookResult.modify)
+        rather than editing in place is not ignored: the provider never sees the
+        content it replaced."""
+        kit, ai_provider = await self._setup_kit()
+
+        @kit.hook(HookTrigger.BEFORE_AI_GENERATION)
+        async def redact(event, ctx):
+            messages = [
+                m.model_copy(update={"content": str(m.content).replace("4417", "[redacted]")})
+                for m in event.ai_context.messages
+            ]
+            context = event.ai_context.model_copy(update={"messages": messages})
+            return HookResult.modify(dataclasses.replace(event, ai_context=context))
+
+        msg = InboundMessage(
+            channel_id="sms1",
+            sender_id="user1",
+            content=TextContent(body="My code is 4417"),
+        )
+        await kit.process_inbound(msg)
+        await advance()
+
+        assert len(ai_provider.calls) == 1
+        sent = " ".join(str(m.content) for m in ai_provider.calls[0].messages)
+        assert "[redacted]" in sent and "4417" not in sent
 
     async def test_async_observer_fires(self, advance):
         kit, ai_provider = await self._setup_kit()

@@ -4,6 +4,7 @@ thinker on a model, and the AI channel that runs it on the turns it listens to."
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import json
 import logging
 from typing import Any
@@ -404,6 +405,34 @@ async def test_the_thinker_reads_what_before_ai_generation_left() -> None:
 
     assert purposes == ["thought", "thought", "answer"]
     [(_, context)] = thinker.calls  # the blocked thought never reached the thinker
+    read = " ".join(str(m.content) for m in context.messages)
+    assert "[redacted]" in read and "4417" not in read
+
+
+async def test_a_replacement_event_is_what_the_thinker_reads() -> None:
+    """RMK-565: a hook's HookResult.modify reaches the thinker, not the original."""
+    thinker = MockThinker([PRICE])
+    nova = AIChannel(
+        "nova",
+        provider=MockAIProvider(["Yes?"]),
+        speak_policy=MockSpeakPolicy(["silent"]),
+        thinker=thinker,
+    )
+    kit = await _meeting(nova)
+
+    @kit.hook(HookTrigger.BEFORE_AI_GENERATION)
+    async def redact(event: AIGenerationEvent, ctx: object) -> HookResult:
+        messages = [
+            m.model_copy(update={"content": str(m.content).replace("4417", "[redacted]")})
+            for m in event.ai_context.messages
+        ]
+        context = event.ai_context.model_copy(update={"messages": messages})
+        return HookResult.modify(dataclasses.replace(event, ai_context=context))
+
+    await _say(kit, "The code is 4417.")
+    await kit.close()
+
+    [(_, context)] = thinker.calls
     read = " ".join(str(m.content) for m in context.messages)
     assert "[redacted]" in read and "4417" not in read
 

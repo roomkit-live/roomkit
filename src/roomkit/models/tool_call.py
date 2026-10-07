@@ -463,7 +463,9 @@ class AIGenerationEvent:
     Provides the full AI context for inspection and modification.
     Hooks can mutate ``ai_context`` in-place (e.g. append messages,
     modify system_prompt, adjust tools) and return ``HookResult.allow()``,
-    or return ``HookResult.block(reason)`` to prevent generation.
+    hand back a replacement event with ``HookResult.modify(event)``, which the
+    generation then reads, or return ``HookResult.block(reason)`` to prevent
+    generation.
     """
 
     ai_context: AIContext

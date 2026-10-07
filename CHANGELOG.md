@@ -187,6 +187,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A `BEFORE_AI_GENERATION` hook that hands back a replacement event
+  (`HookResult.modify(event)`) rather than editing it in place is no longer
+  ignored (RMK-565). The hook engine took the replacement, but the AI channel
+  read the original event: a redaction written that way reached the provider
+  unredacted, and since RMK-562 the thinker too. The generation, and the
+  thought, now read what the hooks left.
+
 - `task_status` gives a task's whole result (RMK-556, RFC §19.8, §23.3,
   §23.4). It read the result from the task's `completed` entry on the status
   bus, whose detail the framework cut at 200 characters, mid-word and unmarked:
