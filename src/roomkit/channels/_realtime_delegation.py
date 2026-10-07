@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Any, Literal, Protocol, cast
 from uuid import uuid4
 
 from roomkit.channels._realtime_context import carry_calls, carrying_task
+from roomkit.channels._realtime_host_hooks import fire_delegation, speak_fallback
 from roomkit.channels._realtime_tool_calls import RealtimeToolCall
 from roomkit.channels._realtime_tool_executor import (
     SESSION_ENDED,
@@ -41,7 +42,6 @@ from roomkit.telemetry.context import reset_span
 from roomkit.tools._outcome import OutcomeKind, ToolOutcome
 from roomkit.tools.result import result_text
 from roomkit.voice.base import VoiceSession, VoiceSessionState
-from roomkit.voice.realtime.events import RealtimeDelegationEvent
 from roomkit.voice.realtime.reasoning import (
     ReasoningBackend,
     ReasoningRequest,
@@ -243,22 +243,9 @@ class RealtimeDelegationMixin:
         if not self._framework.hook_engine.has_hooks(HookTrigger.ON_REALTIME_DELEGATION):
             return
 
-        kind: Literal["hosted", "integrator"] = "hosted" if target == "hosted" else "integrator"
-        event = RealtimeDelegationEvent(session=session, delegation_id=delegation_id, target=kind)
         _, _tok = self._rt_span_ctx(session.id)
         try:
-            context = await self._framework._build_context(room_id)  # noqa: SLF001
-            await self._framework.hook_engine.run_async_hooks(
-                room_id,
-                HookTrigger.ON_REALTIME_DELEGATION,
-                event,
-                context,
-                skip_event_filter=True,
-            )
-        except Exception:
-            logger.warning(
-                "ON_REALTIME_DELEGATION failed for session %s", session.id, exc_info=True
-            )
+            await fire_delegation(self._framework, room_id, session, delegation_id, target)
         finally:
             if _tok is not None:
                 reset_span(_tok)
@@ -435,17 +422,8 @@ class RealtimeDelegationMixin:
         """One spoken output, so the model does not wait for an answer that never comes."""
         if session.state == VoiceSessionState.ENDED:
             return
-        try:
-            self._expect_provider_output(session.id)
-            await self._provider.submit_delegation_output(
-                session, delegation_id, text, spoken=True
-            )
-        except Exception:
-            logger.exception(
-                "Could not return the fallback for delegation %s (session %s)",
-                delegation_id,
-                session.id,
-            )
+        self._expect_provider_output(session.id)
+        await speak_fallback(self._provider, session, delegation_id, text)
 
     # -----------------------------------------------------------------
     # Backend tool calls go through the channel gate

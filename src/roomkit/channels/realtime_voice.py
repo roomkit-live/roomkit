@@ -781,9 +781,8 @@ class RealtimeVoiceChannel(
         provider_done = self._provider_idle.get(session_id, True)
         user_silent = not self._user_speaking.get(session_id, False)
         drained = session_id in self._audio_drained or session_id not in self._response_generation
-        tools_done = (
-            not self._tool_calls.busy(session_id)
-            and session_id not in self._awaiting_tool_response
+        tools_done = self._tool_calls.settled(
+            session_id, awaiting_answer=session_id in self._awaiting_tool_response
         )
         delegations_done = not self._pending_delegations.get(session_id)
         if provider_done and user_silent and drained and tools_done and delegations_done:

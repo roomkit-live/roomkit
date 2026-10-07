@@ -6,14 +6,17 @@ model's context, ON_ERROR for a failure of its session."""
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from roomkit.models.enums import HookTrigger
 from roomkit.models.event import EventSource, RoomEvent, TextContent
+from roomkit.voice.base import VoiceSessionState
+from roomkit.voice.realtime.events import RealtimeDelegationEvent
 
 if TYPE_CHECKING:
     from roomkit.core.framework import RoomKit
     from roomkit.voice.base import VoiceSession
+    from roomkit.voice.realtime.provider import RealtimeVoiceProvider
 
 logger = logging.getLogger("roomkit.channels.realtime_host_hooks")
 
@@ -92,3 +95,49 @@ async def fire_session_error(
         )
     except Exception:
         logger.warning("ON_ERROR could not be fired for session %s", session.id, exc_info=True)
+
+
+async def fire_delegation(
+    framework: RoomKit | None,
+    room_id: str | None,
+    session: VoiceSession,
+    delegation_id: str,
+    target: str,
+) -> None:
+    """Announce a provider's delegation to ON_REALTIME_DELEGATION (RFC
+    §12.4.1), the same way on every host. A hook failure is logged, never
+    raised into the provider's receive loop."""
+    if framework is None or not room_id:
+        return
+    if not framework.hook_engine.has_hooks(HookTrigger.ON_REALTIME_DELEGATION):
+        return
+    kind: Literal["hosted", "integrator"] = "hosted" if target == "hosted" else "integrator"
+    event = RealtimeDelegationEvent(session=session, delegation_id=delegation_id, target=kind)
+    try:
+        context = await framework._build_context(room_id)  # noqa: SLF001
+        await framework.hook_engine.run_async_hooks(
+            room_id,
+            HookTrigger.ON_REALTIME_DELEGATION,
+            event,
+            context,
+            skip_event_filter=True,
+        )
+    except Exception:
+        logger.warning("ON_REALTIME_DELEGATION failed for session %s", session.id, exc_info=True)
+
+
+async def speak_fallback(
+    provider: RealtimeVoiceProvider, session: VoiceSession, delegation_id: str, text: str
+) -> None:
+    """Answer a delegation with one spoken output, so the model does not wait
+    for an answer that never comes (RFC §12.4.1), on every host."""
+    if session.state == VoiceSessionState.ENDED:
+        return
+    try:
+        await provider.submit_delegation_output(session, delegation_id, text, spoken=True)
+    except Exception:
+        logger.exception(
+            "Could not return the fallback for delegation %s (session %s)",
+            delegation_id,
+            session.id,
+        )

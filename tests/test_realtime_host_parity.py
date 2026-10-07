@@ -506,3 +506,75 @@ async def test_an_injection_into_an_ended_session_is_not_sent(host: str) -> None
     assert (result.status, result.reason) == ("not_sent", "realtime_session_gone")
     assert provider.injections == []
     assert heard == []
+
+
+# -- a delegation, and what idle waits for ---------------------------------------
+
+
+@HOSTS
+async def test_a_delegation_with_no_backend_is_answered_aloud_and_announced(host: str) -> None:
+    """RMK-528: the model never waits for an answer that does not come."""
+    provider = _Provider()
+    rt = _Host(host, provider, [])
+    await rt.attach()
+    session = await rt.start()
+    assert session is not None
+    heard: list[tuple[str, str]] = []
+
+    @rt.kit.hook(HookTrigger.ON_REALTIME_DELEGATION, execution=HookExecution.ASYNC)
+    async def announced(event: Any, ctx: Any) -> None:
+        heard.append((event.delegation_id, event.target))
+
+    await provider.simulate_delegation(session, "d1", "integrator")
+    await until(
+        lambda: (
+            bool(heard)
+            and any(call.method == "submit_delegation_output" for call in provider.calls)
+        )
+    )
+    outputs = [
+        (call.args.get("delegation_id"), call.args.get("spoken"))
+        for call in provider.calls
+        if call.method == "submit_delegation_output"
+    ]
+    await rt.kit.close()
+
+    assert heard == [("d1", "integrator")]
+    assert outputs == [("d1", True)]
+
+
+@HOSTS
+async def test_a_host_is_not_idle_while_a_call_runs_nor_before_its_answer(host: str) -> None:
+    """RMK-528: a hand-back waiting for idle does not land mid-call."""
+    release = asyncio.Event()
+
+    async def slow(*args: Any) -> str:
+        await release.wait()
+        return "done"
+
+    provider = _Provider()
+    rt = _Host(host, provider, [])
+    rt.serve_with(slow)
+    await rt.attach()
+    session = await rt.start()
+    assert session is not None
+
+    async def idle() -> bool:
+        try:
+            await rt.channel.wait_idle(ROOM, timeout=0.1)
+        except TimeoutError:
+            return False
+        return True
+
+    await provider.simulate_tool_call(session, "c1", "lookup", {})
+    await _settle()
+    while_running = await idle()
+    release.set()
+    await until(lambda: bool(provider.tool_results))
+    before_answer = await idle()
+    await provider.simulate_response_start(session)
+    await provider.simulate_response_end(session)
+    await _settle()
+    await rt.kit.close()
+
+    assert (while_running, before_answer) == (False, False)

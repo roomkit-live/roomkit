@@ -198,6 +198,12 @@ class ToolCallBook:
         """Whether a call is in flight on the session."""
         return bool(self._calls.get(session_id))
 
+    def settled(self, session_id: str, *, awaiting_answer: bool) -> bool:
+        """Whether the session's tools leave it idle, on every host (RFC
+        §12.10.12, §22.2): no call in flight, and no result still waiting
+        for the model's answer to it (*awaiting_answer*)."""
+        return not self.busy(session_id) and not awaiting_answer
+
     def muting(self, session_id: str) -> bool:
         """Whether a call holding the input muted is in flight on the session."""
         return any(call.mutes for call in self._all(session_id))
