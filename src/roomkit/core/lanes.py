@@ -32,7 +32,7 @@ import contextvars
 import logging
 import math
 from collections import deque
-from collections.abc import Coroutine
+from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
@@ -212,13 +212,21 @@ class DeliveryCascade:
         if self.cancelled is not None:
             task.cancel()
 
-    async def run[T](self, work: Coroutine[Any, Any, T]) -> T:
-        """Execute owned work without giving its waiter cancellation ownership."""
+    async def run[T](
+        self,
+        work: Coroutine[Any, Any, T],
+        *,
+        on_task: Callable[[asyncio.Task[T]], None] | None = None,
+    ) -> T:
+        """Execute owned work without giving its waiter cancellation
+        ownership; *on_task* receives its task as soon as it is owned."""
         if self.cancelled is not None:
             work.close()
             raise asyncio.CancelledError
         task = asyncio.create_task(work)
         self.track(task)
+        if on_task is not None:
+            on_task(task)
         try:
             return await asyncio.shield(task)
         except asyncio.CancelledError:

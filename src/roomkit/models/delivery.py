@@ -245,7 +245,9 @@ class InboundResult(BaseModel):
     """Terminal delivery cancellation reason; never changes the committed event.
 
     Backfilled by a deferred handle's ``wait()`` or ``cancel()`` after cleanup.
-    An awaited ``process_inbound`` propagates ``CancelledError`` after draining.
+    An awaited ``process_inbound`` propagates the caller's own cancellation
+    (``CancelledError``) after draining; a turn the kit's ``close()`` cut is
+    returned instead, its end under ``turns`` (RFC §10.1 step 18).
     """
     response_metadata: ResponseMetadata = Field(default_factory=ResponseMetadata)
     """The turn's response-metadata record; empty when no turn ran."""

@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from roomkit.channels._realtime_context import get_current_voice_session
 from roomkit.core._failure_log import log_failure
-from roomkit.core.exceptions import ChannelNotRegisteredError
+from roomkit.core.exceptions import ChannelNotRegisteredError, RoomKitError
 
 # _persist_child_stream and _run_with_structured_result are re-exported (self-
 # aliased) for the test suite, which imports them from this module.
@@ -23,7 +23,13 @@ from roomkit.core.mixins._child_execution import (
     run_agent_in_child_room,
 )
 from roomkit.core.mixins.helpers import HelpersMixin
-from roomkit.core.task_utils import await_interruptible, check_open, hold_task, shielded
+from roomkit.core.task_utils import (
+    _finish_cleanup,
+    await_interruptible,
+    check_open,
+    hold_task,
+    shielded,
+)
 from roomkit.models.enums import (
     ChannelCategory,
     ChannelType,
@@ -507,9 +513,50 @@ class DelegationMixin(HelpersMixin):
         max_result_retries: int = 3,
         result_tool: ResultTool | None = None,
     ) -> DelegatedTask:
-        """Run the agent inline and return a pre-completed task."""
-        start = time.monotonic()
+        """Run the agent inline, as a task the kit holds until it ends, and
+        return the ended task (RFC §23.3): the kit's close cuts it as it cuts
+        the background, cancelled with its completion run; the caller's own
+        cancellation is raised once the task has ended."""
         handle.status = TaskStatus.IN_PROGRESS
+        start = time.monotonic()
+        try:
+            check_open(self, "delegation")
+        except RoomKitError:
+            # The kit's close began once the task was announced: it ends as
+            # the close would have ended it running.
+            await self._end_inline_cancelled(handle, context, on_complete, span, start)
+            return handle
+        run = hold_task(
+            self,
+            self._inline_task(
+                handle,
+                context,
+                on_complete,
+                span,
+                start,
+                require_structured_result=require_structured_result,
+                max_result_retries=max_result_retries,
+                result_tool=result_tool,
+            ),
+        )
+        await await_interruptible(run)
+        return handle
+
+    async def _inline_task(
+        self,
+        handle: DelegatedTask,
+        context: dict[str, Any] | None,
+        on_complete: Any | None,
+        span: _DelegationSpan,
+        start: float,
+        *,
+        require_structured_result: bool,
+        max_result_retries: int,
+        result_tool: ResultTool | None,
+    ) -> None:
+        """Run an inline task's turn and end it, as one run the kit holds: a
+        cut from its caller or from the kit's close ends it cancelled, its
+        completion run to its end (RFC §23.3)."""
         turn = self._child_turn(
             handle,
             require_structured_result=require_structured_result,
@@ -519,15 +566,10 @@ class DelegationMixin(HelpersMixin):
         try:
             agent_response, failure, caller_cut = await _turn_outcome(turn)
         except asyncio.CancelledError:
-            # A caller cancelled this delegation (a supervisor's per-task
-            # timeout through asyncio.wait_for): the task ends as any task
-            # does, cancelled, its completion run to its end, then the
-            # cancellation goes on (RFC §23.3).
-            elapsed = (time.monotonic() - start) * 1000
-            cancelled = _result_from_handle(
-                handle, duration_ms=elapsed, **cancelled_task_fields(context)
-            )
-            await shielded(self._complete_inline(handle, cancelled, on_complete, span))
+            # A cut from outside (a supervisor's per-task timeout through
+            # asyncio.wait_for, the kit's close): the task ends as any task
+            # does, then the cancellation goes on.
+            await self._end_inline_cancelled(handle, context, on_complete, span, start)
             raise
         if failure is not None:
             log_failure(_tasks_logger, failure, f"Inline task {handle.id}")
@@ -538,10 +580,25 @@ class DelegationMixin(HelpersMixin):
             **finished_task_fields(agent_response, failure, context),
         )
         # Its work ran: it ends as it stands, whatever cancels its caller now.
-        await shielded(self._complete_inline(handle, result, on_complete, span))
+        await _finish_cleanup(self._complete_inline(handle, result, on_complete, span))
         if caller_cut:
             raise asyncio.CancelledError
-        return handle
+
+    async def _end_inline_cancelled(
+        self,
+        handle: DelegatedTask,
+        context: dict[str, Any] | None,
+        on_complete: Any | None,
+        span: _DelegationSpan,
+        start: float,
+    ) -> None:
+        """End an inline task cut before its answer: cancelled, with no
+        output, its completion run to its end whatever cancels it again."""
+        elapsed = (time.monotonic() - start) * 1000
+        cancelled = _result_from_handle(
+            handle, duration_ms=elapsed, **cancelled_task_fields(context)
+        )
+        await _finish_cleanup(self._complete_inline(handle, cancelled, on_complete, span))
 
     def _child_turn(
         self,

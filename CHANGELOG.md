@@ -187,6 +187,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `kit.close()` ends a turn someone awaits as it ends the same turn on the
+  neighbouring door (RMK-526, RFC §23.3, §10.1 step 18). An inline delegation
+  (`delegate(wait=True)`) is now held by the kit like a background one: the
+  close cuts it first and it ends `cancelled`, with no output, its
+  ON_TASK_COMPLETED fired before the store is sealed; it ended `failed`, with
+  a narration as output, and its hook was lost against the sealed store.
+  `process_inbound()`, `send_event()` and `regenerate_response()` awaited
+  under the close return their `cancelled` turn, as a deferred caller reads
+  it, instead of raising a `CancelledError` the caller did not ask for, with
+  two spurious warnings. **Behaviour change:** `close()` waits for an inline
+  task's completion, its `on_complete` included, as it already waits for the
+  background ones, and ON_AI_RESPONSE no longer fires for a turn the close
+  cut on the awaited door, as on the deferred one. A `close()` called from
+  inside work the kit holds (a strategy's run, a hand-back, an inline
+  worker's tool) no longer waits for that work: it hung.
+
 - `generate()` and the stream hand the loop the same answer (RMK-531, RFC
   §6.4). On OpenAI and its derivatives and on PolarGrid, a response with
   `<think>` tags is now split exactly as the stream splits it: **behaviour

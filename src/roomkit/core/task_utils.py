@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextvars
 import logging
-from collections.abc import Coroutine
+from collections.abc import Awaitable, Coroutine
 from typing import Any, Protocol
 
 from roomkit.core.exceptions import RoomKitError
@@ -47,8 +47,16 @@ def hold_task(
     """Run *work* as a task *kit* holds until it ends, so its ``close()``
     cancels it with the other background work (RFC §19.7.3, §23.3 step 8);
     an exception it ends on is logged. *context*, when given, is the one it
-    runs in instead of a copy of the caller's."""
-    task = asyncio.create_task(work, context=context)
+    runs in instead of a copy of the caller's. What runs under it reads it
+    in :func:`held_runs`."""
+    # The run is named in its own context before it starts, so what runs
+    # under it reads it from its first step (a cell, since the task does not
+    # exist until it is created).
+    run_context = context if context is not None else contextvars.copy_context()
+    cell: list[asyncio.Task[Any]] = []
+    run_context.run(_HELD_RUNS.set, (*run_context.get(_HELD_RUNS, ()), cell))
+    task = asyncio.create_task(work, context=run_context)
+    cell.append(task)
     runs = kit._background_runs  # noqa: SLF001
     runs.add(task)
     task.add_done_callback(runs.discard)
@@ -121,6 +129,19 @@ async def cancel_and_wait(
         )
 
 
+_HELD_RUNS: contextvars.ContextVar[tuple[list[asyncio.Task[Any]], ...]] = contextvars.ContextVar(
+    "roomkit_held_runs", default=()
+)
+"""The kit-held runs the current code runs under, outermost first, each in
+the cell :func:`hold_task` fills once it has created the run's task."""
+
+
+def held_runs() -> tuple[asyncio.Task[Any], ...]:
+    """The kit-held runs (:func:`hold_task`) the current code runs under: a
+    ``close()`` called from one of them must not wait for it."""
+    return tuple(task for cell in _HELD_RUNS.get() for task in cell)
+
+
 def _cancellation_requests() -> int:
     """The current task's pending cancellation requests; 0 outside a task."""
     task = asyncio.current_task()
@@ -128,25 +149,33 @@ def _cancellation_requests() -> int:
 
 
 async def await_interruptible(task: asyncio.Future[Any]) -> bool:
-    """Await *task*, which someone else may cancel; whether they did.
+    """Await *task*, which someone else may cancel; whether they did
+    (:func:`await_unless_cut`)."""
+    cut, _ = await await_unless_cut(task)
+    return cut
 
-    A cancellation of *task* from elsewhere (a playback interrupt) ends the
-    wait quietly and returns ``True``. One aimed at the caller reaches the
-    task too, as awaiting it does, and is raised once the task has ended,
-    even when the task swallowed it and returned: comparing the caller's
-    pending cancellation requests before and after tells the two apart. The
-    task's own exception is raised, as awaiting it would.
+
+async def await_unless_cut[T](work: Awaitable[T]) -> tuple[bool, T | None]:
+    """Await *work*, which someone else may cut: ``(True, None)`` when they
+    did, ``(False, its value)`` otherwise.
+
+    A cancellation from elsewhere (a playback interrupt, the kit's close)
+    ends the wait quietly. One aimed at the caller reaches the work too, as
+    awaiting it does, and is raised once the work has ended, even when the
+    work swallowed it and returned: comparing the caller's pending
+    cancellation requests before and after tells the two apart. The work's
+    own exception is raised, as awaiting it would.
     """
     requested = _cancellation_requests()
     try:
-        await task
+        value = await work
     except asyncio.CancelledError:
         if _cancellation_requests() > requested:
             raise
-        return True
+        return True, None
     if _cancellation_requests() > requested:
         raise asyncio.CancelledError
-    return False
+    return False, value
 
 
 def log_task_exception(task: asyncio.Task[Any]) -> None:

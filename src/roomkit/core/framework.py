@@ -68,7 +68,7 @@ from roomkit.core.mixins import (
     SourceOpsMixin,
     VoiceOpsMixin,
 )
-from roomkit.core.task_utils import cancel_and_wait
+from roomkit.core.task_utils import cancel_and_wait, held_runs
 from roomkit.core.transcoder import DefaultContentTranscoder
 from roomkit.identity.base import IdentityResolver
 from roomkit.models.channel import RateLimit
@@ -500,12 +500,15 @@ class RoomKit(
     async def _cancel_background_runs(self) -> None:
         """Cancel the background work the kit holds and wait for its ends:
         a strategy's run frees its room and posts its terminal entry,
-        cancelled; a delegation's hand-back under way is cut (RFC §23.3)."""
-        runs = set(self._background_runs)
+        cancelled; an inline delegation ends cancelled, its completion run;
+        a delegation's hand-back under way is cut (RFC §23.3). The runs this
+        close runs under are spared: waiting for them would wait for itself."""
+        spared = set(held_runs())
+        runs = set(self._background_runs) - spared
         while runs:
             await cancel_and_wait(*runs, log_errors_to=logger)
             # A run's end may start another: it is cancelled in turn.
-            runs = {run for run in self._background_runs if not run.done()}
+            runs = {run for run in self._background_runs if not run.done()} - spared
 
     async def close(self) -> None:
         """Close every channel, then release what they share.

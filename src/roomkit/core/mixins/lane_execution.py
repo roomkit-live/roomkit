@@ -25,6 +25,7 @@ from roomkit.core.mixins.helpers import (
     _refuses_writes,
 )
 from roomkit.core.mixins.inbound_locked import _Blocked, _Ready
+from roomkit.core.task_utils import await_unless_cut
 from roomkit.models.delivery import DeliveryError, DeliveryResult
 from roomkit.models.enums import ChannelCategory, EventStatus, EventType, HookTrigger
 from roomkit.models.event import EventSource, RoomEvent
@@ -569,9 +570,31 @@ class LaneExecutionMixin(HelpersMixin):
         )
         cascade.track(task)
         task.add_done_callback(_end_tail)
+        self._hold_reader(task)
+        return task
+
+    def _hold_reader(self, task: asyncio.Task[Any]) -> None:
+        """Hold a reader of a caller's streams, so the kit's close cuts it
+        before it seals the lanes, with its other pending work."""
         task.add_done_callback(self._pending_hook_tasks.discard)
         self._pending_hook_tasks.add(task)
-        return task
+
+    async def _read_streams(
+        self, cascade: DeliveryCascade, room_id: str
+    ) -> tuple[Exception | None, ResponseMetadata]:
+        """Read the streams a caller's delivery set started, as work the
+        kit's close cuts with the deferred readers. A cut from elsewhere
+        leaves the cut turn on the cascade, which the caller reports; the
+        caller's own cancellation is raised (RFC §10.1)."""
+        _, read = await await_unless_cut(
+            cascade.run(
+                self._process_streaming_responses(
+                    cascade, room_id, response_events=cascade.response_events
+                ),
+                on_task=self._hold_reader,
+            )
+        )
+        return read if read is not None else (None, ResponseMetadata())
 
     async def _finish_cascade(
         self,
@@ -607,11 +630,7 @@ class LaneExecutionMixin(HelpersMixin):
         elif cascade.streams and cascade.cancelled is None:
             cascade.caller_logs = caller_logs
             cascade.caller_logs_streamed = caller_logs and streamed_too
-            return await cascade.run(
-                self._process_streaming_responses(
-                    cascade, room_id, response_events=cascade.response_events
-                )
-            )
+            return await self._read_streams(cascade, room_id)
         return None, ResponseMetadata()
 
     # -- Lane executor callbacks (LaneHost) --
