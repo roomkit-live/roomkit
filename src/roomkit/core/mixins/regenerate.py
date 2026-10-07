@@ -187,8 +187,12 @@ class RegenerateMixin(HelpersMixin):
         ``None``. ``process_timeout`` bounds only the wait for the room lock
         and the choice of the trigger: past it, the call returns
         ``InboundResult(blocked=True, reason="process_timeout")`` without
-        running the agent. A room whose status refuses
-        new events (RFC §5.1) is refused *before* the agent runs, with
+        running the agent. The call waits behind the deliveries already in
+        the room's lane; called from inside that lane or under the room lock,
+        it returns at once and the regeneration follows in lane order. A
+        caller cancelled cuts the regenerated turn. A room whose status
+        refuses new events (RFC §5.1), at the call or while the regeneration
+        waits in the lane, is refused *before* the agent runs, with
         ``InboundResult(blocked=True, reason="room_closed")`` and a
         ``room_refused_event`` framework event — exactly as
         :meth:`process_inbound` refuses — rather than after a generation whose

@@ -210,7 +210,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   it the call returns `InboundResult(blocked=True, reason="process_timeout")`
   and emits `process_timeout` with `operation = "regenerate"`. The trigger's
   own `AFTER_BROADCAST`, delivery report and `event_processed` are still not
-  repeated; its side effects are kept.
+  repeated; its side effects are kept. A room closed while the regeneration
+  waits in the lane refuses it before the agent runs (`room_closed`), and a
+  `send_event()` caller cancelled now cuts the turn it waited for, as
+  `process_inbound()` and `regenerate_response()` do.
 
 - A conference with a realtime model keeps three contracts a realtime voice
   channel keeps with the same provider (RMK-523, RFC §12.10.12, §12.4, §7.5).
