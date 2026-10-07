@@ -22,6 +22,7 @@ from roomkit.providers.ai.base import some_vendor_accepts_tool_name
 
 if TYPE_CHECKING:
     from roomkit.voice.realtime.provider import RealtimeVoiceProvider
+    from roomkit.voice.realtime.reasoning import ReasoningBackend
 
 logger = logging.getLogger("roomkit.channels.tools")
 
@@ -36,6 +37,23 @@ def refuse_host_tools(
     refuse_unnamable(names, channel_id)
     refuse_given_twice(names, channel_id)
     refuse_served_names(names, served, channel_id)
+
+
+def refuse_backend_names(
+    names: Iterable[str | None], backend: ReasoningBackend | None, channel_id: str
+) -> None:
+    """Refuse a session tool declared under a name the channel's reasoning
+    backend serves itself: its agent would answer the call instead of the
+    tool's handler, outside the channel's gate (RFC §12.4.1)."""
+    if backend is None:
+        return
+    taken = backend.served_names()
+    for name in names:
+        if name in taken:
+            raise ValueError(
+                f"Tool {name!r} on channel {channel_id!r} is served by its reasoning "
+                f"backend's agent itself (RFC §12.4.1); give the tool another name"
+            )
 
 
 def refuse_served_names(

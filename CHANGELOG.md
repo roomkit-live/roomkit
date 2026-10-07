@@ -187,6 +187,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A realtime voice channel with a reasoning backend refuses, at
+  construction, a session tool declared under a name its backend's agent
+  serves itself (RMK-527, RFC §12.4.1): `read_stored_result`, and
+  `find_tools` / `list_tools` when the agent's tool search is on. The agent
+  answered such a call itself, outside the channel's gate, and the tool's
+  handler never ran. New `ReasoningBackend.served_names()` (none by
+  default; an `AgentReasoningBackend` names its agent's own tools).
+  **Behaviour change:** such a channel no longer constructs; rename the
+  tool. The agent's own `tool_policy` keeps composing with the channel's,
+  now written in the RFC.
+
 - ON_REALTIME_TEXT_INJECTED hears the same event for a broadcast on a
   realtime voice channel as on a conference (RMK-530, RFC §12.5): the event
   of the injection, its source the host, `injected_role` and `session_id`,

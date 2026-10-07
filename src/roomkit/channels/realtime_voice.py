@@ -41,6 +41,7 @@ from roomkit.channels._realtime_transcription import RealtimeTranscriptionMixin
 from roomkit.channels._served_tools import (
     CollisionLog,
     dict_tool_name,
+    refuse_backend_names,
     refuse_host_tools,
     refuse_unnamable,
     warn_tools_uncallable,
@@ -645,11 +646,11 @@ class RealtimeVoiceChannel(
             pinned=tool_search_pinned,
         )
         self._register_channel_tools()
+        host_names = [dict_tool_name(tool) for tool in self._tools or []]
         refuse_host_tools(
-            (dict_tool_name(tool) for tool in self._tools or []),
-            self._channel_tool_names() | self._human_input_names(),
-            self.channel_id,
+            host_names, self._channel_tool_names() | self._human_input_names(), self.channel_id
         )
+        refuse_backend_names(host_names, self._reasoning_backend, self.channel_id)
         self._human_input.refuse_collisions(self._channel_tool_names(), self.channel_id)
 
     def _skill_support_for(

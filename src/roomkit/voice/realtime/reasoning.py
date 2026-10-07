@@ -198,6 +198,12 @@ class ReasoningBackend(ABC):
     async def session_ended(self, session_id: str) -> None:  # noqa: B027
         """Release any state kept for a session that just ended."""
 
+    def served_names(self) -> frozenset[str]:
+        """The tool names the backend serves itself, outside the channel's
+        gate, which a session's tools must not take (RFC §12.4.1); none by
+        default."""
+        return frozenset()
+
     async def close(self) -> None:  # noqa: B027
         """Release all resources."""
 
@@ -295,6 +301,13 @@ class AgentReasoningBackend(ReasoningBackend):
     def agent(self) -> AIChannel:
         """The agent serving the delegations."""
         return self._agent
+
+    def served_names(self) -> frozenset[str]:
+        """The names the agent serves from its own registry (its large-result
+        re-read, its Tool Search when on), which it answers before the
+        channel's gate (RFC §12.4.1)."""
+        entries = self._agent._registry.entries(None)  # noqa: SLF001
+        return frozenset(entry.name for entry in entries if entry.serve is not None)
 
     @property
     def provider(self) -> AIProvider:
