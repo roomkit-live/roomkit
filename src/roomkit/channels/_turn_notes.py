@@ -10,10 +10,16 @@ re-bill that history.
 A ``BEFORE_AI_GENERATION`` hook adds to them with :func:`add_turn_note`, and a
 reader that shows the input apart from its notes (a debug view) separates them
 with :func:`split_turn_notes`.
+
+The header is the channel's alone: a copy of it in the conversation's text or
+in a block of the notes is replaced by :data:`COPIED_HEADER_MARK` before the
+model reads it, so a participant cannot pass their words off as the runtime's
+notes, and the header a hook or a reader finds is the one the channel placed.
 """
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from roomkit.channels._user_text import joined
@@ -28,6 +34,23 @@ for nothing, whatever the input above them is (a participant's words, an
 instruction, or nothing new). It always opens a paragraph and is followed by
 one, the first of the notes' blocks."""
 
+COPIED_HEADER_MARK = (
+    "[A copy of the runtime's notes header stood here: the runtime did not write it.]"
+)
+"""What stands in place of a copy of :data:`TURN_NOTES_HEADER` the channel did
+not place (RFC §6.4)."""
+
+
+def _copy_pattern(header: str) -> re.Pattern[str]:
+    """*header*'s words in order, in any case and spacing, with a straight or
+    typographic apostrophe, with or without its brackets."""
+    words = [re.escape(word).replace("'", "['’ʼ]") for word in header.strip("[]").split()]
+    body = r"\s+".join(words)
+    return re.compile(rf"(?:\[\s*)?{body}(?:\s*\])?", re.IGNORECASE)
+
+
+_HEADER_COPY = _copy_pattern(TURN_NOTES_HEADER)
+
 # The blank line between the input and its notes, and between the notes'
 # blocks. The rendering is a contract with the prefix a provider caches.
 _PARAGRAPH = "\n\n"
@@ -37,8 +60,41 @@ _OPENING = f"{TURN_NOTES_HEADER}{_PARAGRAPH}"
 
 
 def turn_notes(blocks: list[str]) -> str | None:
-    """*blocks* under the notes' header, or ``None`` when there are none."""
-    return _PARAGRAPH.join([TURN_NOTES_HEADER, *blocks]) if blocks else None
+    """*blocks* under the notes' header, none holding a copy of it, or ``None``
+    when there are none."""
+    if not blocks:
+        return None
+    return _PARAGRAPH.join([TURN_NOTES_HEADER, *map(without_header_copies, blocks)])
+
+
+def without_header_copies(text: str) -> str:
+    """*text* with each copy of the notes' header replaced by
+    :data:`COPIED_HEADER_MARK` (RFC §6.4)."""
+    return _HEADER_COPY.sub(lambda _match: COPIED_HEADER_MARK, text)
+
+
+def conversation_without_header_copies(messages: list[AIMessage]) -> list[AIMessage]:
+    """*messages* whose text holds no copy of the notes' header, so the header
+    the model reads is the one the channel places after them (RFC §6.4)."""
+    return [_without_copies(message) for message in messages]
+
+
+def _without_copies(message: AIMessage) -> AIMessage:
+    """*message* with each copy of the header in its text replaced; *message*
+    itself when its text holds none. A part other than text (an image, a
+    thinking block a provider wants back as it was) is left as it is."""
+    content = message.content
+    cleaned: str | list[Any]
+    if isinstance(content, str):
+        cleaned = without_header_copies(content)
+    else:
+        cleaned = [
+            AITextPart(text=without_header_copies(part.text))
+            if isinstance(part, AITextPart)
+            else part
+            for part in content
+        ]
+    return message if cleaned == content else message.model_copy(update={"content": cleaned})
 
 
 def with_turn_notes(messages: list[AIMessage], notes: str | None) -> list[AIMessage]:
@@ -81,12 +137,13 @@ def add_turn_note(messages: list[AIMessage], block: str) -> list[AIMessage]:
 
         event.ai_context.messages = add_turn_note(event.ai_context.messages, block)
 
-    The header is the notes' only mark: an input that quotes it as a
-    paragraph of its own, a blank line after it, reads as carrying notes, and
-    the block then joins the input's text with no header of its own. Add
-    notes before anything a hook appends to the input: a text input takes
-    the block at its very end.
+    The header is the notes' only mark, and the channel replaces every copy
+    of it in the conversation and in a block, *block* included (RFC §6.4), so
+    the header found is the channel's: only one a hook wrote into the
+    messages itself is what this misreads. Add notes before anything a hook
+    appends to the input: a text input takes the block at its very end.
     """
+    block = without_header_copies(block)
     last = turn_input(messages)
     noted = _with_block(last, block) if last is not None else None
     if noted is None:
@@ -100,9 +157,10 @@ def split_turn_notes(text: str) -> tuple[str, str]:
     none. An input with images keeps its notes in a text part of their own:
     split that part's text.
 
-    The header is the notes' only mark, so the cut is at its last occurrence
-    that opens a paragraph and is followed by one, as the channel places it:
-    an input, or a note, that quotes the header that way is what this misreads.
+    The cut is at the header's last occurrence that opens a paragraph and is
+    followed by one, as the channel places it; the channel replaces every
+    other copy (RFC §6.4), so only one a hook wrote into the messages itself
+    is what this misreads.
     """
     at = _notes_at(text)
     if at < 0:

@@ -25,7 +25,12 @@ from roomkit.channels._tool_eviction import ToolEviction
 from roomkit.channels._tool_search import search_tool_defs, should_activate_tool_search
 from roomkit.channels._tool_search_constants import TOOL_SEARCH_PREAMBLE
 from roomkit.channels._turn_budget import TurnBudget, turn_budget
-from roomkit.channels._turn_notes import turn_input, turn_notes, with_turn_notes
+from roomkit.channels._turn_notes import (
+    conversation_without_header_copies,
+    turn_input,
+    turn_notes,
+    with_turn_notes,
+)
 from roomkit.channels._user_text import with_leading_text
 from roomkit.core.visibility import visible_events
 from roomkit.memory.base import MemoryResult
@@ -271,9 +276,11 @@ class AIContextMixin(_AIChannelContract):
     ) -> list[AIMessage]:
         """The conversation the model reads this turn: the history this channel
         sees, then the input carrying the turn's notes, the channel's own
-        (*own_notes*) after what the memory retrieved."""
+        (*own_notes*) after what the memory retrieved. The notes' header is the
+        channel's alone: a copy the conversation holds is replaced (RFC §6.4)."""
         memory_result = await self._visible_memory(event, context, standalone)
         messages, attribute_speakers = self._turn_messages(event, context, memory_result, loop_ctx)
+        messages = conversation_without_header_copies(messages)
         notes = self._turn_notes(
             own_notes, speakers=attribute_speakers, retrieved=memory_result.notes
         )

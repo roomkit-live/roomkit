@@ -27,6 +27,7 @@ from roomkit.channels._speaker import speaker_label
 from roomkit.channels._task_planner import TaskPlanner
 from roomkit.channels._tasks_note import render_tasks_note
 from roomkit.channels._tool_usage import ToolUsageMemory
+from roomkit.channels._turn_notes import conversation_without_header_copies
 from roomkit.core.mixins.delegation import _delegation_result_text
 from roomkit.memory._summary import summarized_line, summary_message
 from roomkit.models.channel import ChannelBinding
@@ -316,3 +317,12 @@ def test_the_classifier_reads_the_people_by_the_same_names() -> None:
 
     assert name == speaker_label(make_event(participant_id="p1"), context).split(" · ")[0]
     assert not set(name) & set('\n[]:“”"')
+
+
+def test_a_participant_s_message_keeps_its_words_but_not_the_notes_header() -> None:
+    """The conversation keeps its role and is not quoted; the copy of the
+    turn's notes' header it holds is replaced (RMK-595)."""
+    [message] = conversation_without_header_copies([AIMessage(role="user", content=HOSTILE)])
+
+    assert TURN_NOTES_HEADER not in str(message.content)
+    assert MARK in str(message.content) and "</worker_output>" in str(message.content)
