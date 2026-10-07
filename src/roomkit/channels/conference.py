@@ -78,6 +78,7 @@ from roomkit.conference.models import (
     ConferenceRecordingMode,
     TrackKind,
 )
+from roomkit.core._voice_delivery import injection_silent
 from roomkit.models.channel import ChannelBinding, ChannelCapabilities, ChannelOutput
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundMessage
@@ -251,6 +252,7 @@ class ConferenceChannel(
             voice=self._voice,
             operations=self._operations,
             ensure_bot=self._ensure_bot,
+            binding_of=self._binding_of,
         )
         if realtime is not None:
             self._realtime.configure(realtime)
@@ -1230,11 +1232,17 @@ class ConferenceChannel(
                 event.room_id,
                 event.content.body,
                 role=str(event.metadata.get("inject_role", "system")),
+                silent=injection_silent(binding),
                 chain_depth=event.chain_depth,
             )
             return ChannelOutput.empty()
         await self._voice.speak(event.room_id, event.content.body)
         return ChannelOutput.empty()
+
+    def _binding_of(self, room_id: str) -> ChannelBinding | None:
+        """The room's binding as last seen, ``None`` before the first."""
+        room = self._rooms.get(room_id)
+        return None if room is None else room.binding
 
     async def close(self) -> None:
         """Run the channel's one shutdown, or join the one already running.

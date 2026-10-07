@@ -9,6 +9,7 @@ from collections.abc import Callable
 from contextlib import nullcontext
 from typing import TYPE_CHECKING, Any
 
+from roomkit.models.channel import ChannelBinding
 from roomkit.models.delivery import DeliveryError, DeliveryOutcome
 from roomkit.models.enums import Access, RoomStatus
 from roomkit.models.voice_delivery import VoiceDeliveryRecord
@@ -24,6 +25,13 @@ _SEVERITY = {"sent": 0, "blocked": 1, "unavailable": 2, "failed": 3, "unknown": 
 
 def active_sessions(channel: Any, room_id: str) -> list[Any]:
     return [s for s in channel.get_room_sessions(room_id) if s.state != VoiceSessionState.ENDED]
+
+
+def injection_silent(binding: ChannelBinding) -> bool:
+    """Whether text injected into a realtime host's model under *binding* asks
+    no answer: a muted, output-muted or unwritable binding withholds the
+    model's response, its context still taking the text (RFC §7.2, §7.5)."""
+    return binding.muted or binding.output_muted or not binding.can_write
 
 
 def _record(ctx: DeliveryContext, channel_id: str, session_id: str) -> VoiceDeliveryRecord:
@@ -122,7 +130,7 @@ async def _validate(
             reason="voice_session_replaced",
             error=DeliveryError(code="voice_session_replaced", message="Pinned session changed"),
         )
-    return binding.muted or binding.output_muted or not binding.can_write, None
+    return injection_silent(binding), None
 
 
 _INJECTION_OUTCOMES: dict[str, Callable[[VoiceInjectionResult, str], DeliveryOutcome]] = {

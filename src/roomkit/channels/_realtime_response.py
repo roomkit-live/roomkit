@@ -8,6 +8,7 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
+from roomkit.channels._realtime_host_hooks import fire_session_error
 from roomkit.models.event import EventSource
 from roomkit.telemetry.base import Attr, SpanKind
 from roomkit.voice.base import VoiceSessionState
@@ -351,26 +352,20 @@ class RealtimeResponseMixin:
     ) -> None:
         """Fire ON_ERROR for a failure of *session*'s, as its channel: the
         provider's, or the reasoning backend's turn (RFC §12.4.1)."""
-        framework = self._framework
-        if framework is None:
-            return
-        try:
-            context = await framework._build_context(session.room_id)  # noqa: SLF001
-            await framework._fire_error_hook(  # noqa: SLF001
-                session.room_id,
-                context,
-                EventSource(
-                    channel_id=self.channel_id,
-                    channel_type=self.channel_type,
-                    participant_id=session.participant_id,
-                    provider=provider,
-                ),
-                error=error,
-                error_type=error_type,
-                error_category=category,
-            )
-        except Exception:
-            logger.warning("ON_ERROR could not be fired for session %s", session.id, exc_info=True)
+        source = EventSource(
+            channel_id=self.channel_id,
+            channel_type=self.channel_type,
+            participant_id=session.participant_id,
+            provider=provider,
+        )
+        await fire_session_error(
+            self._framework,
+            source,
+            session,
+            error=error,
+            error_type=error_type,
+            category=category,
+        )
 
     async def _end_failed_provider_session(self, session: VoiceSession) -> None:
         """Release channel and transport state after a fatal provider loss."""

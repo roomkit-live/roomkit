@@ -1,6 +1,7 @@
-"""ON_REALTIME_TEXT_INJECTED, announced the same way by every channel whose
-realtime model takes injected text: a realtime voice channel and a conference
-with a realtime model plugged in (RFC §12.5)."""
+"""The hooks a channel hosting a realtime model announces, the same way on
+every host: a realtime voice channel and a conference with a realtime model
+plugged in (RFC §12.5). ON_REALTIME_TEXT_INJECTED for text entering the
+model's context, ON_ERROR for a failure of its session."""
 
 from __future__ import annotations
 
@@ -14,7 +15,7 @@ if TYPE_CHECKING:
     from roomkit.core.framework import RoomKit
     from roomkit.voice.base import VoiceSession
 
-logger = logging.getLogger("roomkit.channels.realtime_text_injected")
+logger = logging.getLogger("roomkit.channels.realtime_host_hooks")
 
 
 async def fire_text_injected(
@@ -53,3 +54,31 @@ async def fire_text_injected(
         logger.warning(
             "ON_REALTIME_TEXT_INJECTED failed for session %s", session.id, exc_info=True
         )
+
+
+async def fire_session_error(
+    framework: RoomKit | None,
+    source: EventSource,
+    session: VoiceSession,
+    *,
+    error: str,
+    error_type: str,
+    category: str,
+) -> None:
+    """Fire ON_ERROR for a failure of *session*'s, as its host *source*: the
+    provider's, or a reasoning backend's turn (RFC §12.4.1, §12.5). A hook
+    failure is logged, never raised into the provider's receive loop."""
+    if framework is None or not session.room_id:
+        return
+    try:
+        context = await framework._build_context(session.room_id)  # noqa: SLF001
+        await framework._fire_error_hook(  # noqa: SLF001
+            session.room_id,
+            context,
+            source,
+            error=error,
+            error_type=error_type,
+            error_category=category,
+        )
+    except Exception:
+        logger.warning("ON_ERROR could not be fired for session %s", session.id, exc_info=True)

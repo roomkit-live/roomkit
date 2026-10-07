@@ -26,9 +26,9 @@ from roomkit.channels._realtime_context import (
 )
 from roomkit.channels._realtime_delegation import RealtimeDelegationMixin
 from roomkit.channels._realtime_endings import SparedCalls, cut_tasks, interrupt_for_ending
+from roomkit.channels._realtime_host_hooks import fire_text_injected
 from roomkit.channels._realtime_response import RealtimeResponseMixin
 from roomkit.channels._realtime_speech import RealtimeSpeechMixin
-from roomkit.channels._realtime_text_injected import fire_text_injected
 from roomkit.channels._realtime_tool_calls import ToolCallBook
 from roomkit.channels._realtime_tool_executor import (
     SESSION_ENDED,
@@ -66,6 +66,7 @@ from roomkit.channels.base import (
     RealtimeModelHost,
     _check_room_scope,
 )
+from roomkit.core._voice_delivery import injection_silent
 from roomkit.core.task_utils import CLOSE_WAIT_S, _finish_cleanup
 from roomkit.models.channel import ChannelBinding, ChannelCapabilities, ChannelOutput
 from roomkit.models.context import RoomContext
@@ -2027,7 +2028,7 @@ class RealtimeVoiceChannel(
 
         room_id = event.room_id
 
-        silent = binding.muted or binding.output_muted or not binding.can_write
+        silent = injection_silent(binding)
         # Inject text into all active sessions for this room
         for session in self.get_room_sessions(room_id):
             try:

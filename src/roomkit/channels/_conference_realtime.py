@@ -43,10 +43,11 @@ from roomkit.channels._conference_tools import (
     warn_unused_role_overrides,
 )
 from roomkit.channels._realtime_endings import SparedCalls, abandon_calls, interrupt_for_ending
-from roomkit.channels._realtime_text_injected import fire_text_injected
+from roomkit.channels._realtime_host_hooks import fire_session_error, fire_text_injected
 from roomkit.channels._realtime_tool_calls import RealtimeToolCall, ToolCallBook
 from roomkit.channels._realtime_tool_executor import (
     ABANDONED_BY_PROVIDER,
+    SESSION_ENDED,
     ToolCallDoor,
     report_cancelled_call,
     report_interrupted_calls,
@@ -67,7 +68,7 @@ from roomkit.tools._human_input_channel import ChannelHumanInput
 from roomkit.tools._outcome import ToolOutcome
 from roomkit.tools.result import GateRefusal, declined_answer, result_text
 from roomkit.tools.timeout import answer_within
-from roomkit.voice.base import AudioChunk, VoiceSession
+from roomkit.voice.base import AudioChunk, VoiceSession, VoiceSessionState
 from roomkit.voice.realtime._answer_depth import AnswerDepth
 from roomkit.voice.realtime.injection import VoiceInjectionResult
 
@@ -78,6 +79,7 @@ if TYPE_CHECKING:
     from roomkit.channels._conference_voice import ConferencePlayback, ConferenceVoice
     from roomkit.conference.models import BotSession, ConferenceRealtimeConfig
     from roomkit.core.framework import RoomKit
+    from roomkit.models.channel import ChannelBinding
     from roomkit.models.context import RoomContext
     from roomkit.tools.context import _ToolLoopContext
     from roomkit.voice.realtime.provider import RealtimeVoiceProvider
@@ -89,6 +91,9 @@ _LEFT_THE_ROOM = "The conference left the room"
 
 # Opens the bot's media connection for a room — the channel's _ensure_bot.
 EnsureBot = Callable[[str], "Awaitable[BotSession]"]
+
+# The room's binding as the channel last saw it — the channel's _binding_of.
+BindingOf = Callable[[str], "ChannelBinding | None"]
 
 CONNECT_COOLDOWN_S = 5.0
 """How long a failed provider connect holds further attempts off.
@@ -133,6 +138,11 @@ class _RoomRealtime:
     session: VoiceSession | None = None
     connecting: asyncio.Lock = field(default_factory=asyncio.Lock)
     next_connect_at: float = 0.0
+    starting: VoiceSession | None = None
+    """The session ``connect()`` is establishing for the room."""
+    start_calls: list[RealtimeToolCall] = field(default_factory=list)
+    """The calls the provider issued while that session started, served once
+    it is the room's (RFC §12.4)."""
     utterance: _Utterance | None = None
     tasks: set[asyncio.Task[None]] = field(default_factory=set)
     answer_depth: AnswerDepth = field(default_factory=AnswerDepth)
@@ -177,6 +187,7 @@ class ConferenceRealtime:
         voice: ConferenceVoice,
         operations: ConferenceOperations,
         ensure_bot: EnsureBot,
+        binding_of: BindingOf,
     ) -> None:
         self._channel_id = channel_id
         # Tools the config gives twice (RFC §21.1), each reported once.
@@ -185,6 +196,7 @@ class ConferenceRealtime:
         self._voice = voice
         self._operations = operations
         self._ensure_bot = ensure_bot
+        self._binding_of = binding_of
         self._config: ConferenceRealtimeConfig | None = None
         # The person's tools of the configuration in force (RFC §9.3).
         self._human_input = ChannelHumanInput(None, ChannelType.CONFERENCE)
@@ -255,6 +267,7 @@ class ConferenceRealtime:
             provider.on_speech_end(partial(self._on_hearing, hearing=False))
             provider.on_tool_call(self._on_tool_call)
             provider.on_tool_call_cancelled(self._on_tool_call_cancelled)
+            provider.on_error(self._on_provider_error)
         warn_unused_role_overrides(config, self._channel_id)
         warn_tools_uncallable(config.tools, "tool(s)", config.provider, self._channel_id)
         self._config = config
@@ -326,43 +339,79 @@ class ConferenceRealtime:
                     exc_info=True,
                 )
                 return None
-            session = VoiceSession(
-                id=f"conf-rt-{uuid.uuid4().hex}",
-                room_id=room_id,
-                participant_id=self._bot_identity,
-                channel_id=self._channel_id,
-                metadata={"bot_session_id": bot.id},
-            )
-            try:
-                with self._operations.use(
-                    ConferenceResource.REALTIME,
-                    what=f"connecting the realtime provider for room {room_id}",
-                ):
-                    self._human_input.warn_unoffered(catalogue(config) or [], self._channel_id)
-                    await config.provider.connect(
-                        session,
-                        system_prompt=config.system_prompt,
-                        voice=config.voice,
-                        tools=declared_tools(config, self._collisions),
-                        temperature=config.temperature,
-                        input_sample_rate=config.input_sample_rate,
-                        output_sample_rate=config.output_sample_rate,
-                        server_vad=config.server_vad,
-                        provider_config=config.provider_config,
-                    )
-            except Exception:
-                room.next_connect_at = loop.time() + CONNECT_COOLDOWN_S
-                logger.warning(
-                    "Conference channel %r could not connect its realtime provider for "
-                    "room %s; retrying on the next need after %.0fs",
-                    self._channel_id,
-                    room_id,
-                    CONNECT_COOLDOWN_S,
-                    exc_info=True,
-                )
-                return None
-            room.session = session
+            session = await self._connect_provider(config, room, room_id, bot)
+            if session is not None:
+                room.session = session
+            self._settle_start_calls(room, session)
             return session
+
+    async def _connect_provider(
+        self,
+        config: ConferenceRealtimeConfig,
+        room: _RoomRealtime,
+        room_id: str,
+        bot: BotSession,
+    ) -> VoiceSession | None:
+        """Connect the provider for a new session of *room_id*: the session,
+        or ``None`` with the cooldown armed when the provider failed it. The
+        calls it issues meanwhile wait in ``room.start_calls``."""
+        loop = asyncio.get_running_loop()
+        session = VoiceSession(
+            id=f"conf-rt-{uuid.uuid4().hex}",
+            room_id=room_id,
+            participant_id=self._bot_identity,
+            channel_id=self._channel_id,
+            metadata={"bot_session_id": bot.id},
+        )
+        room.starting = session
+        try:
+            with self._operations.use(
+                ConferenceResource.REALTIME,
+                what=f"connecting the realtime provider for room {room_id}",
+            ):
+                self._human_input.warn_unoffered(catalogue(config) or [], self._channel_id)
+                await config.provider.connect(
+                    session,
+                    system_prompt=config.system_prompt,
+                    voice=config.voice,
+                    tools=declared_tools(config, self._collisions),
+                    temperature=config.temperature,
+                    input_sample_rate=config.input_sample_rate,
+                    output_sample_rate=config.output_sample_rate,
+                    server_vad=config.server_vad,
+                    provider_config=config.provider_config,
+                )
+        except Exception:
+            room.next_connect_at = loop.time() + CONNECT_COOLDOWN_S
+            logger.warning(
+                "Conference channel %r could not connect its realtime provider for "
+                "room %s; retrying on the next need after %.0fs",
+                self._channel_id,
+                room_id,
+                CONNECT_COOLDOWN_S,
+                exc_info=True,
+            )
+            return None
+        finally:
+            room.starting = None
+        if session.state == VoiceSessionState.ENDED:
+            # The provider ended it while connecting, and said so through its
+            # error callback: there is no session to hold.
+            room.next_connect_at = loop.time() + CONNECT_COOLDOWN_S
+            return None
+        return session
+
+    def _settle_start_calls(self, room: _RoomRealtime, session: VoiceSession | None) -> None:
+        """Serve the calls the provider issued while *session* started, now
+        that it is the room's; report each cancelled when the start failed
+        (RFC §12.4), as a realtime voice channel does."""
+        calls, room.start_calls = room.start_calls, []
+        if session is None:
+            if calls:
+                self._track_report(report_interrupted_calls(self, calls, SESSION_ENDED))
+            return
+        for call in calls:
+            self._take_call(call)
 
     async def send_mixed(self, room_id: str, data: bytes) -> None:
         """The mixer's sender: one mixed window to the provider.
@@ -383,7 +432,7 @@ class ConferenceRealtime:
             await config.provider.send_audio(session, data)
 
     async def deliver_text(
-        self, room_id: str, text: str, *, role: str, chain_depth: int = 0
+        self, room_id: str, text: str, *, role: str, silent: bool, chain_depth: int = 0
     ) -> None:
         """Inject a broadcast text event into the provider's context.
 
@@ -391,7 +440,8 @@ class ConferenceRealtime:
         injects rather than synthesizes, and the conference follows suit.
         Contained, because a provider that cannot take the text right now
         must not fail the broadcast that carried it. The model's answer to
-        it is one deeper than the event (RFC §12.10.12).
+        it is one deeper than the event (RFC §12.10.12); *silent* asks none,
+        as a muted binding does on a realtime voice channel (RFC §7.5).
         """
         if self._config is None:
             return
@@ -399,7 +449,9 @@ class ConferenceRealtime:
         if session is None:
             return
         try:
-            await self.inject_text(session, text, role=role, chain_depth=chain_depth)
+            await self.inject_text(
+                session, text, role=role, silent=silent, chain_depth=chain_depth
+            )
         except Exception:
             logger.warning(
                 "Conference channel %r could not inject a text event into the realtime "
@@ -543,6 +595,11 @@ class ConferenceRealtime:
         room = self._guarded(session)
         if config is None or room is None:
             return
+        binding = self._binding_of(session.room_id)
+        if binding is not None and binding.output_muted:
+            # The provider's audio is not forwarded under an output-muted
+            # binding, as on a realtime voice channel (RFC §5).
+            return
         utterance = room.utterance
         if utterance is None:
             # Nothing promised on_response_start in the ABC: audio with no
@@ -640,10 +697,25 @@ class ConferenceRealtime:
     async def _on_tool_call(
         self, session: VoiceSession, call_id: str, name: str, arguments: dict[str, Any] | str
     ) -> None:
-        room = self._guarded(session)
         call = RealtimeToolCall.from_provider(
             session, call_id, name, arguments, room_id=session.room_id
         )
+        if not self._held_for_start(call):
+            self._take_call(call)
+
+    def _held_for_start(self, call: RealtimeToolCall) -> bool:
+        """Whether *call* waits for its session's start to end: issued while
+        ``connect()`` runs, it is served once the session is the room's."""
+        room = self._rooms.get(call.room_id or "")
+        if self._config is None or room is None or room.starting is not call.session:
+            return False
+        room.start_calls.append(call)
+        return True
+
+    def _take_call(self, call: RealtimeToolCall) -> None:
+        """Serve *call* on its room, or report it when its session is no
+        longer the room's."""
+        room = self._guarded(call.session)
         if room is None:
             self._report_stale_call(call)
             return
@@ -658,6 +730,55 @@ class ConferenceRealtime:
             return
         call.task = room.spawn(self._answer_tool(call))
         call.task.add_done_callback(lambda _: self._tool_calls.close(call))
+
+    def _on_provider_error(self, session: VoiceSession, code: str, message: str) -> None:
+        """The provider failed *session*: ON_ERROR (``realtime_provider``) for
+        every failure, and a session it ended is dropped from its room, as on
+        a realtime voice channel (RFC §12.5). Scheduled, never awaited: this
+        runs inside the provider's receive loop."""
+        config = self._config
+        room = self._rooms.get(session.room_id)
+        if config is None or room is None:
+            return
+        if room.session is not session and room.starting is not session:
+            return
+        logger.error(
+            "Conference channel %r: realtime provider error for room %s: [%s] %s",
+            self._channel_id,
+            session.room_id,
+            code,
+            message,
+        )
+        source = EventSource(
+            channel_id=self._channel_id,
+            channel_type=ChannelType.CONFERENCE,
+            participant_id=session.participant_id,
+            provider=config.provider.name,
+        )
+        self._track_report(
+            fire_session_error(
+                self._framework,
+                source,
+                session,
+                error=message,
+                error_type=code,
+                category="realtime_provider",
+            )
+        )
+        if session.state == VoiceSessionState.ENDED and room.session is session:
+            self._drop_ended_session(config, room, session)
+
+    def _drop_ended_session(
+        self, config: ConferenceRealtimeConfig, room: _RoomRealtime, session: VoiceSession
+    ) -> None:
+        """Take a session its provider ended off its room, as a detach takes
+        it off; the room stays, and its next need reconnects after the
+        cooldown."""
+        self._end_room_session(room, SESSION_ENDED, [])
+        room.hearing = False
+        room.next_connect_at = asyncio.get_running_loop().time() + CONNECT_COOLDOWN_S
+        room.settle()
+        self._track_report(self._disconnect(config.provider, session))
 
     async def _on_tool_call_cancelled(self, session: VoiceSession, call_ids: list[str]) -> None:
         """The model will not read these calls' results: interrupt them as a
@@ -825,18 +946,32 @@ class ConferenceRealtime:
         room = self._rooms.pop(room_id, None)
         if room is None:
             return None
+        session = self._end_room_session(room, _LEFT_THE_ROOM, list(room.tasks))
+        # A room off the books has nothing in flight: a delivery waiting on it
+        # goes on to find its session gone.
+        room.idle.set()
+        return session
+
+    def _end_room_session(
+        self, room: _RoomRealtime, why: str, tasks: list[asyncio.Task[None]]
+    ) -> VoiceSession | None:
+        """End the room's session for *why*: the response in flight discarded,
+        its calls and *tasks* cut but the call that caused the ending, each
+        cut call reported once, cancelled (RFC §12.4). The session ended.
+
+        The reports run beside the teardown; the disconnect that follows waits
+        for them, so none races the store's release at close.
+        """
         utterance = room.utterance
         if utterance is not None and not utterance.discarded:
             utterance.discarded = True
             utterance.finish()
         session, room.session = room.session, None
         calls = self._tool_calls.take(session.id) if session is not None else []
-        interrupted, _ = interrupt_for_ending(calls, list(room.tasks))
+        interrupted, _ = interrupt_for_ending(calls, tasks)
         self._spared_calls.keep(call for call in calls if call not in interrupted)
-        # A room off the books has nothing in flight: a delivery waiting on it
-        # goes on to find its session gone.
-        room.idle.set()
-        self._report_detached_calls(interrupted)
+        if interrupted:
+            self._track_report(report_interrupted_calls(self, interrupted, why))
         return session
 
     def _report_stale_call(self, call: RealtimeToolCall) -> None:
@@ -852,16 +987,6 @@ class ConferenceRealtime:
         self._reports.add(report)
         report.add_done_callback(self._reports.discard)
         report.add_done_callback(log_task_exception)
-
-    def _report_detached_calls(self, calls: list[RealtimeToolCall]) -> None:
-        """Report each call the detach interrupted, once, as cancelled (RFC §12.4).
-
-        The reports run beside the teardown; the disconnect that follows waits
-        for them, so none races the store's release at close.
-        """
-        if not calls:
-            return
-        self._track_report(report_interrupted_calls(self, calls, _LEFT_THE_ROOM))
 
     async def settle_spared(self) -> None:
         """At the channel's close, wait for the calls an ending spared that
@@ -893,20 +1018,7 @@ class ConferenceRealtime:
         config = self._config
         if session is None or config is None:
             return
-        try:
-            with self._operations.use(
-                ConferenceResource.REALTIME,
-                what=f"disconnecting the realtime session of room {session.room_id}",
-            ):
-                await config.provider.disconnect(session)
-        except Exception:
-            logger.warning(
-                "Conference channel %r could not disconnect the realtime session of "
-                "room %s; the provider may still hold it",
-                self._channel_id,
-                session.room_id,
-                exc_info=True,
-            )
+        await self._disconnect(config.provider, session)
 
     async def disconnect_sessions(
         self, provider: RealtimeVoiceProvider, sessions: list[VoiceSession]
@@ -920,20 +1032,25 @@ class ConferenceRealtime:
         """
         await self._settle_reports()
         for session in sessions:
-            try:
-                with self._operations.use(
-                    ConferenceResource.REALTIME,
-                    what=f"disconnecting the realtime session of room {session.room_id}",
-                ):
-                    await provider.disconnect(session)
-            except Exception:
-                logger.warning(
-                    "Conference channel %r could not disconnect the realtime session of "
-                    "room %s; the provider may still hold it",
-                    self._channel_id,
-                    session.room_id,
-                    exc_info=True,
-                )
+            await self._disconnect(provider, session)
+
+    async def _disconnect(self, provider: RealtimeVoiceProvider, session: VoiceSession) -> None:
+        """Disconnect one session, contained: a session the provider will not
+        release is logged, never raised into the teardown."""
+        try:
+            with self._operations.use(
+                ConferenceResource.REALTIME,
+                what=f"disconnecting the realtime session of room {session.room_id}",
+            ):
+                await provider.disconnect(session)
+        except Exception:
+            logger.warning(
+                "Conference channel %r could not disconnect the realtime session of "
+                "room %s; the provider may still hold it",
+                self._channel_id,
+                session.room_id,
+                exc_info=True,
+            )
 
     async def close_provider(self) -> None:
         """Close the provider. The shutdown coordinator's closer for REALTIME."""
