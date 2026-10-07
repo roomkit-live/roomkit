@@ -2,6 +2,7 @@
 
 from roomkit.speaking.always import AlwaysSpeak
 from roomkit.speaking.base import (
+    CutReply,
     SpeakDecision,
     SpeakDecisionEvent,
     SpeakMode,
@@ -16,6 +17,7 @@ from roomkit.speaking.thought import Thought, ThoughtEvent
 __all__ = [
     "AlwaysSpeak",
     "ClassifierSpeakPolicy",
+    "CutReply",
     "LLMThinker",
     "MockSpeakPolicy",
     "MockThinker",

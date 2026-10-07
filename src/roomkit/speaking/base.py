@@ -11,6 +11,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Literal, get_args
 
 from roomkit.models.event import RoomEvent
@@ -21,6 +22,20 @@ SpeakMode = Literal["speak", "offer", "silent"]
 without giving it; ``silent`` runs no turn."""
 
 _MODES = frozenset(get_args(SpeakMode))
+
+
+@dataclass(frozen=True)
+class CutReply:
+    """The agent's answer, cut off by someone speaking over it (RFC §12.3.13)."""
+
+    text: str
+    """What the agent was saying: the text handed to speech when it was cut."""
+
+    played_ms: int
+    """How much of it played before the cut."""
+
+    at: datetime
+    """When it was cut."""
 
 
 @dataclass(frozen=True)
@@ -50,6 +65,10 @@ class SpeakTurn:
 
     thought: Thought | None = None
     """What the agent has in mind, when its channel has a thinker."""
+
+    cut: CutReply | None = None
+    """The agent's answer cut off just before ``event``, when it has not spoken
+    since."""
 
     def by_agent(self, event: RoomEvent) -> bool:
         """Whether *event* is one of the agent's own answers."""

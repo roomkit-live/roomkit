@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
+from roomkit.channels._ai_cuts import CUT_MARK, cut_answer_ids, cut_records
 from roomkit.channels._ai_policy import policy_check
 from roomkit.channels._dangling_recovery import patch_dangling_tool_calls
 from roomkit.channels._instruction import instruction_fingerprint, is_standalone, mark_instruction
@@ -403,6 +404,9 @@ class AIContextMixin(_AIChannelContract):
     ) -> list[tuple[str, str | list[_ContentPart], str | None]]:
         """The history's turns as (role, content, speaker), a user turn's speaker named."""
         past_turns: list[tuple[str, str | list[_ContentPart], str | None]] = []
+        # An answer cut off by a barge-in reads as cut, not as heard whole (§6.4).
+        records = cut_records(context, self.channel_id)
+        cut_ids = cut_answer_ids(memory_result.events, records, self.channel_id)
         for past_event in memory_result.events:
             if past_event.metadata.get("cancellation_reason") == SUPERSEDED:
                 # A response nobody heard: the user continued the turn first,
@@ -410,6 +414,8 @@ class AIContextMixin(_AIChannelContract):
                 continue
             role = self._determine_role(past_event)
             content = self._transcript_content(past_event)
+            if content and past_event.id in cut_ids:
+                content = _with_cut_mark(content)
             if content:
                 speaker = event_speaker(past_event, context) if role == "user" else None
                 past_turns.append((role, content, speaker))
@@ -844,6 +850,13 @@ def event_speaker(event: RoomEvent, context: RoomContext) -> str | None:
             if participant.id == participant_id and participant.display_name:
                 return participant.display_name
     return None
+
+
+def _with_cut_mark(content: str | list[_ContentPart]) -> str | list[_ContentPart]:
+    """An answer cut off by a barge-in, marked as such (RFC §6.4)."""
+    if isinstance(content, str):
+        return f"{content}\n{CUT_MARK}"
+    return [*content, AITextPart(text=CUT_MARK)]
 
 
 def _with_speaker_prefix(content: str | list[_ContentPart], name: str) -> str | list[_ContentPart]:

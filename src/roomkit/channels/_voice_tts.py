@@ -446,6 +446,7 @@ class VoiceTTSMixin:
                         telemetry=telemetry,
                         accumulated=text.accumulated,
                         speaker_id=event.source.channel_id,
+                        responds_to=event.responds_to,
                     )
                     for session, branch in zip(target_sessions, fan_out.branches, strict=True)
                 ),
@@ -559,6 +560,8 @@ class VoiceTTSMixin:
                         session_id=session.id,
                         text=full_text or "(empty)",
                         barge_in_claimed=previous.barge_in_claimed,
+                        answer_channel_id=previous.answer_channel_id,
+                        answer_responds_to=previous.answer_responds_to,
                     )
         # Only a session that was served gets the final transcript: showing a
         # response the user never heard would contradict the audio.
@@ -630,6 +633,7 @@ class VoiceTTSMixin:
         telemetry: TelemetryProvider | None,
         accumulated: list[str],
         speaker_id: str,
+        responds_to: str | None = None,
     ) -> bool:
         """Play one session's copy of a streamed response through TTS.
 
@@ -652,6 +656,7 @@ class VoiceTTSMixin:
                 telemetry=telemetry,
                 accumulated=accumulated,
                 speaker_id=speaker_id,
+                responds_to=responds_to,
             )
         finally:
             sentences.close()
@@ -670,6 +675,7 @@ class VoiceTTSMixin:
         telemetry: TelemetryProvider | None,
         accumulated: list[str],
         speaker_id: str,
+        responds_to: str | None = None,
     ) -> None:
         """Interrupt, play and drain one session's streamed response."""
         from .voice import TTSPlaybackState
@@ -684,7 +690,12 @@ class VoiceTTSMixin:
             )
             await self.interrupt(session, reason="new_tts")
 
-        playback = TTSPlaybackState(session_id=session.id, text="")
+        playback = TTSPlaybackState(
+            session_id=session.id,
+            text="",
+            answer_channel_id=speaker_id,
+            answer_responds_to=responds_to,
+        )
         with self._state_lock:
             self._playing_sessions[session.id] = playback
             # Clear done event so wait_playback_done() blocks until send_audio returns
@@ -788,6 +799,7 @@ class VoiceTTSMixin:
         voice: str | None = None,
         speaker_id: str | None = None,
         response: bool = False,
+        responds_to: str | None = None,
     ) -> None:
         """Speak *text* on *session*, reporting a failure once the playback has ended.
 
@@ -798,7 +810,12 @@ class VoiceTTSMixin:
         provider = self._tts.name if self._tts else "unknown"
         try:
             await self._play_tts(
-                session, text, voice=voice, speaker_id=speaker_id, response=response
+                session,
+                text,
+                voice=voice,
+                speaker_id=speaker_id,
+                response=response,
+                responds_to=responds_to,
             )
         except Exception as exc:
             await self._report_tts_failure(self._room_of(session), provider, exc, session.id)
@@ -818,6 +835,7 @@ class VoiceTTSMixin:
         voice: str | None = None,
         speaker_id: str | None = None,
         response: bool = False,
+        responds_to: str | None = None,
     ) -> None:
         """Synthesize *text* and send audio to *session*.
 
@@ -849,7 +867,12 @@ class VoiceTTSMixin:
 
         await self._session_output_backend(session).send_transcription(session, text, "assistant")
 
-        playback = TTSPlaybackState(session_id=session.id, text=text)
+        playback = TTSPlaybackState(
+            session_id=session.id,
+            text=text,
+            answer_channel_id=speaker_id if response else None,
+            answer_responds_to=responds_to if response else None,
+        )
         with self._state_lock:
             self._playing_sessions[session.id] = playback
             # Clear done event so wait_playback_done() blocks until send_audio returns
@@ -992,7 +1015,12 @@ class VoiceTTSMixin:
             results = await asyncio.gather(
                 *(
                     self._send_tts(
-                        s, final_text, voice=voice, speaker_id=speaker_id, response=True
+                        s,
+                        final_text,
+                        voice=voice,
+                        speaker_id=speaker_id,
+                        response=True,
+                        responds_to=event.responds_to,
                     )
                     for s in target_sessions
                 ),

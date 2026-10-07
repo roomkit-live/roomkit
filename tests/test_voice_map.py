@@ -166,6 +166,7 @@ class TestDeliverPassesVoice:
                 voice="voice-alice",
                 speaker_id="agent-a",
                 response=True,
+                responds_to=None,
             )
 
     async def test_deliver_voice_passes_none_for_unknown_agent(self) -> None:
@@ -198,5 +199,10 @@ class TestDeliverPassesVoice:
         with patch.object(channel, "_send_tts", new_callable=AsyncMock) as mock_send:
             await channel._deliver_voice(event, _binding(), _ctx())
             mock_send.assert_called_once_with(
-                session, "Hi", voice=None, speaker_id="agent-unknown", response=True
+                session,
+                "Hi",
+                voice=None,
+                speaker_id="agent-unknown",
+                response=True,
+                responds_to=None,
             )

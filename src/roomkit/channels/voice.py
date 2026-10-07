@@ -172,6 +172,11 @@ class TTSPlaybackState:
     """Monotonic time playback was interrupted."""
     context_turn: tuple[AssistantTurnRecorder, str] | None = None
     """The TTS context turn this playback will record, and its speaker."""
+    answer_channel_id: str | None = None
+    """The intelligence channel whose answer this playback speaks; ``None`` for
+    a playback that answers nothing (``say()``, a greeting)."""
+    answer_responds_to: str | None = None
+    """The event that answer responds to (RFC §8.5)."""
     barge_in_claimed: bool = False
     """Set by the first barge-in on this playback; every later trigger finds
     it taken. The playback leaves ``_playing_sessions`` only once that barge-in
@@ -1919,12 +1924,16 @@ class VoiceChannel(
             metadata["played_percentage"] = round(
                 min(100.0, 100.0 * played_ms / playback.total_duration_ms), 1
             )
+        # The agent's words, not the listener's (RMK-533): no participant id,
+        # and the answer it cut named, so the AI channel can mark it as cut.
+        if playback.answer_channel_id is not None:
+            metadata["answer_channel_id"] = playback.answer_channel_id
+            metadata["answer_responds_to"] = playback.answer_responds_to
         try:
             await self._framework.send_event(
                 room_id,
                 self.channel_id,
                 TextContent(body=playback.text),
-                participant_id=session.participant_id,
                 metadata=metadata,
                 visibility=Visibility.INTERNAL,
             )

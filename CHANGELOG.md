@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- An agent knows its answer was cut off (RMK-563, RFC §6.4). When a barge-in
+  cuts the agent, the context its next turn reads marks that answer as
+  interrupted ("the person may not have heard the end of it") instead of heard
+  whole, on every AI channel. A speak policy reads the cut in the new
+  `SpeakTurn.cut` (`CutReply(text, played_ms, at)`) when the agent has not
+  answered since; `ClassifierSpeakPolicy` then asks whether the turn spoken
+  over it leaves it free to go on (`resume`, 0.4) and, unless asked for quiet,
+  speaks with the reason `resume after cut` and a note to go on from where it
+  was cut without repeating what was heard. Which part was heard is not
+  guessed. Only a record a voice channel of the room wrote counts (internal, no
+  participant, from a bound voice channel): a message claiming to be one is
+  ignored. Example: `examples/resume_after_cut.py`.
+
 - Claude Haiku 5.5 (`claude-haiku-5-5`, released 2026-10-07) in the Anthropic
   catalog (RMK-578): 1M context, adaptive thinking and effort (the provider
   already treats it as a modern model: no `temperature`, no `budget_tokens`),
@@ -193,6 +206,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   keep the SDK's own retries.
 
 ### Fixed
+
+- The record a voice channel writes when a barge-in cuts the agent is the
+  agent's words, not the listener's (RMK-533, RFC §12.3.13): it no longer
+  carries the human's participant id, and names the answer it cut
+  (`metadata.answer_channel_id`, `metadata.answer_responds_to`). A hook that
+  logged it as something the person said read the agent's own words as theirs.
 
 - A conference with a full-duplex realtime model answers its delegations, and
   is not idle while a tool call runs (RMK-528, RFC §12.10.12). A delegation

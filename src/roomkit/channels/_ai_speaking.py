@@ -8,6 +8,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from roomkit.channels._ai_context import event_speaker
+from roomkit.channels._ai_cuts import cut_records, cut_reply
 from roomkit.core.visibility import visible_events
 from roomkit.models.enums import EventType, ParticipantRole, ParticipantStatus
 from roomkit.models.event import is_tool_call_record
@@ -122,6 +123,7 @@ def _speak_turn(
         channel_id=channel_id,
         speakers=speakers,
         thought=thought,
+        cut=cut_reply(recent, cut_records(context, channel_id), channel_id),
     )
 
 

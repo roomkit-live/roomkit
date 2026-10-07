@@ -94,6 +94,33 @@ QUESTIONS: Mapping[str, Question] = MappingProxyType(
 """The questions :class:`ClassifierSpeakPolicy` asks, by the name :func:`compose`
 reads."""
 
+RESUME = YesNoQuestion(
+    "The assistant was cut off while saying `assistant_cut_off.was_saying`: the speaker "
+    "of `last_turn` started talking over it after `assistant_cut_off.heard_seconds` "
+    "seconds. Does `last_turn` leave the assistant free to go on and finish: an "
+    "acknowledgement, a thanks, a short reaction, an invitation to continue, or talking "
+    "over it by accident? A question (even about what the assistant was saying), a "
+    "request, a correction, an objection, or asking the assistant to stop means the "
+    "speaker wants to talk instead."
+)
+"""Asked when the agent's answer was cut just before the turn (``SpeakTurn.cut``)."""
+
+RESUME_THRESHOLD = 0.4
+"""Above it, the turn spoken over the agent leaves it free to finish. Measured
+with Jev on 32 labelled French turns, cut after 0.2 s and after 4 s: a speaker
+who wants the turn reads 0.05-0.13, an acknowledgement 0.63-0.86 (32/32)."""
+
+RESUME_NOTE = (
+    "You were cut off after about {seconds:.0f} s of your last answer. If what you were "
+    'saying still matters, go on from where you were cut: a short link back ("so, as I '
+    'was saying"), then only what was left. Do not repeat what was heard, do not '
+    "apologise."
+)
+"""The note a resumed turn carries."""
+
+_CUT_TEXT_LIMIT = 600
+"""Characters of the cut answer the classifier reads."""
+
 THOUGHT_QUESTIONS: Mapping[str, Question] = MappingProxyType(
     {"answers": ANSWERS, "corrects": CORRECTS}
 )
@@ -152,6 +179,18 @@ def compose(
     if knows >= (proactivity / 2 if urgent else proactivity):
         return "offer", "urgent" if urgent else "has something to add"
     return "silent", "not addressed"
+
+
+def resume_after_cut(
+    mode: SpeakMode, reason: str, judgments: Mapping[str, float]
+) -> tuple[SpeakMode, str]:
+    """After a cut: the agent goes on to finish its answer when the turn spoken
+    over it leaves it free to (``resume``), unless that turn asks for quiet, the
+    speaker is not done, or a request for quiet still stands; otherwise the turn
+    decides as without a cut."""
+    free = judgments.get("resume", 0.0) >= RESUME_THRESHOLD
+    held = any(judgments.get(n, 0.0) >= 0.5 for n in ("hush", "unfinished", "quiet_rule"))
+    return ("speak", "resume after cut") if free and not held else (mode, reason)
 
 
 def addressed(directness: float, request: float, *, alone: bool = False) -> bool:
@@ -240,6 +279,8 @@ class ClassifierSpeakPolicy(SpeakPolicy):
         asked = dict(self._questions)
         if turn.thought is not None and turn.thought.want_to_say:
             asked |= THOUGHT_QUESTIONS
+        if turn.cut is not None:
+            asked["resume"] = RESUME
         if self._languages:
             options = {name: name for name in self._languages}
             options[_OTHER_LANGUAGE] = "Another language, or nothing to tell it from."
@@ -262,6 +303,11 @@ class ClassifierSpeakPolicy(SpeakPolicy):
         }
         if turn.thought is not None:
             state["assistant_thought"] = turn.thought.as_state()
+        if turn.cut is not None:
+            state["assistant_cut_off"] = {
+                "was_saying": turn.cut.text[-_CUT_TEXT_LIMIT:],
+                "heard_seconds": round(turn.cut.played_ms / 1000, 1),
+            }
         return state
 
     def decision(self, turn: SpeakTurn, answers: Answers) -> SpeakDecision:
@@ -274,7 +320,12 @@ class ClassifierSpeakPolicy(SpeakPolicy):
             proactivity=self._proactivity,
             urgent=thought is not None and thought.urgent and bool(thought.want_to_say),
         )
-        return SpeakDecision(mode, reason, judgments, self._language_notes(answers))
+        notes = self._language_notes(answers)
+        if turn.cut is not None:
+            mode, reason = resume_after_cut(mode, reason, judgments)
+            if reason == "resume after cut":
+                notes = (RESUME_NOTE.format(seconds=turn.cut.played_ms / 1000), *notes)
+        return SpeakDecision(mode, reason, judgments, notes)
 
     def _language_notes(self, answers: Answers) -> tuple[str, ...]:
         answer = answers.get("language")
