@@ -332,9 +332,15 @@ def _agent_session_tools(
 
 def _carried_tool_names(rtv: RealtimeVoiceChannel) -> set[str]:
     """Every name the channel carries now, declared in a session or not: its
-    host definitions, every name its human-input tools serve, and the tools
-    it serves itself (Tool Search's, the skills')."""
-    return set(rtv._host_tool_names()) | rtv._human_input.names | rtv._channel_tool_names()
+    host definitions, every name its human-input tools serve, the tools it
+    serves itself (Tool Search's, the skills') and those its reasoning
+    backend answers itself."""
+    return (
+        set(rtv._host_tool_names())
+        | rtv._human_input.names
+        | rtv._channel_tool_names()
+        | rtv._backend_served_names()
+    )
 
 
 def refuse_agents_with_unserved(agents: list[Agent], channel_id: str) -> None:

@@ -41,6 +41,7 @@ if TYPE_CHECKING:
     from roomkit.tools.policy import ToolPolicy
     from roomkit.voice.base import VoiceSession
     from roomkit.voice.realtime.provider import RealtimeVoiceProvider
+    from roomkit.voice.realtime.reasoning import ReasoningBackend
 
 logger = logging.getLogger("roomkit.channels.realtime_voice")
 
@@ -63,6 +64,7 @@ class RealtimeToolGateMixin:
     _registry: ChannelRegistry
     _tool_search_support: Any
     _provider: RealtimeVoiceProvider
+    _reasoning_backend: ReasoningBackend | None
     _framework: RoomKit | None
     channel_id: str
     channel_type: ChannelType
@@ -91,6 +93,12 @@ class RealtimeToolGateMixin:
     def _human_input_names(self) -> frozenset[str]:
         """The names the person's tools declare, which no other tool takes."""
         return self._human_input.declared_names
+
+    def _backend_served_names(self) -> frozenset[str]:
+        """The names the reasoning backend answers itself, which no session
+        tool takes (RFC §12.4.1)."""
+        backend = self._reasoning_backend
+        return backend.served_names() if backend is not None else frozenset()
 
     def _orchestration_dicts(
         self, room_id: str | None, skip: Container[str | None] = ()
@@ -208,8 +216,9 @@ class RealtimeToolGateMixin:
     def _declared_once(
         self, tools: list[dict[str, Any]], room_id: str | None
     ) -> list[dict[str, Any]]:
-        """A session's host tools in *room_id*: none under a name the channel or
-        orchestration declares itself there, each name once (RFC §21.1,
+        """A session's host tools in *room_id*: none under a name the channel,
+        its reasoning backend or orchestration declares itself there, each
+        name once (RFC §21.1, §12.4.1,
         :func:`declared_once`). Those are composed in afterwards. A tool
         orchestration serves without declaring it always (a pipeline agent's,
         its handoff) comes through the session's catalogue: only its own
@@ -217,6 +226,7 @@ class RealtimeToolGateMixin:
         served = (
             self._channel_tool_names()
             | self._human_input_names()
+            | self._backend_served_names()
             | self._registry.names(room_id, lambda traits: traits.always_declared)
         )
         own = [tool for tool in tools if self._declares_its_server(tool, room_id)]
@@ -329,7 +339,13 @@ class RealtimeToolGateMixin:
         self, room_id: str | None, participant_id: str, session_id: str
     ) -> str | None:
         """The session participant's role, where a policy has overrides to read."""
-        if not self._reads_roles(session_id) or not (self._framework and room_id):
+        if not self._reads_roles(session_id):
+            return None
+        return await self._read_participant_role(room_id, participant_id)
+
+    async def _read_participant_role(self, room_id: str | None, participant_id: str) -> str | None:
+        """The participant's role as the store holds it now."""
+        if not (self._framework and room_id):
             return None
         # Under the framework's lease, like every store read a channel makes:
         # a call landing while the kit closes must not read a closing store.

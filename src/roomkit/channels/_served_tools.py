@@ -52,7 +52,7 @@ def refuse_backend_names(
         if name in taken:
             raise ValueError(
                 f"Tool {name!r} on channel {channel_id!r} is served by its reasoning "
-                f"backend's agent itself (RFC §12.4.1); give the tool another name"
+                f"backend itself (RFC §12.4.1); give the tool another name"
             )
 
 

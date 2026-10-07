@@ -230,16 +230,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   could not be sent (a fallback, a result) is not waited for: on a realtime
   voice channel, a fallback the provider refused held the session busy.
 
-- A realtime voice channel with a reasoning backend refuses, at
-  construction, a session tool declared under a name its backend's agent
-  serves itself (RMK-527, RFC §12.4.1): `read_stored_result`, and
-  `find_tools` / `list_tools` when the agent's tool search is on. The agent
-  answered such a call itself, outside the channel's gate, and the tool's
-  handler never ran. New `ReasoningBackend.served_names()` (none by
-  default; an `AgentReasoningBackend` names its agent's own tools).
-  **Behaviour change:** such a channel no longer constructs; rename the
-  tool. The agent's own `tool_policy` keeps composing with the channel's,
-  now written in the RFC.
+- A realtime voice channel with a reasoning backend refuses a session tool
+  given under a name its backend's agent serves itself (RMK-527, RFC
+  §12.4.1): `read_stored_result`, and `find_tools` / `list_tools` unless the
+  agent has `tool_search=False`. It is refused at construction, a
+  human-input tool's included, and at `configure(tools=)`; one that arrives
+  later (a session's or a room's tools, `reconfigure_session`) is not
+  declared, with a warning. The agent answered such a call itself, outside
+  the channel's gate, and the tool's handler never ran. New
+  `ReasoningBackend.served_names()` (none by default; an
+  `AgentReasoningBackend` names its agent's own tools). **Behaviour
+  change:** such a channel no longer constructs; rename the tool. The
+  agent's own `tool_policy` composes with the channel's and now resolves
+  for the session participant's role, so its `role_overrides` apply: new
+  `ReasoningRequest.participant_role`, read by the channel when it hands
+  the delegation over; they never applied on this door.
 
 - ON_REALTIME_TEXT_INJECTED hears the same event for a broadcast on a
   realtime voice channel as on a conference (RMK-530, RFC §12.5): the event

@@ -137,6 +137,7 @@ class RealtimeDelegationMixin:
     _access_cause: Any  # see RealtimeToolsMixin
     _door_exempt: Any  # see RealtimeToolGateMixin
     _refresh_session_policies: Any  # see RealtimeToolGateMixin
+    _read_participant_role: Any  # see RealtimeToolGateMixin
     _open_tool_call: Any  # see RealtimeToolsMixin
     _close_tool_call: Any  # see RealtimeToolsMixin
     _tool_calls: Any  # see RealtimeToolsMixin
@@ -366,11 +367,13 @@ class RealtimeDelegationMixin:
         (RFC §12.4.1).
         """
         await self._refresh_session_policies(session, handover.room_id)
+        role = await self._read_participant_role(handover.room_id, session.participant_id)
         return ReasoningRequest(
             session=session,
             delegation_id=delegation_id,
             transcript=handover.transcript,
             first=handover.first,
+            participant_role=role,
             tools=self._backend_catalogue(session.id),
             unavailable=self._backend_unavailable(session.id),
             execute_tool=lambda name, arguments: self._execute_backend_tool(

@@ -150,6 +150,9 @@ class ReasoningRequest:
             outside the gate, to the channel's ON_TOOL_CALL hooks, as
             ``(name, arguments, result, is_error=..., detail=...,
             tool_call_id=...)``: served or failed, reported once.
+        participant_role: The session participant's role when the
+            delegation was handed over (``None`` without one), so a backend
+            resolves its own tool policy for it, role overrides included.
     """
 
     session: VoiceSession
@@ -162,6 +165,7 @@ class ReasoningRequest:
     report_refusal: RefusalReporter | None = None
     unavailable: dict[str, str] = field(default_factory=dict)
     report_call: CallReporter | None = None
+    participant_role: str | None = None
 
 
 @dataclass(frozen=True)
@@ -303,11 +307,10 @@ class AgentReasoningBackend(ReasoningBackend):
         return self._agent
 
     def served_names(self) -> frozenset[str]:
-        """The names the agent serves from its own registry (its large-result
-        re-read, its Tool Search when on), which it answers before the
-        channel's gate (RFC §12.4.1)."""
-        entries = self._agent._registry.entries(None)  # noqa: SLF001
-        return frozenset(entry.name for entry in entries if entry.serve is not None)
+        """The names the agent serves itself (its large-result re-read, its
+        Tool Search unless ``tool_search=False``), which it answers before
+        the channel's gate (RFC §12.4.1)."""
+        return frozenset(self._agent._channel_tool_names())  # noqa: SLF001
 
     @property
     def provider(self) -> AIProvider:
@@ -392,6 +395,9 @@ class AgentReasoningBackend(ReasoningBackend):
             channel_id=agent.channel_id, room_id=room_id or "", channel_type=agent.channel_type
         )
         loop_ctx = _ToolLoopContext(room_id=room_id)
+        # The agent's policy resolves for the session's participant, as in a
+        # room (RFC §12.4.1, §19.5).
+        loop_ctx.current_participant_role = request.participant_role
         # A call to a session tool the model was not offered reads the voice
         # gate's cause, not "not declared" (RFC §21.1).
         loop_ctx.unavailable_tools = dict(request.unavailable)

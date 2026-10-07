@@ -633,7 +633,8 @@ class RealtimeVoiceChannel(
         tool_search_threshold: int,
         tool_search_pinned: list[str] | None,
     ) -> None:
-        """The tools the channel serves itself: the skills' and Tool Search's."""
+        """The tools the channel serves itself (the skills' and Tool
+        Search's), and the given tools refused against them."""
         names = skills.skill_names if skills is not None else None
         warn_tools_uncallable(names, "skill(s)", self._provider, self.channel_id)
         self._skill_support = self._skill_support_for(skills, script_executor, skill_delivery_mode)
@@ -645,12 +646,20 @@ class RealtimeVoiceChannel(
             pinned=tool_search_pinned,
         )
         self._register_channel_tools()
-        host_names = [dict_tool_name(tool) for tool in self._tools or []]
-        refuse_host_tools(
-            host_names, self._channel_tool_names() | self._human_input_names(), self.channel_id
-        )
-        refuse_backend_names(host_names, self._reasoning_backend, self.channel_id)
+        self._refuse_given_tools([dict_tool_name(tool) for tool in self._tools or []])
         self._human_input.refuse_collisions(self._channel_tool_names(), self.channel_id)
+        refuse_backend_names(
+            sorted(self._human_input_names()), self._reasoning_backend, self.channel_id
+        )
+
+    def _refuse_given_tools(self, names: list[str | None]) -> None:
+        """Refuse host tools given under a name something else serves: the
+        channel, its human-input tools, its reasoning backend, orchestration
+        (RFC §21.1, §12.4.1); or one no vendor accepts, or given twice."""
+        served = self._channel_tool_names() | self._human_input_names()
+        refuse_host_tools(names, served, self.channel_id)
+        refuse_backend_names(names, self._reasoning_backend, self.channel_id)
+        self._registry.refuse_host_names(names)
 
     def _skill_support_for(
         self,
@@ -894,15 +903,12 @@ class RealtimeVoiceChannel(
         """Update channel defaults for future sessions.
 
         Active sessions are not affected — use ``reconfigure_session``
-        for those. A tool under a name the channel or orchestration serves,
-        or given twice, is refused (RFC §21.1), and so is a name no vendor
-        accepts (RFC §6.7).
+        for those. A tool under a name the channel, its reasoning backend or
+        orchestration serves, or given twice, is refused (RFC §21.1,
+        §12.4.1), and so is a name no vendor accepts (RFC §6.7).
         """
         if tools is not None:
-            names = [dict_tool_name(tool) for tool in tools]
-            served = self._channel_tool_names() | self._human_input_names()
-            refuse_host_tools(names, served, self.channel_id)
-            self._registry.refuse_host_names(names)
+            self._refuse_given_tools([dict_tool_name(tool) for tool in tools])
         if system_prompt is not None:
             self._system_prompt = system_prompt
         if voice is not None:
