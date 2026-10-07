@@ -7,17 +7,20 @@ import logging
 import time
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from roomkit.core._failure_log import was_reported
 from roomkit.core.exceptions import TaskCutShortError, TaskTurnFailedError
 from roomkit.models.enums import TaskStatus
+from roomkit.models.response_metadata import TURNS_KEY
 
 logger = logging.getLogger("roomkit.tasks")
 
 
 class DelegatedTaskResult(BaseModel):
     """Result of a completed delegated task."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     task_id: str
     child_room_id: str
@@ -26,6 +29,10 @@ class DelegatedTaskResult(BaseModel):
     status: TaskStatus = TaskStatus.COMPLETED
     output: str | None = None
     error: str | None = None
+    exception: Exception | None = Field(default=None, exclude=True)
+    """The failure itself, its type kept (what the worker's turn raised),
+    for a caller that hands it on; held in memory, never serialized (RFC
+    §23.3 step 6)."""
     duration_ms: float = 0.0
     metadata: dict[str, Any] = Field(default_factory=dict)
 
@@ -138,13 +145,19 @@ def task_cut_reason(result: Any) -> str | None:
 
 
 def finished_task_fields(
-    response: str | None, failure: BaseException | None, context: dict[str, Any] | None
+    response: str | None,
+    failure: BaseException | None,
+    context: dict[str, Any] | None,
+    turns: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """The outcome of a delegated task that ran: completed with the worker's
-    *response*, or failed with *failure*. A worker cut short keeps its last
-    narration as the output and how its turn ended in the metadata (RFC
-    §23.3); any other failure keeps nothing."""
+    *response*, or failed with *failure*, kept as raised. A worker cut short
+    keeps its last narration as the output and how its turn ended in the
+    metadata (RFC §23.3); any other failure keeps nothing. Its turn's record
+    (*turns*, by responder) goes under ``turns`` however it ended."""
     output, metadata = response, dict(context or {})
+    if turns:
+        metadata[TURNS_KEY] = dict(turns)
     if isinstance(failure, (TaskCutShortError, TaskTurnFailedError)):
         output = output or failure.narration
         metadata["loop_end_reason"] = failure.reason
@@ -156,5 +169,14 @@ def finished_task_fields(
         "status": TaskStatus.COMPLETED if response else TaskStatus.FAILED,
         "output": output,
         "error": str(failure) if failure is not None else None,
+        "exception": _as_raised(failure),
         "metadata": metadata,
     }
+
+
+def _as_raised(failure: BaseException | None) -> Exception | None:
+    """What the worker's turn raised: a failed turn's own error, not the
+    wrapper that carries its end and narration."""
+    if isinstance(failure, TaskTurnFailedError) and isinstance(failure.__cause__, Exception):
+        return failure.__cause__
+    return failure if isinstance(failure, Exception) else None

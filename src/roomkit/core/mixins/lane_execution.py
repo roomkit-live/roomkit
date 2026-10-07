@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from roomkit.core._failure_log import needs_reporting
-from roomkit.core.event_router import CHAIN_DEPTH_LIMIT, BroadcastResult
+from roomkit.core.event_router import CHAIN_DEPTH_LIMIT, BroadcastResult, reply_turn_entry
 from roomkit.core.exceptions import RoomNotFoundError
 from roomkit.core.mixins.helpers import (
     _RECENT_EVENTS_LIMIT,
@@ -34,7 +34,6 @@ from roomkit.models.response_metadata import (
     add_turn_entry,
     merge_caller_record,
     merge_channel_record,
-    turn_summary,
 )
 from roomkit.telemetry.base import SpanKind
 from roomkit.telemetry.context import get_current_span, restored_span
@@ -1123,15 +1122,8 @@ def record_buffered_reply(
     answer, puts its end under its channel in ``turns``, read off its record
     or else its last message (RFC §6.4)."""
     merge_channel_record(cascade.response_metadata, output.response_metadata)
-    if not root:
-        return
-    messages = [
-        event.metadata or {}
-        for event in reversed(output.response_events)
-        if event.type == EventType.MESSAGE
-    ]
-    entry = turn_summary(output.response_metadata, *messages)
-    add_turn_entry(cascade.response_metadata, channel_id, entry)
+    if root:
+        add_turn_entry(cascade.response_metadata, channel_id, reply_turn_entry(output))
 
 
 def _log_partial_failure(result: BroadcastResult, total: int, room_id: str, event_id: str) -> None:

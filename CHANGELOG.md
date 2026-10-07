@@ -207,6 +207,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A synchronous Loop answers as a room turn does (RMK-529, RFC §19.7.4,
+  §23.3): its result carries how the producer's last turn ended under
+  `turns["<producer>"]` (`loop_end_reason`, `ai_usage`), a cut producer
+  (`max_rounds`, deadline, budget) is read there with no error, and a
+  producer whose turn failed reaches the caller as the error it raised, its
+  type kept: a `ProviderError` stays one, logged once. **Behaviour change:**
+  a cut came as a `TaskCutShortError` and a provider failure as a
+  `RoomKitError("The producer's task failed: ...")`; code that caught
+  `RoomKitError` on a Loop now receives the `ProviderError`. A delegated
+  task carries its worker's turn record under `metadata["turns"]` however
+  its turn ended, and a failed one keeps the failure itself in the new
+  `DelegatedTaskResult.exception` (in memory, never serialized).
+
 - The record a voice channel writes when a barge-in cuts the agent is the
   agent's words, not the listener's (RMK-533, RFC §12.3.13): it no longer
   carries the human's participant id, and names the answer it cut

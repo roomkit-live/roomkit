@@ -1,21 +1,25 @@
-"""A Loop whose producer's task failed says so (RMK-435, RFC §19.7.4, §23.3).
+"""A Loop whose producer's task failed says so (RMK-435, RMK-529, RFC
+§19.7.4, §23.3).
 
 The sync Loop no longer publishes an empty producer message: with no output
 at all the turn has no answer; with an earlier output, that output goes out,
-not approved, with why the loop stopped; either way the caller reads the
-producer's failure. The async Loop's delivered text says the producer's task
-failed, never with its error. The voice ``delegate_workers`` of a Supervisor
-is a strategy's tool, unbound by the channel's default call timeout.
+not approved, with why the loop stopped. Either way the caller reads how the
+producer's last turn ended under ``turns``, a cut there and no error, and a
+turn that failed as the error it raised, its type kept. The async Loop's
+delivered text says the producer's task failed, never with its error. The
+voice ``delegate_workers`` of a Supervisor is a strategy's tool, unbound by
+the channel's default call timeout.
 """
 
 from __future__ import annotations
 
 import asyncio
+import logging
 from typing import Any
 
 import pytest
 
-from roomkit import HookExecution, HookTrigger, RoomKit, RoomKitError, TaskCutShortError
+from roomkit import HookExecution, HookTrigger, RoomKit
 from roomkit.channels.agent import Agent
 from roomkit.channels.realtime_voice import RealtimeVoiceChannel
 from roomkit.models.delivery import InboundMessage
@@ -93,12 +97,16 @@ async def _producer_messages(kit: RoomKit) -> list[tuple[str | None, dict[str, A
     ]
 
 
+def _producer_turn(result: Any) -> dict[str, Any]:
+    return dict(result.response_metadata).get("turns", {}).get("producer", {})
+
+
 async def test_a_producer_cut_before_any_output_gives_no_answer_and_its_reason() -> None:
     kit, result = await _sync_loop(_producer([LOOPING] * 10), ["APPROVED"])
 
     assert await _producer_messages(kit) == []
-    assert isinstance(result.error, TaskCutShortError)
-    assert result.error.reason == "max_rounds"
+    assert result.error is None
+    assert _producer_turn(result)["loop_end_reason"] == "max_rounds"
     await kit.close()
 
 
@@ -116,9 +124,11 @@ async def test_a_producer_cut_after_an_output_keeps_it_not_approved() -> None:
         "producer_failed",
         1,
     )
-    # The draft goes out and the cut surfaces beside it, to the caller: an
-    # expected end fires no ON_ERROR, as a room turn's cut fires none (RMK-513).
-    assert isinstance(result.error, TaskCutShortError)
+    # The draft goes out and the cut reads under turns, to the caller: an
+    # expected end is no error and fires no ON_ERROR, as a room turn's cut
+    # fires none (RMK-513, RMK-529).
+    assert result.error is None
+    assert _producer_turn(result)["loop_end_reason"] == "max_rounds"
     await asyncio.sleep(0.1)
     assert errors == []
     state = get_conversation_state(await kit.get_room("r"))
@@ -126,12 +136,29 @@ async def test_a_producer_cut_after_an_output_keeps_it_not_approved() -> None:
     await kit.close()
 
 
-async def test_a_producer_whose_provider_fails_gives_its_error_to_the_caller() -> None:
-    kit, result = await _sync_loop(Agent("producer", provider=_Refused()), ["APPROVED"])
+async def test_a_producer_whose_provider_fails_gives_its_error_to_the_caller(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    with caplog.at_level(logging.WARNING, logger="roomkit"):
+        kit, result = await _sync_loop(Agent("producer", provider=_Refused()), ["APPROVED"])
 
     assert await _producer_messages(kit) == []
-    assert isinstance(result.error, RoomKitError)
-    assert "401" in str(result.error)
+    assert isinstance(result.error, ProviderError)
+    assert result.error.status_code == 401
+    assert len([r for r in caplog.records if "invalid x-api-key" in r.getMessage()]) == 1
+    await kit.close()
+
+
+async def test_a_completed_loop_says_how_the_producers_last_turn_ended() -> None:
+    drafts = [
+        AIResponse(content=f"Draft {n}.", usage={"input_tokens": 3, "output_tokens": n})
+        for n in (1, 2)
+    ]
+    kit, result = await _sync_loop(_producer(drafts), ["Needs work.", "APPROVED"])
+
+    turn = _producer_turn(result)
+    assert turn["loop_end_reason"] == "completed"
+    assert turn["ai_usage"]["output_tokens"] == 2
     await kit.close()
 
 
@@ -265,8 +292,9 @@ def _failing_after_a_round() -> Agent:
 async def test_a_producer_failing_after_a_round_gives_its_error_not_a_cut() -> None:
     kit, result = await _sync_loop(_failing_after_a_round(), ["APPROVED"])
 
-    assert type(result.error) is RoomKitError
-    assert "upstream 400" in str(result.error)
+    assert isinstance(result.error, ProviderError)
+    assert result.error.status_code == 400
+    assert _producer_turn(result)["loop_end_reason"] == "error"
     await kit.close()
 
 

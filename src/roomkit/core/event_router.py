@@ -25,6 +25,7 @@ from roomkit.models.enums import (
     ChannelDirection,
     ChannelMediaType,
     EventStatus,
+    EventType,
     Visibility,
 )
 from roomkit.models.event import (
@@ -42,6 +43,7 @@ from roomkit.models.event import (
     is_interruption_marker,
     is_tool_call_record,
 )
+from roomkit.models.response_metadata import turn_summary
 from roomkit.models.task import Observation, Task
 from roomkit.providers.utils import _aclose_stream
 
@@ -181,6 +183,32 @@ def stream_record(sr: StreamingResponse) -> dict[str, Any]:
     """A stream's turn record: its response metadata (where an ACP agent
     writes its outcome) with how its loop ended, once read (RFC §6.4)."""
     return {**sr.response_metadata, **(sr.turn_record or {})}
+
+
+def reply_turn_entry(output: ChannelOutput) -> dict[str, Any] | None:
+    """A buffered reply's entry under the caller's ``turns``: its end and
+    usage, read off its record or else its last message (RFC §6.4)."""
+    messages = [
+        event.metadata or {}
+        for event in reversed(output.response_events)
+        if event.type == EventType.MESSAGE
+    ]
+    return turn_summary(output.response_metadata, *messages)
+
+
+def responder_turn_entries(result: BroadcastResult) -> dict[str, dict[str, Any]]:
+    """Each responder's entry under the caller's ``turns``, by its channel
+    id: a buffered reply's, or a stream's once read (RFC §6.4)."""
+    entries = {
+        cid: reply_turn_entry(out)
+        for cid, out in result.outputs.items()
+        if out.response_stream is None
+    }
+    entries.update(
+        (sr.source_channel_id, turn_summary(stream_record(sr)))
+        for sr in result.streaming_responses
+    )
+    return {cid: entry for cid, entry in entries.items() if entry is not None}
 
 
 @dataclass

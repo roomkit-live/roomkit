@@ -10,17 +10,18 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from collections.abc import Callable
-from dataclasses import dataclass
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from roomkit.channels._tool_registry import orchestration_tool, schema_tool
 from roomkit.core._failure_log import mark_reported
-from roomkit.core.exceptions import RoomKitError, TaskCutShortError
+from roomkit.core.exceptions import RoomKitError
 from roomkit.models.channel import ChannelBinding, ChannelOutput
 from roomkit.models.context import RoomContext
 from roomkit.models.enums import ChannelType, TaskStatus
 from roomkit.models.event import EventSource, RoomEvent, TextContent
+from roomkit.models.response_metadata import TURNS_KEY, ResponseMetadata
 from roomkit.orchestration._background import (
     BackgroundRun,
     background_failure_text,
@@ -352,14 +353,28 @@ async def _run_loop(
         max_iterations=max_iterations,
     )
     # The producer's failure reaches the caller whether an earlier output goes
-    # out or not (RFC §19.7.4, §23.3).
+    # out or not, and how its last turn ended reads under ``turns`` as a room
+    # turn's does (RFC §19.7.4, §6.4).
     failure = _producer_failure(outcome) if outcome.stopped == "producer_failed" else None
+    record = ResponseMetadata(outcome.record)
     if not outcome.output:
         # No output at all: the turn has no answer, and the caller reads why.
-        return ChannelOutput(responded=False, error=failure)
+        return ChannelOutput(responded=False, error=failure, response_metadata=record)
 
-    # The producer's response to the event, one deeper (RFC §8.3, §19.7.4).
-    result_event = RoomEvent(
+    return ChannelOutput(
+        responded=True,
+        response_events=[_loop_answer(event, room_id, producer, outcome)],
+        error=failure,
+        response_metadata=record,
+    )
+
+
+def _loop_answer(
+    event: RoomEvent, room_id: str, producer: Agent, outcome: _LoopOutcome
+) -> RoomEvent:
+    """The producer's response to *event*, one deeper, saying how the loop
+    ended (RFC §8.3, §19.7.4)."""
+    return RoomEvent(
         room_id=room_id,
         type=event.type,
         source=EventSource(
@@ -376,7 +391,6 @@ async def _run_loop(
             "stopped": outcome.stopped,
         },
     )
-    return ChannelOutput(responded=True, response_events=[result_event], error=failure)
 
 
 @dataclass
@@ -384,13 +398,15 @@ class _LoopOutcome:
     """How a loop ended (RFC §19.7.4): ``stopped`` is ``approved``,
     ``max_iterations`` or ``producer_failed``; ``output`` is the last output
     reviewed, from ``iteration``, the last iteration completed; ``failure`` is
-    the producer's failed task, when one stopped the loop."""
+    the producer's failed task, when one stopped the loop; ``record`` how the
+    producer's last turn ended, with its usage (RFC §6.4)."""
 
     approved: bool = False
     iteration: int = 0
     output: str = ""
     stopped: str = "max_iterations"
     failure: DelegatedTaskResult | None = None
+    record: dict[str, Any] = field(default_factory=dict)
 
     @property
     def cut_reason(self) -> str | None:
@@ -403,18 +419,32 @@ def _cut_reason(result: DelegatedTaskResult | None) -> str | None:
     return task_cut_reason(result)
 
 
-def _producer_failure(outcome: _LoopOutcome) -> Exception:
-    """The producer's failure, as the loop's caller reads it: its cut (an
-    expected end), or its task's error. One its turn raised after it began
-    was reported and logged in the task's room already: the caller hands it
-    on without a second report (RFC §19.7.4)."""
-    if reason := outcome.cut_reason:
-        return TaskCutShortError(reason, None)
-    error = outcome.failure.error if outcome.failure is not None else None
-    failure = RoomKitError(
-        f"The producer's task failed: {error}" if error else "The producer's task gave no output"
-    )
-    return mark_reported(failure) if _failed_in_its_turn(outcome.failure) else failure
+def _producer_failure(outcome: _LoopOutcome) -> Exception | None:
+    """The producer's failure, as the loop's caller reads it: none for a
+    cut, an expected end read under ``turns``; else what its turn raised, its
+    type kept, or the task's error. One its turn raised after it began was
+    reported and logged in the task's room already: the caller hands it on
+    without a second report (RFC §19.7.4)."""
+    if outcome.cut_reason:
+        return None
+    task = outcome.failure
+    failure = task.exception if task is not None else None
+    if failure is None:
+        error = task.error if task is not None else None
+        failure = RoomKitError(
+            f"The producer's task failed: {error}"
+            if error
+            else "The producer's task gave no output"
+        )
+    return mark_reported(failure) if _failed_in_its_turn(task) else failure
+
+
+def _producer_turn(result: DelegatedTaskResult | None, producer_id: str) -> dict[str, Any]:
+    """How the producer's turn of *result* ended, with its usage: its entry
+    under the task's ``turns`` (RFC §23.3 step 6)."""
+    turns = result.metadata.get(TURNS_KEY) if result is not None else None
+    entry = turns.get(producer_id) if isinstance(turns, Mapping) else None
+    return dict(entry) if isinstance(entry, Mapping) else {}
 
 
 def _failed_in_its_turn(result: DelegatedTaskResult | None) -> bool:
@@ -528,6 +558,7 @@ async def _execute_loop(
     for iteration in range(1, max_iterations + 1):
         logger.info("[loop] Iteration %d/%d — producer", iteration, max_iterations)
         produced = await _produce(kit, room_id, producer, current_input, iteration, max_iterations)
+        outcome.record = _producer_turn(produced, producer.channel_id)
         producer_output = task_work(produced)
         if not producer_output:
             logger.info("[loop] The producer's task failed at iteration %d: stopping", iteration)

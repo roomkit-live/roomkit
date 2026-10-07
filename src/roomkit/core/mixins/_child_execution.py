@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple, Protocol, runtime_checkable
 from uuid import uuid4
 
 from roomkit.core._failure_log import mark_reported
-from roomkit.core.event_router import stream_record
+from roomkit.core.event_router import responder_turn_entries, stream_record
 from roomkit.core.exceptions import TaskCutShortError, TaskTurnFailedError, TurnCutShortError
 from roomkit.core.lanes import DeliveryCascade
 from roomkit.core.mixins._response_reader import ResponseReader
@@ -52,6 +52,10 @@ if TYPE_CHECKING:
 
 
 _tasks_logger = logging.getLogger("roomkit.tasks")
+
+_Turns = dict[str, dict[str, Any]]
+"""Each responder's turn entry, by channel id, as a room turn's caller reads
+it under ``turns`` (RFC §6.4)."""
 
 
 class _TraceSink:
@@ -264,10 +268,12 @@ async def _child_context(kit: RoomKit, room: Room, bindings: list[ChannelBinding
 
 
 async def _broadcast_and_collect(
-    kit: RoomKit, child_room_id: str, message_body: str
+    kit: RoomKit, child_room_id: str, message_body: str, *, turns: _Turns | None = None
 ) -> str | None:
     """One delegated turn: store *message_body* as a system message, broadcast it,
-    persist the agent's full trace (tool calls + messages), and return its text."""
+    persist the agent's full trace (tool calls + messages), and return its text.
+    *turns* receives each responder's turn entry however the turn ended
+    (RFC §23.3 step 6)."""
     room = await kit.get_room(child_room_id)
     bindings = await kit.store.list_bindings(child_room_id)
 
@@ -303,9 +309,29 @@ async def _broadcast_and_collect(
     # answer then takes (RFC §23.3 step 6); a stream that fails later fires
     # it where it is read.
     await kit._report_intelligence_errors(msg_event, context, result)
-    if _shares_a_transport(bindings):
-        return await _deliver_answer(kit, child_room_id, result)
-    return await _collect_answer(kit, child_room_id, result, msg_event.chain_depth + 1)
+    return await _answer_of_broadcast(
+        kit, child_room_id, result, bindings, msg_event.chain_depth + 1, turns
+    )
+
+
+async def _answer_of_broadcast(
+    kit: RoomKit,
+    child_room_id: str,
+    result: BroadcastResult,
+    bindings: list[ChannelBinding],
+    child_depth: int,
+    turns: _Turns | None,
+) -> str | None:
+    """A delegated broadcast's answer, by the room's path when a transport
+    is shared, else the trace's; each responder's turn entry goes to *turns*
+    however the turn ended (RFC §23.3 steps 5 and 6)."""
+    try:
+        if _shares_a_transport(bindings):
+            return await _deliver_answer(kit, child_room_id, result)
+        return await _collect_answer(kit, child_room_id, result, child_depth)
+    finally:
+        if turns is not None:
+            turns.update(responder_turn_entries(result))
 
 
 def _shares_a_transport(bindings: list[ChannelBinding]) -> bool:
@@ -563,6 +589,8 @@ async def _run_with_structured_result(
     task_desc: str,
     max_result_retries: int,
     result_tool: ResultTool | None = None,
+    *,
+    turns: _Turns | None = None,
 ) -> str:
     """Run a delegated agent that must hand its work back via a result tool
     (*result_tool*, ``submit_result`` by default). Injects the tool (for
@@ -586,7 +614,7 @@ async def _run_with_structured_result(
     channel = kit.channels.get(agent_id) if agent_id else None
     if not isinstance(channel, _InjectableToolChannel):
         # No injectable agent channel — fall back to plain text collection.
-        text = await _broadcast_and_collect(kit, child_room_id, task_desc)
+        text = await _broadcast_and_collect(kit, child_room_id, task_desc, turns=turns)
         return text or ""
     role = getattr(channel, "role", None) or getattr(channel, "description", None) or str(agent_id)
 
@@ -594,7 +622,9 @@ async def _run_with_structured_result(
         message = task_desc
         last_text = ""
         for _attempt in range(max_result_retries + 1):
-            scanned, text = await _owed_result(kit, child_room_id, message, str(agent_id), tool)
+            scanned, text = await _owed_result(
+                kit, child_room_id, message, str(agent_id), tool, turns=turns
+            )
             if scanned is not None:
                 return json.dumps(scanned)
             last_text = text or last_text
@@ -611,13 +641,19 @@ async def _run_with_structured_result(
 
 
 async def _owed_result(
-    kit: RoomKit, child_room_id: str, message: str, worker_id: str, tool: ResultTool
+    kit: RoomKit,
+    child_room_id: str,
+    message: str,
+    worker_id: str,
+    tool: ResultTool,
+    *,
+    turns: _Turns | None = None,
 ) -> tuple[dict[str, Any] | None, str | None]:
     """One turn of a worker that owes a result: what it submitted, and its
     text. A turn cut short, or failed after it began, keeps a result it
     submitted before, and fails the task without one (RFC §23.3)."""
     try:
-        text = await _broadcast_and_collect(kit, child_room_id, message)
+        text = await _broadcast_and_collect(kit, child_room_id, message, turns=turns)
     except (TaskCutShortError, TaskTurnFailedError):
         submitted = await _scan_for_submitted_result(kit, child_room_id, worker_id, tool)
         if submitted is None:
@@ -634,6 +670,7 @@ async def run_agent_in_child_room(
     require_structured_result: bool = False,
     max_result_retries: int = 3,
     result_tool: ResultTool | None = None,
+    turns: _Turns | None = None,
 ) -> str | None:
     """Send a task to a child room and collect the attached agent's response.
 
@@ -649,9 +686,12 @@ async def run_agent_in_child_room(
     Either way the agent's full trace (tool calls + messages) is persisted in the
     child room, which records its parent via ``metadata.parent_room_id`` (set at
     creation in :meth:`delegate`) so the parent↔child link is rebuildable.
+
+    *turns*, when given, receives each responder's turn entry (its end, its
+    usage), the last turn's, however it ended (RFC §23.3 step 6).
     """
     if require_structured_result:
         return await _run_with_structured_result(
-            kit, child_room_id, task_desc, max_result_retries, result_tool
+            kit, child_room_id, task_desc, max_result_retries, result_tool, turns=turns
         )
-    return await _broadcast_and_collect(kit, child_room_id, task_desc)
+    return await _broadcast_and_collect(kit, child_room_id, task_desc, turns=turns)

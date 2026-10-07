@@ -111,6 +111,7 @@ class InMemoryTaskRunner(TaskRunner):
         """Run the worker in the task's child room: the task's outcome."""
         agent_response: str | None = None
         failure: Exception | None = None
+        turns: dict[str, dict[str, Any]] = {}
         try:
             # Update child room status
             room = await kit.get_room(task.child_room_id)
@@ -136,11 +137,13 @@ class InMemoryTaskRunner(TaskRunner):
             # Lazy import to avoid circular dependency
             from roomkit.core.mixins.delegation import run_agent_in_child_room
 
-            agent_response = await run_agent_in_child_room(kit, task.child_room_id, task.task)
+            agent_response = await run_agent_in_child_room(
+                kit, task.child_room_id, task.task, turns=turns
+            )
         except Exception as exc:
             log_failure(logger, exc, f"Task {task.id}")
             failure = exc
-        return finished_task_fields(agent_response, failure, context)
+        return finished_task_fields(agent_response, failure, context, turns)
 
     async def _finish(
         self,

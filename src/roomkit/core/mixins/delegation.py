@@ -165,6 +165,7 @@ def _result_from_handle(
     error: str | None,
     duration_ms: float,
     metadata: dict[str, Any],
+    exception: Exception | None = None,
 ) -> DelegatedTaskResult:
     """Build a result from a task handle's identity fields (id, room ids, agent)."""
     return DelegatedTaskResult(
@@ -174,6 +175,7 @@ def _result_from_handle(
         agent_id=handle.agent_id,
         status=status,
         output=output,
+        exception=exception,
         error=error,
         duration_ms=duration_ms,
         metadata=metadata,
@@ -557,11 +559,13 @@ class DelegationMixin(HelpersMixin):
         """Run an inline task's turn and end it, as one run the kit holds: a
         cut from its caller or from the kit's close ends it cancelled, its
         completion run to its end (RFC §23.3)."""
+        turns: dict[str, dict[str, Any]] = {}
         turn = self._child_turn(
             handle,
             require_structured_result=require_structured_result,
             max_result_retries=max_result_retries,
             result_tool=result_tool,
+            turns=turns,
         )
         try:
             agent_response, failure, caller_cut = await _turn_outcome(turn)
@@ -577,7 +581,7 @@ class DelegationMixin(HelpersMixin):
         result = _result_from_handle(
             handle,
             duration_ms=elapsed,
-            **finished_task_fields(agent_response, failure, context),
+            **finished_task_fields(agent_response, failure, context, turns),
         )
         # Its work ran: it ends as it stands, whatever cancels its caller now.
         await _finish_cleanup(self._complete_inline(handle, result, on_complete, span))
@@ -607,6 +611,7 @@ class DelegationMixin(HelpersMixin):
         require_structured_result: bool,
         max_result_retries: int,
         result_tool: ResultTool | None,
+        turns: dict[str, dict[str, Any]],
     ) -> asyncio.Task[str | None]:
         """The delegated turn, in a task of its own: the worker's turn sets
         its tool-loop context in a copy of the caller's, so a cut that ends
@@ -619,6 +624,7 @@ class DelegationMixin(HelpersMixin):
                 require_structured_result=require_structured_result,
                 max_result_retries=max_result_retries,
                 result_tool=result_tool,
+                turns=turns,
             )
         )
 
