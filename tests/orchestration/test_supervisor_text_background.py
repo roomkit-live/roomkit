@@ -151,10 +151,12 @@ async def test_a_worker_past_its_bound_is_told_as_not_completed(door: str) -> No
 
 
 async def _team_delegations(
-    *, async_delivery: bool, voice: bool, config_only: bool = False
+    *, async_delivery: bool, voice: bool, config_only: bool = False, at_least: int = 0
 ) -> list[str]:
     """The agents a sequential team's run delegates to, in order; the
-    supervisor without a model when *config_only*."""
+    supervisor without a model when *config_only*. A background run is waited
+    for until it delegated *at_least* times: a fixed pause cuts it short on a
+    loaded machine."""
     kit = RoomKit()
     boss = (
         Agent("boss") if config_only else Agent("boss", provider=MockAIProvider(responses=["ok"]))
@@ -185,7 +187,7 @@ async def _team_delegations(
         await kit.create_room(room_id="r1", orchestration=strategy)
         with tool_call_in("r1"):
             await boss._channel_tool_handler("delegate_workers", {"task": "Do it."})
-    await until(lambda: len(delegated) >= (2 if config_only else 3))
+    await until(lambda: len(delegated) >= max(at_least, 2 if config_only else 3))
     await asyncio.sleep(0.05)
     await kit.close()
     return delegated
@@ -204,7 +206,10 @@ async def test_a_sequential_team_is_supervised_in_the_background_as_in_its_turn(
     in_turn = await _team_delegations(async_delivery=False, voice=False)
 
     assert in_turn[0] == "boss"
-    assert await _team_delegations(async_delivery=async_delivery, voice=voice) == in_turn
+    in_background = await _team_delegations(
+        async_delivery=async_delivery, voice=voice, at_least=len(in_turn)
+    )
+    assert in_background == in_turn
 
 
 async def test_a_rejected_supervised_chain_is_told_failed_in_the_background(
