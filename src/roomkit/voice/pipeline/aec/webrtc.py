@@ -101,10 +101,14 @@ class _StreamState:
     # ``window`` feeds the periodic ``AEC stats`` line and ``turn`` the
     # ``AEC turn`` line at bypass. Both cover one playback only, so a line
     # never mixes a turn cut by a barge-in, the user's voice included, with
-    # the next one. Read and written under ``lock``.
+    # the next one. A window is logged only when the reference carried sound
+    # in it (``window_rendered``): a canceller kept running between responses
+    # would otherwise log every second of silence. Read and written under
+    # ``lock``.
     process_count: int = 0
     ref_fed_count: int = 0
     window: _Levels = field(default_factory=_Levels)
+    window_rendered: bool = False
     turn: _Levels = field(default_factory=_Levels)
     # Set at an activation change: the next accumulation starts both from zero.
     stats_reset_pending: bool = False
@@ -308,7 +312,10 @@ class WebRTCAECProvider(AECProvider):
                 st.window.add(in_energy, out_energy, len(in_processed))
                 st.turn.add(in_energy, out_energy, len(in_processed))
                 if st.window.blocks >= _LOG_INTERVAL:
-                    window = st.window.take()
+                    taken = st.window.take()
+                    if st.window_rendered:
+                        window = taken
+                    st.window_rendered = False
             if window is not None:
                 self._log_stats(stream, st, window)
 
@@ -400,6 +407,8 @@ class WebRTCAECProvider(AECProvider):
                 st.ap.process_reverse_stream(chunk)
                 st.ref_fed_count += 1
                 fed_this_call += 1
+                if chunk.strip(b"\x00"):
+                    st.window_rendered = True
             total_fed = st.ref_fed_count
 
         if fed_this_call > 0 and (total_fed <= 3 or total_fed % 100 == 0):

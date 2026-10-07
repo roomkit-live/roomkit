@@ -398,6 +398,7 @@ class TestWebRTCAECStatsPerTurn:
         provider.set_stream_active("s1", False)
         provider.set_stream_active("s1", True)
         for _ in range(100):
+            provider.feed_reference(_tone_frame(500), "s1")
             provider.process(_tone_frame(100), "s1")
 
         stats = self._stats_lines(caplog, "AEC stats")
@@ -438,11 +439,28 @@ class TestWebRTCAECStatsPerTurn:
         provider.set_active(False)
         provider.set_active(True)
         for _ in range(100):
+            provider.feed_reference(_tone_frame(500), "s1")
             provider.process(_tone_frame(100), "s1")
 
         assert len(self._stats_lines(caplog, "AEC turn")) == 1
         stats = self._stats_lines(caplog, "AEC stats")
         assert len(stats) == 1 and "in_rms=100 " in stats[0]
+
+    def test_a_second_with_a_silent_reference_is_not_logged(self, caplog):
+        """A canceller kept running between responses logs only while one plays."""
+        mock_mod, _, _ = _make_mock_aec_module()
+        provider, _ = _make_provider(mock_mod)
+        caplog.set_level("INFO", logger=_AEC_LOGGER)
+        provider.set_stream_active("s1", True)
+
+        for amplitude in (0, 500):  # a second between responses, then one of a response
+            for _ in range(100):
+                provider.feed_reference(_tone_frame(amplitude), "s1")
+                provider.process(_tone_frame(100), "s1")
+
+        stats = self._stats_lines(caplog, "AEC stats")
+        assert len(stats) == 1
+        assert "processed=200" in stats[0]
 
     def test_a_bypass_with_no_audio_logs_no_turn(self, caplog):
         mock_mod, _, _ = _make_mock_aec_module()

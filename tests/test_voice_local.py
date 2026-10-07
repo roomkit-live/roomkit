@@ -399,42 +399,75 @@ class TestLocalAudioSpeakerPlayback:
         reference = b"".join(c.args[0].data for c in aec.feed_reference.call_args_list)
         assert reference.startswith(_PCM * 600)
 
-    async def test_a_played_response_keeps_cancelling_the_echo_tail(self) -> None:
-        """The device and the room still sound after the last block left."""
+    async def test_the_aec_runs_from_capture_to_the_end_of_the_session(self) -> None:
+        """Never paused between responses: resumed, it came back a block out of
+        step and missed the next response's echo (RMK-551)."""
         aec = MagicMock()
-        backend, _ = _speaker_backend(input_sample_rate=24000, aec=aec)
+        backend, streams = _speaker_backend(input_sample_rate=24000, aec=aec)
         session = await backend.connect("room-1", "user-1", "voice-1")
-
-        await _play(backend, session, _response())
+        await backend.start_listening(session)
+        assert len(streams) == 1  # the speaker opens with capture
         assert session.id in backend._aec_active_sessions
-        fed = aec.feed_reference.call_count
-        for _ in range(25):  # 500 ms of tail at 20 ms a block
-            _drain_block(backend)
 
-        assert aec.feed_reference.call_count > fed  # silence, as reference
-        aec.reset.assert_not_called()
+        for _ in range(2):
+            await _play(backend, session, _response())
+            for _ in range(100):  # 2 s between responses: silence, as reference
+                _drain_block(backend)
+
+        assert len(streams) == 1
+        assert [c.args for c in aec.set_stream_active.call_args_list] == [(session.id, True)]
+        assert aec.feed_reference.call_count >= 200
+        await backend.disconnect(session)
         assert aec.set_stream_active.call_args_list[-1].args == (session.id, False)
-        assert session.id not in backend._aec_active_sessions
 
-    async def test_a_cut_keeps_cancelling_the_echo_tail_then_bypasses(self) -> None:
+    async def test_a_cut_leaves_the_aec_running(self) -> None:
         aec = MagicMock()
         backend, _ = _speaker_backend(input_sample_rate=24000, aec=aec, rt_prebuffer_ms=0)
         session = await backend.connect("room-1", "user-1", "voice-1")
+        await backend.start_listening(session)
         task = asyncio.create_task(backend.send_audio(session, _endless()))
         await asyncio.sleep(0.01)
         _drain_block(backend)
-        assert session.id in backend._aec_active_sessions
 
         assert await backend.cancel_audio(session) is True
         await asyncio.wait_for(task, 1)
         assert backend._speaker.buffered_bytes == 0
-        for _ in range(25):  # the block reporting the cut, then 24 of the tail
+        fed = aec.feed_reference.call_count
+        for _ in range(50):
             assert _drain_block(backend) == b"\x00" * _BLOCK
+
+        assert aec.feed_reference.call_count == fed + 50
         assert session.id in backend._aec_active_sessions
-        _drain_block(backend)
+        assert all(c.args[1] is True for c in aec.set_stream_active.call_args_list)
+
+    async def test_muted_capture_still_runs_through_the_aec(self) -> None:
+        """The canceller's capture timeline never pauses; the frame is dropped after."""
+        aec = MagicMock()
+        aec.process.side_effect = lambda frame, stream: frame
+        backend, _ = _speaker_backend(input_sample_rate=24000, aec=aec)
+        delivered: list[AudioFrame] = []
+        backend.on_audio_received(lambda _s, frame: delivered.append(frame))
+        session = await backend.connect("room-1", "user-1", "voice-1")
+        await backend.start_listening(session)
+        backend.set_input_muted(session, True)
+        handle = backend._make_frame_handler(session)
+
+        handle(AudioFrame(data=_PCM * 480, sample_rate=24000))
+        await asyncio.sleep(0)
+
+        aec.process.assert_called_once()
+        assert delivered == []
+
+    async def test_stop_listening_stops_the_aec(self) -> None:
+        aec = MagicMock()
+        backend, _ = _speaker_backend(input_sample_rate=24000, aec=aec)
+        session = await backend.connect("room-1", "user-1", "voice-1")
+        await backend.start_listening(session)
+
+        await backend.stop_listening(session)
 
         assert session.id not in backend._aec_active_sessions
-        aec.reset.assert_not_called()
+        assert aec.set_stream_active.call_args_list[-1].args == (session.id, False)
 
     async def test_streamed_audio_waits_for_room_rather_than_dropping(self) -> None:
         backend, _ = _speaker_backend(rt_prebuffer_ms=0)
@@ -509,17 +542,14 @@ class TestLocalAudioSpeakerPlayback:
             backend._speaker._callback(bytearray(_BLOCK), _BLOCK // 2, None, "output underflow")
         assert "output underflow" in caplog.text
 
-    async def test_the_aec_delay_is_seeded_when_the_speaker_opens_after_capture(self) -> None:
+    async def test_the_aec_delay_is_seeded_from_both_streams_at_capture_start(self) -> None:
         aec = MagicMock()
         aec.stream_delay_ms = 0
         backend, _ = _speaker_backend(latency=0.0181, aec=aec)
         backend._sd.RawInputStream = lambda **kwargs: MagicMock(latency=0.0378)
         session = await backend.connect("room-1", "user-1", "voice-1")
-        await backend.start_listening(session)
-        aec.set_stream_delay_ms.assert_not_called()  # no speaker yet
 
-        backend._speaker.open()
-        backend._configure_aec_delay()
+        await backend.start_listening(session)  # the speaker opens with capture
 
         aec.set_stream_delay_ms.assert_called_once_with(56)
 
@@ -680,9 +710,9 @@ class TestRealtimePrebuffer:
         assert _drain_block(backend) == b"\x00" * _BLOCK
         assert backend._speaker.buffered_bytes == _BLOCK
 
-    async def test_interrupt_keeps_cancelling_the_echo_tail_then_bypasses(self) -> None:
-        """A cut response: the device and the room still sound, so the AEC keeps
-        cancelling for the echo tail, then is bypassed without losing its filter."""
+    async def test_interrupt_leaves_the_aec_running(self) -> None:
+        """A cut response: the device and the room still sound, and the next
+        response comes; the canceller keeps its timeline and its filter."""
         aec = MagicMock()
         backend, session = await _rt_backend(
             input_sample_rate=24000,
@@ -695,13 +725,11 @@ class TestRealtimePrebuffer:
         assert session.id in backend._aec_active_sessions
 
         backend.interrupt(session)
-        for _ in range(25):  # the block reporting the cut, then 24 of the tail
+        for _ in range(50):
             _drain_block(backend)
-        assert session.id in backend._aec_active_sessions
-        _drain_block(backend)
 
-        assert session.id not in backend._aec_active_sessions
-        assert aec.set_stream_active.call_args_list[-1].args == (session.id, False)
+        assert session.id in backend._aec_active_sessions
+        assert all(c.args[1] is True for c in aec.set_stream_active.call_args_list)
         aec.reset.assert_not_called()
 
     async def test_stale_end_of_response_ignored_after_interrupt(self) -> None:
@@ -763,15 +791,13 @@ class TestRealtimePrebuffer:
             aec=aec,
             mute_mic_during_playback=False,
         )
-        await backend.send_audio(session, _PCM * (_BLOCK // 2))
+        assert session.id not in backend._aec_active_sessions  # failed at capture start
 
-        _drain_block(backend)
-        assert session.id not in backend._aec_active_sessions
         await backend.send_audio(session, _PCM * (_BLOCK // 2))
-        _drain_block(backend)
+        _drain_block(backend)  # retried when a response plays
 
         assert session.id in backend._aec_active_sessions
-        assert aec.set_stream_active.call_count >= 2
+        assert aec.set_stream_active.call_count == 2
 
 
 class TestContinuousPlayedCallbacks:
@@ -823,7 +849,7 @@ class TestContinuousPlayedCallbacks:
 
         assert ended == [True]
 
-    async def test_transport_aec_reference_tracks_silence_after_activation(self) -> None:
+    async def test_transport_aec_reference_is_every_block_from_capture_start(self) -> None:
         aec = MagicMock()
         backend, _ = _make_backend(
             input_sample_rate=24000,
@@ -835,26 +861,24 @@ class TestContinuousPlayedCallbacks:
         )
         session = await backend.connect("room-1", "user-1", "voice-1")
         await backend.accept(session, None)
-        _drain_block(backend)  # idle silence — transport-level policy unchanged
-        aec.feed_reference.assert_not_called()
+        _drain_block(backend)  # idle silence before any response: capture advances
+        assert aec.feed_reference.call_count == 1
         await backend.send_audio(session, _PCM * (_BLOCK // 2))
         _drain_block(backend)  # real audio
-        assert aec.feed_reference.call_count == 1
+        assert aec.feed_reference.call_count == 2
         aec.set_stream_active.assert_called_with(session.id, True)
 
-        _drain_block(backend)  # mid-response underrun: capture still advances
-        assert aec.feed_reference.call_count == 2
+        _drain_block(backend)  # mid-response underrun
+        assert aec.feed_reference.call_count == 3
         silence_frame = aec.feed_reference.call_args_list[-1].args[0]
         assert silence_frame.data == b"\x00" * _BLOCK
 
         backend.end_of_response(session)
-        _drain_block(backend)  # drained: the echo tail starts
-        assert session.id in backend._aec_active_sessions
-        for _ in range(25):
+        for _ in range(50):
             _drain_block(backend)
 
         aec.reset.assert_not_called()
-        assert aec.set_stream_active.call_args_list[-1].args == (session.id, False)
+        assert all(c.args[1] is True for c in aec.set_stream_active.call_args_list)
 
 
 # ---------------------------------------------------------------------------

@@ -109,10 +109,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   took 5 to 10 s to settle, and AEC3 could not follow it. Replayed offline on a
   recorded session, holding the delay still took the echo-only 100 ms blocks
   left above -50 dBFS from 23 % to 5 %. With it:
-  - after a response drains or is cut, the AEC keeps cancelling for 0.5 s on
-    the silent reference, as a pipeline AEC does, instead of passing the audio
-    still in the device and the room's echo straight through (~100 ms after
-    each barge-in);
+  - the AEC runs from the first captured frame to the end of the session,
+    never paused between responses or at a cut, and the speaker opens with
+    capture. Paused and resumed, the canceller came back a block out of step
+    and missed the next response's echo: live, with the delay held still,
+    four responses in eight kept 56 to 89 % of their first second's echo
+    blocks above -50 dBFS, and each was cut by its own echo; replayed without
+    the pauses, none. The user's voice between responses
+    passes through it untouched (0.1 dB). Muted, gated or half-duplex frames
+    still go through the canceller before they are dropped. The per-second
+    `AEC stats` log only seconds in which the reference carried sound;
   - an output underflow is logged in VoiceChannel mode too, and the stream
     plays fixed `block_duration_ms` blocks;
   - the WebRTC delay is seeded from PortAudio's latencies in VoiceChannel mode

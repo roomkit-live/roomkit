@@ -70,11 +70,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("roomkit.voice.local")
 
-# After playback drains or is cut, the device and the room still sound: the
-# transport's AEC keeps cancelling this long on the silent reference (RFC
-# §12.3.4), as a pipeline AEC does (VoiceChannel's _AEC_ECHO_TAIL_S).
-_AEC_ECHO_TAIL_MS = 500
-
 _DEFAULT_INPUT_SAMPLE_RATE = 16000
 _DEFAULT_CHANNELS = 1
 _DEFAULT_BLOCK_DURATION_MS = 20
@@ -269,9 +264,6 @@ class LocalAudioBackend(VoiceBackend):
         # --- AEC (transport-level reference feeding) ---
         self._aec = aec
         self._aec_active_sessions: set[str] = set()
-        # Blocks of echo tail left to cancel after a playback drained or was cut.
-        self._aec_tail: dict[str, int] = {}
-        self._aec_tail_blocks = max(1, _AEC_ECHO_TAIL_MS // block_duration_ms)
         # The capture side's latency, once known: with the speaker's, it seeds
         # an unset WebRTC delay (_configure_aec_delay).
         self._input_latency_ms: float | None = None
@@ -381,7 +373,7 @@ class LocalAudioBackend(VoiceBackend):
         self._muted_sessions.discard(session.id)
         if self._speaker_stream == session.id:
             self._speaker_stream = None
-        self._aec_end_playback(session.id)
+        self._aec_end(session.id)
         self._ref_buffers.pop(session.id, None)
         with self._tap_ref_lock:
             self._tap_ref.pop(session.id, None)
@@ -425,6 +417,16 @@ class LocalAudioBackend(VoiceBackend):
             if not callback_ref:
                 return
 
+            # Transport-level AEC: every captured frame, whatever happens to
+            # it next, inline on the capture thread so reference and capture
+            # stay in step.  Dropping frames from the canceller (mute, gating,
+            # half-duplex) would pause its capture timeline against the
+            # speaker's.  The channel's pipeline skips AEC (NATIVE_AEC).
+            reference: AudioFrame | None = None
+            if aec_ref is not None and self._aec_tap_callbacks:
+                reference = self._take_tap_reference(session.id, frame)
+            processed = aec_ref.process(frame, session.id) if aec_ref is not None else frame
+
             # Explicit mute via set_input_muted()
             if session.id in self._muted_sessions:
                 return
@@ -439,14 +441,8 @@ class LocalAudioBackend(VoiceBackend):
             if session.id in self._gated_sessions:
                 return
 
-            # Transport-level AEC: run capture inline on the capture thread
-            # so reference and capture timing stay synchronous.
-            # The channel's pipeline skips AEC (NATIVE_AEC capability).
-            if aec_ref is not None and self._aec_tap_callbacks and loop_ref is not None:
-                reference = self._take_tap_reference(session.id, frame)
+            if reference is not None and loop_ref is not None:
                 loop_ref.call_soon_threadsafe(self._emit_aec_tap, session, frame, reference)
-            processed = aec_ref.process(frame, session.id) if aec_ref is not None else frame
-
             if loop_ref is not None and loop_ref.is_running():
                 loop_ref.call_soon_threadsafe(callback_ref, session, processed)
             else:
@@ -481,6 +477,8 @@ class LocalAudioBackend(VoiceBackend):
             self._subscribe_to_source(source, session, handler)
         else:
             self._open_input_stream(session, handler)
+
+        self._start_aec(session)
 
         # Capture is live — fire session ready callbacks
         for cb in self._session_ready_callbacks:
@@ -588,6 +586,8 @@ class LocalAudioBackend(VoiceBackend):
             finally:
                 stream.close()
             logger.info("Mic capture stopped: session=%s", session.id)
+        # No capture, nothing to cancel: the canceller stops with it.
+        self._aec_end(session.id)
 
     # -------------------------------------------------------------------------
     # Speaker playback
@@ -909,14 +909,10 @@ class LocalAudioBackend(VoiceBackend):
     def _cut_speaker(self, stream: str) -> int:
         """Drop the queued audio; returns the chunks dropped.
 
-        The speaker's next block reports the cut and the AEC keeps cancelling
-        through the echo tail.  With no stream running no block comes, so the
-        AEC's playback ends here.
+        The speaker plays silence from its next block, and the AEC keeps
+        cancelling what the device and the room still play.
         """
-        queued = self._speaker.flush()
-        if not self._speaker.is_open:
-            self._aec_end_playback(stream)
-        return queued
+        return self._speaker.flush()
 
     def _speaker_owner(self) -> str | None:
         """The session the speaker's audio belongs to.
@@ -989,7 +985,7 @@ class LocalAudioBackend(VoiceBackend):
                 # broadcast itself continues: playback is physically ongoing,
                 # and level/position listeners must keep seeing it.  The
                 # pipeline consumer honours the flag.
-                "capture_paused": self._aec_capture_paused(stream),
+                "capture_paused": self._capture_paused(stream),
             },
         )
         for cb in list(self._audio_played_callbacks):
@@ -1055,16 +1051,43 @@ class LocalAudioBackend(VoiceBackend):
             delay_ms,
         )
 
-    def _aec_capture_paused(self, stream: str) -> bool:
-        """Whether capture is paused, so reference time must pause as well."""
+    def _capture_paused(self, stream: str) -> bool:
+        """Whether captured frames are dropped (muted, gated, half-duplex):
+        a pipeline AEC's reference pauses in step (played-frame metadata)."""
         return (
             stream in self._muted_sessions
             or stream in self._gated_sessions
             or (self._mute_mic_during_playback and bool(self._playing_sessions))
         )
 
-    def _aec_begin_playback(self, stream: str) -> None:
-        """Activate transport AEC once, when physical playback starts."""
+    def _start_aec(self, session: VoiceSession) -> None:
+        """Start the transport AEC with capture, and the speaker with it.
+
+        The canceller runs from the first captured frame to the end of the
+        session, never paused between responses.  Paused and resumed, its
+        reference came back a block ahead of capture and the learned filter
+        missed the next response's echo (RMK-551: replayed on a live session,
+        the first second of a response kept up to 89 % of its echo blocks
+        above -50 dBFS, none when it never pauses; the user's voice between
+        responses passes through it untouched).  The speaker opens with capture
+        so the reference starts with it: silence until the first response.
+        """
+        if self._aec is None:
+            return
+        if not self._realtime_mode:
+            self._speaker_stream = session.id
+        self._aec_begin(session.id)
+        try:
+            self._open_speaker()
+        except Exception:
+            logger.warning(
+                "Speaker unavailable at capture start: the AEC reference starts "
+                "with the first playback",
+                exc_info=True,
+            )
+
+    def _aec_begin(self, stream: str) -> None:
+        """Activate the transport AEC for *stream*, once."""
         if self._aec is None or stream in self._aec_active_sessions:
             return
         try:
@@ -1074,9 +1097,8 @@ class LocalAudioBackend(VoiceBackend):
             return
         self._aec_active_sessions.add(stream)
 
-    def _aec_end_playback(self, stream: str) -> None:
-        """Pause transport AEC without destroying its learned echo path."""
-        self._aec_tail.pop(stream, None)
+    def _aec_end(self, stream: str) -> None:
+        """Stop the transport AEC for *stream*; its learned echo path is kept."""
         if self._aec is None or stream not in self._aec_active_sessions:
             return
         try:
@@ -1088,34 +1110,23 @@ class LocalAudioBackend(VoiceBackend):
         self._ref_buffers.pop(stream, None)
 
     def _aec_on_block(self, stream: str, block: SpeakerBlock) -> None:
-        """Run the transport AEC's playback lifecycle on one played block.
+        """Feed the transport AEC every played block, silence included.
 
-        Playback starts at the first block carrying audio.  From then every
-        block is fed, silence included: capture keeps advancing on the mic
-        thread, so skipping render silence would compress AEC3's reference
-        timeline and make it cancel the wrong point in history.  When the
-        playback drains or is cut, the device and the room still sound, so the
-        AEC keeps cancelling for the echo tail on the silent reference that
-        follows (RFC §12.3.4), then is bypassed with its learned filter kept.
-        While capture is paused (muted, gated, half-duplex) both timelines
-        pause, the tail's countdown included.
+        Capture advances on the mic thread whether or not anything plays, so
+        the reference advances with it: skipping render silence would compress
+        AEC3's reference timeline and make it cancel the wrong point in
+        history.  A canceller that failed to start is retried when a response
+        plays.
         """
         if self._aec is None:
             return
-        paused = self._aec_capture_paused(stream)
-        if block.written > 0 and not paused:
-            self._aec_tail.pop(stream, None)
-            self._aec_begin_playback(stream)
         if stream not in self._aec_active_sessions:
-            return
-        if not paused:
-            self._aec_feed_played(bytearray(block.data), stream)
-        if block.drained or block.flushed:
-            self._aec_tail[stream] = self._aec_tail_blocks
-        elif not paused and block.written == 0 and stream in self._aec_tail:
-            self._aec_tail[stream] -= 1
-            if self._aec_tail[stream] <= 0:
-                self._aec_end_playback(stream)
+            if block.written == 0:
+                return
+            self._aec_begin(stream)
+            if stream not in self._aec_active_sessions:
+                return
+        self._aec_feed_played(bytearray(block.data), stream)
 
     def _aec_feed_played(self, played: bytearray, stream: str) -> None:
         """Feed actually-played speaker bytes to the AEC as reference.
