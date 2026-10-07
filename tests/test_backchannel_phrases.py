@@ -37,6 +37,12 @@ def _is_backchannel(text: str | None, detector: PhraseBackchannelDetector | None
         "C'est ça",
         "Ah bon",
         "Tout à fait",
+        "Merci.",
+        "Merci beaucoup",
+        "Ok, merci",
+        "Thank you",
+        "Thanks a lot",
+        "Beurk",
     ],
 )
 def test_acknowledgements_are_backchannels(text: str) -> None:
@@ -53,6 +59,9 @@ def test_acknowledgements_are_backchannels(text: str) -> None:
         "Attends, stop",
         "Yeah but what about Calgary",
         "Is it dangerous",
+        "Merci, mais attends",
+        "Non merci",
+        "Thanks, but stop",
     ],
 )
 def test_anything_else_is_an_interruption(text: str) -> None:

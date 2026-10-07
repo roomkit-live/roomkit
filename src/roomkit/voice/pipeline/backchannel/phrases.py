@@ -41,8 +41,14 @@ ENGLISH_BACKCHANNELS: tuple[str, ...] = (
     "indeed",
     "of course",
     "wow",
+    "thanks",
+    "thank you",
+    "thanks a lot",
+    "thank you so much",
+    "yuck",
 )
-"""Acknowledgements and listener fillers in English."""
+"""Acknowledgements, listener fillers and reactions in English: thanks included, said
+to what the bot just said or did, not to stop it."""
 
 FRENCH_BACKCHANNELS: tuple[str, ...] = (
     "oui",
@@ -72,8 +78,14 @@ FRENCH_BACKCHANNELS: tuple[str, ...] = (
     "tout à fait",
     "je vois",
     "c'est ça",
+    "merci",
+    "merci beaucoup",
+    "merci bien",
+    "berk",
+    "beurk",
 )
-"""Acknowledgements and listener fillers in French."""
+"""Acknowledgements, listener fillers and reactions in French: thanks included (live, a
+« Merci » to « je m'occupe de ça » cut the result that came next, RMK-555)."""
 
 _WORD = re.compile(r"[^\W_]+")  # letters and digits: apostrophes and hyphens split words
 _REPEATED = re.compile(r"(\w)\1+")

@@ -84,6 +84,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- A thanks or a reaction no longer cuts an agent under the SEMANTIC barge-in
+  (RMK-555): `ENGLISH_BACKCHANNELS` and `FRENCH_BACKCHANNELS` gain "thanks",
+  "thank you", "thanks a lot", "thank you so much", "yuck", "merci", "merci
+  beaucoup", "merci bien", "berk" and "beurk". Live, a « Merci » said to « je
+  m'occupe de ça » cut the task's result that started at that moment, and the
+  agent answered the thanks instead of giving it. "Merci, mais attends" and
+  "non merci" still cut in.
+
 - `LocalAudioBackend(aec=...)` keeps the microphone open while it plays
   (RMK-551): `mute_mic_during_playback` now defaults to `None`, half-duplex
   only without an `aec`. With the old default `True`, a backend given an AEC
