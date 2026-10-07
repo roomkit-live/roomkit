@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from roomkit.models.channel import ChannelBinding
     from roomkit.models.context import RoomContext
     from roomkit.models.event import RoomEvent
+    from roomkit.models.tool_call import GenerationPurpose
     from roomkit.providers.ai.base import (
         AIContext,
         AIImagePart,
@@ -30,6 +31,8 @@ if TYPE_CHECKING:
         StreamEvent,
     )
     from roomkit.realtime.base import EphemeralEventType
+    from roomkit.speaking.base import SpeakDecision
+    from roomkit.speaking.thought import Thought
     from roomkit.telemetry.base import TelemetryProvider
     from roomkit.tools.context import _ToolLoopContext
     from roomkit.tools.policy import ToolPolicy
@@ -53,6 +56,14 @@ class _AIChannelContract:
     def _policy_allows(self, name: str) -> bool: ...
 
     def _get_loop_ctx(self) -> _ToolLoopContext: ...
+
+    async def _thinking_context(
+        self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
+    ) -> AIContext | None: ...
+
+    async def _speak_decision(
+        self, event: RoomEvent, context: RoomContext, thought: Thought | None = None
+    ) -> SpeakDecision | None: ...
 
     def _served_tool_names(self, room_id: str | None) -> set[str]: ...
 
@@ -98,7 +109,7 @@ class _AIChannelContract:
     ) -> AIContext: ...
 
     async def _fire_before_generation_hook(
-        self, ai_context: AIContext, event: RoomEvent
+        self, ai_context: AIContext, event: RoomEvent, *, purpose: GenerationPurpose = "answer"
     ) -> tuple[AIContext, bool]: ...
 
     def _drain_steering_queue(

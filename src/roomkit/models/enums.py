@@ -274,6 +274,8 @@ class HookTrigger(StrEnum):
     BEFORE_BRIDGE_AUDIO = "before_bridge_audio"
     # Speaking turns: whether an AI channel's agent speaks on an event (RFC §6.4)
     ON_SPEAK_DECISION = "on_speak_decision"
+    # What an AI channel's agent thinks while it listens (RFC §6.4)
+    ON_THOUGHT = "on_thought"
     # AI generation (pre-flight — can block or modify context)
     BEFORE_AI_GENERATION = "before_ai_generation"
     # AI Thinking/Reasoning

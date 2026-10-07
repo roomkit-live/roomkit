@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 from roomkit.channels._served_tools import CollisionLog
 from roomkit.channels._turn_notes import turn_input
 from roomkit.models.event import RoomEvent
-from roomkit.models.tool_call import AIGenerationEvent
+from roomkit.models.tool_call import AIGenerationEvent, GenerationPurpose
 from roomkit.providers.ai.base import AIContext
 from roomkit.telemetry.base import TelemetryProvider
 from roomkit.telemetry.noop import NoopTelemetryProvider
@@ -47,9 +47,13 @@ class AIGenerationMixin(_AIChannelContract):
         return getattr(self, "_telemetry", None) or NoopTelemetryProvider()
 
     async def _fire_before_generation_hook(
-        self, ai_context: AIContext, event: RoomEvent
+        self, ai_context: AIContext, event: RoomEvent, *, purpose: GenerationPurpose = "answer"
     ) -> tuple[AIContext, bool]:
-        """Fire BEFORE_AI_GENERATION hook. Returns ``(context, blocked)``."""
+        """Fire BEFORE_AI_GENERATION hook. Returns ``(context, blocked)``.
+
+        *purpose* is ``answer`` for the agent's turn, ``thought`` for its thinker
+        (RFC §6.4): every model call on the room's context passes the hook.
+        """
         if not self._before_generation_hook:
             return ai_context, False
         gen_event = AIGenerationEvent(
@@ -58,6 +62,7 @@ class AIGenerationMixin(_AIChannelContract):
             room_id=event.room_id,
             trigger=event,
             provider_name=self.provider_name,
+            purpose=purpose,
         )
         # Read before the hook runs: it may edit the list in place.
         declared = {tool.name for tool in ai_context.tools or []}

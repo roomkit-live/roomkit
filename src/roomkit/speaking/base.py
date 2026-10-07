@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from typing import Literal, get_args
 
 from roomkit.models.event import RoomEvent
+from roomkit.speaking.thought import Thought
 
 SpeakMode = Literal["speak", "offer", "silent"]
 """``speak`` answers; ``offer`` says in one short sentence what the agent could add,
@@ -46,6 +47,9 @@ class SpeakTurn:
     """Who said ``event`` and each of ``recent``, by event id, where the room
     names them: the name the sender's transport stamped on the event, else the
     participant's display name, as the AI context names speakers."""
+
+    thought: Thought | None = None
+    """What the agent has in mind, when its channel has a thinker."""
 
     def by_agent(self, event: RoomEvent) -> bool:
         """Whether *event* is one of the agent's own answers."""

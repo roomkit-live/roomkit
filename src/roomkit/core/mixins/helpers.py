@@ -107,6 +107,7 @@ if TYPE_CHECKING:
         BeforeGenerationHook,
         SpeakDecisionHook,
         ThinkingHook,
+        ThoughtHook,
         ToolUsageLoader,
     )
     from roomkit.channels._task_planner import PlanUpdatedCallback
@@ -121,6 +122,7 @@ if TYPE_CHECKING:
         ToolRoundEvent,
     )
     from roomkit.speaking.base import SpeakDecisionEvent
+    from roomkit.speaking.thought import ThoughtEvent
     from roomkit.store.base import ConversationStore
     from roomkit.tools.external import BeforeToolCallback
 
@@ -1258,6 +1260,23 @@ class HelpersMixin:
 
         async def _callback(event: SpeakDecisionEvent) -> None:
             trigger = HookTrigger.ON_SPEAK_DECISION
+            if not event.room_id or not kit_ref._hook_engine.has_hooks(trigger):
+                return
+            context = await kit_ref._hook_context(event.room_id, trigger)
+            if context is None:
+                return
+            await kit_ref._hook_engine.run_async_hooks(
+                event.room_id, trigger, event, context, skip_event_filter=True
+            )
+
+        return _callback
+
+    def _build_thought_hook(self) -> ThoughtHook:
+        """Build an ON_THOUGHT callback for an AIChannel (RFC §6.4)."""
+        kit_ref = self
+
+        async def _callback(event: ThoughtEvent) -> None:
+            trigger = HookTrigger.ON_THOUGHT
             if not event.room_id or not kit_ref._hook_engine.has_hooks(trigger):
                 return
             context = await kit_ref._hook_context(event.room_id, trigger)

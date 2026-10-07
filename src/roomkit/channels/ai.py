@@ -33,6 +33,7 @@ from roomkit.channels._ai_resilience import AIResilienceMixin
 from roomkit.channels._ai_speaking import AISpeakingMixin, speak_notes
 from roomkit.channels._ai_steering import AISteeringMixin
 from roomkit.channels._ai_streaming import AIStreamingMixin
+from roomkit.channels._ai_thinking import AIThinkingMixin
 from roomkit.channels._ai_tools import AIToolsMixin
 from roomkit.channels._served_tools import (
     CollisionLog,
@@ -90,10 +91,12 @@ from roomkit.tools.timeout import ToolTimeouts
 if TYPE_CHECKING:
     from roomkit.channels._ai_callbacks import AfterToolRoundHook
     from roomkit.models.tool_call import ContinuationPolicy, ToolCallCallback, ToolCallObserver
+    from roomkit.providers.ai.base import AIContext
     from roomkit.sandbox.executor import SandboxExecutor
     from roomkit.skills.executor import ScriptExecutor
     from roomkit.skills.registry import SkillRegistry
-    from roomkit.speaking.base import SpeakPolicy
+    from roomkit.speaking.base import SpeakDecision, SpeakPolicy
+    from roomkit.speaking.thinker import Thinker
     from roomkit.tools.base import Tool
     from roomkit.tools.external import ExternalToolHandler
     from roomkit.tools.human_input import HumanInputToolHandler
@@ -130,6 +133,7 @@ def _portable_schema(schema: dict[str, Any] | None) -> dict[str, Any] | None:
 
 
 class AIChannel(
+    AIThinkingMixin,
     AISpeakingMixin,
     AIStreamingMixin,
     AIGenerationMixin,
@@ -194,10 +198,14 @@ class AIChannel(
         describe_empty_event: EmptyEventDescriber | None = None,
         speak_policy: SpeakPolicy | None = None,
         speak_timeout: float = 2.0,
+        thinker: Thinker | None = None,
+        think_wait: float = 1.5,
     ) -> None:
         super().__init__(channel_id)
         # Whether the agent speaks on an event (RFC §6.4): none, it answers every one.
         self._store_speak_policy(speak_policy, speak_timeout)
+        # What it thinks while it listens (RFC §6.4): none, no thought.
+        self._store_thinker(thinker, think_wait, speak_policy)
         self._store_turn_budget(turn_budget_tokens, turn_budget_usd, provider, fallback_provider)
         self._provider = provider
         self._system_prompt = system_prompt
@@ -522,12 +530,51 @@ class AIChannel(
         runner = self._registry.turn_runner(room_id)
         if runner is not None:
             return await runner(event, binding, context)
-        decision = await self._speak_decision(event, context)
-        if decision is not None and decision.mode == "silent":
-            # No turn, but the conversation is the agent's memory all the same.
-            await self._ingest_event(event, context)
+        decision = await self._speak_decision(event, context, self._thought_of(room_id))
+        if decision is None or decision.mode != "silent":
+            notes = await self._speaking_notes(room_id, decision)
+            return await self._respond(event, binding, context, notes=notes)
+        # No turn, but the conversation is the agent's memory all the same.
+        await self._ingest_event(event, context)
+        decision = await self._think_while_listening(event, binding, context, decision)
+        if decision.mode == "silent":
             return ChannelOutput.empty()
-        return await self._respond(event, binding, context, notes=speak_notes(decision))
+        notes = await self._speaking_notes(room_id, decision)
+        return await self._respond(event, binding, context, notes=notes, ingested=True)
+
+    async def _speaking_notes(
+        self, room_id: str, decision: SpeakDecision | None
+    ) -> tuple[str, ...]:
+        """What a decided turn's notes carry: the agent's thought, then what the
+        decision asks (RFC §6.4)."""
+        if decision is None:
+            return ()
+        return (*await self._thought_notes(room_id), *speak_notes(decision))
+
+    async def on_room_attached(self, room_id: str, binding: ChannelBinding) -> None:
+        """A room the channel joins starts from an empty thought, whatever an
+        earlier room of the same id left (RFC §6.4)."""
+        await self._forget_thought(room_id)
+
+    async def on_room_detached(self, room_id: str) -> None:
+        """The room's thought goes with the binding (RFC §6.4)."""
+        await self._forget_thought(room_id)
+
+    async def _thinking_context(
+        self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
+    ) -> AIContext | None:
+        """What the thinker reads on *event*: its context, built as for an answer
+        and passed through BEFORE_AI_GENERATION as a thought (RFC §6.4), which a
+        hook may change; ``None`` when a hook blocks it."""
+        token = _current_loop_ctx.set(self._turn_loop_ctx(event, context))
+        try:
+            ai_context = await self._build_context(event, binding, context)
+            ai_context, blocked = await self._fire_before_generation_hook(
+                ai_context, event, purpose="thought"
+            )
+        finally:
+            _current_loop_ctx.reset(token)
+        return None if blocked else ai_context
 
     async def _respond(
         self,
@@ -536,6 +583,7 @@ class AIChannel(
         context: RoomContext,
         *,
         notes: tuple[str, ...] = (),
+        ingested: bool = False,
     ) -> ChannelOutput:
         """Answer an event with this channel's own turn.
 
@@ -545,6 +593,7 @@ class AIChannel(
         streams (one that does not is read through its ``generate()``) and
         whether the turn carries tools (a turn without any is one round).
         *notes* join the turn's notes: what a speak policy's decision asks.
+        *ingested*: the memory provider already has the event.
         """
         if event.source.channel_id == self.channel_id:
             return ChannelOutput.empty()
@@ -552,7 +601,8 @@ class AIChannel(
         if is_tool_call_record(event):
             return ChannelOutput.empty()
 
-        await self._ingest_event(event, context)
+        if not ingested:
+            await self._ingest_event(event, context)
 
         token = _current_loop_ctx.set(self._turn_loop_ctx(event, context))
         try:
@@ -621,6 +671,7 @@ class AIChannel(
         """Close the channel: its running turns first (their calls cancelled
         and reported, RFC §9.3), then its provider, memory, and executors."""
         await self._end_running_turns()
+        await self._close_minds()
         await self._human_input.close(self.channel_id)
         await super().close()
         await self._memory.close()

@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from roomkit.channels._ai_callbacks import SpeakDecisionHook
     from roomkit.models.context import RoomContext
     from roomkit.models.event import RoomEvent
+    from roomkit.speaking.thought import Thought
 
 logger = logging.getLogger("roomkit.channels.ai")
 
@@ -47,7 +48,7 @@ class AISpeakingMixin:
         self._speak_decision_hook = None
 
     async def _speak_decision(
-        self, event: RoomEvent, context: RoomContext
+        self, event: RoomEvent, context: RoomContext, thought: Thought | None = None
     ) -> SpeakDecision | None:
         """The policy's decision on *event*, or None when nothing is decided: no
         policy, an instruction (the application asked for that turn), the
@@ -56,7 +57,7 @@ class AISpeakingMixin:
         policy = self._speak_policy
         if policy is None or not self._submitted_to_policy(event):
             return None
-        turn = _speak_turn(event, context, self.channel_id)
+        turn = _speak_turn(event, context, self.channel_id, thought)
         try:
             decision = await asyncio.wait_for(policy.decide(turn), self._speak_timeout)
         except TimeoutError:
@@ -100,7 +101,9 @@ def speak_notes(decision: SpeakDecision | None) -> tuple[str, ...]:
     return decision.notes
 
 
-def _speak_turn(event: RoomEvent, context: RoomContext, channel_id: str) -> SpeakTurn:
+def _speak_turn(
+    event: RoomEvent, context: RoomContext, channel_id: str, thought: Thought | None = None
+) -> SpeakTurn:
     """What the policy judges: the room's messages before *event* that the channel
     may know (RFC §7.5 rule 8: a policy may send them to a classifier outside),
     who said each, and the people taking part besides the agent."""
@@ -118,6 +121,7 @@ def _speak_turn(event: RoomEvent, context: RoomContext, channel_id: str) -> Spea
         people=_people(context, (*recent, event), speakers, channel_id),
         channel_id=channel_id,
         speakers=speakers,
+        thought=thought,
     )
 
 

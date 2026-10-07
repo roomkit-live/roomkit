@@ -236,11 +236,16 @@ from roomkit.skills import RequiresMatch, ScriptExecutor, Skill, SkillMetadata, 
 from roomkit.speaking import (
     AlwaysSpeak,
     ClassifierSpeakPolicy,
+    LLMThinker,
     MockSpeakPolicy,
+    MockThinker,
     SpeakDecision,
     SpeakDecisionEvent,
     SpeakPolicy,
     SpeakTurn,
+    Thinker,
+    Thought,
+    ThoughtEvent,
 )
 from roomkit.store import ConversationStore, InMemoryStore, SQLiteSchemaError, SQLiteStore
 from roomkit.telemetry.redaction import content_logging_enabled, set_content_logging
@@ -539,6 +544,11 @@ __all__ = [
     "SpeakDecisionEvent",
     "SpeakPolicy",
     "SpeakTurn",
+    "LLMThinker",
+    "MockThinker",
+    "Thinker",
+    "Thought",
+    "ThoughtEvent",
     # Tools
     "HumanInputHandler",
     "HumanInputToolHandler",

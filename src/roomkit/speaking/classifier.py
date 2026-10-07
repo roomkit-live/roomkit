@@ -71,6 +71,15 @@ ANSWERED = YesNoQuestion(
 judged on ``last_turn`` alone, "Non, c'était un test" read directness 0.4 and
 request 0.07."""
 
+ANSWERS = YesNoQuestion(
+    "Does one of `assistant_thought.want_to_say` answer a question asked, or a need "
+    "stated, in `last_turn` itself?"
+)
+CORRECTS = YesNoQuestion(
+    "Does one of `assistant_thought.want_to_say` correct, or warn about a problem with, "
+    "something said or proposed in `last_turn` itself?"
+)
+
 QUESTIONS: Mapping[str, Question] = MappingProxyType(
     {
         "directness": DIRECTNESS,
@@ -85,6 +94,11 @@ QUESTIONS: Mapping[str, Question] = MappingProxyType(
 """The questions :class:`ClassifierSpeakPolicy` asks, by the name :func:`compose`
 reads."""
 
+THOUGHT_QUESTIONS: Mapping[str, Question] = MappingProxyType(
+    {"answers": ANSWERS, "corrects": CORRECTS}
+)
+"""Asked too when the agent has something to say (``SpeakTurn.thought``)."""
+
 LANGUAGE_INSTRUCTIONS = (
     "In which language should the assistant answer the person who spoke in `last_turn`? "
     "It is the language that person speaks, judged on `last_turn` together with their "
@@ -98,7 +112,13 @@ a French conversation to English."""
 _OTHER_LANGUAGE = "other"
 
 
-def compose(judgments: Mapping[str, float], *, alone: bool = False) -> tuple[SpeakMode, str]:
+def compose(
+    judgments: Mapping[str, float],
+    *,
+    alone: bool = False,
+    proactivity: float = 0.5,
+    urgent: bool = False,
+) -> tuple[SpeakMode, str]:
     """The mode, and why, from the judgments by question name (missing ones read 0).
 
     ``directness`` is the expected level on 0 (not mentioned), 1 (tentatively),
@@ -107,9 +127,13 @@ def compose(judgments: Mapping[str, float], *, alone: bool = False) -> tuple[Spe
     directness says. In order: the speaker not done, postponing or asking for
     quiet, or a standing request for quiet the turn does not lift, keeps the agent
     silent; an answer to its question, or being addressed, makes it speak; being
-    only wondered about makes it offer.
+    only wondered about makes it offer, or speak when what it wants to say answers
+    or corrects the turn (``answers``, ``corrects``). Not addressed, it offers when
+    that reaches *proactivity* (lower is more eager), half of it when what it
+    wants to say is *urgent*: urgency alone made an agent ask the same question
+    four times over unrelated turns.
     """
-    j = {name: judgments.get(name, 0.0) for name in QUESTIONS}
+    j = {name: judgments.get(name, 0.0) for name in (*QUESTIONS, *THOUGHT_QUESTIONS)}
     if j["unfinished"] >= 0.5:
         return "silent", "not finished"
     if j["deferred"] >= 0.5:
@@ -122,8 +146,11 @@ def compose(judgments: Mapping[str, float], *, alone: bool = False) -> tuple[Spe
         return "speak", "answers its question"
     if addressed(j["directness"], j["request"], alone=alone):
         return "speak", "addressed"
+    knows = max(j["answers"], j["corrects"])
     if j["directness"] >= 0.75:
-        return "offer", "wondered about"
+        return ("speak", "knows the answer") if knows >= 0.5 else ("offer", "wondered about")
+    if knows >= (proactivity / 2 if urgent else proactivity):
+        return "offer", "urgent" if urgent else "has something to add"
     return "silent", "not addressed"
 
 
@@ -172,6 +199,9 @@ class ClassifierSpeakPolicy(SpeakPolicy):
             language (``{"French": "Réponds en français uniquement."}``). Empty:
             the language is not judged.
         history: How many turns before the event the classifier reads.
+        proactivity: How sure the policy must be that what the agent wants to
+            say answers or corrects the turn before it offers unasked, in
+            (0, 1]: lower is more eager. Only a thinker gives it something to say.
     """
 
     def __init__(
@@ -183,7 +213,10 @@ class ClassifierSpeakPolicy(SpeakPolicy):
         questions: Mapping[str, Question] | None = None,
         languages: Mapping[str, str] | None = None,
         history: int = 6,
+        proactivity: float = 0.5,
     ) -> None:
+        if not 0 < proactivity <= 1:
+            raise ValueError("proactivity must be in (0, 1]")
         if languages and _OTHER_LANGUAGE in languages:
             raise ValueError(f"{_OTHER_LANGUAGE!r} is kept for a language not listed")
         self._classifier = classifier
@@ -192,6 +225,7 @@ class ClassifierSpeakPolicy(SpeakPolicy):
         self._questions = {**QUESTIONS, **(questions or {})}
         self._languages = dict(languages or {})
         self._history = history
+        self._proactivity = proactivity
 
     async def decide(self, turn: SpeakTurn) -> SpeakDecision:
         if not _text(turn.event):
@@ -200,9 +234,12 @@ class ClassifierSpeakPolicy(SpeakPolicy):
         return self.decision(turn, answers)
 
     def questions(self, turn: SpeakTurn) -> dict[str, Question]:
-        """The questions asked on *turn*: :data:`QUESTIONS` as replaced, and the
+        """The questions asked on *turn*: :data:`QUESTIONS` as replaced, those of
+        :data:`THOUGHT_QUESTIONS` when the agent has something to say, and the
         language when the policy has languages."""
         asked = dict(self._questions)
+        if turn.thought is not None and turn.thought.want_to_say:
+            asked |= THOUGHT_QUESTIONS
         if self._languages:
             options = {name: name for name in self._languages}
             options[_OTHER_LANGUAGE] = "Another language, or nothing to tell it from."
@@ -211,22 +248,32 @@ class ClassifierSpeakPolicy(SpeakPolicy):
 
     def state(self, turn: SpeakTurn) -> dict[str, Any]:
         """What the classifier reads: the agent, the people, the recent turns and
-        the last one, each with its speaker."""
+        the last one, each with its speaker, and the agent's thought when it has
+        one."""
         agent: dict[str, str] = {"name": self._agent_name}
         if self._agent_role:
             agent["role"] = self._agent_role
         said = [e for e in turn.recent if _text(e)][-self._history :] if self._history else []
-        return {
+        state: dict[str, Any] = {
             "agent": agent,
             "people": list(turn.people),
             "recent_turns": [self._said(turn, e) for e in said],
             "last_turn": self._said(turn, turn.event),
         }
+        if turn.thought is not None:
+            state["assistant_thought"] = turn.thought.as_state()
+        return state
 
     def decision(self, turn: SpeakTurn, answers: Answers) -> SpeakDecision:
         """The decision from the answers: :func:`compose`, and the language's note."""
         judgments = judgments_of(answers)
-        mode, reason = compose(judgments, alone=len(turn.people) == 1)
+        thought = turn.thought
+        mode, reason = compose(
+            judgments,
+            alone=len(turn.people) == 1,
+            proactivity=self._proactivity,
+            urgent=thought is not None and thought.urgent and bool(thought.want_to_say),
+        )
         return SpeakDecision(mode, reason, judgments, self._language_notes(answers))
 
     def _language_notes(self, answers: Answers) -> tuple[str, ...]:

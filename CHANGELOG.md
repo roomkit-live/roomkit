@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Thinking while listening (RMK-562, RFC §6.4): `AIChannel(thinker=...,
+  think_wait=1.5)` keeps, per room and in memory, the agent's `Thought` (what it
+  thinks, what it would say if given the turn, whether that cannot wait). On an
+  event the speak policy leaves silent, the channel builds the event's context
+  and the thinker rewrites the thought, one call at a time per room from the
+  latest context. That context passes `BEFORE_AI_GENERATION` first, the new
+  `AIGenerationEvent.purpose` set to `"thought"` (`"answer"` for a turn): a hook
+  that blocks it keeps the thought, what a hook changes is what the thinker
+  reads, so consent, redaction or budget rules hold for the thought too; back within `think_wait` with something to say, the policy
+  decides again with it, so the agent may offer on a turn it first listened to.
+  When the agent speaks or offers on a decided event, the turn's notes carry its
+  thought, quoted, bounded and named as information rather than instructions
+  (people's words can reach it), and what it wanted to say is emptied; a
+  thinker that fails keeps the thought; attaching or detaching a room starts
+  it empty. New hook `ON_THOUGHT` (80 triggers). `SpeakTurn.thought`;
+  `ClassifierSpeakPolicy` reads it, asks `answers` / `corrects` when the agent
+  has something to say, and offers by `proactivity` (0.5), halved when urgent.
+  New: `Thought`, `ThoughtEvent`, `Thinker`, `LLMThinker` (any provider with a
+  response schema, instructions replaceable) and `MockThinker`. A thinker needs
+  a speak policy. Example: `examples/thinking_while_listening.py`.
+
 - A speak policy on judgments: `ClassifierSpeakPolicy` (RMK-561, RFC §6.4). On
   each turn one classifier call answers narrow questions (directness, deferred,
   unfinished, hush, a standing request for quiet, request, an answer to the

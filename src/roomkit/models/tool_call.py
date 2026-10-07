@@ -452,6 +452,10 @@ class AIResponseEvent:
 AfterResponseCallback = Callable[["AIResponseEvent"], Awaitable[None]]
 
 
+GenerationPurpose = Literal["answer", "thought"]
+"""What a model call on a turn's context is for (RFC §6.4)."""
+
+
 @dataclass
 class AIGenerationEvent:
     """Emitted through BEFORE_AI_GENERATION hooks before AI provider invocation.
@@ -483,6 +487,12 @@ class AIGenerationEvent:
 
     provider_name: str | None = None
     """Name of the AI provider that will be invoked."""
+
+    purpose: GenerationPurpose = "answer"
+    """What the generation is for: ``answer``, the agent's turn; ``thought``, its
+    thinker reading the event's context while the agent stays silent (RFC §6.4).
+    A block on a thought keeps the thought it had; what a hook changes is what
+    the thinker reads."""
 
     timestamp: datetime = field(default_factory=_utcnow)
     """When the generation was initiated."""
