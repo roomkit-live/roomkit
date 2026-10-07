@@ -30,6 +30,7 @@ from roomkit.channels._ai_loop_rules import (
 )
 from roomkit.channels._ai_policy import AIToolPolicyMixin
 from roomkit.channels._ai_resilience import AIResilienceMixin
+from roomkit.channels._ai_speaking import AISpeakingMixin, speak_notes
 from roomkit.channels._ai_steering import AISteeringMixin
 from roomkit.channels._ai_streaming import AIStreamingMixin
 from roomkit.channels._ai_tools import AIToolsMixin
@@ -92,6 +93,7 @@ if TYPE_CHECKING:
     from roomkit.sandbox.executor import SandboxExecutor
     from roomkit.skills.executor import ScriptExecutor
     from roomkit.skills.registry import SkillRegistry
+    from roomkit.speaking.base import SpeakPolicy
     from roomkit.tools.base import Tool
     from roomkit.tools.external import ExternalToolHandler
     from roomkit.tools.human_input import HumanInputToolHandler
@@ -128,6 +130,7 @@ def _portable_schema(schema: dict[str, Any] | None) -> dict[str, Any] | None:
 
 
 class AIChannel(
+    AISpeakingMixin,
     AIStreamingMixin,
     AIGenerationMixin,
     AIToolsMixin,
@@ -189,8 +192,12 @@ class AIChannel(
         tool_timeout_seconds: float | None = 30.0,
         tool_timeouts: Mapping[str, float | None] | None = None,
         describe_empty_event: EmptyEventDescriber | None = None,
+        speak_policy: SpeakPolicy | None = None,
+        speak_timeout: float = 2.0,
     ) -> None:
         super().__init__(channel_id)
+        # Whether the agent speaks on an event (RFC §6.4): none, it answers every one.
+        self._store_speak_policy(speak_policy, speak_timeout)
         self._store_turn_budget(turn_budget_tokens, turn_budget_usd, provider, fallback_provider)
         self._provider = provider
         self._system_prompt = system_prompt
@@ -515,10 +522,20 @@ class AIChannel(
         runner = self._registry.turn_runner(room_id)
         if runner is not None:
             return await runner(event, binding, context)
-        return await self._respond(event, binding, context)
+        decision = await self._speak_decision(event, context)
+        if decision is not None and decision.mode == "silent":
+            # No turn, but the conversation is the agent's memory all the same.
+            await self._ingest_event(event, context)
+            return ChannelOutput.empty()
+        return await self._respond(event, binding, context, notes=speak_notes(decision))
 
     async def _respond(
-        self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
+        self,
+        event: RoomEvent,
+        binding: ChannelBinding,
+        context: RoomContext,
+        *,
+        notes: tuple[str, ...] = (),
     ) -> ChannelOutput:
         """Answer an event with this channel's own turn.
 
@@ -527,6 +544,7 @@ class AIChannel(
         by round and executes tool calls between rounds, whatever the provider
         streams (one that does not is read through its ``generate()``) and
         whether the turn carries tools (a turn without any is one round).
+        *notes* join the turn's notes: what a speak policy's decision asks.
         """
         if event.source.channel_id == self.channel_id:
             return ChannelOutput.empty()
@@ -534,22 +552,28 @@ class AIChannel(
         if is_tool_call_record(event):
             return ChannelOutput.empty()
 
-        # Ingest event into memory provider (enables stateful providers
-        # like vector stores to index content as it arrives).
-        # An instruction is the application's, not the conversation's (RFC
-        # §10.1.1): a memory provider never learns it as something said.
-        _ingest_room_id = context.room.id if context.room else event.room_id
-        if _ingest_room_id and event.type != EventType.INSTRUCTION:
-            try:
-                await self._memory.ingest(_ingest_room_id, event, channel_id=self.channel_id)
-            except Exception:
-                logger.warning("Memory ingestion failed", exc_info=True)
+        await self._ingest_event(event, context)
 
         token = _current_loop_ctx.set(self._turn_loop_ctx(event, context))
         try:
-            return await self._start_streaming_tool_response(event, binding, context)
+            return await self._start_streaming_tool_response(event, binding, context, notes=notes)
         finally:
             _current_loop_ctx.reset(token)
+
+    async def _ingest_event(self, event: RoomEvent, context: RoomContext) -> None:
+        """Hand *event* to the memory provider (a stateful one, a vector store,
+        indexes content as it arrives), whether the agent answers it or not.
+
+        An instruction is the application's, not the conversation's (RFC
+        §10.1.1): a memory provider never learns it as something said.
+        """
+        room_id = context.room.id if context.room else event.room_id
+        if not room_id or event.type == EventType.INSTRUCTION:
+            return
+        try:
+            await self._memory.ingest(room_id, event, channel_id=self.channel_id)
+        except Exception:
+            logger.warning("Memory ingestion failed", exc_info=True)
 
     def _turn_loop_ctx(self, event: RoomEvent, context: RoomContext) -> _ToolLoopContext:
         """The per-turn context the turn's tool handlers read (RFC §21.4).

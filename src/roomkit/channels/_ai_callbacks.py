@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from roomkit.core.hooks import SyncPipelineResult
     from roomkit.models.tool_call import AIGenerationEvent, ToolRoundEvent
+    from roomkit.speaking.base import SpeakDecisionEvent
 
 BeforeGenerationHook = Callable[["AIGenerationEvent"], Awaitable["SyncPipelineResult"]]
 """BEFORE_AI_GENERATION for a turn's context: allowed or blocked, and why. The
@@ -25,6 +26,9 @@ AfterToolRoundHook = Callable[["ToolRoundEvent"], Awaitable[None]]
 event, the loop then applies what they asked."""
 
 ThinkingHook = Callable[[str, str, int], Awaitable[None]]
+
+SpeakDecisionHook = Callable[["SpeakDecisionEvent"], Awaitable[None]]
+"""ON_SPEAK_DECISION for one channel's decision on one event (RFC §6.4)."""
 """ON_AI_THINKING: ``(room_id, thinking, round_idx)``."""
 
 ToolUsageLoader = Callable[[str], Awaitable[list[dict[str, Any]]]]

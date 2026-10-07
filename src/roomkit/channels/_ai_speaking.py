@@ -1,0 +1,111 @@
+"""Speaking turns on the AI channel: the speak policy consulted before a turn runs
+(RFC §6.4)."""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+from typing import TYPE_CHECKING
+
+from roomkit.models.enums import EventType, ParticipantStatus
+from roomkit.models.event import is_tool_call_record
+from roomkit.speaking.base import SpeakDecision, SpeakDecisionEvent, SpeakPolicy, SpeakTurn
+
+if TYPE_CHECKING:
+    from roomkit.channels._ai_callbacks import SpeakDecisionHook
+    from roomkit.models.context import RoomContext
+    from roomkit.models.event import RoomEvent
+
+logger = logging.getLogger("roomkit.channels.ai")
+
+OFFER_NOTE = (
+    "Nobody asked you on this turn. Offer, in one short sentence, what you could "
+    "add, without giving it."
+)
+"""The block an ``offer`` decision adds to the turn's notes."""
+
+_FALLBACK = "fallback"
+
+
+class AISpeakingMixin:
+    """Consults the channel's speak policy, once per event it would answer."""
+
+    channel_id: str
+    _speak_policy: SpeakPolicy | None
+    _speak_timeout: float
+    _speak_decision_hook: SpeakDecisionHook | None
+
+    def _store_speak_policy(self, policy: SpeakPolicy | None, timeout: float) -> None:
+        if timeout <= 0:
+            raise ValueError("speak_timeout must be positive")
+        self._speak_policy = policy
+        self._speak_timeout = timeout
+        self._speak_decision_hook = None
+
+    async def _speak_decision(
+        self, event: RoomEvent, context: RoomContext
+    ) -> SpeakDecision | None:
+        """The policy's decision on *event*, or None when nothing is decided: no
+        policy, an instruction (the application asked for that turn), the
+        channel's own event or a tool record. A policy that fails or does not
+        decide in time does not silence the agent."""
+        policy = self._speak_policy
+        if policy is None or not self._submitted_to_policy(event):
+            return None
+        turn = _speak_turn(event, context)
+        try:
+            decision = await asyncio.wait_for(policy.decide(turn), self._speak_timeout)
+        except TimeoutError:
+            logger.warning(
+                "Speak policy took over %.1f s on %s; speaking", self._speak_timeout, event.id
+            )
+            decision = SpeakDecision("speak", reason=_FALLBACK)
+        except Exception:
+            logger.warning("Speak policy failed on %s; speaking", event.id, exc_info=True)
+            decision = SpeakDecision("speak", reason=_FALLBACK)
+        await self._report_speak_decision(event, context, decision)
+        return decision
+
+    def _submitted_to_policy(self, event: RoomEvent) -> bool:
+        return (
+            event.type != EventType.INSTRUCTION
+            and event.source.channel_id != self.channel_id
+            and not is_tool_call_record(event)
+        )
+
+    async def _report_speak_decision(
+        self, event: RoomEvent, context: RoomContext, decision: SpeakDecision
+    ) -> None:
+        hook = self._speak_decision_hook
+        if hook is None:
+            return
+        room_id = context.room.id if context.room else event.room_id
+        try:
+            await hook(SpeakDecisionEvent(room_id, self.channel_id, event, decision))
+        except Exception:
+            logger.warning("ON_SPEAK_DECISION failed on %s", event.id, exc_info=True)
+
+
+def speak_notes(decision: SpeakDecision | None) -> tuple[str, ...]:
+    """The blocks a decision adds to the turn's notes: its own, and for an offer
+    the channel's ask to offer rather than answer."""
+    if decision is None:
+        return ()
+    if decision.mode == "offer":
+        return (*decision.notes, OFFER_NOTE)
+    return decision.notes
+
+
+def _speak_turn(event: RoomEvent, context: RoomContext) -> SpeakTurn:
+    """What the policy judges: the room's messages before *event* and its people."""
+    recent = tuple(
+        e
+        for e in context.recent_events
+        if e.id != event.id and e.type == EventType.MESSAGE and not is_tool_call_record(e)
+    )
+    people = tuple(
+        p.display_name or p.id
+        for p in context.participants
+        if p.status == ParticipantStatus.ACTIVE
+    )
+    return SpeakTurn(event=event, recent=recent, people=people)

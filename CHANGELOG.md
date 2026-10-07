@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Speaking turns: an AI channel's speak policy decides whether its agent speaks
+  now, offers to, or stays silent (RMK-560, RFC §6.4). `AIChannel(speak_policy=...,
+  speak_timeout=2.0)` asks the policy once per event it would answer, before
+  `BEFORE_AI_GENERATION`: `speak` runs the turn with the decision's notes,
+  `offer` asks for one short sentence of what the agent could add, `silent` runs
+  no turn at all (the event is stored and the memory provider learns it all the
+  same). Instructions, a task's hand-back among them, a strategy's turns and the
+  channel's own events are never submitted. A policy that raises or misses its
+  bound lets the agent speak (reason `fallback`). Every decision fires the new
+  `ON_SPEAK_DECISION` hook with its reason and judgments. New module
+  `roomkit.speaking`: `SpeakPolicy`, `SpeakTurn`, `SpeakDecision`,
+  `SpeakDecisionEvent`, `AlwaysSpeak` (the baseline) and `MockSpeakPolicy`.
+  Without a policy nothing changes. Example: `examples/speaking_turns.py`.
+
 - Only words interrupt, if asked (RMK-559, RFC §12.3.13):
   `PhraseBackchannelDetector(cut_without_words=False)` judges an utterance the
   STT made no words of a backchannel, so echo an AEC left, a cough or room noise

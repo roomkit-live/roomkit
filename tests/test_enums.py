@@ -149,7 +149,7 @@ class TestHookTrigger:
         assert HookTrigger.ON_EVENT_DELETED == "on_event_deleted"
 
     def test_count(self) -> None:
-        assert len(HookTrigger) == 78
+        assert len(HookTrigger) == 79
 
     def test_invalid_raises(self) -> None:
         with pytest.raises(ValueError):

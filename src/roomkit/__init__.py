@@ -219,6 +219,14 @@ from roomkit.providers.image import (
 )
 from roomkit.sandbox import SandboxExecutor, SandboxResult
 from roomkit.skills import RequiresMatch, ScriptExecutor, Skill, SkillMetadata, SkillRegistry
+from roomkit.speaking import (
+    AlwaysSpeak,
+    MockSpeakPolicy,
+    SpeakDecision,
+    SpeakDecisionEvent,
+    SpeakPolicy,
+    SpeakTurn,
+)
 from roomkit.store import ConversationStore, InMemoryStore, SQLiteSchemaError, SQLiteStore
 from roomkit.telemetry.redaction import content_logging_enabled, set_content_logging
 from roomkit.tools.base import Tool
@@ -497,6 +505,12 @@ __all__ = [
     "Skill",
     "SkillMetadata",
     "SkillRegistry",
+    "AlwaysSpeak",
+    "MockSpeakPolicy",
+    "SpeakDecision",
+    "SpeakDecisionEvent",
+    "SpeakPolicy",
+    "SpeakTurn",
     # Tools
     "HumanInputHandler",
     "HumanInputToolHandler",

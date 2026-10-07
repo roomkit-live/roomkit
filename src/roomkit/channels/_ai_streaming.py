@@ -23,6 +23,7 @@ from roomkit.channels._ai_loop_rules import (
 from roomkit.channels._ai_stream_external_tools import _ExternalStreamTools
 from roomkit.channels._ai_stream_round import _StreamRound, _StreamRoundState
 from roomkit.channels._ai_tools import call_end_marker
+from roomkit.channels._turn_notes import add_turn_note
 from roomkit.core.task_utils import shielded
 from roomkit.models.channel import ChannelOutput
 from roomkit.models.event import RoomEvent
@@ -263,10 +264,24 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
         )
 
     async def _start_streaming_tool_response(
-        self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
+        self,
+        event: RoomEvent,
+        binding: ChannelBinding,
+        context: RoomContext,
+        *,
+        notes: tuple[str, ...] = (),
     ) -> ChannelOutput:
-        """Return a streaming response that handles tool calls between rounds."""
+        """Return a streaming response that handles tool calls between rounds.
+
+        *notes* join the turn's notes before ``BEFORE_AI_GENERATION``, which sees
+        them (a speak policy's decision, RFC §6.4).
+        """
         ai_context = await self._build_context(event, binding, context)
+        if notes:
+            messages = list(ai_context.messages)
+            for block in notes:
+                messages = add_turn_note(messages, block)
+            ai_context = ai_context.model_copy(update={"messages": messages})
         ai_context, blocked = await self._fire_before_generation_hook(ai_context, event)
         if blocked:
             return ChannelOutput.empty()

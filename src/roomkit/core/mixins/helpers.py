@@ -105,6 +105,7 @@ if TYPE_CHECKING:
     from roomkit.channels._ai_callbacks import (
         AfterToolRoundHook,
         BeforeGenerationHook,
+        SpeakDecisionHook,
         ThinkingHook,
         ToolUsageLoader,
     )
@@ -119,6 +120,7 @@ if TYPE_CHECKING:
         ToolCallObserver,
         ToolRoundEvent,
     )
+    from roomkit.speaking.base import SpeakDecisionEvent
     from roomkit.store.base import ConversationStore
     from roomkit.tools.external import BeforeToolCallback
 
@@ -1246,6 +1248,23 @@ class HelpersMixin:
                 ),
                 context,
                 skip_event_filter=True,
+            )
+
+        return _callback
+
+    def _build_speak_decision_hook(self) -> SpeakDecisionHook:
+        """Build an ON_SPEAK_DECISION callback for an AIChannel (RFC §6.4)."""
+        kit_ref = self
+
+        async def _callback(event: SpeakDecisionEvent) -> None:
+            trigger = HookTrigger.ON_SPEAK_DECISION
+            if not event.room_id or not kit_ref._hook_engine.has_hooks(trigger):
+                return
+            context = await kit_ref._hook_context(event.room_id, trigger)
+            if context is None:
+                return
+            await kit_ref._hook_engine.run_async_hooks(
+                event.room_id, trigger, event, context, skip_event_filter=True
             )
 
         return _callback
