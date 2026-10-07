@@ -13,6 +13,7 @@ from abc import ABC, abstractmethod
 from typing import Any
 
 from roomkit._text import quoted
+from roomkit.channels._speaker import SPEAKER_KEY
 from roomkit.channels._turn_notes import split_turn_notes
 from roomkit.providers.ai.base import AIContext, AIMessage, AIProvider, ProviderError
 from roomkit.speaking.thought import MAX_WANT_TO_SAY, Thought
@@ -143,10 +144,10 @@ def thinker_input(previous: Thought, messages: list[AIMessage]) -> str:
 
 
 def transcript_line(message: AIMessage) -> str:
-    """One message as a line of the conversation, quoted (RFC §6.4): the agent's
-    own after ``You:``, a user message as the context wrote it (the speaker's
-    name first when several people talk), tool traffic and the turn notes left
-    out."""
+    """One message as a line of the conversation, its words quoted (RFC §6.4)
+    after who said them: ``You:`` for the agent's own, the speaker's name the
+    context gave a user message when several people talk; tool traffic and the
+    turn notes left out."""
     if message.role == "tool":
         return ""
     if isinstance(message.content, str):
@@ -156,5 +157,16 @@ def transcript_line(message: AIMessage) -> str:
     text = split_turn_notes(text)[0].strip()
     if not text:
         return ""
-    line = quoted(text, LINE_LIMIT)
-    return f"You: {line}" if message.role == "assistant" else line
+    if message.role == "assistant":
+        return f"You: {quoted(text, LINE_LIMIT)}"
+    return _said_by(text, message.metadata.get(SPEAKER_KEY))
+
+
+def _said_by(text: str, speaker: Any) -> str:
+    """A user message's *text* quoted, after its *speaker*'s name when the
+    context named one: the name the context gave, out of the quote, so that a
+    person who writes ``Name:`` is not read as someone else."""
+    prefix = f"{speaker}: "
+    if isinstance(speaker, str) and text.startswith(prefix):
+        return f"{speaker}: {quoted(text[len(prefix) :], LINE_LIMIT)}"
+    return quoted(text, LINE_LIMIT)

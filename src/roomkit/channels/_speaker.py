@@ -15,6 +15,11 @@ from roomkit.models.context import RoomContext
 from roomkit.models.event import RoomEvent
 from roomkit.models.participant import Participant
 
+SPEAKER_KEY = "speaker"
+"""The ``AIMessage.metadata`` key naming whose words a user message carries when
+the context prefixes them with that name (``"Name: text"``): a transcript
+reads the name there, never from the text, where anyone can write ``Name:``."""
+
 
 def speaker_label(
     event: RoomEvent,

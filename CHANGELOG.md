@@ -607,7 +607,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   worker id; the speaker's name before a message, in the classifier's state
   (speakers and people alike), the ACP room context and the console transcript;
   each message of the transcripts the thinker, a summarizing or compacting
-  memory and a compaction read; the room context an ACP agent receives (each
+  memory and a compaction read (the thinker names a speaker by the name the
+  context gave, out of the quote, so a person who writes `Marie:` is not read
+  as Marie; both memories read an event alike, rich content by its text rather
+  than its model's repr); the room context an ACP agent receives (each
   message quoted, bounded at 4000 characters); and `StatusBus.recent_text()`.
   The thinker reads the agent's prompt fenced in `<agent>`; a memory's summary
   comes fenced in `<conversation_summary>`, which a compaction names rather than

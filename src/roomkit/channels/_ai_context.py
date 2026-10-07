@@ -18,6 +18,7 @@ from roomkit.channels._skill_constants import (
     SKILLS_PREAMBLE as _SKILLS_PREAMBLE,
 )
 from roomkit.channels._skill_constants import TOOL_RUN_SCRIPT
+from roomkit.channels._speaker import SPEAKER_KEY
 from roomkit.channels._task_planner import TaskPlanner
 from roomkit.channels._tasks_note import render_tasks_note
 from roomkit.channels._tool_eviction import ToolEviction
@@ -390,18 +391,14 @@ class AIContextMixin(_AIChannelContract):
         memory = list(memory_result.messages)
         messages: list[AIMessage] = list(memory)
         for role, content, speaker in past_turns:
-            if attribute_speakers and speaker:
-                content = _with_speaker_prefix(content, speaker)
-            messages.append(AIMessage(role=role, content=content))
+            messages.append(_turn_message(role, content, speaker if attribute_speakers else None))
 
         # Patch orphaned tool calls from interrupted tool loops (barge-in)
         messages = patch_dangling_tool_calls(messages)
 
         if current_content:
-            content = current_content
-            if attribute_speakers and current_speaker:
-                content = _with_speaker_prefix(content, current_speaker)
-            messages.append(AIMessage(role="user", content=content))
+            speaker = current_speaker if attribute_speakers else None
+            messages.append(_turn_message("user", current_content, speaker))
         return _after_memory(memory, messages[len(memory) :]), attribute_speakers
 
     def _past_turns(
@@ -880,6 +877,18 @@ def _with_cut_mark(content: str | list[_ContentPart]) -> str | list[_ContentPart
     if isinstance(content, str):
         return f"{content}\n{CUT_MARK}"
     return [*content, AITextPart(text=CUT_MARK)]
+
+
+def _turn_message(role: str, content: str | list[_ContentPart], speaker: str | None) -> AIMessage:
+    """A turn's message; a named *speaker*'s carries their name before their
+    words, and under :data:`SPEAKER_KEY`, where a transcript reads it."""
+    if not speaker:
+        return AIMessage(role=role, content=content)
+    return AIMessage(
+        role=role,
+        content=_with_speaker_prefix(content, speaker),
+        metadata={SPEAKER_KEY: speaker},
+    )
 
 
 def _with_speaker_prefix(content: str | list[_ContentPart], name: str) -> str | list[_ContentPart]:
