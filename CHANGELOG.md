@@ -17,7 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   metadata now names its `task_id`. Every AI channel's turn carries the room's
   latest six tasks in its notes, read from the bus as the turn is built: what
   each was asked, how long it has run, its latest progress and that no result
-  has come back, or how it ended; what a worker wrote is quoted on one line and
+  has come back, or how it ended, and that the progress is the latest its worker
+  gave, to answer from without a tool call; what a worker wrote is quoted on one line and
   bounded, between quote marks it cannot close; a worker's name keeps to an
   identifier's characters and a task's ending to a known word. A standalone
   turn carries none. Example:

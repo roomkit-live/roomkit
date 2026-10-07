@@ -23,10 +23,14 @@ TASKS_NOTE = (
 """Opens the tasks' block of the turn's notes."""
 
 RUNNING_NOTE = (
-    "Speak of a running task only when asked, and give none of its data before its "
-    "result comes back."
+    "Each task's progress is the latest its worker gave, with how long ago: asked how far "
+    "a task got, answer from it, without a tool call. Speak of a running task only when "
+    "asked, and give nothing of its result before it comes back."
 )
-"""Closes the block when a task still runs."""
+"""Closes the block when a task still runs. Without the first sentence Claude Haiku
+5.5 called ``task_status`` with the progress in its notes (5 runs of 5), or withheld
+the progress as data of a task not back yet (2 of 5); with it, 16 of 16 answered from
+the note (2026-10-07)."""
 
 TASKS_NOTE_LIMIT = 6
 """How many tasks, the latest, the block lists."""
