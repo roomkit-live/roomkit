@@ -57,7 +57,7 @@ class TestToolUsageMemory:
         digest = mem.render_digest("r1")
         assert digest is not None
         assert "SpotifyPlayback" in digest
-        assert "action='get'" in digest
+        assert "action=“get”" in digest
         assert "Zach Bryan" in digest
 
     def test_digest_disclaims_it_is_not_the_full_toolset(self) -> None:

@@ -132,5 +132,5 @@ async def test_the_rebuilt_memory_reads_like_the_live_one(streaming: bool) -> No
     live, rebuilt = await _digests(kit, ai)
 
     assert live == rebuilt
-    assert "ok(q='c1')" in live and "boom(q='c2')" in live and "fails(q='c5')" in live
+    assert "ok(q=“c1”)" in live and "boom(q=“c2”)" in live and "fails(q=“c5”)" in live
     assert "refuse" not in live and "ghost" not in live

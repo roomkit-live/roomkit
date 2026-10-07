@@ -101,7 +101,7 @@ async def test_a_joining_agent_does_not_rebuild_another_agents_calls(
     first = p2.calls[0]
     context = " ".join(str(m.content) for m in first.messages)
     assert "secret-of-ai1" not in context
-    assert "lookup(q='balance')" not in context
+    assert "lookup(q=“balance”)" not in context
     assert "RULES-FOR-ALPHA" not in (first.system_prompt or "")
     assert ai2._tool_usage.tool_names("r1") == set()
     assert ai2._skill_activation.active_names("r1") == set()
@@ -135,8 +135,8 @@ async def test_a_call_id_repeated_across_turns_rebuilds_both_calls(streaming: bo
     rebuilt.seed("r1", await kit._build_tool_usage_loader("ai1")("r1"))
 
     digest = rebuilt.render_digest("r1") or ""
-    assert "lookup(q='paris')" in digest
-    assert "lookup(q='rome')" in digest
+    assert "lookup(q=“paris”)" in digest
+    assert "lookup(q=“rome”)" in digest
     assert digest == (ai._tool_usage.render_digest("r1") or "")
     await kit.close()
 

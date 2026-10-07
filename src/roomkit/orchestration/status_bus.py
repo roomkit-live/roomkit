@@ -37,7 +37,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from roomkit._text import bounded_text
+from roomkit._text import bounded_text, identifier, quoted
 from roomkit.core.task_utils import log_task_exception
 
 logger = logging.getLogger("roomkit.orchestration.status_bus")
@@ -321,16 +321,16 @@ class StatusBus:
         return await self._backend.recent(n, agent_id=agent_id, status=status)
 
     async def recent_text(self, n: int = 10) -> str:
-        """Format recent entries as text for agent context injection."""
+        """Format recent entries as text for agent context injection: what an
+        agent wrote quoted, its id and action identifiers (RFC §6.4)."""
         entries = await self.recent(n)
         if not entries:
             return "No activity yet."
         lines = []
         for e in entries:
-            lines.append(
-                f"[{e.ts[11:19]}] {e.agent_id}: {e.action} → {e.status}"
-                + (f" | {e.detail}" if e.detail else "")
-            )
+            line = f"[{e.ts[11:19]}] {identifier(e.agent_id, 'agent')}: "
+            line += f"{identifier(e.action, 'action')} → {e.status}"
+            lines.append(line + (f" | {quoted(e.detail, DETAIL_LIMIT)}" if e.detail else ""))
         return "\n".join(lines)
 
     async def has_completed(self, agent_id: str | None = None) -> bool:

@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 
 from roomkit.channels._ai_context import event_speaker
 from roomkit.channels._ai_cuts import cut_records, cut_reply
+from roomkit.channels._speaker import participant_name
 from roomkit.core.visibility import visible_events
 from roomkit.models.enums import EventType, ParticipantRole, ParticipantStatus
 from roomkit.models.event import is_tool_call_record
@@ -137,7 +138,7 @@ def _people(
     agent's channel, or the distinct speakers of *events* when more: one
     microphone is one participant but may carry several diarized voices."""
     participants = tuple(
-        p.display_name or p.id
+        participant_name(p)
         for p in context.participants
         if p.status == ParticipantStatus.ACTIVE
         and p.role not in _NOT_PEOPLE

@@ -13,6 +13,7 @@ from collections.abc import Callable
 from roomkit._text import identifier, person_name
 from roomkit.models.context import RoomContext
 from roomkit.models.event import RoomEvent
+from roomkit.models.participant import Participant
 
 
 def speaker_label(
@@ -50,10 +51,14 @@ def speaker_label(
     )
     if person is None:
         return label(event.source.channel_id)
-    # Written by whoever registers the person: a name, or an identifier, that
-    # cannot open a line or a frame where a model reads it (RFC §6.4).
-    name = person_name(person.display_name) or identifier(person.id, "participant")
-    return f"{name} · {event.source.channel_id}"
+    return f"{participant_name(person)} · {event.source.channel_id}"
+
+
+def participant_name(participant: Participant) -> str:
+    """*participant*'s name as a model reads it: written by whoever registers the
+    person, so kept to a name's characters, or to an identifier's when it has
+    no name (RFC §6.4)."""
+    return person_name(participant.display_name) or identifier(participant.id, "participant")
 
 
 def _channel_id_label(channel_id: str) -> str:

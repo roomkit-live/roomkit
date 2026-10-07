@@ -42,6 +42,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
+from roomkit._text import identifier, quoted
 from roomkit.channels._tool_eviction import (
     eviction_placeholder_size,
     is_eviction_placeholder,
@@ -272,7 +273,7 @@ class ToolUsageMemory:
 
     @classmethod
     def _format_call_with_result(cls, call: _Call) -> str:
-        head = f"- {call.name}({cls._format_args(call.arguments)}) returned:"
+        head = f"- {cls._format_head(call)} returned:"
         lines = [head, fence("tool_result", call.result_excerpt)]
         if call.result_chars > len(call.result_excerpt):
             lines.append(
@@ -295,17 +296,18 @@ class ToolUsageMemory:
     def _format_call(cls, call: _Call) -> str:
         # The preview is a tool's output too: data, set apart like a result.
         preview = fence("tool_result", call.result_preview)
-        return f"{call.name}({cls._format_args(call.arguments)}) → {preview}"
+        return f"{cls._format_head(call)} → {preview}"
 
     @staticmethod
-    def _format_args(arguments: dict[str, Any]) -> str:
-        parts: list[str] = []
-        for key, value in arguments.items():
-            rendered = repr(value)
-            if len(rendered) > _ARG_VALUE_CHARS:
-                rendered = rendered[:_ARG_VALUE_CHARS] + "…"
-            parts.append(f"{key}={rendered}")
-        return ", ".join(parts)
+    def _format_head(call: _Call) -> str:
+        """The call as the digest names it, ``name(key=“value”, n=3)``: the model
+        wrote it, so the name and keys are identifiers and each text quoted (RFC
+        §6.4)."""
+        args = ", ".join(
+            f"{identifier(key, 'arg')}={_arg_value(value)}"
+            for key, value in call.arguments.items()
+        )
+        return f"{identifier(call.name, 'tool')}({args})"
 
     @staticmethod
     def _preview(result: Any) -> str:
@@ -313,3 +315,11 @@ class ToolUsageMemory:
         if len(text) > _RESULT_PREVIEW_CHARS:
             return text[:_RESULT_PREVIEW_CHARS] + "…"
         return text or "(no result)"
+
+
+def _arg_value(value: Any) -> str:
+    """An argument's value in the digest: a number, a flag or nothing as it is,
+    any other value quoted."""
+    if value is None or isinstance(value, bool | int | float):
+        return repr(value)
+    return quoted(value if isinstance(value, str) else repr(value), _ARG_VALUE_CHARS)

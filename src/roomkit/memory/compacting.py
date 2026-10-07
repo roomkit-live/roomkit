@@ -8,9 +8,9 @@ import logging
 from collections import OrderedDict
 from dataclasses import replace
 
+from roomkit.memory._summary import summarized_line, summary_message
 from roomkit.memory._wrapper import _MemoryWrapper
 from roomkit.memory.base import MemoryProvider, MemoryResult
-from roomkit.memory.summarizing import summarized_line, summary_message
 from roomkit.memory.token_estimator import (
     estimate_message_tokens,
     estimate_notes_tokens,
