@@ -693,47 +693,7 @@ class LaneExecutionMixin(HelpersMixin):
             # Root pass only: delivery tracking, partial-failure
             # reporting and the caller-facing error all describe the
             # trigger's own delivery set, never a reentry's.
-            if result.errors:
-                total = len(result.delivery_outputs) + len(result.errors)
-                _log_partial_failure(result, total, room_id, event.id)
-                await self._emit_framework_event(
-                    "broadcast_partial_failure",
-                    room_id=room_id,
-                    event_id=event.id,
-                    data={
-                        "failed": len(result.errors),
-                        "total": total,
-                        "errors": result.errors,
-                    },
-                )
-            for ch_id in result.delivery_outputs:
-                await self._emit_framework_event(
-                    "delivery_succeeded", room_id=room_id, event_id=event.id, channel_id=ch_id
-                )
-            for ch_id, error_msg in result.errors.items():
-                await self._emit_framework_event(
-                    "delivery_failed",
-                    room_id=room_id,
-                    event_id=event.id,
-                    channel_id=ch_id,
-                    data={"error": error_msg},
-                )
-            cascade.delivery_results = _delivery_results(result)
-            intelligence = {
-                target.channel_id
-                for target in plan.targets
-                if target.category == ChannelCategory.INTELLIGENCE
-            }
-            reached = result.outputs.keys() | result.errors.keys()
-            cascade.unavailable_targets = [
-                target
-                for target in event.addressed_to or []
-                if target not in intelligence or target not in reached
-            ]
-            await self._record_failed_deliveries(event, cascade.delivery_results)
-            await self._settle_buffered_replies(
-                cascade, event, context, result, root=plan.emit_processed
-            )
+            await self._report_root_pass(plan, result, cascade)
 
         # A stream any pass started is read by the caller (RFC §8.3); one a
         # reentry pass or a streamed segment's delivery started answers an
@@ -756,6 +716,57 @@ class LaneExecutionMixin(HelpersMixin):
 
         if plan.emit_processed:
             await self._emit_framework_event("event_processed", room_id=room_id, event_id=event.id)
+
+    async def _report_root_pass(
+        self, plan: DeliveryPlan, result: BroadcastResult, cascade: DeliveryCascade
+    ) -> None:
+        """Report the trigger's own delivery set to its caller: the delivery
+        framework events, the failed deliveries, the addressed targets that
+        no intelligence reached, and the buffered replies (RFC §10.1 step 18)."""
+        event = plan.event
+        context = plan.context
+        room_id = event.room_id
+        if result.errors:
+            total = len(result.delivery_outputs) + len(result.errors)
+            _log_partial_failure(result, total, room_id, event.id)
+            await self._emit_framework_event(
+                "broadcast_partial_failure",
+                room_id=room_id,
+                event_id=event.id,
+                data={
+                    "failed": len(result.errors),
+                    "total": total,
+                    "errors": result.errors,
+                },
+            )
+        for ch_id in result.delivery_outputs:
+            await self._emit_framework_event(
+                "delivery_succeeded", room_id=room_id, event_id=event.id, channel_id=ch_id
+            )
+        for ch_id, error_msg in result.errors.items():
+            await self._emit_framework_event(
+                "delivery_failed",
+                room_id=room_id,
+                event_id=event.id,
+                channel_id=ch_id,
+                data={"error": error_msg},
+            )
+        cascade.delivery_results = _delivery_results(result)
+        intelligence = {
+            target.channel_id
+            for target in plan.targets
+            if target.category == ChannelCategory.INTELLIGENCE
+        }
+        reached = result.outputs.keys() | result.errors.keys()
+        cascade.unavailable_targets = [
+            target
+            for target in event.addressed_to or []
+            if target not in intelligence or target not in reached
+        ]
+        await self._record_failed_deliveries(event, cascade.delivery_results)
+        await self._settle_buffered_replies(
+            cascade, event, context, result, root=plan.emit_processed
+        )
 
     async def _settle_buffered_replies(
         self,
