@@ -77,7 +77,11 @@ class RealtimeModelHost(ABC):
         start_audio_stream: bool = False,
         chain_depth: int = 0,
     ) -> VoiceInjectionResult | None:
-        """Inject *text* into *session* with the intent *role* (RFC §12.4)."""
+        """Inject *text* into *session* with the intent *role* (RFC §12.4).
+
+        Not sent (``not_sent``, ``realtime_session_gone``) when *session* is
+        not one the host holds or the provider ended it.
+        """
 
     @abstractmethod
     async def wait_idle(

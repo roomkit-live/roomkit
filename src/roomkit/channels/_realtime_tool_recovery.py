@@ -197,10 +197,9 @@ class RealtimeToolRecoveryMixin:
         refused and can correct itself on its next turn. The result arrives
         bounded by the channel's ``tool_result_max_length`` (RFC §21.5).
         Injected through the channel, which announces it to
-        ON_REALTIME_TEXT_INJECTED as every injection (RFC §12.4).
+        ON_REALTIME_TEXT_INJECTED as every injection (RFC §12.4); an ended
+        session takes none.
         """
-        if session.state == VoiceSessionState.ENDED:
-            return
         await self.inject_text(
             session,
             f"[Tool {tool_name} {verb}: {result_str}]",

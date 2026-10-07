@@ -480,7 +480,10 @@ async def test_a_broadcast_is_announced_as_the_injection_it_is(host: str) -> Non
 
 
 @HOSTS
-async def test_an_injection_into_an_ended_session_is_not_sent(host: str) -> None:
+@pytest.mark.parametrize("ending", ["let-go", "provider-ended"])
+async def test_an_injection_into_an_ended_session_is_not_sent(host: str, ending: str) -> None:
+    """Refused whether the host let the session go or the provider ended it
+    and the host still holds it."""
     provider = _Provider()
     rt = _Host(host, provider, [])
     await rt.attach()
@@ -492,14 +495,15 @@ async def test_an_injection_into_an_ended_session_is_not_sent(host: str) -> None
     async def audit(event: Any, ctx: Any) -> None:
         heard.append(event)
 
-    if host == "voice":
+    if ending == "provider-ended":
+        session.state = VoiceSessionState.ENDED
+        assert rt.sessions() == [session]
+    elif host == "voice":
         await rt.channel.end_session(session)
-        inject = rt.channel.inject_text
     else:
         session.state = VoiceSessionState.ENDED
         rt.channel._realtime.detach_room(ROOM)
-        inject = rt.channel._realtime.inject_text
-    result = await inject(session, "late", role="system")
+    result = await rt.channel.inject_text(session, "late", role="system")
     await _settle()
     await rt.kit.close()
 

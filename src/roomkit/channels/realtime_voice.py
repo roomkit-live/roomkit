@@ -26,7 +26,7 @@ from roomkit.channels._realtime_context import (
 )
 from roomkit.channels._realtime_delegation import RealtimeDelegationMixin
 from roomkit.channels._realtime_endings import SparedCalls, cut_tasks, interrupt_for_ending
-from roomkit.channels._realtime_host_hooks import fire_text_injected
+from roomkit.channels._realtime_host_hooks import fire_text_injected, serves
 from roomkit.channels._realtime_response import RealtimeResponseMixin
 from roomkit.channels._realtime_speech import RealtimeSpeechMixin
 from roomkit.channels._realtime_tool_calls import ToolCallBook
@@ -1000,8 +1000,8 @@ class RealtimeVoiceChannel(
     def _serves(self, session: VoiceSession) -> bool:
         """Whether *session* is one of the channel's live sessions."""
         with self._state_lock:
-            held = self._sessions.get(session.id) is session
-        return held and session.state != VoiceSessionState.ENDED
+            held = self._sessions.get(session.id)
+        return serves(held, session)
 
     async def _fire_text_injected(
         self,

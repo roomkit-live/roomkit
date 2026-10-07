@@ -759,6 +759,8 @@ class ConferenceChannel(
     ) -> VoiceInjectionResult | None:
         """Inject *text* into the realtime model's room session *session*.
 
+        Not sent (``not_sent``, ``realtime_session_gone``) when *session* is
+        no longer the room's or the provider ended it (RFC §12.4).
         *start_audio_stream* has no use here: the mix feeds the session from
         the moment it connects.
         """

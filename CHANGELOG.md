@@ -223,9 +223,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `event.source` is now the channel itself, the emitter moved to
   `injected_from`. `RealtimeVoiceChannel.on_event` goes through
   `inject_text` (one announcement, silent under a muted binding), and
-  `inject_text` on a session the channel no longer serves returns
-  `not_sent` / `realtime_session_gone` without calling the provider or the
-  hook, as a conference does.
+  `inject_text` on a session the host no longer holds, or one its provider
+  ended before the host let it go, returns `not_sent` /
+  `realtime_session_gone` without calling the provider or the hook, on a
+  realtime voice channel and a conference alike.
 
 - `kit.close()` ends a turn someone awaits as it ends the same turn on the
   neighbouring door (RMK-526, RFC §23.3, §10.1 step 18). An inline delegation

@@ -1,7 +1,8 @@
 """The hooks a channel hosting a realtime model announces, the same way on
 every host: a realtime voice channel and a conference with a realtime model
 plugged in (RFC §12.5). ON_REALTIME_TEXT_INJECTED for text entering the
-model's context, ON_ERROR for a failure of its session."""
+model's context, ON_ERROR for a failure of its session, and the one test of
+whether a session still takes text."""
 
 from __future__ import annotations
 
@@ -19,6 +20,13 @@ if TYPE_CHECKING:
     from roomkit.voice.realtime.provider import RealtimeVoiceProvider
 
 logger = logging.getLogger("roomkit.channels.realtime_host_hooks")
+
+
+def serves(held: VoiceSession | None, session: VoiceSession) -> bool:
+    """Whether *session* still takes text, on every host: it is the session
+    the host holds (*held*) and the provider has not ended it, even before
+    the host has let it go (RFC §12.4)."""
+    return held is session and session.state != VoiceSessionState.ENDED
 
 
 async def fire_text_injected(

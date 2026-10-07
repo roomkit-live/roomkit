@@ -49,6 +49,7 @@ from roomkit.channels._realtime_host_hooks import (
     fire_delegation,
     fire_session_error,
     fire_text_injected,
+    serves,
     speak_fallback,
 )
 from roomkit.channels._realtime_tool_calls import RealtimeToolCall, ToolCallBook
@@ -531,9 +532,11 @@ class ConferenceRealtime:
         channel injects into its own (RFC §12.4): the model's answer is one
         deeper than *chain_depth* unless *silent*; a broadcast names the event
         it came from to the hook (*injected_from*). Not sent when the session
-        is no longer the room's (an unplug, a detach, a reconnect)."""
+        is no longer the room's (an unplug, a detach, a reconnect) or the
+        provider ended it."""
         config = self._config
-        if config is None or self._guarded(session) is None:
+        room = self._rooms.get(session.room_id)
+        if config is None or not serves(room.session if room else None, session):
             return VoiceInjectionResult(status="not_sent", reason="realtime_session_gone")
         with self._operations.use(
             ConferenceResource.REALTIME, what=f"text injection for room {session.room_id}"
@@ -541,7 +544,6 @@ class ConferenceRealtime:
             result = await config.provider.inject_text(session, text, role=role, silent=silent)
         if result is None or result.status != "sent":
             return result
-        room = self._rooms.get(session.room_id)
         if room is not None and not silent:
             room.answer_depth.injected(chain_depth)
         source = self._source(config, session)
