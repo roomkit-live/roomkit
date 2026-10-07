@@ -61,6 +61,20 @@ from roomkit.channels.transport import TransportChannel
 from roomkit.channels.video import VideoChannel
 from roomkit.channels.voice import VoiceChannel
 from roomkit.channels.websocket import WebSocketChannel
+from roomkit.classifiers import (
+    Answers,
+    ChoiceAnswer,
+    ChoiceQuestion,
+    Classifier,
+    ClassifierError,
+    JevClassifier,
+    LLMClassifier,
+    MockClassifier,
+    ScoreAnswer,
+    ScoreQuestion,
+    YesNoAnswer,
+    YesNoQuestion,
+)
 from roomkit.conference import (
     BotSession,
     ConferenceAccess,
@@ -505,6 +519,18 @@ __all__ = [
     "Skill",
     "SkillMetadata",
     "SkillRegistry",
+    "Answers",
+    "ChoiceAnswer",
+    "ChoiceQuestion",
+    "Classifier",
+    "ClassifierError",
+    "JevClassifier",
+    "LLMClassifier",
+    "MockClassifier",
+    "ScoreAnswer",
+    "ScoreQuestion",
+    "YesNoAnswer",
+    "YesNoQuestion",
     "AlwaysSpeak",
     "MockSpeakPolicy",
     "SpeakDecision",

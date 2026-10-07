@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Classifiers: narrow, typed questions answered with probabilities (RMK-255,
+  RFC §6.8). A component that needs judgment where code needs understanding
+  asks its questions together, in one call, and composes the answers in code.
+  New module `roomkit.classifiers`: the `Classifier` ABC
+  (`classify(state, questions) -> Answers`, `close()`), `YesNoQuestion`,
+  `ChoiceQuestion`, `ScoreQuestion` and their answers, `Answers` with typed
+  reads (`yes()`, `choice()`, `score()`), and `ClassifierError` for any failure,
+  the end of a bounded wait included. Three implementations: `MockClassifier`
+  (scripted), `LLMClassifier` on any AI provider that supports a response schema
+  (probabilities 0 or 1, not calibrated), and `JevClassifier` on TypeSafe's Jev
+  (calibrated, ~150 ms a call) behind the new `typesafe` extra
+  (`pip install roomkit[typesafe]`, also in `providers`). Example:
+  `examples/classifier_judgments.py`.
+
 - Speaking turns: an AI channel's speak policy decides whether its agent speaks
   now, offers to, or stays silent (RMK-560, RFC §6.4). `AIChannel(speak_policy=...,
   speak_timeout=2.0)` asks the policy once per event it would answer, before

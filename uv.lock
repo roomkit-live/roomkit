@@ -5740,6 +5740,7 @@ all = [
     { name = "tiktoken" },
     { name = "transformers", version = "5.15.0", source = { registry = "https://pypi.org/simple" } },
     { name = "twilio" },
+    { name = "typesafe-sdk" },
     { name = "uvicorn" },
     { name = "websockets" },
 ]
@@ -5809,6 +5810,7 @@ dev = [
     { name = "telegramify-markdown" },
     { name = "twilio" },
     { name = "ty" },
+    { name = "typesafe-sdk" },
     { name = "websockets" },
 ]
 discord = [
@@ -5922,6 +5924,7 @@ providers = [
     { name = "polargrid-sdk" },
     { name = "telegramify-markdown" },
     { name = "twilio" },
+    { name = "typesafe-sdk" },
 ]
 pynacl = [
     { name = "pynacl" },
@@ -5996,6 +5999,9 @@ telegram = [
 ]
 twilio = [
     { name = "twilio" },
+]
+typesafe = [
+    { name = "typesafe-sdk" },
 ]
 video = [
     { name = "av" },
@@ -6220,6 +6226,10 @@ requires-dist = [
     { name = "twilio", marker = "extra == 'providers'", specifier = ">=9.0" },
     { name = "twilio", marker = "extra == 'twilio'", specifier = ">=9.0" },
     { name = "ty", marker = "extra == 'dev'", specifier = ">=0.0.26" },
+    { name = "typesafe-sdk", marker = "extra == 'all'", specifier = ">=0.7.2,<0.8" },
+    { name = "typesafe-sdk", marker = "extra == 'dev'", specifier = ">=0.7.2,<0.8" },
+    { name = "typesafe-sdk", marker = "extra == 'providers'", specifier = ">=0.7.2,<0.8" },
+    { name = "typesafe-sdk", marker = "extra == 'typesafe'", specifier = ">=0.7.2,<0.8" },
     { name = "ultralytics", marker = "extra == 'yolo'", specifier = ">=8.3" },
     { name = "uvicorn", marker = "extra == 'all'", specifier = ">=0.30" },
     { name = "uvicorn", marker = "extra == 'fastrtc'", specifier = ">=0.30" },
@@ -6233,7 +6243,7 @@ requires-dist = [
     { name = "websockets", marker = "extra == 'sources'", specifier = ">=14.2" },
     { name = "websockets", marker = "extra == 'websocket'", specifier = ">=14.2" },
 ]
-provides-extras = ["acp", "aicoustics", "all", "anam", "anthropic", "azure", "buzz", "cerebras", "console", "deepgram", "deepseek", "dev", "discord", "docs", "elevenlabs", "fastrtc", "fluxions", "gemini", "gradium", "httpx", "litellm", "livekit", "llamacpp", "local-audio", "local-video", "mcp", "mediapipe", "meta", "meta-stt", "mistral", "neutts", "ollama", "openai", "openrouter", "opentelemetry", "phonenumbers", "pocket-tts", "polargrid", "postgres", "providers", "pynacl", "pyroscope", "qwen-ai", "qwen-asr", "qwen-tts", "realtime-deepgram", "realtime-elevenlabs", "realtime-gemini", "realtime-openai", "redis", "rtp", "screen-capture", "screen-input", "sherpa-onnx", "sip", "smart-turn", "sources", "sse", "teams", "telegram", "twilio", "video", "video-overlay", "vllm", "vui", "webrtc-aec", "websocket", "webtransport", "whatsapp-personal", "xai", "yolo"]
+provides-extras = ["acp", "aicoustics", "all", "anam", "anthropic", "azure", "buzz", "cerebras", "console", "deepgram", "deepseek", "dev", "discord", "docs", "elevenlabs", "fastrtc", "fluxions", "gemini", "gradium", "httpx", "litellm", "livekit", "llamacpp", "local-audio", "local-video", "mcp", "mediapipe", "meta", "meta-stt", "mistral", "neutts", "ollama", "openai", "openrouter", "opentelemetry", "phonenumbers", "pocket-tts", "polargrid", "postgres", "providers", "pynacl", "pyroscope", "qwen-ai", "qwen-asr", "qwen-tts", "realtime-deepgram", "realtime-elevenlabs", "realtime-gemini", "realtime-openai", "redis", "rtp", "screen-capture", "screen-input", "sherpa-onnx", "sip", "smart-turn", "sources", "sse", "teams", "telegram", "twilio", "typesafe", "video", "video-overlay", "vllm", "vui", "webrtc-aec", "websocket", "webtransport", "whatsapp-personal", "xai", "yolo"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "setuptools", specifier = "<85" }]
@@ -7428,6 +7438,22 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/29/59/e2b13b499d15e6720150c4b1a8d91e31fcacf716b432397475b3151ff7e4/types_protobuf-7.34.1.20260518.tar.gz", hash = "sha256:28cfaded25889cb83ebfb63cfb0a43628f0b6f3785767bec17287dc6468795f2", size = 68936, upload-time = "2026-05-18T06:01:47.332Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/2a/1f/ec5caf72c2e3b688ca3927e0979a04ddad19e1afc4bf1c199bd743e0f419/types_protobuf-7.34.1.20260518-py3-none-any.whl", hash = "sha256:a0a5337413347166439c0e07cbc26c6164d091401c6f01b1dfd8cdb966c4dd8f", size = 85992, upload-time = "2026-05-18T06:01:45.696Z" },
+]
+
+[[package]]
+name = "typesafe-sdk"
+version = "0.7.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "httpx2" },
+    { name = "pydantic" },
+    { name = "pydantic-core" },
+    { name = "tenacity" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/42/ac/8bad2c02c038b85039cdb198ba106650d54bade0c0c986c68dc6e9cef8c3/typesafe_sdk-0.7.2.tar.gz", hash = "sha256:2434f4af5cdfc45d6ab5ff27048e8b257207f786b60456e69995e345b32e77e1", size = 23169, upload-time = "2026-09-26T21:20:24.988Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/99/5e/2b97ba9b0b77612e3a480ddb60c0c0325b4809ef57a7b565341d65ef7bec/typesafe_sdk-0.7.2-py3-none-any.whl", hash = "sha256:0a961148187d52e18276ed7f2d02617cfac48e3b97673cb631a8749397d43d1e", size = 36448, upload-time = "2026-09-26T21:20:23.511Z" },
 ]
 
 [[package]]
