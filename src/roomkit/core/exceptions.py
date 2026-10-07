@@ -47,6 +47,18 @@ class RoomClosedError(RoomKitError):
     """
 
 
+class ProcessTimeoutError(RoomKitError):
+    """``process_timeout`` expired before the commit point (RFC §13.6): the
+    event was not written.
+
+    Raised by direct injection, which returns the committed ``RoomEvent`` and
+    has no place for a refusal (RFC §10.5), once the ``process_timeout``
+    framework event has been emitted. The inbound path and
+    ``regenerate_response`` return ``InboundResult(blocked=True,
+    reason="process_timeout")`` instead.
+    """
+
+
 class ChannelNotFoundError(RoomKitError):
     """Channel binding not found in room."""
 

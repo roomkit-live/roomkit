@@ -15,7 +15,9 @@ from __future__ import annotations
 
 import asyncio
 
-from roomkit import RoomKit
+import pytest
+
+from roomkit import FrameworkEvent, HookTrigger, ProcessTimeoutError, RoomKit
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundMessage
 from roomkit.models.event import RoomEvent, TextContent
@@ -100,8 +102,6 @@ class TestTheWindowCoversWhatItClaims:
 
     async def test_a_hook_that_hangs_inside_the_lock_still_times_out(self) -> None:
         """The region that already worked keeps working."""
-        from roomkit import HookTrigger
-
         kit = await _kit(SimpleChannel("sms1"))
 
         @kit.hook(HookTrigger.BEFORE_BROADCAST)
@@ -145,3 +145,45 @@ class TestTheWindowStopsWhereItShould:
         elapsed = asyncio.get_running_loop().time() - started
 
         assert elapsed < FAST * 2
+
+
+class TestDirectInjectionRaisesWhatItCannotReturn:
+    """``send_event`` returns the committed event: a pre-commit expiry raises,
+    the wait for the room lock bounded as on the inbound path (RMK-525, RFC
+    §10.5, §13.6)."""
+
+    @pytest.mark.parametrize("where", ["lock", "hook"])
+    async def test_it_raises_and_writes_nothing(self, where: str) -> None:
+        kit = await _kit(SimpleChannel("sms1"))
+        expired: list[FrameworkEvent] = []
+
+        @kit.on("process_timeout")
+        async def on_timeout(event: FrameworkEvent) -> None:
+            expired.append(event)
+
+        if where == "hook":
+
+            @kit.hook(HookTrigger.BEFORE_BROADCAST)
+            async def slow(event, ctx):  # noqa: ANN001, ANN202
+                await asyncio.sleep(3600)
+
+        async def squatter() -> None:
+            async with kit._lock_manager.locked("r1"):  # noqa: SLF001
+                await asyncio.sleep(3600)
+
+        before = await kit.store.list_events("r1")
+        holder = asyncio.create_task(squatter()) if where == "lock" else None
+        await asyncio.sleep(0.05)
+        try:
+            with pytest.raises(ProcessTimeoutError):
+                await asyncio.wait_for(
+                    kit.send_event("r1", "sms1", TextContent(body="hi")), timeout=5.0
+                )
+        finally:
+            if holder is not None:
+                holder.cancel()
+        await asyncio.sleep(0.05)
+        after = await kit.store.list_events("r1")
+
+        assert after == before
+        assert [event.type for event in expired] == ["process_timeout"]

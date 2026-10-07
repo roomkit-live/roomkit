@@ -29,6 +29,7 @@ from roomkit.core.exceptions import (
     ChannelNotRegisteredError,
     IdentityNotFoundError,
     ParticipantNotFoundError,
+    ProcessTimeoutError,
     RoomClosedError,
     RoomKitError,
     RoomNotFoundError,
@@ -72,7 +73,7 @@ from roomkit.core.task_utils import cancel_and_wait, held_runs
 from roomkit.core.transcoder import DefaultContentTranscoder
 from roomkit.identity.base import IdentityResolver
 from roomkit.models.channel import RateLimit
-from roomkit.models.delivery import STANDALONE
+from roomkit.models.delivery import STANDALONE, InboundResult
 from roomkit.models.enums import (
     AgentResponsePolicy,
     ChannelType,
@@ -95,6 +96,23 @@ from roomkit.store.memory import InMemoryStore
 from roomkit.tasks.base import TaskRunner
 
 logger = logging.getLogger("roomkit.framework")
+
+
+def _raise_unless_committed(result: InboundResult, room_id: str) -> None:
+    """Raise what refused a direct injection before its commit point (RFC
+    §10.5): its contract is the committed event, and handing back one marked
+    DELIVERED for a write that never happened would be a lie the caller acts
+    on. A room that refuses events (RFC §5.1), consistent with get_room(),
+    which raises for a room that is gone, and ``process_timeout`` (§13.6)."""
+    if not result.blocked:
+        return
+    if result.reason == "room_closed":
+        raise RoomClosedError(f"Room {room_id} does not accept new events")
+    if result.reason == "process_timeout":
+        raise ProcessTimeoutError(
+            f"Room {room_id}: process_timeout expired before the event was committed"
+        )
+
 
 # Re-export exception classes so existing ``from roomkit.core.framework import ...``
 # statements continue to work without changes.
@@ -914,23 +932,23 @@ class RoomKit(
             # locked pass has committed. The check and the wait for the turn
             # spend the same pre-commit budget as the locked gates (§13.6).
             deadline = asyncio.get_running_loop().time() + self._process_timeout
-            async with (
-                self._admission.admitted(room_id, event, None) as precheck,
-                self._lock_manager.locked(room_id),
-            ):
-                # No pre-lock context is carried: the off-lock check, when one
-                # ran, built its own, and the locked pass rebuilds one under
-                # the lock.
-                result = await self._process_locked(
-                    event, room_id, None, cascade, precheck=precheck, deadline=deadline
-                )
-            # A room that refuses events (RFC §5.1) is the one block this API
-            # cannot report by returning: its contract is the committed event,
-            # and handing back one marked DELIVERED for a write that never
-            # happened would be a lie the caller acts on. Consistent with
-            # get_room() above, which already raises for a room that is gone.
-            if result.blocked and result.reason == "room_closed":
-                raise RoomClosedError(f"Room {room_id} does not accept new events")
+            async with contextlib.AsyncExitStack() as stack:
+                try:
+                    async with asyncio.timeout_at(deadline):
+                        precheck = await stack.enter_async_context(
+                            self._admission.admitted(room_id, event, None)
+                        )
+                        await stack.enter_async_context(self._lock_manager.locked(room_id))
+                except TimeoutError:
+                    result = await self._refuse_on_timeout(room_id, channel_id=channel_id)
+                else:
+                    # No pre-lock context is carried: the off-lock check, when
+                    # one ran, built its own, and the locked pass rebuilds one
+                    # under the lock.
+                    result = await self._process_locked(
+                        event, room_id, None, cascade, precheck=precheck, deadline=deadline
+                    )
+            _raise_unless_committed(result, room_id)
             if isinstance(result.event, RoomEvent):
                 event = result.event
             # The caller observes its event's delivery-set completion (RFC

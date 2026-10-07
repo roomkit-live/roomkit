@@ -322,7 +322,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   repeated; its side effects are kept. A room closed while the regeneration
   waits in the lane refuses it before the agent runs (`room_closed`), and a
   `send_event()` caller cancelled now cuts the turn it waited for, as
-  `process_inbound()` and `regenerate_response()` do.
+  `process_inbound()` and `regenerate_response()` do. `send_event()` now
+  bounds its wait for the off-lock check and the room lock by
+  `process_timeout`, and a pre-commit expiry raises the new
+  `ProcessTimeoutError`, after the `process_timeout` framework event, since
+  its result is the committed event (RFC §10.5). **Behaviour change:** it
+  waited for a held lock without bound, and an expiry under the lock
+  returned an event marked delivered that was never written.
 
 - A conference with a realtime model keeps three contracts a realtime voice
   channel keeps with the same provider (RMK-523, RFC §12.10.12, §12.4, §7.5).
