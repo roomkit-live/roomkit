@@ -8,6 +8,7 @@ import threading
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
+from roomkit.channels._realtime_tool_calls import transcript_starts_answer
 from roomkit.core.exceptions import ChannelNotFoundError
 from roomkit.models.enums import HookTrigger
 from roomkit.models.event import TextContent
@@ -108,7 +109,7 @@ class RealtimeTranscriptionMixin:
         self, session: VoiceSession, text: str, role: str, is_final: bool
     ) -> Any:
         """Handle transcription from provider."""
-        if self._provider.full_duplex and role == "assistant" and text and not is_final:
+        if transcript_starts_answer(self._provider.full_duplex, role, text, is_final):
             self._note_provider_output(session.id)
         answer_depth = self._session_answer_depth(session.id)
         if role == "user":

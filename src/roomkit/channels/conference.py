@@ -772,7 +772,9 @@ class ConferenceChannel(
         self, room_id: str, timeout: float = 15.0, *, session_ids: list[str] | None = None
     ) -> None:
         """Wait until the realtime model's room session is idle: its answer
-        has ended and reached the bot track, and its VAD hears nobody speak."""
+        has ended and reached the bot track, its VAD hears nobody speak, no
+        tool call is in flight and no result or delegation fallback waits
+        for the model's answer."""
         session = self._realtime.session_for(room_id)
         if session is None or (session_ids is not None and session.id not in session_ids):
             return

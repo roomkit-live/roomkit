@@ -520,7 +520,6 @@ class RealtimeVoiceChannel(
         # The calls an ending spared (their handler caused it) that may still
         # run off the books: waited for, or cut, at the channel's close.
         self._spared_calls = SparedCalls()
-        self._awaiting_tool_response: set[str] = set()
         # Wall-clock of the last user-turn start (VAD SPEECH_START). Consumed by
         # _realtime_transcription when emitting the final user turn as a
         # RoomEvent, so tool_calls fired mid-turn sort after the user message.
@@ -781,9 +780,7 @@ class RealtimeVoiceChannel(
         provider_done = self._provider_idle.get(session_id, True)
         user_silent = not self._user_speaking.get(session_id, False)
         drained = session_id in self._audio_drained or session_id not in self._response_generation
-        tools_done = self._tool_calls.settled(
-            session_id, awaiting_answer=session_id in self._awaiting_tool_response
-        )
+        tools_done = self._tool_calls.settled(session_id)
         delegations_done = not self._pending_delegations.get(session_id)
         if provider_done and user_silent and drained and tools_done and delegations_done:
             idle.set()
@@ -791,15 +788,19 @@ class RealtimeVoiceChannel(
             idle.clear()
 
     def _expect_provider_output(self, session_id: str) -> None:
-        """Keep idle closed until a submitted result has an assistant continuation."""
-        self._awaiting_tool_response.add(session_id)
-        self._provider_idle[session_id] = False
+        """Keep idle closed until output about to go to the model has its
+        answer (RFC §12.4.1)."""
+        self._tool_calls.expect_answer(session_id)
         self._update_idle_event(session_id)
 
+    def _withdraw_provider_output(self, session_id: str) -> None:
+        """The output could not be sent: no answer to it is awaited."""
+        if self._tool_calls.stop_awaiting(session_id):
+            self._update_idle_event(session_id)
+
     def _note_provider_output(self, session_id: str) -> None:
-        """A new provider response can continue submitted tool results."""
-        if session_id in self._awaiting_tool_response:
-            self._awaiting_tool_response.discard(session_id)
+        """The model's output started the answer to what was sent to it."""
+        if self._tool_calls.stop_awaiting(session_id):
             self._provider_idle[session_id] = False
             self._update_idle_event(session_id)
 
@@ -1304,7 +1305,7 @@ class RealtimeVoiceChannel(
                 idle.set()
             self._user_speaking.pop(session.id, None)
             self._provider_idle.pop(session.id, None)
-            self._awaiting_tool_response.discard(session.id)
+            self._tool_calls.stop_awaiting(session.id)
             self._session_tools.pop(session.id, None)
             self._session_roles.pop(session.id, None)
             self._session_agent_policies.pop(session.id, None)
@@ -1717,7 +1718,6 @@ class RealtimeVoiceChannel(
             self._user_turn_start_at.pop(session.id, None)
             self._provider_idle.pop(session.id, None)
             self._tool_calls.take(session.id)
-            self._awaiting_tool_response.discard(session.id)
             self._transcript_ledger.pop(session.id, None)
             self._delegated_before.discard(session.id)
             self._pending_delegations.pop(session.id, None)

@@ -43,16 +43,21 @@ from roomkit.channels._conference_tools import (
     declared_tools,
     warn_unused_role_overrides,
 )
-from roomkit.channels._realtime_delegation import FALLBACK_NO_BACKEND
 from roomkit.channels._realtime_endings import SparedCalls, abandon_calls, interrupt_for_ending
 from roomkit.channels._realtime_host_hooks import (
+    FALLBACK_NO_BACKEND,
     fire_delegation,
     fire_session_error,
     fire_text_injected,
     serves,
     speak_fallback,
 )
-from roomkit.channels._realtime_tool_calls import RealtimeToolCall, ToolCallBook
+from roomkit.channels._realtime_tool_calls import (
+    RealtimeToolCall,
+    ToolCallBook,
+    audio_starts_answer,
+    transcript_starts_answer,
+)
 from roomkit.channels._realtime_tool_executor import (
     ABANDONED_BY_PROVIDER,
     SESSION_ENDED,
@@ -149,6 +154,9 @@ def _idle_event() -> asyncio.Event:
 class _RoomRealtime:
     """One room's share of the provider: its session, and the response in flight."""
 
+    book: ToolCallBook
+    """The channel's tool calls in flight, the room's among them, and the
+    answers its sessions wait for."""
     session: VoiceSession | None = None
     connecting: asyncio.Lock = field(default_factory=asyncio.Lock)
     next_connect_at: float = 0.0
@@ -157,6 +165,9 @@ class _RoomRealtime:
     start_calls: list[RealtimeToolCall] = field(default_factory=list)
     """The calls the provider issued while that session started, served once
     it is the room's (RFC §12.4)."""
+    start_delegations: list[tuple[str, str]] = field(default_factory=list)
+    """The delegations (id, target) issued while it started, answered once it
+    is the room's (RFC §12.10.12)."""
     utterance: _Utterance | None = None
     tasks: set[asyncio.Task[None]] = field(default_factory=set)
     answer_depth: AnswerDepth = field(default_factory=AnswerDepth)
@@ -167,11 +178,6 @@ class _RoomRealtime:
     """The provider's own VAD hears the room's people speak."""
     idle: asyncio.Event = field(default_factory=_idle_event)
     """Set while nothing is in flight in the room (RFC §22.2)."""
-    book: ToolCallBook | None = None
-    """The channel's tool calls in flight, the room's among them."""
-    awaiting_answer: bool = False
-    """A result or a delegation's fallback went to the model, whose answer
-    to it has not started yet."""
 
     def hold_off(self) -> None:
         """Hold further connect attempts off for the cooldown."""
@@ -180,17 +186,25 @@ class _RoomRealtime:
     def settle(self) -> None:
         """Idle when no response is open or still published, nobody is heard,
         and the session's tools are settled (RFC §12.10.12): no call in
-        flight, no result waiting for the model's answer to it."""
+        flight, no output waiting for the model's answer to it."""
         open_response = self.utterance is not None and not self.utterance.discarded
-        tools_busy = (
-            self.book is not None
-            and self.session is not None
-            and not self.book.settled(self.session.id, awaiting_answer=self.awaiting_answer)
-        )
+        tools_busy = self.session is not None and not self.book.settled(self.session.id)
         if open_response or self.speaking or self.hearing or tools_busy:
             self.idle.clear()
         else:
             self.idle.set()
+
+    def expect_answer(self, session: VoiceSession) -> None:
+        """Output is about to go to *session*'s model: the room is not idle
+        until the model's answer to it starts (RFC §12.4.1)."""
+        if self.session is session:
+            self.book.expect_answer(session.id)
+            self.settle()
+
+    def stop_awaiting(self, session: VoiceSession) -> None:
+        """The answer started, or the output could not be sent."""
+        if self.session is session and self.book.stop_awaiting(session.id):
+            self.settle()
 
     def spawn(self, coro: Awaitable[None]) -> asyncio.Task[None]:
         task = asyncio.ensure_future(coro)
@@ -446,17 +460,23 @@ class ConferenceRealtime:
         back: the cooldown armed, each call the provider issued meanwhile
         reported once, cancelled (RFC §12.4), the provider told to disconnect."""
         room.hold_off()
+        room.start_delegations = []
         calls, room.start_calls = room.start_calls, []
         if calls:
             self._track_report(report_interrupted_calls(self, calls, SESSION_ENDED))
         self._track_report(self._disconnect(config.provider, session))
 
     def _serve_start_calls(self, room: _RoomRealtime) -> None:
-        """Serve the calls the provider issued while the room's session
-        started, now that it is the room's (RFC §12.4)."""
+        """Serve the calls and answer the delegations the provider issued
+        while the room's session started, now that it is the room's (RFC
+        §12.4, §12.10.12)."""
         calls, room.start_calls = room.start_calls, []
+        delegations, room.start_delegations = room.start_delegations, []
         for call in calls:
             self._take_call(call)
+        if room.session is not None:
+            for delegation_id, target in delegations:
+                self._on_delegation(room.session, delegation_id, target)
 
     async def send_mixed(self, room_id: str, data: bytes) -> None:
         """The mixer's sender: one mixed window to the provider.
@@ -618,7 +638,8 @@ class ConferenceRealtime:
         utterance = _Utterance()
         room.utterance = utterance
         room.speaking += 1
-        room.awaiting_answer = False
+        if room.session is not None:
+            room.book.stop_awaiting(room.session.id)
         room.settle()
         room.spawn(self._speak(room, room_id, utterance))
         return utterance
@@ -653,6 +674,8 @@ class ConferenceRealtime:
         room = self._guarded(session)
         if config is None or room is None:
             return
+        if audio_starts_answer(config.provider.full_duplex, audio):
+            room.stop_awaiting(session)
         binding = self._binding_of(session.room_id)
         if binding is not None and binding.output_muted:
             # The provider's audio is not forwarded under an output-muted
@@ -691,7 +714,9 @@ class ConferenceRealtime:
     async def wait_idle(self, room_id: str, timeout: float = 15.0) -> None:
         """Wait until nothing is in flight in the room (RFC §22.2): the model's
         last answer has ended and reached the bot track, or a barge-in cut it,
-        and its VAD hears nobody speak. A room with no session is idle."""
+        its VAD hears nobody speak, no tool call is in flight and no result or
+        delegation fallback waits for the model's answer. A room with no
+        session is idle."""
         room = self._rooms.get(room_id)
         if room is not None and not room.idle.is_set():
             await asyncio.wait_for(room.idle.wait(), timeout=timeout)
@@ -707,9 +732,12 @@ class ConferenceRealtime:
         playback's text abreast for ON_BARGE_IN; assistant finals become the
         room's record of what the AI said.
         """
+        config = self._config
         room = self._guarded(session)
-        if room is None:
+        if config is None or room is None:
             return
+        if transcript_starts_answer(config.provider.full_duplex, role, text, is_final):
+            room.stop_awaiting(session)
         if role != "assistant":
             # Discarded, but it says the model heard the room's people,
             # whose words open a chain.
@@ -799,21 +827,27 @@ class ConferenceRealtime:
         """The model delegated work: ON_REALTIME_DELEGATION, and for the
         integrator's target the spoken fallback, as a realtime voice channel
         with no reasoning backend answers it (RFC §12.4.1, §12.10.12): a
-        conference has none, and the model must not wait for nothing."""
-        room = self._guarded(session)
-        if room is None:
+        conference has none, and the model must not wait for nothing. One
+        issued while the session starts is answered once it is the room's."""
+        room = self._rooms.get(session.room_id)
+        if room is not None and room.starting is session:
+            room.start_delegations.append((delegation_id, target))
+            return
+        if self._config is None or room is None or not serves(room.session, session):
             return
         self._track_report(
             fire_delegation(self._framework, session.room_id, session, delegation_id, target)
         )
         if target != "integrator":
             return
-        room.awaiting_answer = True
-        room.settle()
-        room.spawn(self._decline_delegation(session, delegation_id))
+        room.expect_answer(session)
+        room.spawn(self._decline_delegation(room, session, delegation_id))
 
-    async def _decline_delegation(self, session: VoiceSession, delegation_id: str) -> None:
-        """Say no backend serves the delegation, through the provider."""
+    async def _decline_delegation(
+        self, room: _RoomRealtime, session: VoiceSession, delegation_id: str
+    ) -> None:
+        """Say no backend serves the delegation, through the provider; a
+        fallback not sent is not waited for."""
         config = self._config
         if config is None:
             return
@@ -827,7 +861,11 @@ class ConferenceRealtime:
         with self._operations.use(
             ConferenceResource.REALTIME, what=f"delegation fallback for room {session.room_id}"
         ):
-            await speak_fallback(config.provider, session, delegation_id, FALLBACK_NO_BACKEND)
+            sent = await speak_fallback(
+                config.provider, session, delegation_id, FALLBACK_NO_BACKEND
+            )
+        if not sent:
+            room.stop_awaiting(session)
 
     def _on_provider_error(self, session: VoiceSession, code: str, message: str) -> None:
         """The provider failed *session*: ON_ERROR (``realtime_provider``) for
@@ -884,7 +922,6 @@ class ConferenceRealtime:
         cooldown."""
         self._end_room_session(room, SESSION_ENDED, [])
         room.hearing = False
-        room.awaiting_answer = False
         room.hold_off()
         room.settle()
         self._track_report(self._disconnect(config.provider, session))
@@ -1027,6 +1064,9 @@ class ConferenceRealtime:
             # A call its own ending spared: its room's session is gone, and
             # nothing is left to answer.
             return False
+        room = self._rooms.get(call.room_id or "")
+        if room is not None:
+            room.expect_answer(call.session)
         try:
             with self._operations.use(
                 ConferenceResource.REALTIME, what=f"tool result for room {call.room_id}"
@@ -1038,8 +1078,9 @@ class ConferenceRealtime:
                     result_text(outcome.result),
                     failed=outcome.failed,
                 )
-            self._await_answer(call)
         except Exception:
+            if room is not None:
+                room.stop_awaiting(call.session)
             logger.warning(
                 "Conference channel %r could not return the result of tool %r to the "
                 "realtime provider in room %s",
@@ -1050,14 +1091,6 @@ class ConferenceRealtime:
             )
             return False
         return True
-
-    def _await_answer(self, call: RealtimeToolCall) -> None:
-        """The model holds *call*'s result: its room is not idle until the
-        model's answer to it starts."""
-        room = self._rooms.get(call.room_id or "")
-        if room is not None and room.session is call.session:
-            room.awaiting_answer = True
-            room.settle()
 
     # -------------------------------------------------------------------------
     # Lifecycle — the session ends where the bot does

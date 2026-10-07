@@ -58,8 +58,10 @@ class _Provider(MockRealtimeProvider):
         end_on_connect: bool = False,
         hold: asyncio.Event | None = None,
         fail_connect: bool = False,
+        delegate_on_connect: bool = False,
+        full_duplex: bool = False,
     ) -> None:
-        super().__init__()
+        super().__init__(full_duplex=full_duplex)
         self.injections: list[tuple[str, bool]] = []
         self.connecting = asyncio.Event()
         self._call_on_connect = call_on_connect
@@ -67,6 +69,7 @@ class _Provider(MockRealtimeProvider):
         self._end_on_connect = end_on_connect
         self._hold = hold
         self._fail_connect = fail_connect
+        self._delegate_on_connect = delegate_on_connect
 
     async def connect(self, session: VoiceSession, **kwargs: Any) -> None:
         await super().connect(session, **kwargs)
@@ -74,6 +77,8 @@ class _Provider(MockRealtimeProvider):
             await self.simulate_tool_call(session, "c0", "lookup", {"q": "first"})
         if self._cancel_on_connect:
             await self.simulate_tool_call_cancellation(session, ["c0"])
+        if self._delegate_on_connect:
+            await self.simulate_delegation(session, "d0", "integrator")
         if self._end_on_connect:
             # From the receive loop the connect started, while the handshake
             # still waits on the server.
@@ -579,6 +584,138 @@ async def test_a_host_is_not_idle_while_a_call_runs_nor_before_its_answer(host: 
     await provider.simulate_response_start(session)
     await provider.simulate_response_end(session)
     await _settle()
+    after_answer = await idle()
     await rt.kit.close()
 
-    assert (while_running, before_answer) == (False, False)
+    assert (while_running, before_answer, after_answer) == (False, False, True)
+
+
+LOUD = b"\x00\x40" * 480  # PCM16 well above the activity floor
+
+
+async def _is_idle(rt: _Host) -> bool:
+    try:
+        await rt.channel.wait_idle(ROOM, timeout=0.3)
+    except TimeoutError:
+        return False
+    return True
+
+
+async def _done(*args: Any) -> str:
+    return "done"
+
+
+@HOSTS
+@pytest.mark.parametrize("answer", ["audio", "transcript"])
+@pytest.mark.parametrize("sent", ["fallback", "result"])
+async def test_an_answer_said_inside_the_open_turn_ends_the_wait(
+    host: str, sent: str, answer: str
+) -> None:
+    """A full-duplex model may answer inside the response already open, with
+    no new response start: its audio or its words start the answer (RFC
+    §12.4.1)."""
+    provider = _Provider(full_duplex=True)
+    rt = _Host(host, provider, [])
+    rt.serve_with(_done)
+    await rt.attach()
+    session = await rt.start()
+    assert session is not None
+    await provider.simulate_response_start(session)
+    if sent == "fallback":
+        await provider.simulate_delegation(session, "d1", "integrator")
+        await until(lambda: bool(provider.delegation_outputs))
+    else:
+        await provider.simulate_tool_call(session, "c1", "lookup", {})
+        await until(lambda: bool(provider.tool_results))
+    await _settle()
+    if answer == "audio":
+        await provider.simulate_audio(session, LOUD)
+    else:
+        await provider.simulate_transcription(session, "Sorry, I cannot", "assistant", False)
+    await provider.simulate_response_end(session)
+    await _settle()
+    idle = await _is_idle(rt)
+    await rt.kit.close()
+
+    assert idle
+
+
+class _AnswersBeforeSubmitReturns(_Provider):
+    async def submit_tool_result(self, session: VoiceSession, call_id: str, result: str) -> None:
+        await super().submit_tool_result(session, call_id, result)
+        await self.simulate_response_start(session)
+
+
+@HOSTS
+async def test_an_answer_that_starts_before_the_send_returns_ends_the_wait(host: str) -> None:
+    provider = _AnswersBeforeSubmitReturns()
+    rt = _Host(host, provider, [])
+    rt.serve_with(_done)
+    await rt.attach()
+    session = await rt.start()
+    assert session is not None
+    await provider.simulate_tool_call(session, "c1", "lookup", {})
+    await until(lambda: bool(provider.tool_results))
+    await provider.simulate_response_end(session)
+    await _settle()
+    idle = await _is_idle(rt)
+    await rt.kit.close()
+
+    assert idle
+
+
+class _FallbackRefused(_Provider):
+    async def submit_delegation_output(self, *args: Any, **kwargs: Any) -> None:
+        raise ConnectionError("socket closed")
+
+
+@HOSTS
+async def test_a_fallback_that_could_not_be_sent_is_not_waited_for(host: str) -> None:
+    provider = _FallbackRefused(full_duplex=True)
+    rt = _Host(host, provider, [])
+    await rt.attach()
+    session = await rt.start()
+    assert session is not None
+    await provider.simulate_delegation(session, "d1", "integrator")
+    await _settle()
+    idle = await _is_idle(rt)
+    await rt.kit.close()
+
+    assert idle
+
+
+@HOSTS
+async def test_a_delegation_issued_while_connecting_is_answered(host: str) -> None:
+    provider = _Provider(delegate_on_connect=True, full_duplex=True)
+    rt = _Host(host, provider, [])
+    await rt.attach()
+    session = await rt.start()
+    assert session is not None
+    await until(lambda: bool(provider.delegation_outputs))
+    outputs = [(d_id, spoken) for _, d_id, _, spoken in provider.delegation_outputs]
+    await rt.kit.close()
+
+    assert outputs == [("d0", True)]
+
+
+@HOSTS
+async def test_a_delegation_from_a_session_the_provider_ended_is_not_announced(
+    host: str,
+) -> None:
+    provider = _Provider(full_duplex=True)
+    rt = _Host(host, provider, [])
+    await rt.attach()
+    session = await rt.start()
+    assert session is not None
+    heard: list[str] = []
+
+    @rt.kit.hook(HookTrigger.ON_REALTIME_DELEGATION, execution=HookExecution.ASYNC)
+    async def announced(event: Any, ctx: Any) -> None:
+        heard.append(event.delegation_id)
+
+    session.state = VoiceSessionState.ENDED
+    await provider.simulate_delegation(session, "d1", "integrator")
+    await _settle()
+    await rt.kit.close()
+
+    assert (heard, provider.delegation_outputs) == ([], [])

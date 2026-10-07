@@ -371,8 +371,7 @@ async def test_received_tool_is_busy_while_transcription_hook_blocks(cancel) -> 
     finally:
         release.set()
         await kit.close()
-    assert not channel._tool_calls.busy(session.id)
-    assert session.id not in channel._awaiting_tool_response
+    assert channel._tool_calls.settled(session.id)
 
 
 async def test_audio_of_first_tool_ack_does_not_release_second_tool_result() -> None:

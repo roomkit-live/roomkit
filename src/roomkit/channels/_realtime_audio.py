@@ -9,10 +9,11 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
+from roomkit.channels._realtime_tool_calls import audio_starts_answer
 from roomkit.models.enums import Access, HookTrigger
 from roomkit.voice.audio_frame import AudioFrame
 from roomkit.voice.base import VoiceSessionState
-from roomkit.voice.utils import pcm16_has_activity, rms_db
+from roomkit.voice.utils import rms_db
 
 if TYPE_CHECKING:
     from roomkit.core.framework import RoomKit
@@ -797,7 +798,7 @@ class RealtimeAudioMixin:
         Each item captures the current generation counter so that chunks
         enqueued before an interrupt are silently discarded.
         """
-        if self._provider.full_duplex and pcm16_has_activity(audio):
+        if audio_starts_answer(self._provider.full_duplex, audio):
             self._note_provider_output(session.id)
         with self._state_lock:
             if session.id not in self._sessions:

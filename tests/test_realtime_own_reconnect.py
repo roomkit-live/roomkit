@@ -136,7 +136,7 @@ class TestTheCallWhoseHandlerReconnected:
         ]
         assert json.loads(observed[0].result) == {"accepted": True}
         # No provider output is owed for a result that was not sent.
-        assert session.id not in ch._awaiting_tool_response
+        assert ch._tool_calls.settled(session.id)
         assert not ch._tool_calls.busy(session.id)
 
     async def test_a_refusal_after_the_reconnect_is_reported_refused(self) -> None:

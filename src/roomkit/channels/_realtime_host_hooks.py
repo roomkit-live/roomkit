@@ -1,8 +1,10 @@
 """The hooks a channel hosting a realtime model announces, the same way on
 every host: a realtime voice channel and a conference with a realtime model
 plugged in (RFC §12.5). ON_REALTIME_TEXT_INJECTED for text entering the
-model's context, ON_ERROR for a failure of its session, and the one test of
-whether a session still takes text."""
+model's context, ON_ERROR for a failure of its session,
+ON_REALTIME_DELEGATION for a delegation, and what both hosts share around
+them: the spoken fallback a delegation is answered with when nothing else
+answers it, and the one test of whether a session still takes text."""
 
 from __future__ import annotations
 
@@ -20,6 +22,10 @@ if TYPE_CHECKING:
     from roomkit.voice.realtime.provider import RealtimeVoiceProvider
 
 logger = logging.getLogger("roomkit.channels.realtime_host_hooks")
+
+FALLBACK_NO_BACKEND = "No backend is available to handle delegated work in this session."
+FALLBACK_NO_OUTPUT = "The delegated work finished without an answer."
+FALLBACK_TIMEOUT = "The delegated work took too long and was abandoned."
 
 
 def serves(held: VoiceSession | None, session: VoiceSession) -> bool:
@@ -136,11 +142,12 @@ async def fire_delegation(
 
 async def speak_fallback(
     provider: RealtimeVoiceProvider, session: VoiceSession, delegation_id: str, text: str
-) -> None:
+) -> bool:
     """Answer a delegation with one spoken output, so the model does not wait
-    for an answer that never comes (RFC §12.4.1), on every host."""
+    for an answer that never comes (RFC §12.4.1), on every host. Whether it
+    was sent: an output not sent is not waited for."""
     if session.state == VoiceSessionState.ENDED:
-        return
+        return False
     try:
         await provider.submit_delegation_output(session, delegation_id, text, spoken=True)
     except Exception:
@@ -149,3 +156,5 @@ async def speak_fallback(
             delegation_id,
             session.id,
         )
+        return False
+    return True

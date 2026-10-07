@@ -6,6 +6,10 @@ call arrives and closes it when the call ends. The record is where the call's
 one delivery and one report are claimed, so a reconfiguration that fails once
 the result went out, a cancellation that lands after it, or the session's end
 cannot add a second outcome to the same call.
+
+The book also holds, per session, whether output sent to the model (a result,
+a delegation's spoken output) still waits for the model's answer, and every
+host reads the answer's start the same way (RFC §12.4.1).
 """
 
 from __future__ import annotations
@@ -24,6 +28,7 @@ from roomkit.providers.ai.tool_calls import (
     unreadable_call_error,
 )
 from roomkit.tools.result import call_id_in_flight_error
+from roomkit.voice.utils import pcm16_has_activity
 
 if TYPE_CHECKING:
     from roomkit.tools._outcome import ToolOutcome
@@ -139,6 +144,7 @@ class ToolCallBook:
 
     def __init__(self) -> None:
         self._calls: dict[str, dict[str, list[RealtimeToolCall]]] = {}
+        self._awaiting: set[str] = set()
 
     def open(self, call: RealtimeToolCall) -> bool:
         """Record *call*: False, the call marked unanswerable, when it came
@@ -198,11 +204,25 @@ class ToolCallBook:
         """Whether a call is in flight on the session."""
         return bool(self._calls.get(session_id))
 
-    def settled(self, session_id: str, *, awaiting_answer: bool) -> bool:
+    def expect_answer(self, session_id: str) -> None:
+        """Output is about to go to the session's model: it waits for the
+        model's answer from before it is sent, so an answer that starts
+        before the send returns is not missed (RFC §12.4.1)."""
+        self._awaiting.add(session_id)
+
+    def stop_awaiting(self, session_id: str) -> bool:
+        """The model's answer started, or the output could not be sent:
+        nothing is awaited any more. Whether something was."""
+        if session_id not in self._awaiting:
+            return False
+        self._awaiting.discard(session_id)
+        return True
+
+    def settled(self, session_id: str) -> bool:
         """Whether the session's tools leave it idle, on every host (RFC
-        §12.10.12, §22.2): no call in flight, and no result still waiting
-        for the model's answer to it (*awaiting_answer*)."""
-        return not self.busy(session_id) and not awaiting_answer
+        §12.10.12, §22.2): no call in flight, and no output still waiting
+        for the model's answer to it."""
+        return not self.busy(session_id) and session_id not in self._awaiting
 
     def muting(self, session_id: str) -> bool:
         """Whether a call holding the input muted is in flight on the session."""
@@ -212,7 +232,21 @@ class ToolCallBook:
         """Every call in flight on the session, off the books: the session ends."""
         calls = self._all(session_id)
         self._calls.pop(session_id, None)
+        self._awaiting.discard(session_id)
         return calls
 
     def _all(self, session_id: str) -> list[RealtimeToolCall]:
         return [call for held in (self._calls.get(session_id) or {}).values() for call in held]
+
+
+def audio_starts_answer(full_duplex: bool, audio: bytes) -> bool:
+    """Whether *audio* from the model starts an awaited answer: on a
+    full-duplex model, which may answer inside a response already open,
+    audible audio does (RFC §12.4.1)."""
+    return full_duplex and pcm16_has_activity(audio)
+
+
+def transcript_starts_answer(full_duplex: bool, role: str, text: str, is_final: bool) -> bool:
+    """Whether a transcription starts an awaited answer: on a full-duplex
+    model, a non-empty partial of the assistant's words does (RFC §12.4.1)."""
+    return full_duplex and role == "assistant" and bool(text) and not is_final

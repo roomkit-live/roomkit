@@ -218,10 +218,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   to the integrator was never answered and ON_REALTIME_DELEGATION never
   fired: the model waited and the bot fell silent. It now fires the hook and
   answers with the spoken fallback a realtime voice channel without a
-  reasoning backend gives (one shared `fire_delegation` / `speak_fallback`).
-  `WaitForIdle` and `Queued` now wait for the session's tool calls and for
-  the model's answer to a result, as on a realtime voice channel (one shared
-  `ToolCallBook.settled`); a hand-back landed mid-call before.
+  reasoning backend gives (one shared `fire_delegation` / `speak_fallback`),
+  a delegation issued while the session connects included. `WaitForIdle`
+  and `Queued` now wait for the session's tool calls and for the model's
+  answer to a result or a fallback, as on a realtime voice channel; a
+  hand-back landed mid-call before. Both hosts keep the awaited answer in
+  one place (`ToolCallBook`) and read its start the same way (RFC §12.4.1):
+  a response start, or on a full-duplex model, which may answer inside the
+  response already open, its audible audio or a partial transcript of its
+  words. The wait starts before the output is sent, and an output that
+  could not be sent (a fallback, a result) is not waited for: on a realtime
+  voice channel, a fallback the provider refused held the session busy.
 
 - A realtime voice channel with a reasoning backend refuses, at
   construction, a session tool declared under a name its backend's agent

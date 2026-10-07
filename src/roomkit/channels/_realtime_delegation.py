@@ -22,7 +22,13 @@ from typing import TYPE_CHECKING, Any, Literal, Protocol, cast
 from uuid import uuid4
 
 from roomkit.channels._realtime_context import carry_calls, carrying_task
-from roomkit.channels._realtime_host_hooks import fire_delegation, speak_fallback
+from roomkit.channels._realtime_host_hooks import (
+    FALLBACK_NO_BACKEND,
+    FALLBACK_NO_OUTPUT,
+    FALLBACK_TIMEOUT,
+    fire_delegation,
+    speak_fallback,
+)
 from roomkit.channels._realtime_tool_calls import RealtimeToolCall
 from roomkit.channels._realtime_tool_executor import (
     SESSION_ENDED,
@@ -36,7 +42,6 @@ from roomkit.channels._realtime_tool_executor import (
 from roomkit.core._failure_log import log_failure, needs_reporting
 from roomkit.core._fallback import FALLBACK_FAILED
 from roomkit.core.task_utils import shielded
-from roomkit.models.enums import HookTrigger
 from roomkit.telemetry.base import SpanKind
 from roomkit.telemetry.context import reset_span
 from roomkit.tools._outcome import OutcomeKind, ToolOutcome
@@ -55,11 +60,6 @@ if TYPE_CHECKING:
     from roomkit.voice.realtime.provider import RealtimeVoiceProvider
 
 logger = logging.getLogger("roomkit.channels.realtime_voice")
-
-#: Spoken to the model when its delegation cannot be served (RFC §12.4.1).
-FALLBACK_NO_BACKEND = "No backend is available to handle delegated work in this session."
-FALLBACK_NO_OUTPUT = "The delegated work finished without an answer."
-FALLBACK_TIMEOUT = "The delegated work took too long and was abandoned."
 
 
 class RealtimeDelegationHost(Protocol):
@@ -106,6 +106,7 @@ class RealtimeDelegationHost(Protocol):
     def _update_idle_event(self, session_id: str) -> None: ...
 
     def _expect_provider_output(self, session_id: str) -> None: ...
+    def _withdraw_provider_output(self, session_id: str) -> None: ...
 
 
 class RealtimeDelegationMixin:
@@ -131,6 +132,7 @@ class RealtimeDelegationMixin:
     _rt_span_ctx: Any  # see RealtimeDelegationHost — cross-mixin
     _fire_session_error_hook: Any  # see RealtimeResponseMixin
     _expect_provider_output: Any
+    _withdraw_provider_output: Any
     _update_idle_event: Any  # see RealtimeDelegationHost — cross-mixin
     _access_cause: Any  # see RealtimeToolsMixin
     _door_exempt: Any  # see RealtimeToolGateMixin
@@ -234,15 +236,8 @@ class RealtimeDelegationMixin:
         self, session: VoiceSession, delegation_id: str, target: str
     ) -> None:
         """Announce the delegation to ON_REALTIME_DELEGATION (RFC §12.4.1)."""
-        if self._framework is None:
-            return
         with self._state_lock:
             room_id = self._session_rooms.get(session.id)
-        if not room_id:
-            return
-        if not self._framework.hook_engine.has_hooks(HookTrigger.ON_REALTIME_DELEGATION):
-            return
-
         _, _tok = self._rt_span_ctx(session.id)
         try:
             await fire_delegation(self._framework, room_id, session, delegation_id, target)
@@ -419,11 +414,11 @@ class RealtimeDelegationMixin:
         return {name: cause for name, cause in causes.items() if name and cause is not None}
 
     async def _fallback(self, session: VoiceSession, delegation_id: str, text: str) -> None:
-        """One spoken output, so the model does not wait for an answer that never comes."""
-        if session.state == VoiceSessionState.ENDED:
-            return
+        """One spoken output, so the model does not wait for an answer that
+        never comes; one not sent is not waited for."""
         self._expect_provider_output(session.id)
-        await speak_fallback(self._provider, session, delegation_id, text)
+        if not await speak_fallback(self._provider, session, delegation_id, text):
+            self._withdraw_provider_output(session.id)
 
     # -----------------------------------------------------------------
     # Backend tool calls go through the channel gate

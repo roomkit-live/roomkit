@@ -131,6 +131,7 @@ class RealtimeToolsHost(Protocol):
     def _update_idle_event(self, session_id: str) -> None: ...
 
     def _expect_provider_output(self, session_id: str) -> None: ...
+    def _withdraw_provider_output(self, session_id: str) -> None: ...
 
 
 def _timed_result_text(name: str, raw: Any) -> str:
@@ -230,6 +231,7 @@ class RealtimeToolsMixin:
     _track_task: Any  # see RealtimeToolsHost — cross-mixin
     _session_answer_depth: Any  # RealtimeTranscriptionMixin — cross-mixin
     _expect_provider_output: Any
+    _withdraw_provider_output: Any
     _update_idle_event: Any
     _compose_session_prompt: Any
     _compose_session_tools: Any
@@ -805,7 +807,11 @@ class RealtimeToolsMixin:
         if session.state == VoiceSessionState.ENDED:
             return False
         self._expect_provider_output(session.id)
-        await submit_tool_outcome(self._provider, session, call.call_id, result, failed=failed)
+        try:
+            await submit_tool_outcome(self._provider, session, call.call_id, result, failed=failed)
+        except Exception:
+            self._withdraw_provider_output(session.id)
+            raise
         return session.state != VoiceSessionState.ENDED
 
     async def _serve_tool_search(
