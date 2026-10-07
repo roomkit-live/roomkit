@@ -359,9 +359,13 @@ class PolarGridAIProvider(AIProvider):
     # -- Error mapping ------------------------------------------------------
 
     def _lost_connection(self, exc: BaseException) -> bool:
-        """Whether the SDK raised a lost connection: a network failure or a
-        timeout, which carry no status to read."""
-        return isinstance(exc, (self._network_error, self._timeout_error))
+        """Whether the SDK raised a lost connection: a timeout, or a network
+        failure with the transport error under it. The SDK raises an error
+        written into a stream as a ``NetworkError`` too, with no cause and no
+        status: a failure the SDK dropped the status of, final (RFC §6.7)."""
+        if isinstance(exc, self._timeout_error):
+            return True
+        return isinstance(exc, self._network_error) and getattr(exc, "cause", None) is not None
 
     def _status_for(self, exc: BaseException) -> int | None:
         """The HTTP status an SDK exception stands for: the one it carries,

@@ -2377,10 +2377,12 @@ clears history; `/quit` exits.
 
 ## Errors
 
-`ollama.ResponseError` maps to `ProviderError(retryable=...)` where
-`retryable=True` for `429`, `500`, `502`, `503`. Transport/connection
-errors (timeouts, refused connections) get marked retryable so the
-calling `RetryPolicy` decides whether to act.
+`ollama.ResponseError` maps to `ProviderError(retryable=...)` as on every
+provider: `retryable=True` for `408`, `409`, `429` and any `5xx`, and for a
+stream the server aborted with no status (`-1`, e.g. a template that failed
+to parse the model's own output). Transport/connection errors (timeouts,
+refused connections) are retryable too; a body that is not Ollama's format
+is final. The calling `RetryPolicy` decides whether to act.
 
 ## What this provider doesn't do
 

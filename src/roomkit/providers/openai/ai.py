@@ -33,6 +33,7 @@ from roomkit.providers.ai.base import (
     StreamTextDelta,
     StreamThinkingDelta,
     answered_by,
+    error_body_failure,
     nonempty_stream,
     provider_error,
     stream_done,
@@ -440,18 +441,7 @@ class OpenAIAIProvider(AIProvider):
         if context.tools:
             kwargs["tools"] = self._declare_tools(context.tools)
 
-        t0 = time.monotonic()
-        try:
-            response = await self._client.chat.completions.create(**kwargs)
-        except ProviderError:
-            raise
-        except Exception as exc:
-            raise self._wrap_error(exc) from exc
-
-        self._record_ttfb(t0)
-        if not hasattr(response, "choices"):
-            # A gateway's page the SDK handed back as it came (RFC §6.7).
-            raise unreadable_response(self._provider_name, "not a chat completion")
+        response = await self._complete(kwargs)
 
         # What the request cost, read before anything else: a response with
         # no choice still billed its input.
@@ -592,6 +582,31 @@ class OpenAIAIProvider(AIProvider):
 
         except Exception as exc:
             raise self._wrap_error(exc) from exc
+
+    async def _complete(self, kwargs: dict[str, Any]) -> Any:
+        """One completion request, not streamed: its response as a chat
+        completion, or the failure the SDK raised or the body stands for."""
+        t0 = time.monotonic()
+        try:
+            response = await self._client.chat.completions.create(**kwargs)
+        except ProviderError:
+            raise
+        except Exception as exc:
+            raise self._wrap_error(exc) from exc
+        self._record_ttfb(t0)
+        return self._completion_of(response)
+
+    def _completion_of(self, response: Any) -> Any:
+        """*response* as a chat completion, or the failure it stands for (RFC
+        §6.7): an error object a gateway answered with 200 reads as the
+        status it names; a body that is no completion (a page the SDK handed
+        back as it came) is unreadable."""
+        error = getattr(response, "error", None)
+        if error:
+            raise error_body_failure(error, provider=self._provider_name)
+        if not hasattr(response, "choices"):
+            raise unreadable_response(self._provider_name, "not a chat completion")
+        return response
 
     def _wrap_error(self, exc: Exception) -> ProviderError:
         """The provider error an SDK failure reads as, on both modes

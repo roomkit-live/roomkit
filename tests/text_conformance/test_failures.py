@@ -13,14 +13,17 @@ from __future__ import annotations
 
 from typing import Any
 
+import httpx
 import pytest
 
 from roomkit.providers.ai.base import AIContext, AIMessage, ProviderError
-from tests.text_conformance.http_wire import HttpWire, http_wires
+from tests.text_conformance import openai_wire
+from tests.text_conformance.http_wire import OVERLOAD, HttpWire, http_wires
 
 WIRES = http_wires()
 BY_WIRE = pytest.mark.parametrize("wire", WIRES, ids=[wire.label for wire in WIRES])
 CONTEXT = AIContext(messages=[AIMessage(role="user", content="go")])
+OPENAI_LABELS = {wire.label for wire in openai_wire.wires()}
 
 
 async def _failure(provider: Any, mode: str) -> ProviderError:
@@ -41,6 +44,8 @@ async def _failure(provider: Any, mode: str) -> ProviderError:
 async def test_an_overload_reads_the_same_as_a_status_and_inside_a_200_stream(
     wire: HttpWire,
 ) -> None:
+    if wire.stream_drops_status:
+        pytest.skip(f"{wire.label}'s SDK raises an in-stream error without its status")
     as_status = await _failure(wire.status(wire.overload_status), "stream")
     in_stream = await _failure(wire.build(wire.stream_error), "stream")
 
@@ -50,6 +55,7 @@ async def test_an_overload_reads_the_same_as_a_status_and_inside_a_200_stream(
 
 
 @BY_WIRE
+@pytest.mark.parametrize("mode", ["generate", "stream"])
 @pytest.mark.parametrize(
     ("status", "retryable"),
     [
@@ -67,11 +73,11 @@ async def test_an_overload_reads_the_same_as_a_status_and_inside_a_200_stream(
     ],
 )
 async def test_a_status_is_retried_when_transient(
-    wire: HttpWire, status: int, retryable: bool
+    wire: HttpWire, status: int, retryable: bool, mode: str
 ) -> None:
     if status in wire.lost_statuses:
         pytest.skip(f"{wire.label}'s SDK raises a {status} without its status")
-    error = await _failure(wire.status(status), "stream")
+    error = await _failure(wire.status(status), mode)
 
     assert (error.retryable, error.status_code) == (retryable, status)
 
@@ -82,3 +88,36 @@ async def test_a_200_html_page_is_a_final_provider_error(wire: HttpWire, mode: s
     error = await _failure(wire.build(wire.html), mode)
 
     assert error.retryable is False
+
+
+@BY_WIRE
+async def test_a_200_stream_with_no_event_is_a_final_provider_error(wire: HttpWire) -> None:
+    error = await _failure(wire.empty_stream(), "stream")
+
+    assert error.retryable is False
+
+
+@BY_WIRE
+async def test_an_error_in_a_stream_that_names_no_status_is_final(wire: HttpWire) -> None:
+    """Without a status, only a lost connection is retried: a message that
+    happens to contain "rate" (in "generate") names no rate limit."""
+    if wire.label == "ollama":
+        pytest.skip("ollama's -1, a stream the server aborted, reads as a lost connection")
+    error = await _failure(wire.unnamed_stream_error(), "stream")
+
+    assert error.retryable is False
+
+
+@pytest.mark.parametrize(
+    "wire",
+    [wire for wire in WIRES if wire.label in OPENAI_LABELS],
+    ids=sorted(OPENAI_LABELS),
+)
+async def test_a_200_json_error_object_reads_as_its_status(wire: HttpWire) -> None:
+    """A gateway answers a completion with 200 and an error object."""
+    body = {"error": {"message": OVERLOAD, "type": "server_error", "code": 503}}
+    provider = wire.build(lambda request: httpx.Response(200, json=body))
+
+    error = await _failure(provider, "generate")
+
+    assert (error.retryable, error.status_code) == (True, 503)

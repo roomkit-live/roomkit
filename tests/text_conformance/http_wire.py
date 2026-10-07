@@ -80,6 +80,30 @@ class HttpWire:
     """The handler answering 200 with a gateway's HTML page."""
     lost_statuses: frozenset[int] = frozenset()
     """Statuses the SDK raises without, so nothing can read them."""
+    stream_drops_status: bool = False
+    """The SDK raises an error written into a stream with no status kept."""
+
+    def empty_stream(self) -> AIProvider:
+        """Answered 200 with a stream that carries no event."""
+        return self.build(_stream(b"", self.stream_content_type))
+
+    def unnamed_stream_error(self) -> AIProvider:
+        """Answered 200, the stream's first event an error naming no status."""
+        return self.build(_stream(self.unnamed_error_event, self.stream_content_type))
+
+    @property
+    def stream_content_type(self) -> str:
+        return "application/x-ndjson" if self.label == "ollama" else "text/event-stream"
+
+    @property
+    def unnamed_error_event(self) -> bytes:
+        error = {"message": "Failed to generate a reply"}
+        if self.label == "ollama":
+            return json.dumps({"error": error["message"]}).encode()
+        if self.label == "anthropic":
+            body = {"type": "error", "error": error}
+            return _anthropic_events([_MESSAGE_START, ("error", body)])
+        return sse([{"error": error}])
 
     def status(self, status: int) -> AIProvider:
         return self.build(_status(status, self.status_body(status)))
@@ -262,7 +286,9 @@ def http_wires() -> list[HttpWire]:
             stream_error=_stream(sse([{"error": {"message": OVERLOAD, "code": 503}}])),
             stream_names_status=False,
             # polargrid-sdk raises a bare PolarGridError, no status kept, for
-            # any status it does not classify (408 and 409 among them).
+            # any status it does not classify (408 and 409 among them), and an
+            # error written into a stream as a NetworkError with no status.
             lost_statuses=frozenset({408, 409}),
+            stream_drops_status=True,
         ),
     ]

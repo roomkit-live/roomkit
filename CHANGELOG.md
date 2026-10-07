@@ -191,14 +191,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the server gave the failure (RMK-524, RFC §6.7). An error written into a
   200 stream (OpenAI and its ten derivatives, Anthropic's `overloaded_error`,
   Mistral) was final where the same failure as an HTTP status was retried;
-  it now reads as the status it describes. **Behaviour change:** 408, 409
-  and every 5xx are retried (504 was final), and an unclassified failure
-  with no status is final on Ollama and PolarGrid, which retried it by
-  default. A 200 whose body is not the provider's format (a gateway's HTML
-  page) is a final `ProviderError` on every provider: OpenAI's `generate()`
-  raised an `AttributeError`, and its stream, like PolarGrid's, ended as an
-  empty success. `providers.ai.base.provider_error` is the one reader.
-  polargrid-sdk drops a 408 or 409 status, so on PolarGrid those are final.
+  it now reads as the status it describes, and a 200 whose body is an error
+  object reads as the status it names. **Behaviour change:** 408, 409 and
+  every 5xx are retried (504 was final), on the image providers that read
+  the same list too (xAI, Meta, OpenRouter). A failure with no status is
+  retried only when it is a lost connection or its message names a retried
+  status, a rate limit or an overload as whole words (a failure "to
+  generate" named a "rate" before); Ollama and PolarGrid no longer retry an
+  unclassified failure by default, and Ollama's mid-stream abort (status
+  -1) stays retried. A body that is not the provider's format (a gateway's
+  HTML page) and a 200 stream that carries no event are a final
+  `ProviderError` on every provider: OpenAI's `generate()` raised an
+  `AttributeError`, and the streams of OpenAI, PolarGrid, Gemini, Mistral
+  and Ollama ended as an empty success. `providers.ai.base.provider_error`
+  is the one reader. polargrid-sdk drops the status of a 408, a 409 and an
+  error written into a stream, so on PolarGrid those are final.
 
 - `regenerate_response` runs its re-broadcast as an inbound event's runs, in
   the room's delivery lane, off the room lock and unbounded (RMK-525, RFC

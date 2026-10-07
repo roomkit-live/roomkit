@@ -37,6 +37,7 @@ from roomkit.providers.ai.base import (
     StreamThinkingDelta,
     StreamToolCall,
     answered_by,
+    nonempty_stream,
     provider_error,
     stream_call_of,
     stream_done,
@@ -444,7 +445,7 @@ class OllamaAIProvider(AIProvider):
 
         try:
             stream = await sdk_patch.chat(self._sdk, self._client, **kwargs)
-            async for chunk in stream:
+            async for chunk in nonempty_stream(stream):
                 model = self._get_attr(chunk, "model", None) or model
                 message = self._get_message(chunk)
                 thinking_delta = self._get_attr(message, "thinking", None)

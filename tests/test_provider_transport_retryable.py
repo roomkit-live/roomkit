@@ -157,7 +157,8 @@ def _polargrid(failure: Failure) -> AIProvider:
 
     def error() -> Exception:
         if failure in ("refused", "dropped"):
-            return polargrid.NetworkError(_REFUSED, None, None)
+            # As the SDK wraps a transport failure: the httpx error under it.
+            return polargrid.NetworkError(_REFUSED, httpx.ConnectError(_REFUSED), None)
         return polargrid.ValidationError("bad request", None, "req-1")
 
     async def make_request(*args: Any, **kwargs: Any) -> Any:

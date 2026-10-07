@@ -26,6 +26,7 @@ from roomkit.providers.ai.base import (
     StreamThinkingDelta,
     StreamToolCall,
     answered_by,
+    nonempty_stream,
     tool_call_of,
 )
 from roomkit.providers.ai.response_schema import checked_stream, schema_for_generate
@@ -384,7 +385,7 @@ class GeminiAIProvider(AIProvider):
                 contents=contents,
                 config=gen_config,
             )
-            async for chunk in response_stream:
+            async for chunk in nonempty_stream(response_stream):
                 # Extract usage from each chunk (last one has the totals)
                 if chunk.usage_metadata:
                     usage = _usage_from_metadata(chunk.usage_metadata)

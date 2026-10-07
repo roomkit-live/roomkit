@@ -112,8 +112,11 @@ class _FakeStream:
         pass
 
     def __aiter__(self) -> _FakeStream:
-        """Yield raw SDK events (content_block_delta) for thinking + text."""
-        self._events: list[SimpleNamespace] = []
+        """Yield raw SDK events (content_block_delta) for thinking + text,
+        behind the ``message_start`` every Anthropic stream opens with."""
+        self._events: list[SimpleNamespace] = [
+            SimpleNamespace(type="message_start", message=self._final_message)
+        ]
         for chunk in self._thinking_chunks:
             self._events.append(
                 SimpleNamespace(

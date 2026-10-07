@@ -1073,8 +1073,8 @@ class TestPolarGridErrors:
 
     @pytest.mark.asyncio
     async def test_an_unknown_error_reads_as_on_every_provider(self) -> None:
-        """No status and no lost connection: final, as the shared rule reads
-        it (RMK-524), no longer retried by a default of PolarGrid's own."""
+        """No status and no lost connection: final, as every provider reads
+        it (RFC §6.7)."""
         provider, mod = _provider()
         mod._client._make_request.side_effect = RuntimeError("???")
 

@@ -264,12 +264,6 @@ class ProviderError(Exception):
         return f"{self.provider}{status}: {message}"
 
 
-# What an SDK error that lost its status says of a transient one: some SDKs
-# (Mistral, google-genai) raise HTTP errors that carry no code, and their
-# message is all there is to read.
-_RETRYABLE_ERROR_TERMS: tuple[str, ...] = ("rate", "limit", "429", "500", "502", "503")
-
-
 def is_transport_failure(exc: BaseException) -> bool:
     """Whether *exc*, or an exception it was raised from, is a transport
     failure: the connection refused, reset or timed out, before the status
@@ -301,6 +295,14 @@ def is_transport_failure(exc: BaseException) -> bool:
 # conflict, a rate limit and any server error, an overload's 529 included.
 RETRYABLE_STATUS_CODES: frozenset[int] = frozenset({408, 409, 429, *range(500, 600)})
 
+# What an error message that came with no status says of a transient failure,
+# for an SDK that lost the status: a status number, or the words of a rate
+# limit or an overload.
+_STATUS_WORDS = re.compile(r"\b([45]\d\d)\b")
+_TRANSIENT_WORDS = re.compile(
+    r"\b(?:rate[ _-]?limit(?:ed|s)?|too many requests|overloaded)\b", re.IGNORECASE
+)
+
 # The status an error object's type names, where a server wrote the failure
 # into its body rather than its status line: a stream already answered 200,
 # or a gateway that answers 200 with an error object.
@@ -318,6 +320,15 @@ _ERROR_TYPE_STATUS: dict[str, int] = {
     "service_unavailable": 503,
     "timeout_error": 504,
     "overloaded_error": 529,
+    # google.rpc codes, as a Google error body names them in ``status``.
+    "INVALID_ARGUMENT": 400,
+    "UNAUTHENTICATED": 401,
+    "PERMISSION_DENIED": 403,
+    "NOT_FOUND": 404,
+    "RESOURCE_EXHAUSTED": 429,
+    "INTERNAL": 500,
+    "UNAVAILABLE": 503,
+    "DEADLINE_EXCEEDED": 504,
 }
 
 
@@ -397,8 +408,9 @@ def provider_error(
     the one the server described (:func:`server_status`), and decides: a
     transient status is retried, any other final. With no status, a lost
     connection (*transport*, or :func:`is_transport_failure`) is retried and
-    an answer that could not be read is final; anything else reads as
-    :func:`failure_retryable` says. A :class:`ProviderError` is already read."""
+    an answer that could not be read is final; anything else is retried only
+    when its message names a transient failure. A :class:`ProviderError` is
+    already read."""
     if isinstance(exc, ProviderError):
         return exc
     if status is None:
@@ -410,13 +422,30 @@ def provider_error(
     elif _unreadable(exc):
         retryable = False
     else:
-        retryable = failure_retryable(None, exc)
+        retryable = _names_transient(str(exc))
     return ProviderError(
         str(exc),
         retryable=retryable,
         provider=provider,
         status_code=status,
         context_overflow=context_overflow,
+    )
+
+
+def error_body_failure(body: Any, *, provider: str) -> ProviderError:
+    """The failure an error object a server answered with in place of a
+    response describes (a gateway's 200 carrying an error): retried when
+    the status it names is transient, final otherwise (RFC §6.7)."""
+    status = _described_status(body)
+    message = next(
+        (item["message"] for item in _error_objects(body) if isinstance(item.get("message"), str)),
+        str(body),
+    )
+    return ProviderError(
+        message,
+        retryable=status is not None and status in RETRYABLE_STATUS_CODES,
+        provider=provider,
+        status_code=status,
     )
 
 
@@ -443,17 +472,13 @@ async def nonempty_stream[T](stream: AsyncIterator[T]) -> AsyncIterator[T]:
         raise ValueError("The provider's stream carried no event: its body could not be read")
 
 
-def failure_retryable(status_code: int | None, exc: BaseException) -> bool:
-    """Whether an SDK failure is worth retrying, for an SDK that may lose the
-    status (Mistral, google-genai): a transient status when it carries one;
-    without one, a transport failure (:func:`is_transport_failure`) or an
-    error whose message names a transient status."""
-    if status_code:
-        return status_code in RETRYABLE_STATUS_CODES
-    if is_transport_failure(exc):
-        return True
-    text = str(exc).lower()
-    return any(term in text for term in _RETRYABLE_ERROR_TERMS)
+def _names_transient(message: str) -> bool:
+    """Whether an error *message* that came with no status names a transient
+    failure: a retried status, a rate limit or an overload, read as whole
+    words, so a "token limit" or a failure "to generate" names none."""
+    return _TRANSIENT_WORDS.search(message) is not None or any(
+        int(code) in RETRYABLE_STATUS_CODES for code in _STATUS_WORDS.findall(message)
+    )
 
 
 # The wordings observed across providers for a context-window refusal. One

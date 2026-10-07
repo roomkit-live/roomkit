@@ -290,7 +290,13 @@ async def test_an_anthropic_block_the_stream_never_closed_is_partial_when_cut() 
     final = SimpleNamespace(content=[block], usage=usage, stop_reason="max_tokens", model="claude")
     provider = AnthropicAIProvider(AnthropicConfig(api_key="k", model="claude-sonnet-5-5"))
     provider._client = SimpleNamespace(
-        messages=SimpleNamespace(stream=lambda **kw: _AnthropicStream([], final))
+        # The stream opened, as every Anthropic stream does, and was cut
+        # before the block's stop.
+        messages=SimpleNamespace(
+            stream=lambda **kw: _AnthropicStream(
+                [SimpleNamespace(type="message_start", message=final)], final
+            )
+        )
     )
 
     [call] = (await provider.generate(_CTX)).tool_calls

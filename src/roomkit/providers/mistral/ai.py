@@ -19,6 +19,7 @@ from roomkit.providers.ai.base import (
     StreamTextDelta,
     StreamThinkingDelta,
     StreamToolCall,
+    nonempty_stream,
     provider_error,
     stream_done,
     tool_call_of,
@@ -250,7 +251,7 @@ class MistralAIProvider(AIProvider):
         model: str | None = None
         try:
             response = await self._client.chat.stream_async(**kwargs)
-            async for event in response:
+            async for event in nonempty_stream(response):
                 data = event.data
                 model = getattr(data, "model", None) or model
                 # Extract usage from the stream when available, before the

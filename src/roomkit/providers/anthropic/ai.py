@@ -24,6 +24,7 @@ from roomkit.providers.ai.base import (
     StreamTextDelta,
     StreamThinkingDelta,
     StreamToolCall,
+    nonempty_stream,
     provider_error,
     request_api_key,
     tool_call_of,
@@ -280,7 +281,7 @@ class AnthropicAIProvider(AIProvider):
             blocks = ToolUseBlocks()
 
             async with client.messages.stream(**kwargs) as stream:
-                async for event in stream:
+                async for event in nonempty_stream(stream):
                     for out in stream_events(event, blocks):
                         if is_first_output(out):
                             first_token.seen()
