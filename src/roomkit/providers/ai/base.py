@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 import sys
 import time as _time
@@ -263,10 +264,6 @@ class ProviderError(Exception):
         return f"{self.provider}{status}: {message}"
 
 
-# HTTP status codes that are transient and worth retrying for any AI provider.
-# Providers may extend this set with their own (e.g. Anthropic's 529 "overloaded").
-RETRYABLE_STATUS_CODES: frozenset[int] = frozenset({429, 500, 502, 503})
-
 # What an SDK error that lost its status says of a transient one: some SDKs
 # (Mistral, google-genai) raise HTTP errors that carry no code, and their
 # message is all there is to read.
@@ -297,6 +294,153 @@ def is_transport_failure(exc: BaseException) -> bool:
         seen.add(id(current))
         current = current.__cause__
     return False
+
+
+# HTTP statuses a failed request is retried on, on every AI provider (RFC
+# §6.7): the transient ones the vendors' own SDKs retry — a timeout, a
+# conflict, a rate limit and any server error, an overload's 529 included.
+RETRYABLE_STATUS_CODES: frozenset[int] = frozenset({408, 409, 429, *range(500, 600)})
+
+# The status an error object's type names, where a server wrote the failure
+# into its body rather than its status line: a stream already answered 200,
+# or a gateway that answers 200 with an error object.
+_ERROR_TYPE_STATUS: dict[str, int] = {
+    "invalid_request_error": 400,
+    "authentication_error": 401,
+    "permission_error": 403,
+    "not_found_error": 404,
+    "request_too_large": 413,
+    "rate_limit_error": 429,
+    "rate_limit_exceeded": 429,
+    "api_error": 500,
+    "server_error": 500,
+    "internal_error": 500,
+    "service_unavailable": 503,
+    "timeout_error": 504,
+    "overloaded_error": 529,
+}
+
+
+def _status_in(value: Any) -> int | None:
+    """*value* as an HTTP error status, if it is one."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, str) and value.isdigit():
+        value = int(value)
+    if isinstance(value, int) and 400 <= value <= 599:
+        return value
+    if isinstance(value, str):
+        return _ERROR_TYPE_STATUS.get(value)
+    return None
+
+
+def _error_objects(body: Any, depth: int = 3) -> Iterator[dict[str, Any]]:
+    """The error objects of a body: the body itself and what it nests under
+    ``error`` or ``data`` (an SSE line an SDK kept whole), innermost first."""
+    if depth == 0 or not isinstance(body, dict):
+        return
+    for key in ("error", "data"):
+        yield from _error_objects(body.get(key), depth - 1)
+    yield body
+
+
+def _described_status(body: Any) -> int | None:
+    """The status an error body describes: its ``code``, ``type`` or
+    ``status``, read on the innermost error object first."""
+    if isinstance(body, str):
+        try:
+            body = json.loads(body)
+        except ValueError:
+            return None
+    for item in _error_objects(body):
+        for key in ("code", "type", "status"):
+            status = _status_in(item.get(key))
+            if status is not None:
+                return status
+    return None
+
+
+def server_status(exc: BaseException) -> int | None:
+    """The HTTP status the server described for a failed request: the error
+    status the SDK's exception carries, else the status or type written in
+    the error's body (a stream that had already answered 200, a gateway's
+    error object), else a numeric ``code`` the exception carries."""
+    carried = _status_in(getattr(exc, "status_code", None))
+    if carried is not None:
+        return carried
+    described = _described_status(getattr(exc, "body", None))
+    if described is not None:
+        return described
+    code = getattr(exc, "code", None)
+    return code if isinstance(code, int) and _status_in(code) is not None else None
+
+
+def _unreadable(exc: BaseException) -> bool:
+    """Whether *exc* says the provider's answer could not be read: a 2xx the
+    SDK failed on, or a ``ValueError`` (a body that is not JSON, a payload
+    that does not validate) raised while reading it."""
+    status = getattr(exc, "status_code", None)
+    answered = isinstance(status, int) and 200 <= status < 300
+    return answered or isinstance(exc, ValueError)
+
+
+def provider_error(
+    exc: BaseException,
+    *,
+    provider: str,
+    status: int | None = None,
+    transport: bool = False,
+    context_overflow: bool | None = None,
+) -> ProviderError:
+    """The :class:`ProviderError` an SDK failure reads as, on every provider
+    (RFC §6.7). Its status is *status* when the SDK's class names one, else
+    the one the server described (:func:`server_status`), and decides: a
+    transient status is retried, any other final. With no status, a lost
+    connection (*transport*, or :func:`is_transport_failure`) is retried and
+    an answer that could not be read is final; anything else reads as
+    :func:`failure_retryable` says. A :class:`ProviderError` is already read."""
+    if isinstance(exc, ProviderError):
+        return exc
+    if status is None:
+        status = server_status(exc)
+    if status is not None:
+        retryable = status in RETRYABLE_STATUS_CODES
+    elif transport or is_transport_failure(exc):
+        retryable = True
+    elif _unreadable(exc):
+        retryable = False
+    else:
+        retryable = failure_retryable(None, exc)
+    return ProviderError(
+        str(exc),
+        retryable=retryable,
+        provider=provider,
+        status_code=status,
+        context_overflow=context_overflow,
+    )
+
+
+def unreadable_response(provider: str, what: str) -> ProviderError:
+    """The failure of a response whose body is not the provider's format (a
+    gateway's HTML page in place of JSON): final (RFC §6.7)."""
+    return ProviderError(
+        f"The provider answered with a body it could not read: {what}",
+        retryable=False,
+        provider=provider,
+    )
+
+
+async def nonempty_stream[T](stream: AsyncIterator[T]) -> AsyncIterator[T]:
+    """Pass an SDK's stream through, failing it when it ends without one
+    item: a page with no ``data:`` line reads as an empty success otherwise.
+    The ``ValueError`` it raises is an answer that could not be read, which
+    the provider's own reading (:func:`provider_error`) makes final."""
+    seen = False
+    async for item in stream:
+        seen = True
+        yield item
+    if not seen:
+        raise ValueError("The provider's stream carried no event: its body could not be read")
 
 
 def failure_retryable(status_code: int | None, exc: BaseException) -> bool:

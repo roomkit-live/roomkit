@@ -509,7 +509,7 @@ class TestPolarGridStreaming:
     @pytest.mark.asyncio
     async def test_streaming_asks_for_a_stream_and_its_usage(self) -> None:
         provider, mod = _provider()
-        sent = _serve(mod, [])
+        sent = _serve(mod, [_stream_chunk(content="a", finish_reason="stop")])
 
         async for _ in provider.generate_structured_stream(_context()):
             pass
@@ -1072,14 +1072,16 @@ class TestPolarGridErrors:
         assert (failed.status_code, failed.retryable) == (None, False)
 
     @pytest.mark.asyncio
-    async def test_unknown_error_retryable(self) -> None:
+    async def test_an_unknown_error_reads_as_on_every_provider(self) -> None:
+        """No status and no lost connection: final, as the shared rule reads
+        it (RMK-524), no longer retried by a default of PolarGrid's own."""
         provider, mod = _provider()
         mod._client._make_request.side_effect = RuntimeError("???")
 
         with pytest.raises(ProviderError) as exc:
             await provider.generate(_context())
 
-        assert exc.value.retryable is True
+        assert exc.value.retryable is False
 
 
 # ---------------------------------------------------------------------------

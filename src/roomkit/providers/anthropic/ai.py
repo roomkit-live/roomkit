@@ -12,7 +12,6 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 from roomkit.providers.ai.base import (
-    RETRYABLE_STATUS_CODES,
     AIContext,
     AIProvider,
     AIResponse,
@@ -25,7 +24,7 @@ from roomkit.providers.ai.base import (
     StreamTextDelta,
     StreamThinkingDelta,
     StreamToolCall,
-    is_transport_failure,
+    provider_error,
     request_api_key,
     tool_call_of,
 )
@@ -297,21 +296,13 @@ class AnthropicAIProvider(AIProvider):
             await self._release_client(leased_api_key)
 
     def _wrap_error(self, exc: Exception) -> ProviderError:
-        """The provider error an SDK failure reads as: a status the server
-        answered, retryable when transient (Anthropic adds 529 "overloaded" to
-        the shared set); the SDK's connection error, or a transport failure
-        it let through while the stream was read, retryable; anything else
-        final (RMK-509)."""
-        if isinstance(exc, self._api_status_error):
-            status = exc.status_code
-            return ProviderError(
-                str(exc),
-                retryable=status in RETRYABLE_STATUS_CODES or status == 529,
-                provider="anthropic",
-                status_code=status,
-            )
-        retryable = isinstance(exc, self._api_connection_error) or is_transport_failure(exc)
-        return ProviderError(str(exc), retryable=retryable, provider="anthropic")
+        """The provider error an SDK failure reads as (:func:`provider_error`):
+        an ``event: error`` of a 200 stream reads as the status its type
+        names (``overloaded_error`` as the 529 it stands for), and the SDK's
+        connection error is a lost connection."""
+        return provider_error(
+            exc, provider="anthropic", transport=isinstance(exc, self._api_connection_error)
+        )
 
     async def generate(self, context: AIContext) -> AIResponse:
         """Generate by consuming the structured stream."""

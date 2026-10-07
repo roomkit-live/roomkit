@@ -19,7 +19,7 @@ from roomkit.providers.ai.base import (
     StreamTextDelta,
     StreamThinkingDelta,
     StreamToolCall,
-    failure_retryable,
+    provider_error,
     stream_done,
     tool_call_of,
 )
@@ -348,14 +348,8 @@ class MistralAIProvider(AIProvider):
     # -- Helpers ---------------------------------------------------------------
 
     def _wrap_error(self, exc: Exception) -> ProviderError:
-        """Wrap an SDK exception into a ProviderError."""
-        status_code = getattr(exc, "status_code", None) or getattr(exc, "code", None)
-        return ProviderError(
-            str(exc),
-            retryable=failure_retryable(status_code, exc),
-            provider="mistral",
-            status_code=status_code,
-        )
+        """The provider error an SDK failure reads as (:func:`provider_error`)."""
+        return provider_error(exc, provider="mistral")
 
     async def close(self) -> None:
         """Close the underlying HTTP client."""

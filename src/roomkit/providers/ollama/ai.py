@@ -18,7 +18,6 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 from roomkit.providers.ai.base import (
-    RETRYABLE_STATUS_CODES,
     AIContext,
     AIImagePart,
     AIMessage,
@@ -38,6 +37,7 @@ from roomkit.providers.ai.base import (
     StreamThinkingDelta,
     StreamToolCall,
     answered_by,
+    provider_error,
     stream_call_of,
     stream_done,
 )
@@ -338,28 +338,19 @@ class OllamaAIProvider(AIProvider):
     # -- Error mapping ------------------------------------------------------
 
     def _wrap_error(self, exc: BaseException) -> ProviderError:
-        if isinstance(exc, self._response_error):
-            status = getattr(exc, "status_code", None)
-            # No HTTP status (ollama reports -1) means the server aborted
-            # mid-stream — e.g. its chat template failed to parse the
-            # model's own tool-call output ("XML syntax error ... closed by
-            # </function>"). That's a transient generation defect: a retry
-            # regenerates with fresh sampling. Only definite HTTP client
-            # errors stay non-retryable.
-            retryable = status in (None, -1) or status in RETRYABLE_STATUS_CODES
-            return ProviderError(
-                str(exc),
-                retryable=retryable,
-                provider=self._provider_name,
-                status_code=status,
-            )
-        # Connection / timeout / other transport errors are typically
-        # retryable — let the upper RetryPolicy decide whether to act.
-        return ProviderError(
-            str(exc),
-            retryable=True,
-            provider=self._provider_name,
+        """The provider error an SDK failure reads as (:func:`provider_error`).
+
+        No HTTP status (ollama reports -1) means the server aborted
+        mid-stream, e.g. its chat template failed to parse the model's own
+        tool-call output ("XML syntax error ... closed by </function>"): a
+        transient generation defect, retried as a lost connection, since a
+        retry regenerates with fresh sampling.
+        """
+        aborted = isinstance(exc, self._response_error) and getattr(exc, "status_code", None) in (
+            None,
+            -1,
         )
+        return provider_error(exc, provider=self._provider_name, transport=aborted)
 
     # -- Non-streaming ------------------------------------------------------
 

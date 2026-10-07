@@ -187,6 +187,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A failed generation reads the same on every text provider, whatever form
+  the server gave the failure (RMK-524, RFC §6.7). An error written into a
+  200 stream (OpenAI and its ten derivatives, Anthropic's `overloaded_error`,
+  Mistral) was final where the same failure as an HTTP status was retried;
+  it now reads as the status it describes. **Behaviour change:** 408, 409
+  and every 5xx are retried (504 was final), and an unclassified failure
+  with no status is final on Ollama and PolarGrid, which retried it by
+  default. A 200 whose body is not the provider's format (a gateway's HTML
+  page) is a final `ProviderError` on every provider: OpenAI's `generate()`
+  raised an `AttributeError`, and its stream, like PolarGrid's, ended as an
+  empty success. `providers.ai.base.provider_error` is the one reader.
+  polargrid-sdk drops a 408 or 409 status, so on PolarGrid those are final.
+
 - `regenerate_response` runs its re-broadcast as an inbound event's runs, in
   the room's delivery lane, off the room lock and unbounded (RMK-525, RFC
   §13.5, §13.6). It held the room lock for the whole broadcast and cut it at

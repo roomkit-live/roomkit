@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from roomkit.providers.ai.base import ProviderError, failure_retryable
+from roomkit.providers.ai.base import ProviderError, provider_error
 
 #: Finish reasons that mean the model withheld the answer rather than wrote it:
 #: a constrained answer ending on one of these is a refusal, not bad JSON.
@@ -38,16 +38,10 @@ def wrap_gemini_error(exc: Exception) -> ProviderError:
     """Wrap a ``google-genai`` exception into a :class:`ProviderError`.
 
     The SDK spells its status on ``code`` or ``status_code`` depending on the
-    error class, and some failures carry neither: a transport failure (the
-    httpx error the SDK lets through, RoomKit's client setting no retries of
-    its own) or a message naming a transient status is then retryable. Shared
-    by every Gemini provider so "is this retryable" has one answer rather than
-    one per surface.
+    error class, and reads an error written into a 200 stream as its status;
+    :func:`provider_error` reads it all, a body the SDK could not parse
+    (``UnknownApiResponseError``, a ``ValueError``) as final. Shared by every
+    Gemini provider so "is this retryable" has one answer rather than one per
+    surface.
     """
-    status_code = getattr(exc, "code", None) or getattr(exc, "status_code", None)
-    return ProviderError(
-        str(exc),
-        retryable=failure_retryable(status_code, exc),
-        provider="gemini",
-        status_code=status_code,
-    )
+    return provider_error(exc, provider="gemini")

@@ -19,7 +19,6 @@ from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from roomkit.providers.ai.base import (
-    RETRYABLE_STATUS_CODES,
     AIContext,
     AIMessage,
     AIProvider,
@@ -34,8 +33,10 @@ from roomkit.providers.ai.base import (
     StreamTextDelta,
     StreamThinkingDelta,
     answered_by,
-    is_transport_failure,
+    nonempty_stream,
+    provider_error,
     stream_done,
+    unreadable_response,
 )
 from roomkit.providers.ai.chat_request import OPENAI_CHAT, ChatDialect, chat_messages
 from roomkit.providers.ai.openai_dialect import (
@@ -448,6 +449,9 @@ class OpenAIAIProvider(AIProvider):
             raise self._wrap_error(exc) from exc
 
         self._record_ttfb(t0)
+        if not hasattr(response, "choices"):
+            # A gateway's page the SDK handed back as it came (RFC §6.7).
+            raise unreadable_response(self._provider_name, "not a chat completion")
 
         # What the request cost, read before anything else: a response with
         # no choice still billed its input.
@@ -529,7 +533,7 @@ class OpenAIAIProvider(AIProvider):
 
         try:
             response = await self._client.chat.completions.create(**kwargs)
-            async for chunk in response:
+            async for chunk in nonempty_stream(response):
                 model = getattr(chunk, "model", None) or model
                 # With include_usage, the final chunk has usage but empty choices
                 if hasattr(chunk, "usage") and chunk.usage:
@@ -590,20 +594,18 @@ class OpenAIAIProvider(AIProvider):
             raise self._wrap_error(exc) from exc
 
     def _wrap_error(self, exc: Exception) -> ProviderError:
-        """The provider error an SDK failure reads as, on both modes: a status
-        the server answered, retryable when transient; the SDK's connection
-        error, or a transport failure it let through while the stream was
-        read (it wraps none raised there), retryable; anything else final."""
-        if isinstance(exc, self._api_status_error):
-            return ProviderError(
-                str(exc),
-                retryable=exc.status_code in RETRYABLE_STATUS_CODES,
-                provider=self._provider_name,
-                status_code=exc.status_code,
-                context_overflow=overflow_fact(exc),
-            )
-        retryable = isinstance(exc, self._api_connection_error) or is_transport_failure(exc)
-        return ProviderError(str(exc), retryable=retryable, provider=self._provider_name)
+        """The provider error an SDK failure reads as, on both modes
+        (:func:`provider_error`): the SDK's connection error is a lost
+        connection, and a status error carries what it says of the context
+        window."""
+        return provider_error(
+            exc,
+            provider=self._provider_name,
+            transport=isinstance(exc, self._api_connection_error),
+            context_overflow=(
+                overflow_fact(exc) if isinstance(exc, self._api_status_error) else None
+            ),
+        )
 
     async def generate_stream(self, context: AIContext) -> AsyncIterator[str]:
         """Yield text deltas (thinking content filtered out)."""

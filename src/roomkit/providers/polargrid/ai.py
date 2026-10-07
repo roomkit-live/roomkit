@@ -55,6 +55,8 @@ from roomkit.providers.ai.base import (
     StreamThinkingDelta,
     StreamToolCallDelta,
     answered_by,
+    nonempty_stream,
+    provider_error,
     stream_done,
 )
 from roomkit.providers.ai.chat_request import ChatDialect, chat_messages
@@ -356,26 +358,10 @@ class PolarGridAIProvider(AIProvider):
 
     # -- Error mapping ------------------------------------------------------
 
-    def _retryable_for(self, exc: BaseException) -> bool:
-        """Map an SDK exception to its retryable flag via dispatch table.
-
-        Unknown errors default to retryable so RoomKit's RetryPolicy
-        decides whether to back off or surface immediately.
-        """
-        retry_map: tuple[tuple[type[BaseException], bool], ...] = (
-            (self._auth_error, False),
-            (self._billing_error, False),
-            (self._validation_error, False),
-            (self._not_found_error, False),
-            (self._rate_limit_error, True),
-            (self._network_error, True),
-            (self._timeout_error, True),
-            (self._server_error, True),
-        )
-        for exc_type, retryable in retry_map:
-            if isinstance(exc, exc_type):
-                return retryable
-        return True
+    def _lost_connection(self, exc: BaseException) -> bool:
+        """Whether the SDK raised a lost connection: a network failure or a
+        timeout, which carry no status to read."""
+        return isinstance(exc, (self._network_error, self._timeout_error))
 
     def _status_for(self, exc: BaseException) -> int | None:
         """The HTTP status an SDK exception stands for: the one it carries,
@@ -399,11 +385,13 @@ class PolarGridAIProvider(AIProvider):
         return None
 
     def _wrap_error(self, exc: BaseException) -> ProviderError:
-        return ProviderError(
-            str(exc),
-            retryable=self._retryable_for(exc),
+        """The provider error an SDK failure reads as (:func:`provider_error`),
+        at the status the SDK's class stands for when it carries none."""
+        return provider_error(
+            exc,
             provider=self._provider_name,
-            status_code=self._status_for(exc),
+            status=self._status_for(exc),
+            transport=self._lost_connection(exc),
         )
 
     # -- Non-streaming ------------------------------------------------------
@@ -525,7 +513,7 @@ class PolarGridAIProvider(AIProvider):
 
         stream = sdk_patch.chat_completion_stream(self._sdk, client, request)
         try:
-            async for chunk in stream:
+            async for chunk in nonempty_stream(stream):
                 model = getattr(chunk, "model", None) or model
                 # The usage comes last, as a chunk with no choices.
                 chunk_usage = self._extract_usage(chunk)

@@ -63,6 +63,19 @@ _FAKE_SERVER = textwrap.dedent(
 
         def do_POST(self):
             request = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+            if request.get("stream"):
+                chunk = {{
+                    "id": "c1", "object": "chat.completion.chunk", "created": 0, "model": "m",
+                    "choices": [{{"index": 0, "delta": {{"content": "ok"}},
+                                 "finish_reason": "stop"}}],
+                }}
+                data = ("data: " + json.dumps(chunk) + "\\n\\ndata: [DONE]\\n\\n").encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "text/event-stream")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+                return
             call = {{
                 "id": "call_1", "type": "function",
                 "function": {{"name": request["tools"][0]["function"]["name"],
