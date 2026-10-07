@@ -309,6 +309,30 @@ async def test_a_provider_error_reaches_on_error_and_the_session_stays(host: str
     assert sessions == [session]
 
 
+async def test_a_conference_whose_provider_refuses_the_connection_tells_on_error() -> None:
+    """No caller waits on a conference's lazy connect, so each refused one
+    reaches ON_ERROR, as a realtime voice channel's start raises to its
+    caller (RFC §12.10.12)."""
+    provider = _Provider(fail_connect=True)
+    rt = _Host("conference", provider, [])
+    await rt.attach()
+    heard = _observe_errors(rt.kit)
+
+    session = await rt.start()
+    await until(lambda: bool(heard))
+    await rt.kit.close()
+
+    assert session is None
+    assert heard == [
+        {
+            "channel": "host",
+            "error": "handshake refused",
+            "error_type": "ConnectionError",
+            "error_category": "realtime_provider",
+        }
+    ]
+
+
 @HOSTS
 async def test_a_session_the_provider_ended_is_let_go_and_its_call_reported(
     host: str,

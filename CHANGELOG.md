@@ -353,7 +353,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   left the room" and never answered. A provider error now fires `ON_ERROR`
   (`realtime_provider`), and a session the provider ended is let go: its calls
   are cut and reported, it is disconnected, and the next need reconnects after
-  the cooldown; nothing was wired before. A start that fails or is cancelled
+  the cooldown; nothing was wired before. A connect the provider refuses
+  fires `ON_ERROR` too (`realtime_provider`, `error_type` the error's type
+  name) at each attempt: no caller waits on the conference's lazy connect,
+  and it was only logged. A start that fails or is cancelled
   reports the calls it held and disconnects, and a call the provider abandons
   while it starts is reported cancelled, never served. The three rules are
   shared by both hosts (`injection_silent`, `fire_session_error`).

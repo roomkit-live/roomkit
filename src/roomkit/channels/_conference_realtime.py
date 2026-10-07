@@ -398,9 +398,10 @@ class ConferenceRealtime:
         bot: BotSession,
     ) -> VoiceSession | None:
         """Connect the provider for a new session of *room_id*: the session,
-        or ``None`` once a start that failed is let go. The calls it issues
-        meanwhile wait in ``room.start_calls``; a start cancelled is let go
-        the same way before the cancellation goes on."""
+        or ``None`` once a start that failed is let go, announced to ON_ERROR
+        since no caller waits to be raised to (RFC §12.10.12). The calls it
+        issues meanwhile wait in ``room.start_calls``; a start cancelled is
+        let go the same way before the cancellation goes on."""
         session = VoiceSession(
             id=f"conf-rt-{uuid.uuid4().hex}",
             room_id=room_id,
@@ -414,7 +415,7 @@ class ConferenceRealtime:
         except asyncio.CancelledError:
             self._fail_start(config, room, session)
             raise
-        except Exception:
+        except Exception as exc:
             logger.warning(
                 "Conference channel %r could not connect its realtime provider for "
                 "room %s; retrying on the next need after %.0fs",
@@ -423,6 +424,7 @@ class ConferenceRealtime:
                 CONNECT_COOLDOWN_S,
                 exc_info=True,
             )
+            self._announce_error(config, session, type(exc).__name__, str(exc))
             self._fail_start(config, room, session)
             return None
         finally:
