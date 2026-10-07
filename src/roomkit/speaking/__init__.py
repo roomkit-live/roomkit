@@ -8,10 +8,12 @@ from roomkit.speaking.base import (
     SpeakPolicy,
     SpeakTurn,
 )
+from roomkit.speaking.classifier import ClassifierSpeakPolicy
 from roomkit.speaking.mock import MockSpeakPolicy
 
 __all__ = [
     "AlwaysSpeak",
+    "ClassifierSpeakPolicy",
     "MockSpeakPolicy",
     "SpeakDecision",
     "SpeakDecisionEvent",

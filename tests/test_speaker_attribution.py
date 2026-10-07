@@ -14,8 +14,8 @@ from __future__ import annotations
 from roomkit.channels import SMSChannel
 from roomkit.channels._ai_context import (
     _SPEAKER_ATTRIBUTION_NOTE,
-    _event_speaker,
     _with_speaker_prefix,
+    event_speaker,
 )
 from roomkit.channels.ai import AIChannel
 from roomkit.core.framework import RoomKit
@@ -126,19 +126,19 @@ class TestSpeakerResolution:
 
     def test_sender_name_metadata_wins(self) -> None:
         event = self._event(metadata={"sender_name": "  Alice  "}, participant_id="p1")
-        assert _event_speaker(event, self._context([])) == "Alice"
+        assert event_speaker(event, self._context([])) == "Alice"
 
     def test_participant_display_name_is_the_fallback(self) -> None:
         event = self._event(participant_id="p1")
         ctx = self._context(
             [Participant(id="p1", room_id="r1", channel_id="sms1", display_name="Bob")]
         )
-        assert _event_speaker(event, ctx) == "Bob"
+        assert event_speaker(event, ctx) == "Bob"
 
     def test_no_name_anywhere_resolves_to_none(self) -> None:
         event = self._event(participant_id="p1")
         ctx = self._context([Participant(id="p1", room_id="r1", channel_id="sms1")])
-        assert _event_speaker(event, ctx) is None
+        assert event_speaker(event, ctx) is None
 
     def test_multimodal_content_gets_a_lead_text_part(self) -> None:
         parts = [AIImagePart(url="data:image/png;base64,x", mime_type="image/png")]

@@ -7,7 +7,8 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING
 
-from roomkit.models.enums import EventType, ParticipantStatus
+from roomkit.channels._ai_context import event_speaker
+from roomkit.models.enums import EventType, ParticipantRole, ParticipantStatus
 from roomkit.models.event import is_tool_call_record
 from roomkit.speaking.base import SpeakDecision, SpeakDecisionEvent, SpeakPolicy, SpeakTurn
 
@@ -25,6 +26,8 @@ OFFER_NOTE = (
 """The block an ``offer`` decision adds to the turn's notes."""
 
 _FALLBACK = "fallback"
+
+_NOT_PEOPLE = frozenset({ParticipantRole.AGENT, ParticipantRole.BOT})
 
 
 class AISpeakingMixin:
@@ -52,7 +55,7 @@ class AISpeakingMixin:
         policy = self._speak_policy
         if policy is None or not self._submitted_to_policy(event):
             return None
-        turn = _speak_turn(event, context)
+        turn = _speak_turn(event, context, self.channel_id)
         try:
             decision = await asyncio.wait_for(policy.decide(turn), self._speak_timeout)
         except TimeoutError:
@@ -96,16 +99,47 @@ def speak_notes(decision: SpeakDecision | None) -> tuple[str, ...]:
     return decision.notes
 
 
-def _speak_turn(event: RoomEvent, context: RoomContext) -> SpeakTurn:
-    """What the policy judges: the room's messages before *event* and its people."""
+def _speak_turn(event: RoomEvent, context: RoomContext, channel_id: str) -> SpeakTurn:
+    """What the policy judges: the room's messages before *event*, who said each,
+    and the people taking part besides the agent."""
     recent = tuple(
         e
         for e in context.recent_events
         if e.id != event.id and e.type == EventType.MESSAGE and not is_tool_call_record(e)
     )
-    people = tuple(
+    speakers = {
+        e.id: name for e in (*recent, event) if (name := event_speaker(e, context)) is not None
+    }
+    return SpeakTurn(
+        event=event,
+        recent=recent,
+        people=_people(context, (*recent, event), speakers, channel_id),
+        channel_id=channel_id,
+        speakers=speakers,
+    )
+
+
+def _people(
+    context: RoomContext,
+    events: tuple[RoomEvent, ...],
+    speakers: dict[str, str],
+    channel_id: str,
+) -> tuple[str, ...]:
+    """The room's active participants that are neither agents nor bots nor on the
+    agent's channel, or the distinct speakers of *events* when more: one
+    microphone is one participant but may carry several diarized voices."""
+    participants = tuple(
         p.display_name or p.id
         for p in context.participants
         if p.status == ParticipantStatus.ACTIVE
+        and p.role not in _NOT_PEOPLE
+        and p.channel_id != channel_id
     )
-    return SpeakTurn(event=event, recent=recent, people=people)
+    voices = tuple(
+        dict.fromkeys(
+            speakers[e.id]
+            for e in events
+            if e.source.channel_id != channel_id and e.id in speakers
+        )
+    )
+    return voices if len(voices) > len(participants) else participants

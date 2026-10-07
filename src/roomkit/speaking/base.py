@@ -9,6 +9,7 @@ turn runs; a ``silent`` decision runs no turn at all.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Literal, get_args
 
@@ -33,8 +34,22 @@ class SpeakTurn:
     the room's messages, without tool records."""
 
     people: tuple[str, ...] = ()
-    """Who takes part besides the agent, by display name (or id): one name is a
-    conversation between the agent and one person."""
+    """Who takes part besides the agent, by name: one name is a conversation
+    between the agent and one person. The room's active participants that are
+    neither agents nor bots, or the distinct speakers of the recent events when
+    more (one microphone may carry several diarized voices)."""
+
+    channel_id: str = ""
+    """The agent's channel: its own answers in ``recent`` come from it."""
+
+    speakers: Mapping[str, str] = field(default_factory=dict)
+    """Who said ``event`` and each of ``recent``, by event id, where the room
+    names them: the name the sender's transport stamped on the event, else the
+    participant's display name, as the AI context names speakers."""
+
+    def by_agent(self, event: RoomEvent) -> bool:
+        """Whether *event* is one of the agent's own answers."""
+        return bool(self.channel_id) and event.source.channel_id == self.channel_id
 
 
 @dataclass(frozen=True)

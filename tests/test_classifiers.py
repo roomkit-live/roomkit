@@ -176,3 +176,11 @@ async def test_llm_close_leaves_the_provider_to_its_owner() -> None:
     provider.close = close  # type: ignore[method-assign]
     await LLMClassifier(provider).close()
     assert closed == []
+
+
+async def test_mock_takes_one_script_per_call_the_last_repeating() -> None:
+    classifier = MockClassifier([{"addressed": 0.9}, {"addressed": 0.1}])
+    probabilities = [
+        (await classifier.classify("x", QUESTIONS)).yes("addressed") for _ in range(3)
+    ]
+    assert probabilities == [0.9, 0.1, 0.1]

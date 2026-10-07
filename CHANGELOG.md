@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A speak policy on judgments: `ClassifierSpeakPolicy` (RMK-561, RFC §6.4). On
+  each turn one classifier call answers narrow questions (directness, deferred,
+  unfinished, hush, a standing request for quiet, request, an answer to the
+  agent's own question) over the turn and the recent turns named by speaker,
+  and `compose()` reads them in order: not finished, postponed or asked for
+  quiet stays silent; an answer to its question or being addressed speaks; being
+  only wondered about offers. Every answer is reported in the decision's
+  judgments and the deciding rule in its reason. Questions are replaced by name
+  (`questions=`), the composition by overriding `decision()`; with
+  `languages=`, the speaker's language is judged over their recent turns and its
+  line joins the turn's notes. `SpeakTurn` gains `channel_id` (`by_agent()`
+  tells the agent's own answers) and `speakers` (who said each event, as the AI
+  context names speakers), and its `people` now leave out agents, bots and the
+  agent's own channel, and count the diarized voices of one microphone.
+  `MockClassifier` takes a list of scripts, one per call. Example:
+  `examples/speaking_judgments.py`.
+
 - Classifiers: narrow, typed questions answered with probabilities (RMK-255,
   RFC §6.8). A component that needs judgment where code needs understanding
   asks its questions together, in one call, and composes the answers in code.

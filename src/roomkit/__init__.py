@@ -235,6 +235,7 @@ from roomkit.sandbox import SandboxExecutor, SandboxResult
 from roomkit.skills import RequiresMatch, ScriptExecutor, Skill, SkillMetadata, SkillRegistry
 from roomkit.speaking import (
     AlwaysSpeak,
+    ClassifierSpeakPolicy,
     MockSpeakPolicy,
     SpeakDecision,
     SpeakDecisionEvent,
@@ -532,6 +533,7 @@ __all__ = [
     "YesNoAnswer",
     "YesNoQuestion",
     "AlwaysSpeak",
+    "ClassifierSpeakPolicy",
     "MockSpeakPolicy",
     "SpeakDecision",
     "SpeakDecisionEvent",

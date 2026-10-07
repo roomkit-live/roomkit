@@ -411,7 +411,7 @@ class AIContextMixin(_AIChannelContract):
             role = self._determine_role(past_event)
             content = self._transcript_content(past_event)
             if content:
-                speaker = _event_speaker(past_event, context) if role == "user" else None
+                speaker = event_speaker(past_event, context) if role == "user" else None
                 past_turns.append((role, content, speaker))
         return past_turns
 
@@ -421,7 +421,7 @@ class AIContextMixin(_AIChannelContract):
         """The turn's input and its speaker; an instruction marked as the
         application's, with no speaker."""
         current_content = self._transcript_content(event)
-        current_speaker = _event_speaker(event, context)
+        current_speaker = event_speaker(event, context)
         if event.type == EventType.INSTRUCTION:
             # The application's direction for this one turn (RFC §10.1.1). It
             # is the turn's input — a system-role message after the history is
@@ -827,7 +827,7 @@ class AIContextMixin(_AIChannelContract):
         return ""
 
 
-def _event_speaker(event: RoomEvent, context: RoomContext) -> str | None:
+def event_speaker(event: RoomEvent, context: RoomContext) -> str | None:
     """Display name of whoever is behind an event, or ``None``.
 
     ``metadata["sender_name"]`` is the stamp transports and hosts write at
