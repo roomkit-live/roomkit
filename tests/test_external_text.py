@@ -1180,6 +1180,12 @@ class TestPersonName:
         assert person_name("[]:") == ""
         assert person_name(None) == ""
 
+    def test_keeps_no_number_that_reads_as_a_rank(self) -> None:
+        """``⑵`` folds to ``(2)``, the form an author's rank takes."""
+        assert person_name("Alice \u2475") == "Alice"
+        assert person_name("Alice \u2489") == "Alice"
+        assert person_name("Zoë 2 \u2461") == "Zoë 2 \u2461"
+
 
 def test_one_line_folds_every_line_break() -> None:
     assert one_line("a\nb\r\nc d\te") == "a b c d e"

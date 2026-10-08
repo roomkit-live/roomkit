@@ -270,14 +270,22 @@ Bob``, a Devanagari visarga ``ः`` as well) or open a quote (``ײ``)."""
 def _kept(text: str, extra: str, other: str) -> str:
     """*text* with each character that is neither a letter, one of its marks, a
     digit nor in *extra* made *other*, a letter that reads as a colon or a quote
-    included; *text* composed first, so that an accent written apart rides its
-    letter."""
+    included, and a number that reads as punctuation (``⑵``, ``(2)`` once
+    folded, the form of an author's rank); *text* composed first, so that an
+    accent written apart rides its letter."""
     return "".join(
-        char
-        if char not in _IMPOSTORS and (char in extra or unicodedata.category(char)[0] in "LMN")
-        else other
+        char if char in extra or _a_name_s(char) else other
         for char in unicodedata.normalize("NFC", text)
     )
+
+
+@functools.cache
+def _a_name_s(char: str) -> bool:
+    """Whether *char* is a letter, a mark or a digit that reads as one."""
+    if char in _IMPOSTORS or unicodedata.category(char)[0] not in "LMN":
+        return False
+    folded = unicodedata.normalize("NFKC", char)
+    return not any(unicodedata.category(part)[0] in "PS" for part in folded)
 
 
 def identifier(value: Any, fallback: str, limit: int = 64) -> str:
