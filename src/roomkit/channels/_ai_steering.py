@@ -7,6 +7,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from roomkit.channels._realtime_context import ending_cause, held_by
+from roomkit.channels._turn_notes import without_header_copies
 from roomkit.core.task_utils import CLOSE_WAIT_S
 from roomkit.models.steering import Cancel, InjectMessage, SteeringDirective, UpdateSystemPrompt
 from roomkit.providers.ai.base import AIContext, AIMessage
@@ -141,6 +142,9 @@ class AISteeringMixin(_AIChannelContract):
     ) -> tuple[AIContext, bool]:
         """Drain all pending steering directives, applying them to *context*.
 
+        An injected message is the conversation's text: a copy of the turn's
+        notes' header it holds is replaced (RFC §6.4).
+
         Returns:
             (updated_context, should_cancel)
         """
@@ -156,7 +160,8 @@ class AISteeringMixin(_AIChannelContract):
                 should_cancel = True
             elif isinstance(directive, InjectMessage):
                 logger.info("Steering: injecting %s message", directive.role)
-                context.messages.append(AIMessage(role=directive.role, content=directive.content))
+                content = without_header_copies(directive.content)
+                context.messages.append(AIMessage(role=directive.role, content=content))
             elif isinstance(directive, UpdateSystemPrompt):
                 logger.info("Steering: appending to system prompt")
                 context = context.model_copy(

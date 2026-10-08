@@ -20,6 +20,7 @@ notes, and the header a hook or a reader finds is the one the channel placed.
 from __future__ import annotations
 
 import re
+from itertools import groupby
 from typing import Any
 
 from roomkit.channels._user_text import joined
@@ -41,12 +42,32 @@ COPIED_HEADER_MARK = (
 not place (RFC §6.4)."""
 
 
+_INVISIBLE = "\u00ad\u200b-\u200f\u2060-\u2064\ufeff"
+"""Characters a text holds without showing them: a soft hyphen, zero-width
+spaces and joiners, direction marks, word joiners, a byte order mark."""
+
+_APOSTROPHE = "['\u2019\u02bc]"
+
+
 def _copy_pattern(header: str) -> re.Pattern[str]:
-    """*header*'s words in order, in any case and spacing, with a straight or
-    typographic apostrophe, with or without its brackets."""
-    words = [re.escape(word).replace("'", "['’ʼ]") for word in header.strip("[]").split()]
-    body = r"\s+".join(words)
-    return re.compile(rf"(?:\[\s*)?{body}(?:\s*\])?", re.IGNORECASE)
+    """*header* as a model reads it: its words in order, in any case, with any
+    spacing, punctuation and invisible character between them (none included)
+    or inside a word, a straight or typographic apostrophe, the brackets
+    optional and the closing punctuation taken with the copy.
+
+    One quantified class between two words, never two in a row: a long run of
+    spaces after a partial copy is then scanned once, not once per split."""
+    marks = re.escape("".join(sorted(set(re.findall(r"[^\w\s'\[\]]", header)))))
+    gap = rf"[\s{_INVISIBLE}{marks}]*"
+    body = gap.join(map(_word_pattern, re.findall(r"[\w']+", header)))
+    end = rf"(?:{gap}\]|[{marks}]+)?"
+    return re.compile(rf"(?:\[{gap})?{body}{end}", re.IGNORECASE)
+
+
+def _word_pattern(word: str) -> str:
+    """A word of the header, an invisible character allowed between its letters."""
+    letters = (_APOSTROPHE if char == "'" else re.escape(char) for char in word)
+    return f"[{_INVISIBLE}]*".join(letters)
 
 
 _HEADER_COPY = _copy_pattern(TURN_NOTES_HEADER)
@@ -81,20 +102,35 @@ def conversation_without_header_copies(messages: list[AIMessage]) -> list[AIMess
 
 def _without_copies(message: AIMessage) -> AIMessage:
     """*message* with each copy of the header in its text replaced; *message*
-    itself when its text holds none. A part other than text (an image, a
-    thinking block a provider wants back as it was) is left as it is."""
+    itself when its text holds none."""
     content = message.content
-    cleaned: str | list[Any]
-    if isinstance(content, str):
-        cleaned = without_header_copies(content)
-    else:
-        cleaned = [
-            AITextPart(text=without_header_copies(part.text))
-            if isinstance(part, AITextPart)
-            else part
-            for part in content
-        ]
+    cleaned: str | list[Any] = (
+        without_header_copies(content)
+        if isinstance(content, str)
+        else _parts_without_copies(content)
+    )
     return message if cleaned == content else message.model_copy(update={"content": cleaned})
+
+
+def _parts_without_copies(parts: list[Any]) -> list[Any]:
+    """*parts* with each copy of the header in their text replaced, one that runs
+    over adjacent text parts included. A part other than text (an image, a
+    thinking block a provider wants back as it was) is kept as it is."""
+    cleaned: list[Any] = []
+    for is_text, group in groupby(parts, key=lambda part: isinstance(part, AITextPart)):
+        run = list(group)
+        cleaned.extend(_text_run_without_copies(run) if is_text else run)
+    return cleaned
+
+
+def _text_run_without_copies(run: list[AITextPart]) -> list[AITextPart]:
+    """Adjacent text parts, each with its copies replaced, or as one part when a
+    copy runs over two of them: the model reads them back to back."""
+    parts = [AITextPart(text=without_header_copies(part.text)) for part in run]
+    joined_text = "".join(part.text for part in parts)
+    if _HEADER_COPY.search(joined_text) is None:
+        return parts
+    return [AITextPart(text=without_header_copies(joined_text))]
 
 
 def with_turn_notes(messages: list[AIMessage], notes: str | None) -> list[AIMessage]:
