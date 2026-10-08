@@ -18,7 +18,12 @@ from copy import deepcopy
 from typing import TYPE_CHECKING, Any
 
 from roomkit.channels._acp_client import _SDK, _TurnDone, _TurnState
-from roomkit.channels._acp_context import compose_prompt, labelled_request, room_context_block
+from roomkit.channels._acp_context import (
+    compose_prompt,
+    labelled_request,
+    room_context_block,
+    window_labels,
+)
 from roomkit.channels._acp_usage import (
     _apply_transport_usage,
     _report_context,
@@ -55,6 +60,7 @@ class ACPTurnMixin:
     _agent_info: dict[str, Any] | None
     _turns: dict[str, _TurnState]
     _prompted_index: dict[str, int]
+    _labelled_rooms: set[str]
     _room_history: int
     _after_response_hook: AfterResponseCallback | None
     _closed: bool
@@ -170,6 +176,39 @@ class ACPTurnMixin:
             raise asyncio.CancelledError
         return session_id
 
+    def _prompt_text(
+        self,
+        room_id: str,
+        blocks: Sequence[str],
+        context: RoomContext,
+        trigger: RoomEvent,
+        text: str,
+        *,
+        standalone: bool,
+    ) -> tuple[str, bool]:
+        """The prompt for *trigger*, and whether its request opens with its
+        sender's label: the host's blocks, the room context it missed, then
+        the request (RFC §6.4, §19.3.2), one ranking naming each source one
+        way in both. A standalone turn reads nothing of the room: no
+        catch-up, and its session was born empty."""
+        labels = window_labels(context, trigger, self.channel_id)
+        catch_up = (
+            ""
+            if standalone
+            else room_context_block(
+                context,
+                self.channel_id,
+                after_index=self._prompted_index.get(room_id, _UNSEEN),
+                trigger=trigger,
+                limit=self._room_history,
+                labels=labels,
+            )
+        )
+        request, labelled = labelled_request(
+            labels, trigger, text, session_labelled=room_id in self._labelled_rooms
+        )
+        return compose_prompt(blocks, catch_up, request), labelled
+
     async def _turn_stream(
         self,
         room_id: str,
@@ -203,21 +242,9 @@ class ACPTurnMixin:
         if self._agent_info is not None:
             turn.usage_metadata["adapter_info"] = deepcopy(self._agent_info)
         self._turns[session_id] = turn
-        # A standalone turn reads nothing of the room: no catch-up, and
-        # its session was born empty.
-        catch_up = (
-            ""
-            if standalone
-            else room_context_block(
-                context,
-                self.channel_id,
-                after_index=self._prompted_index.get(room_id, _UNSEEN),
-                trigger=trigger,
-                limit=self._room_history,
-            )
+        prompt_text, turn.labelled = self._prompt_text(
+            room_id, blocks, context, trigger, text, standalone=standalone
         )
-        request = labelled_request(context, trigger, text, self.channel_id)
-        prompt_text = compose_prompt(blocks, catch_up, request)
         prompt = [self._sdk().acp.text_block(prompt_text)]
         # The cursor commits only after the agent accepts the prompt. A
         # generator body that never runs, or a prompt rejected before
@@ -364,6 +391,8 @@ class ACPTurnMixin:
                 self._prompted_index[room_id] = max(
                     seen_index, self._prompted_index.get(room_id, _UNSEEN)
                 )
+                if turn.labelled:
+                    self._labelled_rooms.add(room_id)
             # The turn's own accounting, and the only place it is offered:
             # the usage notifications describe the context window, not what
             # answering cost.

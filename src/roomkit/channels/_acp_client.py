@@ -82,6 +82,9 @@ class _TurnState:
     thinking_open: bool = False
     runner: asyncio.Task[Any] | None = None
     rebuilding: bool = False
+    # The request opened with its sender's label: once the agent accepts it,
+    # the room's session labels every later request (RFC §6.4).
+    labelled: bool = False
     """The runner is rebuilding a refused session, before another prompt."""
     cancel_requested: bool = False
     started_at: float = field(default_factory=time.monotonic)
@@ -361,6 +364,7 @@ class ACPConnectionMixin:
     _turn_sessions: dict[str, str]
     _session_options: dict[str, list[Any]]
     _prompted_index: dict[str, int]
+    _labelled_rooms: set[str]
     _agent_info: dict[str, Any] | None
     _agent_closes_sessions: bool
     _handler_started: bool
@@ -404,6 +408,7 @@ class ACPConnectionMixin:
                 # replacement agent starts empty and must receive the visible
                 # room history again on its first prompt.
                 self._prompted_index.clear()
+                self._labelled_rooms.clear()
 
             sdk = self._sdk()
             if sdk.acp.PROTOCOL_VERSION != _STABLE_PROTOCOL_VERSION:

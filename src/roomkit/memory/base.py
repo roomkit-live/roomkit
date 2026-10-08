@@ -33,11 +33,17 @@ class MemoryResult:
     the history a provider caches (RFC §20.2). A provider that wraps another
     and rebuilds its result carries the inner ``notes``
     (``dataclasses.replace`` keeps them).
+
+    ``speakers`` is the labels ``messages`` name participants by, as the
+    runtime gives them (a summary's lines, ``Alice``, ``@sms1``): the channel
+    counts them toward labelling the turns that follow, so a conversation a
+    summary named several people in labels its turns (RFC §6.4).
     """
 
     messages: list[AIMessage] = field(default_factory=list)
     events: list[RoomEvent] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
+    speakers: list[str] = field(default_factory=list)
 
 
 class MemoryProvider(ABC):

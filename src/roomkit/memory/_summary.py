@@ -11,7 +11,7 @@ from roomkit._text import CONVERSATION_SUMMARY_TAG, fence, quoted
 from roomkit.channels._speaker import several_speakers, turn_labels
 from roomkit.memory.token_estimator import extract_event_text
 from roomkit.models.context import RoomContext
-from roomkit.models.enums import ChannelType
+from roomkit.models.enums import ChannelType, EventType
 from roomkit.models.event import RoomEvent
 from roomkit.providers.ai.base import AIMessage
 
@@ -29,25 +29,48 @@ EVENT_TEXT_LIMIT = 2000
 @dataclass(frozen=True)
 class SummaryLines:
     """The lines a summarizer reads for the turns it summarizes, for
-    *channel_id*'s agent answering *current* in the room of *context*: each
-    turn quoted on one line after who said it, so no turn can write a line
-    of another (RFC §6.4).
+    *channel_id*'s agent answering *current* in the room of *context*, with
+    *kept*, the turns the memory keeps after the summary: each turn quoted
+    on one line after who said it, so no turn can write a line of another
+    (RFC §6.4).
 
-    When the turns and *current* hold several speakers, a participant's line
-    opens with the label the runtime gives its author, out of the quote, and
-    ``[assistant]`` names only *channel_id*'s agent (another agent speaks
-    under its label, ``@ai2``); otherwise, as in a one-to-one conversation,
-    a line reads ``[assistant]`` or ``[user]``."""
+    The threshold is the conversation's, over every turn the memory
+    retrieved and *current* (a turn with no text, the agent's own and the
+    application's instruction aside): when they hold several speakers, a
+    participant's line opens with the label the runtime gives its author,
+    out of the quote, and ``[assistant]`` names only *channel_id*'s agent
+    (another agent speaks under its label, ``@ai2``); otherwise, as in a
+    one-to-one conversation, a line reads ``[assistant]`` or ``[user]``."""
 
     context: RoomContext
     current: RoomEvent | None = None
     channel_id: str | None = None
+    kept: tuple[RoomEvent, ...] = ()
 
     def __call__(self, events: Sequence[RoomEvent]) -> list[str]:
-        turns = [*events, *([self.current] if self.current is not None else [])]
+        labels = self._labels(events)
+        return [self._line(event, labels.get(event.id)) for event in events]
+
+    def named(self, events: Sequence[RoomEvent]) -> list[str]:
+        """The labels the lines for *events* name participants by, for
+        :attr:`MemoryResult.speakers`; none when they read ``[user]``."""
+        labels = self._labels(events)
+        return sorted({label for e in events if (label := labels.get(e.id)) and not self._own(e)})
+
+    def _labels(self, events: Sequence[RoomEvent]) -> dict[str, str | None]:
+        """Each turn's label, or none when the turns hold one speaker."""
+        current = [self.current] if self.current is not None else []
+        turns = list({e.id: e for e in (*events, *self.kept, *current)}.values())
         labels = turn_labels(turns, self.context)
-        several = several_speakers(labels[e.id] for e in turns if not self._own(e))
-        return [self._line(event, labels.get(event.id) if several else None) for event in events]
+        counted = (labels.get(e.id) for e in turns if self._counts(e))
+        return labels if several_speakers(counted) else {}
+
+    def _counts(self, event: RoomEvent) -> bool:
+        """Whether *event* counts toward the threshold, as the conversation's
+        turns do."""
+        if self._own(event) or event.type == EventType.INSTRUCTION:
+            return False
+        return bool(extract_event_text(event).strip())
 
     def _own(self, event: RoomEvent) -> bool:
         """Whether *event* is the summarized agent's own turn."""

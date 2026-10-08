@@ -2,7 +2,8 @@
 
 Besides the turn's notes' header, the runtime writes marks in a model's
 input: the application's instruction, an answer that was cut off, a
-summary's header, the lines of the room context an ACP agent receives. A
+summary's header, the lines of the room context an ACP agent receives, the
+note that says how speakers are labelled. A
 participant's text holding a copy of one would read as the runtime's, so the
 copy is replaced as the text enters a transcript or a prompt, before the
 runtime places its own marks; a mark's bracketed opening alone counts as a
@@ -20,6 +21,7 @@ from roomkit.channels._acp_marks import ROOM_CONTEXT_END, ROOM_CONTEXT_OPENING
 from roomkit.channels._ai_cuts import CUT_MARK
 from roomkit.channels._compaction import SUMMARY_HEADER as COMPACTION_HEADER
 from roomkit.channels._instruction import INSTRUCTION_MARKER
+from roomkit.channels._speaker import SPEAKER_ATTRIBUTION_NOTE
 from roomkit.channels._turn_notes import cleaned_content, without_header_copies
 from roomkit.memory._summary import SUMMARY_HEADER as MEMORY_SUMMARY_HEADER
 
@@ -31,6 +33,7 @@ _MARKS = (
     CUT_MARK,
     COMPACTION_HEADER,
     MEMORY_SUMMARY_HEADER,
+    SPEAKER_ATTRIBUTION_NOTE,
 )
 """The runtime's marks long enough to be told from prose without their
 brackets, the notes' header aside. The room context's first line ends with a

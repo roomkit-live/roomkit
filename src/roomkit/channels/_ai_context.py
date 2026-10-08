@@ -395,6 +395,9 @@ class AIContextMixin(_AIChannelContract):
         speakers = {label for _, _, label in past_turns if label}
         if current_content and current_label:
             speakers.add(current_label)
+        # The people a summary named count too: a summary that names Alice
+        # leaves no unlabelled "Alice: ..." turn after it (RFC §6.4).
+        speakers.update(memory_result.speakers)
         attribute_speakers = several_speakers(speakers)
 
         # Pre-built messages from memory (e.g. summaries)

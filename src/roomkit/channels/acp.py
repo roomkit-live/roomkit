@@ -243,6 +243,8 @@ class ACPChannel(ACPConnectionMixin, ACPSessionsMixin, ACPTurnMixin, ACPEventsMi
         self._session_rooms: dict[str, str] = {}
         self._session_options: dict[str, list[Any]] = {}
         self._prompted_index: dict[str, int] = {}
+        # Rooms whose session was sent a labelled request (RFC §6.4).
+        self._labelled_rooms: set[str] = set()
         self._turns: dict[str, _TurnState] = {}
         self._agent_info: dict[str, Any] | None = None
         self._agent_closes_sessions = True
@@ -541,3 +543,4 @@ class ACPChannel(ACPConnectionMixin, ACPSessionsMixin, ACPTurnMixin, ACPEventsMi
         self._session_rooms.clear()
         self._session_options.clear()
         self._prompted_index.clear()
+        self._labelled_rooms.clear()

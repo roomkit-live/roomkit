@@ -181,6 +181,7 @@ class SummarizingMemory(_MemoryWrapper):
 
         trimmed = events[:keep_from]
         kept = events[keep_from:]
+        lines = replace(lines, kept=tuple(kept))
 
         # Extract any prior summary text for chaining
         prior_summary = self._extract_prior_summary(prior_messages)
@@ -188,7 +189,12 @@ class SummarizingMemory(_MemoryWrapper):
 
         # Preserve non-summary prior messages from the inner provider
         non_summary = [m for m in prior_messages if not is_summary(m)]
-        return replace(inner, messages=[*non_summary, summary_message(summary)], events=kept)
+        return replace(
+            inner,
+            messages=[*non_summary, summary_message(summary)],
+            events=kept,
+            speakers=sorted({*inner.speakers, *lines.named(trimmed)}),
+        )
 
     async def _get_or_create_summary(
         self,
@@ -198,11 +204,12 @@ class SummarizingMemory(_MemoryWrapper):
         lines: SummaryLines,
     ) -> str:
         """Generate or retrieve a cached summary for the given events."""
-        # Content-derived cache key to avoid cross-room and temporal collisions;
-        # the agent it is for too, since its own turns read [assistant].
-        event_ids = ":".join(e.id for e in events)
+        # Content-derived cache key to avoid cross-room and temporal collisions:
+        # the lines as the summarizer reads them, which name the turns' authors
+        # for the agent the summary is for.
+        event_texts = lines(events)
         cache_key = hashlib.md5(
-            f"{room_id}:{lines.channel_id}:{event_ids}".encode(), usedforsecurity=False
+            "\n".join([room_id, *event_texts]).encode(), usedforsecurity=False
         ).hexdigest()
         now = asyncio.get_running_loop().time()
 
@@ -217,8 +224,6 @@ class SummarizingMemory(_MemoryWrapper):
         if len(self._summary_cache) >= _MAX_CACHE_ENTRIES:
             oldest_key = next(iter(self._summary_cache))
             del self._summary_cache[oldest_key]
-
-        event_texts = lines(events)
 
         prompt_parts = [
             "Summarize this conversation concisely. Focus on: decisions made, "

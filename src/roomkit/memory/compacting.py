@@ -105,13 +105,14 @@ class CompactingMemory(_MemoryWrapper):
         kept_events = events[keep_from:]
 
         # Summarize trimmed events
-        lines = SummaryLines(context, current_event, channel_id)
+        lines = SummaryLines(context, current_event, channel_id, tuple(kept_events))
         summary = await self._get_or_create_summary(room_id, trimmed_events, lines, channel_id)
 
         return replace(
             inner_result,
             messages=[*inner_result.messages, summary_message(summary)],
             events=kept_events,
+            speakers=sorted({*inner_result.speakers, *lines.named(trimmed_events)}),
         )
 
     async def _get_or_create_summary(

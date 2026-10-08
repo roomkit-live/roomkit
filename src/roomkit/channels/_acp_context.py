@@ -66,7 +66,9 @@ def acp_event_text(event: RoomEvent) -> str:
     That is where it differs from ``extract_event_text``, which reads a rich
     event's markup body. A copy of a runtime mark in it is replaced, so it
     cannot pass for the runtime's (RFC §6.4). A host building an ACP prompt of
-    its own reads an event as the channel does through this.
+    its own reads an event's text as the channel does through this; the
+    channel also opens a request with its sender's label when several people
+    speak, which such a host does itself.
     """
     return without_mark_copies(_plain_text(event))
 
@@ -88,8 +90,11 @@ def room_context_block(
     after_index: int,
     trigger: RoomEvent,
     limit: int,
+    labels: dict[str, str | None] | None = None,
 ) -> str:
-    """The room's conversation since *after_index*, as one prompt section.
+    """The room's conversation since *after_index*, as one prompt section,
+    each turn named by *labels* when given (:func:`window_labels`, the
+    request's ranking), else ranked over the turns shown.
 
     Returns ``""`` when there is nothing the agent missed — the common case
     once it is in a back-and-forth, and the reason an ordinary exchange pays
@@ -146,7 +151,8 @@ def room_context_block(
         )
 
     shown = missed[-limit:]
-    labels = turn_labels(shown, context)
+    if labels is None:
+        labels = turn_labels(shown, context)
     # Each message quoted on its line: it cannot end the block nor start a
     # line of its own (RFC §6.4).
     lines = [
@@ -243,15 +249,11 @@ async def contributed_blocks(
         return []
 
 
-def labelled_request(context: RoomContext, trigger: RoomEvent, text: str, channel_id: str) -> str:
-    """The request an ACP turn sends for *trigger*: *text*, opened with its
-    sender's label after the note that says how labels read, when the agent's
-    visible window and the request hold several speakers (RFC §6.4), so an
-    unnamed sender who writes ``Alice:`` does not read as Alice. A one-to-one
-    room's request, and the application's instruction, are sent as they are.
-    """
-    if trigger.type == EventType.INSTRUCTION or not text.strip():
-        return text
+def window_labels(
+    context: RoomContext, trigger: RoomEvent, channel_id: str
+) -> dict[str, str | None]:
+    """The label of each turn the agent may read and of *trigger*, ranked
+    once, so the room context and the request name each source one way."""
     window = [
         event
         for event in visible_events(context, channel_id)
@@ -260,11 +262,27 @@ def labelled_request(context: RoomContext, trigger: RoomEvent, text: str, channe
         and event.type not in _SKIPPED_TYPES
         and acp_event_text(event).strip()
     ]
-    labels = turn_labels([*window, trigger], context)
+    return turn_labels([*window, trigger], context)
+
+
+def labelled_request(
+    labels: dict[str, str | None], trigger: RoomEvent, text: str, *, session_labelled: bool
+) -> tuple[str, bool]:
+    """The request an ACP turn sends for *trigger*, and whether it opens with
+    its sender's label (RFC §6.4): it does when *labels* (:func:`window_labels`)
+    name several speakers, or once the session was sent a labelled request
+    (*session_labelled*), since the session keeps what it was sent; the first
+    labelled request of a session carries the note that says how labels read.
+    So an unnamed sender who writes ``Alice:`` does not read as Alice. A
+    one-to-one room's request, and the application's instruction, are sent
+    as they are."""
+    if trigger.type == EventType.INSTRUCTION or not text.strip():
+        return text, False
     label = labels.get(trigger.id)
-    if label is None or not several_speakers(labels.values()):
-        return text
-    return f"{SPEAKER_ATTRIBUTION_NOTE}\n\n{label}: {text}"
+    if label is None or not (session_labelled or several_speakers(labels.values())):
+        return text, False
+    request = f"{label}: {text}"
+    return (request if session_labelled else f"{SPEAKER_ATTRIBUTION_NOTE}\n\n{request}"), True
 
 
 def compose_prompt(blocks: Sequence[str], catch_up: str, request: str) -> str:
