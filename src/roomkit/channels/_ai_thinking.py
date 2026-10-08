@@ -86,18 +86,19 @@ class _RoomMind:
         while self._pending is not None:
             (context, spoke), ticket = self._pending, self._asked
             self._pending = None
-            previous = self.thought
             started = time.monotonic()
-            thought = await self._next(previous, context)
+            thought = await self._next(self.thought, context)
             duration_ms = round((time.monotonic() - started) * 1000)
             if self._spoke != spoke:
                 thought = thought.said()  # it spoke since the context: that is said now
             async with self._changed:
-                self.thought = thought
+                # What the thought replaces is read now: the agent may have
+                # spoken during the call, emptying the one the call started from.
+                replaced, self.thought = self.thought, thought
                 self._done = ticket
                 self._changed.notify_all()
-            if thought != previous:
-                await self._channel._report_thought(self.room_id, thought, previous, duration_ms)
+            if thought != replaced:
+                await self._channel._report_thought(self.room_id, thought, replaced, duration_ms)
 
     async def _next(self, previous: Thought, context: AIContext) -> Thought:
         try:

@@ -24,9 +24,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   policy took (the channel's bound when it did not decide in time) and
   `SpeakDecisionEvent.asked_again` marks the decision the policy takes again
   once the agent thought; `ThoughtEvent.duration_ms` is how long the thinker
-  call took, `None` for a thought emptied because the agent spoke. A policy or a
-  thinker is measured from the hooks, without wrapping it in a class of one's
-  own. Both fields have defaults: an event built positionally still is.
+  call took, `None` for a thought emptied because the agent spoke. A policy is
+  measured from the hook on every decision, without wrapping it in a class of
+  one's own; a thinker on the calls that change its thought (a call that fails
+  or keeps the thought fires no `ON_THOUGHT`, as before). A thought that comes
+  back after the agent spoke during its call now reports the emptied thought it
+  replaces, and fires nothing when it changes nothing. The new fields have
+  defaults: an event built positionally stays valid.
   Example: `examples/thinking_while_listening.py`.
 
 - `supports_reasoning_effort_with_tools` on `OpenAIConfig` and `AzureAIConfig`:
