@@ -6,7 +6,11 @@
 
 MAI-Transcribe detects no turns: a pipeline VAD finds where you stop, and
 the provider commits the utterance then; the final transcript comes about
-0.13 s later. So this example always runs a VAD (``VAD=0`` is refused).
+0.13 s later. So this example always runs a VAD (``VAD=0`` is refused). The
+VAD waits 800 ms of silence, not its usual 500: at 500, a pause in the middle
+of a sentence ended the turn, and a word cut by it was transcribed in two
+halves out of context ("pas su-" then "perbit"). Each 100 ms more is 100 ms
+more before every answer.
 
 One Foundry resource in a region serving both models (``swedencentral``)
 answers both providers with the same key. MAI-Transcribe-2-Streaming must be
@@ -29,16 +33,20 @@ Environment variables:
     VOICE                 Voice name (default: en-US-Harper:MAI-Voice-2.1-Flash;
                           fr-FR-Soleil:MAI-Voice-2.1-Flash speaks French)
     STYLE                 A style the voice supports, e.g. customer_call_center
+    RATE                  Speaking rate, e.g. +15% (default), 0% for the voice's own
 
     --- Audio (optional) ---
     VAD                   energy | silero | ten (default: energy)
+    VAD_SILENCE_MS        Silence that ends your turn, in ms (default: 800)
     AEC                   webrtc | speex | 0 (default: webrtc)
+    INTERRUPTION          semantic | words | confirmed | immediate | disabled
+                          (default: semantic: an "okay" does not stop the agent)
 
 Run with:
     ANTHROPIC_API_KEY=... AZURE_SPEECH_KEY=... AZURE_SPEECH_REGION=swedencentral \\
     AZURE_MAI_ENDPOINT=https://<resource>.services.ai.azure.com \\
         uv run --extra azure-speech --extra anthropic --extra local-audio \\
-        python examples/voice_azure_mai_agent.py
+        --extra webrtc-aec python examples/voice_azure_mai_agent.py
 
 Use headphones, or keep AEC on: without echo cancellation the agent hears
 itself. Press Ctrl+C to stop.
@@ -54,6 +62,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from shared import (
     build_aec,
+    build_interruption,
     build_pipeline,
     build_vad,
     require_env,
@@ -67,6 +76,7 @@ from roomkit import ChannelCategory, HookResult, HookTrigger, RoomKit, VoiceChan
 from roomkit.channels.ai import AIChannel
 from roomkit.providers.anthropic import AnthropicAIProvider, AnthropicConfig
 from roomkit.voice.backends.local import LocalAudioBackend
+from roomkit.voice.pipeline import VADConfig
 from roomkit.voice.stt.azure_mai import (
     DEFAULT_DEPLOYMENT,
     AzureMAISTTConfig,
@@ -105,7 +115,8 @@ async def main() -> None:
     if vad is None:
         sys.exit("MAI-Transcribe detects no turns: run with a VAD (VAD=energy|silero|ten).")
     # No aec= on the pipeline: the backend feeds the echo reference itself.
-    pipeline = build_pipeline(vad=vad)
+    silence_ms = int(os.environ.get("VAD_SILENCE_MS", "800"))
+    pipeline = build_pipeline(vad=vad, vad_config=VADConfig(silence_threshold_ms=silence_ms))
 
     # --- MAI-Transcribe: one stream per utterance, committed when it ends ------
     language = voice_language(None)
@@ -125,13 +136,24 @@ async def main() -> None:
             region=env["AZURE_SPEECH_REGION"],
             voice=os.environ.get("VOICE", DEFAULT_VOICE),
             style=os.environ.get("STYLE") or None,
+            # MAI-Voice-2.1-Flash speaks slowly for a conversation; Flash
+            # follows the rate closely (+20% took 4.7 s down to 3.8 s).
+            rate=os.environ.get("RATE", "+15%") or None,
             sample_rate=OUTPUT_RATE,
         )
     )
     logger.info("Hearing in %s, speaking with %s", language or "any language", tts.default_voice)
 
     # --- Channels ---------------------------------------------------------------
-    voice = VoiceChannel("voice", stt=stt, tts=tts, backend=backend, pipeline=pipeline)
+    voice = VoiceChannel(
+        "voice",
+        stt=stt,
+        tts=tts,
+        backend=backend,
+        pipeline=pipeline,
+        # The agent keeps talking through an "okay" and stops for anything else.
+        interruption=build_interruption(),
+    )
     ai = AIChannel(
         "ai",
         provider=AnthropicAIProvider(

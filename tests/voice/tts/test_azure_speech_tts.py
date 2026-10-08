@@ -119,6 +119,24 @@ class TestRender:
         assert express.getAttribute("style") == "joyful"
         assert express.firstChild.data == "Great news!"
 
+    async def test_a_rate_wraps_the_text_inside_the_style(self) -> None:
+        fake = FakeAzureSpeech()
+
+        await _pcm(_provider(fake, style="joyful", rate="+15%"), "Great news!")
+
+        document = _ssml(fake.requests[0])
+        [express] = document.getElementsByTagName("mstts:express-as")
+        [prosody] = express.getElementsByTagName("prosody")
+        assert prosody.getAttribute("rate") == "+15%"
+        assert prosody.firstChild.data == "Great news!"
+
+    async def test_no_rate_leaves_the_voice_its_own_pace(self) -> None:
+        fake = FakeAzureSpeech()
+
+        await _pcm(_provider(fake))
+
+        assert _ssml(fake.requests[0]).getElementsByTagName("prosody") == []
+
     async def test_text_is_spoken_as_written_never_read_as_markup(self) -> None:
         fake = FakeAzureSpeech()
         text = 'Use <break time="5s"/> & "quotes" </voice><voice name="x">'
@@ -234,6 +252,15 @@ class TestConfig:
     def test_a_voice_without_locale_and_no_language_is_refused(self) -> None:
         with pytest.raises(ValueError, match="names no locale"):
             AzureSpeechTTSConfig(api_key="k", region="swedencentral", voice="MAI-Voice-2.1")
+
+    @pytest.mark.parametrize("rate", ["+20%", "-10%", "12.5%", "1.2", "fast", "x-slow", "default"])
+    def test_rates_ssml_takes_are_accepted(self, rate: str) -> None:
+        assert AzureSpeechTTSConfig(api_key="k", region="eastus", rate=rate).rate == rate
+
+    @pytest.mark.parametrize("rate", ["", "20", "+20", "1000%", "faster", '+20%"><x'])
+    def test_a_rate_ssml_does_not_take_is_refused(self, rate: str) -> None:
+        with pytest.raises(ValueError, match="rate must be"):
+            AzureSpeechTTSConfig(api_key="k", region="eastus", rate=rate)
 
     def test_a_language_that_is_no_tag_is_refused(self) -> None:
         with pytest.raises(ValueError, match="BCP-47"):

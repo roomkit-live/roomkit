@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `AzureSpeechTTSConfig.rate`, the speaking rate as SSML `prosody` takes it
+  (`"+15%"`, `"1.2"`, `"fast"`), validated and escaped (RMK-618).
+  MAI-Voice-2.1-Flash speaks slowly for a conversation and follows it closely
+  (measured 2026-10-08). The MAI voice agent example
+  (`examples/voice_azure_mai_agent.py`) speaks at `+15%`, waits 800 ms of
+  silence before ending a turn instead of 500 (a pause mid-sentence cut a word
+  into two halves transcribed out of context), and takes semantic barge-in, so
+  an "okay" no longer stops the agent; `RATE`, `VAD_SILENCE_MS` and
+  `INTERRUPTION` change them.
+
 - Microsoft's MAI speech models, on a Microsoft Foundry resource, without
   an Azure SDK (RMK-608, `pip install roomkit[azure-speech]`). `AzureMAISTTProvider`
   streams to MAI-Transcribe-2-Streaming over its realtime WebSocket: partials

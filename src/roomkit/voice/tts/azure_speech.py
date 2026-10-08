@@ -51,9 +51,14 @@ OUTPUT_FORMATS: dict[int, str] = {
 _LOCALE = re.compile(r"^([a-z]{2,3}-[A-Z]{2})-")
 _LANGUAGE_TAG = re.compile(r"^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$")
 _REGION = re.compile(r"^[a-z0-9]+$")
+# SSML prosody rates: a relative change (+20%), a multiplier (1.2) or a keyword.
+_RATE = re.compile(
+    r"^(?:[+-]?\d{1,3}(?:\.\d+)?%|\d(?:\.\d+)?"
+    r"|x-slow|slow|medium|fast|x-fast|default)$"
+)
 # Characters XML 1.0 cannot carry at all, escaped or not: dropped, they are
 # never speech.
-_NOT_XML = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f￾￿\ud800-\udfff]")
+_NOT_XML = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\ufffe\uffff\ud800-\udfff]")
 _LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 
 
@@ -86,6 +91,10 @@ class AzureSpeechTTSConfig:
         style: A speaking style the voice supports (``joyful``,
             ``customer_call_center``…), wrapped around every text with
             ``mstts:express-as``. ``None`` speaks in the voice's default style.
+        rate: Speaking rate, as SSML ``prosody`` takes it: a relative change
+            (``"+20%"``), a multiplier (``"1.2"``) or a keyword (``"fast"``).
+            ``None`` speaks at the voice's own pace. MAI-Voice-2.1-Flash
+            follows it closely (measured 2026-10-08); MAI-Voice-2.1 less so.
         sample_rate: Output rate, one of :data:`OUTPUT_FORMATS`.
         timeout: Read budget of a render, in seconds.
         connect_timeout: TCP connect budget, in seconds, apart from ``timeout``.
@@ -97,6 +106,7 @@ class AzureSpeechTTSConfig:
     voice: str = DEFAULT_VOICE
     language: str | None = None
     style: str | None = None
+    rate: str | None = None
     sample_rate: int = 24000
     timeout: float = 30.0
     connect_timeout: float = 5.0
@@ -117,6 +127,11 @@ class AzureSpeechTTSConfig:
         if self.language is not None and not _LANGUAGE_TAG.match(self.language):
             raise ValueError(f"language must be a BCP-47 tag such as fr-CA, got {self.language!r}")
         ssml_language(self.voice, self.language)
+        if self.rate is not None and not _RATE.match(self.rate):
+            raise ValueError(
+                "rate must be a relative change (+20%), a multiplier (1.2) or a keyword "
+                f"(x-slow, slow, medium, fast, x-fast, default), got {self.rate!r}"
+            )
 
 
 def synthesis_url(region: str | None, endpoint: str | None) -> str:
@@ -152,13 +167,17 @@ def ssml_language(voice: str, language: str | None) -> str:
     return match.group(1)
 
 
-def build_ssml(text: str, *, voice: str, language: str, style: str | None) -> str:
+def build_ssml(
+    text: str, *, voice: str, language: str, style: str | None, rate: str | None = None
+) -> str:
     """The SSML document of one render, with every value escaped.
 
     *text* is spoken as written: markup in it is escaped, never interpreted,
     and characters XML cannot carry are dropped.
     """
     body = html.escape(_NOT_XML.sub("", text), quote=False)
+    if rate is not None:
+        body = f'<prosody rate="{html.escape(rate)}">{body}</prosody>'
     if style is not None:
         body = f'<mstts:express-as style="{html.escape(style)}">{body}</mstts:express-as>'
     return (
@@ -214,6 +233,7 @@ class AzureSpeechTTSProvider(TTSProvider):
             voice=name,
             language=ssml_language(name, self._config.language),
             style=self._config.style,
+            rate=self._config.rate,
         )
         if _NOT_XML.sub("", text).strip():
             carry = b""
