@@ -60,11 +60,12 @@ FENCED_TAGS = (
     CONVERSATION_SUMMARY_TAG,
     "context",
     "task",
+    "vision",
 )
 """The tags RoomKit fences external data in: a tool's result, a worker's output,
 a knowledge passage, a memory's summary of the conversation, content a
-realtime provider adds to its prompt, and the goal or task an orchestration
-strategy copies into another model's prompt."""
+realtime provider adds to its prompt, the goal or task an orchestration
+strategy copies into another model's prompt, and what a vision provider saw."""
 
 
 _OPEN = "<\uff1c\ufe64"

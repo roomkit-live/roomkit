@@ -41,3 +41,7 @@ ToolUsageLoader = Callable[[str], Awaitable[list[dict[str, Any]]]]
 RoomTasksLoader = Callable[[str], Awaitable[list[dict[str, Any]]]]
 """A room's background tasks as the StatusBus lists them, read for the turn's
 notes (RFC §23.4)."""
+
+RoomVisionLoader = Callable[[str], Awaitable[str | None]]
+"""What a video channel in the room last saw, as the note the turn carries
+(RFC §12.8.7); ``None`` when no camera of the room has been analysed."""

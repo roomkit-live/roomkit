@@ -33,6 +33,7 @@ import subprocess  # nosec B404
 import sys
 from typing import TYPE_CHECKING, Any
 
+from roomkit._text import quoted
 from roomkit.core.exceptions import UnservedToolCallError
 from roomkit.providers.ai.response_schema import ResponseSchemaError
 from roomkit.telemetry.redaction import redact
@@ -179,7 +180,7 @@ CLICK_ELEMENT_TOOL: dict[str, Any] = {
 _LOCATE_PROMPT = """\
 Image size: {w}x{h} pixels.
 
-Element to find: "{element}"
+Element to find: {element}
 
 Instructions:
 - Find the VISUAL element (icon, button, widget) matching the description.
@@ -199,6 +200,17 @@ If not found:
 {{"found": false, "cx": 0, "cy": 0, \
 "box": {{"x1": 0, "y1": 0, "x2": 0, "y2": 0}}, "label": ""}}\
 """
+
+_ELEMENT_CHARS = 200
+"""The characters of the element a locate prompt quotes."""
+
+
+def _locate_prompt(element: str, width: int, height: int) -> str:
+    """The prompt that asks a vision model where *element* is on a screen of
+    *width* by *height*: the element, a tool call's argument, quoted
+    (RFC §6.4)."""
+    return _LOCATE_PROMPT.format(w=width, h=height, element=quoted(element, _ELEMENT_CHARS))
+
 
 _INT = {"type": "integer"}
 
@@ -364,7 +376,7 @@ async def _find_element(
     if frame is None:
         return None
 
-    prompt = _LOCATE_PROMPT.format(w=frame.width, h=frame.height, element=element)
+    prompt = _locate_prompt(element, frame.width, frame.height)
     parsed = await _locate(vision, frame, prompt)
     if parsed is None or not parsed.get("found"):
         logger.warning("Element not found: %s (answer: %s)", element, str(parsed)[:300])

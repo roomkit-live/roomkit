@@ -103,6 +103,7 @@ class VideoChannel(VideoHooksMixin, FrameworkAwareChannel, Channel):
         self._last_vision_results: dict[str, VisionResult] = {}
         # Timestamp of last vision analysis per session
         self._last_vision_ts: dict[str, float] = {}
+        self._room_vision: dict[str, tuple[float, VisionResult]] = {}
         # Sessions where backend signalled ready before bind_session ran
         self._session_ready_pending: set[str] = set()
         # Cached event loop for cross-thread scheduling
@@ -490,6 +491,7 @@ class VideoChannel(VideoHooksMixin, FrameworkAwareChannel, Channel):
         self._session_bindings.clear()
         self._last_vision_results.clear()
         self._last_vision_ts.clear()
+        self._room_vision.clear()
         self._session_ready_pending.clear()
 
     # -------------------------------------------------------------------------

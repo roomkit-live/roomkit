@@ -84,6 +84,7 @@ class AudioVideoChannel(VideoHooksMixin, VoiceChannel):
         self._vision_interval_ms = vision_interval_ms
         self._last_vision_results: dict[str, VisionResult] = {}
         self._last_vision_ts: dict[str, float] = {}
+        self._room_vision: dict[str, tuple[float, VisionResult]] = {}
         self._video_media_taps: list[Callable[[VideoSession, VideoFrame], None]] = []
         # Dual-signal: track sessions where backend signalled video ready
         # before bind_session completed
@@ -313,6 +314,7 @@ class AudioVideoChannel(VideoHooksMixin, VoiceChannel):
         await self._video_resources.close()
         self._last_vision_results.clear()
         self._last_vision_ts.clear()
+        self._room_vision.clear()
         self._video_media_taps.clear()
         self._session_ready_pending_video.clear()
         if self._video_bridge is not None:

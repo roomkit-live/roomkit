@@ -39,6 +39,7 @@ from roomkit.channels._task_planner import TaskPlanner
 from roomkit.channels._tasks_note import render_tasks_note
 from roomkit.channels._tool_usage import ToolUsageMemory
 from roomkit.channels._turn_notes import conversation_without_header_copies, without_header_copies
+from roomkit.channels._video_hooks import vision_note
 from roomkit.channels.agent import Agent
 from roomkit.core.mixins.delegation import _delegation_result_text
 from roomkit.memory._summary import summarized_line, summary_message
@@ -72,6 +73,8 @@ from roomkit.providers.openai.live_events import BYTES, chunk_framed_text
 from roomkit.speaking.thinker import thinker_input
 from roomkit.speaking.thought import Thought, thought_note
 from roomkit.tasks.models import DelegatedTaskResult, TaskStatus
+from roomkit.video.vision.base import VisionResult
+from roomkit.video.vision.screen_input import _locate_prompt
 from roomkit.voice.realtime.injection import say_line_instruction
 from tests.conftest import make_event
 
@@ -165,6 +168,7 @@ QUOTED: dict[str, Callable[[str], str]] = {
     "handoff line": lambda text: _handoff_line(
         "a", HandoffRequest(target_agent_id="b", reason=text)
     ),
+    "screen locate prompt": lambda text: _locate_prompt(text, 1920, 1080),
 }
 
 
@@ -222,6 +226,10 @@ FENCED: dict[str, tuple[str, Callable[[str], str]]] = {
         lambda text: recovered_result_text("lookup", "completed", text),
     ),
     "deepgram silent content": ("context", lambda text: prompt_addition(text, "user")),
+    "vision note": (
+        "vision",
+        lambda text: vision_note(VisionResult(description=text, labels=[text], text=text)),
+    ),
 }
 
 

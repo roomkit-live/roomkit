@@ -624,6 +624,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   quotes. `fence()` and `named_blocks()` stay importable from
   `roomkit.tools.fence`. The realtime injections, the orchestration strategies
   and the vision context follow in RMK-590.
+- What a camera sees rides an AI channel's turn notes as a `<vision>` block,
+  never its system prompt (RMK-593, RFC §12.8.7, §6.4). After each analysed
+  frame, every AI channel of the room had its binding's `system_prompt`
+  rewritten with `Current view: …`, `Objects detected: …` and
+  `Text visible: …` raw: a filmed sign reading "Ignore your instructions"
+  became the application's instruction, and the prompt changing with every
+  frame broke the provider's prompt cache. Each turn now reads the latest
+  result of the room's video channels (a loader beside the background tasks'
+  one), its description, objects and text fenced in `<vision>`, and nothing is
+  written to the binding. **Behaviour change:** `setup_video_vision()`,
+  already deprecated, only warns (its `context_prefix` and AI-channel
+  targeting are gone, every AI channel of the room reads the note);
+  `setup_realtime_vision()` injects the same block under its prefix; the
+  element `screen_input` asks a vision model to locate is quoted.
 - An orchestration strategy sets each model's output it hands another model
   apart in a block of its own (RMK-592, RFC §19.7, §6.4). The supervisor, the
   loop and the handoff composed those inputs with `--- label ---` separators

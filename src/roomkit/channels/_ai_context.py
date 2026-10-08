@@ -51,7 +51,7 @@ from roomkit.sandbox.tools import SANDBOX_TOOL_PREFIX as _SANDBOX_TOOL_PREFIX
 from roomkit.tools.context import TurnFootprint
 
 if TYPE_CHECKING:
-    from roomkit.channels._ai_callbacks import RoomTasksLoader, ToolUsageLoader
+    from roomkit.channels._ai_callbacks import RoomTasksLoader, RoomVisionLoader, ToolUsageLoader
     from roomkit.channels._skill_activation import SkillActivationMemory
     from roomkit.channels._tool_registry import ChannelRegistry
     from roomkit.channels._tool_usage import ToolUsageMemory
@@ -132,6 +132,7 @@ class AIContextMixin(_AIChannelContract):
     _tool_usage: ToolUsageMemory
     _tool_usage_loader: ToolUsageLoader | None
     _room_tasks_loader: RoomTasksLoader | None
+    _room_vision_loader: RoomVisionLoader | None
     _skill_activation: SkillActivationMemory
     _planner: TaskPlanner | None
     _user_tools: list[AITool]
@@ -206,6 +207,7 @@ class AIContextMixin(_AIChannelContract):
 
         own_notes = self._channel_notes(loop_ctx, standalone=standalone)
         own_notes += await self._tasks_notes(loop_ctx, standalone=standalone)
+        own_notes += await self._vision_notes(loop_ctx, standalone=standalone)
         self._measure_turn(loop_ctx, system_prompt, own_notes, settings.get("max_tokens"))
         messages = await self._turn_conversation(event, context, loop_ctx, standalone, own_notes)
         loop_ctx.turn_input = turn_input(messages)
@@ -496,6 +498,20 @@ class AIContextMixin(_AIChannelContract):
             logger.warning("Could not read room %s's tasks for its turn", room_id, exc_info=True)
             return []
         note = render_tasks_note(tasks, now=datetime.now(UTC))
+        return [note] if note else []
+
+    async def _vision_notes(self, loop_ctx: _ToolLoopContext, *, standalone: bool) -> list[str]:
+        """What the room's camera last showed, for the turn's notes (RFC
+        §12.8.7), fenced as data; a standalone turn reads none."""
+        room_id = loop_ctx.room_id
+        if standalone or room_id is None or self._room_vision_loader is None:
+            return []
+        try:
+            note = await self._room_vision_loader(room_id)
+        except Exception:
+            # A failing read costs the turn what the camera saw, not the turn.
+            logger.warning("Could not read room %s's vision for its turn", room_id, exc_info=True)
+            return []
         return [note] if note else []
 
     def _add_skills(

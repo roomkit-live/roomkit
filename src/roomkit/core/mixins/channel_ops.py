@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
+from roomkit.channels._video_hooks import room_vision_loader
 from roomkit.channels.base import Channel, FrameworkAwareChannel
 from roomkit.core.exceptions import (
     ChannelAlreadyRegisteredError,
@@ -206,6 +207,7 @@ class ChannelOpsMixin(HelpersMixin):
         channel._before_tool_call_hook = self._build_before_tool_call_hook(channel.channel_id)
         channel._tool_usage_loader = self._build_tool_usage_loader(channel.channel_id)
         channel._room_tasks_loader = self._build_room_tasks_loader()
+        channel._room_vision_loader = room_vision_loader(self)  # ty: ignore[invalid-argument-type]
         channel._before_generation_hook = self._build_before_generation_hook(channel.channel_id)
         channel._after_tool_round_hook = self._build_after_tool_round_hook()
         channel._thinking_hook = self._build_thinking_hook(channel.channel_id)

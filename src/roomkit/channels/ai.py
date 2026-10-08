@@ -428,6 +428,9 @@ class AIChannel(
         # The room's background tasks for the turn's notes (RFC §23.4), read
         # from the framework's StatusBus: wired at registration.
         self._room_tasks_loader = None
+        # What the room's cameras last saw, for the turn's notes (RFC §12.8.7):
+        # wired at registration.
+        self._room_vision_loader = None
 
     @property
     def tool_handler(self) -> ToolHandler | None:
