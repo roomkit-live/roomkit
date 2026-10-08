@@ -947,7 +947,7 @@ class TestOutbound:
     ) -> None:
         cfg = DeepgramAgentConfig(api_key=SecretStr("dg-key"), max_prompt_chars=40)
         provider = DeepgramAgentProvider(cfg)
-        ws = await _connect(provider, session, system_prompt="Tu es concis.")
+        ws = await _connect(provider, session, system_prompt="Be concise.")
         with caplog.at_level(logging.WARNING, logger="roomkit.providers.deepgram.realtime"):
             await provider.inject_text(session, "x" * 60, role="system", silent=True)
 

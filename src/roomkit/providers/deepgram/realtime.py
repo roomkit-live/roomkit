@@ -92,6 +92,13 @@ class _SessionState:
     assistant_text: str = ""
 
 
+def prompt_addition(text: str, role: str) -> str:
+    """What a silent injection with the intent *role* adds to the prompt: a
+    ``system`` instruction joins the instructions, any other intent is content
+    set apart in a ``<context>`` block it cannot close (RFC §12.4, §6.4)."""
+    return text if role == "system" else fence("context", text)
+
+
 class DeepgramAgentProvider(RealtimeVoiceProvider):
     """Realtime voice provider using the Deepgram Voice Agent API.
 
@@ -666,7 +673,8 @@ class DeepgramAgentProvider(RealtimeVoiceProvider):
         so it never reads as more of them (RFC §12.4). ``UpdatePrompt`` never
         starts a turn, so a non-silent ``system`` instruction travels as
         ``InjectUserMessage``, which the agent acts on at once; a standing
-        instruction ("speak more slowly from now on") is ``silent=True``.
+        instruction ("speak more slowly from now on") is ``role="system",
+        silent=True``.
         """
         state = self._states.get(session.id)
         if state is None:
@@ -675,8 +683,7 @@ class DeepgramAgentProvider(RealtimeVoiceProvider):
             )
 
         if silent:
-            appended = text if role == "system" else fence("context", text)
-            await self._append_to_prompt(state, appended)
+            await self._append_to_prompt(state, prompt_addition(text, role))
             return VoiceInjectionResult(status="sent")
 
         is_agent_message = role == "assistant"

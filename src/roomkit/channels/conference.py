@@ -1223,12 +1223,15 @@ class ConferenceChannel(
         if self._realtime_config is not None:
             # The realtime counterpart of speaking: the provider is the
             # room's voice, so a text event joins its conversation context
-            # rather than being synthesized over it (RFC 12.10.12).
-            # As content its author wrote, never as the application's
+            # rather than being synthesized over it (RFC 12.10.12), as
+            # content its author wrote, never as the application's
             # instruction (RFC §12.4), as on a realtime voice channel.
+            text = broadcast_text(event, event.content.body, context)
+            if text is None:
+                return ChannelOutput.empty()
             await self._realtime.deliver_text(
                 event.room_id,
-                broadcast_text(event, event.content.body, context),
+                text,
                 silent=injection_silent(binding),
                 chain_depth=event.chain_depth,
                 injected_from=event,

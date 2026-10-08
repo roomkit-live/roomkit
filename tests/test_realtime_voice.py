@@ -20,6 +20,7 @@ from roomkit import (
 )
 from roomkit.channels._realtime_tool_executor import tool_loop_context
 from roomkit.channels.realtime_voice import RealtimeVoiceChannel
+from roomkit.models.channel import ChannelBinding
 from roomkit.models.enums import ChannelType
 from roomkit.models.event import EventSource, RoomEvent
 from roomkit.models.room import Room
@@ -477,8 +478,6 @@ class TestTextInjection:
             ),
             content=TextContent(body="Offer 20% discount"),
         )
-        from roomkit.models.channel import ChannelBinding
-
         binding = ChannelBinding(
             channel_id="rt-voice-1",
             room_id=room_id,
@@ -514,8 +513,6 @@ class TestTextInjection:
             content=TextContent(body="I need help with returns"),
             metadata={"inject_role": asked},
         )
-        from roomkit.models.channel import ChannelBinding
-
         binding = ChannelBinding(
             channel_id="rt-voice-1",
             room_id=room_id,
@@ -1100,8 +1097,6 @@ class TestSelfLoopPrevention:
             ),
             content=TextContent(body="Own transcription"),
         )
-        from roomkit.models.channel import ChannelBinding
-
         binding = ChannelBinding(
             channel_id="rt-voice-1",
             room_id=room_id,
@@ -1155,8 +1150,6 @@ class TestDeliverIsNoop:
             ),
             content=TextContent(body="Hello"),
         )
-        from roomkit.models.channel import ChannelBinding
-
         binding = ChannelBinding(
             channel_id="rt-voice-1",
             room_id=room_id,

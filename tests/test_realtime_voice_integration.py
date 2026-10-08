@@ -55,8 +55,7 @@ class ObserverChannel(Channel):
 class TestSupervisorTextInjection:
     async def test_supervisor_text_injection_e2e(self) -> None:
         """A supervisor's broadcast reaches the realtime AI as the supervisor's
-        quoted words; the application directs it with an instruction delivery
-        (RFC §12.4, §22.1)."""
+        quoted words, never as an instruction (RFC §12.4)."""
         provider = MockRealtimeProvider()
         transport = MockRealtimeTransport()
 
@@ -95,6 +94,21 @@ class TestSupervisorTextInjection:
             "supervisor: “Offer the customer a 20% discount”",
             "user",
         )
+
+        await kit.close()
+
+    async def test_the_application_directs_the_realtime_ai_with_an_instruction(self) -> None:
+        """An instruction delivery is the application's door to the system
+        intent (RFC §12.4, §22.1)."""
+        provider = MockRealtimeProvider()
+        rt_channel = RealtimeVoiceChannel(
+            "rt-voice", provider=provider, transport=MockRealtimeTransport()
+        )
+        kit = RoomKit()
+        kit.register_channel(rt_channel)
+        room = await kit.create_room()
+        await kit.attach_channel(room.id, "rt-voice")
+        await rt_channel.start_session(room.id, "user-1", "fake-ws")
 
         await kit.deliver(
             room.id, "Offer the customer a 20% discount", channel_id="rt-voice", instruction=True

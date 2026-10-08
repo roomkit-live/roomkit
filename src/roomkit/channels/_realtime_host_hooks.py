@@ -37,15 +37,16 @@ content someone else wrote, never the application's instruction, whatever the
 event carries (RFC §12.4)."""
 
 BROADCAST_TEXT_LIMIT = 4000
-"""The characters of a broadcast text a session takes, as an ACP agent's room
-context takes a message."""
+"""The characters of a broadcast text a session takes."""
 
 
-def broadcast_text(event: RoomEvent, text: str, context: RoomContext) -> str:
+def broadcast_text(event: RoomEvent, text: str, context: RoomContext) -> str | None:
     """*text*, which *event* broadcast, as a realtime host injects it: quoted
     after its author's name, as a transcript names them (RFC §6.4, §12.4).
     ``Marie · sms: “…”``: on one line, it cannot end its quote nor add a line
-    of its own."""
+    of its own. ``None`` for a blank text, which no session takes."""
+    if not text.strip():
+        return None
     return f"{speaker_label(event, context)}: {quoted(text, BROADCAST_TEXT_LIMIT)}"
 
 

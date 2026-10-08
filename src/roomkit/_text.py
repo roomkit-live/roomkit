@@ -41,9 +41,10 @@ def one_line(text: Any) -> str:
 CONVERSATION_SUMMARY_TAG = "conversation_summary"
 """The tag a memory's summary of the conversation is set apart in."""
 
-FENCED_TAGS = ("tool_result", "worker_output", "knowledge", CONVERSATION_SUMMARY_TAG)
+FENCED_TAGS = ("tool_result", "worker_output", "knowledge", CONVERSATION_SUMMARY_TAG, "context")
 """The tags RoomKit fences external data in: a tool's result, a worker's output,
-a knowledge passage, a memory's summary of the conversation."""
+a knowledge passage, a memory's summary of the conversation, and content a
+realtime provider adds to its prompt."""
 
 
 def fence(tag: str, text: str) -> str:

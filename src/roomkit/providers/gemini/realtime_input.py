@@ -55,8 +55,8 @@ def _into_conversation(state: _GeminiSessionState, text: str, silent: bool) -> s
         return text
     instructions, state.pending_instructions = state.pending_instructions, None
     return (
-        "Your instructions have been replaced. From now on, follow only the ones "
-        f"in this block:\n{fence('instructions', instructions)}\n\n{text}"
+        "Your instructions have been replaced. From now on, follow these instead "
+        f"of the ones you started with:\n{fence('instructions', instructions)}\n\n{text}"
     )
 
 

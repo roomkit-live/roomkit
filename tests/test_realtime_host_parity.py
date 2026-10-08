@@ -539,6 +539,22 @@ async def test_a_broadcast_enters_as_its_author_s_quoted_words(
 
 
 @HOSTS
+async def test_a_blank_broadcast_reaches_no_session(host: str) -> None:
+    """Nothing to quote: no empty quote is injected (RMK-591)."""
+    provider = _Provider()
+    rt = _Host(host, provider, [])
+    await rt.attach()
+    assert await rt.start() is not None
+
+    await rt.kit.send_event(ROOM, "src", TextContent(body="  \n "))
+    await rt.kit.send_event(ROOM, "src", TextContent(body="after"))
+    await until(lambda: bool(provider.injections))
+    await rt.kit.close()
+
+    assert provider.injections == [("src: “after”", False)]
+
+
+@HOSTS
 @pytest.mark.parametrize("ending", ["let-go", "provider-ended"])
 async def test_an_injection_into_an_ended_session_is_not_sent(host: str, ending: str) -> None:
     """Refused whether the host let the session go or the provider ended it

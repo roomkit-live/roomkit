@@ -342,8 +342,8 @@ class TestReconfigureResumption:
 
         [call] = state.live_session.send_client_content.call_args_list
         assert call.kwargs["turns"].parts[0].text == (
-            "Your instructions have been replaced. From now on, follow only the ones in "
-            "this block:\n<instructions>\nYou are Bill.\n</instructions>\n\n"
+            "Your instructions have been replaced. From now on, follow these instead of "
+            "the ones you started with:\n<instructions>\nYou are Bill.\n</instructions>\n\n"
             "Marie · sms: “hello”"
         )
 

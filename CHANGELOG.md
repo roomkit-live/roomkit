@@ -637,13 +637,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   change:** `inject_role` is no longer read, and a supervisor's text is the
   supervisor's words, not an instruction: the application directs the model
   with `kit.deliver(..., instruction=True)` or `inject_text(..., role=
-  "system")`. A call recovered from speech hands its result back fenced in
-  `<tool_result>` (`[Tool name verb]` above it); an `assistant` line a
-  provider phrases as an instruction to say it is quoted; Gemini sets the
+  "system")`. On a full-duplex provider (GPT-Live) the `user` intent is a
+  commentary append the model says aloud in its own words (RFC §12.4.1), so
+  a broadcast that used to be an instructions append is now relayed to the
+  caller. A blank broadcast reaches no session. `ON_REALTIME_TEXT_INJECTED`
+  carries the text as injected (`src: “…”`), not the event's raw body. A call
+  recovered from speech hands its result back fenced in `<tool_result>`
+  (`[Tool name verb]` above it); an `assistant` line a provider phrases as an
+  instruction to say it is quoted, within 2000 characters; Gemini sets the
   instruction a resumption left unapplied apart in an `<instructions>` block
-  before the text it rides with, and Deepgram appends silent content other
-  than a `system` instruction to its prompt in a `<context>` block of its
-  own, so neither reads as more of the instructions.
+  before the text it rides with (measured on `gemini-3.8-live`: the new
+  instruction and the text riding it are both followed), and Deepgram
+  appends silent content other than a `system` instruction to its prompt in
+  a `<context>` block of its own, so neither reads as more of the
+  instructions. **Behaviour change:** on Deepgram a standing instruction is
+  `role="system", silent=True`; a silent injection with the default `user`
+  intent is now content in a `<context>` block.
 
 - A participant can no longer pass their words off as the runtime's notes
   (RMK-595, RFC §6.4). The turn's notes follow the input under one header,

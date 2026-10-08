@@ -173,7 +173,8 @@ class RealtimeVoiceChannel(
     other channels (supervisor dashboards, logging) see the conversation.
 
     Category is TRANSPORT so that:
-    - ``on_event()`` receives broadcasts (for text injection from supervisors)
+    - ``on_event()`` receives broadcasts: another channel's text enters the
+      sessions as its author's quoted words (RFC §12.4)
     - ``deliver()`` is called but returns empty (customer is on voice)
 
     Example:
@@ -2073,10 +2074,9 @@ class RealtimeVoiceChannel(
         if event.source.channel_id == self.channel_id:
             return ChannelOutput.empty()
 
-        text = self.extract_text(event)
-        if not text:
+        text = broadcast_text(event, self.extract_text(event), context)
+        if text is None:
             return ChannelOutput.empty()
-        text = broadcast_text(event, text, context)
 
         # Into every live session of the room, as any injection goes: silent
         # under a muted binding, one deeper than the event, announced once.
