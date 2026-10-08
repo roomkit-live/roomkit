@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from roomkit._text import one_of, quoted
 from roomkit.channels._agent_features import unserved_on_realtime
+from roomkit.channels._mark_copies import compile_mark_patterns, without_mark_copies
 from roomkit.channels.ai import AIChannel
 from roomkit.core.exceptions import ToolFailedError, ToolRefusedError, TurnCutShortError
 from roomkit.core.task_utils import shielded
@@ -247,7 +248,8 @@ def render_transcript_request(
             else "Voice conversation since the previous delegation:"
         )
         lines.extend(
-            f"{one_of(line.role, _ROLES, 'user').upper()}: {quoted(line.text, _LINE_CHARS)}"
+            f"{one_of(line.role, _ROLES, 'user').upper()}: "
+            f"{quoted(without_mark_copies(line.text), _LINE_CHARS)}"
             for line in transcript
             if line.text.strip()
         )
@@ -348,6 +350,7 @@ class AgentReasoningBackend(ReasoningBackend):
     async def _answer(self, request: ReasoningRequest) -> AsyncIterator[ReasoningOutput]:
         """Run the delegation on the agent's loop: progress, then the answer."""
         session_id = request.session.id
+        await compile_mark_patterns()
         messages = [
             *self._histories.get(session_id, []),
             AIMessage(

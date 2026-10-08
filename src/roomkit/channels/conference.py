@@ -61,6 +61,7 @@ from roomkit.channels._conference_session import ConferenceSessionMixin
 from roomkit.channels._conference_shutdown import CloseStatus, ConferenceShutdownCoordinator
 from roomkit.channels._conference_subscription import ConferenceSubscriptionMixin
 from roomkit.channels._conference_voice import ConferenceVoice
+from roomkit.channels._mark_copies import compile_mark_patterns
 from roomkit.channels._realtime_host_hooks import broadcast_text
 from roomkit.channels._served_tools import (
     dict_tool_name,
@@ -1226,6 +1227,7 @@ class ConferenceChannel(
             # rather than being synthesized over it (RFC 12.10.12), as
             # content its author wrote, never as the application's
             # instruction (RFC §12.4), as on a realtime voice channel.
+            await compile_mark_patterns()
             text = broadcast_text(event, event.content.body, context, self.channel_id)
             if text is None:
                 return ChannelOutput.empty()

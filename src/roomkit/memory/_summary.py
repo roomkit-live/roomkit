@@ -10,8 +10,8 @@ from dataclasses import dataclass
 from roomkit._text import CONVERSATION_SUMMARY_TAG, fence, quoted
 from roomkit.channels._mark_copies import without_mark_copies
 from roomkit.channels._runtime_record import (
+    RUNTIME_RECORD,
     SUMMARY_HEADER,
-    SUMMARY_MARK,
     runtime_record,
     written_by_runtime,
 )
@@ -91,6 +91,10 @@ class SummaryLines:
         return f"[{role}]: {text}"
 
 
+_SUMMARY_KIND = "summary"
+"""The provenance a summary message carries (:data:`RUNTIME_RECORD`)."""
+
+
 def summary_message(summary: str) -> AIMessage:
     """The message that stands for the summarized events: :data:`SUMMARY_HEADER`,
     then *summary* fenced as data, a model's rewriting of what people said."""
@@ -100,11 +104,12 @@ def summary_message(summary: str) -> AIMessage:
         # A model wrote the summary: a copy of a mark in it is replaced, since
         # this message keeps its own (RFC §6.4).
         content=f"{SUMMARY_HEADER}\n{fence(CONVERSATION_SUMMARY_TAG, cleaned)}",
-        metadata=runtime_record("summary"),
+        metadata=runtime_record(_SUMMARY_KIND),
     )
 
 
 def is_summary(message: AIMessage) -> bool:
-    """Whether *message* is a summary, :func:`summary_message`'s or an inner
-    provider's."""
-    return isinstance(message.content, str) and SUMMARY_MARK in message.content
+    """Whether *message* is a summary a memory of the runtime built
+    (:func:`summary_message`'s, an inner provider's): by its provenance alone,
+    never by its header, which anyone can type (RFC §6.4)."""
+    return message.metadata.get(RUNTIME_RECORD) == _SUMMARY_KIND

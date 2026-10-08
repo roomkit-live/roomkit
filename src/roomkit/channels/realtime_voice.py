@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
+from roomkit.channels._mark_copies import compile_mark_patterns
 from roomkit.channels._realtime_audio import _MAX_QUEUED_AUDIO_CHUNKS, RealtimeAudioMixin
 from roomkit.channels._realtime_context import (
     _current_voice_session as _current_voice_session,
@@ -2080,6 +2081,7 @@ class RealtimeVoiceChannel(
         if event.source.channel_id == self.channel_id:
             return ChannelOutput.empty()
 
+        await compile_mark_patterns()
         text = broadcast_text(event, self.extract_text(event), context, self.channel_id)
         if text is None:
             return ChannelOutput.empty()

@@ -13,6 +13,8 @@ import logging
 from typing import TYPE_CHECKING, Literal
 
 from roomkit._text import quoted
+from roomkit.channels._mark_copies import without_mark_copies
+from roomkit.channels._runtime_record import written_by_runtime
 from roomkit.channels._speaker import channel_label, turn_labels
 from roomkit.core.visibility import visible_events
 from roomkit.models.enums import HookTrigger
@@ -48,10 +50,14 @@ def broadcast_text(
     after the label the conversation gives its author (RFC §6.4, §12.4), read
     among the recent turns *channel_id*, the session's channel, may see.
     ``Marie: “…”``: on one line, it cannot end its quote nor add a line of
-    its own. ``None`` for a blank text, which no
-    session takes."""
+    its own, a copy of a runtime mark in it replaced unless the runtime wrote
+    *event*. ``None`` for a blank text, which no session takes. The caller
+    compiles the marks' patterns first
+    (:func:`~roomkit.channels._mark_copies.compile_mark_patterns`)."""
     if not text.strip():
         return None
+    if not written_by_runtime(event.metadata):
+        text = without_mark_copies(text)
     seen = visible_events(context, channel_id)
     label = turn_labels([*seen, event], context).get(event.id)
     author = label or channel_label(event.source.channel_id)

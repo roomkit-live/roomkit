@@ -293,9 +293,10 @@ class AIContextMixin(_AIChannelContract):
         # Who a task this turn delegates names as having asked (RFC §19.7).
         loop_ctx.requester = requester
         messages = conversation_without_header_copies(messages)
-        notes = self._turn_notes(
-            own_notes, speakers=attribute_speakers, retrieved=memory_result.notes
-        )
+        # What a memory retrieved holds others' words: a copy of a mark in it
+        # is replaced, the channel's own notes being the runtime's (RFC §6.4).
+        retrieved = [without_mark_copies(note) for note in memory_result.notes]
+        notes = self._turn_notes(own_notes, speakers=attribute_speakers, retrieved=retrieved)
         messages = with_turn_notes(messages, notes)
         return messages
 
