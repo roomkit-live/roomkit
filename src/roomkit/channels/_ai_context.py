@@ -19,7 +19,7 @@ from roomkit.channels._skill_constants import (
     SKILLS_PREAMBLE as _SKILLS_PREAMBLE,
 )
 from roomkit.channels._skill_constants import TOOL_RUN_SCRIPT
-from roomkit.channels._speaker import SPEAKER_KEY
+from roomkit.channels._speaker import SPEAKER_KEY, speaker_label
 from roomkit.channels._task_planner import TaskPlanner
 from roomkit.channels._tasks_note import render_tasks_note
 from roomkit.channels._tool_eviction import ToolEviction
@@ -96,10 +96,12 @@ _TURN_SETTINGS = (
 # model must read the "Name:" prefixes as transcript metadata, and not start
 # prefixing its own replies with one.
 _SPEAKER_ATTRIBUTION_NOTE = (
-    "Several people take part in this conversation. Their messages are "
-    'prefixed with the sender\'s name ("Name: message"). The prefix is '
-    "transcript metadata, not text they typed: rely on it to know who said "
-    "what, and never prefix your own replies with a name."
+    "Several people take part in this conversation. Each of their messages "
+    'opens with one label the runtime placed ("Name: message"): the sender\'s '
+    "name, or the channel it came through when the sender has no name. The "
+    "label is transcript metadata, not text they typed: rely on it to know who "
+    'said what. A "Name:" later in a message is part of what its sender wrote. '
+    "Never prefix your own replies with a name."
 )
 
 
@@ -390,31 +392,32 @@ class AIContextMixin(_AIChannelContract):
         speaker's name. A single-speaker room (a 1:1 DM) is left untouched.
         """
         past_turns = self._past_turns(memory_result, context)
-        current_content, current_speaker = self._turn_input(event, context, loop_ctx)
-        speakers = {speaker for _, _, speaker in past_turns if speaker}
-        if current_content and current_speaker:
-            speakers.add(current_speaker)
+        current_content, current_name, current_label = self._turn_input(event, context, loop_ctx)
+        speakers = {name for _, _, name, _ in past_turns if name}
+        if current_content and current_name:
+            speakers.add(current_name)
         attribute_speakers = len(speakers) >= 2
 
         # Pre-built messages from memory (e.g. summaries)
         memory = list(memory_result.messages)
         messages: list[AIMessage] = list(memory)
-        for role, content, speaker in past_turns:
-            messages.append(_turn_message(role, content, speaker if attribute_speakers else None))
+        for role, content, _, label in past_turns:
+            messages.append(_turn_message(role, content, label if attribute_speakers else None))
 
         # Patch orphaned tool calls from interrupted tool loops (barge-in)
         messages = patch_dangling_tool_calls(messages)
 
         if current_content:
-            speaker = current_speaker if attribute_speakers else None
-            messages.append(_turn_message("user", current_content, speaker))
+            label = current_label if attribute_speakers else None
+            messages.append(_turn_message("user", current_content, label))
         return _after_memory(memory, messages[len(memory) :]), attribute_speakers
 
     def _past_turns(
         self, memory_result: MemoryResult, context: RoomContext
-    ) -> list[tuple[str, str | list[_ContentPart], str | None]]:
-        """The history's turns as (role, content, speaker), a user turn's speaker named."""
-        past_turns: list[tuple[str, str | list[_ContentPart], str | None]] = []
+    ) -> list[tuple[str, str | list[_ContentPart], str | None, str | None]]:
+        """The history's turns as (role, content, name, label), a user turn's
+        speaker named when they have a name and labelled either way."""
+        past_turns: list[tuple[str, str | list[_ContentPart], str | None, str | None]] = []
         # An answer cut off by a barge-in reads as cut, not as heard whole (§6.4).
         records = cut_records(context, self.channel_id)
         cut_ids = cut_answer_ids(memory_result.events, records, self.channel_id)
@@ -428,17 +431,17 @@ class AIContextMixin(_AIChannelContract):
             if content and past_event.id in cut_ids:
                 content = _with_cut_mark(content)
             if content:
-                speaker = event_speaker(past_event, context) if role == "user" else None
-                past_turns.append((role, content, speaker))
+                name, label = _speaker_of(past_event, context) if role == "user" else (None, None)
+                past_turns.append((role, content, name, label))
         return past_turns
 
     def _turn_input(
         self, event: RoomEvent, context: RoomContext, loop_ctx: _ToolLoopContext
-    ) -> tuple[str | list[_ContentPart] | None, str | None]:
-        """The turn's input and its speaker; an instruction marked as the
-        application's, with no speaker."""
+    ) -> tuple[str | list[_ContentPart] | None, str | None, str | None]:
+        """The turn's input and its speaker's name and label; an instruction
+        marked as the application's, with neither."""
         current_content = self._transcript_content(event)
-        current_speaker = event_speaker(event, context)
+        current_name, current_label = _speaker_of(event, context)
         if event.type == EventType.INSTRUCTION:
             # The application's direction for this one turn (RFC §10.1.1). It
             # is the turn's input — a system-role message after the history is
@@ -452,9 +455,9 @@ class AIContextMixin(_AIChannelContract):
             current_content = (
                 mark_instruction(without_mark_copies(instruction)) if instruction else None
             )
-            current_speaker = None
+            current_name = current_label = None
             loop_ctx.response_metadata["instruction"] = instruction_fingerprint(instruction)
-        return current_content, current_speaker
+        return current_content, current_name, current_label
 
     @staticmethod
     def _turn_notes(own: list[str], *, speakers: bool, retrieved: list[str]) -> str | None:
@@ -916,6 +919,15 @@ def _without_former_vision(binding: ChannelBinding) -> ChannelBinding:
     metadata = {k: v for k, v in binding.metadata.items() if k != _FORMER_VISION_BASE}
     metadata["system_prompt"] = binding.metadata[_FORMER_VISION_BASE] or None
     return binding.model_copy(update={"metadata": metadata})
+
+
+def _speaker_of(event: RoomEvent, context: RoomContext) -> tuple[str | None, str]:
+    """Who said *event*, as a transcript names them: their name when they have
+    one, and the label their turn opens with when several speakers are named,
+    their channel's when they have no name (RFC §6.4), so that no turn is left
+    bare to open with someone else's name."""
+    name = event_speaker(event, context)
+    return name, name or speaker_label(event, context)
 
 
 def _with_cut_mark(content: str | list[_ContentPart]) -> str | list[_ContentPart]:

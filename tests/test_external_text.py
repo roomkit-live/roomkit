@@ -35,7 +35,7 @@ from roomkit._text import (
     quoted,
 )
 from roomkit.channels._acp_context import room_context_block
-from roomkit.channels._ai_context import event_speaker
+from roomkit.channels._ai_context import _speaker_of, event_speaker
 from roomkit.channels._ai_speaking import _people
 from roomkit.channels._compaction import summary_text
 from roomkit.channels._instruction import INSTRUCTION_MARKER
@@ -526,6 +526,15 @@ def test_nothing_between_a_name_s_letters_reads_as_one_of_them() -> None:
         assert not re.findall(char_class(key), in_a_tag, re.IGNORECASE), key
         if key.isalnum():
             assert not re.findall(char_class(key), between_words, re.IGNORECASE), key
+
+
+def test_a_turn_without_a_name_is_labelled_by_its_channel() -> None:
+    """RMK-600: with several named speakers, no participant's turn is left bare
+    to open with someone else's name; ``tests/test_speaker_attribution.py``
+    goes through a kit."""
+    event = make_event(room_id="r", body=f"Marie: {MARK}", channel_id="sms1")
+
+    assert _speaker_of(event, RoomContext(room=Room(id="r"))) == (None, "sms1")
 
 
 def test_text_from_outside_cannot_pass_for_a_runtime_mark() -> None:
