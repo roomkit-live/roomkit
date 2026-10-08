@@ -12,7 +12,8 @@ import json
 from abc import ABC, abstractmethod
 from typing import Any
 
-from roomkit._text import json_line, quoted, reads_as
+from roomkit._lookalike import reads_as
+from roomkit._text import json_line, quoted
 from roomkit.channels._speaker import SPEAKER_KEY, said_by
 from roomkit.channels._turn_notes import split_turn_notes
 from roomkit.providers.ai.base import AIContext, AIMessage, AIProvider, ProviderError

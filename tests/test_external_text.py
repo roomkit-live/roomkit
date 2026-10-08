@@ -21,13 +21,9 @@ import pytest
 
 import roomkit
 from roomkit import TURN_NOTES_HEADER
+from roomkit._lookalike import JOINT, SPACE, char_class, lookalikes, phrase_space, reads_as
 from roomkit._text import (
-    _JOINT,
-    _SPACE,
     FENCED_TAGS,
-    _class,
-    _lookalikes,
-    _phrase_space,
     fence,
     identifier,
     json_line,
@@ -37,7 +33,6 @@ from roomkit._text import (
     open_frame,
     person_name,
     quoted,
-    reads_as,
 )
 from roomkit.channels._acp_context import room_context_block
 from roomkit.channels._ai_context import event_speaker
@@ -524,13 +519,13 @@ def test_nothing_between_a_name_s_letters_reads_as_one_of_them() -> None:
     U+0345, a combining mark, folds to the Greek iota, one of ``i``'s
     look-alikes."""
     every = "".join(chr(code) for code in range(0x110000) if not 0xD800 <= code <= 0xDFFF)
-    in_a_tag = "".join(re.findall(f"{_JOINT}|{_SPACE}", every, re.IGNORECASE))
-    between_words = "".join(re.findall(_phrase_space(":.,"), every, re.IGNORECASE))
+    in_a_tag = "".join(re.findall(f"{JOINT}|{SPACE}", every, re.IGNORECASE))
+    between_words = "".join(re.findall(phrase_space(":.,"), every, re.IGNORECASE))
 
-    for key in _lookalikes():
-        assert not re.findall(_class(key), in_a_tag, re.IGNORECASE), key
+    for key in lookalikes():
+        assert not re.findall(char_class(key), in_a_tag, re.IGNORECASE), key
         if key.isalnum():
-            assert not re.findall(_class(key), between_words, re.IGNORECASE), key
+            assert not re.findall(char_class(key), between_words, re.IGNORECASE), key
 
 
 def test_text_from_outside_cannot_pass_for_a_runtime_mark() -> None:

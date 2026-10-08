@@ -25,7 +25,7 @@ from collections.abc import Callable
 from itertools import groupby
 from typing import Any
 
-from roomkit._text import phrase_pattern
+from roomkit._lookalike import phrase_pattern
 from roomkit.channels._user_text import joined
 from roomkit.providers.ai.base import AIMessage, AITextPart
 
@@ -47,7 +47,7 @@ not place (RFC §6.4)."""
 
 @functools.cache
 def _header_copy() -> re.Pattern[str]:
-    """The notes' header as a model reads it (:func:`roomkit._text.phrase_pattern`),
+    """The notes' header as a model reads it (:func:`roomkit._lookalike.phrase_pattern`),
     compiled on first use: its letters' look-alikes take a moment to gather."""
     return re.compile(phrase_pattern(TURN_NOTES_HEADER), re.IGNORECASE)
 

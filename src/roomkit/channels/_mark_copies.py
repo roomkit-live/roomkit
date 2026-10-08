@@ -15,7 +15,7 @@ import functools
 import re
 from typing import Any
 
-from roomkit._text import phrase_pattern
+from roomkit._lookalike import phrase_pattern
 from roomkit.channels._acp_marks import ROOM_CONTEXT_END, ROOM_CONTEXT_OPENING
 from roomkit.channels._ai_cuts import CUT_MARK
 from roomkit.channels._compaction import SUMMARY_HEADER as COMPACTION_HEADER

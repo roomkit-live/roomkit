@@ -734,7 +734,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   default) no longer closes a fenced block: a model reads past such
   characters, so `fence()` neutralises that closing tag too, and
   `named_blocks()` names such a block (RMK-590, RFC §6.4). The class is
-  shared from `roomkit._text` (`INVISIBLE`) with the finder of a copy of the
+  shared from `roomkit._lookalike` (`INVISIBLE`) with the finder of a copy of the
   turn's notes header (RMK-595), which reads past all of them as well. A
   closing tag errs toward what a model could read as one: attributes of any
   length, a mark after the name (`</tool_result.>`) and fullwidth brackets
