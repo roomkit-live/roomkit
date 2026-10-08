@@ -658,9 +658,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   characters, so `fence()` neutralises that closing tag too, and
   `named_blocks()` names such a block (RMK-590, RFC §6.4). The class is
   shared from `roomkit._text` (`INVISIBLE`) with the finder of a copy of the
-  turn's notes header (RMK-595), which reads past all of them as well. A tag's
-  name is read up to its end without consuming what follows, so a run of
-  invisible characters after it is read once, in linear time.
+  turn's notes header (RMK-595), which reads past all of them as well. A tag
+  is read in linear time: its name ends where a space, an invisible
+  character, a slash or `>` follows (`<task-list>` is another tag), read
+  without consuming it, and what follows up to its `>` is bounded. A text of
+  `<tool_result ` repeated with no `>` cost quadratic time before (about one
+  second on 224 000 characters, in `fence()`, `named_blocks()` and so in
+  `quoted()` and a compaction); about a million characters now take tens of
+  milliseconds.
 - A text another channel broadcast no longer enters a realtime session as the
   application's instruction (RMK-591, RFC §12.4). A realtime voice channel's
   `on_event` and a conference's realtime delivery injected it with the `system`

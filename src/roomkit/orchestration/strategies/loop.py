@@ -664,6 +664,11 @@ def _review_prompt(producer_output: str) -> str:
     )
 
 
+def _with_feedback(review_input: str, reviewer: str, feedback: str) -> str:
+    """*review_input* with *reviewer*'s feedback after it, as a block of its own."""
+    return f"{review_input}\n\n{worker_block(f'Feedback from {reviewer}', feedback)}"
+
+
 async def _review_sequential(
     kit: RoomKit,
     room_id: str,
@@ -681,7 +686,7 @@ async def _review_sequential(
 
         # Next reviewer sees previous feedback appended
         if not review["approved"] and output:
-            current_input = f"{current_input}\n\n{worker_block(f'Feedback from {name}', output)}"
+            current_input = _with_feedback(current_input, name, output)
 
     return results
 

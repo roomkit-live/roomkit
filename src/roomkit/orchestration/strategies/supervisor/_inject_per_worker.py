@@ -201,10 +201,10 @@ def _worker_told(worker_id: str, outcome: WorkerOutcome | None) -> str:
     """What the supervisor reads of a background worker: its outcome bounded
     and set apart as a worker's; for a run that raised (``None``), that the
     task could not be completed."""
-    if outcome is None:
-        return background_failure_text(f"task for {worker_id}")
-    status = "completed" if outcome.completed else "did not complete"
     worker = identifier(worker_id, "worker")
+    if outcome is None:
+        return background_failure_text(f"task for {worker}")
+    status = "completed" if outcome.completed else "did not complete"
     return result_text(
         f"[Your background task for {worker} {status}. Share the outcome with the user.]",
         bounded(outcome.output or "No output"),

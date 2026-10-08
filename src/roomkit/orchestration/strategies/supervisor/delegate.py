@@ -178,6 +178,15 @@ def _outcome_text(worker_results: list[dict[str, Any]] | None) -> str:
     return workers_text(header, _format_worker_results(each_bounded))
 
 
+def _one_pass_results(user_message: str, worker_results: list[dict[str, Any]]) -> str:
+    """What the supervisor presents from in one pass: the user's message as a
+    ``<task>`` block, then each worker's output as a block of its own."""
+    return (
+        f"The user asked:\n{fence('task', user_message)}\n\n"
+        f"{_present_worker_results(worker_results)}"
+    )
+
+
 def _results_event(event: RoomEvent, body: str) -> RoomEvent:
     """The workers' results, standing in for the event the supervisor answers.
 
@@ -486,11 +495,7 @@ async def _one_pass_delegate(
     )
 
     # Inject results into context and let supervisor present
-    results_event = _results_event(
-        event,
-        f"The user asked:\n{fence('task', user_message)}\n\n"
-        f"{_present_worker_results(worker_results)}",
-    )
+    results_event = _results_event(event, _one_pass_results(user_message, worker_results))
 
     try:
         await supervisor._memory.ingest(

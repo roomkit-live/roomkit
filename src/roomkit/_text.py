@@ -69,12 +69,16 @@ strategy copies into another model's prompt."""
 
 def _tag_name(tag: str) -> str:
     """*tag*'s name as a model reads it, up to its end: any invisible character
-    between its letters, and no further letter of a name after it. Its end is
-    read without consuming anything (not ``\\b``, which a Hangul filler, an
-    invisible character Unicode counts a letter, would defeat), so what
-    follows it is read once: no two quantifiers compete for the same
-    characters, and the pattern stays linear."""
-    return f"[{INVISIBLE}]*".join(map(re.escape, tag)) + "(?![A-Za-z0-9_])"
+    between its letters, then a space, an invisible character, a slash or the
+    tag's end (``<task-list>`` is another tag). The end is read without
+    consuming anything, so no two quantifiers compete for what follows."""
+    return f"[{INVISIBLE}]*".join(map(re.escape, tag)) + rf"(?=[\s{INVISIBLE}/>])"
+
+
+_TAG_REST = r"[^>]{0,256}>"
+"""What follows a tag's name up to its ``>``, bounded: read from every ``<name``
+in a text, an unbounded run would read the rest of the text each time, which
+is quadratic in a text of ``<name`` without ``>``."""
 
 
 def fence(tag: str, text: str) -> str:
@@ -87,7 +91,7 @@ def fence(tag: str, text: str) -> str:
     cannot close the block.
     """
     gap = rf"[\s{INVISIBLE}]*"
-    closing = re.compile(rf"<{gap}/{gap}{_tag_name(tag)}[^>]*>", re.IGNORECASE)
+    closing = re.compile(rf"<{gap}/{gap}{_tag_name(tag)}{_TAG_REST}", re.IGNORECASE)
     neutral = f"</{tag}_>"
     body = closing.sub(lambda _match: neutral, text)
     return f"<{tag}>\n{body}\n</{tag}>"
@@ -104,7 +108,7 @@ def named_blocks(text: str, tags: tuple[str, ...] = FENCED_TAGS) -> str:
     for tag in tags:
         name = _tag_name(tag)
         block = re.compile(
-            rf"<{gap}{name}[^>]*>.*?(?:<{gap}/{gap}{name}[^>]*>|\Z)",
+            rf"<{gap}{name}{_TAG_REST}.*?(?:<{gap}/{gap}{name}{_TAG_REST}|\Z)",
             re.IGNORECASE | re.DOTALL,
         )
         text = block.sub(f"[{tag}]", text)
