@@ -352,6 +352,32 @@ class TestFindToolsHandler:
         assert "create_invoice" in second_exposed
         assert "send_sms" not in second_exposed
 
+    async def test_searches_of_one_response_add_up(self) -> None:
+        """Two searches the model ran in one response each told it their
+        matches are declared: the second adds to the window (RMK-606); a
+        later response's search, or one of no known response, swaps it."""
+        catalogue = [
+            _tool("send_sms", "send an SMS"),
+            _tool("create_invoice", "create an invoice"),
+            _tool("book_room", "book a room"),
+        ]
+        support = RealtimeToolSearchSupport(catalogue)
+        support.init_session("s1")
+        find = TOOL_FIND_TOOLS
+
+        _, sms = await support.handle_tool_call(find, {"query": "sms"}, "s1")
+        _, invoice = await support.handle_tool_call(find, {"query": "invoice"}, "s1")
+        _, room = await support.handle_tool_call(find, {"query": "room"}, "s1")
+
+        assert support.expose("s1", sms, response=3)
+        assert support.expose("s1", invoice, response=3)
+        assert support._exposed["s1"] == {"send_sms", "create_invoice"}
+        assert support.expose("s1", room, response=4)
+        assert support._exposed["s1"] == {"book_room"}
+        assert support.expose("s1", sms)
+        assert support.expose("s1", invoice)
+        assert support._exposed["s1"] == {"create_invoice"}
+
     async def test_find_tools_no_query_returns_error(self) -> None:
         support = RealtimeToolSearchSupport([_tool("foo")])
         support.init_session("s1")

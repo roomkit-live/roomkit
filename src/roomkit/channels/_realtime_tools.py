@@ -103,6 +103,7 @@ class RealtimeToolsHost(Protocol):
 
     _state_lock: threading.Lock
     _session_rooms: dict[str, str]
+    _response_generation: dict[str, int]
     _session_spans: dict[str, Any]
     _turn_spans: dict[str, Any]
     _session_tools: dict[str, Any]
@@ -204,6 +205,7 @@ class RealtimeToolsMixin:
 
     _state_lock: threading.Lock
     _session_rooms: dict[str, str]
+    _response_generation: dict[str, int]
     _session_spans: dict[str, Any]
     _turn_spans: dict[str, Any]
     _session_tools: dict[str, Any]
@@ -355,6 +357,8 @@ class RealtimeToolsMixin:
             # A session already ended no longer maps its room: its calls are
             # reported there all the same (RFC §9.3).
             call.room_id = self._session_room(call.session) or call.session.room_id or None
+        with self._state_lock:
+            call.response = self._response_generation.get(session_id)
         muted_before = self._tool_calls.muting(session_id)
         if not self._tool_calls.open(call):
             return False
@@ -751,14 +755,20 @@ class RealtimeToolsMixin:
         if skill is not None:
             await self._open_skill_gates(call.session, skill)
         elif hinted:
-            await self._reveal_names(call.session, hinted, catalogue)
+            await self._reveal_names(call.session, hinted, catalogue, call.response)
         return outcome
 
     async def _reveal_names(
-        self, session: VoiceSession, names: list[str], catalogue: list[dict[str, Any]]
+        self,
+        session: VoiceSession,
+        names: list[str],
+        catalogue: list[dict[str, Any]],
+        response: int | None,
     ) -> None:
         """Reveal the tools a served ``find_tools`` call matched, or an
-        activation's hint named, in the session's *catalogue*.
+        activation's hint named, in the session's *catalogue*: added to what
+        another search of the same model *response* revealed, in place of
+        what an earlier response's did.
 
         A reconfiguration that gave the session another catalogue while the
         call was judged (a handoff) reset the reveal window, and the names
@@ -772,7 +782,7 @@ class RealtimeToolsMixin:
         search = self._tool_search_support
         if (
             search is not None
-            and search.expose(session.id, names)
+            and search.expose(session.id, names, response)
             and self._provider.supports_mid_session_reconfigure
         ):
             await self._reveal_tools(session)
@@ -852,7 +862,7 @@ class RealtimeToolsMixin:
                 return ended_outcome(call)
             delivered = await deliver_once(call, door, outcome)
             if delivered and outcome.kind is OutcomeKind.SERVED and names:
-                await self._reveal_names(session, names, catalogue)
+                await self._reveal_names(session, names, catalogue, call.response)
         logger.info(
             "Tool-search %s(%s) %s for session %s (%d matches)",
             call.name,

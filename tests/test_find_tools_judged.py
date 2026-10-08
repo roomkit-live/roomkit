@@ -258,6 +258,36 @@ class TestRealtime:
         await kit.close()
 
 
+class TestRealtimeSearchesOfOneResponse:
+    """Each search's result tells the model its matches are declared: two
+    searches of one model response reveal both (RMK-606)."""
+
+    async def test_two_searches_of_one_response_reveal_both_their_matches(self) -> None:
+        provider = MockRealtimeProvider()
+        kit, channel, session = await _realtime_kit(provider)
+        await provider.simulate_response_start(session)
+
+        await _call(channel, provider, session, "find_tools", {"query": "spotify"})
+        await _call(channel, provider, session, "find_tools", {"query": "x5"})
+
+        assert {t.get("name") for t in _declared(provider)} >= FOUND | {"x5"}
+        await kit.close()
+
+    async def test_a_later_responses_search_still_swaps_the_window(self) -> None:
+        provider = MockRealtimeProvider()
+        kit, channel, session = await _realtime_kit(provider)
+        await provider.simulate_response_start(session)
+        await _call(channel, provider, session, "find_tools", {"query": "spotify"})
+        await provider.simulate_response_end(session)
+        await provider.simulate_response_start(session)
+
+        await _call(channel, provider, session, "find_tools", {"query": "x5"})
+
+        declared = {t.get("name") for t in _declared(provider)}
+        assert "x5" in declared and not FOUND & declared
+        await kit.close()
+
+
 class _InBand(MockRealtimeProvider):
     """Reconfigures in band (OpenAI Realtime's ``session.update``): no
     reconnect, the call id in flight stays the session's."""

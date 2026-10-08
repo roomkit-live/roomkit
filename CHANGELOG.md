@@ -222,6 +222,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Two `find_tools` calls a realtime model runs in one response each reveal
+  their matches (RMK-606), as two of one round do on the text loop (RMK-604):
+  the session's declaration kept only the search served last. A call carries
+  the model response it came in, the channel's count of the responses its
+  provider announced, and `RealtimeToolSearchSupport.expose` adds one
+  response's reveals up while a later response's search still swaps the
+  window. A provider that announces no response keeps the swap; one that
+  announces only spoken responses (Gemini Live) groups successive tool-only
+  steps with the response before them, so the window grows until the model
+  speaks rather than losing a tool it was told is declared.
+
 - A primitive the model's server quoted reaches the tool as the type its
   property declares (RMK-605): `"0"` for an `integer` is `0`, `"0.5"` for a
   `number` is `0.5`, `"true"` for a `boolean` is `true`. A server that turns a

@@ -58,6 +58,10 @@ class RealtimeToolCall:
     reported, and nothing sent (RFC §12.4)."""
     mutes: bool = False
     """The call holds the session's input muted while it runs."""
+    response: int | None = None
+    """The model response the call came in, by the channel's count of the
+    responses its provider announced; ``None`` before the first. Searches of
+    one response add up in the reveal window (RMK-606)."""
     structured_content: dict[str, Any] | None = None
     """The structured copy its handler left on the tool call context (MCP
     ``structuredContent``), carried to ON_TOOL_CALL (RFC §9.3)."""

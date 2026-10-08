@@ -86,6 +86,8 @@ class RealtimeToolSearchSupport:
         self._validate_catalogue(catalogue)
         # session_id -> set of tool names currently exposed by find_tools
         self._exposed: dict[str, set[str]] = {}
+        # session_id -> the model response whose search last swapped the window
+        self._exposed_response: dict[str, int] = {}
         self._session_catalogues: dict[str, list[dict[str, Any]]] = {}
 
     def _validate_catalogue(self, catalogue: list[dict[str, Any]]) -> None:
@@ -176,6 +178,7 @@ class RealtimeToolSearchSupport:
         effective = self._catalogue if catalogue is None else catalogue
         self._validate_catalogue(effective)
         self._exposed[session_id] = set()
+        self._exposed_response.pop(session_id, None)
         self._session_catalogues[session_id] = list(effective)
         self._active[session_id] = self.activates(session_id, effective)
 
@@ -196,6 +199,7 @@ class RealtimeToolSearchSupport:
 
     def cleanup_session(self, session_id: str) -> None:
         self._exposed.pop(session_id, None)
+        self._exposed_response.pop(session_id, None)
         self._session_catalogues.pop(session_id, None)
         self._active.pop(session_id, None)
 
@@ -246,17 +250,30 @@ class RealtimeToolSearchSupport:
                 seen.add(n)
         return result
 
-    def expose(self, session_id: str, names: Iterable[str]) -> bool:
+    def expose(self, session_id: str, names: Iterable[str], response: int | None = None) -> bool:
         """Reveal *names* as ``find_tools`` reveals its matches: the exposure
         window swapped, what is declared anyway left out. Whether anything
-        was revealed, which the session's declaration then has to show."""
+        was revealed, which the session's declaration then has to show.
+
+        Searches the model ran side by side in one *response* each told it
+        their matches are declared, so the second adds to the window the
+        first swapped (RMK-606), as the text loop's searches of one round do.
+        A search of a later response swaps it, and so does one whose response
+        is not known (``None``)."""
         if self.uses_call_tool or not self.active(session_id):
             return False
         exclude = self._never_revealed(session_id)
         revealed = {name for name in names if name not in exclude}
         if not revealed:
             return False
+        if response is not None and self._exposed_response.get(session_id) == response:
+            self._exposed[session_id] = self._exposed.get(session_id, set()) | revealed
+            return True
         self._exposed[session_id] = revealed
+        if response is None:
+            self._exposed_response.pop(session_id, None)
+        else:
+            self._exposed_response[session_id] = response
         return True
 
     def _never_revealed(self, session_id: str) -> set[str]:
