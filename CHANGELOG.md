@@ -681,7 +681,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `</tool_result` with no bracket after it stayed, and everything up to the
   next `>` was deleted. It now neutralises where a closing tag starts
   (`</tool_result` made `</tool_result_`, what follows kept), compared under
-  NFKC and case folding (`＜／ｔｏｏｌ＿ｒｅｓｕｌｔ＞`, mathematical letters),
+  NFKC and case folding (`＜／ｔｏｏｌ＿ｒｅｓｕｌｔ＞`, mathematical letters) and
+  with the Cyrillic, Greek and Armenian homoglyphs of its letters (`</tооl_result>`),
   with control characters and lone surrogates a provider strips (Gemini
   Live's sanitiser turned `</tool\x00_result>` into a real closing tag after
   the fence), with several slashes or an escaped one (`<\/tool_result>`), with

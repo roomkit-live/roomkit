@@ -85,12 +85,45 @@ _GAP = rf"[\s{INVISIBLE}\u0300-\u036f\u2800\ufff9-\ufffb]*"
 characters, combining marks, a braille blank, interlinear annotation marks."""
 
 
+_CONFUSABLES = {
+    "a": "\u0430\u0251\u03b1",
+    "b": "\u044c",
+    "c": "\u0441\u03f2\u1d04",
+    "d": "\u0501",
+    "e": "\u0435\u04bd",
+    "g": "\u0261\u0581",
+    "h": "\u04bb\u0570",
+    "i": "\u0456\u03b9\u0269\u04cf\u0131",
+    "j": "\u0458\u03f3",
+    "k": "\u03ba\u043a",
+    "l": "\u04cf\u01c0",
+    "m": "\u043c",
+    "n": "\u0578",
+    "o": "\u043e\u03bf\u03c3\u0585\u1d0f",
+    "p": "\u0440\u03c1",
+    "q": "\u051b\u0566",
+    "r": "\u0433",
+    "s": "\u0455\ua731",
+    "t": "\u0442\u03c4",
+    "u": "\u03c5\u057d\u1d1c",
+    "v": "\u03bd\u0475\u1d20",
+    "w": "\u051d\u0461\u1d21",
+    "x": "\u0445\u03c7",
+    "y": "\u0443\u04af\u03b3",
+    "z": "\u1d22",
+}
+"""Letters of other scripts a model reads as a Latin one beyond what NFKC folds:
+the Cyrillic, Greek and Armenian homoglyphs (``о``, ``ο``, ``օ`` for ``o``), and
+small capitals; their capitals match through case folding."""
+
+
 @functools.cache
 def _lookalikes() -> dict[str, str]:
     """Each lowercase ASCII letter, digit, underscore, bracket and slash, with
     every character NFKC folds onto it under case folding (fullwidth,
-    mathematical, circled, small forms: ``ｔ``, ``𝐭``, ``ⓣ``, ``＜``), as the body
-    of a regular expression's class. Read once, on first use."""
+    mathematical, circled, small forms: ``ｔ``, ``𝐭``, ``ⓣ``, ``＜``) and its
+    homoglyphs in other scripts (:data:`_CONFUSABLES`), as the body of a
+    regular expression's class. Read once, on first use."""
     found = {char: [re.escape(char)] for char in "abcdefghijklmnopqrstuvwxyz0123456789_<>/"}
     for code in range(0x80, 0x110000):
         if 0xD800 <= code <= 0xDFFF:
@@ -98,6 +131,8 @@ def _lookalikes() -> dict[str, str]:
         folded = unicodedata.normalize("NFKC", chr(code)).casefold()
         if folded in found:
             found[folded].append(re.escape(chr(code)))
+    for char, homoglyphs in _CONFUSABLES.items():
+        found[char] += map(re.escape, homoglyphs)
     return {char: "".join(forms) for char, forms in found.items()}
 
 
