@@ -18,6 +18,7 @@ import threading
 from collections.abc import Awaitable, Callable
 from typing import Any, Protocol
 
+from roomkit._text import open_frame
 from roomkit.providers.ai.tool_declaration import declared_parameters
 
 logger = logging.getLogger("roomkit.providers.openai.live")
@@ -348,8 +349,17 @@ def _split_at_token_limit(text: str, token_limit: int, tok: Tokenizer) -> tuple[
     return text[:end], text[end:]
 
 
+_FRAME_RESERVE = 32
+"""Tokens a cut keeps for closing the frame it leaves open (``</tool_result>``
+on its own line, measured in bytes when no tokenizer is loaded)."""
+
+
 def chunk_text(
-    text: str, token_limit: int = MAX_APPEND_TOKENS, *, tok: Tokenizer | None = None
+    text: str,
+    token_limit: int = MAX_APPEND_TOKENS,
+    *,
+    tok: Tokenizer | None = None,
+    keep_frames: bool = False,
 ) -> list[str]:
     """Split appends within the token bound, preserving inner text.
 
@@ -358,13 +368,35 @@ def chunk_text(
     needs, since the model voices each piece. UTF-8 characters stay whole.
     Splits prefer sentences, then spaces, then character boundaries. RFC
     §12.4.1: bounded appends split rather than truncate or refuse content.
+    With *keep_frames*, a text the runtime set apart in a frame keeps it in
+    each piece (:func:`_keep_frame`).
     """
     if token_limit <= 0:
         raise ValueError("token_limit must be positive")
     tok = tok or _tokenizer or BYTES
     text = text.strip()
+    limit = max(token_limit - _FRAME_RESERVE, token_limit // 2) if keep_frames else token_limit
     chunks: list[str] = []
     while text:
-        head, text = _split_at_token_limit(text, token_limit, tok)
+        head, text = _split_at_token_limit(text, limit, tok)
+        if keep_frames and text:
+            head, text = _keep_frame(head, text)
         chunks.append(head)
     return chunks
+
+
+def _keep_frame(head: str, rest: str) -> tuple[str, str]:
+    """*head* closing the frame it leaves open, *rest* opening it again: a
+    block ends and starts over, a quote too, after its author or the
+    instruction that quotes it (RFC §6.4, §12.4.1). A frame the cut falls
+    right after the opening of, or right before the end of, stays whole on
+    one side rather than leave an empty one on the other."""
+    closing, opening = open_frame(head)
+    if not closing:
+        return head, rest
+    head, rest = head.rstrip(), rest.lstrip()
+    if rest.startswith(closing.strip()):
+        return head + closing, rest[len(closing.strip()) :].lstrip()
+    if head.endswith(opening.strip()) and len(head) > len(opening.strip()):
+        return head[: -len(opening.strip())].rstrip(), opening + rest
+    return head + closing, opening + rest

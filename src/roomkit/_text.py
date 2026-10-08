@@ -92,6 +92,46 @@ def named_blocks(text: str, tags: tuple[str, ...] = FENCED_TAGS) -> str:
     return text
 
 
+# -- A frame across a cut ----------------------------------------------------
+
+_FRAME_EDGE = re.compile(
+    "|".join([rf"<(/?)({'|'.join(map(re.escape, (*FENCED_TAGS, 'instructions')))})>", "“", "”"])
+)
+
+_LEAD_LIMIT = 200
+"""The characters before a quote on its line that a reopened quote repeats: an
+author's name or the instruction that quotes it; a longer lead is not one."""
+
+
+def open_frame(text: str) -> tuple[str, str]:
+    """The frame left open at the end of *text*, as what closes it there and
+    what opens it again (RFC §6.4, §12.4.1); ``("", "")`` when none is.
+
+    A block ``<tag>`` with no ``</tag>`` after it, inside which only that
+    closing tag counts, what the block holds being data; or a quote “ with no
+    ” after it, opened again after what precedes it on its line
+    (``Marie · sms: “``).
+    """
+    tag: str | None = None
+    quote_at: int | None = None
+    for edge in _FRAME_EDGE.finditer(text):
+        mark = edge.group(0)
+        if tag is not None:
+            tag = None if mark == f"</{tag}>" else tag
+        elif quote_at is not None:
+            quote_at = None if mark == "”" else quote_at
+        elif mark == "“":
+            quote_at = edge.start()
+        elif edge.group(2) and not edge.group(1):
+            tag = edge.group(2)
+    if tag is not None:
+        return f"\n</{tag}>", f"<{tag}>\n"
+    if quote_at is None:
+        return "", ""
+    lead = text[text.rfind("\n", 0, quote_at) + 1 : quote_at]
+    return "”", f"{lead if len(lead) <= _LEAD_LIMIT else ''}“"
+
+
 # -- Inline quotes -------------------------------------------------------------
 
 _DOUBLE_QUOTES = str.maketrans(dict.fromkeys('"“”„‟«»＂〝〞〟⹂❝❞❠🙶🙷🙸″‶ʺ˝', "'"))

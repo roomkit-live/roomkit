@@ -97,7 +97,7 @@ class OpenAILiveClientMixin(RealtimeVoiceProvider):
             silent,
             session.id,
         )
-        await self._send_append(state, event_type, None, text)
+        await self._send_append(state, event_type, None, text, keep_frames=True)
         return VoiceInjectionResult(status="sent")
 
     async def submit_delegation_output(
@@ -122,16 +122,25 @@ class OpenAILiveClientMixin(RealtimeVoiceProvider):
         await self._send_append(state, event_type, delegation_id, text)
 
     async def _send_append(
-        self, state: _LiveSession, event_type: str, delegation_id: str | None, text: str
+        self,
+        state: _LiveSession,
+        event_type: str,
+        delegation_id: str | None,
+        text: str,
+        *,
+        keep_frames: bool = False,
     ) -> None:
         """Append context in as many bounded pieces as the API needs.
 
         One piece for a text within the bound: the model voices every
         commentary piece, so a split is only made where the API forces it.
-        ``delegation_id`` is always sent, ``None`` included: on these events
-        the field is required, and ``None`` means general session context.
+        An injected text the runtime framed keeps its frame in each piece
+        (*keep_frames*, RFC §12.4.1); a delegation's output is the agent's own
+        answer, split as it is. ``delegation_id`` is always sent, ``None``
+        included: on these events the field is required, and ``None`` means
+        general session context.
         """
-        for chunk in chunk_text(text, tok=await tokenizer()):
+        for chunk in chunk_text(text, tok=await tokenizer(), keep_frames=keep_frames):
             await state.ws.send(
                 json.dumps({"type": event_type, "delegation_id": delegation_id, "content": chunk})
             )

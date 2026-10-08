@@ -624,6 +624,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   quotes. `fence()` and `named_blocks()` stay importable from
   `roomkit.tools.fence`. The realtime injections, the orchestration strategies
   and the vision context follow in RMK-590.
+- On GPT-Live, a framed text split into several appends keeps its frame in
+  each one (RMK-596, RFC §12.4.1, §6.4). A text over the API's per-append
+  bound is split on sentences, and only the first piece carried its frame's
+  opening and only the last its end: a background task's result handed back
+  to a GPT-Live session (an instructions append, its body fenced in
+  `<worker_output>`, up to 4000 characters) sent its middle pieces as bare
+  worker text read as instructions, and a long broadcast lost its author and
+  its quote. Each cut now closes the frame it leaves open and opens it again
+  in the next append (`roomkit._text.open_frame`): a block ends and starts
+  over, a quote is reopened after its author or the instruction that quotes
+  it. A delegation's output, the agent's own answer, is split as before.
 - A closing tag with an invisible character in it (`</tool_\u200bresult>`, a
   soft hyphen, a word joiner, a byte order mark) no longer closes a fenced
   block: a model reads past such characters, so `fence()` neutralises that

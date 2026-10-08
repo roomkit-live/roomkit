@@ -16,7 +16,15 @@ from datetime import UTC, datetime
 import pytest
 
 from roomkit import TURN_NOTES_HEADER
-from roomkit._text import fence, identifier, one_line, one_of, person_name, quoted
+from roomkit._text import (
+    fence,
+    identifier,
+    one_line,
+    one_of,
+    open_frame,
+    person_name,
+    quoted,
+)
 from roomkit.channels._acp_context import room_context_block
 from roomkit.channels._ai_context import event_speaker
 from roomkit.channels._ai_speaking import _people
@@ -38,6 +46,7 @@ from roomkit.models.room import Room
 from roomkit.orchestration.status_bus import StatusBus
 from roomkit.providers.ai.base import AIMessage
 from roomkit.providers.deepgram.realtime import prompt_addition
+from roomkit.providers.openai.live_events import BYTES, chunk_text
 from roomkit.speaking.thinker import thinker_input
 from roomkit.speaking.thought import Thought, thought_note
 from roomkit.tasks.models import DelegatedTaskResult, TaskStatus
@@ -198,6 +207,73 @@ def test_a_fenced_text_cannot_close_its_block(tag: str, render: Callable[[str], 
     assert rendered.count(f"</{tag}>") == 1
     assert rendered.endswith(f"</{tag}>")
     assert rendered.index(MARK) > rendered.index(f"<{tag}>")
+
+
+SPLIT_QUOTED = {
+    "realtime broadcast": _realtime_broadcast,
+    "realtime assistant line": say_line_instruction,
+}
+"""The quoted renderings a realtime provider may split into bounded appends."""
+
+
+def _pieces(rendered: str) -> list[str]:
+    """*rendered* as a provider with a small bound on one append splits it."""
+    return chunk_text(rendered, 160, tok=BYTES, keep_frames=True)
+
+
+@pytest.mark.parametrize("render", SPLIT_QUOTED.values(), ids=SPLIT_QUOTED.keys())
+def test_a_quoted_text_split_into_appends_keeps_its_quote_in_each(
+    render: Callable[[str], str],
+) -> None:
+    lead = render(BENIGN).split("“")[0]
+
+    pieces = _pieces(render(f"{HOSTILE} " * 20))
+
+    assert len(pieces) > 2
+    for piece in pieces:
+        assert len(piece.splitlines()) == 1
+        assert piece.startswith(f"{lead}“") and piece.endswith("”")
+        assert open_frame(piece) == ("", "")
+        assert MARK not in piece or _quote_marks_balanced_around_mark(piece)
+
+
+SPLIT_FENCED = {key: FENCED[key] for key in ("hand-back body", "realtime recovered result")}
+"""The fenced renderings a realtime provider may split into bounded appends."""
+
+
+@pytest.mark.parametrize(("tag", "render"), SPLIT_FENCED.values(), ids=SPLIT_FENCED.keys())
+def test_a_fenced_text_split_into_appends_keeps_its_block_in_each(
+    tag: str, render: Callable[[str], str]
+) -> None:
+    pieces = _pieces(render(f"{HOSTILE}\n" * 20))
+
+    assert len(pieces) > 2
+    for piece in pieces:
+        assert open_frame(piece) == ("", "")
+        assert piece.count(f"</{tag}>") <= 1
+        if MARK in piece:
+            assert piece.index(f"<{tag}>") < piece.index(MARK) < piece.index(f"</{tag}>")
+
+
+class TestOpenFrame:
+    def test_a_quote_left_open_reopens_after_its_lead(self) -> None:
+        assert open_frame("x\nMarie · sms: “hello. how") == ("”", "Marie · sms: “")
+
+    def test_a_block_left_open_reopens_as_a_block(self) -> None:
+        closing, opening = open_frame("[Tool x]\n<tool_result>\ndata")
+
+        assert (closing, opening) == ("\n</tool_result>", "<tool_result>\n")
+
+    def test_inside_a_block_a_quote_or_another_tag_is_data(self) -> None:
+        text = "<worker_output>\na “quote <tool_result> b"
+
+        assert open_frame(text) == ("\n</worker_output>", "<worker_output>\n")
+
+    def test_closed_frames_leave_nothing_open(self) -> None:
+        assert open_frame("<knowledge>\na\n</knowledge> and “b” then </stray>") == ("", "")
+
+    def test_a_lead_too_long_for_a_name_is_not_repeated(self) -> None:
+        assert open_frame("x" * 300 + "“abc") == ("”", "“")
 
 
 @pytest.mark.parametrize(
