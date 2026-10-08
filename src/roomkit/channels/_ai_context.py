@@ -167,6 +167,7 @@ class AIContextMixin(_AIChannelContract):
         that snapshots go stale. Without a provider, the metadata toolset
         is used.
         """
+        binding = _without_former_vision(binding)
         turn, settings = await self._resolve_turn(binding, context)
         # The prompt grows below (skills, sandbox, planner, notes); the other
         # settings reach the context as resolved.
@@ -205,9 +206,7 @@ class AIContextMixin(_AIChannelContract):
         # may withdraw from (RFC §6.4).
         tools = self._reachable_tools(tools)
 
-        own_notes = self._channel_notes(loop_ctx, standalone=standalone)
-        own_notes += await self._tasks_notes(loop_ctx, standalone=standalone)
-        own_notes += await self._vision_notes(loop_ctx, standalone=standalone)
+        own_notes = await self._own_notes(loop_ctx, context, standalone=standalone)
         self._measure_turn(loop_ctx, system_prompt, own_notes, settings.get("max_tokens"))
         messages = await self._turn_conversation(event, context, loop_ctx, standalone, own_notes)
         loop_ctx.turn_input = turn_input(messages)
@@ -500,19 +499,22 @@ class AIContextMixin(_AIChannelContract):
         note = render_tasks_note(tasks, now=datetime.now(UTC))
         return [note] if note else []
 
-    async def _vision_notes(self, loop_ctx: _ToolLoopContext, *, standalone: bool) -> list[str]:
-        """What the room's camera last showed, for the turn's notes (RFC
+    def _vision_notes(self, context: RoomContext, *, standalone: bool) -> list[str]:
+        """What the room's video last showed, for the turn's notes (RFC
         §12.8.7), fenced as data; a standalone turn reads none."""
-        room_id = loop_ctx.room_id
-        if standalone or room_id is None or self._room_vision_loader is None:
+        if standalone or self._room_vision_loader is None:
             return []
-        try:
-            note = await self._room_vision_loader(room_id)
-        except Exception:
-            # A failing read costs the turn what the camera saw, not the turn.
-            logger.warning("Could not read room %s's vision for its turn", room_id, exc_info=True)
-            return []
+        note = self._room_vision_loader(context)
         return [note] if note else []
+
+    async def _own_notes(
+        self, loop_ctx: _ToolLoopContext, context: RoomContext, *, standalone: bool
+    ) -> list[str]:
+        """The notes the channel adds to the turn's input: the room's plan and
+        tools used, its background tasks, what its video last showed."""
+        notes = self._channel_notes(loop_ctx, standalone=standalone)
+        notes += await self._tasks_notes(loop_ctx, standalone=standalone)
+        return notes + self._vision_notes(context, standalone=standalone)
 
     def _add_skills(
         self,
@@ -893,6 +895,22 @@ def event_speaker(event: RoomEvent, context: RoomContext) -> str | None:
             if participant.id == participant_id and participant.display_name:
                 return person_name(participant.display_name) or None
     return None
+
+
+_FORMER_VISION_BASE = "_base_system_prompt"
+"""Where RoomKit's vision path up to 0.95 kept a binding's own prompt when it
+wrote what a camera saw into ``system_prompt``."""
+
+
+def _without_former_vision(binding: ChannelBinding) -> ChannelBinding:
+    """*binding* with its own prompt back where RoomKit's vision path up to 0.95
+    wrote what a camera saw into it (RFC §12.8.7): a persisted binding would
+    otherwise keep the last text a camera read in its prompt for good."""
+    if _FORMER_VISION_BASE not in binding.metadata:
+        return binding
+    metadata = {k: v for k, v in binding.metadata.items() if k != _FORMER_VISION_BASE}
+    metadata["system_prompt"] = binding.metadata[_FORMER_VISION_BASE] or None
+    return binding.model_copy(update={"metadata": metadata})
 
 
 def _with_cut_mark(content: str | list[_ContentPart]) -> str | list[_ContentPart]:

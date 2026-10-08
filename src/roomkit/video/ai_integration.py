@@ -10,6 +10,7 @@ a RealtimeVoiceChannel's sessions.
 from __future__ import annotations
 
 import logging
+import warnings
 from typing import TYPE_CHECKING
 
 from roomkit.channels._video_hooks import vision_note
@@ -29,17 +30,20 @@ def setup_video_vision(
     *,
     context_prefix: str = "You can see a live camera feed. Current view:",
 ) -> None:
-    """Formerly wired vision results into one AIChannel's system prompt.
+    """Deprecated: warns, and wires nothing.
 
     .. deprecated::
         What a vision provider saw rides every AIChannel's turn notes in the
-        room on its own (RFC §12.8.7); a system prompt that changes with each
-        frame let the text a camera read pass for the application's
-        instruction. This call only warns: it writes no prompt and no binding,
-        and *context_prefix* and *ai_channel_id* are no longer used.
+        room on its own (RFC §12.8.7), never a system prompt, where the text a
+        camera read would pass for the application's instruction. This call
+        writes no prompt and no binding; *context_prefix* and *ai_channel_id*
+        are ignored.
     """
-    import warnings
-
+    logger.warning(
+        "setup_video_vision() does nothing: what the camera sees rides every AI "
+        "channel's turn notes in room %s (RFC §12.8.7); its context_prefix is ignored",
+        room_id,
+    )
     warnings.warn(
         "setup_video_vision() is deprecated and does nothing: what the camera "
         "sees rides every AI channel's turn notes in the room (RFC §12.8.7).",

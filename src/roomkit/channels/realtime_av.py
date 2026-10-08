@@ -76,7 +76,7 @@ class RealtimeAudioVideoChannel(VideoHooksMixin, RealtimeVoiceChannel):
         self._vision_interval_ms = vision_interval_ms
         self._last_vision_results: dict[str, VisionResult] = {}
         self._last_vision_ts: dict[str, float] = {}
-        self._room_vision: dict[str, tuple[float, VisionResult]] = {}
+        self._room_vision: dict[str, tuple[float, str, VisionResult]] = {}
         self._video_media_taps: list[Callable[[VideoSession, VideoFrame], None]] = []
         self._video_pipeline_config = video_pipeline
 
@@ -212,6 +212,7 @@ class RealtimeAudioVideoChannel(VideoHooksMixin, RealtimeVoiceChannel):
 
         # Clean up video state
         self._last_vision_results.pop(session.id, None)
+        self._forget_session_vision(session.id)
         self._last_vision_ts.pop(session.id, None)
 
     async def close(self) -> None:

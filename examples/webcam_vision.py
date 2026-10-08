@@ -4,8 +4,8 @@ Captures webcam frames via LocalVideoBackend, analyzes them with
 a VisionProvider, and feeds the descriptions into an AIChannel so
 the AI can "see" and respond to what's on camera.
 
-The framework injects each vision result into the system prompt of the
-AI channels attached to the room.  Every ``--ask-every`` seconds a text
+Each AI channel attached to the room reads the latest vision result in
+its turn's notes, as a ``<vision>`` block.  Every ``--ask-every`` seconds a text
 "viewer" channel asks the AI what it sees; the reply is printed with the
 camera view the AI was given.  The AI here is a ``MockAIProvider`` with
 canned replies, so the printed view shows the wiring — swap in a real
@@ -228,7 +228,7 @@ async def main() -> None:
     await kit.attach_channel("webcam-demo", "viewer")
     await kit.attach_channel("webcam-demo", "ai", category=ChannelCategory.INTELLIGENCE)
 
-    # Vision results are auto-injected into AI channels in the same room.
+    # The room's AI channels read the latest vision result in each turn's notes.
 
     # --- Hooks: log video events ---------------------------------------------
 
@@ -261,7 +261,7 @@ async def main() -> None:
             parts.append(f"       OCR: {data['text']}")
         print("\n".join(parts))
 
-    # --- Periodic question: the AI answers with the view in its prompt -------
+    # --- Periodic question: the AI answers with the view in its turn's notes -------
     async def ask_ai_periodically() -> None:
         while True:
             await asyncio.sleep(args.ask_every)
@@ -277,8 +277,8 @@ async def main() -> None:
             if result.error is not None:
                 print(f"  AI error: {result.error!r}")
             elif ai_provider.calls:
-                prompt = ai_provider.calls[-1].system_prompt or ""
-                view = [line for line in prompt.splitlines() if "Current view:" in line]
+                turn = str(ai_provider.calls[-1].messages[-1].content)
+                view = [line for line in turn.splitlines() if line.startswith("Description:")]
                 print(f"  (AI was given: {view[-1].strip() if view else 'no camera view yet'})")
 
     # --- Connect and start capture -------------------------------------------
@@ -295,7 +295,7 @@ async def main() -> None:
     print(f"Mode: {mode}")
     print(f"Camera: device {args.device} at 640x480 @ {args.fps}fps")
     print(f"Vision analysis every {args.interval}ms")
-    print("Vision results are auto-injected into the AI channel's system prompt")
+    print("The AI channel reads the latest vision result in each turn's notes")
     if args.ask_every > 0:
         print(f"Viewer asks the (mock) AI every {args.ask_every:g}s")
     if args.lang:

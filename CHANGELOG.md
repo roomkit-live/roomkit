@@ -637,11 +637,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   frame broke the provider's prompt cache. Each turn now reads the latest
   result of the room's video channels (a loader beside the background tasks'
   one), its description, objects and text fenced in `<vision>`, and nothing is
-  written to the binding. **Behaviour change:** `setup_video_vision()`,
-  already deprecated, only warns (its `context_prefix` and AI-channel
-  targeting are gone, every AI channel of the room reads the note);
-  `setup_realtime_vision()` injects the same block under its prefix; the
-  element `screen_input` asks a vision model to locate is quoted.
+  written to the binding. The view belongs to the video session that produced
+  it: once that session ends, no turn reads it. A binding RoomKit's vision path
+  wrote into keeps its own prompt under `_base_system_prompt`, and is read with
+  that prompt again, not the last text a camera read. **Behaviour change:**
+  `setup_video_vision()`, already deprecated, only warns and logs (its
+  `context_prefix` and AI-channel targeting are gone, every AI channel of the
+  room reads the note); `setup_realtime_vision()` injects the same block under
+  its prefix; the element `screen_input` asks a vision model to locate is
+  quoted. **Upgrade:** a binding written by `setup_video_vision()` carries no
+  such key and keeps its last view in `system_prompt` on a persistent store:
+  set that binding's `system_prompt` back to your own prompt.
 - An orchestration strategy sets each model's output it hands another model
   apart in a block of its own (RMK-592, RFC §19.7, §6.4). The supervisor, the
   loop and the handoff composed those inputs with `--- label ---` separators

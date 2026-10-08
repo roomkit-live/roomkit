@@ -7,8 +7,8 @@ the AI can "see" your screen and describe what's happening.
 Use case: AI-powered screen assistant that observes and explains
 what software is displayed, guiding the user through tasks.
 
-The framework injects each vision result into the system prompt of the
-AI channels attached to the room.  Every ``--ask-every`` seconds a text
+Each AI channel attached to the room reads the latest vision result in
+its turn's notes, as a ``<vision>`` block.  Every ``--ask-every`` seconds a text
 "viewer" channel asks the AI what is on screen; the reply is printed with
 the screen view the AI was given.  The AI here is a ``MockAIProvider``
 with canned replies, so the printed view shows the wiring — swap in a
@@ -208,7 +208,7 @@ async def main() -> None:
     viewer.register_connection("viewer-conn", on_ai_reply, room_id="screen-demo")
 
     # --- Room setup ----------------------------------------------------------
-    # Vision results are auto-injected into the AI channels of the room.
+    # The room's AI channels read the latest vision result in each turn's notes.
     await kit.create_room(room_id="screen-demo")
     await kit.attach_channel("screen-demo", "video-screen")
     await kit.attach_channel("screen-demo", "viewer")
@@ -245,7 +245,7 @@ async def main() -> None:
             parts.append(f"       OCR: {data['text']}")
         print("\n".join(parts))
 
-    # --- Periodic question: the AI answers with the view in its prompt -------
+    # --- Periodic question: the AI answers with the view in its turn's notes -------
     async def ask_ai_periodically() -> None:
         while True:
             await asyncio.sleep(args.ask_every)
@@ -261,8 +261,8 @@ async def main() -> None:
             if result.error is not None:
                 print(f"  AI error: {result.error!r}")
             elif ai_provider.calls:
-                prompt = ai_provider.calls[-1].system_prompt or ""
-                view = [line for line in prompt.splitlines() if "Current view:" in line]
+                turn = str(ai_provider.calls[-1].messages[-1].content)
+                view = [line for line in turn.splitlines() if line.startswith("Description:")]
                 print(f"  (AI was given: {view[-1].strip() if view else 'no screen view yet'})")
 
     # --- Connect and start capture -------------------------------------------
@@ -280,7 +280,7 @@ async def main() -> None:
     print(f"Monitor: {args.monitor} at scale {args.scale} @ {args.fps}fps")
     print(f"Vision analysis every {args.interval}ms")
     print(f"Diff threshold: {args.diff}")
-    print("Vision results are auto-injected into the AI channel's system prompt")
+    print("The AI channel reads the latest vision result in each turn's notes")
     if args.ask_every > 0:
         print(f"Viewer asks the (mock) AI every {args.ask_every:g}s")
     print("Press Ctrl+C to stop.\n")

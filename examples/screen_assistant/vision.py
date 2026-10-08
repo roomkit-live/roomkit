@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 
+from roomkit.tools.fence import fence
 from roomkit.video.vision.screen_tool import capture_screen_frame
 
 from .state import ScreenAssistantState
@@ -73,6 +74,9 @@ def build_change_context(previous: str, current: str) -> tuple[str | None, bool]
     if previous and not significant and previous[:80] == current[:80]:
         return None, False
 
+    # What the vision model wrote is data, set apart in a block it cannot
+    # close (RFC §6.4): a screen showing "ignore your instructions" stays a screen.
     if significant:
-        return f"[Screen changed — new: {', '.join(sorted(new_terms))}] {current}", True
-    return f"[Screen changed] {current}", False
+        seen = f"New: {', '.join(sorted(new_terms))}\nDescription: {current}"
+        return f"[Screen changed]\n{fence('vision', seen)}", True
+    return f"[Screen changed]\n{fence('vision', f'Description: {current}')}", False

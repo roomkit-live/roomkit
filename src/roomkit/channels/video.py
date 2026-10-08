@@ -99,11 +99,11 @@ class VideoChannel(VideoHooksMixin, FrameworkAwareChannel, Channel):
         self._session_bindings: dict[str, tuple[str, ChannelBinding]] = {}
         # Track scheduled fire-and-forget tasks for clean shutdown
         self._scheduled_tasks: set[asyncio.Task[Any]] = set()
-        # Last vision result per session (for AI context injection)
+        # Last vision result per session
         self._last_vision_results: dict[str, VisionResult] = {}
         # Timestamp of last vision analysis per session
         self._last_vision_ts: dict[str, float] = {}
-        self._room_vision: dict[str, tuple[float, VisionResult]] = {}
+        self._room_vision: dict[str, tuple[float, str, VisionResult]] = {}
         # Sessions where backend signalled ready before bind_session ran
         self._session_ready_pending: set[str] = set()
         # Cached event loop for cross-thread scheduling
@@ -250,6 +250,7 @@ class VideoChannel(VideoHooksMixin, FrameworkAwareChannel, Channel):
         if self._video_pipeline is not None:
             self._video_pipeline.reset(session.id)
         self._last_vision_results.pop(session.id, None)
+        self._forget_session_vision(session.id)
         self._last_vision_ts.pop(session.id, None)
         if binding_info and self._framework:
             room_id = binding_info[0]

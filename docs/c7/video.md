@@ -101,7 +101,7 @@ vision = OpenAIVisionProvider(OpenAIVisionConfig(
 # GeminiVisionProvider(GeminiVisionConfig(api_key="AIza...", model="gemini-3.8-flash"))
 ```
 
-`await provider.analyze_frame(frame, prompt=None)` returns `VisionResult(description, labels, confidence, faces, text, metadata)` — `text` is OCR, `faces` are `FaceDetection` boxes. Results are cached per session (`channel.get_last_vision_result(session_id)`), emitted as `video_vision_result` framework events, and auto-injected into the system prompt of any `AIChannel` in the same room. For realtime voice, `setup_realtime_vision(kit, room_id, voice_channel_id)` injects via `inject_text(silent=True)`. On-demand tools: `DescribeWebcamTool`, `DescribeScreenTool`, `ListWebcamsTool`.
+`await provider.analyze_frame(frame, prompt=None)` returns `VisionResult(description, labels, confidence, faces, text, metadata)` — `text` is OCR, `faces` are `FaceDetection` boxes. Results are cached per session (`channel.get_last_vision_result(session_id)`), emitted as `video_vision_result` framework events, and read by every `AIChannel` of the room in its turn's notes as a `<vision>` block (its system prompt and binding never change with the camera; the view ends with its video session). For realtime voice, `setup_realtime_vision(kit, room_id, voice_channel_id)` injects the same block via `inject_text(silent=True)`. On-demand tools: `DescribeWebcamTool`, `DescribeScreenTool`, `ListWebcamsTool`.
 
 ## Video Hook Triggers
 
