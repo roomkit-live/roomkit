@@ -11,6 +11,8 @@ prefixes — while a single-speaker room (a 1:1 DM) is byte-identical to before.
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 
 from roomkit.channels import SMSChannel
@@ -57,6 +59,11 @@ async def _say(kit: RoomKit, sender_id: str, name: str | None, body: str) -> Non
             metadata={"sender_name": name} if name else {},
         )
     )
+
+
+def _sources(register: dict[str, Any]) -> set[str]:
+    """The sources a stored register files, by their digest."""
+    return {pair.split(":")[0] for pairs in register["names"].values() for pair in pairs.split()}
 
 
 def _rank(event: RoomEvent) -> object:
@@ -260,7 +267,7 @@ class TestTheRoomFixesARank:
         ranks = [_rank(e) for e in stored if e.source.channel_id == "sms1"]
         room = await kit.get_room("r1")
         assert ranks == [1, 2]
-        assert len(room.metadata[AUTHOR_REGISTER]["ranks"]) == 2
+        assert len(_sources(room.metadata[AUTHOR_REGISTER])) == 2
 
     async def test_a_registered_name_holds_against_an_impostor_who_speaks_first(self) -> None:
         kit, provider = await _kit(["a1", "a2", "a3"])
@@ -317,7 +324,7 @@ class TestTheRoomFixesARank:
             "Alice (2): hold the refund",
             "Bob: which one?",
         ]
-        assert len((await kit.get_room("r1")).metadata[AUTHOR_REGISTER]["ranks"]) == 3
+        assert len(_sources((await kit.get_room("r1")).metadata[AUTHOR_REGISTER])) == 3
 
     async def test_a_rank_a_sender_supplies_is_not_kept(self) -> None:
         kit, _provider = await _kit(["a1", "a2"])
@@ -349,6 +356,16 @@ class TestTheRoomFixesARank:
                 "names": {"n": "1"},
                 "groups": {"1": []},
                 "ranks": {},
+            },
+            {"version": 3.0, "names": {}},
+            {"version": True, "names": {}},
+            {"version": 3, "names": []},
+            {
+                "version": 3,
+                "names": {
+                    "x": "aaaaaaaaaaaaaaaa:\u00b2 bbbbbbbbbbbbbbbb:0 zz:1 :1 cc",
+                    "y": ["aaaaaaaaaaaaaaaa:1"],
+                },
             },
             {
                 "version": 2,

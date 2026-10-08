@@ -956,13 +956,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reader reads the record while the event's source is the one recorded,
   and ranks it against the room's register otherwise (an event whose
   source or metadata `update_event` replaced, one from before the
-  register). Names alike through another rank as one group: `Lan`, `Ian`,
-  `ian` read `Lan`, `Ian (2)`, `ian (3)` (they read 1, 2, 2); when a name
-  joins two groups, a source whose rank another holds takes a new one for
-  its next turns. A room with no register, one from before it, has it
-  rebuilt once from its timeline, the ranks its turns' records hold first,
-  then its named participants, then its other turns in index order (72 ms
-  for 10,000 events in memory). **Behaviour change:** a `participant_id`
+  register). Ranks are kept per name a source uses: a new source takes one
+  more than the highest rank the sources whose names read like its own
+  hold, so `Lan`, `Ian`, `ian` read `Lan`, `Ian (2)`, `ian (3)` (they read
+  1, 2, 2); a registered participant takes the lowest rank none of them
+  holds, and a source keeps its rank while none of them holds it, so a
+  sender whose name reads like two participants' renumbers neither. A room
+  with no register, one from before it, has it rebuilt once from its
+  timeline, page by page: the ranks its turns' records hold, then its named
+  participants' seats, then its other turns in index order. **Behaviour change:** a `participant_id`
   names a participant by their id only on a channel they are reached
   through (`channel_id`, `connected_via`), and by the identity the identity
   pipeline resolved on any: a sender who posts another participant's id on
@@ -971,9 +973,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   its channel in their `connected_via`, as RFC §5.5 asks. The register is read and
   written under the room lock, so a store shared across processes needs a
   distributed lock manager, which the init warning now says. The register
-  keeps strings and numbers only, since every read of the room copies or
-  parses it: a commit costs 0.6 ms at 1,000 named sources and 6.7 ms at
-  10,000 in memory, where it cost 1.9 and 22 ms. The strategies' installs,
+  keeps strings only, since every read of the room copies or parses it: a
+  commit costs 0.2 ms at 1,000 named sources and 2 ms at 10,000 in memory,
+  where it cost 1.9 and 22 ms. The strategies' installs,
   a loop's end and a delegated task's status write their metadata keys
   alone (`patch_room_metadata`), and a full room write no longer undoes a
   register entry written meanwhile: `save_conversation_state(store,

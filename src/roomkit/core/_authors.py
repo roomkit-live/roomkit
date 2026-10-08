@@ -16,6 +16,8 @@ metadata may reach clients.
 from __future__ import annotations
 
 import hashlib
+import itertools
+import re
 from collections.abc import Iterable
 from typing import Any
 
@@ -34,8 +36,9 @@ event is committed: ``{"name": "Alice", "rank": 2, "source": "<digest>"}``."""
 AUTHOR_REGISTER = "author_register"
 """The room metadata key holding the room's register of authors."""
 
-_VERSION = 2
+_VERSION = 3
 _PAGE = 500
+_PAIR = re.compile(r"([0-9a-f]{16}):([1-9][0-9]{0,8})")
 
 
 class People:
@@ -109,175 +112,103 @@ def recorded_author(event: RoomEvent) -> tuple[str, int, str] | None:
 
 
 class AuthorRegister:
-    """A room's register of authors: the names the room has seen, grouped by
-    what they read as, directly or through another name (``Lan``, ``Ian`` and
-    ``ian`` form one group), and each source's rank in each group.
+    """A room's register of authors: for each thing a name reads as (a
+    skeleton, hashed), the sources whose names read so and the rank of each.
 
-    A source new to a group takes the group's highest rank plus one, so two
-    sources whose names read alike never share a rank; a source keeps its
-    rank in a group. When a name joins two groups, a source of the younger
-    whose rank a source of the older holds takes a new one.
+    Two sources whose names read alike share a skeleton, so their ranks are
+    told apart there: a source new to the names it uses takes one more than
+    the highest rank the sources whose names read like them hold (``Lan``,
+    then ``Ian (2)``, then ``ian (3)``), and a registered participant the
+    lowest rank none of them holds. A source keeps its rank while no source
+    whose name reads like the one it uses holds it, so a name that reads like
+    two others ranks after both and renumbers neither.
 
     Kept as JSON in the room's metadata, which every read of the room copies
-    or parses, so its values are strings and numbers only: ``names`` files
-    each name under a group, ``groups`` holds each group's highest rank, and
-    ``ranks`` each source's ``"group:rank"`` pairs. The application may write
-    the metadata too: what is malformed in it is read as absent."""
+    or parses, so its values are strings: ``names`` maps each hashed
+    skeleton to its ``"source:rank"`` pairs. The application may write the
+    metadata too: what is malformed in it is read as absent."""
 
     def __init__(self, data: dict[str, Any] | None = None) -> None:
-        self.data: dict[str, Any] = data or {
-            "version": _VERSION,
-            "next": 1,
-            "names": {},
-            "groups": {},
-            "ranks": {},
-        }
+        self.data: dict[str, Any] = data or {"version": _VERSION, "names": {}}
         self.changed = data is None
-        self._index: _Index | None = None
 
     @classmethod
     def stored(cls, value: object) -> AuthorRegister | None:
         """The register *value* (a room's :data:`AUTHOR_REGISTER`) holds, or
         ``None`` when it holds none of this version."""
-        if not isinstance(value, dict) or value.get("version") != _VERSION:
+        if not isinstance(value, dict) or type(value.get("version")) is not int:
             return None
-        if not _is_rank(value.get("next")):
-            return None
-        if all(isinstance(value.get(key), dict) for key in ("names", "groups", "ranks")):
+        if value["version"] == _VERSION and isinstance(value.get("names"), dict):
             return cls(value)
         return None
 
     def copy(self) -> AuthorRegister:
         """A register a reader may extend without touching this one: its
-        values are strings and numbers, so a copy of each map suffices."""
-        maps = {key: dict(self.data[key]) for key in ("names", "groups", "ranks")}
-        return AuthorRegister({**self.data, **maps})
+        values are strings, so a copy of the map suffices."""
+        return AuthorRegister({**self.data, "names": dict(self.data["names"])})
 
     def rank(self, source: str, names: set[str]) -> int:
-        """*source*'s rank in the group of *names*, the register extended when
-        the source or one of the names is new to it."""
-        gid = self._join(names)
-        held = self._ranks(source).get(gid)
-        if held is not None:
-            return held
-        return self._enter(source, gid, self.data["groups"][gid] + 1)
-
-    def claim(self, source: str, names: set[str], rank: int) -> None:
-        """Record *source* at *rank* in the group of *names*, as a turn's
-        record says it was; a rank another source of the group holds stays
-        theirs, and *source* takes a new one at its next turn."""
-        gid = self._join(names)
-        if gid in self._ranks(source) or rank in self._held(gid):
-            return
-        self._enter(source, gid, rank)
-
-    def seed(self, people: People, salt: str) -> None:
-        """The room's named participants enter first, in the order they
-        joined: a name the application registered holds its rank against a
-        sender who takes it, whoever spoke first."""
-        for person in sorted(people.participants, key=lambda p: p.joined_at):
-            if name := person_name(person.display_name):
-                self.rank(digest(salt, ["participant", person.id]), name_keys(salt, name))
-
-    def _join(self, names: set[str]) -> str:
-        """The group *names* belong to, the oldest of theirs with the others
-        merged into it, or a new one; each name filed under it."""
-        filed = (self.data["names"].get(name) for name in names)
-        found = sorted({gid for gid in filed if self._is_group(gid)}, key=int)
-        if found:
-            gid = found[0]
-            for other in found[1:]:
-                self._merge(gid, other)
-        else:
-            gid = str(self.data["next"])
-            self.data["next"] += 1
-            self.data["groups"][gid] = 0
-            self.changed = True
-        for name in sorted(names):
-            if self.data["names"].get(name) != gid:
-                self.data["names"][name] = gid
-                if self._index is not None:
-                    self._index.names.setdefault(gid, []).append(name)
-                self.changed = True
-        return gid
-
-    def _merge(self, gid: str, other: str) -> None:
-        index = self._indexed()
-        held = self._held(gid)
-        top = max(self.data["groups"][gid], self.data["groups"].pop(other))
-        for name in index.names.pop(other, []):
-            self.data["names"][name] = gid
-            index.names.setdefault(gid, []).append(name)
-        for source in index.members.pop(other, []):
-            ranks = self._ranks(source)
-            rank = ranks.pop(other, None)
-            if gid not in ranks:
-                if rank is None or rank in held:
-                    top += 1
-                    rank = top
-                ranks[gid] = rank
-                held.add(rank)
-                index.members.setdefault(gid, []).append(source)
-            self._write_ranks(source, ranks)
-        self.data["groups"][gid] = top
-        self.changed = True
-
-    def _enter(self, source: str, gid: str, rank: int) -> int:
-        ranks = self._ranks(source)
-        ranks[gid] = rank
-        self._write_ranks(source, ranks)
-        self.data["groups"][gid] = max(self.data["groups"][gid], rank)
-        if self._index is not None:
-            self._index.members.setdefault(gid, []).append(source)
+        """*source*'s rank under *names*: the rank it holds when no other
+        source under them holds it, else one more than the highest held;
+        filed under each of *names*."""
+        mine, others = self._ranks(source, names)
+        kept = sorted(mine - others)
+        rank = kept[0] if kept else max(mine | others, default=0) + 1
+        self._file(source, names, rank)
         return rank
 
-    def _is_group(self, gid: object) -> bool:
-        if not isinstance(gid, str) or not gid.isdigit():
-            return False
-        top = self.data["groups"].get(gid)
-        return isinstance(top, int) and not isinstance(top, bool) and top >= 0
+    def seat(self, source: str, names: set[str]) -> int:
+        """*source*'s rank under *names* as a registered participant's: the
+        rank it holds when no other source under them holds it, else the
+        lowest none of them holds."""
+        mine, others = self._ranks(source, names)
+        kept = sorted(mine - others)
+        rank = kept[0] if kept else next(n for n in itertools.count(1) if n not in others)
+        self._file(source, names, rank)
+        return rank
 
-    def _held(self, gid: str) -> set[int]:
-        sources = self._indexed().members.get(gid, [])
-        return {rank for source in sources if (rank := self._ranks(source).get(gid))}
+    def claim(self, source: str, names: set[str], rank: int) -> None:
+        """Record *source* at *rank* under *names*, as a turn's record says it
+        was; a rank another source under them holds stays theirs, and
+        *source* takes a new one at its next turn."""
+        _mine, others = self._ranks(source, names)
+        if rank not in others:
+            self._file(source, names, rank)
 
-    def _ranks(self, source: str) -> dict[str, int]:
-        """*source*'s rank in each group, its malformed pairs left out."""
-        value = self.data["ranks"].get(source)
+    def seed(self, people: People, salt: str) -> None:
+        """The room's named participants take their seats, in the order they
+        joined: a name the application registered holds the lowest rank free
+        against a sender who takes it, whoever spoke first."""
+        for person in sorted(people.participants, key=lambda p: p.joined_at):
+            if name := person_name(person.display_name):
+                self.seat(digest(salt, ["participant", person.id]), name_keys(salt, name))
+
+    def _ranks(self, source: str, names: set[str]) -> tuple[set[int], set[int]]:
+        """The ranks *source* holds under *names*, and those the other sources
+        under them hold."""
+        mine: set[int] = set()
+        others: set[int] = set()
+        for name in names:
+            for holder, rank in self._entries(name).items():
+                (mine if holder == source else others).add(rank)
+        return mine, others
+
+    def _entries(self, name: str) -> dict[str, int]:
+        """The sources filed under *name* and their ranks, its malformed pairs
+        left out."""
+        value = self.data["names"].get(name)
         if not isinstance(value, str):
             return {}
-        ranks: dict[str, int] = {}
-        for pair in value.split():
-            gid, _, rank = pair.partition(":")
-            if self._is_group(gid) and rank.isdigit() and int(rank) > 0:
-                ranks[gid] = int(rank)
-        return ranks
+        pairs = (_PAIR.fullmatch(pair) for pair in value.split())
+        return {found[1]: int(found[2]) for found in pairs if found}
 
-    def _write_ranks(self, source: str, ranks: dict[str, int]) -> None:
-        self.data["ranks"][source] = " ".join(f"{gid}:{rank}" for gid, rank in ranks.items())
-        self.changed = True
-
-    def _indexed(self) -> _Index:
-        """Each group's names and sources, read once from the register when a
-        merge or a replayed record needs them, then kept up to date."""
-        if self._index is None:
-            index = _Index()
-            for name, gid in self.data["names"].items():
-                if self._is_group(gid):
-                    index.names.setdefault(gid, []).append(name)
-            for source in self.data["ranks"]:
-                for gid in self._ranks(source):
-                    index.members.setdefault(gid, []).append(source)
-            self._index = index
-        return self._index
-
-
-class _Index:
-    """A register's groups, read the other way: each one's names and sources."""
-
-    def __init__(self) -> None:
-        self.names: dict[str, list[str]] = {}
-        self.members: dict[str, list[str]] = {}
+    def _file(self, source: str, names: set[str], rank: int) -> None:
+        for name in sorted(names):
+            entries = self._entries(name)
+            if entries.get(source) != rank:
+                entries[source] = rank
+                self.data["names"][name] = " ".join(f"{s}:{r}" for s, r in entries.items())
+                self.changed = True
 
 
 def _is_rank(value: object) -> bool:
@@ -303,26 +234,36 @@ def author_record(
     return {"name": name, "rank": register.rank(source, name_keys(salt, name)), "source": source}
 
 
-def rebuilt(events: Iterable[RoomEvent], context: RoomContext) -> AuthorRegister:
-    """A register for a room that holds none (a room from before it): the
-    ranks its turns' records hold, then its named participants, then the
-    authors of its turns that hold no record, in index order."""
-    register = AuthorRegister()
-    people = People(context.participants)
-    salt = context.room.id
-    unrecorded: list[tuple[str, set[str]]] = []
-    for event in events:
-        if event.status == EventStatus.BLOCKED or event.source.channel_type == ChannelType.SYSTEM:
-            continue
-        record = recorded_author(event)
-        if record is not None and (name := person_name(record[0])):
-            register.claim(record[2], name_keys(salt, name), record[1])
-        elif (name := author_name(event, people)) is not None:
-            unrecorded.append((digest(salt, source_of(event, people)), name_keys(salt, name)))
-    register.seed(people, salt)
-    for source, names in unrecorded:
-        register.rank(source, names)
-    return register
+class _Rebuild:
+    """A register for a room that holds none (a room from before it), from
+    its timeline, page by page: the ranks its turns' records hold, then its
+    named participants' seats, then the authors of its turns that hold no
+    record, in index order."""
+
+    def __init__(self, context: RoomContext) -> None:
+        self.register = AuthorRegister()
+        self._people = People(context.participants)
+        self._salt = context.room.id
+        self._unrecorded: list[tuple[str, set[str]]] = []
+
+    def add(self, events: Iterable[RoomEvent]) -> None:
+        for event in events:
+            if event.status == EventStatus.BLOCKED:
+                continue
+            if event.source.channel_type == ChannelType.SYSTEM:
+                continue
+            record = recorded_author(event)
+            if record is not None and (name := person_name(record[0])):
+                self.register.claim(record[2], name_keys(self._salt, name), record[1])
+            elif (name := author_name(event, self._people)) is not None:
+                source = digest(self._salt, source_of(event, self._people))
+                self._unrecorded.append((source, name_keys(self._salt, name)))
+
+    def done(self) -> AuthorRegister:
+        self.register.seed(self._people, self._salt)
+        for source, names in self._unrecorded:
+            self.register.rank(source, names)
+        return self.register
 
 
 async def with_author(store: ConversationStore, room_id: str, event: RoomEvent) -> RoomEvent:
@@ -349,7 +290,7 @@ async def with_author(store: ConversationStore, room_id: str, event: RoomEvent) 
     context = RoomContext(room=room, participants=await store.list_participants(room_id))
     register = AuthorRegister.stored(room.metadata.get(AUTHOR_REGISTER))
     if register is None:
-        register = rebuilt(await _timeline(store, room_id), context)
+        register = await _rebuilt(store, room_id, context)
     record = author_record(event, context, register)
     if register.changed:
         await store.patch_room_metadata(room_id, {AUTHOR_REGISTER: register.data})
@@ -358,9 +299,11 @@ async def with_author(store: ConversationStore, room_id: str, event: RoomEvent) 
     return event.model_copy(update={"metadata": {**event.metadata, AUTHOR: record}})
 
 
-async def _timeline(store: ConversationStore, room_id: str) -> list[RoomEvent]:
-    """The turns *room_id* received, in index order."""
-    events: list[RoomEvent] = []
-    while page := await store.list_events(room_id, offset=len(events), limit=_PAGE):
-        events.extend(page)
-    return events
+async def _rebuilt(store: ConversationStore, room_id: str, context: RoomContext) -> AuthorRegister:
+    """The register *room_id*'s timeline rebuilds (:class:`_Rebuild`)."""
+    rebuild = _Rebuild(context)
+    offset = 0
+    while page := await store.list_events(room_id, offset=offset, limit=_PAGE):
+        rebuild.add(page)
+        offset += len(page)
+    return rebuild.done()

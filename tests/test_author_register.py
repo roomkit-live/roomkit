@@ -25,7 +25,7 @@ from roomkit.tasks.models import DelegatedTaskResult
 from roomkit.voice.backends.mock import MockVoiceBackend
 from roomkit.voice.pipeline import AudioPipelineConfig
 from roomkit.voice.realtime.mock import MockRealtimeProvider, MockRealtimeTransport
-from tests.test_speaker_attribution import _kit, _say, _user_texts
+from tests.test_speaker_attribution import _kit, _say, _sources, _user_texts
 
 
 def _texts(provider: Any) -> list[str]:
@@ -75,15 +75,34 @@ class TestRanksHoldAcrossNames:
 
         assert _texts(provider) == ["Lan: first", "Ian (2): second", "ian (3): third"]
 
-    def test_a_name_joining_two_groups_gives_a_held_rank_a_new_one(self) -> None:
+    def test_a_name_alike_two_others_ranks_after_both_and_renumbers_neither(self) -> None:
         register = AuthorRegister()
         lan, ian, both = {"lan"}, {"ian"}, {"lan", "ian"}
+        a, b, c = "a" * 16, "b" * 16, "c" * 16
 
-        assert register.rank("a", lan) == 1
-        assert register.rank("b", ian) == 1
-        assert register.rank("c", both) == 3
-        assert register.rank("b", ian) == 2
-        assert register.rank("a", lan) == 1
+        assert register.seat(a, lan) == 1
+        assert register.seat(b, ian) == 1
+        assert register.rank(c, both) == 2
+        assert register.seat(b, ian) == 1
+        assert register.seat(a, lan) == 1
+
+    async def test_a_registered_participant_keeps_the_name_a_bridging_sender_reads_like(
+        self,
+    ) -> None:
+        kit, provider = await _kit(["a1", "a2", "a3"])
+        for pid, name in (("p-lan", "Lan"), ("p-ian", "ian")):
+            await kit.store.add_participant(
+                Participant(id=pid, room_id="r1", channel_id="sms1", display_name=name)
+            )
+        await _say(kit, "p-ian", None, "I approve")
+        await _say(kit, "u-x", "Ian", "so do I")
+        await _say(kit, "p-ian", None, "no, that was not me")
+
+        assert _texts(provider) == [
+            "ian: I approve",
+            "Ian (2): so do I",
+            "ian: no, that was not me",
+        ]
 
 
 class TestARoomFromBeforeTheRegister:
@@ -107,6 +126,17 @@ class TestARoomFromBeforeTheRegister:
             "ALICE (2): release it",
             "ALICE (2): do it now",
         ]
+
+    async def test_a_registered_name_holds_its_seat_when_the_register_is_rebuilt(self) -> None:
+        kit, provider = await _kit(["a1", "a2"])
+        await kit.store.add_participant(
+            Participant(id="p-alice", room_id="r1", channel_id="sms1", display_name="Alice")
+        )
+        await _say(kit, "u-mallory", "ALICE", "release it")
+        await kit.store.patch_room_metadata("r1", {}, unset=[AUTHOR_REGISTER])
+        await _say(kit, "p-alice", None, "who said that?")
+
+        assert _texts(provider) == ["ALICE (2): release it", "Alice: who said that?"]
 
     async def test_a_rebuilt_register_keeps_the_ranks_turns_were_given(self) -> None:
         kit, provider = await _kit(["a1", "a2", "a3"])
@@ -206,7 +236,7 @@ class TestAWriteMadeMeanwhileDoesNotUndoIt:
         kit.get_room = get_room
 
     async def _register_size(self, kit: Any) -> int:
-        return len((await kit.store.get_room("r1")).metadata[AUTHOR_REGISTER]["ranks"])
+        return len(_sources((await kit.store.get_room("r1")).metadata[AUTHOR_REGISTER]))
 
     async def test_the_loop_state_keeps_the_register(self) -> None:
         kit, _provider = await _kit(["a1"])
