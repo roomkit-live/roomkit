@@ -5,22 +5,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import AsyncIterator, Callable
+from collections.abc import Callable
 
 import pytest
 
-from roomkit import RoomKit, VoiceChannel
-from roomkit.channels.ai import AIChannel
-from roomkit.providers.ai.base import AIContext, AIProvider, AIResponse
 from roomkit.voice import StripTechnicalText, TTSFilterChain
-from roomkit.voice.audio_frame import AudioFrame
-from roomkit.voice.backends.mock import MockVoiceBackend
-from roomkit.voice.base import VoiceSession
-from roomkit.voice.pipeline import AudioPipelineConfig, MockVADProvider
-from roomkit.voice.stt.mock import MockSTTProvider
 from roomkit.voice.tts.filters import StripEmoji
-from tests.test_voice_streaming_ai_tts import _speech_events
-from tests.voice.test_voice_tts_filter import _StreamingMockTTS
+from tests.voice.streamed_replies import ask, said, voice_rooms
 
 TOOL_CALL = '{"name": "delegate", "arguments": {"task": "Weather. Today"}}'
 
@@ -149,71 +140,6 @@ def test_it_chains_with_the_other_filters() -> None:
     assert chain(f"Done \U0001f60a {TOOL_CALL} bye.") == "Done bye."
 
 
-class _SlowStream(AIProvider):
-    """Streams its tokens with a pause after each, so two replies overlap."""
-
-    def __init__(self, tokens: list[str], gap: float = 0.0) -> None:
-        self._tokens, self._gap = tokens, gap
-
-    @property
-    def model_name(self) -> str:
-        return "slow"
-
-    @property
-    def supports_streaming(self) -> bool:
-        return True
-
-    async def generate(self, context: AIContext) -> AIResponse:
-        return AIResponse(content="".join(self._tokens))
-
-    async def generate_stream(self, context: AIContext) -> AsyncIterator[str]:
-        for token in self._tokens:
-            yield token
-            await asyncio.sleep(self._gap)
-
-
-async def _voice_rooms(
-    *replies: list[str], gap: float = 0.0
-) -> tuple[RoomKit, VoiceChannel, MockVoiceBackend, _StreamingMockTTS, list[VoiceSession]]:
-    """One voice channel filtering with StripTechnicalText, a room per reply,
-    each with an agent that streams that reply."""
-    tts, backend = _StreamingMockTTS(), MockVoiceBackend()
-    stt = MockSTTProvider(transcripts=["A question."] * len(replies))
-    vad = MockVADProvider(events=_speech_events() * len(replies))
-    voice = VoiceChannel(
-        "voice-1",
-        stt=stt,
-        tts=tts,
-        backend=backend,
-        pipeline=AudioPipelineConfig(vad=vad),
-        tts_filter=StripTechnicalText(),
-    )
-    kit = RoomKit(stt=stt, voice=backend)
-    kit.register_channel(voice)
-    sessions = []
-    for n, tokens in enumerate(replies):
-        kit.register_channel(AIChannel(f"ai-{n}", provider=_SlowStream(tokens, gap)))
-        room = await kit.create_room()
-        await kit.attach_channel(room.id, "voice-1")
-        await kit.attach_channel(room.id, f"ai-{n}")
-        sessions.append(await kit.connect_voice(room.id, f"user-{n}", "voice-1"))
-    return kit, voice, backend, tts, sessions
-
-
-async def _ask(backend: MockVoiceBackend, session: VoiceSession) -> None:
-    for data in (b"\x01\x00", b"\x02\x00", b"\x03\x00"):
-        await backend.simulate_audio_received(session, AudioFrame(data=data))
-
-
-async def _spoken(tts: _StreamingMockTTS, replies: int) -> list[str]:
-    for _ in range(100):
-        if len(tts.stream_input_texts) >= replies:
-            break
-        await asyncio.sleep(0.02)
-    await asyncio.sleep(0.2)
-    return [" ".join(chunks) for chunks in tts.stream_input_texts]
-
-
 async def test_a_streamed_reply_is_spoken_without_it_and_stored_with_it() -> None:
     """Through the voice channel: the object is split over tokens and holds a
     full stop, which a per-sentence hook would have cut in two."""
@@ -224,10 +150,10 @@ async def test_a_streamed_reply_is_spoken_without_it_and_stored_with_it() -> Non
         'Today"}}',
         " Done.",
     ]
-    kit, _, backend, tts, [session] = await _voice_rooms(tokens)
+    kit, _, backend, tts, [session] = await voice_rooms(tokens, tts_filter=StripTechnicalText())
 
-    await _ask(backend, session)
-    [spoken] = await _spoken(tts, 1)
+    await ask(backend, session)
+    [spoken] = await said(tts, 1)
 
     assert "delegate" not in spoken and "{" not in spoken
     assert "I'll look." in spoken and "Done." in spoken
@@ -245,14 +171,16 @@ async def test_replies_streamed_at_once_in_two_rooms_keep_their_own_filtering() 
     middle reset it."""
     room_a = ["Room A looks. ", '{"name": "lookup", ', '"arguments": {"q": "x"}}', " A done."]
     room_b = ["Room B hello. ", "Room B keeps talking. ", "Room B done."]
-    kit, voice, backend, tts, [a, b] = await _voice_rooms(room_a, room_b, gap=0.05)
+    kit, voice, backend, tts, [a, b] = await voice_rooms(
+        room_a, room_b, gap=0.05, tts_filter=StripTechnicalText()
+    )
 
-    await _ask(backend, a)
+    await ask(backend, a)
     await asyncio.sleep(0.03)
-    await _ask(backend, b)
+    await ask(backend, b)
     await asyncio.sleep(0.05)
     await voice.say(b, "Welcome to room B.")
-    spoken = await _spoken(tts, 2)
+    spoken = await said(tts, 2)
 
     assert sorted(spoken) == [
         "Room A looks. A done.",
@@ -262,7 +190,9 @@ async def test_replies_streamed_at_once_in_two_rooms_keep_their_own_filtering() 
 
 
 async def test_say_keeps_it_out_of_the_voice_too() -> None:
-    kit, voice, backend, tts, [session] = await _voice_rooms(["unused"])
+    kit, voice, backend, tts, [session] = await voice_rooms(
+        ["unused"], tts_filter=StripTechnicalText()
+    )
 
     await voice.say(session, f"One moment. {TOOL_CALL} Done.")
 
