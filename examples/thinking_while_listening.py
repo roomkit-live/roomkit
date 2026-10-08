@@ -13,7 +13,9 @@ something to say, the policy decides again with that thought.
 3. "Nova, go ahead, tell us." asks her: she speaks, her thought in the turn's
    notes, and what she wanted to say is then said.
 
-``ON_THOUGHT`` shows each thought, ``ON_SPEAK_DECISION`` each decision.
+``ON_THOUGHT`` shows each thought, ``ON_SPEAK_DECISION`` each decision, each with
+how long the thinker or the policy took, and whether a decision is the one taken
+again once Nova thought: no wrapper around either is needed to measure them.
 
 ``CLASSIFIER`` (``mock``, ``jev``) chooses the policy's judgments and ``THINKER``
 (``mock``, ``anthropic``) the thinker's model; the defaults need no key. With
@@ -100,7 +102,7 @@ def make_thinker() -> Thinker:
         key = require_env("ANTHROPIC_API_KEY")["ANTHROPIC_API_KEY"]
         config = AnthropicConfig(api_key=key, model="claude-haiku-5-5")
         return LLMThinker(AnthropicAIProvider(config))
-    return MockThinker([PRICE])
+    return MockThinker([PRICE], delay=0.4)  # about what Claude Haiku took
 
 
 async def main() -> None:
@@ -132,13 +134,23 @@ async def main() -> None:
 
     @kit.hook(HookTrigger.ON_THOUGHT, execution=HookExecution.ASYNC)
     async def on_thought(event: ThoughtEvent, ctx: object) -> None:
-        logger.info("  Nova thinks: %s %s", event.thought.text, list(event.thought.want_to_say))
+        took = f"{event.duration_ms} ms" if event.duration_ms is not None else "no call"
+        thought = event.thought
+        logger.info("  Nova thinks (%s): %s %s", took, thought.text, list(thought.want_to_say))
 
     @kit.hook(HookTrigger.ON_SPEAK_DECISION, execution=HookExecution.ASYNC)
     async def on_decision(event: SpeakDecisionEvent, ctx: object) -> None:
         decision = event.decision
         judged = " ".join(f"{k}={v:.2f}" for k, v in decision.judgments.items() if v >= 0.05)
-        logger.info("  → %s (%s) %s", decision.mode, decision.reason, judged)
+        again = ", asked again" if event.asked_again else ""
+        logger.info(
+            "  → %s (%s, %d ms%s) %s",
+            decision.mode,
+            decision.reason,
+            event.duration_ms,
+            again,
+            judged,
+        )
 
     for name, body in LINES:
         logger.info('%s: "%s"', name, body)

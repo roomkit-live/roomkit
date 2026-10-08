@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from typing import TYPE_CHECKING
 
 from roomkit.channels._ai_cuts import cut_records, cut_reply
@@ -49,28 +50,46 @@ class AISpeakingMixin:
         self._speak_decision_hook = None
 
     async def _speak_decision(
-        self, event: RoomEvent, context: RoomContext, thought: Thought | None = None
+        self,
+        event: RoomEvent,
+        context: RoomContext,
+        thought: Thought | None = None,
+        *,
+        asked_again: bool = False,
     ) -> SpeakDecision | None:
-        """The policy's decision on *event*, or None when nothing is decided: no
-        policy, an instruction (the application asked for that turn), the
-        channel's own event or a tool record. A policy that fails or does not
-        decide in time does not silence the agent."""
+        """The policy's decision on *event*, reported to ``ON_SPEAK_DECISION``
+        with how long it took, or None when nothing is decided: no policy, an
+        instruction (the application asked for that turn), the channel's own
+        event or a tool record. *asked_again*: the policy decides again once the
+        agent thought (RFC §6.4)."""
         policy = self._speak_policy
         if policy is None or not self._submitted_to_policy(event):
             return None
         turn = _speak_turn(event, context, self.channel_id, thought)
+        started = time.monotonic()
+        decision = await self._bounded_decision(policy, turn)
+        duration_ms = round((time.monotonic() - started) * 1000)
+        room_id = context.room.id if context.room else event.room_id
+        await self._report_speak_decision(
+            SpeakDecisionEvent(room_id, self.channel_id, event, decision, duration_ms, asked_again)
+        )
+        return decision
+
+    async def _bounded_decision(self, policy: SpeakPolicy, turn: SpeakTurn) -> SpeakDecision:
+        """The policy's decision on *turn* within the channel's bound: a policy
+        that fails or does not decide in time does not silence the agent, which
+        speaks with the reason ``fallback``."""
         try:
-            decision = await asyncio.wait_for(policy.decide(turn), self._speak_timeout)
+            return await asyncio.wait_for(policy.decide(turn), self._speak_timeout)
         except TimeoutError:
             logger.warning(
-                "Speak policy took over %.1f s on %s; speaking", self._speak_timeout, event.id
+                "Speak policy took over %.1f s on %s; speaking",
+                self._speak_timeout,
+                turn.event.id,
             )
-            decision = SpeakDecision("speak", reason=_FALLBACK)
         except Exception:
-            logger.warning("Speak policy failed on %s; speaking", event.id, exc_info=True)
-            decision = SpeakDecision("speak", reason=_FALLBACK)
-        await self._report_speak_decision(event, context, decision)
-        return decision
+            logger.warning("Speak policy failed on %s; speaking", turn.event.id, exc_info=True)
+        return SpeakDecision("speak", reason=_FALLBACK)
 
     def _submitted_to_policy(self, event: RoomEvent) -> bool:
         return (
@@ -79,17 +98,14 @@ class AISpeakingMixin:
             and not is_tool_call_record(event)
         )
 
-    async def _report_speak_decision(
-        self, event: RoomEvent, context: RoomContext, decision: SpeakDecision
-    ) -> None:
+    async def _report_speak_decision(self, report: SpeakDecisionEvent) -> None:
         hook = self._speak_decision_hook
         if hook is None:
             return
-        room_id = context.room.id if context.room else event.room_id
         try:
-            await hook(SpeakDecisionEvent(room_id, self.channel_id, event, decision))
+            await hook(report)
         except Exception:
-            logger.warning("ON_SPEAK_DECISION failed on %s", event.id, exc_info=True)
+            logger.warning("ON_SPEAK_DECISION failed on %s", report.event.id, exc_info=True)
 
 
 def speak_notes(decision: SpeakDecision | None) -> tuple[str, ...]:

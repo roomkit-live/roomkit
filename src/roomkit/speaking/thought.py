@@ -76,6 +76,10 @@ class ThoughtEvent:
     previous: Thought = field(default_factory=Thought)
     """The thought it replaces."""
 
+    duration_ms: int | None = None
+    """How long the thinker call that brought it took; ``None`` when no call
+    did: the agent spoke, and what it wanted to say was emptied."""
+
 
 def thought_note(thought: Thought) -> str:
     """*thought* as the turn's notes carry it when the agent speaks, each text

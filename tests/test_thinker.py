@@ -23,6 +23,7 @@ from roomkit import (
     RoomKit,
     SMSChannel,
     SpeakDecision,
+    SpeakDecisionEvent,
     Thought,
     ThoughtEvent,
     add_turn_note,
@@ -227,6 +228,26 @@ async def test_with_something_to_say_in_time_the_agent_raises_its_hand() -> None
     assert [t.thought for t in policy.turns] == [Thought(), PRICE]
     assert "- “It costs 1,200 $ a year.”" in _notes(provider)
     assert channel._thought_of("r1") == PRICE.said()
+
+
+async def test_the_decision_taken_again_after_thinking_says_so() -> None:
+    """RMK-627: ON_SPEAK_DECISION tells the first decision on an event from the
+    one the policy takes again with the thought."""
+    channel, _ = _channel(MockSpeakPolicy(["silent", "offer"]), MockThinker([PRICE]))
+    decisions: list[SpeakDecisionEvent] = []
+
+    async def hook(event: SpeakDecisionEvent) -> None:
+        decisions.append(event)
+
+    channel._speak_decision_hook = hook
+    event = _said("We are looking for the licence price.")
+
+    await respond(channel, event, _BINDING, _context(event))
+
+    assert [(d.event.id, d.decision.mode, d.asked_again) for d in decisions] == [
+        (event.id, "silent", False),
+        (event.id, "offer", True),
+    ]
 
 
 async def test_a_late_thought_waits_for_the_next_turn() -> None:
@@ -443,7 +464,7 @@ async def test_every_new_thought_reaches_on_thought() -> None:
         "nova",
         provider=MockAIProvider(["Yes?"]),
         speak_policy=MockSpeakPolicy(["silent"]),
-        thinker=MockThinker([PRICE]),
+        thinker=MockThinker([PRICE], delay=0.05),
     )
     kit.register_channel(nova)
     kit.register_channel(SMSChannel("sms", provider=MockSMSProvider()))
@@ -468,6 +489,8 @@ async def test_every_new_thought_reaches_on_thought() -> None:
     assert [(e.room_id, e.channel_id, e.thought, e.previous) for e in seen] == [
         ("meeting", "nova", PRICE, Thought())
     ]
+    # RMK-627: how long the thinker call took, read without wrapping the thinker.
+    assert seen[0].duration_ms is not None and 40 <= seen[0].duration_ms < 900
 
 
 async def test_speaking_reports_the_emptied_thought() -> None:
@@ -494,6 +517,8 @@ async def test_speaking_reports_the_emptied_thought() -> None:
     await kit.close()
 
     assert [(e.thought, e.previous) for e in seen] == [(PRICE, Thought()), (PRICE.said(), PRICE)]
+    # The emptied thought came from no thinker call: it has no duration.
+    assert seen[0].duration_ms is not None and seen[1].duration_ms is None
 
 
 def test_speak_decision_is_unchanged_without_a_thinker() -> None:

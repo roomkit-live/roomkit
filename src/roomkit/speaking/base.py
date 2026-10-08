@@ -105,6 +105,14 @@ class SpeakDecisionEvent:
 
     decision: SpeakDecision
 
+    duration_ms: int = 0
+    """How long the policy took to decide: the channel's bound when it did not
+    decide in time."""
+
+    asked_again: bool = False
+    """The policy was asked again on the event once the agent thought, with the
+    thought (RFC §6.4): not its first decision on it."""
+
 
 class SpeakPolicy(ABC):
     """Decides, on every event an AI channel would answer, whether its agent speaks.

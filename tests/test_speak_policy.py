@@ -167,6 +167,35 @@ async def test_a_policy_that_fails_or_is_late_does_not_silence_the_agent(
     assert "speaking" in caplog.text
 
 
+@pytest.mark.parametrize(
+    ("policy", "bound", "at_least_ms"),
+    [
+        (MockSpeakPolicy(["speak"], delay=0.05), 2.0, 40),
+        (MockSpeakPolicy(["silent"], delay=1.0), 0.1, 90),
+    ],
+    ids=["decided", "late"],
+)
+async def test_a_decision_reports_how_long_the_policy_took(
+    policy: MockSpeakPolicy, bound: float, at_least_ms: int
+) -> None:
+    """RMK-627: a hook measures the policy without wrapping it; a late one
+    reports the bound, not the time it would have taken."""
+    channel, _ = _channel(policy, speak_timeout=bound)
+    decisions: list[SpeakDecisionEvent] = []
+
+    async def hook(event: SpeakDecisionEvent) -> None:
+        decisions.append(event)
+
+    channel._speak_decision_hook = hook
+    await respond(
+        channel, make_event(body="Nova ?", channel_id="sms1", room_id="r1"), _BINDING, _context()
+    )
+
+    [event] = decisions
+    assert at_least_ms <= event.duration_ms < 900
+    assert event.asked_again is False
+
+
 def test_a_decision_refuses_an_unknown_mode() -> None:
     with pytest.raises(ValueError, match="maybe"):
         SpeakDecision("maybe")  # type: ignore[arg-type]

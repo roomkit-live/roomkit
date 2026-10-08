@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import time
 from typing import TYPE_CHECKING
 
 from roomkit.speaking.thought import Thought, ThoughtEvent, thought_note
@@ -86,7 +87,9 @@ class _RoomMind:
             (context, spoke), ticket = self._pending, self._asked
             self._pending = None
             previous = self.thought
+            started = time.monotonic()
             thought = await self._next(previous, context)
+            duration_ms = round((time.monotonic() - started) * 1000)
             if self._spoke != spoke:
                 thought = thought.said()  # it spoke since the context: that is said now
             async with self._changed:
@@ -94,7 +97,7 @@ class _RoomMind:
                 self._done = ticket
                 self._changed.notify_all()
             if thought != previous:
-                await self._channel._report_thought(self.room_id, thought, previous)
+                await self._channel._report_thought(self.room_id, thought, previous, duration_ms)
 
     async def _next(self, previous: Thought, context: AIContext) -> Thought:
         try:
@@ -158,7 +161,7 @@ class AIThinkingMixin(_AIChannelContract):
             return decision
         if not mind.thought.want_to_say:
             return decision
-        again = await self._speak_decision(event, context, mind.thought)
+        again = await self._speak_decision(event, context, mind.thought, asked_again=True)
         return again if again is not None else decision
 
     async def _thought_notes(self, room_id: str) -> tuple[str, ...]:
@@ -170,16 +173,20 @@ class AIThinkingMixin(_AIChannelContract):
             return ()
         spoken = mind.spoke()
         if mind.thought != spoken:
-            await self._report_thought(room_id, mind.thought, spoken)
+            await self._report_thought(room_id, mind.thought, spoken, None)
         note = thought_note(spoken)
         return (note,) if note else ()
 
-    async def _report_thought(self, room_id: str, thought: Thought, previous: Thought) -> None:
+    async def _report_thought(
+        self, room_id: str, thought: Thought, previous: Thought, duration_ms: int | None
+    ) -> None:
+        """Fire ``ON_THOUGHT`` with *thought*, and how long the thinker call that
+        brought it took (``None`` without a call)."""
         hook = self._thought_hook
         if hook is None:
             return
         try:
-            await hook(ThoughtEvent(room_id, self.channel_id, thought, previous))
+            await hook(ThoughtEvent(room_id, self.channel_id, thought, previous, duration_ms))
         except Exception:
             logger.warning("ON_THOUGHT failed in room %s", room_id, exc_info=True)
 

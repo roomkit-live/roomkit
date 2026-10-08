@@ -62,7 +62,12 @@ class _AIChannelContract:
     ) -> AIContext | None: ...
 
     async def _speak_decision(
-        self, event: RoomEvent, context: RoomContext, thought: Thought | None = None
+        self,
+        event: RoomEvent,
+        context: RoomContext,
+        thought: Thought | None = None,
+        *,
+        asked_again: bool = False,
     ) -> SpeakDecision | None: ...
 
     def _served_tool_names(self, room_id: str | None) -> set[str]: ...

@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `ON_SPEAK_DECISION` and `ON_THOUGHT` say what deciding and thinking cost
+  (RMK-627, RFC §6.4). `SpeakDecisionEvent.duration_ms` is how long the speak
+  policy took (the channel's bound when it did not decide in time) and
+  `SpeakDecisionEvent.asked_again` marks the decision the policy takes again
+  once the agent thought; `ThoughtEvent.duration_ms` is how long the thinker
+  call took, `None` for a thought emptied because the agent spoke. A policy or a
+  thinker is measured from the hooks, without wrapping it in a class of one's
+  own. Both fields have defaults: an event built positionally still is.
+  Example: `examples/thinking_while_listening.py`.
+
 - `supports_reasoning_effort_with_tools` on `OpenAIConfig` and `AzureAIConfig`:
   whether the server takes `reasoning_effort` beside function tools (RMK-557,
   RFC §6.7). Behind a `base_url`, on an Azure deployment or a LiteLLM alias the
