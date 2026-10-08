@@ -144,6 +144,14 @@ async def _settle(seconds: float = 0.05) -> None:
     await asyncio.sleep(seconds)
 
 
+async def _spoken(provider: MockRealtimeProvider, timeout: float = 2.0) -> None:
+    """Wait until a delegation delivered the output the model speaks: a fixed
+    sleep lost the race on a loaded CI runner."""
+    async with asyncio.timeout(timeout):
+        while not any(spoken for *_, spoken in provider.delegation_outputs):
+            await asyncio.sleep(0.01)
+
+
 class TestConfiguration:
     def test_timeout_must_be_positive(self) -> None:
         with pytest.raises(ValueError, match="reasoning_timeout_s"):
@@ -942,7 +950,8 @@ class TestAgentBackendOnTheChannel:
 
         session = await channel.start_session("r1", "user-1", "fake-ws")
         await provider.simulate_delegation(session, "d1", "integrator")
-        await _settle(0.1)
+        await _spoken(provider)
+        await _settle()
         return kit, provider, observed, telemetry
 
     async def test_a_served_call_is_reported_once(self) -> None:
