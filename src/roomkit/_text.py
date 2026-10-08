@@ -67,18 +67,53 @@ realtime provider adds to its prompt, and the goal or task an orchestration
 strategy copies into another model's prompt."""
 
 
-def _tag_name(tag: str) -> str:
-    """*tag*'s name as a model reads it, up to its end: any invisible character
-    between its letters, then a space, an invisible character, a slash or the
-    tag's end (``<task-list>`` is another tag). The end is read without
-    consuming anything, so no two quantifiers compete for what follows."""
-    return f"[{INVISIBLE}]*".join(map(re.escape, tag)) + rf"(?=[\s{INVISIBLE}/>])"
+_OPEN = "<\uff1c\ufe64"
+_SLASH = "/\uff0f"
+_CLOSE = ">\uff1e\ufe65"
+"""A tag's angle brackets and slash as a model reads them: the ASCII ones, and
+their fullwidth and small forms (``＜／tool_result＞``)."""
+
+_GAP = rf"[\s{INVISIBLE}]*"
+_TAG_END = re.compile(f"[{_CLOSE}]")
 
 
-_TAG_REST = r"[^>]{0,256}>"
-"""What follows a tag's name up to its ``>``, bounded: read from every ``<name``
-in a text, an unbounded run would read the rest of the text each time, which
-is quadratic in a text of ``<name`` without ``>``."""
+def _tag_name(tag: str, *, exact: bool = False) -> str:
+    """*tag*'s name as a model reads it: any invisible character between its
+    letters, and no letter, digit or underscore of a longer name after it. A
+    hyphen, a dot or any other mark ends it: read as a closing tag, such a
+    name closes the block for a model, so a closing tag errs toward one.
+    *exact*, for an opening tag, which names a block only as written, ends
+    the name at a space, an invisible character, a slash or the bracket
+    (``<task-list>`` is another tag). The end is read without consuming
+    anything."""
+    letters = f"[{INVISIBLE}]*".join(map(re.escape, tag))
+    if exact:
+        return letters + rf"(?=[\s{INVISIBLE}{_SLASH}{_CLOSE}])"
+    return letters + "(?![A-Za-z0-9_])"
+
+
+def _closing_tag(tag: str) -> re.Pattern[str]:
+    """Where a closing tag of *tag* starts, as a model reads it."""
+    return re.compile(f"[{_OPEN}]{_GAP}[{_SLASH}]{_GAP}{_tag_name(tag)}", re.IGNORECASE)
+
+
+def _opening_tag(tag: str) -> re.Pattern[str]:
+    """Where an opening tag of *tag* starts, as written."""
+    return re.compile(f"[{_OPEN}]{_GAP}{_tag_name(tag, exact=True)}", re.IGNORECASE)
+
+
+def _next_tag(text: str, start: re.Pattern[str], pos: int) -> tuple[int, int] | None:
+    """The first tag *start* opens at or after *pos*, through the first bracket
+    that ends it, whatever its attributes hold; ``None`` when none is ended.
+
+    Read from *pos* forward once: no bracket after a tag's start means none
+    after any later start either, so a text of tags never ended costs one
+    pass, however long."""
+    begun = start.search(text, pos)
+    if begun is None:
+        return None
+    ended = _TAG_END.search(text, begun.end())
+    return None if ended is None else (begun.start(), ended.end())
 
 
 def fence(tag: str, text: str) -> str:
@@ -86,14 +121,17 @@ def fence(tag: str, text: str) -> str:
 
     Any closing tag of that name in *text*, in any case, with any spacing,
     invisible character (:data:`INVISIBLE`, a zero-width space inside the name
-    included) or trailing attributes (``</TOOL_RESULT >``, ``< / tool_result>``,
-    ``</tool_result foo>``, ``</tool_result/>``), is neutralised, so the data
-    cannot close the block.
+    included), trailing attributes of any length, or brackets in their
+    fullwidth form (``</TOOL_RESULT >``, ``< / tool_result>``,
+    ``</tool_result foo>``, ``</tool_result/>``, ``</tool_result.>``,
+    ``＜／tool_result＞``), is neutralised, so the data cannot close the block.
+    Read in linear time.
     """
-    gap = rf"[\s{INVISIBLE}]*"
-    closing = re.compile(rf"<{gap}/{gap}{_tag_name(tag)}{_TAG_REST}", re.IGNORECASE)
-    neutral = f"</{tag}_>"
-    body = closing.sub(lambda _match: neutral, text)
+    closing, parts, pos = _closing_tag(tag), [], 0
+    while (span := _next_tag(text, closing, pos)) is not None:
+        parts += [text[pos : span[0]], f"</{tag}_>"]
+        pos = span[1]
+    body = "".join(parts) + text[pos:]
     return f"<{tag}>\n{body}\n</{tag}>"
 
 
@@ -104,15 +142,22 @@ def named_blocks(text: str, tags: tuple[str, ...] = FENCED_TAGS) -> str:
     For text about to be cut short, such as a summary: quoting part of a block
     could leave it open, and what follows would then read as data.
     """
-    gap = rf"[\s{INVISIBLE}]*"
     for tag in tags:
-        name = _tag_name(tag)
-        block = re.compile(
-            rf"<{gap}{name}{_TAG_REST}.*?(?:<{gap}/{gap}{name}{_TAG_REST}|\Z)",
-            re.IGNORECASE | re.DOTALL,
-        )
-        text = block.sub(f"[{tag}]", text)
+        text = _named(text, tag)
     return text
+
+
+def _named(text: str, tag: str) -> str:
+    """*text* with each *tag* block, from its opening through its closing or
+    the text's end, replaced by ``[tag]``; read in linear time."""
+    opening, closing = _opening_tag(tag), _closing_tag(tag)
+    parts: list[str] = []
+    pos = 0
+    while (span := _next_tag(text, opening, pos)) is not None:
+        ended = _next_tag(text, closing, span[1])
+        parts += [text[pos : span[0]], f"[{tag}]"]
+        pos = ended[1] if ended is not None else len(text)
+    return "".join(parts) + text[pos:]
 
 
 # -- A frame across a cut ----------------------------------------------------
