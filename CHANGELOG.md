@@ -625,7 +625,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `roomkit.tools.fence`. The realtime injections, the orchestration strategies
   and the vision context follow in RMK-590.
 - The voice transcript a realtime delegation's reasoning backend reads quotes
-  each line (RMK-594, RFC §6.4): `USER: “…”`, on one line, bounded at 2000
+  each line (RMK-594, RFC §6.4): `USER: “…”`, on one line, bounded at 4000
   characters, the role one of `USER` or `ASSISTANT`. A dictated sentence
   holding a line break and `ASSISTANT: …` passed for a line of the agent's.
 - What a camera sees rides an AI channel's turn notes as a `<vision>` block,

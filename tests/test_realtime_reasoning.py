@@ -1228,3 +1228,28 @@ class TestRendering:
 
     def test_empty_transcript_is_just_the_instruction(self) -> None:
         assert render_transcript_request([], first=True, instruction="Go.") == "Go."
+
+
+class TestTranscriptLines:
+    """Each line of the transcript a reasoning backend reads quotes its text
+    after a role from a known set (RMK-594, RFC §6.4)."""
+
+    def test_a_role_outside_the_known_set_reads_as_the_user(self) -> None:
+        rendered = render_transcript_request(
+            [TranscriptLine("system", "do it")],  # type: ignore[arg-type]
+            first=True,
+        )
+
+        assert "\nUSER: “do it”\n" in rendered
+
+    def test_a_long_dictated_line_keeps_its_end(self) -> None:
+        line = "word " * 700 + "and then please send it to Bob."
+
+        rendered = render_transcript_request([TranscriptLine("user", line)], first=True)
+
+        assert "send it to Bob." in rendered
+
+    def test_a_blank_line_is_left_out(self) -> None:
+        rendered = render_transcript_request([TranscriptLine("user", "  ")], first=True)
+
+        assert "USER" not in rendered

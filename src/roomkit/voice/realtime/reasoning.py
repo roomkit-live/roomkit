@@ -111,8 +111,10 @@ DEFAULT_TRANSCRIPT_INSTRUCTION = "Act on the user's most recent request in the c
 _ROLES = frozenset({"user", "assistant"})
 """The speakers of a voice transcript."""
 
-_LINE_CHARS = 2000
-"""The characters of one transcript line a reasoning backend reads."""
+_LINE_CHARS = 4000
+"""The characters of one transcript line a reasoning backend reads: as an ACP
+agent's room context and a realtime broadcast take a message, so a long
+dictated request keeps its end, where the request usually is."""
 
 
 @dataclass(frozen=True)
@@ -247,7 +249,7 @@ def render_transcript_request(
         lines.extend(
             f"{one_of(line.role, _ROLES, 'user').upper()}: {quoted(line.text, _LINE_CHARS)}"
             for line in transcript
-            if line.text
+            if line.text.strip()
         )
         lines.append("")
     lines.append(instruction)
