@@ -31,6 +31,12 @@ def bounded_text(text: str, limit: int) -> str:
     return cut.rstrip() + "…"
 
 
+INVISIBLE = "\u00ad\u200b-\u200f\u2060-\u2064\ufeff"
+"""Characters a text holds without showing them, as the body of a regular
+expression's class: a soft hyphen, zero-width spaces and joiners, direction
+marks, word joiners, a byte order mark. A model reads past them."""
+
+
 def one_line(text: Any) -> str:
     """*text* on one line: each run of whitespace, line breaks included, one space."""
     return " ".join(str(text).split())
@@ -47,15 +53,22 @@ a knowledge passage, a memory's summary of the conversation, and content a
 realtime provider adds to its prompt."""
 
 
+def _tag_name(tag: str) -> str:
+    """*tag*'s name as a model reads it: any invisible character between its
+    letters."""
+    return f"[{INVISIBLE}]*".join(map(re.escape, tag))
+
+
 def fence(tag: str, text: str) -> str:
     """*text* inside ``<tag>`` … ``</tag>``, with no closing tag of its own.
 
-    Any closing tag of that name in *text*, in any case, with any spacing or
-    trailing attributes (``</TOOL_RESULT >``, ``< / tool_result>``,
-    ``</tool_result foo>``, ``</tool_result/>``), is neutralised, so the data
-    cannot close the block.
+    Any closing tag of that name in *text*, in any case, with any spacing,
+    invisible character or trailing attributes (``</TOOL_RESULT >``,
+    ``< / tool_result>``, ``</tool_\u200bresult>``, ``</tool_result foo>``,
+    ``</tool_result/>``), is neutralised, so the data cannot close the block.
     """
-    closing = re.compile(rf"<\s*/\s*{re.escape(tag)}\b[^>]*>", re.IGNORECASE)
+    gap = rf"[\s{INVISIBLE}]*"
+    closing = re.compile(rf"<{gap}/{gap}{_tag_name(tag)}\b[^>]*>", re.IGNORECASE)
     neutral = f"</{tag}_>"
     body = closing.sub(lambda _match: neutral, text)
     return f"<{tag}>\n{body}\n</{tag}>"
@@ -68,10 +81,12 @@ def named_blocks(text: str, tags: tuple[str, ...] = FENCED_TAGS) -> str:
     For text about to be cut short, such as a summary: quoting part of a block
     could leave it open, and what follows would then read as data.
     """
+    gap = rf"[\s{INVISIBLE}]*"
     for tag in tags:
-        name = re.escape(tag)
+        name = _tag_name(tag)
         block = re.compile(
-            rf"<\s*{name}\b[^>]*>.*?(?:<\s*/\s*{name}\b[^>]*>|\Z)", re.IGNORECASE | re.DOTALL
+            rf"<{gap}{name}\b[^>]*>.*?(?:<{gap}/{gap}{name}\b[^>]*>|\Z)",
+            re.IGNORECASE | re.DOTALL,
         )
         text = block.sub(f"[{tag}]", text)
     return text

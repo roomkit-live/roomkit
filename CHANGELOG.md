@@ -624,6 +624,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   quotes. `fence()` and `named_blocks()` stay importable from
   `roomkit.tools.fence`. The realtime injections, the orchestration strategies
   and the vision context follow in RMK-590.
+- A closing tag with an invisible character in it (`</tool_\u200bresult>`, a
+  soft hyphen, a word joiner, a byte order mark) no longer closes a fenced
+  block: a model reads past such characters, so `fence()` neutralises that
+  closing tag too, and `named_blocks()` names such a block (RMK-590, RFC
+  §6.4). The class of invisible characters is the one the turn's notes
+  header copy is found with (RMK-595), now shared from `roomkit._text`.
 - A text another channel broadcast no longer enters a realtime session as the
   application's instruction (RMK-591, RFC §12.4). A realtime voice channel's
   `on_event` and a conference's realtime delivery injected it with the `system`

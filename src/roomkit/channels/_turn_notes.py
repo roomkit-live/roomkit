@@ -23,6 +23,7 @@ import re
 from itertools import groupby
 from typing import Any
 
+from roomkit._text import INVISIBLE
 from roomkit.channels._user_text import joined
 from roomkit.providers.ai.base import AIMessage, AITextPart
 
@@ -42,10 +43,6 @@ COPIED_HEADER_MARK = (
 not place (RFC §6.4)."""
 
 
-_INVISIBLE = "\u00ad\u200b-\u200f\u2060-\u2064\ufeff"
-"""Characters a text holds without showing them: a soft hyphen, zero-width
-spaces and joiners, direction marks, word joiners, a byte order mark."""
-
 _APOSTROPHE = "['\u2019\u02bc]"
 
 
@@ -58,7 +55,7 @@ def _copy_pattern(header: str) -> re.Pattern[str]:
     One quantified class between two words, never two in a row: a long run of
     spaces after a partial copy is then scanned once, not once per split."""
     marks = re.escape("".join(sorted(set(re.findall(r"[^\w\s'\[\]]", header)))))
-    gap = rf"[\s{_INVISIBLE}{marks}]*"
+    gap = rf"[\s{INVISIBLE}{marks}]*"
     body = gap.join(map(_word_pattern, re.findall(r"[\w']+", header)))
     end = rf"(?:{gap}\]|[{marks}]+)?"
     return re.compile(rf"(?:\[{gap})?{body}{end}", re.IGNORECASE)
@@ -67,7 +64,7 @@ def _copy_pattern(header: str) -> re.Pattern[str]:
 def _word_pattern(word: str) -> str:
     """A word of the header, an invisible character allowed between its letters."""
     letters = (_APOSTROPHE if char == "'" else re.escape(char) for char in word)
-    return f"[{_INVISIBLE}]*".join(letters)
+    return f"[{INVISIBLE}]*".join(letters)
 
 
 _HEADER_COPY = _copy_pattern(TURN_NOTES_HEADER)
