@@ -658,10 +658,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   binds its sender (`ChannelBinding.participant_id`), and the first sender
   routed through a binding that names no one is recorded on it when the
   message is routed, under the room lock: two first messages arriving
-  together land apart, and a message a hook refuses has been routed all the
-  same. A sender is known by their address and by the identity the store
-  resolves it to; what the host sends with `deliver()` (sender `system`,
-  `SYSTEM_SENDER_ID`) does not close a room to its customer's reply. A member
+  together land apart, a message whose claim waits past `process_timeout` is
+  refused as a process timeout, and a message a hook refuses has been routed
+  all the same. A sender is known by their address and by the identity the
+  store resolves it to; what the host sends with `deliver()` (sender
+  `system`, `SYSTEM_SENDER_ID`) does not close a room to its customer's
+  reply, and a message routed under that sender is never let into an
+  existing room by step 3, so a sender borrowing the name gets a room of its
+  own. A member
   added under an id that is neither their address nor a linked identity now
   closes a dedicated room to routing: route their messages with `room_id`, or
   `link_address()` their number. A binding speaks for its own channel: step 1

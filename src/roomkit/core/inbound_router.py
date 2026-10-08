@@ -123,6 +123,11 @@ class DefaultInboundRoomRouter(InboundRoomRouter):
             return False
         if binding.group:
             return True
+        if sender == SYSTEM_SENDER_ID:
+            # The framework names the room it writes to, and nothing it writes
+            # counts as a correspondent's: a sender borrowing the name, on a
+            # channel whose senders choose their id, gets a room of its own.
+            return False
         own = await self._known_as(channel_type, sender)
         if not binding_admits(binding, own):
             return False

@@ -243,14 +243,17 @@ class InboundMixin(HelpersMixin):
         # ``process_timeout`` bounds is steps 3-11 — and this is the one part
         # that can create a room, so a timeout here would leave an orphan
         # behind for a message that was refused.
-        room_id, room_just_created = await self._route_to_room(
-            message,
-            channel,
-            room_id,
-            telemetry,
-            inbound_span_id,
-            organization_id=organization_id,
-        )
+        try:
+            room_id, room_just_created = await self._route_to_room(
+                message,
+                channel,
+                room_id,
+                telemetry,
+                inbound_span_id,
+                organization_id=organization_id,
+            )
+        except _ClaimTimeoutError as exc:
+            return await self._refuse_on_timeout(exc.room_id, channel_id=message.channel_id)
 
         # One budget for the whole pre-commit phase (RFC §13.6), as an absolute
         # deadline so it can be shared with the locked region rather than
@@ -660,8 +663,9 @@ class InboundMixin(HelpersMixin):
         unlocked read keeps the usual case, a binding that already names its
         sender, free of the lock. The claim re-reads under the room lock,
         where every binding mutation runs, and waits for it no longer than
-        ``process_timeout``: a message whose room lock is stuck is refused at
-        its commit anyway (§13.6), and nothing is recorded for it.
+        ``process_timeout``: past that the message is refused (§13.6), never
+        let in unrecorded, which would leave the room open to a concurrent
+        stranger.
         """
         sender = message.sender_id
         if not sender or sender == SYSTEM_SENDER_ID:
@@ -674,7 +678,7 @@ class InboundMixin(HelpersMixin):
                 async with asyncio.timeout(self._process_timeout):
                     await stack.enter_async_context(self._lock_manager.locked(room_id))
             except TimeoutError:
-                return True
+                raise _ClaimTimeoutError(room_id) from None
             binding = await self._store.get_binding(room_id, message.channel_id)
             if binding is None or not _names_no_one(binding):
                 return binding is None or binding_admits(binding, frozenset({sender}))
@@ -759,6 +763,14 @@ class InboundMixin(HelpersMixin):
             )
         except Exception:
             logger.exception("Error firing ON_SESSION_STARTED for text channel")
+
+
+class _ClaimTimeoutError(Exception):
+    """The room lock a routed message's claim waits for stayed taken (RFC §13.6)."""
+
+    def __init__(self, room_id: str) -> None:
+        super().__init__(room_id)
+        self.room_id = room_id
 
 
 def _names_no_one(binding: ChannelBinding) -> bool:
