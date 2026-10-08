@@ -22,22 +22,24 @@ from roomkit.channels._realtime_host_hooks import broadcast_text
 from roomkit.channels._realtime_tool_recovery import recovered_result_text
 from roomkit.models.context import RoomContext
 from roomkit.models.room import Room
-from roomkit.providers.openai import live, live_events
+from roomkit.providers.openai import live, live_append
 from roomkit.providers.openai.live import (
     HostedReasoning,
     IntegratorReasoning,
     OpenAILiveProvider,
 )
-from roomkit.providers.openai.live_events import (
+from roomkit.providers.openai.live_append import (
     BYTES,
-    MAX_APPEND_TOKENS,
-    build_audio_format,
     chunk_text,
     estimated_tokens,
-    format_backend_tools,
-    history_items,
     token_count,
     tokenizer,
+)
+from roomkit.providers.openai.live_events import (
+    MAX_APPEND_TOKENS,
+    build_audio_format,
+    format_backend_tools,
+    history_items,
 )
 from roomkit.tasks.handback import result_text
 from roomkit.voice.base import VoiceSession, VoiceSessionState
@@ -1243,7 +1245,7 @@ class TestHelpers:
     async def test_without_tiktoken_the_byte_bound_holds(self, monkeypatch: Any) -> None:
         import sys
 
-        monkeypatch.setattr(live_events, "_tokenizer", None)
+        monkeypatch.setattr(live_append, "_tokenizer", None)
         monkeypatch.setitem(sys.modules, "tiktoken", None)  # ImportError on import
         assert (await tokenizer()) is BYTES
         assert chunk_text("x" * 1000)[0] == "x" * MAX_APPEND_TOKENS

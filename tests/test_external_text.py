@@ -76,7 +76,7 @@ from roomkit.providers.ai.base import AIMessage
 from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.providers.deepgram.realtime import prompt_addition
 from roomkit.providers.gemini.realtime_input import _sanitize_gemini_text
-from roomkit.providers.openai.live_events import BYTES, chunk_framed_text
+from roomkit.providers.openai.live_append import BYTES, chunk_framed_text
 from roomkit.speaking.thinker import thinker_input
 from roomkit.speaking.thought import Thought, thought_note
 from roomkit.tasks.models import DelegatedTaskResult, TaskStatus

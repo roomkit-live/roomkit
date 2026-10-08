@@ -31,6 +31,7 @@ from roomkit.core.task_utils import cancel_and_wait, log_task_exception
 from roomkit.providers.ai.base import ModelInfo
 from roomkit.providers.ai.tool_declaration import ToolNameRule
 from roomkit.providers.openai.ai import OPENAI_TOOL_NAMES
+from roomkit.providers.openai.live_append import chunk_text, tokenizer
 from roomkit.providers.openai.live_client import OpenAILiveClientMixin
 from roomkit.providers.openai.live_config import (
     _ACKNOWLEDGED_CLOSE_TIMEOUT,
@@ -51,10 +52,8 @@ from roomkit.providers.openai.live_events import (
     EVT_SESSION_UPDATE,
     TurnGrouper,
     build_audio_format,
-    chunk_text,
     format_backend_tools,
     history_items,
-    tokenizer,
 )
 from roomkit.providers.openai.live_handlers import OpenAILiveEventHandlersMixin
 from roomkit.providers.openai.live_hosted import OpenAILiveHostedDelegationMixin

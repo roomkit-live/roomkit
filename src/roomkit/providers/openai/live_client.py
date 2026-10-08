@@ -13,15 +13,13 @@ import json
 import logging
 from typing import Any
 
+from roomkit.providers.openai.live_append import chunk_framed_text, chunk_text, tokenizer
 from roomkit.providers.openai.live_config import _LOG_TAG, _LiveSession
 from roomkit.providers.openai.live_events import (
     EVT_COMMENTARY_APPEND,
     EVT_INPUT_AUDIO_APPEND,
     EVT_INSTRUCTIONS_APPEND,
     EVT_THINKING_APPEND,
-    chunk_framed_text,
-    chunk_text,
-    tokenizer,
 )
 from roomkit.voice.audio_frame import AudioFrame
 from roomkit.voice.base import VoiceSession
