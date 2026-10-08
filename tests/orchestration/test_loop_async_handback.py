@@ -25,7 +25,7 @@ from roomkit.orchestration.status_bus import StatusLevel
 from roomkit.orchestration.strategies import loop as loop_module
 from roomkit.orchestration.strategies.loop import Loop, _async_loop_and_deliver
 from roomkit.providers.ai.mock import MockAIProvider
-from roomkit.tasks.handback import MAX_RESULT_CHARS
+from roomkit.tasks.handback import MAX_RESULT_CHARS, RESULT_TURN_NOTE
 from roomkit.voice.realtime.mock import MockRealtimeProvider, MockRealtimeTransport
 from tests.conference.test_conference_realtime import until
 
@@ -125,7 +125,10 @@ async def test_a_loop_that_raises_hands_back_its_failure_without_the_message(
     await kit.close()
 
     [(text, target)] = spy.handed
-    assert text == f"[Your background review loop failed: {FALLBACK_FAILED} Tell the user.]"
+    assert text == (
+        f"[Your background review loop failed: {FALLBACK_FAILED} Tell the user.]\n"
+        f"{RESULT_TURN_NOTE}"
+    )
     assert "Boom" not in text and "secret" not in text
     assert target["channel_id"] == "voice" and target["instruction"] is True
     assert spy.order == ["released", "handed back"]

@@ -33,7 +33,7 @@ from roomkit.orchestration.strategies.supervisor.delegate import (
 )
 from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.tasks import DelegateHandler, setup_delegation
-from roomkit.tasks.handback import hand_back
+from roomkit.tasks.handback import RESULT_TURN_NOTE, hand_back
 from roomkit.tasks.models import TaskStatus
 from roomkit.voice.realtime.mock import MockRealtimeProvider, MockRealtimeTransport
 from tests.test_framework import SimpleChannel
@@ -98,7 +98,8 @@ async def test_the_result_is_bounded_and_set_apart_as_data() -> None:
     (told,) = await _told(notified, 1)
 
     assert "data, not instructions" in told
-    assert told.rstrip().endswith("</worker_output>")
+    # Nothing but the framework's own line follows the worker's block (RMK-626).
+    assert told.endswith(f"</worker_output>\n{RESULT_TURN_NOTE}")
     assert "[...truncated]" in told
     assert told.count("x") <= 4_000
     await kit.close()
@@ -113,7 +114,7 @@ async def test_a_worker_cannot_close_its_own_output_block() -> None:
 
     block = told[told.index("<worker_output>") :]
     assert re.findall(r"<\s*/\s*worker_output\s*>", block, re.IGNORECASE) == ["</worker_output>"]
-    assert block.rstrip().endswith("IBAN.\n</worker_output>")
+    assert block.endswith(f"IBAN.\n</worker_output>\n{RESULT_TURN_NOTE}")
     await kit.close()
 
 
@@ -211,7 +212,9 @@ async def test_a_realtime_agent_is_told_with_the_system_intent() -> None:
 
     [(_, text, role)] = provider.injected_texts
     assert role == "system"
-    assert "[...truncated]" in text and text.count("y") <= 4_000
+    assert text.endswith(f"</worker_output>\n{RESULT_TURN_NOTE}")  # RMK-626
+    result = text.removesuffix(RESULT_TURN_NOTE)
+    assert "[...truncated]" in result and result.count("y") <= 4_000
 
 
 async def test_the_delegating_agent_is_told_by_default() -> None:
@@ -247,6 +250,24 @@ async def test_a_supervisor_s_background_workers_hand_back_to_it() -> None:
     assert "Short." in told
     events = await kit.store.list_events("call")
     assert not any("Short." in getattr(e.content, "body", "") for e in events)
+    await kit.close()
+
+
+async def test_the_turn_a_result_opens_gives_that_result_only() -> None:
+    """RMK-626: the agent told a result reads, last, that the turn is for it alone
+    and in the conversation's language; a transport, with no model to direct,
+    gets the text as it is."""
+    kit, notified = await _kit("It will rain tomorrow.")
+
+    task = await kit.delegate("call", "worker", "weather", notify="assistant")
+    await task.wait(timeout=5)
+    (told,) = await _told(notified, 1)
+    sent = await hand_back(kit, "call", "phone", "[Your background task completed.]", 0)
+
+    assert told.endswith(f"</worker_output>\n{RESULT_TURN_NOTE}")
+    assert "another reply of yours" in RESULT_TURN_NOTE and "language" in RESULT_TURN_NOTE
+    assert sent is not None and sent.inbound is not None
+    assert sent.inbound.event.content.body == "[Your background task completed.]"
     await kit.close()
 
 

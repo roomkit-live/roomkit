@@ -47,6 +47,7 @@ from roomkit.orchestration.strategies.supervisor import (
 from roomkit.orchestration.strategies.supervisor.prompts import SUBMIT_VERDICT
 from roomkit.orchestration.strategies.supervisor.supervised import _supervisor_review
 from roomkit.providers.ai.mock import MockAIProvider
+from roomkit.tasks.handback import RESULT_TURN_NOTE
 from roomkit.tasks.models import DelegatedTaskResult
 from tests.tool_room import room_tool_names, tool_call_in
 
@@ -1443,7 +1444,10 @@ class TestAsyncRunAndDeliver:
         on_done.assert_called_once_with(success=False)
         kit.deliver.assert_called_once()
         told = kit.deliver.call_args[0][1]
-        assert told == f"[Your background workers failed: {FALLBACK_FAILED} Tell the user.]"
+        assert told == (
+            f"[Your background workers failed: {FALLBACK_FAILED} Tell the user.]\n"
+            f"{RESULT_TURN_NOTE}"
+        )
         assert "Boom" not in told and "secret" not in told
         assert kit.deliver.call_args.kwargs["addressed_to"] == ["boss"]
         assert kit.deliver.call_args.kwargs["chain_depth"] == 2

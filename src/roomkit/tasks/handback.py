@@ -30,6 +30,18 @@ MAX_RESULT_CHARS = 4000
 _NOT_DELIVERED = ("blocked", "unavailable", "failed")
 
 
+RESULT_TURN_NOTE = (
+    "This turn only gives this task's result: give it, without answering anything "
+    "else that was said; another reply of yours is taking care of that. Say it in "
+    "the language the conversation is in, whatever the result's."
+)
+"""Closes what a model is handed back (RFC §23.3 step 8). The turn reads the
+room's last messages, and one that answered them too repeated what another turn
+was saying: with a question asked as a result came back, Claude Haiku gave its
+answer again in 10 hand-backs out of 10 without this line, 4 out of 10 with it,
+and 4 out of 4 with a line that did not say another reply takes care of it. A
+worker's English result was also said in English to a French conversation."""
+
 CALLER_HANDS_BACK = "roomkit:caller-hands-back"
 """The ``notify`` of a background delegation whose caller hands its result
 back itself (a strategy's background run waits for it): the task runner
@@ -86,8 +98,9 @@ async def hand_back(
     *notify* names who is told: an intelligence channel receives an instruction
     addressed to it, through the room's transport; a realtime voice channel, an
     instruction in a session: *session_id*, the session whose call started the
-    work, or its one session in the room. Another transport has no model to
-    direct and receives a message through it. A channel not attached to the
+    work, or its one session in the room. Either closes on
+    :data:`RESULT_TURN_NOTE`. Another transport has no model to direct and
+    receives a message through it. A channel not attached to the
     room is told nothing (``None``), and a hand-back that is not delivered is
     logged. A framework that closes starts no turn (RFC §23.3): nothing is
     handed back (``None``).
@@ -102,6 +115,7 @@ async def hand_back(
     target = _target(kit, notify, session_id)
     if metadata is not None:
         target["metadata"] = metadata
+    text = _addressed_text(text, target)
     outcome = await kit.deliver(room_id, text, chain_depth=chain_depth, **target)
     if outcome.status in _NOT_DELIVERED:
         _log_not_delivered(notify, room_id, outcome)
@@ -130,6 +144,12 @@ def not_handed_back(outcome: DeliveryOutcome | None) -> str | None:
     if outcome.status in _NOT_DELIVERED:
         return f"not handed back: {outcome.status} ({outcome.reason})"
     return None
+
+
+def _addressed_text(text: str, target: dict[str, Any]) -> str:
+    """*text* as its target receives it: a model's closes on
+    :data:`RESULT_TURN_NOTE`, a transport's is left as it is."""
+    return f"{text}\n{RESULT_TURN_NOTE}" if target.get("instruction") else text
 
 
 def _target(kit: RoomKit, notify: str, session_id: str | None) -> dict[str, Any]:

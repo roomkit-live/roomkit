@@ -278,6 +278,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- A background result handed back to a model now closes on a line saying the
+  turn it opens gives that result only, another of the agent's replies taking
+  care of whatever else was said, in the language the conversation is in
+  rather than the result's (RMK-626, RFC §23.3 step 8). The turn read the
+  room's last messages and answered them too while another turn was answering
+  them: with a question asked as a result came back, Claude Haiku gave its
+  answer again in 10 hand-backs out of 10 without the line, 4 out of 10 with it.
+  A worker's English result was also said in English to a French
+  conversation. `hand_back()` adds it, so every hand-back gets it: a
+  delegation's, a supervisor's workers', an async review loop's, a failed
+  background run's. A transport's delivery carries no such line. The text is
+  `roomkit.tasks.handback.RESULT_TURN_NOTE`.
+
 - A thanks or a reaction no longer cuts an agent under the SEMANTIC barge-in
   (RMK-555): `ENGLISH_BACKCHANNELS` and `FRENCH_BACKCHANNELS` gain "thanks",
   "thank you", "thanks a lot", "thank you so much", "yuck", "merci", "merci
