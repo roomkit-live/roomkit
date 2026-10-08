@@ -1,0 +1,201 @@
+"""Build ``src/roomkit/_lookalike_data.py`` from Unicode's confusables and NFKC.
+
+Usage::
+
+    uv run python scripts/build_lookalikes.py [path/to/confusables.txt]
+
+Without a path, ``confusables.txt`` is downloaded from unicode.org (UTS #39,
+latest). The output is a Python module holding, for each ASCII letter, digit,
+underscore, angle bracket, slash, colon and apostrophe, the characters a model
+reads as it, and the single characters that read as several letters (``ⅵ`` for
+``vi``). Run it when Unicode publishes a new confusables.txt, and commit the
+result with the version it names.
+"""
+
+from __future__ import annotations
+
+import re
+import subprocess  # nosec B404
+import sys
+import unicodedata
+import urllib.request
+from pathlib import Path
+
+URL = "https://www.unicode.org/Public/security/latest/confusables.txt"
+OUTPUT = Path(__file__).resolve().parent.parent / "src" / "roomkit" / "_lookalike_data.py"
+TARGETS = "abcdefghijklmnopqrstuvwxyz0123456789_<>/:'"
+SEQUENCE = re.compile(r"[a-z0-9]{2,4}")
+WIDTH = 72
+
+LICENSE = """\
+UNICODE LICENSE V3
+
+COPYRIGHT AND PERMISSION NOTICE
+
+Copyright (c) 1991-2026 Unicode, Inc.
+
+NOTICE TO USER: Carefully read the following legal agreement. BY
+DOWNLOADING, INSTALLING, COPYING OR OTHERWISE USING DATA FILES, AND/OR
+SOFTWARE, YOU UNEQUIVOCALLY ACCEPT, AND AGREE TO BE BOUND BY, ALL OF THE
+TERMS AND CONDITIONS OF THIS AGREEMENT. IF YOU DO NOT AGREE, DO NOT
+DOWNLOAD, INSTALL, COPY, DISTRIBUTE OR USE THE DATA FILES OR SOFTWARE.
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of data files and any associated documentation (the "Data Files") or
+software and any associated documentation (the "Software") to deal in the
+Data Files or Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, and/or sell
+copies of the Data Files or Software, and to permit persons to whom the
+Data Files or Software are furnished to do so, provided that either (a)
+this copyright and permission notice appear with all copies of the Data
+Files or Software, or (b) this copyright and permission notice appear in
+associated Documentation.
+
+THE DATA FILES AND SOFTWARE ARE PROVIDED "AS IS", WITHOUT WARRANTY OF ANY
+KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT OF
+THIRD PARTY RIGHTS.
+
+IN NO EVENT SHALL THE COPYRIGHT HOLDER OR HOLDERS INCLUDED IN THIS NOTICE
+BE LIABLE FOR ANY CLAIM, OR ANY SPECIAL INDIRECT OR CONSEQUENTIAL DAMAGES,
+OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS,
+WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION,
+ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THE DATA
+FILES OR SOFTWARE.
+
+Except as contained in this notice, the name of a copyright holder shall
+not be used in advertising or otherwise to promote the sale, use or other
+dealings in these Data Files or Software without prior written
+authorization of the copyright holder.
+"""
+
+Table = dict[str, set[str]]
+
+
+def parse(text: str) -> tuple[str, Table, Table]:
+    """The version of a confusables.txt and what it lists: the characters that
+    read as each target, and those that read as a run of letters."""
+    found = re.search(r"^# Version: (\S+)", text, re.MULTILINE)
+    if found is None:
+        raise ValueError("confusables.txt names no version")
+    forms: Table = {target: set() for target in TARGETS}
+    sequences: Table = {}
+    for line in text.splitlines():
+        data = line.split("#", 1)[0].strip()
+        if not data:
+            continue
+        source, target = (field.strip() for field in data.split(";")[:2])
+        char = _chars(source)
+        if len(char) == 1:
+            _file(char, _chars(target).lower(), forms, sequences)
+    return found.group(1), forms, sequences
+
+
+def add_compatibility_forms(forms: Table, sequences: Table) -> None:
+    """Every character outside ASCII that NFKC and case folding turn into a
+    target or a run of letters (fullwidth, mathematical, circled, ``ⅵ``)."""
+    for code in range(0x80, 0x110000):
+        if 0xD800 <= code <= 0xDFFF:
+            continue
+        char = chr(code)
+        _file(char, unicodedata.normalize("NFKC", char).casefold(), forms, sequences)
+
+
+def _file(char: str, read: str, forms: Table, sequences: Table) -> None:
+    if read in forms:
+        if char != read:
+            forms[read].add(char)
+    elif SEQUENCE.fullmatch(read):
+        sequences.setdefault(read, set()).add(char)
+
+
+def _chars(codes: str) -> str:
+    return "".join(chr(int(code, 16)) for code in codes.split())
+
+
+def render(version: str, forms: Table, sequences: Table) -> str:
+    """The module's source: the license, the versions, then both tables."""
+    lines = [
+        '"""Characters a model reads as an ASCII letter, digit or mark, and those',
+        "that read as several letters: generated by ``scripts/build_lookalikes.py``",
+        f"from Unicode's confusables.txt (UTS #39, version {version}) and the",
+        f"compatibility forms of Unicode {unicodedata.unidata_version} (NFKC with case",
+        "folding). Do not edit; run the script again.",
+        "",
+        "The data is derived from Unicode data files, under this notice:",
+        "",
+        *LICENSE.splitlines(),
+        '"""',
+        "",
+        "from __future__ import annotations",
+        "",
+        f'CONFUSABLES_VERSION = "{version}"',
+        f'UNICODE_VERSION = "{unicodedata.unidata_version}"',
+        "",
+        "FORMS: dict[str, str] = {",
+        *_entries(forms),
+        "}",
+        '"""For each target, the characters that read as it, in code point order."""',
+        "",
+        "SEQUENCES: dict[str, str] = {",
+        *_entries(sequences),
+        "}",
+        '"""For each run of two to four letters, the characters that read as it."""',
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def _entries(table: Table) -> list[str]:
+    lines = []
+    for key in sorted(table):
+        chunks = _chunks(sorted(table[key]))
+        if not chunks:
+            continue
+        lines.append(f"    {_literal(key)}: (")
+        lines += [f'        "{chunk}"' for chunk in chunks]
+        lines.append("    ),")
+    return lines
+
+
+def _chunks(chars: list[str]) -> list[str]:
+    chunks, current = [], ""
+    for char in chars:
+        escaped = _escape(char)
+        if len(current) + len(escaped) > WIDTH:
+            chunks.append(current)
+            current = ""
+        current += escaped
+    return [*chunks, current] if current else chunks
+
+
+def _escape(char: str) -> str:
+    code = ord(char)
+    if 0x20 <= code < 0x7F and char not in '"\\':
+        return char
+    return f"\\u{code:04x}" if code < 0x10000 else f"\\U{code:08x}"
+
+
+def _literal(key: str) -> str:
+    return f'"{"".join(map(_escape, key))}"'
+
+
+def main(argv: list[str]) -> None:
+    if len(argv) > 1:
+        text = Path(argv[1]).read_text(encoding="utf-8-sig")
+    else:
+        with urllib.request.urlopen(URL, timeout=60) as response:  # nosec B310
+            text = response.read().decode("utf-8-sig")
+    version, forms, sequences = parse(text)
+    add_compatibility_forms(forms, sequences)
+    OUTPUT.write_text(render(version, forms, sequences), encoding="utf-8")
+    # Formatted as the repository formats it, so a run on the same data
+    # reproduces the committed file byte for byte.
+    # A fixed command: this interpreter's ruff on the file just written.
+    command = [sys.executable, "-m", "ruff", "format", "--quiet", str(OUTPUT)]
+    subprocess.run(command, check=True)  # nosec B603
+    print(f"Wrote {OUTPUT} (confusables {version}, Unicode {unicodedata.unidata_version})")
+
+
+if __name__ == "__main__":
+    main(sys.argv)

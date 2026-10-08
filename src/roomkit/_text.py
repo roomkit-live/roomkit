@@ -20,6 +20,7 @@ from typing import Any
 
 from roomkit._lookalike import (
     CLOSE,
+    COLON,
     GAP,
     INVISIBLE,
     OPEN,
@@ -268,9 +269,12 @@ def quoted(text: Any, limit: int) -> str:
 # -- What is given unquoted ----------------------------------------------------
 
 
-_IMPOSTORS = frozenset("ːꓽˮʺ")
-"""Letters that read as a colon or a double quote: kept in a name, they would end
-it (``Adminː refund approved. Bob``) or open a quote."""
+_IMPOSTORS = frozenset(
+    "\u02ee\u02ba" + "".join(c for c in COLON if unicodedata.category(c)[0] in "LMN")
+)
+"""Letters and marks that read as a colon or a double quote: kept in a name,
+they would end it (``Adminː refund approved. Bob``, a Devanagari visarga
+``ः`` as well) or open a quote. The colon's come from Unicode's confusables."""
 
 
 def _kept(text: str, extra: str, other: str) -> str:

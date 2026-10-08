@@ -14,7 +14,8 @@ from __future__ import annotations
 
 import functools
 import re
-import unicodedata
+
+from roomkit._lookalike_data import FORMS, SEQUENCES
 
 INVISIBLE = (
     "\u00ad\u034f\u061c\u115f\u1160\u17b4\u17b5\u180b-\u180f\u200b-\u200f"
@@ -97,30 +98,45 @@ _CONFUSABLES = {
     "y": "\u0443\u04af\u03b3\u03a5\u028f",
     "z": "\u1d22\u0396",
 }
-"""Letters of other scripts a model reads as a Latin one beyond what NFKC folds:
-the Cyrillic, Greek and Armenian homoglyphs (``о``, ``ο``, ``օ`` for ``o``), the
-capitals whose own lowercase reads as another letter (Greek ``Ν`` is a
-capital N, its ``ν`` a v), and the small capitals; other capitals match
-through case folding."""
+"""Letters a model reads as a Latin one that Unicode's confusables
+(:mod:`roomkit._lookalike_data`) do not list: lowercase Cyrillic and Greek
+letters that read as a small capital (``т``, ``к``, ``τ``), the small capitals
+themselves, Armenian ``Լ``; other capitals match through case folding."""
+
+COLON = FORMS[":"]
+"""The characters a model reads as a colon (the Devanagari visarga ``ः``
+among them), from Unicode's confusables."""
 
 
 @functools.cache
 def lookalikes() -> dict[str, str]:
-    """Each lowercase ASCII letter, digit, underscore, bracket and slash, with
-    every character NFKC folds onto it under case folding (fullwidth,
-    mathematical, circled, small forms: ``ｔ``, ``𝐭``, ``ⓣ``, ``＜``) and its
-    homoglyphs in other scripts (:data:`_CONFUSABLES`), as the body of a
-    regular expression's class. Read once, on first use."""
-    found = {char: [re.escape(char)] for char in "abcdefghijklmnopqrstuvwxyz0123456789_<>/"}
-    for code in range(0x80, 0x110000):
-        if 0xD800 <= code <= 0xDFFF:
-            continue
-        folded = unicodedata.normalize("NFKC", chr(code)).casefold()
-        if folded in found:
-            found[folded].append(re.escape(chr(code)))
-    for char, homoglyphs in _CONFUSABLES.items():
-        found[char] += map(re.escape, homoglyphs)
-    return {char: "".join(forms) for char, forms in found.items()}
+    """Each lowercase ASCII letter, digit, underscore, bracket, slash, colon and
+    apostrophe, with the characters a model reads as it: Unicode's confusables
+    and compatibility forms (``ｔ``, ``𝐭``, ``ⓣ``, ``τ``, ``0`` for ``o``), and
+    :data:`_CONFUSABLES`, as the body of a regular expression's class. A
+    character that may also sit between letters or words (``|``, a combining
+    mark) is left out: a class holding it beside one that reads it too would be
+    read in quadratic time. Built once, on first use, from tables generated
+    ahead of time."""
+    return {
+        char: _class_body(char, {*forms, *_CONFUSABLES.get(char, "")})
+        for char, forms in FORMS.items()
+    }
+
+
+@functools.cache
+def _sequences() -> dict[str, str]:
+    """Each run of two to four letters a single character reads as (``vi`` for
+    ``ⅵ``), with those characters as the body of a regular expression's class."""
+    return {run: _class_body("", set(chars)) for run, chars in SEQUENCES.items()}
+
+
+def _class_body(char: str, forms: set[str]) -> str:
+    """*char* and the *forms* that cannot sit between letters or words, escaped,
+    in code point order."""
+    spacing = re.compile(f"{JOINT}|{SPACE}|{phrase_space('')}", re.IGNORECASE)
+    kept = sorted(form for form in forms if form != char and not spacing.fullmatch(form))
+    return "".join(map(re.escape, [char, *kept] if char else kept))
 
 
 def char_class(char: str, more: str = "") -> str:
@@ -136,12 +152,38 @@ _APOSTROPHES = "'\u2019\u02bc"
 
 def word_pattern(word: str) -> str:
     """*word* as a model reads it, a regular expression to compile with
-    ``re.IGNORECASE``: each letter in any of its forms (NFKC look-alikes,
-    homoglyphs), an apostrophe straight or typographic, an invisible, control
-    or combining character between the letters."""
-    return _NAME_JOIN.join(
-        f"[{_APOSTROPHES}]" if char in _APOSTROPHES else char_class(char) for char in word
-    )
+    ``re.IGNORECASE``: each letter in any of its forms (confusables,
+    compatibility forms), a run of its letters as the one character that reads
+    as it (``ⅵ`` for ``vi``), an apostrophe straight or typographic, an
+    invisible, control or combining character between the letters. The runs
+    are taken from the left and never overlap, so the pattern grows with the
+    word, not with the ways to spell it."""
+    units, at = [], 0
+    while at < len(word):
+        size = _run_at(word, at)
+        letters = _NAME_JOIN.join(map(_letter, word[at : at + size]))
+        units.append(
+            letters if size == 1 else f"(?:{letters}|[{_sequences()[_run(word, at, size)]}])"
+        )
+        at += size
+    return _NAME_JOIN.join(units)
+
+
+def _letter(char: str) -> str:
+    return f"[{_APOSTROPHES}]" if char in _APOSTROPHES else char_class(char)
+
+
+def _run(word: str, at: int, size: int) -> str:
+    return word[at : at + size].lower()
+
+
+def _run_at(word: str, at: int) -> int:
+    """How many letters of *word* from *at* one character reads as: the longest
+    run of two to four that some character spells, or one."""
+    for size in (4, 3, 2):
+        if at + size <= len(word) and _run(word, at, size) in _sequences():
+            return size
+    return 1
 
 
 def phrase_pattern(phrase: str, *, bracketed: bool = False) -> str:
