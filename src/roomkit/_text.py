@@ -60,10 +60,13 @@ realtime provider adds to its prompt."""
 
 
 def _tag_name(tag: str) -> str:
-    """*tag*'s name as a model reads it: any invisible character between its
-    letters or after them (a Hangul filler is one, though Unicode counts it a
-    letter)."""
-    return f"[{INVISIBLE}]*".join(map(re.escape, tag)) + f"[{INVISIBLE}]*"
+    """*tag*'s name as a model reads it, up to its end: any invisible character
+    between its letters, and no further letter of a name after it. Its end is
+    read without consuming anything (not ``\\b``, which a Hangul filler, an
+    invisible character Unicode counts a letter, would defeat), so what
+    follows it is read once: no two quantifiers compete for the same
+    characters, and the pattern stays linear."""
+    return f"[{INVISIBLE}]*".join(map(re.escape, tag)) + "(?![A-Za-z0-9_])"
 
 
 def fence(tag: str, text: str) -> str:
@@ -76,7 +79,7 @@ def fence(tag: str, text: str) -> str:
     cannot close the block.
     """
     gap = rf"[\s{INVISIBLE}]*"
-    closing = re.compile(rf"<{gap}/{gap}{_tag_name(tag)}\b[^>]*>", re.IGNORECASE)
+    closing = re.compile(rf"<{gap}/{gap}{_tag_name(tag)}[^>]*>", re.IGNORECASE)
     neutral = f"</{tag}_>"
     body = closing.sub(lambda _match: neutral, text)
     return f"<{tag}>\n{body}\n</{tag}>"
@@ -93,7 +96,7 @@ def named_blocks(text: str, tags: tuple[str, ...] = FENCED_TAGS) -> str:
     for tag in tags:
         name = _tag_name(tag)
         block = re.compile(
-            rf"<{gap}{name}\b[^>]*>.*?(?:<{gap}/{gap}{name}\b[^>]*>|\Z)",
+            rf"<{gap}{name}[^>]*>.*?(?:<{gap}/{gap}{name}[^>]*>|\Z)",
             re.IGNORECASE | re.DOTALL,
         )
         text = block.sub(f"[{tag}]", text)

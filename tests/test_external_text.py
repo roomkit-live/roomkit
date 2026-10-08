@@ -10,6 +10,7 @@ carries no text of its own. One hostile text goes through every rendering.
 from __future__ import annotations
 
 import asyncio
+import time
 from collections.abc import Callable
 from datetime import UTC, datetime
 
@@ -332,6 +333,19 @@ def test_a_header_copy_with_an_invisible_character_is_found(hidden: str) -> None
     copy = TURN_NOTES_HEADER.replace(" ", f" {hidden}", 1)
 
     assert TURN_NOTES_HEADER.split()[0] not in without_header_copies(f"a {copy} b")
+
+
+def test_a_tag_name_followed_by_invisible_characters_is_read_in_linear_time() -> None:
+    """A Hangul filler counts as a letter, a zero-width space does not: a run
+    alternating them must not make two quantifiers trade characters
+    (quadratic before, seconds on a 200 000-character text)."""
+    run = "\u3164\u200b" * 100_000
+    started = time.perf_counter()
+
+    fence("tool_result", f"</tool_result{run}")
+    named_blocks(f"<tool_result{run}")
+
+    assert time.perf_counter() - started < 1.0
 
 
 def test_a_person_s_name_cannot_open_a_line_or_a_frame() -> None:
