@@ -153,7 +153,7 @@ for t in state.phase_history:
 Use `state.context` to store arbitrary data that survives across conversation turns:
 
 ```python
-from roomkit.orchestration.state import get_conversation_state, set_conversation_state
+from roomkit.orchestration.state import get_conversation_state, save_conversation_state
 
 room = await kit.get_room("support")
 state = get_conversation_state(room)
@@ -168,9 +168,9 @@ updated_state = state.model_copy(update={
     }
 })
 
-# Persist back to room
-updated_room = set_conversation_state(room, updated_state)
-await kit.store.update_room(updated_room)
+# Persist its metadata key alone: a full room write from the room read
+# above would undo what was written since
+await save_conversation_state(kit.store, room.id, updated_state)
 ```
 
 ### Retrieving Custom Data on Later Turns
@@ -187,7 +187,7 @@ attempts = state.context.get("attempts", 0)
 Use `state.transition()` to change phase and record an audit entry:
 
 ```python
-from roomkit.orchestration.state import get_conversation_state, set_conversation_state
+from roomkit.orchestration.state import get_conversation_state, save_conversation_state
 
 room = await kit.get_room("support")
 state = get_conversation_state(room)
@@ -199,8 +199,7 @@ new_state = state.transition(
     metadata={"escalation_priority": "high"},
 )
 
-updated_room = set_conversation_state(room, new_state)
-await kit.store.update_room(updated_room)
+await save_conversation_state(kit.store, room.id, new_state)
 ```
 
 ### PhaseTransition Audit Record
@@ -221,7 +220,7 @@ Each transition creates an immutable `PhaseTransition`:
 
 ```python
 from roomkit import HookTrigger, HookResult, RoomEvent, RoomContext, TextContent
-from roomkit.orchestration.state import get_conversation_state, set_conversation_state
+from roomkit.orchestration.state import get_conversation_state, save_conversation_state
 
 @kit.hook(HookTrigger.BEFORE_BROADCAST)
 async def track_sentiment(event: RoomEvent, ctx: RoomContext) -> HookResult:
@@ -234,8 +233,7 @@ async def track_sentiment(event: RoomEvent, ctx: RoomContext) -> HookResult:
             "message_count": state.context.get("message_count", 0) + 1,
         }
     })
-    updated_room = set_conversation_state(ctx.room, updated_state)
-    await kit.store.update_room(updated_room)
+    await save_conversation_state(kit.store, ctx.room.id, updated_state)
     return HookResult.allow()
 ```
 

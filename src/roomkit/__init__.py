@@ -216,6 +216,7 @@ from roomkit.orchestration import (
     Supervisor,
     Swarm,
     get_conversation_state,
+    save_conversation_state,
     set_conversation_state,
     setup_handoff,
 )
@@ -457,6 +458,7 @@ __all__ = [
     "get_conversation_state",
     "received_events",
     "visible_events",
+    "save_conversation_state",
     "set_conversation_state",
     "HANDOFF_TOOL",
     "SUBMIT_RESULT",

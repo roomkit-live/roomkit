@@ -884,7 +884,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reads it (RMK-607, RFC §6.4, §10.1 step 12). Two resolvers named a turn's
   author: the AIChannel's (sender name, then participant by id) and the ACP
   room context's and realtime broadcast's (`Marie · sms`, participant by id
-  or identity, no sender name). One resolver in `channels/_speaker.py` now
+  or identity, no sender name). One resolver (`core/_authors.py`, labels in
+  `channels/_speaker.py`) now
   gives the label everywhere a model reads a turn: the sender name a
   transport stamps (or a diarized voice), the participant's registered name
   (by id or identity) otherwise, `@channel` for a sender with neither. When a
@@ -895,8 +896,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   order the room saw them. The rank is fixed when the turn is committed, from
   a register the room keeps in its metadata (`author_register`, digests of
   the sources and of what their names read as, salted with the room's id: no
-  sender id nor name is kept), and rides the event (`metadata["author_rank"]`,
-  any value it came with dropped), so it holds as the window slides and
+  sender id nor name is kept), and rides the event with the name and the
+  source (`metadata["author"]`, any value it came with dropped; RMK-620
+  below), so it holds as the window slides and
   across the prompts an ACP or realtime session keeps. Every turn that
   reaches the room joins the register, whatever its visibility, and a
   blocked one takes no rank: ranked without joining it, a restricted turn
@@ -916,6 +918,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Marie · sms` for a human reader. The
   ACP request itself, memory summaries, delegated tasks and the speak policy
   follow in RMK-614, RMK-615 and RMK-616.
+
+- The room's register of authors holds a renamed participant, a room from
+  before it, names alike through another and a write made meanwhile
+  (RMK-620, RFC §5.5, §6.4, §10.1 step 12). A turn's record of its author
+  (`metadata["author"]`: name, rank and a digest of the source) fixes the
+  name with the rank, so a participant renamed after speaking keeps on
+  their earlier turns the name they spoke under (`Mal`, not `Alice`); a
+  reader reads the record while the event's source is the one recorded,
+  and ranks it against the room's register otherwise (an event whose
+  source or metadata `update_event` replaced, one from before the
+  register). Names alike through another rank as one group: `Lan`, `Ian`,
+  `ian` read `Lan`, `Ian (2)`, `ian (3)` (they read 1, 2, 2); when a name
+  joins two groups, a source whose rank another holds takes a new one for
+  its next turns. A room with no register, one from before it, has it
+  rebuilt once from its timeline, the ranks its turns' records hold first,
+  then its named participants, then its other turns in index order (72 ms
+  for 10,000 events in memory). **Behaviour change:** a `participant_id`
+  names a participant by their id only on a channel they are reached
+  through (`channel_id`, `connected_via`), and by the identity the identity
+  pipeline resolved on any: a sender who posts another participant's id on
+  another channel reads as themself (`@sms2`). The register is read and
+  written under the room lock, so a store shared across processes needs a
+  distributed lock manager, which the init warning now says. The register
+  keeps strings and numbers only, since every read of the room copies or
+  parses it: a commit costs 0.6 ms at 1,000 named sources and 6.7 ms at
+  10,000 in memory, where it cost 1.9 and 22 ms. The strategies' installs,
+  a loop's end and a delegated task's status write their metadata keys
+  alone (`patch_room_metadata`), and a full room write no longer undoes a
+  register entry written meanwhile: `save_conversation_state(store,
+  room_id, state)` saves a conversation state that way.
 
 - The forms a fenced block's tag, a runtime mark and an agent's name are read
   in come from Unicode's confusables (RMK-602, RFC §6.4). A hand-written

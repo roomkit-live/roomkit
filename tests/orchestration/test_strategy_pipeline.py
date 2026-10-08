@@ -46,6 +46,7 @@ def _make_mock_kit(room: Room, bindings: list[ChannelBinding]) -> MagicMock:
     kit.get_room = AsyncMock(return_value=room)
     kit.store.list_bindings = AsyncMock(return_value=bindings)
     kit.store.update_room = AsyncMock()
+    kit.store.patch_room_metadata = AsyncMock(return_value=room)
     kit.hook_engine = MagicMock()
     kit.hook_engine.add_room_hook = MagicMock()
     kit.lock_manager = MagicMock()
@@ -115,9 +116,9 @@ class TestPipelineInstall:
         p = Pipeline(agents=agents)
         await p.install(kit, "r1")
 
-        # Verify update_room was called with conversation state
-        kit.store.update_room.assert_called_once()
-        updated_room = kit.store.update_room.call_args[0][0]
+        # Verify the conversation state was saved
+        kit.store.patch_room_metadata.assert_called_once()
+        updated_room = Room(id="saved", metadata=kit.store.patch_room_metadata.call_args[0][1])
         state = get_conversation_state(updated_room)
         assert state.active_agent_id == "triage"
         assert state.phase == "triage"

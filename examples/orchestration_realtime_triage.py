@@ -68,7 +68,7 @@ from roomkit.orchestration.pipeline import ConversationPipeline, PipelineStage
 from roomkit.orchestration.state import (
     ConversationState,
     get_conversation_state,
-    set_conversation_state,
+    save_conversation_state,
 )
 from roomkit.providers.gemini.realtime import GeminiLiveProvider
 from roomkit.voice.backends.sip import SIPVoiceBackend
@@ -215,12 +215,11 @@ async def main() -> None:
         )
 
         # Initialize orchestration state to the pipeline's first stage
-        room = await kit.get_room(actual_room_id)
-        room = set_conversation_state(
-            room,
+        await save_conversation_state(
+            kit.store,
+            actual_room_id,
             ConversationState(phase="intake", active_agent_id="agent-triage"),
         )
-        await kit.store.update_room(room)
 
         # Trigger the triage agent's initial greeting
         await _handler.send_greeting(actual_room_id, channel_id="voice")

@@ -197,6 +197,7 @@ RoomKit exports **255 symbols** from `roomkit`. Providers and voice types import
 | `RoutingConditions` | Conditions for a routing rule to match |
 | `get_conversation_state` | Extract typed ConversationState from room metadata |
 | `set_conversation_state` | Return a room copy with updated conversation state |
+| `save_conversation_state` | Persist a conversation state, writing its metadata key alone |
 | `HandoffHandler` | Processes handoff tool calls |
 | `HandoffRequest` | Parsed from an agent's handoff tool call arguments |
 | `HandoffResult` | Result returned to the calling agent after a handoff |

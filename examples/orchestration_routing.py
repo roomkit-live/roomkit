@@ -37,7 +37,7 @@ from roomkit.memory.sliding_window import SlidingWindowMemory
 from roomkit.models.event import RoomEvent
 from roomkit.orchestration.handoff import HandoffMemoryProvider
 from roomkit.orchestration.router import ConversationRouter, RoutingConditions, RoutingRule
-from roomkit.orchestration.state import get_conversation_state, set_conversation_state
+from roomkit.orchestration.state import get_conversation_state, save_conversation_state
 from roomkit.providers.ai.mock import MockAIProvider
 
 # --- Helpers -----------------------------------------------------------------
@@ -265,7 +265,7 @@ async def main() -> None:
     state = get_conversation_state(room).transition(
         "handling", to_agent=None, reason="Webhooks fixed, conversation released"
     )
-    await kit.store.update_room(set_conversation_state(room, state))
+    await save_conversation_state(kit.store, "support-room", state)
     mark = len(inbox)
     await kit.process_inbound(
         InboundMessage(

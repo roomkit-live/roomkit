@@ -13,7 +13,9 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from roomkit.core.exceptions import RoomNotFoundError
 from roomkit.models.room import Room
+from roomkit.store.base import ConversationStore
 
 
 @unique
@@ -109,7 +111,8 @@ def get_conversation_state(room: Room) -> ConversationState:
 def set_conversation_state(room: Room, state: ConversationState) -> Room:
     """Return a room copy with updated conversation state.
 
-    Does NOT persist — the caller must save via ``store.update_room()``.
+    Does NOT persist: :func:`save_conversation_state` does, without a full
+    room write.
     """
     return room.model_copy(
         update={
@@ -119,3 +122,19 @@ def set_conversation_state(room: Room, state: ConversationState) -> Room:
             }
         }
     )
+
+
+async def save_conversation_state(
+    store: ConversationStore, room_id: str, state: ConversationState
+) -> None:
+    """Persist *state* as *room_id*'s conversation state, writing its metadata
+    key alone: a full room write from a room read earlier would undo what
+    was written since, the room's register of authors among it (RFC §10.1
+    step 12).
+
+    Raises:
+        RoomNotFoundError: *room_id* does not exist.
+    """
+    patched = await store.patch_room_metadata(room_id, {_STATE_KEY: state.model_dump(mode="json")})
+    if patched is None:
+        raise RoomNotFoundError(f"Room {room_id} not found")

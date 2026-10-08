@@ -34,7 +34,7 @@ from roomkit.orchestration.pipeline import ConversationPipeline, PipelineStage
 from roomkit.orchestration.state import (
     ConversationState,
     get_conversation_state,
-    set_conversation_state,
+    save_conversation_state,
 )
 from roomkit.providers.ai.mock import MockAIProvider
 
@@ -146,10 +146,8 @@ async def main() -> None:
         await kit.attach_channel("dev-room", agent_id, category=ChannelCategory.INTELLIGENCE)
 
     # Initialize to the pipeline's first stage
-    room = await kit.get_room("dev-room")
     initial_state = ConversationState(phase="analysis", active_agent_id="agent-discuss")
-    room = set_conversation_state(room, initial_state)
-    await kit.store.update_room(room)
+    await save_conversation_state(kit.store, "dev-room", initial_state)
 
     # --- Simulate bug fix workflow -------------------------------------------
 

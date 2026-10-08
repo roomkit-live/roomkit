@@ -34,6 +34,7 @@ from roomkit.orchestration.state import (
     ConversationState,
     PhaseTransition,
     get_conversation_state,
+    save_conversation_state,
     set_conversation_state,
 )
 from roomkit.orchestration.status_bus import StatusLevel
@@ -57,6 +58,7 @@ __all__ = [
     "ConversationState",
     "PhaseTransition",
     "get_conversation_state",
+    "save_conversation_state",
     "set_conversation_state",
     # Router
     "ConversationRouter",

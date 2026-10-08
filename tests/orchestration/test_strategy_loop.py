@@ -33,6 +33,7 @@ def _make_mock_kit(room: Room) -> MagicMock:
     kit = MagicMock()
     kit.get_room = AsyncMock(return_value=room)
     kit.store.update_room = AsyncMock()
+    kit.store.patch_room_metadata = AsyncMock(return_value=room)
     kit.hook_engine = MagicMock()
     kit.hook_engine.add_room_hook = MagicMock()
     kit.channels = {}
@@ -63,7 +64,7 @@ class TestLoopInstall:
         loop = Loop(agent=writer, reviewer=editor, max_iterations=5)
         await loop.install(kit, "r1")
 
-        updated_room = kit.store.update_room.call_args[0][0]
+        updated_room = Room(id="saved", metadata=kit.store.patch_room_metadata.call_args[0][1])
         state = get_conversation_state(updated_room)
         assert state.active_agent_id == "writer"
         assert state.phase == "writer"

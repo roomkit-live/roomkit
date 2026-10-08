@@ -282,7 +282,8 @@ class RoomKit(
         self._admission = RoomAdmission(self._hook_engine, self._lock_manager, self._build_context)
         # A persistent store paired with an in-process lock is unsafe if the
         # store is shared across processes: per-process locks do not coordinate
-        # the full inbound pipeline or its idempotency decisions (RFC §13.5).
+        # the full inbound pipeline, its idempotency decisions or the room's
+        # register of authors (RFC §10.1 step 12, §13.5).
         if not self._store.is_process_local and isinstance(
             self._lock_manager, InMemoryLockManager
         ):
@@ -290,7 +291,8 @@ class RoomKit(
                 "%s is paired with InMemoryLockManager. This is safe only in a "
                 "single process; if the store is shared across processes (e.g. a "
                 "load-balanced deployment), use a distributed lock manager such "
-                "as PostgresAdvisoryLockManager with PostgresStore.",
+                "as PostgresAdvisoryLockManager with PostgresStore, or two "
+                "processes may give two senders whose names read alike one rank.",
                 type(self._store).__name__,
             )
         # Delivery lanes (RFC §10.2): broadcast planned under the room lock,

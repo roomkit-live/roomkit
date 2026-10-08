@@ -2037,7 +2037,7 @@ The speaker of an event is resolved in this order:
 
 1. `event.metadata["sender_name"]` — stamped at ingress. The Teams webhook parser and the WhatsApp Personal (neonize) source write it, a voice channel's diarization names each voice of a shared microphone with it; a host does the same by passing `InboundMessage(..., metadata={"sender_name": "Alice"})`.
 2. The room's participant record: `Participant.display_name` for the participant whose `id` (or `identity_id`) equals `event.source.participant_id` (the inbound `sender_id`).
-3. Otherwise the turn has no name and, in a multi-speaker room, opens with its channel as the room addresses it (`"@sms1: text"`, kept to an identifier's characters, never a participant's id), a form no name takes: a nameless sender cannot open with someone else's name, and a person named `ai2` does not read as the agent `@ai2`. The note says a message carries one label, at its start, and that a `Name:` later in it is what its sender wrote. Two senders whose names read alike (`Alice`, `ALICE`, `Аlice`) are told apart: a participant the room registered keeps the name, then the first sender the room saw, each later one carrying its rank (`ALICE (2): …`), a form no name takes, fixed when the turn is committed so it holds as the window slides (every turn that reaches the room joins the room's register, whatever its visibility, so no later sender takes a restricted turn's rank); the room context an ACP agent reads and a realtime broadcast use the same labels.
+3. Otherwise the turn has no name and, in a multi-speaker room, opens with its channel as the room addresses it (`"@sms1: text"`, kept to an identifier's characters, never a participant's id), a form no name takes: a nameless sender cannot open with someone else's name, and a person named `ai2` does not read as the agent `@ai2`. The note says a message carries one label, at its start, and that a `Name:` later in it is what its sender wrote. Two senders whose names read alike (`Alice`, `ALICE`, `Аlice`) are told apart: a participant the room registered keeps the name, then the first sender the room saw, each later one carrying its rank (`ALICE (2): …`), a form no name takes, fixed when the turn is committed so it holds as the window slides (every turn that reaches the room joins the room's register, whatever its visibility, so no later sender takes a restricted turn's rank); names alike through another rank as one group (`Lan`, `Ian (2)`, `ian (3)`), the turn's record keeps the name it was given (a participant renamed later reads on their earlier turns as they were named then), a room from before the register rebuilds it from its timeline, and a participant's id names them only on a channel they are reached through; the room context an ACP agent reads and a realtime broadcast use the same labels.
 
 Rules that follow from the definition:
 
@@ -4015,7 +4015,7 @@ for t in state.phase_history:
 Use `state.context` to store arbitrary data that survives across conversation turns:
 
 ```python
-from roomkit.orchestration.state import get_conversation_state, set_conversation_state
+from roomkit.orchestration.state import get_conversation_state, save_conversation_state
 
 room = await kit.get_room("support")
 state = get_conversation_state(room)
@@ -4030,9 +4030,9 @@ updated_state = state.model_copy(update={
     }
 })
 
-# Persist back to room
-updated_room = set_conversation_state(room, updated_state)
-await kit.store.update_room(updated_room)
+# Persist its metadata key alone: a full room write from the room read
+# above would undo what was written since
+await save_conversation_state(kit.store, room.id, updated_state)
 ```
 
 ### Retrieving Custom Data on Later Turns
@@ -4049,7 +4049,7 @@ attempts = state.context.get("attempts", 0)
 Use `state.transition()` to change phase and record an audit entry:
 
 ```python
-from roomkit.orchestration.state import get_conversation_state, set_conversation_state
+from roomkit.orchestration.state import get_conversation_state, save_conversation_state
 
 room = await kit.get_room("support")
 state = get_conversation_state(room)
@@ -4061,8 +4061,7 @@ new_state = state.transition(
     metadata={"escalation_priority": "high"},
 )
 
-updated_room = set_conversation_state(room, new_state)
-await kit.store.update_room(updated_room)
+await save_conversation_state(kit.store, room.id, new_state)
 ```
 
 ### PhaseTransition Audit Record
@@ -4083,7 +4082,7 @@ Each transition creates an immutable `PhaseTransition`:
 
 ```python
 from roomkit import HookTrigger, HookResult, RoomEvent, RoomContext, TextContent
-from roomkit.orchestration.state import get_conversation_state, set_conversation_state
+from roomkit.orchestration.state import get_conversation_state, save_conversation_state
 
 @kit.hook(HookTrigger.BEFORE_BROADCAST)
 async def track_sentiment(event: RoomEvent, ctx: RoomContext) -> HookResult:
@@ -4096,8 +4095,7 @@ async def track_sentiment(event: RoomEvent, ctx: RoomContext) -> HookResult:
             "message_count": state.context.get("message_count", 0) + 1,
         }
     })
-    updated_room = set_conversation_state(ctx.room, updated_state)
-    await kit.store.update_room(updated_room)
+    await save_conversation_state(kit.store, ctx.room.id, updated_state)
     return HookResult.allow()
 ```
 
@@ -5695,6 +5693,7 @@ RoomKit exports **255 symbols** from `roomkit`. Providers and voice types import
 | `RoutingConditions` | Conditions for a routing rule to match |
 | `get_conversation_state` | Extract typed ConversationState from room metadata |
 | `set_conversation_state` | Return a room copy with updated conversation state |
+| `save_conversation_state` | Persist a conversation state, writing its metadata key alone |
 | `HandoffHandler` | Processes handoff tool calls |
 | `HandoffRequest` | Parsed from an agent's handoff tool call arguments |
 | `HandoffResult` | Result returned to the calling agent after a handoff |

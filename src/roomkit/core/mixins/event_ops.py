@@ -60,9 +60,11 @@ class EventOpsMixin(HelpersMixin):
         from. The record takes the room's next index, which its delivery lane
         counts as delivered at once, so the room's next event never waits on
         it; no delivery set, no hook and no broadcast follow. It is stored as
-        given, whatever the persistence policy, and the source write rule
-        (RFC §7.5 rule 2) does not apply to it. An event the members must
-        receive goes through :meth:`send_event`.
+        given, whatever the persistence policy, but for the record of its
+        author, which the room fixes when the event names one
+        (``metadata["author"]``, RFC §10.1 step 12, any value given dropped);
+        the source write rule (RFC §7.5 rule 2) does not apply to it. An event
+        the members must receive goes through :meth:`send_event`.
 
         The room is read under its lock, which a hook already holding it
         re-enters, scoped to *organization_id* (RFC §17.2).
@@ -96,7 +98,11 @@ class EventOpsMixin(HelpersMixin):
 
         Provided fields replace the stored values wholesale (``metadata`` is
         not merged — pass the full mapping). Unlike the inbound EDIT path,
-        no ``edited`` marker is added; the caller controls metadata.
+        no ``edited`` marker is added; the caller controls metadata. The
+        record of its author the event was committed with
+        (``metadata["author"]``, RFC §10.1 step 12) holds while it stays in
+        the metadata and the source stays the one recorded; otherwise a
+        reader ranks the event's author against the room's register.
 
         Fires ON_EVENT_UPDATED with the updated event. Returns the updated
         event, or ``None`` when *event_id* does not exist in *room_id* (no

@@ -21,7 +21,7 @@ from roomkit.orchestration.handoff import (
 from roomkit.orchestration.router import ConversationRouter
 from roomkit.orchestration.state import (
     ConversationState,
-    set_conversation_state,
+    save_conversation_state,
 )
 
 if TYPE_CHECKING:
@@ -111,10 +111,8 @@ class Swarm(Orchestration):
         set_up_handoffs(handoffs, room_id=room_id, owner=self)
 
         # Set initial conversation state
-        room = await kit.get_room(room_id)
         initial_state = ConversationState(
             phase="swarm",
             active_agent_id=self._entry,
         )
-        room = set_conversation_state(room, initial_state)
-        await kit.store.update_room(room)
+        await save_conversation_state(kit.store, room_id, initial_state)

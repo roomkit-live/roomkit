@@ -13,7 +13,7 @@ from roomkit.core.hooks import HookRegistration
 from roomkit.models.enums import HookExecution, HookTrigger
 from roomkit.orchestration.base import Orchestration
 from roomkit.orchestration.router import ConversationRouter
-from roomkit.orchestration.state import ConversationState, set_conversation_state
+from roomkit.orchestration.state import ConversationState, save_conversation_state
 from roomkit.orchestration.strategies.supervisor._common import (
     _DEFAULT_MAX_REVISIONS,
     _DEFAULT_TASK_TIMEOUT_SECONDS,
@@ -246,10 +246,8 @@ class Supervisor(
             self._inject_per_worker_tools(kit, room_id)
 
         # Set initial conversation state
-        room = await kit.get_room(room_id)
         initial_state = ConversationState(
             phase="supervisor",
             active_agent_id=self._supervisor.channel_id,
         )
-        room = set_conversation_state(room, initial_state)
-        await kit.store.update_room(room)
+        await save_conversation_state(kit.store, room_id, initial_state)

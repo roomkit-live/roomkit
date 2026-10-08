@@ -22,7 +22,7 @@ from roomkit.orchestration.handoff import (
 from roomkit.orchestration.pipeline import ConversationPipeline, PipelineStage
 from roomkit.orchestration.state import (
     ConversationState,
-    set_conversation_state,
+    save_conversation_state,
 )
 
 if TYPE_CHECKING:
@@ -125,13 +125,11 @@ class Pipeline(Orchestration):
         self._wire_handoff(self._agents, handler, cp, room_id)
 
         # Set initial conversation state
-        room = await kit.get_room(room_id)
         initial_state = ConversationState(
             phase=stages[0].phase,
             active_agent_id=self._agents[0].channel_id,
         )
-        room = set_conversation_state(room, initial_state)
-        await kit.store.update_room(room)
+        await save_conversation_state(kit.store, room_id, initial_state)
 
     def _build_stages(self) -> list[PipelineStage]:
         """Build pipeline stages from agent list."""

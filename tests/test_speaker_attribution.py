@@ -11,14 +11,17 @@ prefixes — while a single-speaker room (a 1:1 DM) is byte-identical to before.
 
 from __future__ import annotations
 
+import pytest
+
 from roomkit.channels import SMSChannel
 from roomkit.channels._ai_context import (
     _SPEAKER_ATTRIBUTION_NOTE,
     _with_speaker_prefix,
 )
 from roomkit.channels._instruction import INSTRUCTION_MARKER
-from roomkit.channels._speaker import AUTHOR_RANK, AUTHOR_REGISTER, author_name, turn_labels
+from roomkit.channels._speaker import author_name, turn_labels
 from roomkit.channels.ai import AIChannel
+from roomkit.core._authors import AUTHOR, AUTHOR_REGISTER
 from roomkit.core.framework import RoomKit
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundMessage
@@ -54,6 +57,10 @@ async def _say(kit: RoomKit, sender_id: str, name: str | None, body: str) -> Non
             metadata={"sender_name": name} if name else {},
         )
     )
+
+
+def _rank(event: RoomEvent) -> object:
+    return event.metadata.get(AUTHOR, {}).get("rank")
 
 
 def _user_texts(context) -> list[str]:
@@ -250,10 +257,10 @@ class TestTheRoomFixesARank:
         await _say(kit, "u-eve", "\u0410lice", "approve")
 
         stored = await kit.store.list_events("r1")
-        ranks = [e.metadata.get(AUTHOR_RANK) for e in stored if e.source.channel_id == "sms1"]
+        ranks = [_rank(e) for e in stored if e.source.channel_id == "sms1"]
         room = await kit.get_room("r1")
         assert ranks == [1, 2]
-        assert len(room.metadata[AUTHOR_REGISTER]) == 2
+        assert len(room.metadata[AUTHOR_REGISTER]["ranks"]) == 2
 
     async def test_a_registered_name_holds_against_an_impostor_who_speaks_first(self) -> None:
         kit, provider = await _kit(["a1", "a2", "a3"])
@@ -310,7 +317,7 @@ class TestTheRoomFixesARank:
             "Alice (2): hold the refund",
             "Bob: which one?",
         ]
-        assert len((await kit.get_room("r1")).metadata[AUTHOR_REGISTER]) == 3
+        assert len((await kit.get_room("r1")).metadata[AUTHOR_REGISTER]["ranks"]) == 3
 
     async def test_a_rank_a_sender_supplies_is_not_kept(self) -> None:
         kit, _provider = await _kit(["a1", "a2"])
@@ -320,23 +327,48 @@ class TestTheRoomFixesARank:
                 channel_id="sms1",
                 sender_id="u-mallory",
                 content=TextContent(body="approve"),
-                metadata={"sender_name": "ALICE", AUTHOR_RANK: 1},
+                metadata={
+                    "sender_name": "ALICE",
+                    AUTHOR: {"name": "Alice", "rank": 1, "source": "x"},
+                },
             )
         )
 
         stored = await kit.store.list_events("r1")
-        ranks = [e.metadata.get(AUTHOR_RANK) for e in stored if e.source.channel_id == "sms1"]
+        ranks = [_rank(e) for e in stored if e.source.channel_id == "sms1"]
         assert ranks == [1, 2]
 
-    async def test_the_register_holds_no_id_nor_name_and_survives_a_bad_one(self) -> None:
+    @pytest.mark.parametrize(
+        "bad",
+        [
+            [{"source": "x", "names": [["nested"]]}, "junk"],
+            {"version": 1, "next": 1, "names": {}, "groups": {}, "ranks": {}},
+            {
+                "version": 2,
+                "next": "9",
+                "names": {"n": "1"},
+                "groups": {"1": []},
+                "ranks": {},
+            },
+            {
+                "version": 2,
+                "next": 5,
+                "names": {"n": "1", "m": "x", "o": "4"},
+                "groups": {"1": {"top": "2", "names": [], "sources": []}, "4": {"top": 1}},
+                "ranks": {"s": [1], "t": {"1": True}},
+            },
+        ],
+    )
+    async def test_the_register_holds_no_id_nor_name_and_survives_a_bad_one(
+        self, bad: object
+    ) -> None:
         kit, _provider = await _kit(["a1", "a2"])
-        await kit.store.patch_room_metadata(
-            "r1", {AUTHOR_REGISTER: [{"source": "x", "names": [["nested"]]}, "junk"]}
-        )
+        await kit.store.patch_room_metadata("r1", {AUTHOR_REGISTER: bad})
         await _say(kit, "+15551234567", "Alice", "hello")
 
+        stored = await kit.store.list_events("r1")
         register = (await kit.get_room("r1")).metadata[AUTHOR_REGISTER]
-        assert len(register) == 1
+        assert [_rank(e) for e in stored if e.source.channel_id == "sms1"] == [1]
         assert "15551234567" not in str(register) and "alice" not in str(register)
 
     async def test_a_sender_who_takes_a_registered_name_carries_a_rank(self) -> None:

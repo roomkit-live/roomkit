@@ -96,8 +96,15 @@ def _make_mock_kit(room: Room, bindings: list[ChannelBinding] | None = None) -> 
         _room_state[r.id] = r
         return r
 
+    async def _patch_room_metadata(rid: str, patch: dict) -> Room:
+        _room_state[rid] = _room_state[rid].model_copy(
+            update={"metadata": {**_room_state[rid].metadata, **patch}}
+        )
+        return _room_state[rid]
+
     kit.get_room = AsyncMock(side_effect=_get_room)
     kit.store.update_room = AsyncMock(side_effect=_update_room)
+    kit.store.patch_room_metadata = AsyncMock(side_effect=_patch_room_metadata)
     kit.store.list_bindings = AsyncMock(return_value=bindings or [])
     kit.hook_engine = MagicMock()
     kit.hook_engine.add_room_hook = MagicMock()

@@ -51,7 +51,7 @@ from roomkit.orchestration.pipeline import ConversationPipeline, PipelineStage
 from roomkit.orchestration.state import (
     ConversationState,
     get_conversation_state,
-    set_conversation_state,
+    save_conversation_state,
 )
 from roomkit.providers.ai.mock import MockAIProvider
 
@@ -187,11 +187,11 @@ async def main() -> None:
     )
 
     # Initialize state to intake (mediator handles first)
-    room = await kit.get_room("code-review")
-    room = set_conversation_state(
-        room, ConversationState(phase="intake", active_agent_id="agent-mediator")
+    await save_conversation_state(
+        kit.store,
+        "code-review",
+        ConversationState(phase="intake", active_agent_id="agent-mediator"),
     )
-    await kit.store.update_room(room)
 
     # --- Simulate conversation -----------------------------------------------
 

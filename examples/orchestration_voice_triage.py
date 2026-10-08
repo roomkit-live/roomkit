@@ -62,7 +62,7 @@ from roomkit.orchestration.pipeline import ConversationPipeline, PipelineStage
 from roomkit.orchestration.state import (
     ConversationState,
     get_conversation_state,
-    set_conversation_state,
+    save_conversation_state,
 )
 from roomkit.providers.gemini import GeminiAIProvider, GeminiConfig
 from roomkit.tasks.delegate import DelegateHandler, build_delegate_tool, setup_delegation
@@ -293,12 +293,11 @@ async def main() -> None:
         await kit.attach_channel(room_id, "agent-triage", category=ChannelCategory.INTELLIGENCE)
         await kit.attach_channel(room_id, "agent-advisor", category=ChannelCategory.INTELLIGENCE)
 
-        room = await kit.get_room(room_id)
-        room = set_conversation_state(
-            room,
+        await save_conversation_state(
+            kit.store,
+            room_id,
             ConversationState(phase="intake", active_agent_id="agent-triage"),
         )
-        await kit.store.update_room(room)
 
         await _handler.send_greeting(room_id, channel_id="voice")
         logger.info("Call connected — room=%s agent=triage", room_id)

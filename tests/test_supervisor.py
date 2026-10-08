@@ -80,6 +80,7 @@ def _make_mock_kit(room: Room) -> MagicMock:
     kit._closed = False
     kit.get_room = AsyncMock(return_value=room)
     kit.store.update_room = AsyncMock()
+    kit.store.patch_room_metadata = AsyncMock(return_value=room)
     # Every channel asked about is attached to the room.
     kit.store.get_binding = AsyncMock(return_value=MagicMock())
     kit.hook_engine = MagicMock()
@@ -263,7 +264,7 @@ class TestSupervisorInstall:
         s = Supervisor(supervisor=boss, workers=[_make_agent("w1")])
         await s.install(kit, "r1")
 
-        updated_room = kit.store.update_room.call_args[0][0]
+        updated_room = Room(id="saved", metadata=kit.store.patch_room_metadata.call_args[0][1])
         state = get_conversation_state(updated_room)
         assert state.active_agent_id == "boss"
         assert state.phase == "supervisor"

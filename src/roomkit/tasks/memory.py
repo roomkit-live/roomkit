@@ -147,15 +147,10 @@ class InMemoryTaskRunner(TaskRunner):
                 # No worker ran.
                 fields = finished_task_fields(None, None, context)
                 return {**fields, "error": f"Child room {task.child_room_id} not found"}
-            await kit.store.update_room(
-                room.model_copy(
-                    update={
-                        "metadata": {
-                            **room.metadata,
-                            "task_status": TaskStatus.IN_PROGRESS,
-                        },
-                    }
-                )
+            # Its key alone: a full room write would undo what was written
+            # since the room was read, the room's register of authors among it.
+            await kit.store.patch_room_metadata(
+                task.child_room_id, {"task_status": TaskStatus.IN_PROGRESS}
             )
             # Lazy import to avoid circular dependency
             from roomkit.core.mixins.delegation import run_agent_in_child_room

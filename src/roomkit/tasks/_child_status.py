@@ -22,11 +22,14 @@ async def record_task_end(kit: RoomKit, result: DelegatedTaskResult) -> None:
         if room is None:
             return
         completed = result.status == TaskStatus.COMPLETED
-        metadata = {
-            **room.metadata,
-            "task_status": result.status,
-            "task_result": result.output if completed else None,
-        }
-        await kit.store.update_room(room.model_copy(update={"metadata": metadata}))
+        # Its keys alone: a full room write would undo what was written since
+        # the room was read, the room's register of authors among it.
+        await kit.store.patch_room_metadata(
+            result.child_room_id,
+            {
+                "task_status": result.status,
+                "task_result": result.output if completed else None,
+            },
+        )
     except Exception:
         logger.exception("Task %s: failed to update child room metadata", result.task_id)

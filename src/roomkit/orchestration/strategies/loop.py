@@ -36,7 +36,7 @@ from roomkit.orchestration.base import Orchestration
 from roomkit.orchestration.state import (
     ConversationState,
     get_conversation_state,
-    set_conversation_state,
+    save_conversation_state,
 )
 from roomkit.orchestration.status_bus import StatusLevel, post_agent_lifecycle
 from roomkit.orchestration.strategies.supervisor import WorkerStrategy
@@ -165,7 +165,6 @@ class Loop(Orchestration):
             self._install_sync_loop(kit, room_id)
 
         # Set initial state
-        room = await kit.get_room(room_id)
         initial_state = ConversationState(
             phase=producer.channel_id,
             active_agent_id=producer.channel_id,
@@ -175,8 +174,7 @@ class Loop(Orchestration):
                 "_loop_max_iterations": max_iter,
             },
         )
-        room = set_conversation_state(room, initial_state)
-        await kit.store.update_room(room)
+        await save_conversation_state(kit.store, room_id, initial_state)
 
     def _install_sync_loop(self, kit: RoomKit, room_id: str) -> None:
         """Take the producer's turns in *room_id* with this loop.
@@ -632,7 +630,7 @@ async def _save_loop_state(kit: RoomKit, room_id: str, outcome: _LoopOutcome) ->
     ctx["_loop_iteration"] = outcome.iteration
     ctx["_loop_stopped"] = outcome.stopped
     state = state.model_copy(update={"context": ctx})
-    await kit.store.update_room(set_conversation_state(room, state))
+    await save_conversation_state(kit.store, room_id, state)
 
 
 async def _run_reviewers(

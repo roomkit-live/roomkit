@@ -9,12 +9,20 @@ names a person for a human reader, with their channel (:func:`speaker_label`).
 from __future__ import annotations
 
 import functools
-import hashlib
 from collections.abc import Callable, Iterable
-from typing import Any
 
 from roomkit._lookalike import skeletons
 from roomkit._text import identifier, person_name, quoted
+from roomkit.core._authors import (
+    AUTHOR_REGISTER,
+    AuthorRegister,
+    People,
+    digest,
+    name_keys,
+    recorded_author,
+    source_of,
+)
+from roomkit.core._authors import author_name as _author_name
 from roomkit.models.context import RoomContext
 from roomkit.models.enums import ChannelType
 from roomkit.models.event import RoomEvent
@@ -56,51 +64,13 @@ def speaker_label(
 
 def _participant(event: RoomEvent, context: RoomContext) -> Participant | None:
     """The room's participant behind *event*."""
-    return _people(context).get(event.source.participant_id or "")
-
-
-def _people(context: RoomContext) -> dict[str, Participant]:
-    """The room's participants by id and by identity: ``source.participant_id``
-    holds a ``Participant.id`` when the channel names its own sender, and an
-    ``Identity.id`` when the identity pipeline resolved one (RFC §11); an id
-    wins over an identity."""
-    people = {p.identity_id: p for p in context.participants if p.identity_id}
-    return people | {p.id: p for p in context.participants}
+    return People(context.participants).of(event)
 
 
 def author_name(event: RoomEvent, context: RoomContext) -> str | None:
     """Display name of whoever is behind *event*, kept to a name's characters
-    (RFC §6.4), or ``None`` (:func:`_author`)."""
-    return _author(event, _people(context))
-
-
-def _author(event: RoomEvent, people: dict[str, Participant]) -> str | None:
-    """``metadata["sender_name"]`` first: the stamp a transport or host writes
-    at ingress, and the voice a channel's diarization names on a shared
-    microphone (RFC §12.2.3); the name the room's participant record holds
-    otherwise. Either is kept to a name's characters: given unquoted before
-    their words, a name must not open a line or a frame of its own. A sender
-    who takes a registered person's name is another source, and carries a
-    rank (:func:`turn_labels`)."""
-    name = event.metadata.get("sender_name")
-    if isinstance(name, str) and (kept := person_name(name)):
-        return kept
-    person = people.get(event.source.participant_id or "")
-    return (person_name(person.display_name) or None) if person is not None else None
-
-
-AUTHOR_RANK = "author_rank"
-"""The event metadata key holding its author's rank among the room's sources
-whose names read alike, fixed when the event is committed (RFC §10.1 step
-12)."""
-
-AUTHOR_REGISTER = "author_register"
-"""The room metadata key holding the sources whose names the room has seen,
-in order, each with what its name reads as (RFC §6.4). Both are kept as
-digests salted with the room's id: the register compares, it never needs to
-show a sender's id or name, and the room's metadata may reach clients."""
-
-Register = list[dict[str, Any]]
+    (RFC §6.4), or ``None``."""
+    return _author_name(event, People(context.participants))
 
 
 def turn_labels(events: Iterable[RoomEvent], context: RoomContext) -> dict[str, str | None]:
@@ -110,96 +80,56 @@ def turn_labels(events: Iterable[RoomEvent], context: RoomContext) -> dict[str, 
 
     Names are told apart across sources (a participant, whichever channel
     reached them, or a sender on its channel): when a source's name reads
-    like an earlier one's (in case or in Unicode's confusables, ``Alice`` and
+    like another's (in case or in Unicode's confusables, ``Alice`` and
     ``Аlice``), it carries its rank, ``Аlice (2)``, a form no name takes, so
     a sender who takes another's name does not read as that person. The
-    room's named participants come first, in the order they joined, whoever
-    spoke first. The rank an event carries (:data:`AUTHOR_RANK`, fixed for
-    the room when it was committed) is the one read. A name that reads as a
-    label the agent's own turns carry (``You``) carries ``(a participant)``,
-    so no one reads as the agent."""
-    people = _people(context)
-    window: Register = []
-    _seed(window, context, "")
-    return {event.id: _label(event, people, window) for event in events}
+    record of its author a turn was committed with (its name and rank,
+    :data:`~roomkit.core._authors.AUTHOR`) is the one read, while the turn's
+    source is the one recorded; a turn with none is ranked against the room's
+    register. A name that reads as a label the agent's own turns carry
+    (``You``) carries ``(a participant)``, so no one reads as the agent."""
+    unrecorded = _Unrecorded(context)
+    return {event.id: _label(event, unrecorded) for event in events}
 
 
-def _label(event: RoomEvent, people: dict[str, Participant], window: Register) -> str | None:
+def _label(event: RoomEvent, unrecorded: _Unrecorded) -> str | None:
     if event.source.channel_type == ChannelType.SYSTEM:
         return None
-    name = _author(event, people)
-    if name is None:
-        return channel_label(event.source.channel_id)
-    keys = skeletons(name)
-    if keys & _agent_labels():
+    people, salt = unrecorded.people, unrecorded.salt
+    source = digest(salt, source_of(event, people))
+    record = recorded_author(event)
+    name = person_name(record[0]) if record is not None and record[2] == source else ""
+    if name and record is not None:
+        rank = record[1]
+    else:
+        name = _author_name(event, people)
+        if name is None:
+            return channel_label(event.source.channel_id)
+        rank = unrecorded.rank(source, name_keys(salt, name))
+    if skeletons(name) & _agent_labels():
         return f"{name} (a participant)"
-    rank = _rank_in(window, _digest("", _source(event, people)), _digests("", keys))
-    stamped = event.metadata.get(AUTHOR_RANK)
-    rank = stamped if isinstance(stamped, int) and stamped > 0 else rank
     return name if rank == 1 else f"{name} ({rank})"
 
 
-def author_rank(event: RoomEvent, context: RoomContext, register: Register) -> int | None:
-    """*event*'s author rank in the room (:data:`AUTHOR_RANK`), *register*
-    (the room's :data:`AUTHOR_REGISTER`) extended with the room's named
-    participants, and with the event's source when it is new; ``None`` for a
-    system event or an author with no name."""
-    if event.source.channel_type == ChannelType.SYSTEM:
-        return None
-    salt = context.room.id
-    _seed(register, context, salt)
-    people = _people(context)
-    name = _author(event, people)
-    if name is None:
-        return None
-    source = _digest(salt, _source(event, people))
-    return _rank_in(register, source, _digests(salt, skeletons(name)))
+class _Unrecorded:
+    """Ranks for turns that carry no record of their author (from before the
+    register, or whose metadata or source was replaced since): a copy of the
+    room's register, extended with the room's named participants and with
+    each new source in the order the turns are read. Copied on first use,
+    which a window of recorded turns never makes."""
 
+    def __init__(self, context: RoomContext) -> None:
+        self.people = People(context.participants)
+        self.salt = context.room.id
+        self._stored = context.room.metadata.get(AUTHOR_REGISTER)
+        self._register: AuthorRegister | None = None
 
-def _seed(register: Register, context: RoomContext, salt: str) -> None:
-    """The room's named participants enter *register* first, in the order they
-    joined: a name the application registered holds its rank against a
-    sender who takes it, whoever spoke first."""
-    for person in sorted(context.participants, key=lambda p: p.joined_at):
-        if name := person_name(person.display_name):
-            source = _digest(salt, ["participant", person.id])
-            _rank_in(register, source, _digests(salt, skeletons(name)))
-
-
-def _digest(salt: str, parts: Iterable[str]) -> str:
-    return hashlib.sha256("\x1f".join([salt, *parts]).encode()).hexdigest()[:24]
-
-
-def _digests(salt: str, keys: Iterable[str]) -> set[str]:
-    return {_digest(salt, [key]) for key in keys}
-
-
-def register_of(value: object) -> Register:
-    """A room's :data:`AUTHOR_REGISTER` as stored, its well-formed entries
-    only: the room's metadata is the application's to write too."""
-    if not isinstance(value, list):
-        return []
-    return [
-        {"source": entry["source"], "names": list(entry["names"])}
-        for entry in value
-        if isinstance(entry, dict)
-        and isinstance(entry.get("source"), str)
-        and isinstance(entry.get("names"), list)
-        and all(isinstance(name, str) for name in entry["names"])
-    ]
-
-
-def _rank_in(register: Register, source: str, keys: set[str]) -> int:
-    """*source*'s rank among the sources of *register* whose names read like
-    *keys*, *register* extended when the source is new to it."""
-    alike: list[str] = []
-    for entry in register:
-        if keys.intersection(entry["names"]) and entry["source"] not in alike:
-            alike.append(entry["source"])
-    if source not in alike:
-        register.append({"source": source, "names": sorted(keys)})
-        alike.append(source)
-    return alike.index(source) + 1
+    def rank(self, source: str, names: set[str]) -> int:
+        if self._register is None:
+            stored = AuthorRegister.stored(self._stored)
+            self._register = stored.copy() if stored is not None else AuthorRegister()
+            self._register.seed(self.people, self.salt)
+        return self._register.rank(source, names)
 
 
 @functools.cache
@@ -208,19 +138,6 @@ def _agent_labels() -> frozenset[str]:
     thinker) and ``you (in a separate session)`` (an ACP agent's room
     context). A name reading as one carries ``(a participant)``."""
     return skeletons("You") | skeletons("you (in a separate session)")
-
-
-def _source(event: RoomEvent, people: dict[str, Participant]) -> list[str]:
-    """Who *event* comes from: the room's participant, whichever channel and
-    id reached them (an identity is one person); else its sender on its
-    channel, since a sender id from one transport says nothing of another's;
-    else its channel."""
-    person = people.get(event.source.participant_id or "")
-    if person is not None:
-        return ["participant", person.id]
-    if event.source.participant_id:
-        return ["sender", event.source.channel_id, event.source.participant_id]
-    return ["channel", event.source.channel_id]
 
 
 def participant_name(participant: Participant) -> str:

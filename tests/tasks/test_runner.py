@@ -68,6 +68,7 @@ def _make_mock_kit(
     kit._persist_side_effects = AsyncMock()
     kit._report_intelligence_errors = AsyncMock()
     kit.store.update_room = AsyncMock()
+    kit.store.patch_room_metadata = AsyncMock(return_value=room)
 
     router = MagicMock()
     result = broadcast_result or _MockBroadcastResult("task done")
@@ -189,8 +190,8 @@ class TestInMemoryTaskRunner:
         await runner.submit(kit, task)
         await task.wait(timeout=5.0)
 
-        # Should have called update_room at least twice (in_progress + completed)
-        assert kit.store.update_room.call_count >= 2
+        # Should have patched the room at least twice (in_progress + completed)
+        assert kit.store.patch_room_metadata.call_count >= 2
 
     async def test_events_committed_atomically(self):
         """_run_agent must commit child-room events via commit_event (index +
