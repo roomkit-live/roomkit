@@ -22,7 +22,7 @@ from roomkit.channels.ai import AIChannel
 from roomkit.channels.realtime_voice import RealtimeVoiceChannel
 from roomkit.models.channel import ChannelBinding
 from roomkit.models.enums import ChannelType
-from roomkit.providers.ai.base import AIResponse
+from roomkit.providers.ai.base import AIResponse, AIToolCall
 from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.voice.realtime.mock import MockCall, MockRealtimeProvider, MockRealtimeTransport
 from tests.conftest import make_event
@@ -376,3 +376,45 @@ async def test_only_the_schema_list_tools_serves_goes_out_uncut(verdict: str) ->
 
     assert len(read) < 1000
     assert json.loads(whole)["tool"]["description"] == "y" * 3000
+
+
+def _calling_side_by_side(*queries: str) -> AIResponse:
+    """One round in which the model ran a search per query, side by side."""
+    return AIResponse(
+        content="",
+        finish_reason="tool_calls",
+        tool_calls=[
+            AIToolCall(id=f"call-find-{i}", name="find_tools", arguments={"query": query})
+            for i, query in enumerate(queries)
+        ],
+    )
+
+
+class TestSearchesOfOneRound:
+    """Each search's result tells the model its matches are declared next
+    round: two searches run side by side in one round reveal both."""
+
+    async def test_two_searches_of_one_round_reveal_both_their_matches(self) -> None:
+        kit, channel, provider = await _text_kit(
+            [_calling_side_by_side("spotify", "x5"), AIResponse(content="done")]
+        )
+
+        await _text_turn(kit, channel)
+
+        assert _round_declares(provider, 1) >= FOUND | {"x5"}
+        await kit.close()
+
+    async def test_a_later_rounds_search_still_swaps_the_window(self) -> None:
+        kit, channel, provider = await _text_kit(
+            [
+                _calling("find_tools", query="spotify"),
+                _calling("find_tools", query="x5"),
+                AIResponse(content="done"),
+            ]
+        )
+
+        await _text_turn(kit, channel)
+
+        declared = _round_declares(provider, 2)
+        assert "x5" in declared and not FOUND & declared
+        await kit.close()

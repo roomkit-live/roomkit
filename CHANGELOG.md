@@ -222,6 +222,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Two `find_tools` calls the model runs side by side in one round each reveal
+  their matches (RMK-604, RFC §24.4). Each result tells the model its matches
+  are declared next round, but the search settled last swapped the window the
+  other had just set, so a tool the other found was missing from the next
+  round's declaration: the model called it anyway, the call was recovered from
+  the catalogue at call time, and on a server whose tool-call parser types
+  arguments from the declared schema (vLLM `qwen3_xml`) its integers arrived as
+  strings and were refused, round after round. Searches of one round now add up
+  in the window; a search of a later round still swaps it.
+
 - `CompactingMemory` counts an event as the other memories do (RMK-589): an
   image by the tokens a provider bills for it (about a thousand), never by its
   URL's or its base64's length. An image by URL counted about 30 tokens, so a

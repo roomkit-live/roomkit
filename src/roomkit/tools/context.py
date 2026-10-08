@@ -104,6 +104,10 @@ class _ToolLoopContext:
     # — round 0 starts empty, a find_tools call reveals matches, and the next
     # round's tool re-filter shows them.
     revealed_tools: set[str] = field(default_factory=set)
+    # The tool rounds this loop ran, and the one whose served search last swapped
+    # the reveal window: searches of one round add up, a later round's swaps it.
+    tool_rounds: int = 0
+    revealed_in_round: int | None = None
     # Anti-loop guard: count of identical (tool, canonical-args) calls this
     # turn. Read by ``_repeated_call_guard`` to short-circuit a model stuck
     # re-issuing the same call instead of answering.

@@ -413,6 +413,8 @@ class AIToolsMixin(_AIChannelContract):
         dispatcher: past the gate, a call nothing serves is unserved, which
         ON_TOOL_CALL's hooks may serve (RFC §9.3).
         """
+        # A round of its own: the searches its calls serve share one reveal window.
+        self._get_loop_ctx().tool_rounds += 1
         # Capture the invocation-scoped room once. The channel object is shared
         # across rooms, while the loop context is copied into every task spawned
         # by gather below.
@@ -1110,13 +1112,20 @@ class AIToolsMixin(_AIChannelContract):
     def _reveal(self, loop_ctx: _ToolLoopContext, names: list[str]) -> None:
         """Reveal *names* as ``find_tools`` reveals its matches: the reveal
         window swapped, what Tool Search never defers left out, and kept for
-        the rest of the session (RFC §24.4)."""
+        the rest of the session (RFC §24.4). Two searches the model ran side by
+        side in one round each told it its matches are declared next round, so
+        the second adds to the window the first swapped instead of swapping it
+        again."""
         never = self._never_deferred(loop_ctx)
         revealed = {name for name in names if name not in never}
         if not revealed:
             return
-        # A tool a served recovery revealed was used: the swap keeps it.
-        loop_ctx.revealed_tools = revealed | loop_ctx.recovered_tools
+        if loop_ctx.revealed_in_round == loop_ctx.tool_rounds:
+            loop_ctx.revealed_tools |= revealed
+        else:
+            # A tool a served recovery revealed was used: the swap keeps it.
+            loop_ctx.revealed_tools = revealed | loop_ctx.recovered_tools
+            loop_ctx.revealed_in_round = loop_ctx.tool_rounds
         self._tool_usage.record_revealed(loop_ctx.room_id, revealed)
 
     def _settle_served_call(self, tool_call_id: str, *, served: bool) -> None:
