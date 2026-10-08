@@ -27,7 +27,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   answers only them. A turn from anyone else, or from a speaker the room does
   not name, is `silent` with the reason `only listened to`, without asking the
   wrapped policy; it is stored and thought about as any silent turn. The
-  wrapped policy judges with only the people answered in `SpeakTurn.people`.
+  wrapped policy judges with only the people answered in `SpeakTurn.people`,
+  the speaker among them even when a participant record names the microphone
+  otherwise; `people` given as one string is refused.
   Speakers are matched by the name the room gives them, ignoring case: it is
   not an access control. Example: `examples/answering_some_people.py`.
 

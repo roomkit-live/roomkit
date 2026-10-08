@@ -7,11 +7,22 @@ from typing import Any
 
 import pytest
 
-from roomkit import AlwaysSpeak, AnswerOnly, MockSpeakPolicy, MockThinker, SpeakTurn, Thought
+from roomkit import (
+    AlwaysSpeak,
+    AnswerOnly,
+    ClassifierSpeakPolicy,
+    MockClassifier,
+    MockSpeakPolicy,
+    MockThinker,
+    SpeakDecisionEvent,
+    SpeakTurn,
+    Thought,
+)
 from roomkit.channels.ai import AIChannel
 from roomkit.models.channel import ChannelBinding
 from roomkit.models.context import RoomContext
 from roomkit.models.enums import ChannelCategory, ChannelType
+from roomkit.models.participant import Participant
 from roomkit.models.room import Room
 from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.speaking.answer_only import LISTENED_TO
@@ -68,6 +79,18 @@ async def test_a_speaker_answered_is_the_wrapped_policys_with_only_the_people_an
     assert turn.people == ("Sylvain",)
 
 
+async def test_the_speaker_answered_counts_when_no_participant_record_names_them() -> None:
+    """The room names its participant "Living room" while the transport stamps
+    the voice "Sylvain": the conversation is still one to one (RMK-625 review)."""
+    inner = MockSpeakPolicy(["speak"])
+
+    await AnswerOnly(inner, ["Sylvain", "Paul"]).decide(
+        _turn(_said("What time is it?", "Sylvain"), people=("Living room", "Paul"))
+    )
+
+    assert inner.turns[0].people == ("Paul", "Sylvain")
+
+
 @pytest.mark.parametrize("speaker", [None, ""], ids=["unnamed", "empty"])
 async def test_a_speaker_the_room_does_not_name_is_not_answered(speaker: str | None) -> None:
     inner = MockSpeakPolicy(["speak"])
@@ -94,6 +117,11 @@ def test_answering_no_one_is_refused(people: list[str]) -> None:
         AnswerOnly(AlwaysSpeak(), people)
 
 
+def test_one_string_is_not_taken_for_a_list_of_names() -> None:
+    with pytest.raises(TypeError, match="not one string"):
+        AnswerOnly(AlwaysSpeak(), "Sylvain")
+
+
 async def test_close_closes_the_wrapped_policy() -> None:
     closed: list[bool] = []
 
@@ -109,8 +137,33 @@ async def test_close_closes_the_wrapped_policy() -> None:
 # --- on an AI channel -------------------------------------------------------------------
 
 
-def _context(*events: Any) -> RoomContext:
-    return RoomContext(room=Room(id="r1"), bindings=[_BINDING, _VOICE], recent_events=list(events))
+def _context(*events: Any, participants: list[Participant] | None = None) -> RoomContext:
+    return RoomContext(
+        room=Room(id="r1"),
+        bindings=[_BINDING, _VOICE],
+        participants=participants or [],
+        recent_events=list(events),
+    )
+
+
+async def test_one_person_before_the_television_is_a_one_to_one_on_the_channel() -> None:
+    """Through the channel's own turn: the microphone's participant record is
+    "Living room", the voice is "Sylvain". A request that names nobody is
+    Nova's, as it is without AnswerOnly (RMK-625 review)."""
+    classifier = MockClassifier({"request": 0.9, "directness": 0.3})
+    channel = AIChannel(
+        "ai1",
+        provider=MockAIProvider(responses=["It is ten."]),
+        speak_policy=AnswerOnly(ClassifierSpeakPolicy(classifier, agent_name="Nova"), ["Sylvain"]),
+    )
+    room_mic = Participant(id="mic", room_id="r1", channel_id="voice1", display_name="Living room")
+    event = _said("What time is it?", "Sylvain")
+
+    run = await respond(channel, event, _BINDING, _context(event, participants=[room_mic]))
+
+    assert run.text == "It is ten."
+    [(state, _)] = classifier.calls
+    assert state["people"] == ["Sylvain"]
 
 
 async def test_a_voice_only_listened_to_is_thought_about_and_never_answered() -> None:
@@ -126,6 +179,12 @@ async def test_a_voice_only_listened_to_is_thought_about_and_never_answered() ->
         thinker=thinker,
         think_wait=1.0,
     )
+    decisions: list[SpeakDecisionEvent] = []
+
+    async def hook(event: SpeakDecisionEvent) -> None:
+        decisions.append(event)
+
+    channel._speak_decision_hook = hook
     tv = _said("So how much does this licence cost, do you think?", "TV")
 
     output = await channel.on_event(tv, _BINDING, _context(tv))
@@ -134,9 +193,14 @@ async def test_a_voice_only_listened_to_is_thought_about_and_never_answered() ->
     assert provider.calls == []
     assert len(thinker.calls) == 1
     assert inner.turns == []  # asked again with the thought, still never the TV's
+    assert [(d.decision.reason, d.asked_again) for d in decisions] == [
+        (LISTENED_TO, False),
+        (LISTENED_TO, True),
+    ]
     sylvain = _said("Nova, did you catch that?", "Sylvain")
     run = await respond(channel, sylvain, _BINDING, _context(tv, sylvain))
 
     assert run.text == "It costs 1,200 $ a year."
     [turn] = inner.turns
     assert turn.event is sylvain and turn.thought == PRICE
+    assert turn.people == ("Sylvain",)

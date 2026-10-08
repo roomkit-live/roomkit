@@ -20,10 +20,10 @@ LISTENED_TO = "only listened to"
 
 
 def _key(name: str) -> str:
-    """*name* as compared: kept to a name's characters as the room keeps a
-    speaker's (so a configured name matches the one the room gives), then
-    ignoring case and spacing."""
-    return " ".join(person_name(name).split()).casefold()
+    """*name* as compared: kept to a name's characters, on one line, as the
+    room keeps a speaker's (so a configured name matches the one the room
+    gives), then ignoring case."""
+    return person_name(name).casefold()
 
 
 class AnswerOnly(SpeakPolicy):
@@ -33,8 +33,9 @@ class AnswerOnly(SpeakPolicy):
     name, is decided ``silent`` with the reason :data:`LISTENED_TO`, without
     asking *policy*: it is stored and the agent's thinker thinks about it, as
     any turn left silent. A turn from one of *people* is *policy*'s to decide,
-    with only *people* in ``SpeakTurn.people``: a voice only listened to does
-    not turn a conversation with one person into a group one.
+    with only *people* in ``SpeakTurn.people``, the speaker among them: a voice
+    only listened to does not turn a conversation with one person into a group
+    one.
 
     A speaker is matched by the name the room gives them (``SpeakTurn.speakers``:
     the name the sender's transport stamped, else the participant's display
@@ -46,10 +47,13 @@ class AnswerOnly(SpeakPolicy):
         people: The names of the people the agent answers.
 
     Raises:
+        TypeError: *people* is one string rather than names.
         ValueError: *people* names no one.
     """
 
     def __init__(self, policy: SpeakPolicy, people: Iterable[str]) -> None:
+        if isinstance(people, str):
+            raise TypeError("AnswerOnly takes the names of the people answered, not one string")
         self._policy = policy
         self._people = frozenset(key for name in people if (key := _key(name)))
         if not self._people:
@@ -60,10 +64,19 @@ class AnswerOnly(SpeakPolicy):
         return name is not None and _key(name) in self._people
 
     async def decide(self, turn: SpeakTurn) -> SpeakDecision:
-        if not self.answers(turn.speakers.get(turn.event.id)):
+        speaker = turn.speakers.get(turn.event.id)
+        if speaker is None or not self.answers(speaker):
             return SpeakDecision("silent", reason=LISTENED_TO)
+        return await self._policy.decide(replace(turn, people=self._judged_with(turn, speaker)))
+
+    def _judged_with(self, turn: SpeakTurn, speaker: str) -> tuple[str, ...]:
+        """The people the wrapped policy judges with: those of the turn it
+        answers, and the speaker when none of them names them (a participant
+        record named otherwise than the voice its transport stamps)."""
         people = tuple(name for name in turn.people if self.answers(name))
-        return await self._policy.decide(replace(turn, people=people))
+        if any(_key(name) == _key(speaker) for name in people):
+            return people
+        return (*people, speaker)
 
     async def close(self) -> None:
         """Close the policy it wraps."""
