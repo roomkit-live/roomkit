@@ -19,6 +19,9 @@ from roomkit.models.store_filter import EventFilter
 from roomkit.models.task import Observation, Task
 from roomkit.models.voice_delivery import VoiceDeliveryRecord
 
+# Page size of the fallback scan over rooms (find_room_id_by_participant).
+_ROOM_PAGE = 100
+
 
 class ConversationStore(ABC):
     """Persistent storage for rooms, events, bindings, and participants.
@@ -279,9 +282,9 @@ class ConversationStore(ABC):
         room when they write to another (§10.4 step 1). Latest by creation
         time, the room id breaking a tie, in every store.
 
-        This is not abstract, so a store written before it existed keeps
-        working: the fallback reads the binding of every room bound to the
-        channel. Override it with an indexed query.
+        Not abstract, so a store that does not override it keeps working:
+        the fallback reads the binding of every room bound to the channel.
+        Override it with an indexed query.
         """
         room_ids = await self.find_room_ids_by_channel(
             channel_id, status=status, limit=sys.maxsize
@@ -291,6 +294,31 @@ class ConversationStore(ABC):
             if binding is not None and binding.participant_id == participant_id:
                 return room_id
         return None
+
+    async def find_room_id_by_participant(
+        self, participant_id: str, status: str | None = None
+    ) -> str | None:
+        """The latest room where *participant_id* is a participant (RFC §10.4 step 1).
+
+        Participant records only, never a binding: a binding speaks for its
+        own channel and is read by :meth:`find_room_id_by_binding`. Latest by
+        creation time, the room id breaking a tie, in every store.
+
+        Not abstract, so a store that does not override it keeps working:
+        the fallback pages through the rooms. Override it with an indexed
+        query.
+        """
+        best: tuple[datetime, str] | None = None
+        offset = 0
+        while True:
+            rooms = await self.find_rooms(status=status, limit=_ROOM_PAGE, offset=offset)
+            for room in rooms:
+                newer = best is None or (room.created_at, room.id) > best
+                if newer and await self.get_participant(room.id, participant_id) is not None:
+                    best = (room.created_at, room.id)
+            if len(rooms) < _ROOM_PAGE:
+                return best[1] if best is not None else None
+            offset += len(rooms)
 
     # Event operations
 

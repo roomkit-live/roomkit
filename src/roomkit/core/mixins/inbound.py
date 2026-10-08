@@ -8,10 +8,17 @@ from contextlib import AsyncExitStack
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from roomkit.core.exceptions import ChannelNotRegisteredError, RoomNotFoundError
+from roomkit.core.inbound_router import binding_admits
 from roomkit.core.mixins.channel_ops import is_channel_detached
 from roomkit.core.mixins.helpers import HelpersMixin
 from roomkit.core.mixins.inbound_identity import _IdentityBlockedError
-from roomkit.models.delivery import STANDALONE, DeliveryHandle, InboundMessage, InboundResult
+from roomkit.models.delivery import (
+    STANDALONE,
+    SYSTEM_SENDER_ID,
+    DeliveryHandle,
+    InboundMessage,
+    InboundResult,
+)
 from roomkit.models.enums import (
     ChannelType,
     EventType,
@@ -231,7 +238,6 @@ class InboundMixin(HelpersMixin):
     ) -> InboundResult:
         """Inner inbound processing (extracted for telemetry wrapping)."""
 
-        routed = room_id is None
         # Route to room (or auto-create). Deliberately outside the pre-commit
         # window below: routing is RFC §10.1 steps 1-2, the phase
         # ``process_timeout`` bounds is steps 3-11 — and this is the one part
@@ -272,7 +278,6 @@ class InboundMixin(HelpersMixin):
             room_id,
             deadline,
             defer_delivery=defer_delivery,
-            routed=routed,
         )
 
     async def _prepare_event(
@@ -351,7 +356,6 @@ class InboundMixin(HelpersMixin):
         deadline: float,
         *,
         defer_delivery: bool = False,
-        routed: bool = False,
     ) -> InboundResult:
         """RFC §10.1 steps 6-18: the locked region, then the delivery set.
 
@@ -378,7 +382,6 @@ class InboundMixin(HelpersMixin):
                 deadline,
                 cascade,
                 defer_delivery=defer_delivery,
-                routed=routed,
             )
         except BaseException:
             # The caller owns this cascade even if setup failed after commit,
@@ -399,7 +402,6 @@ class InboundMixin(HelpersMixin):
         cascade: DeliveryCascade,
         *,
         defer_delivery: bool,
-        routed: bool,
     ) -> InboundResult:
         async with AsyncExitStack() as stack:
             try:
@@ -424,8 +426,6 @@ class InboundMixin(HelpersMixin):
                 deadline=deadline,
                 precheck=precheck,
             )
-            if routed and not result.blocked:
-                await self._retain_routed_sender(room_id, message, context)
 
         if defer_delivery:
             # Every result that reached this locked region gets a handle — a
@@ -527,9 +527,14 @@ class InboundMixin(HelpersMixin):
             attributes={"sender_id": message.sender_id or ""},
         )
         try:
-            room_id, room_just_created = await self._find_or_open_room(
-                message, channel, room_id, organization_id
-            )
+            if room_id is None:
+                room_id, room_just_created = await self._route_and_claim(
+                    message, channel, organization_id
+                )
+            else:
+                room_id, room_just_created = await self._find_or_open_room(
+                    message, channel, room_id, organization_id
+                )
             telemetry.end_span(route_span, attributes={"room_id": room_id or ""})
         except Exception as exc:
             telemetry.end_span(route_span, status="error", error_message=str(exc))
@@ -625,40 +630,56 @@ class InboundMixin(HelpersMixin):
         )
         return room.id
 
-    async def _retain_routed_sender(
-        self, room_id: str, message: InboundMessage, context: RoomContext
-    ) -> None:
-        """Record a routed sender on a binding that names no one (RFC §10.1 step 2).
+    async def _route_and_claim(
+        self, message: InboundMessage, channel: Channel, organization_id: str | None
+    ) -> tuple[str, bool]:
+        """The room the router gives *message*, its binding naming the sender.
+
+        The router admits off the lock, so a concurrent message's sender may
+        hold the binding by the time this one claims it (RFC §10.1 step 2):
+        the message is then routed once more, against a store where the
+        router sees that sender and refuses this one. The second answer is
+        kept whatever its claim gives: when the binding still names someone
+        else, the sender is one of several members the router found by their
+        participant record, not a stranger admitted by step 3.
+        """
+        room_id, created = await self._find_or_open_room(message, channel, None, organization_id)
+        if created or await self._claim_binding(room_id, message):
+            return room_id, created
+        room_id, created = await self._find_or_open_room(message, channel, None, organization_id)
+        if not created:
+            await self._claim_binding(room_id, message)
+        return room_id, created
+
+    async def _claim_binding(self, room_id: str, message: InboundMessage) -> bool:
+        """Record the routed sender on a binding naming no one; False if it names another.
 
         A binding that is not a group carries one correspondent's conversation,
-        and the first sender routed through it, whose message the room
-        received, is that correspondent: the router then finds them there by
-        the binding and admits no one else (§10.4). Runs under the room lock
-        the inbound commit holds, where every binding mutation runs. The
-        context's binding is the hint, so the usual case, a binding that
-        already names someone, reads nothing; the write re-reads the store.
-
-        The message is committed by then, so a store failure here is logged,
-        never raised: the router still refuses other senders by what the room
-        received (§10.4), and only this sender's next message may open a room
-        of its own.
+        and the first sender routed through it is that correspondent: the
+        router then finds them there and admits no one else (RFC §10.4). The
+        unlocked read keeps the usual case, a binding that already names its
+        sender, free of the lock. The claim re-reads under the room lock,
+        where every binding mutation runs, and waits for it no longer than
+        ``process_timeout``: a message whose room lock is stuck is refused at
+        its commit anyway (§13.6), and nothing is recorded for it.
         """
-        hint = context.get_binding(message.channel_id)
-        if not message.sender_id or hint is None or not _names_no_one(hint):
-            return
-        try:
+        sender = message.sender_id
+        if not sender or sender == SYSTEM_SENDER_ID:
+            return True
+        binding = await self._store.get_binding(room_id, message.channel_id)
+        if binding is None or not _names_no_one(binding):
+            return binding is None or binding_admits(binding, frozenset({sender}))
+        async with AsyncExitStack() as stack:
+            try:
+                async with asyncio.timeout(self._process_timeout):
+                    await stack.enter_async_context(self._lock_manager.locked(room_id))
+            except TimeoutError:
+                return True
             binding = await self._store.get_binding(room_id, message.channel_id)
-            if binding is not None and _names_no_one(binding):
-                await self._store.update_binding(
-                    binding.model_copy(update={"participant_id": message.sender_id})
-                )
-        except Exception:
-            logger.warning(
-                "Could not record sender on binding %s of room %s",
-                message.channel_id,
-                room_id,
-                exc_info=True,
-            )
+            if binding is None or not _names_no_one(binding):
+                return binding is None or binding_admits(binding, frozenset({sender}))
+            await self._store.update_binding(binding.model_copy(update={"participant_id": sender}))
+            return True
 
     async def _maybe_auto_attach(self, room_id: str, channel_id: str) -> None:
         """Attach *channel_id* if it was never bound — not if it was revoked.

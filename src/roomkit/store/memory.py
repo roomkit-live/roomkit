@@ -286,6 +286,20 @@ class InMemoryStore(ConversationStore):
                 best = (room.created_at, room.id)
         return best[1] if best is not None else None
 
+    async def find_room_id_by_participant(
+        self, participant_id: str, status: str | None = None
+    ) -> str | None:
+        best: tuple[Any, str] | None = None
+        for room_id in self._participant_room_index.get(participant_id, ()):
+            room = self._rooms.get(room_id)
+            if room is None or participant_id not in self._participants.get(room_id, {}):
+                continue
+            if status is not None and room.status.value != status:
+                continue
+            if best is None or (room.created_at, room.id) > best:
+                best = (room.created_at, room.id)
+        return best[1] if best is not None else None
+
     async def find_room_ids_by_channel(
         self, channel_id: str, status: str | None = None, limit: int = 2
     ) -> list[str]:

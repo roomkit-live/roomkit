@@ -112,7 +112,7 @@ def _row_to_binding(row: Any) -> ChannelBinding:
         output_muted=row["output_muted"],
         visibility=row["visibility"],
         participant_id=row["participant_id"],
-        group=row["is_group"],
+        group=row.get("is_group", False),
         last_read_index=row["last_read_index"],
         attached_at=row["attached_at"],
         capabilities=caps,

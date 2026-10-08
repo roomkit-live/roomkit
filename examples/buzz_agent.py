@@ -90,8 +90,10 @@ async def main() -> int:
     kit = RoomKit()
     kit.register_channel(BuzzChannel(channel_id, provider=provider))
     await kit.create_room(room_id="buzz-agent")
+    # A Buzz channel is a group conversation: every member's message belongs
+    # to this room (a group binding, RFC §10.4).
     await kit.attach_channel(
-        "buzz-agent", channel_id, metadata={"buzz_channel_id": relay_channel_id}
+        "buzz-agent", channel_id, group=True, metadata={"buzz_channel_id": relay_channel_id}
     )
 
     started_at = int(time.time())

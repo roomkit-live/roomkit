@@ -74,7 +74,9 @@ async def main() -> None:
         )
     )
     await kit.create_room(room_id=ROOM)
-    await kit.attach_channel(ROOM, CHANNEL)
+    # Several people write on this one channel: a group binding (RFC §10.4),
+    # or the router would give each new speaker a room of their own.
+    await kit.attach_channel(ROOM, CHANNEL, group=True)
     await kit.attach_channel(ROOM, "ai-assistant", category=ChannelCategory.INTELLIGENCE)
 
     # 1. One speaker in the window: the prompt is exactly what it always was.

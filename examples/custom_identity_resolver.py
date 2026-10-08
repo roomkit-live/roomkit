@@ -108,7 +108,8 @@ async def main() -> None:
         return IdentityHookResult.resolved(id_result.candidates[0])
 
     await kit.create_room(room_id="identity-room")
-    await kit.attach_channel("identity-room", "ws-main")
+    # Three senders on one channel of one room: a group binding (RFC §10.4).
+    await kit.attach_channel("identity-room", "ws-main", group=True)
 
     # --- Test 1: Known sender (alice) ---
     print("Test 1: Known sender (alice-phone)")

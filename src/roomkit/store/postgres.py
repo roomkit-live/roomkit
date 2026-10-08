@@ -821,6 +821,22 @@ class PostgresStore(ConversationStore):
             row = await conn.fetchrow(query, *params)
         return row["room_id"] if row is not None else None
 
+    async def find_room_id_by_participant(
+        self, participant_id: str, status: str | None = None
+    ) -> str | None:
+        # Newest room first, id as tie-breaker, like the other stores.
+        query = (
+            "SELECT p.room_id FROM participants p JOIN rooms r ON r.id = p.room_id WHERE p.id = $1"
+        )
+        params: list[Any] = [participant_id]
+        if status is not None:
+            query += " AND r.status = $2"
+            params.append(status.value if hasattr(status, "value") else status)
+        query += " ORDER BY r.created_at DESC, p.room_id DESC LIMIT 1"
+        async with self._acquire() as conn:
+            row = await conn.fetchrow(query, *params)
+        return row["room_id"] if row is not None else None
+
     async def find_room_ids_by_channel(
         self,
         channel_id: str,

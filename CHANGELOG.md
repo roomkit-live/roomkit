@@ -656,17 +656,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   joined the room through the channel, and the room received nothing on the
   channel from another named sender. A room created for an inbound message
   binds its sender (`ChannelBinding.participant_id`), and the first sender
-  routed through a binding that names no one is recorded on it, so their next
-  message finds their room. A binding speaks for its own channel: step 1 looks
-  for the binding of the channel the sender wrote on
-  (`ConversationStore.find_room_id_by_binding`, with a fallback for a store
-  that does not implement it), so a `participant_id` set on one number's
-  binding no longer routes that sender's texts to another number into the
-  same room. A conversation of several senders on one channel routed without
-  `room_id` (a group chat bound to its room) now declares it with
-  `attach_channel(room_id, channel_id, group=True)`; without it, its second
-  speaker gets a room of their own. `PostgresStore` adds the
-  `bindings.is_group` column on start. Example: `examples/shared_sms_number.py`.
+  routed through a binding that names no one is recorded on it when the
+  message is routed, under the room lock: two first messages arriving
+  together land apart, and a message a hook refuses has been routed all the
+  same. A sender is known by their address and by the identity the store
+  resolves it to; what the host sends with `deliver()` (sender `system`,
+  `SYSTEM_SENDER_ID`) does not close a room to its customer's reply. A member
+  added under an id that is neither their address nor a linked identity now
+  closes a dedicated room to routing: route their messages with `room_id`, or
+  `link_address()` their number. A binding speaks for its own channel: step 1
+  looks for the binding of the channel the sender wrote on
+  (`ConversationStore.find_room_id_by_binding`), then for a room the sender is
+  a participant of (`ConversationStore.find_room_id_by_participant`, both with
+  a fallback for a store that does not implement them), so a `participant_id`
+  set on one number's binding no longer routes that sender's texts to another
+  number into the same room. A delivery status that names no room reaches the
+  room whose binding names its recipient, else the one room bound to its
+  channel, else none: never the oldest of several rooms, which on a shared
+  number is another customer's. A conversation of several senders on one
+  channel routed without `room_id` (a group chat bound to its room) now
+  declares it with `attach_channel(room_id, channel_id, group=True)`; without
+  it, its second speaker gets a room of their own. `BuzzHuddleWatcher`'s
+  announcement room is declared a group. `PostgresStore` adds the
+  `bindings.is_group` column and the routing indexes on start, `SQLiteStore`
+  the indexes. Example: `examples/shared_sms_number.py`.
 
 - Text from outside cannot leave its frame in an AI channel's context
   (RMK-589, RFC §6.4). A person's words or name, a worker's output, a thought or

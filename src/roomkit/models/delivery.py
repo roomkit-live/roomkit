@@ -47,6 +47,13 @@ class ProviderResult(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+# The sender of a message the framework writes into a room itself (a
+# ``deliver()``, an orchestration cue): the host speaking, never a
+# correspondent of the room's channel, so routing does not count it as one
+# (RFC §10.4).
+SYSTEM_SENDER_ID = "system"
+
+
 class InboundMessage(BaseModel):
     """A message received from an external provider.
 

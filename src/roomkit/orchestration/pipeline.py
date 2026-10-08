@@ -338,7 +338,7 @@ class ConversationPipeline:
     ) -> None:
         """Register ON_HANDOFF + BEFORE_TTS hooks for handoff greeting."""
         from roomkit.models.context import RoomContext
-        from roomkit.models.delivery import InboundMessage
+        from roomkit.models.delivery import SYSTEM_SENDER_ID, InboundMessage
         from roomkit.models.event import RoomEvent, TextContent
         from roomkit.models.hook import HookResult
 
@@ -422,7 +422,7 @@ class ConversationPipeline:
                         kit.process_inbound(
                             InboundMessage(
                                 channel_id=voice_channel_id,
-                                sender_id="system",
+                                sender_id=SYSTEM_SENDER_ID,
                                 event_type=EventType.INSTRUCTION,
                                 content=TextContent(body=prompt),
                                 addressed_to=[to_agent] if to_agent else None,

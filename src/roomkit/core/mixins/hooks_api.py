@@ -299,9 +299,7 @@ class HooksApiMixin(HelpersMixin):
         """
         room_id = status.room_id
         if not room_id and status.channel_id:
-            room_id = await self._store.find_room_id_by_channel(
-                status.channel_id, status=str(RoomStatus.ACTIVE)
-            )
+            room_id = await self._room_of_status(status, status.channel_id)
 
         if not room_id:
             logger.warning(
@@ -325,6 +323,25 @@ class HooksApiMixin(HelpersMixin):
             context,
             skip_event_filter=True,
         )
+
+    async def _room_of_status(self, status: DeliveryStatus, channel_id: str) -> str | None:
+        """The room a delivery status belongs to, or ``None`` (RFC §10.4).
+
+        The room whose binding of the channel names the status's recipient,
+        else the one active room bound to the channel. Never one of several:
+        on a number shared by many correspondents, the oldest room is
+        another customer's, and the status (its recipient's number among it)
+        would be dispatched with that room's context.
+        """
+        active = str(RoomStatus.ACTIVE)
+        if status.recipient:
+            room_id = await self._store.find_room_id_by_binding(
+                channel_id, status.recipient, status=active
+            )
+            if room_id is not None:
+                return room_id
+        candidates = await self._store.find_room_ids_by_channel(channel_id, status=active, limit=2)
+        return candidates[0] if len(candidates) == 1 else None
 
     def add_room_hook(
         self,

@@ -92,7 +92,8 @@ async def main() -> None:
     kit.register_channel(SMSChannel("sms", provider=MockSMSProvider()))
     await kit.create_room(room_id="meeting")
     await kit.attach_channel("meeting", "nova", category=ChannelCategory.INTELLIGENCE)
-    await kit.attach_channel("meeting", "sms")
+    # Several people write on this one channel: a group binding (RFC §10.4).
+    await kit.attach_channel("meeting", "sms", group=True)
 
     @kit.hook(HookTrigger.ON_SPEAK_DECISION, execution=HookExecution.ASYNC)
     async def on_decision(event: SpeakDecisionEvent, ctx: object) -> None:

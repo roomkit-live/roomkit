@@ -509,7 +509,10 @@ class BuzzHuddleWatcher:
         # Buzz channel (and fail with "channel_id must be a UUID").
         announcements_room = f"{self._events_channel_id}-room"
         await self._kit.create_room(room_id=announcements_room)
-        await self._kit.attach_channel(announcements_room, self._events_channel_id)
+        # Every member's announcement belongs to this one room: a group
+        # binding, or each new announcer would be routed to a room of their
+        # own (RFC §10.4).
+        await self._kit.attach_channel(announcements_room, self._events_channel_id, group=True)
 
         @self._kit.hook(
             HookTrigger.AFTER_BROADCAST,

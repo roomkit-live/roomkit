@@ -10,7 +10,9 @@ from __future__ import annotations
 
 from roomkit.core.inbound_router import _HISTORY_PAGE, DefaultInboundRoomRouter
 from roomkit.models.channel import ChannelBinding
+from roomkit.models.delivery import SYSTEM_SENDER_ID
 from roomkit.models.enums import ChannelType, EventStatus, RoomStatus
+from roomkit.models.identity import Identity
 from roomkit.models.participant import Participant
 from roomkit.models.room import Room
 from roomkit.store.memory import InMemoryStore
@@ -213,3 +215,28 @@ class TestStepThreeAdmitsOneConversation:
         )
 
         assert await self._route(store) == "r1"
+
+    async def test_the_frameworks_own_messages_do_not(self) -> None:
+        """What the host sends through ``deliver()`` is not a correspondent's."""
+        store = await _store_with_rooms("r1")
+        await store.add_event_auto_index(
+            "r1", make_event(room_id="r1", channel_id="ws", participant_id=SYSTEM_SENDER_ID)
+        )
+
+        assert await self._route(store) == "r1"
+
+    async def test_what_names_the_senders_identity_is_their_own(self) -> None:
+        """Identity resolution names participants and stamps events with the
+        identity, not the address: the identity the store resolves counts."""
+        store = await _store_with_rooms("r1")
+        await store.create_identity(Identity(id="id-bob"))
+        await store.link_address("id-bob", str(ChannelType.WEBSOCKET), "bob")
+        await store.add_participant(
+            Participant(id="id-bob", room_id="r1", channel_id="ws", identity_id="id-bob")
+        )
+        await store.add_event_auto_index(
+            "r1", make_event(room_id="r1", channel_id="ws", participant_id="id-bob")
+        )
+
+        assert await self._route(store) == "r1"
+        assert await self._route(store, sender="carol") is None

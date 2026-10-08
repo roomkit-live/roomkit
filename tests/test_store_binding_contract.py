@@ -12,6 +12,7 @@ import pytest
 from roomkit.core.inbound_router import DefaultInboundRoomRouter
 from roomkit.models.channel import ChannelBinding, RateLimit, RetryPolicy
 from roomkit.models.enums import ChannelType, EventStatus, EventType, RoomStatus
+from roomkit.models.participant import Participant
 from roomkit.models.room import Room
 from roomkit.models.store_filter import EventFilter
 from roomkit.store.base import ConversationStore
@@ -388,3 +389,47 @@ async def test_step_three_gives_the_same_answer_in_every_store(
         assert await routes("bob") == room.id
     finally:
         await contract_store.delete_room(room.id)
+
+
+class _StoreWithoutTheParticipantLookup(InMemoryStore):
+    """A store that does not override ``find_room_id_by_participant``."""
+
+    find_room_id_by_participant = ConversationStore.find_room_id_by_participant
+
+
+@pytest.mark.parametrize("fallback", [False, True])
+async def test_a_participant_record_finds_its_room_never_a_binding(
+    contract_store: ConversationStore, fallback: bool
+) -> None:
+    """RFC §10.4 step 1, second half: the newest room where the sender is a
+    participant, the room id breaking a tie; a binding naming them is not one."""
+    store = _StoreWithoutTheParticipantLookup() if fallback else contract_store
+    if fallback and not isinstance(contract_store, InMemoryStore):
+        pytest.skip("the fallback runs over the in-memory store")
+    t0 = datetime(2026, 10, 8, 12, tzinfo=UTC)
+    tag = uuid4().hex
+    who = f"alice-{tag}"
+    rooms = [
+        Room(id=f"a-{tag}", created_at=t0),
+        Room(id=f"b-{tag}", created_at=t0 + timedelta(seconds=1)),
+        Room(id=f"c-{tag}", created_at=t0 + timedelta(seconds=1)),
+        Room(id=f"d-{tag}", created_at=t0 + timedelta(seconds=2), status=RoomStatus.CLOSED),
+        Room(id=f"e-{tag}", created_at=t0 + timedelta(seconds=3)),
+    ]
+    for room in rooms:
+        await store.create_room(room)
+    for room in rooms[:4]:
+        await store.add_participant(Participant(id=who, room_id=room.id, channel_id="sms"))
+    await store.add_binding(
+        ChannelBinding(
+            room_id=f"e-{tag}", channel_id="sms", channel_type=ChannelType.SMS, participant_id=who
+        )
+    )
+    active = str(RoomStatus.ACTIVE)
+    try:
+        assert await store.find_room_id_by_participant(who, status=active) == f"c-{tag}"
+        assert await store.find_room_id_by_participant(who) == f"d-{tag}"
+        assert await store.find_room_id_by_participant(f"bob-{tag}") is None
+    finally:
+        for room in rooms:
+            await store.delete_room(room.id)

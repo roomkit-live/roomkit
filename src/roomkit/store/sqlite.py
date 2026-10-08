@@ -89,12 +89,15 @@ CREATE TABLE IF NOT EXISTS bindings(
     PRIMARY KEY(room_id, channel_id)
 );
 CREATE INDEX IF NOT EXISTS idx_bindings_channel ON bindings(channel_id);
+CREATE INDEX IF NOT EXISTS idx_bindings_channel_participant
+    ON bindings(channel_id, participant_id);
 CREATE TABLE IF NOT EXISTS participants(
     room_id TEXT NOT NULL,
     id TEXT NOT NULL,
     data TEXT NOT NULL,
     PRIMARY KEY(room_id, id)
 );
+CREATE INDEX IF NOT EXISTS idx_participants_id ON participants(id);
 CREATE TABLE IF NOT EXISTS identities(
     id TEXT PRIMARY KEY,
     data TEXT NOT NULL
@@ -808,6 +811,31 @@ class SQLiteStore(ConversationStore):
             self._db()
             .execute(
                 f"""SELECT r.id FROM bindings b JOIN rooms r ON r.id = b.room_id
+                    WHERE {" AND ".join(where)}
+                    ORDER BY r.created_ts DESC, r.id DESC LIMIT 1""",  # nosec B608 — fragments are internal, values parameterised
+                params,
+            )
+            .fetchone()
+        )
+        return row[0] if row is not None else None
+
+    async def find_room_id_by_participant(
+        self, participant_id: str, status: str | None = None
+    ) -> str | None:
+        return await self._run(self._x_find_room_id_by_participant, participant_id, status)
+
+    def _x_find_room_id_by_participant(
+        self, participant_id: str, status: str | None
+    ) -> str | None:
+        where = ["p.id = ?"]
+        params: list[Any] = [participant_id]
+        if status is not None:
+            where.append("r.status = ?")
+            params.append(status)
+        row = (
+            self._db()
+            .execute(
+                f"""SELECT r.id FROM participants p JOIN rooms r ON r.id = p.room_id
                     WHERE {" AND ".join(where)}
                     ORDER BY r.created_ts DESC, r.id DESC LIMIT 1""",  # nosec B608 — fragments are internal, values parameterised
                 params,

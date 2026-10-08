@@ -256,6 +256,10 @@ ALTER TABLE bindings ADD COLUMN IF NOT EXISTS retry_policy JSONB;
 -- A group binding admits every sender (RFC §10.4); existing rows are not one.
 -- Not named "group": a reserved word in SQL.
 ALTER TABLE bindings ADD COLUMN IF NOT EXISTS is_group BOOLEAN NOT NULL DEFAULT FALSE;
+-- Routing reads the binding of one channel naming one sender (RFC §10.4): on
+-- a number shared by many correspondents every binding has the same channel.
+CREATE INDEX IF NOT EXISTS idx_bindings_channel_participant
+    ON bindings(channel_id, participant_id);
 
 -- participants
 CREATE TABLE IF NOT EXISTS participants (
@@ -284,6 +288,8 @@ SET connected_via = ARRAY[channel_id] || array_remove(connected_via, channel_id)
 WHERE connected_via[1] IS DISTINCT FROM channel_id;
 CREATE INDEX IF NOT EXISTS idx_participants_channel
     ON participants(room_id, channel_id);
+-- Routing reads the rooms a sender is a participant of (RFC §10.4 step 1).
+CREATE INDEX IF NOT EXISTS idx_participants_id ON participants(id);
 
 -- identities
 CREATE TABLE IF NOT EXISTS identities (

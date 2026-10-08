@@ -6,6 +6,8 @@ import logging
 from abc import ABC, abstractmethod
 from typing import Any
 
+from roomkit.models.channel import ChannelBinding
+from roomkit.models.delivery import SYSTEM_SENDER_ID
 from roomkit.models.enums import ChannelType, RoomStatus
 from roomkit.models.store_filter import EventFilter
 from roomkit.store.base import ConversationStore
@@ -35,7 +37,8 @@ class InboundRoomRouter(ABC):
 
 
 class DefaultInboundRoomRouter(InboundRoomRouter):
-    """Default router (RFC §10.4): by participant, then by a *single* binding.
+    """Default router (RFC §10.4): the sender's own room, then a channel bound
+    to a single conversation that is open to the sender, else ``None``.
 
     Returns ``None`` rather than choosing when the message could belong to
     more than one room. A new room is recoverable; a message delivered into
@@ -53,30 +56,33 @@ class DefaultInboundRoomRouter(InboundRoomRouter):
         participant_id: str | None = None,
         channel_data: dict[str, Any] | None = None,
     ) -> str | None:
-        # Strategy 1 (RFC §10.4): the sender's own room. Tried first because it
+        # Step 1 (RFC §10.4): the sender's own room. Tried first because it
         # identifies the conversation, where a binding of the channel to some
         # room only identifies the pipe.
         if participant_id:
-            room_id = await self._senders_room(channel_id, channel_type, participant_id)
+            room_id = await self._senders_room(channel_id, participant_id)
             if room_id is not None:
                 return room_id
 
-        # Strategy 2: a channel dedicated to one conversation. Only when the
+        # Step 3: a channel dedicated to one conversation. Only when the
         # channel is bound to exactly one active room — a channel shared across
-        # rooms (delegation, or a room re-created after its predecessor closed)
-        # makes this ambiguous, and the framework creating a fresh room is the
-        # safe answer — and only when that room is open to this sender: on a
-        # number shared by many correspondents, the one room bound to it is
-        # the first correspondent's conversation.
+        # rooms (delegation, a room re-created after its predecessor closed, a
+        # number shared by many correspondents) makes this ambiguous, and the
+        # framework creating a fresh room is the safe answer — and only when
+        # that room is open to this sender: on a shared number, the one room
+        # bound to it is the first correspondent's conversation.
         candidates = await self._store.find_room_ids_by_channel(
             channel_id, status=str(RoomStatus.ACTIVE), limit=2
         )
         if len(candidates) == 1:
-            if await self._admits(candidates[0], channel_id, participant_id or None):
+            if await self._admits(candidates[0], channel_id, channel_type, participant_id or None):
                 return candidates[0]
             return None
         if len(candidates) > 1:
-            logger.warning(
+            # Debug, not a warning: on a number shared by many correspondents,
+            # several rooms bound to the channel is the ordinary state, and
+            # every new correspondent passes through here.
+            logger.debug(
                 "Channel %s is bound to %d active rooms — refusing to guess which one "
                 "this message belongs to. Pass room_id explicitly, or install a custom "
                 "InboundRoomRouter.",
@@ -86,31 +92,25 @@ class DefaultInboundRoomRouter(InboundRoomRouter):
 
         return None
 
-    async def _senders_room(
-        self, channel_id: str, channel_type: ChannelType, sender: str
-    ) -> str | None:
+    async def _senders_room(self, channel_id: str, sender: str) -> str | None:
         """The latest active room that is *sender*'s own (RFC §10.4 step 1).
 
         First the room whose binding of this very channel names the sender: a
         binding speaks for its own channel, so a correspondent of one number
         is not taken to that room when they write to another. Then the room
-        where the sender is a participant, by channel type. ``find_latest_room``
-        also matches a binding of another channel of that type, which is the
-        cross-number move refused here, so a room it finds only that way is
-        not the sender's.
+        where the sender is a participant; the stores record which channels a
+        participant reached, not their types, so that half matches whatever
+        the channel type.
         """
         active = str(RoomStatus.ACTIVE)
         room_id = await self._store.find_room_id_by_binding(channel_id, sender, status=active)
         if room_id is not None:
             return room_id
-        room = await self._store.find_latest_room(
-            participant_id=sender, channel_type=str(channel_type), status=active
-        )
-        if room is None or await self._store.get_participant(room.id, sender) is None:
-            return None
-        return room.id
+        return await self._store.find_room_id_by_participant(sender, status=active)
 
-    async def _admits(self, room_id: str, channel_id: str, sender: str | None) -> bool:
+    async def _admits(
+        self, room_id: str, channel_id: str, channel_type: ChannelType, sender: str | None
+    ) -> bool:
         """Whether the one room bound to *channel_id* is open to *sender* (RFC §10.4).
 
         A group binding is open to everyone. Otherwise the room is another
@@ -123,23 +123,50 @@ class DefaultInboundRoomRouter(InboundRoomRouter):
             return False
         if binding.group:
             return True
-        if binding.participant_id is not None and binding.participant_id != sender:
+        own = await self._known_as(channel_type, sender)
+        if not binding_admits(binding, own):
             return False
         for participant in await self._store.list_participants(room_id):
-            if participant.id != sender and channel_id in participant.connected_via:
+            if channel_id in participant.connected_via and not own & {
+                participant.id,
+                participant.identity_id,
+            }:
                 return False
-        return not await _heard_from_other(self._store, room_id, channel_id, sender)
+        return not await _heard_from_other(self._store, room_id, channel_id, own)
+
+    async def _known_as(self, channel_type: ChannelType, sender: str | None) -> frozenset[str]:
+        """The ids a room may know *sender* by: the address, and its identity.
+
+        Identity resolution names a participant and stamps an event with the
+        identity's id, not the address (RFC §11), so the identity the store
+        resolves the address to is the sender's own too. The router is not
+        given the caller's organization, so only an unscoped registration
+        resolves here (§17.2).
+        """
+        if sender is None:
+            return frozenset()
+        identity = await self._store.resolve_identity(str(channel_type), sender)
+        return frozenset({sender} if identity is None else {sender, identity.id})
+
+
+def binding_admits(binding: ChannelBinding, known_as: frozenset[str]) -> bool:
+    """Whether *binding* lets a sender known by *known_as* in (RFC §10.4).
+
+    A group binding lets everyone in; any other, the correspondent it names,
+    or anyone while it names no one.
+    """
+    return binding.group or binding.participant_id is None or binding.participant_id in known_as
 
 
 async def _heard_from_other(
-    store: ConversationStore, room_id: str, channel_id: str, sender: str | None
+    store: ConversationStore, room_id: str, channel_id: str, own: frozenset[str]
 ) -> bool:
     """Whether the room received a message on *channel_id* naming another sender.
 
     Received means stored and not ``BLOCKED`` (the default page skips those).
-    An event whose source names no participant is not a correspondent's: a
-    channel that does not stamp its senders cannot tell one from another, and
-    the binding and the participants speak for the room then.
+    An event whose source names no participant, or the framework's own sender
+    (``SYSTEM_SENDER_ID``: the host speaking through ``deliver()``), is not a
+    correspondent's; *own* holds the ids the sender is known by.
     """
     received = EventFilter(source_channel_id=channel_id)
     offset = 0
@@ -147,8 +174,10 @@ async def _heard_from_other(
         page = await store.list_events(
             room_id, offset=offset, limit=_HISTORY_PAGE, event_filter=received
         )
-        if any(e.source.participant_id not in (None, sender) for e in page):
-            return True
+        for event in page:
+            named = event.source.participant_id
+            if named not in (None, SYSTEM_SENDER_ID) and named not in own:
+                return True
         if len(page) < _HISTORY_PAGE:
             return False
         offset += len(page)
