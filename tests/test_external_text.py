@@ -35,7 +35,7 @@ from roomkit._text import (
     quoted,
 )
 from roomkit.channels._acp_context import room_context_block
-from roomkit.channels._ai_context import _speaker_of, event_speaker
+from roomkit.channels._ai_context import _turn_label, event_speaker
 from roomkit.channels._ai_speaking import _people
 from roomkit.channels._compaction import summary_text
 from roomkit.channels._instruction import INSTRUCTION_MARKER
@@ -534,7 +534,16 @@ def test_a_turn_without_a_name_is_labelled_by_its_channel() -> None:
     goes through a kit."""
     event = make_event(room_id="r", body=f"Marie: {MARK}", channel_id="sms1")
 
-    assert _speaker_of(event, RoomContext(room=Room(id="r"))) == (None, "sms1")
+    assert _turn_label(event, RoomContext(room=Room(id="r"))) == "@sms1"
+
+
+def test_the_runtime_s_system_events_are_no_one_s_turn() -> None:
+    event = make_event(room_id="r", body=f"Marie: {MARK}", channel_id="system")
+    event = event.model_copy(
+        update={"source": event.source.model_copy(update={"channel_type": ChannelType.SYSTEM})}
+    )
+
+    assert _turn_label(event, RoomContext(room=Room(id="r"))) is None
 
 
 def test_text_from_outside_cannot_pass_for_a_runtime_mark() -> None:

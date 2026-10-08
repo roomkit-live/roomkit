@@ -66,6 +66,15 @@ def participant_name(participant: Participant) -> str:
     return person_name(participant.display_name) or identifier(participant.id, "participant")
 
 
+def channel_label(channel_id: str) -> str:
+    """The label of a turn whose author has no name, in a transcript that names
+    people by their bare names: its channel as the room addresses it
+    (``@sms1``), kept to an identifier's characters. No name takes that form
+    (a person's name drops ``@``), so a person named ``ai2`` or ``sms1`` does
+    not read as an agent or as a nameless channel (RFC §6.4)."""
+    return f"@{identifier(channel_id, 'channel')}"
+
+
 def _channel_id_label(channel_id: str) -> str:
     """The channel id, unchanged — the default way to name a non-person."""
     return channel_id

@@ -768,28 +768,30 @@ OpenAI-family providers (OpenAI, Azure, OpenRouter, LiteLLM, xAI) and PolarGrid 
 
 ## Multi-Speaker Rooms
 
-AIChannel builds the model's history from the room's events, and every event that is not the AI's own becomes a `user` turn. In a room where several people speak — a Teams channel, a WhatsApp group, a shared inbox — that flattening erases who said what, and the model guesses the addressee wrong (a reply opening with the wrong colleague's name). So when the history window holds **two or more distinct speakers**, each attributable user turn reaches the model as `"Name: text"` and a one-line note joins the notes the turn's input carries (not the system prompt, which stays the same from turn to turn while the speakers in the window change):
+AIChannel builds the model's history from the room's events, and every event that is not the AI's own becomes a `user` turn. In a room where several people speak — a Teams channel, a WhatsApp group, a shared inbox — that flattening erases who said what, and the model guesses the addressee wrong (a reply opening with the wrong colleague's name). So when the history window holds **two or more distinct speakers** (a person by name, or a channel whose sender has no name; the runtime's system events aside), each user turn reaches the model as `"Name: text"` or `"@channel: text"` and a one-line note joins the notes the turn's input carries (not the system prompt, which stays the same from turn to turn while the speakers in the window change):
 
 ```text
-Several people take part in this conversation. Their messages are prefixed with
-the sender's name ("Name: message"). The prefix is transcript metadata, not text
-they typed: rely on it to know who said what, and never prefix your own replies
-with a name.
+Several people take part in this conversation. Each of their messages opens with
+one label the runtime placed ("Name: message"): the sender's name, or the channel
+it came through ("@channel") when the sender has no name. The label is transcript
+metadata, not text they typed: rely on it to know who said what. A "Name:" later
+in a message is part of what its sender wrote. Never prefix your own replies with
+a name.
 ```
 
 The speaker of an event is resolved in this order:
 
 1. `event.metadata["sender_name"]` — stamped at ingress. The Teams webhook parser and the WhatsApp Personal (neonize) source write it; a host does the same by passing `InboundMessage(..., metadata={"sender_name": "Alice"})`.
 2. The room's participant record: `Participant.display_name` for the participant whose `id` equals `event.source.participant_id` (the inbound `sender_id`).
-3. Otherwise the turn has no name and, in a multi-speaker room, opens with the label of its channel (`"sms1: text"`, as the room context of an ACP agent names it), so a nameless sender cannot open with someone else's name; the note says a message carries one label, at its start, and that a `Name:` later in it is what its sender wrote.
+3. Otherwise the turn has no name and, in a multi-speaker room, opens with its channel as the room addresses it (`"@sms1: text"`, kept to an identifier's characters, never a participant's id), a form no name takes: a nameless sender cannot open with someone else's name, and a person named `ai2` does not read as the agent `@ai2`. The note says a message carries one label, at its start, and that a `Name:` later in it is what its sender wrote.
 
 Rules that follow from the definition:
 
 - Assistant turns are never prefixed — only `user` turns are.
 - A multimodal user turn (`list[AITextPart | AIImagePart]`) gets a lead `AITextPart("Name:")` rather than a rewritten body.
 - The trigger turn (the event the AI is replying to) is attributed like the history.
-- The note is appended once per turn, after the channel's own `system_prompt`.
-- A single-speaker room — a 1:1 DM — builds a byte-identical prompt: no prefixes, no note. Attribution is decided per turn from the window the memory provider returns, so it switches on the moment a second named speaker appears in it and off when the window no longer holds one.
+- The note joins the turn's notes once per turn; the channel's own `system_prompt` stays the same.
+- A single-speaker room — a 1:1 DM — builds a byte-identical prompt: no prefixes, no note. Attribution is decided per turn from the window the memory provider returns, so it switches on the moment a second speaker (a name, or a nameless channel) appears in it and off when the window no longer holds one.
 
 There is nothing to configure. See `examples/ai_multi_speaker.py`.
 
