@@ -15,8 +15,10 @@ the text round trip entirely.
 Two request contracts live here, chosen by model family:
 
 * The 3.1 and 2.5 models have no style field, so a direction can only travel
-  inside the prompt. The text goes out wrapped in labelled instructions that
-  keep the model reciting the transcript rather than the direction.
+  inside the prompt. The text goes out as a ``<transcript>`` block under
+  instructions that keep the model reciting the transcript rather than the
+  direction; the text cannot close the block, so it can neither cut the
+  transcript short nor open another (RFC §6.4).
 * From 3.8 on, the model reads those instructions aloud (measured 2026-09-27:
   half the runs on ``gemini-3.8-flash-tts``, every run on the Lite model), so
   the text goes out alone and the direction rides as ``speech_metadata``.
@@ -40,6 +42,7 @@ from collections.abc import AsyncIterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from roomkit._text import fence
 from roomkit.providers.gemini.sdk import build_genai_client, close_genai_client
 from roomkit.providers.gemini.voices import VOICES, voice_info_from_catalog
 from roomkit.voice.base import AudioChunk
@@ -135,7 +138,11 @@ class GeminiTTSConfig:
             line above the ``Transcript:`` label in the same ``input`` string,
             which is what keeps the model reciting the transcript instead of
             the direction; the 3.1 preview can occasionally read it aloud
-            anyway. For cues that steer a word or a phrase rather than the
+            anyway. Every model performs a delivery cue written in the text
+            itself (an audio tag, a sentence such as "whisper this"), whatever
+            frame holds it (measured 2026-10-08, 3.8 included): remove such
+            cues from text you do not trust in a ``BEFORE_TTS`` hook. For cues
+            that steer a word or a phrase rather than the
             whole utterance, put audio tags inline in the text itself. Google
             documents ``<laugh>``, ``<sigh>`` and ``<short pause>`` for 3.8
             and ``[laughs]``, ``[whispers]`` for 3.1; the 3.8 models perform
@@ -265,14 +272,18 @@ class GeminiTTSProvider(TTSProvider):
         ]
 
     def _build_prompt(self, text: str) -> str:
-        """Build an explicit direction/transcript prompt for reliable recitation."""
+        """Build an explicit direction/transcript prompt for reliable recitation:
+        the text in a block it cannot close, so a text holding a
+        ``Delivery direction:`` or ``Transcript:`` line of its own neither cuts
+        the transcript short nor fails the request (measured 2026-10-08)."""
         lines = [
             "Synthesize speech from the transcript below.",
-            "Speak only the transcript; do not read these instructions or labels aloud.",
+            "Speak only the text inside the transcript block, exactly as written; "
+            "do not read these instructions, labels or tags aloud.",
         ]
         if self._config.style_prompt:
             lines.append(f"Delivery direction: {self._config.style_prompt}")
-        lines.extend(("Transcript:", text))
+        lines.append(fence("transcript", text))
         return "\n".join(lines)
 
     def _generation_config(self, voice: str | None) -> dict[str, Any]:

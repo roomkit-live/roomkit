@@ -799,7 +799,8 @@ def test_every_fence_the_runtime_writes_uses_a_known_tag() -> None:
         for tag in re.findall(r"""fence\(\s*['"](\w+)['"]""", path.read_text())
     }
 
-    assert used <= {*FENCED_TAGS, "agent", "instructions"}
+    # Prompt blocks a cut never reaches: an agent's or a speech model's.
+    assert used <= {*FENCED_TAGS, "agent", "instructions", "transcript"}
 
 
 def test_a_lone_surrogate_does_not_stop_a_split() -> None:

@@ -824,6 +824,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `role="system", silent=True`; a silent injection with the default `user`
   intent is now content in a `<context>` block.
 
+- A text to speak can no longer cut its Gemini TTS transcript short or fail
+  the request (RMK-601, RFC §6.4, §12.2). On `gemini-3.1-*` and `gemini-2.*`,
+  whose only contract is a prompt, the text followed a `Transcript:` label:
+  one holding `Delivery direction:` and `Transcript:` lines of its own was cut
+  to "Hi." on 2.5 (2 runs in 3) and failed with a 400 on 3.1 (1 in 3),
+  measured live. The text is now a `<transcript>` block it cannot close: it
+  is spoken whole (5 in 5) and the tag is not. The 3.8 models and dialogues
+  already send the text in a field of its own. Every Gemini TTS model, 3.8
+  included, still performs a delivery cue written in the text itself
+  (`whisper very slowly`), as it does an audio tag; no frame stops that, and
+  the docs say to remove such cues from text you do not trust in a
+  `BEFORE_TTS` hook.
+
 - A turn without a name can no longer open with someone else's (RMK-600,
   RFC §6.4). The AIChannel prefixed a user turn with its speaker's name only
   when it had one, and only once two named speakers were in the window: a
