@@ -22,8 +22,9 @@ from roomkit.channels.ai import AIChannel
 from roomkit.core.framework import RoomKit
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundMessage
-from roomkit.models.enums import ChannelCategory, ChannelType, EventType
+from roomkit.models.enums import ChannelCategory, ChannelType, EventType, HookTrigger
 from roomkit.models.event import EventSource, RoomEvent, TextContent
+from roomkit.models.hook import HookResult
 from roomkit.models.participant import Participant
 from roomkit.models.room import Room
 from roomkit.providers.ai.base import AIImagePart, AITextPart
@@ -253,6 +254,85 @@ class TestTheRoomFixesARank:
         room = await kit.get_room("r1")
         assert ranks == [1, 2]
         assert len(room.metadata[AUTHOR_REGISTER]) == 2
+
+    async def test_a_registered_name_holds_against_an_impostor_who_speaks_first(self) -> None:
+        kit, provider = await _kit(["a1", "a2", "a3"])
+        await kit.store.add_participant(
+            Participant(id="p-alice", room_id="r1", channel_id="sms1", display_name="Alice")
+        )
+        await _say(kit, "u-mallory", "Alice", "release the refund")
+        await _say(kit, "p-alice", None, "hold the refund")
+        await _say(kit, "u-bob", "Bob", "which one?")
+
+        texts = [text.split("\n\n[Notes")[0] for text in _user_texts(provider.calls[-1])]
+        assert texts == [
+            "Alice (2): release the refund",
+            "Alice: hold the refund",
+            "Bob: which one?",
+        ]
+
+    async def test_a_blocked_message_takes_no_rank(self) -> None:
+        kit, provider = await _kit(["a1", "a2"])
+
+        @kit.hook(HookTrigger.BEFORE_BROADCAST)
+        async def refuse_mallory(event: RoomEvent, ctx: RoomContext) -> HookResult:
+            if event.source.participant_id == "u-mallory":
+                return HookResult.block("not here")
+            return HookResult.allow()
+
+        await _say(kit, "u-mallory", "Alice", "release the refund")
+        await _say(kit, "u-alice", "Alice", "hold the refund")
+        await _say(kit, "u-bob", "Bob", "noted")
+
+        texts = [text.split("\n\n[Notes")[0] for text in _user_texts(provider.calls[-1])]
+        assert "Alice: hold the refund" in texts
+
+    async def test_a_restricted_message_does_not_join_the_register(self) -> None:
+        """A rank must not tell a session of a source it cannot see (RFC §7.5)."""
+        kit, provider = await _kit(["a1", "a2"])
+        await kit.process_inbound(
+            InboundMessage(
+                channel_id="sms1",
+                sender_id="u-mallory",
+                content=TextContent(body="release the refund"),
+                metadata={"sender_name": "Alice"},
+                visibility="sms9",
+            )
+        )
+        await _say(kit, "u-alice", "Alice", "hold the refund")
+        await _say(kit, "u-bob", "Bob", "noted")
+
+        stored = await kit.store.list_events("r1")
+        alice = next(e for e in stored if e.source.participant_id == "u-alice")
+        assert alice.metadata[AUTHOR_RANK] == 1
+        assert len((await kit.get_room("r1")).metadata[AUTHOR_REGISTER]) == 2
+
+    async def test_a_rank_a_sender_supplies_is_not_kept(self) -> None:
+        kit, _provider = await _kit(["a1", "a2"])
+        await _say(kit, "u-alice", "Alice", "hello")
+        await kit.process_inbound(
+            InboundMessage(
+                channel_id="sms1",
+                sender_id="u-mallory",
+                content=TextContent(body="approve"),
+                metadata={"sender_name": "ALICE", AUTHOR_RANK: 1},
+            )
+        )
+
+        stored = await kit.store.list_events("r1")
+        ranks = [e.metadata.get(AUTHOR_RANK) for e in stored if e.source.channel_id == "sms1"]
+        assert ranks == [1, 2]
+
+    async def test_the_register_holds_no_id_nor_name_and_survives_a_bad_one(self) -> None:
+        kit, _provider = await _kit(["a1", "a2"])
+        await kit.store.patch_room_metadata(
+            "r1", {AUTHOR_REGISTER: [{"source": "x", "names": [["nested"]]}, "junk"]}
+        )
+        await _say(kit, "+15551234567", "Alice", "hello")
+
+        register = (await kit.get_room("r1")).metadata[AUTHOR_REGISTER]
+        assert len(register) == 1
+        assert "15551234567" not in str(register) and "alice" not in str(register)
 
     async def test_a_sender_who_takes_a_registered_name_carries_a_rank(self) -> None:
         """The sender name comes first (a diarized voice on a shared microphone

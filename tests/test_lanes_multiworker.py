@@ -226,12 +226,14 @@ async def test_send_event_from_sync_hook_commits_and_eventually_delivers() -> No
 def test_store_commit_event_stays_behind_the_choke_points() -> None:
     """Every framework commit must flow through the three gates
     (_persist_committed / _commit_indexed / _commit_to_lane) so each index
-    reaches the delivery cursor exactly once. A direct store.commit_event
-    anywhere else in core silently grows a permanent cursor hole."""
+    reaches the delivery cursor exactly once, and through helpers._commit,
+    the one place that ranks a turn's author (RMK-607). A direct
+    store.commit_event anywhere else in core silently grows a permanent
+    cursor hole, or stores a turn without its rank."""
     from pathlib import Path
 
     core = Path(__file__).parent.parent / "src" / "roomkit" / "core"
-    allowed = {"helpers.py": 2, "lane_execution.py": 1}
+    allowed = {"helpers.py": 1}
     offenders: list[str] = []
     for path in core.rglob("*.py"):
         count = path.read_text().count("store.commit_event(")
@@ -240,8 +242,8 @@ def test_store_commit_event_stays_behind_the_choke_points() -> None:
         if path.name not in allowed or count > allowed[path.name]:
             offenders.append(f"{path.relative_to(core)}: {count} call(s)")
     assert not offenders, (
-        "store.commit_event outside the commit gates (helpers._persist_committed, "
-        f"helpers._commit_indexed, lane_execution._commit_to_lane): {offenders}"
+        "store.commit_event outside helpers._commit, which the commit gates "
+        f"(_persist_committed, _commit_indexed, _commit_to_lane) call: {offenders}"
     )
 
 

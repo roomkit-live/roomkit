@@ -888,13 +888,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   gives the label everywhere a model reads a turn: the sender name a
   transport stamps (or a diarized voice), the participant's registered name
   (by id or identity) otherwise, `@channel` for a sender with neither. When a
-  source's name reads like the name of a source the room saw earlier, in case
-  or in Unicode's confusables, it carries its rank: `Alice`, then
-  `ALICE (2)`, `Аlice (3)`, a form no name takes. The rank is fixed when the
-  turn is committed, from a register the room keeps in its metadata
-  (`author_register`, the sources and what their names read as), and rides
-  the event (`metadata["author_rank"]`), so it holds as the window slides and
-  across the prompts an ACP or realtime session keeps. A participant reached
+  source's name reads like another's, in case or in Unicode's confusables, it
+  carries its rank: `Alice`, then `ALICE (2)`, `Аlice (3)`, a form no name
+  takes. The room's registered participants hold the first ranks, in the
+  order they joined, whoever speaks first; then the room's senders, in the
+  order the room saw them. The rank is fixed when the turn is committed, from
+  a register the room keeps in its metadata (`author_register`, digests of
+  the sources and of what their names read as, salted with the room's id: no
+  sender id nor name is kept), and rides the event (`metadata["author_rank"]`,
+  any value it came with dropped), so it holds as the window slides and
+  across the prompts an ACP or realtime session keeps. Only a turn every
+  reader may see joins the register: a restricted turn is ranked without
+  joining it, and a blocked one takes no rank, so a rank tells no session of
+  a source it cannot see. A participant reached
   through several channels is one source; a sender id is one only on its
   channel. A name that reads as the agent's own label (`You`, `you in a
   separate session`) carries `(a participant)`. Names are compared without
@@ -903,8 +909,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   what a rank means. This changes the text an ACP prompt and a realtime
   injection carry: the ACP room context now reads `[1] Marie: “…”` and
   `[2] @claude-code: “…”` where it read `Marie · sms` and `claude-code`, a
-  realtime broadcast `Marie: “…”` or `@sms: “…”`, ranked among the turns its
-  session may see; the console keeps `Marie · sms` for a human reader. The
+  realtime broadcast `Marie: “…”` or `@sms: “…”`; the console keeps
+  `Marie · sms` for a human reader. The
   ACP request itself, memory summaries, delegated tasks and the speak policy
   follow in RMK-614, RMK-615 and RMK-616.
 

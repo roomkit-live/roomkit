@@ -9,7 +9,9 @@ names a person for a human reader, with their channel (:func:`speaker_label`).
 from __future__ import annotations
 
 import functools
+import hashlib
 from collections.abc import Callable, Iterable
+from typing import Any
 
 from roomkit._lookalike import skeletons
 from roomkit._text import identifier, person_name, quoted
@@ -94,9 +96,11 @@ whose names read alike, fixed when the event is committed (RFC §10.1 step
 
 AUTHOR_REGISTER = "author_register"
 """The room metadata key holding the sources whose names the room has seen,
-in order, each with what its name reads as (RFC §6.4)."""
+in order, each with what its name reads as (RFC §6.4). Both are kept as
+digests salted with the room's id: the register compares, it never needs to
+show a sender's id or name, and the room's metadata may reach clients."""
 
-Register = list[dict[str, list[str]]]
+Register = list[dict[str, Any]]
 
 
 def turn_labels(events: Iterable[RoomEvent], context: RoomContext) -> dict[str, str | None]:
@@ -105,17 +109,18 @@ def turn_labels(events: Iterable[RoomEvent], context: RoomContext) -> dict[str, 
     none; ``None`` for the runtime's system events, no participant's turn.
 
     Names are told apart across sources (a participant, whichever channel
-    reached them, or a sender on its channel): when a later source's name
-    reads like an earlier one's (in case or in Unicode's confusables,
-    ``Alice`` and ``Аlice``), it carries its rank, ``Аlice (2)``, a form no
-    name takes, so a sender who takes another's name does not read as that
-    person. The rank an event carries (:data:`AUTHOR_RANK`, fixed for the room
-    when it was committed) is the one read; an event without one is ranked
-    after them, in the order *events* gives. A name that reads as a label the
-    agent's own turns carry (``You``) carries ``(a participant)``, so no one
-    reads as the agent."""
+    reached them, or a sender on its channel): when a source's name reads
+    like an earlier one's (in case or in Unicode's confusables, ``Alice`` and
+    ``Аlice``), it carries its rank, ``Аlice (2)``, a form no name takes, so
+    a sender who takes another's name does not read as that person. The
+    room's named participants come first, in the order they joined, whoever
+    spoke first. The rank an event carries (:data:`AUTHOR_RANK`, fixed for
+    the room when it was committed) is the one read. A name that reads as a
+    label the agent's own turns carry (``You``) carries ``(a participant)``,
+    so no one reads as the agent."""
     people = _people(context)
     window: Register = []
+    _seed(window, context, "")
     return {event.id: _label(event, people, window) for event in events}
 
 
@@ -128,23 +133,47 @@ def _label(event: RoomEvent, people: dict[str, Participant], window: Register) -
     keys = skeletons(name)
     if keys & _agent_labels():
         return f"{name} (a participant)"
-    rank = _rank_in(window, _source(event, people), keys)
+    rank = _rank_in(window, _digest("", _source(event, people)), _digests("", keys))
     stamped = event.metadata.get(AUTHOR_RANK)
     rank = stamped if isinstance(stamped, int) and stamped > 0 else rank
     return name if rank == 1 else f"{name} ({rank})"
 
 
-def author_rank(event: RoomEvent, context: RoomContext, register: Register) -> int | None:
+def author_rank(
+    event: RoomEvent, context: RoomContext, register: Register, *, enters: bool = True
+) -> int | None:
     """*event*'s author rank in the room (:data:`AUTHOR_RANK`), *register*
-    (the room's :data:`AUTHOR_REGISTER`) extended when its source is new;
+    (the room's :data:`AUTHOR_REGISTER`) extended with the room's named
+    participants, and with the event's source when it is new and *enters*;
     ``None`` for a system event or an author with no name."""
     if event.source.channel_type == ChannelType.SYSTEM:
         return None
+    salt = context.room.id
+    _seed(register, context, salt)
     people = _people(context)
     name = _author(event, people)
     if name is None:
         return None
-    return _rank_in(register, _source(event, people), skeletons(name))
+    source = _digest(salt, _source(event, people))
+    return _rank_in(register, source, _digests(salt, skeletons(name)), enters=enters)
+
+
+def _seed(register: Register, context: RoomContext, salt: str) -> None:
+    """The room's named participants enter *register* first, in the order they
+    joined: a name the application registered holds its rank against a
+    sender who takes it, whoever spoke first."""
+    for person in sorted(context.participants, key=lambda p: p.joined_at):
+        if name := person_name(person.display_name):
+            source = _digest(salt, ["participant", person.id])
+            _rank_in(register, source, _digests(salt, skeletons(name)))
+
+
+def _digest(salt: str, parts: Iterable[str]) -> str:
+    return hashlib.sha256("\x1f".join([salt, *parts]).encode()).hexdigest()[:24]
+
+
+def _digests(salt: str, keys: Iterable[str]) -> set[str]:
+    return {_digest(salt, [key]) for key in keys}
 
 
 def register_of(value: object) -> Register:
@@ -153,23 +182,25 @@ def register_of(value: object) -> Register:
     if not isinstance(value, list):
         return []
     return [
-        {"source": list(entry["source"]), "names": list(entry["names"])}
+        {"source": entry["source"], "names": list(entry["names"])}
         for entry in value
         if isinstance(entry, dict)
-        and isinstance(entry.get("source"), list)
+        and isinstance(entry.get("source"), str)
         and isinstance(entry.get("names"), list)
+        and all(isinstance(name, str) for name in entry["names"])
     ]
 
 
-def _rank_in(register: Register, source: list[str], keys: frozenset[str]) -> int:
+def _rank_in(register: Register, source: str, keys: set[str], *, enters: bool = True) -> int:
     """*source*'s rank among the sources of *register* whose names read like
-    *keys*, *register* extended when the source is new to it."""
-    alike: list[list[str]] = []
+    *keys*, *register* extended when the source is new to it and *enters*."""
+    alike: list[str] = []
     for entry in register:
         if keys.intersection(entry["names"]) and entry["source"] not in alike:
             alike.append(entry["source"])
     if source not in alike:
-        register.append({"source": source, "names": sorted(keys)})
+        if enters:
+            register.append({"source": source, "names": sorted(keys)})
         alike.append(source)
     return alike.index(source) + 1
 

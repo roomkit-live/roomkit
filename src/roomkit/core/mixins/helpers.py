@@ -395,8 +395,14 @@ class HelpersMixin:
         """*event* carrying its author's rank among the room's sources whose
         names read alike, the room's register extended first when its source
         is new (RFC §6.4, §10.1 step 12): under the room lock, before the
-        commit, so a stored turn's rank never changes."""
-        if not (event.source.participant_id or event.metadata.get("sender_name")):
+        commit, so a stored turn's rank never changes. A rank the event came
+        with is dropped, the runtime's alone; a BLOCKED record takes none (only
+        a turn that reaches the room is ranked)."""
+        if AUTHOR_RANK in event.metadata:
+            metadata = {k: v for k, v in event.metadata.items() if k != AUTHOR_RANK}
+            event = event.model_copy(update={"metadata": metadata})
+        named = event.source.participant_id or event.metadata.get("sender_name")
+        if not named or event.status == EventStatus.BLOCKED:
             return event
         room = await self._store.get_room(room_id)
         if room is None:
@@ -404,7 +410,11 @@ class HelpersMixin:
         register = register_of(room.metadata.get(AUTHOR_REGISTER))
         size = len(register)
         people = await self._store.list_participants(room_id)
-        rank = author_rank(event, RoomContext(room=room, participants=people), register)
+        # Only a turn every reader sees joins the register: a rank must not
+        # tell a session of a source it cannot see (RFC §7.5).
+        joins = event.visibility == Visibility.ALL
+        context = RoomContext(room=room, participants=people)
+        rank = author_rank(event, context, register, enters=joins)
         if rank is None:
             return event
         if len(register) != size:

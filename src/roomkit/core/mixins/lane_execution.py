@@ -237,6 +237,9 @@ class LaneExecutionMixin(HelpersMixin):
             and not self._persistence_policy.should_persist(event.type)
         ):
             if plan_factory is not None:
+                if event.type != EventType.INSTRUCTION:
+                    # Delivered unstored, still a turn its readers name.
+                    event = await self._with_author_rank(room_id, event)
                 plan = plan_factory(event)
                 if plan is not None:
                     room = await self._store.get_room(room_id)
