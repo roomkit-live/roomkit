@@ -16,11 +16,7 @@ import re
 from typing import Any
 
 from roomkit._text import phrase_pattern
-from roomkit.channels._acp_context import (
-    ROOM_CONTEXT_CLOSING,
-    ROOM_CONTEXT_END,
-    ROOM_CONTEXT_OPENING,
-)
+from roomkit.channels._acp_marks import ROOM_CONTEXT_END, ROOM_CONTEXT_OPENING
 from roomkit.channels._ai_cuts import CUT_MARK
 from roomkit.channels._compaction import SUMMARY_HEADER as COMPACTION_HEADER
 from roomkit.channels._instruction import INSTRUCTION_MARKER
@@ -35,10 +31,11 @@ _MARKS = (
     CUT_MARK,
     COMPACTION_HEADER,
     MEMORY_SUMMARY_HEADER,
-    ROOM_CONTEXT_CLOSING,
 )
 """The runtime's marks long enough to be told from prose without their
-brackets, the notes' header aside."""
+brackets, the notes' header aside. The room context's first line ends with a
+sentence that is prose alone (``Context only; the request follows.``): its
+bracketed opening is what counts."""
 
 _SHORT_MARKS = (ROOM_CONTEXT_OPENING, ROOM_CONTEXT_END)
 """The runtime's marks that count only with their opening bracket: their words

@@ -94,19 +94,33 @@ folds onto them (fullwidth and small forms, see :func:`_lookalikes`): their
 modifier, syllabics, quotation, angle, ornament, box-drawing and mathematical
 look-alikes."""
 
-_COMBINING = "\u0300-\u0344\u0346-\u036f"
-"""The combining diacritical marks, but U+0345: under case folding it is the
-Greek iota, a letter of ``i``'s look-alikes, and a class that holds a letter
-of the name beside that letter's own reads a run of it in quadratic time."""
+_IOTA = "(?-i:\u0345)"
+"""The combining iota, matched as itself only: under case folding it is the
+Greek iota, one of ``i``'s look-alikes. A class that holds it beside a letter
+class that reads it too would read a run of it in quadratic time, so the
+combining marks' classes leave it to this, and a letter's class refuses it."""
 
-_NAME_JOIN = rf"[{INVISIBLE}\t\n\x0b\x0c\r{_COMBINING}\u20d0-\u20ff\ufe20-\ufe2f]*"
-"""What may sit between a tag's letters for a model still to read the name:
-an invisible, control or line-break character, a combining mark (underlined,
-struck letters)."""
+_COMBINING = r"\u0300-\u0344\u0346-\u036f\u20d0-\u20ff\ufe20-\ufe2f"
+"""The combining marks a model reads past (underlined, struck letters), U+0345
+aside (:data:`_IOTA`)."""
 
-_GAP = rf"[\s{INVISIBLE}{_COMBINING}\u2800\ufff9-\ufffb]*"
-"""Room between a tag's brackets, slash and name: spacing, the invisible
-characters, combining marks, a braille blank, interlinear annotation marks."""
+_JOINT = rf"(?:[{INVISIBLE}\t\n\x0b\x0c\r{_COMBINING}]|{_IOTA})"
+"""One character that may sit between a tag's letters for a model still to
+read the name: an invisible, control or line-break character, a combining
+mark."""
+
+_NAME_JOIN = f"{_JOINT}*"
+
+_SPACE = rf"(?:[\s{INVISIBLE}{_COMBINING}\u2800\ufff9-\ufffb]|{_IOTA})"
+"""One character of the room between a tag's brackets, slash and name:
+spacing, the invisible characters, combining marks, a braille blank,
+interlinear annotation marks."""
+
+_GAP = f"{_SPACE}*"
+
+_MARKUP = r"*_~`\-/|\\"
+"""Markup a copy of a phrase may wrap or join its words with (bold, struck,
+code, hyphenated, slashed)."""
 
 
 _CONFUSABLES = {
@@ -168,7 +182,7 @@ def _class(char: str, more: str = "") -> str:
     the look-alike table does not hold (a custom tag's hyphen or accented
     letter) is matched as it is."""
     forms = _lookalikes().get(char.lower()) or re.escape(char)
-    return f"[{forms}{re.escape(more)}]"
+    return f"(?!{_IOTA})[{forms}{re.escape(more)}]"
 
 
 _APOSTROPHES = "'\u2019\u02bc"
@@ -187,19 +201,29 @@ def word_pattern(word: str) -> str:
 def phrase_pattern(phrase: str, *, bracketed: bool = False) -> str:
     """*phrase* as a model reads it, a regular expression to compile with
     ``re.IGNORECASE``: its words in order (:func:`word_pattern`), with any
-    spacing, punctuation and invisible character between them (none
-    included), its opening bracket optional unless *bracketed*, its last word
-    not part of a longer one, and the closing punctuation taken with the
-    copy.
+    spacing, its own punctuation, markup (bold, struck, code, hyphens,
+    slashes), combining marks and invisible characters between them (none
+    included), its opening bracket, square or fullwidth, optional unless
+    *bracketed*, its last word not part of a longer one, and the closing
+    punctuation taken with the copy.
 
     One quantified class between two words, never two in a row: a long run of
     spaces after a partial copy is then scanned once, not once per split."""
     marks = re.escape("".join(sorted(set(re.findall(r"[^\w\s'\[\]]", phrase)))))
-    gap = rf"[\s{INVISIBLE}{marks}]*"
+    gap = f"{_phrase_space(marks)}*"
     body = gap.join(map(word_pattern, re.findall(r"[\w']+", phrase)))
     end = rf"(?:{gap}\]|[{marks}]+)?" if marks else rf"(?:{gap}\])?"
-    opening = rf"[\[\uff3b]{gap}" if bracketed else rf"(?:\[{gap})?"
-    return rf"{opening}{body}(?!\w){end}"
+    bracket = rf"[\[\uff3b]{gap}"
+    opening = bracket if bracketed else f"(?:{bracket})?"
+    return rf"{opening}{body}(?![^\W_]){end}"
+
+
+def _phrase_space(marks: str) -> str:
+    """One character that may sit between a phrase's words: spacing, *marks*
+    (the phrase's own punctuation, escaped), markup, a combining mark, an
+    invisible character. Never a bracket: a run of brackets then starts no
+    copy at each of its brackets."""
+    return rf"(?:[\s{INVISIBLE}{_COMBINING}{_MARKUP}{marks}]|{_IOTA})"
 
 
 def reads_as(text: str, word: str) -> bool:
@@ -221,8 +245,7 @@ def _tag_name(tag: str, *, exact: bool = False) -> str:
     if exact:
         letters = f"[{INVISIBLE}]*".join(map(re.escape, tag))
         return letters + rf"(?=[\s{INVISIBLE}/>])"
-    letters = _NAME_JOIN.join(_class(char) for char in tag)
-    return letters + "(?![A-Za-z0-9_])"
+    return word_pattern(tag) + "(?![A-Za-z0-9_])"
 
 
 @functools.lru_cache(maxsize=64)
@@ -241,7 +264,7 @@ def _loose_opening_tag(tag: str) -> re.Pattern[str]:
     ``<task.v2>`` are other tags). It errs toward a tag: ``latency < task
     deadline`` gets an underscore, while ``<task`` closing a block's text
     would make the runtime's own closing tag close it instead."""
-    name = _NAME_JOIN.join(_class(char) for char in tag)
+    name = word_pattern(tag)
     return re.compile(f"{_class('<', _OPEN)}{_GAP}{name}(?![\\w.:-])", re.IGNORECASE)
 
 

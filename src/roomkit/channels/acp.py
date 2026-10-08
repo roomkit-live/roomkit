@@ -50,7 +50,6 @@ from roomkit.channels._acp_events import ACPEventsMixin
 from roomkit.channels._acp_sessions import ACPSessionsMixin
 from roomkit.channels._acp_turn import ACPTurnMixin
 from roomkit.channels._instruction import instruction_fingerprint, is_standalone, mark_instruction
-from roomkit.channels._mark_copies import without_mark_copies
 from roomkit.channels.acp_transport import ACPTransport, StdioACPTransport
 from roomkit.channels.base import Channel
 from roomkit.models.channel import ChannelBinding, ChannelCapabilities, ChannelOutput
@@ -378,9 +377,7 @@ class ACPChannel(ACPConnectionMixin, ACPSessionsMixin, ACPTurnMixin, ACPEventsMi
         if is_tool_call_record(event):
             return ChannelOutput.empty()
 
-        # A copy of a runtime mark in the event's text is replaced before the
-        # channel places its own (RFC §6.4).
-        text = without_mark_copies(acp_event_text(event))
+        text = acp_event_text(event)
 
         room_id = context.room.id if context.room is not None else event.room_id
         # Host-only blocks can be collected now. Catch-up is deliberately

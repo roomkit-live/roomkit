@@ -27,6 +27,12 @@ import logging
 from collections.abc import Awaitable, Callable, Sequence
 
 from roomkit._text import quoted
+from roomkit.channels._acp_marks import (
+    ROOM_CONTEXT_CLOSING,
+    ROOM_CONTEXT_END,
+    ROOM_CONTEXT_OPENING,
+)
+from roomkit.channels._mark_copies import without_mark_copies
 from roomkit.channels._speaker import speaker_label
 from roomkit.channels.base import Channel
 from roomkit.core.visibility import visible_events
@@ -42,15 +48,6 @@ _SKIPPED_TYPES = frozenset({EventType.TOOL_CALL_START, EventType.TOOL_CALL_END})
 ENTRY_LIMIT = 4000
 """Characters of one message the room context quotes."""
 
-ROOM_CONTEXT_OPENING = "[Room context"
-"""How the room context block opens; what follows says how much it holds."""
-
-ROOM_CONTEXT_CLOSING = " Context only; the request follows.]"
-"""Ends the room context block's first line."""
-
-ROOM_CONTEXT_END = "[End of room context]"
-"""The room context block's last line."""
-
 ACPContextContributor = Callable[[RoomContext, RoomEvent], Awaitable[Sequence[str]]]
 """What a host adds to one turn's prompt: blocks, for this request, right now."""
 
@@ -62,9 +59,15 @@ def acp_event_text(event: RoomEvent) -> str:
     Rich content is offered as its plain-text rendering: the prompt is a
     string, and a session that received the markup would answer about it.
     That is where it differs from ``extract_event_text``, which reads a rich
-    event's markup body. A host building an ACP prompt of its own reads an
-    event as the channel does through this.
+    event's markup body. A copy of a runtime mark in it is replaced, so it
+    cannot pass for the runtime's (RFC §6.4). A host building an ACP prompt of
+    its own reads an event as the channel does through this.
     """
+    return without_mark_copies(_plain_text(event))
+
+
+def _plain_text(event: RoomEvent) -> str:
+    """*event*'s content as a string, rich content by its plain text."""
     content = event.content
     if isinstance(content, TextContent):
         return content.body
