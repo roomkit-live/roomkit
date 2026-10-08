@@ -16,11 +16,12 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import partial
 from typing import TYPE_CHECKING, Any, Literal, Protocol, cast
 from uuid import uuid4
 
+from roomkit.channels._mark_copies import compile_mark_patterns, without_mark_copies
 from roomkit.channels._realtime_context import carry_calls, carrying_task
 from roomkit.channels._realtime_host_hooks import (
     FALLBACK_NO_BACKEND,
@@ -368,10 +369,11 @@ class RealtimeDelegationMixin:
         """
         await self._refresh_session_policies(session, handover.room_id)
         role = await self._read_participant_role(handover.room_id, session.participant_id)
+        transcript = await _without_mark_copies(handover.transcript)
         return ReasoningRequest(
             session=session,
             delegation_id=delegation_id,
-            transcript=handover.transcript,
+            transcript=transcript,
             first=handover.first,
             participant_role=role,
             tools=self._backend_catalogue(session.id),
@@ -619,3 +621,11 @@ def _end_delegation_after(call: RealtimeToolCall) -> None:
     carrier = call.carrier
     if carrier is not None and call.caused_ending:
         asyncio.get_running_loop().call_soon(carrier.cancel)
+
+
+async def _without_mark_copies(transcript: list[TranscriptLine]) -> list[TranscriptLine]:
+    """*transcript* as a backend receives it, the host's own included: a copy
+    of a runtime mark in a line replaced (RFC §6.4), the patterns compiled off
+    the event loop first."""
+    await compile_mark_patterns()
+    return [replace(line, text=without_mark_copies(line.text)) for line in transcript]

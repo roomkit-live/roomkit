@@ -30,8 +30,9 @@ COMPACTION_HEADER = "[Context compacted — earlier conversation summary]"
 dropped."""
 
 SUMMARY_MARK = "[Conversation summary"
-"""How a summary's message opens, whatever header follows: a later summary finds
-an earlier one by it, an inner provider's own included."""
+"""How a summary's message opens, whatever header follows. A later summary
+finds an earlier one by its provenance, never by this text, which anyone can
+type (RFC §6.4)."""
 
 SUMMARY_HEADER = f"{SUMMARY_MARK} — earlier messages compacted]"
 """Opens a memory summary's message."""
