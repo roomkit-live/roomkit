@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 from pydantic import BaseModel, SecretStr
 
 from roomkit.providers.openai.config import OpenAIConfig
@@ -23,6 +25,8 @@ class XAIConfig(OpenAIConfig):
     :class:`XAIRealtimeConfig`, which configures the speech-to-speech WebSocket
     API — same vendor, different protocol.
     """
+
+    _vendor_rule_on_tool_turns: ClassVar[bool] = True
 
     base_url: str = "https://api.x.ai/v1"
     """xAI's OpenAI-compatible endpoint. Override only to point at a proxy."""

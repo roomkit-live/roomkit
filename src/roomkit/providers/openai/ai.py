@@ -335,34 +335,31 @@ class OpenAIAIProvider(AIProvider):
     def _tool_turn_effort(self, effort: str | None) -> str | None:
         """The reasoning effort a turn with tools sends on this endpoint.
 
-        What the config states of the server decides first
-        (``supports_reasoning_effort_with_tools``, RFC §6.7). Unstated, it is
-        read from the catalogue on OpenAI's own endpoint: a model tagged
+        Read from the catalogue on OpenAI's own endpoint: a model tagged
         ``tools_reasoning_none`` takes function tools only with ``none``, sent
         even unset since leaving it out answers 400 on the models that default
         higher; one tagged ``tools_reasoning_effort`` takes *effort*. Any other
         model, and any model behind a ``base_url`` or an Azure deployment name,
-        whose real model this provider cannot know, has it left out
-        (``_server_takes_reasoning_with_tools``).
+        whose real model this provider cannot know, sends what the config
+        states of the server (``_tool_turn_setting``, RFC §6.7).
         """
-        stated = getattr(self._config, "supports_reasoning_effort_with_tools", None)
-        if stated is None and self._is_openai_endpoint:
+        if self._is_openai_endpoint:
             info = self.catalog_entry()
             capabilities = info.capabilities if info is not None else []
             if "tools_reasoning_none" in capabilities:
                 return "none"
             if "tools_reasoning_effort" in capabilities:
                 return effort
-        return effort if self._server_takes_reasoning_with_tools(effort) else None
+        return self._tool_turn_setting(effort)
 
-    def _server_takes_reasoning_with_tools(self, setting: object) -> bool:
-        """Whether the config says the server takes *setting*, a turn's
-        reasoning setting, beside function tools; unsaid counts as no, warned
-        of once when it leaves a setting out (RFC §6.7)."""
+    def _tool_turn_setting[T](self, setting: T | None) -> T | None:
+        """The reasoning *setting* a turn with tools carries where no catalogue
+        speaks for the model: kept where the config says the server takes it
+        there, else left out, an unsaid one warned of once (RFC §6.7)."""
         stated = getattr(self._config, "supports_reasoning_effort_with_tools", None)
         if stated is None and setting is not None:
             self._warn_reasoning_left_out(setting)
-        return bool(stated)
+        return setting if stated else None
 
     def _warn_reasoning_left_out(self, setting: object) -> None:
         """Warn, once per provider, that a turn with tools left out *setting*

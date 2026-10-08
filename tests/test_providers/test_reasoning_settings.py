@@ -13,6 +13,7 @@ from collections.abc import Callable
 from typing import Any
 
 import pytest
+from pydantic import ValidationError
 
 from roomkit.providers.ai.base import AIContext, AIMessage, AITool
 from roomkit.providers.ai.reasoning import nearest_level, thinking_switch, turn_setting
@@ -97,9 +98,21 @@ _EFFORT: dict[str, Effort] = {
     "mistral": (_with(MistralAIProvider, MistralConfig), _mistral),
 }
 
-# Where a turn with tools does not carry an enabling effort, and why (RFC §6.7):
-# LiteLLM cannot know the model behind an alias.
+# Where a turn with tools does not carry an enabling effort unless the config
+# says the server takes it there, and why (RFC §6.7): LiteLLM cannot know the
+# model behind an alias.
 _NOT_ON_TOOL_TURNS = {"litellm"}
+
+# The configs whose provider applies its vendor's own rule on a turn with tools,
+# so they refuse a statement of what the server takes there rather than ignore it.
+_VENDOR_RULE_CONFIGS = [
+    CerebrasConfig,
+    DeepSeekConfig,
+    MetaConfig,
+    OpenRouterConfig,
+    QwenConfig,
+    XAIConfig,
+]
 
 
 def _context(**fields: Any) -> AIContext:
@@ -126,6 +139,31 @@ def test_a_tool_turn_carries_the_effort_as_a_turn_without_does(name: str) -> Non
     build, read = _EFFORT[name]
 
     assert read(build("high"), _context(tools=_TOOLS, reasoning_effort="low")) == "low"
+
+
+@pytest.mark.parametrize("name", sorted(_NOT_ON_TOOL_TURNS))
+def test_a_tool_turn_carries_the_effort_where_the_config_says_the_server_takes_it(
+    name: str,
+) -> None:
+    build, read = _EFFORT[name]
+    provider = build("high")
+    provider._config = provider._config.model_copy(
+        update={"supports_reasoning_effort_with_tools": True}
+    )
+
+    assert read(provider, _context(tools=_TOOLS, reasoning_effort="low")) == "low"
+    assert read(build("high"), _context(tools=_TOOLS, reasoning_effort="low")) is None
+
+
+@pytest.mark.parametrize("config", _VENDOR_RULE_CONFIGS, ids=lambda config: config.__name__)
+def test_a_config_whose_provider_applies_its_vendor_rule_refuses_the_statement(
+    config: type[OpenAIConfig],
+) -> None:
+    fields: dict[str, Any] = {"api_key": "k", "model": "m"}
+
+    with pytest.raises(ValidationError, match="supports_reasoning_effort_with_tools"):
+        config(**fields, supports_reasoning_effort_with_tools=False)
+    assert config(**fields).supports_reasoning_effort_with_tools is None
 
 
 _SWITCHED_ON = {"api_key": "k", "model": "m", "enable_thinking": True}

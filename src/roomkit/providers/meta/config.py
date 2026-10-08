@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, SecretStr, field_validator
 
@@ -83,6 +83,8 @@ class MetaConfig(OpenAIConfig):
     Meta trains its models on their prompts and completions. They are never a
     default; choose one knowingly.
     """
+
+    _vendor_rule_on_tool_turns: ClassVar[bool] = True
 
     base_url: str = "https://api.meta.ai/v1"
     """Meta Model API endpoint. Override only to point at a proxy."""

@@ -16,11 +16,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   effort out without a word; for an agent with tools that is nearly every turn.
   `True` sends it there as on any turn (the LiteLLM budget too), `False` leaves
   it out, and unset keeps today's behaviour and now logs one warning per
-  provider naming the field. A stated value outranks OpenAI's catalogue on its
-  own endpoint. Measured on Inception's Mercury 2.5 (2026-10-08), the same tool
-  turn at `low`: 393 to 851 reasoning tokens with the effort left out (one run
-  called no tool), 247 to 256 with the field on. Example:
-  `examples/openai_compatible_tool_effort.py`.
+  provider naming the field. On OpenAI's own endpoint a model the catalogue
+  tags follows its tag whatever the field says (gpt-5.4 and later keep `none`,
+  the only value they take beside tools). The configs whose provider applies its
+  vendor's own rule on a tool turn (`XAIConfig`, `OpenRouterConfig`,
+  `MetaConfig`, `CerebrasConfig`, `DeepSeekConfig`, `QwenConfig`) refuse the
+  field rather than ignore it. Measured on Inception's Mercury 2.5
+  (2026-10-08), the same tool turn at `low`: 393 to 851 reasoning tokens with
+  the effort left out (one run called no tool), 247 to 256 with the field on.
+  Example: `examples/openai_compatible_tool_effort.py`, a two-round tool loop
+  run both ways.
 
 - `AzureSpeechTTSConfig.rate`, the speaking rate as SSML `prosody` takes it
   (`"+15%"`, `"1.2"`, `"fast"`), validated and escaped (RMK-618).

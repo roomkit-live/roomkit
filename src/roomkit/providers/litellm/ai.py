@@ -113,7 +113,7 @@ class LiteLLMAIProvider(OpenAIAIProvider):
             return
         budget = context.thinking_budget
         effort = turn_setting(context.reasoning_effort, self._config.reasoning_effort)
-        if context.tools and not self._server_takes_reasoning_with_tools(budget or effort):
+        if context.tools and self._tool_turn_setting(budget or effort) is None:
             return
         if budget:
             kwargs.setdefault("extra_body", {})["thinking"] = {

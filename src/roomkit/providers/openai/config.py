@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, ClassVar
 
-from pydantic import BaseModel, SecretStr
+from pydantic import BaseModel, SecretStr, field_validator
 
 from roomkit.providers.vendor_endpoint import OPENAI_BASE_URL, is_vendor_endpoint
 
@@ -22,6 +22,12 @@ class OpenAIConfig(BaseModel):
         model: Model identifier to use.
         max_tokens: Maximum tokens in the response.
     """
+
+    _vendor_rule_on_tool_turns: ClassVar[bool] = False
+    """Whether this config's provider knows what its vendor takes of reasoning
+    on a turn with tools, and applies that rule: a derivative that does sets it
+    true and refuses ``supports_reasoning_effort_with_tools`` rather than
+    ignore it (RFC §6.7)."""
 
     api_key: SecretStr
     base_url: str | None = None
@@ -91,14 +97,26 @@ class OpenAIConfig(BaseModel):
     default (on for OpenAI's own endpoint, off behind a ``base_url``)."""
     supports_reasoning_effort_with_tools: bool | None = None
     """Whether the server takes ``reasoning_effort`` beside function tools (RFC
-    §6.7). ``True`` sends the turn's effort on a turn with tools as on any
-    other; ``False`` leaves it out. ``None`` keeps the provider's default: the
-    model catalogue on OpenAI's own endpoint, left out behind a ``base_url``,
-    whose model the provider cannot know, with a warning logged once when an
-    effort is left out. Set it for an OpenAI-compatible server that takes the
-    pair. A stated value outranks the catalogue. Read by the OpenAI, Azure and
-    LiteLLM providers; a derivative that knows its vendor's rule (Meta,
-    Cerebras, xAI, OpenRouter, DeepSeek, Qwen) applies that rule instead."""
+    §6.7), for a model the provider cannot know: one behind a ``base_url``, or
+    on OpenAI's own endpoint one the catalogue does not tag. ``True`` sends the
+    turn's effort on a turn with tools as on any other; ``False`` leaves it
+    out. ``None`` leaves it out too, with a warning logged once when an effort
+    is left out. A model the catalogue tags follows its tag whatever this says.
+    Read by the OpenAI and LiteLLM providers; the configs of the derivatives
+    that know their vendor's rule (Meta, Cerebras, xAI, OpenRouter, DeepSeek,
+    Qwen) refuse it."""
+
+    @field_validator("supports_reasoning_effort_with_tools")
+    @classmethod
+    def _refused_where_the_vendor_rule_applies(cls, value: bool | None) -> bool | None:
+        """Refuse a statement this config's provider would ignore: it applies
+        its vendor's own rule on a turn with tools (RFC §6.7)."""
+        if value is not None and cls._vendor_rule_on_tool_turns:
+            raise ValueError(
+                f"{cls.__name__} takes no supports_reasoning_effort_with_tools: its provider "
+                "applies its vendor's own rule on a turn with tools"
+            )
+        return value
 
     def model_post_init(self, __context: Any) -> None:
         """Apply safe defaults for modern models on OpenAI's own endpoint."""

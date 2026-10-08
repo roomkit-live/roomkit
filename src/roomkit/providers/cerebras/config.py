@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import ClassVar, Literal
 
 from roomkit.providers.openai.config import OpenAIConfig
 
@@ -14,6 +14,8 @@ class CerebrasConfig(OpenAIConfig):
     :class:`OpenAIConfig`. ``model`` is required; upgrading RoomKit never
     silently selects another model. Install with ``roomkit[cerebras]``.
     """
+
+    _vendor_rule_on_tool_turns: ClassVar[bool] = True
 
     base_url: str = "https://api.cerebras.ai/v1"
     """Cerebras endpoint. May be overridden for a dedicated endpoint or proxy."""

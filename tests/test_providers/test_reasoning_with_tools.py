@@ -170,7 +170,7 @@ class TestPathRules:
 
 
 class TestOnOpenAIsOwnEndpoint:
-    """Unset, the catalogue decides; stated, the config outranks it."""
+    """A model the catalogue tags follows its tag; the config decides the rest."""
 
     @staticmethod
     def _official(model: str, **cfg: Any) -> OpenAIAIProvider:
@@ -178,24 +178,30 @@ class TestOnOpenAIsOwnEndpoint:
         provider._config = OpenAIConfig(api_key="k", model=model, **cfg)
         return provider
 
-    def test_unset_a_tagged_model_follows_the_catalogue_without_warning(
-        self, caplog: pytest.LogCaptureFixture
+    @pytest.mark.parametrize("stated", [None, True, False])
+    def test_a_tagged_model_follows_the_catalogue_whatever_the_config_states(
+        self, stated: bool | None, caplog: pytest.LogCaptureFixture
     ) -> None:
+        # gpt-6-luna answers 400 to a tool turn without ``none`` and to one
+        # with ``low``: a statement on the config must not take it from there.
         tools = _context(tools=[_TOOL])
+        flag = {_FLAG: stated}
 
         with caplog.at_level(logging.WARNING):
-            before_5_4 = _sent(self._official("gpt-5-mini", reasoning_effort="low"), tools)
-            from_5_4 = _sent(self._official("gpt-5.5", reasoning_effort="low"), tools)
+            before_5_4 = _sent(self._official("gpt-5-mini", reasoning_effort="low", **flag), tools)
+            unset = _sent(self._official("gpt-6-luna", **flag), tools)
+            from_5_4 = _sent(self._official("gpt-6-luna", reasoning_effort="low", **flag), tools)
 
         assert before_5_4["reasoning_effort"] == "low"
+        assert unset["reasoning_effort"] == "none"
         assert from_5_4["reasoning_effort"] == "none"
         assert _warnings(caplog) == []
 
     @pytest.mark.parametrize(("stated", "expected"), [(True, "low"), (False, None)])
-    def test_a_stated_value_outranks_the_catalogue(
+    def test_the_config_decides_for_a_model_the_catalogue_does_not_tag(
         self, stated: bool, expected: str | None
     ) -> None:
-        provider = self._official("gpt-5.5", reasoning_effort="low", **{_FLAG: stated})
+        provider = self._official("gpt-7-preview", reasoning_effort="low", **{_FLAG: stated})
 
         assert _sent(provider, _context(tools=[_TOOL])).get("reasoning_effort") == expected
 

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 from roomkit.providers.openai.config import OpenAIConfig
 
 
@@ -26,6 +28,8 @@ class QwenConfig(OpenAIConfig):
 
     Only the endpoint and Qwen's own thinking switch are added on top.
     """
+
+    _vendor_rule_on_tool_turns: ClassVar[bool] = True
 
     base_url: str = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
     """Model Studio's OpenAI-compatible endpoint, international deployment.

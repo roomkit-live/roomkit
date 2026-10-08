@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 from roomkit.providers.openai.config import OpenAIConfig, OpenAIImageConfig
 
 
@@ -20,6 +22,8 @@ class OpenRouterConfig(OpenAIConfig):
     Only OpenRouter's routing endpoint and optional app-attribution headers
     are added on top.
     """
+
+    _vendor_rule_on_tool_turns: ClassVar[bool] = True
 
     base_url: str = "https://openrouter.ai/api/v1"
     """OpenRouter's OpenAI-compatible endpoint. Override only to point at a
