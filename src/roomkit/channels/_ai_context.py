@@ -939,7 +939,7 @@ def _with_speaker_prefix(content: str | list[_ContentPart], name: str) -> str | 
         else part
         for part in content
     ]
-    if parts and isinstance(parts[0], AITextPart):
+    if parts and isinstance(parts[0], AITextPart) and parts[0].text.strip():
         return parts
     return [AITextPart(text=f"{name}:"), *parts]
 

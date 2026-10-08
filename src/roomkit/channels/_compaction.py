@@ -81,7 +81,8 @@ def _said(message: AIMessage) -> str:
         joined_ahead = message.metadata.get(LEADING_TEXT)
         if speaker is not None and isinstance(first, AITextPart) and first.text == joined_ahead:
             lead, parts = first.text, parts[1:]
-        text = " ".join(
+        # A line per part, so each part's line labels are seen as such.
+        text = "\n".join(
             named_blocks(part.text)[:_SUMMARY_PART_CHARS]
             if isinstance(part, AITextPart)
             else f"[{part.type}]"

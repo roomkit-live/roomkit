@@ -157,7 +157,8 @@ def transcript_line(message: AIMessage) -> str:
     else:
         # The notes ride a text part of their own when the input has images.
         texts = (getattr(part, "text", "") for part in message.content)
-        text = " ".join(split_turn_notes(part_text)[0] for part_text in texts)
+        # A line per part, so each part's line labels are seen as such.
+        text = "\n".join(split_turn_notes(part_text)[0] for part_text in texts)
     text = text.strip()
     if not text:
         return ""

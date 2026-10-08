@@ -208,17 +208,35 @@ def labelled_lines(text: str, label: str) -> str:
     """*text* with each of its lines opened by *label* (``"Alice: …"``): an
     API that merges consecutive user turns, or a line ``Bob: …`` inside the
     message, must not make a line read as another author's (RFC §6.4,
-    measured in RMK-616). A blank line stays blank."""
-    return "\n".join(f"{label}: {line}" if line.strip() else line for line in text.split("\n"))
+    measured in RMK-616). A line ends at any break :meth:`str.splitlines`
+    knows (``\r``, ``\u2028``, a form feed…), each made a line feed: a model
+    reads a ``\u2028`` as no break at all, so the label after it would sit
+    mid-line, where it guards nothing. A blank line stays blank."""
+    lines = text.splitlines()
+    return "\n".join(f"{label}: {line}" if line.strip() else line for line in lines)
 
 
 def said_by(text: str, speaker: object, limit: int, *, label: str | None = None) -> str:
     """*text* quoted within *limit*, after the name the context gave its speaker
     (``SPEAKER_KEY``) when it gave one, shown as *label* when given: the name
-    out of the quote, its copy on each line (:func:`labelled_lines`) left out,
-    so a person who writes ``Name:`` is not read as someone else (RFC §6.4)."""
-    prefix = f"{speaker}: "
-    if isinstance(speaker, str) and text.startswith(prefix):
-        body = "\n".join(line.removeprefix(prefix) for line in text.split("\n"))
-        return f"{label or speaker}: {quoted(body, limit)}"
+    out of the quote, its copy on each line (:func:`labelled_lines`, and a
+    lead part's bare ``Name:``) left out, so a person who writes ``Name:`` is
+    not read as someone else (RFC §6.4)."""
+    if isinstance(speaker, str) and _opens_with_label(text, speaker):
+        return f"{label or speaker}: {quoted(_without_line_labels(text, speaker), limit)}"
     return quoted(text, limit)
+
+
+def _opens_with_label(text: str, speaker: str) -> bool:
+    """Whether *text*'s first line that is not blank opens with *speaker*'s
+    label, or is a lead part's bare ``speaker:``."""
+    first = next((line for line in text.splitlines() if line.strip()), "")
+    return first.startswith(f"{speaker}: ") or first.strip() == f"{speaker}:"
+
+
+def _without_line_labels(text: str, speaker: str) -> str:
+    """*text* with the label each of its lines opens with removed once, and a
+    lead part's bare ``speaker:`` line dropped."""
+    prefix, lead = f"{speaker}: ", f"{speaker}:"
+    lines = text.splitlines(keepends=True)
+    return "".join(line.removeprefix(prefix) for line in lines if line.strip() != lead)
