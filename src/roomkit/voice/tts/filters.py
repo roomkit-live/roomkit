@@ -6,10 +6,16 @@ import logging
 import re
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator, Iterable
+from typing import Literal
 
 from roomkit.telemetry.redaction import redact
 
 logger = logging.getLogger("roomkit.voice.tts.filters")
+
+
+def _tidy(text: str) -> str:
+    """*text* without the double spaces a removal leaves, nor surrounding blanks."""
+    return re.sub(r"  +", " ", text).strip()
 
 
 class TTSStreamFilter(ABC):
@@ -22,6 +28,11 @@ class TTSStreamFilter(ABC):
     :meth:`reset`.  The default :meth:`__call__` delegates to feed+flush
     but subclasses may override it with a more efficient implementation
     (e.g. a single regex pass).
+
+    A voice channel streams each response through its own copy of its filter
+    (``copy.deepcopy``), so responses streamed at once in several rooms never
+    share what a filter buffers: a filter holding something that cannot be
+    copied defines ``__deepcopy__``.
     """
 
     @abstractmethod
@@ -86,9 +97,7 @@ class StripInternalTags(TTSStreamFilter):
         self._mode = ""
 
     def __call__(self, text: str) -> str:
-        result = _INTERNAL_RE.sub("", text)
-        # Collapse multiple spaces left by removal and strip
-        return re.sub(r"  +", " ", result).strip()
+        return _tidy(_INTERNAL_RE.sub("", text))
 
     def feed(self, chunk: str) -> str:
         self._buf += chunk
@@ -221,8 +230,7 @@ class StripBrackets(TTSStreamFilter):
         return match.group(0) if self._kept(match.group(0)[1:-1]) else ""
 
     def __call__(self, text: str) -> str:
-        result = _BRACKET_RE.sub(self._replace, text)
-        return re.sub(r"  +", " ", result).strip()
+        return _tidy(_BRACKET_RE.sub(self._replace, text))
 
     def feed(self, chunk: str) -> str:
         self._buf += chunk
@@ -293,7 +301,7 @@ class StripEmoji(TTSStreamFilter):
         pass
 
     def __call__(self, text: str) -> str:
-        return re.sub(r"  +", " ", _EMOJI_RE.sub("", text)).strip()
+        return _tidy(_EMOJI_RE.sub("", text))
 
     def feed(self, chunk: str) -> str:
         return _EMOJI_RE.sub("", chunk)
@@ -319,6 +327,15 @@ _NOTE_OPENING_SO_FAR = re.compile(r"\(\s*(?:n|no|not|note\s*|nb\s*)?$", re.IGNOR
 
 _SEPARATOR_DASHES = 3
 
+_Removed = Literal["json", "note", "separator"]
+
+_OPENINGS: dict[str, tuple[re.Pattern[str], re.Pattern[str], Literal["json", "note"]]] = {
+    "{": (_JSON_OPENING, _JSON_OPENING_SO_FAR, "json"),
+    "(": (_NOTE_OPENING, _NOTE_OPENING_SO_FAR, "note"),
+}
+"""What a ``{`` or a ``(`` may open: the opening that decides it, the start of
+one still too short to tell, and what the buffer then holds open."""
+
 
 class StripTechnicalText(TTSStreamFilter):
     """Strip the technical text a model may write into a spoken reply.
@@ -330,42 +347,53 @@ class StripTechnicalText(TTSStreamFilter):
     - **A note to itself**: ``(Note: ...)`` or ``(NB: ...)``, any case.
     - **A separator**: three dashes or more.
 
-    Whatever the model, a reply sometimes carries them: gpt-oss wrote its next
-    tool call as text, with a result it made up, or a note for itself. Removing
-    it from the voice does not make the call happen. The text stored in the
-    conversation is left as the model wrote it, so the slip stays visible; it
-    is just not heard. Each JSON object or note removed is logged as a warning
-    (its length; its text at DEBUG, through :func:`~roomkit.telemetry.redaction.redact`).
+    Whatever the model, a reply may carry them: a model may write its next
+    tool call as text, with a result it made up, or leave a note for itself.
+    Removing it from the voice does not make the call happen. The text stored
+    in the conversation is left as the model wrote it, so the slip stays
+    visible; it is just not heard. Each JSON object or note removed is logged
+    as a warning with its length (its text at DEBUG, through
+    :func:`~roomkit.telemetry.redaction.redact`); a separator at DEBUG.
 
     A parenthesis, a brace or a dash of ordinary text passes: ``(about ten
     minutes)``, ``{x}``, ``well-known``, ``--``. A JSON object or a note still
-    open when the stream ends is removed. Reasoning written in plain words
-    ("Need no tool.") is not recognised: no rule tells it from an answer.
+    open when the stream ends is removed. The rules do not know who a note is
+    for: ``(Note: holidays may delay it)`` written for the listener goes too,
+    and ``3---2`` reads ``32``. What they do not cover stays: reasoning in
+    plain words ("Need no tool."), which no rule tells from an answer, and the
+    fence or brackets around a removed object (a Markdown code block, a JSON
+    array: chain :class:`StripBrackets` for the brackets).
 
     In streaming mode it works on the tokens, before a reply is cut into
     sentences, so an object holding a sentence's full stop is removed whole.
     """
 
-    _mode: str
-    """``"json"`` or ``"note"`` while the buffer holds one open, else ``""``."""
+    _mode: Literal["", "json", "note"]
+    """What the buffer holds open: nothing, a JSON object or a note."""
     _depth: int
     _scanned: int
     """How much of the open object or note is scanned."""
     _in_string: bool
     _escaped: bool
     _buf: str
+    _blank: bool
+    """What was spoken so far ends on a blank (or nothing was)."""
     _trim: bool
+    """The spacing that follows a removal is not spoken."""
 
     def __init__(self) -> None:
         self.reset()
 
     def reset(self) -> None:
         self._buf = ""
-        self._trim = False  # the spacing after a removal is not emitted
+        self._blank = True
+        self._trim = False
         self._settle()
 
     def __call__(self, text: str) -> str:
-        return re.sub(r"  +", " ", super().__call__(text)).strip()
+        # Its own state: a whole text never resets a reply this instance streams.
+        whole = type(self)()
+        return _tidy(whole.feed(text) + whole.flush())
 
     def feed(self, chunk: str) -> str:
         self._buf += chunk
@@ -407,16 +435,12 @@ class StripTechnicalText(TTSStreamFilter):
                 return False  # more dashes may come
             if dashes >= _SEPARATOR_DASHES:
                 self._removed("separator", buf[:dashes])
-                self._trim = True
+                self._trim = self._blank
             else:
                 self._emit(out, buf[:dashes])
             self._buf = buf[dashes:]
             return True
-        opening, so_far, mode = (
-            (_JSON_OPENING, _JSON_OPENING_SO_FAR, "json")
-            if buf[0] == "{"
-            else (_NOTE_OPENING, _NOTE_OPENING_SO_FAR, "note")
-        )
+        opening, so_far, mode = _OPENINGS[buf[0]]
         if opening.match(buf):
             self._mode = mode
             return True
@@ -427,10 +451,13 @@ class StripTechnicalText(TTSStreamFilter):
         return True
 
     def _emit(self, out: list[str], text: str) -> None:
-        """Add plain *text* to what is spoken, without the spacing a removal left."""
+        """Add plain *text* to what is spoken, without doubling the spacing
+        around a removal."""
         if self._trim:
             text = text.lstrip()
             self._trim = not text
+        if text:
+            self._blank = text[-1].isspace()
         out.append(text)
 
     def _close_json(self) -> bool:
@@ -465,10 +492,11 @@ class StripTechnicalText(TTSStreamFilter):
 
     def _drop(self, end: int) -> bool:
         """Remove the open object or note, which ends at *end*."""
-        self._removed(self._mode, self._buf[:end])
+        if self._mode:
+            self._removed(self._mode, self._buf[:end])
         self._buf = self._buf[end:]
         self._settle()
-        self._trim = True
+        self._trim = self._blank
         return True
 
     def _settle(self) -> None:
@@ -477,7 +505,7 @@ class StripTechnicalText(TTSStreamFilter):
         self._in_string = self._escaped = False
 
     @staticmethod
-    def _removed(kind: str, text: str) -> None:
+    def _removed(kind: _Removed, text: str) -> None:
         if kind == "separator":
             logger.debug("Separator kept out of speech")
             return

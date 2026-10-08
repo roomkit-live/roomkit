@@ -16,9 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   three dashes or more. Plugged as `VoiceChannel(tts_filter=...)` or in a
   `TTSFilterChain`; on a streamed reply it works on the tokens, before the
   reply is cut into sentences, so an object holding a full stop goes whole.
-  Each removal is logged (its length; its text at DEBUG, redacted unless
-  content logging is on); the stored response keeps the model's text.
-  Reasoning written in plain words is not recognised. Example:
+  Each JSON object or note removed is logged as a warning with its length
+  (its text at DEBUG, redacted unless content logging is on); the stored
+  response keeps the model's text. The rules do not know who a note is for,
+  and reasoning written in plain words is not recognised. Example:
   `examples/voice_strip_technical_text.py`.
 
 - `AnswerOnly(policy, people=[...])`, a speak policy around any other that
