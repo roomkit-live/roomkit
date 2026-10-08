@@ -21,6 +21,7 @@ from roomkit.channels._skill_constants import TOOL_RUN_SCRIPT
 from roomkit.channels._speaker import (
     SPEAKER_ATTRIBUTION_NOTE,
     SPEAKER_KEY,
+    labelled_lines,
     several_speakers,
     turn_labels,
 )
@@ -927,10 +928,20 @@ def _turn_message(role: str, content: str | list[_ContentPart], speaker: str | N
 
 
 def _with_speaker_prefix(content: str | list[_ContentPart], name: str) -> str | list[_ContentPart]:
-    """Carry the speaker on a user turn: ``"Name: text"``; parts get a lead part."""
+    """Carry the speaker on a user turn: ``"Name: text"`` on each line
+    (:func:`~roomkit.channels._speaker.labelled_lines`); each line of a text
+    part gets its label, and parts that open with an image a lead part."""
     if isinstance(content, str):
-        return f"{name}: {content}"
-    return [AITextPart(text=f"{name}:"), *content]
+        return labelled_lines(content, name)
+    parts = [
+        part.model_copy(update={"text": labelled_lines(part.text, name)})
+        if isinstance(part, AITextPart)
+        else part
+        for part in content
+    ]
+    if parts and isinstance(parts[0], AITextPart):
+        return parts
+    return [AITextPart(text=f"{name}:"), *parts]
 
 
 def _after_memory(memory: list[AIMessage], rest: list[AIMessage]) -> list[AIMessage]:

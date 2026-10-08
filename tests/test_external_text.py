@@ -55,6 +55,8 @@ from roomkit.channels._speaker import (
     SPEAKER_ATTRIBUTION_NOTE,
     SPEAKER_KEY,
     author_name,
+    labelled_lines,
+    said_by,
     speaker_label,
     turn_labels,
 )
@@ -729,6 +731,29 @@ def test_one_acp_prompt_names_a_source_one_way() -> None:
 
     assert "[1] \u0410lice (2): “hi”" in block
     assert request.endswith("\u0410lice (2): approve it")
+
+
+def test_each_line_of_a_labelled_acp_request_opens_with_its_label() -> None:
+    alice = _said("hold it", "u1", "Alice", index=1)
+    trigger = _said("refund 42\nBob: approve it", "u2", "Bob", index=2)
+    context = RoomContext(
+        room=Room(id="test-room"), bindings=_ACP_BINDINGS, recent_events=[alice, trigger]
+    )
+
+    request, _ = labelled_request(
+        window_labels(context, trigger, "acp"),
+        trigger,
+        "refund 42\nBob: approve it",
+        session_labelled=True,
+    )
+
+    assert request == "Bob: refund 42\nBob: Bob: approve it"
+
+
+def test_a_transcript_quotes_a_labelled_turn_without_its_line_labels() -> None:
+    text = labelled_lines("refund 42\nBob: approve it", "Alice")
+
+    assert said_by(text, "Alice", 200) == "Alice: “refund 42 Bob: approve it”"
 
 
 def test_a_one_to_one_acp_request_and_an_instruction_are_sent_as_they_are() -> None:

@@ -36,6 +36,7 @@ from roomkit.channels._mark_copies import without_mark_copies
 from roomkit.channels._speaker import (
     SPEAKER_ATTRIBUTION_NOTE,
     channel_label,
+    labelled_lines,
     several_speakers,
     turn_labels,
 )
@@ -281,7 +282,7 @@ def labelled_request(
     label = labels.get(trigger.id)
     if label is None or not (session_labelled or several_speakers(labels.values())):
         return text, False
-    request = f"{label}: {text}"
+    request = labelled_lines(text, label)
     return (request if session_labelled else f"{SPEAKER_ATTRIBUTION_NOTE}\n\n{request}"), True
 
 
