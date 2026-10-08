@@ -316,16 +316,20 @@ class StripEmoji(TTSStreamFilter):
 
 _TECHNICAL_START = re.compile(r"[{(-]")
 
-_JSON_OPENING = re.compile(r'\{\s*"')
-"""A JSON object as a model writes one: its first key is quoted."""
+_JSON_OPENING = re.compile(r'\{\s*(?:"|[A-Za-z_]\w*\s*:)')
+"""A JSON object as a model writes one: its first key quoted, or a bare name
+followed by a colon (``{agent: "meteo"}``)."""
 
-_JSON_OPENING_SO_FAR = re.compile(r"\{\s*$")
+_JSON_OPENING_SO_FAR = re.compile(r"\{\s*(?:[A-Za-z_]\w*\s*)?$")
 
 _NOTE_OPENING = re.compile(r"\(\s*(?:note|nb)\s*:", re.IGNORECASE)
 
 _NOTE_OPENING_SO_FAR = re.compile(r"\(\s*(?:n|no|not|note\s*|nb\s*)?$", re.IGNORECASE)
 
 _SEPARATOR_DASHES = 3
+
+_CLOSING_PUNCTUATION = frozenset(".,;:!?)")
+"""Characters that follow a word with no space before them."""
 
 _Removed = Literal["json", "note", "separator"]
 
@@ -340,10 +344,11 @@ one still too short to tell, and what the buffer then holds open."""
 class StripTechnicalText(TTSStreamFilter):
     """Strip the technical text a model may write into a spoken reply.
 
-    - **A JSON object**, recognised by its quoted first key (``{"``, spaces
-      allowed): a tool call or a tool result the model wrote as words instead
-      of calling the tool. Nested objects go with it, and a brace inside one
-      of its strings does not end it.
+    - **A JSON object**, recognised by its first key, quoted (``{"``) or a bare
+      name and a colon (``{agent:``), spaces allowed: a tool call or a tool
+      result the model wrote as words instead of calling the tool. Nested
+      objects go with it, and a brace inside one of its strings does not end
+      it.
     - **A note to itself**: ``(Note: ...)`` or ``(NB: ...)``, any case.
     - **A separator**: three dashes or more.
 
@@ -380,6 +385,8 @@ class StripTechnicalText(TTSStreamFilter):
     """What was spoken so far ends on a blank (or nothing was)."""
     _trim: bool
     """The spacing that follows a removal is not spoken."""
+    _space_due: bool
+    """A removal sat between two words: one space keeps them apart."""
 
     def __init__(self) -> None:
         self.reset()
@@ -388,6 +395,7 @@ class StripTechnicalText(TTSStreamFilter):
         self._buf = ""
         self._blank = True
         self._trim = False
+        self._space_due = False
         self._settle()
 
     def __call__(self, text: str) -> str:
@@ -435,7 +443,7 @@ class StripTechnicalText(TTSStreamFilter):
                 return False  # more dashes may come
             if dashes >= _SEPARATOR_DASHES:
                 self._removed("separator", buf[:dashes])
-                self._trim = self._blank
+                self._after_removal()
             else:
                 self._emit(out, buf[:dashes])
             self._buf = buf[dashes:]
@@ -451,14 +459,24 @@ class StripTechnicalText(TTSStreamFilter):
         return True
 
     def _emit(self, out: list[str], text: str) -> None:
-        """Add plain *text* to what is spoken, without doubling the spacing
-        around a removal."""
+        """Add plain *text* to what is spoken, with one space where a removal
+        was: not doubled, not lost between two words."""
         if self._trim:
             text = text.lstrip()
             self._trim = not text
+        elif self._space_due and text:
+            if not text[0].isspace() and text[0] not in _CLOSING_PUNCTUATION:
+                text = f" {text}"
+            self._space_due = False
         if text:
             self._blank = text[-1].isspace()
         out.append(text)
+
+    def _after_removal(self) -> None:
+        """What follows a removal: its spacing goes when a blank came before it,
+        a space comes back when a word came before it."""
+        self._trim = self._blank
+        self._space_due = not self._blank
 
     def _close_json(self) -> bool:
         """Scan the open object to its closing brace; ``False`` while it is open."""
@@ -496,7 +514,7 @@ class StripTechnicalText(TTSStreamFilter):
             self._removed(self._mode, self._buf[:end])
         self._buf = self._buf[end:]
         self._settle()
-        self._trim = self._blank
+        self._after_removal()
         return True
 
     def _settle(self) -> None:

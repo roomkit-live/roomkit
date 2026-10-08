@@ -45,8 +45,23 @@ MODES = pytest.mark.parametrize(
         ("Hello (nb : see (this) later) !", "Hello !"),
         ("--- Next part.", "Next part."),
         ("First.\n\n-----\n\nSecond.", "First. Second."),
+        (
+            'Searching.{agent: "meteo", task: "rain"}{"status": "ok"}Back soon.',
+            "Searching. Back soon.",
+        ),
+        ('I check{"name": "x"}, then I come back.', "I check, then I come back."),
     ],
-    ids=["tool-call", "braces-in-strings", "spaced-key", "note", "nested-note", "dashes", "rule"],
+    ids=[
+        "tool-call",
+        "braces-in-strings",
+        "spaced-key",
+        "note",
+        "nested-note",
+        "dashes",
+        "rule",
+        "bare-key-glued",
+        "glued-before-comma",
+    ],
 )
 def test_technical_text_is_not_heard(spoken: Callable[[str], str], text: str, heard: str) -> None:
     assert spoken(text) == heard

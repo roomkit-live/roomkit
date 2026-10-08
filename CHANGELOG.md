@@ -26,12 +26,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `StripTechnicalText`, a TTS text filter that keeps technical text out of the
   voice (RMK-624): a JSON object (a tool call or a tool result the model wrote
-  as words instead of calling the tool; nested objects and braces inside its
-  strings included), a `(Note: ...)` / `(NB: ...)` to itself, a separator of
+  as words instead of calling the tool, its first key quoted or a bare name and
+  a colon; nested objects and braces inside its strings included), a `(Note: ...)` / `(NB: ...)` to itself, a separator of
   three dashes or more. Plugged as `VoiceChannel(tts_filter=...)` or in a
   `TTSFilterChain`; on a streamed reply it works on the tokens, before the
   reply is cut into sentences, so an object holding a full stop goes whole.
-  Each JSON object or note removed is logged as a warning with its length
+  A removal leaves one space between the words around it. Each JSON object or
+  note removed is logged as a warning with its length
   (its text at DEBUG, redacted unless content logging is on); the stored
   response keeps the model's text. The rules do not know who a note is for,
   and reasoning written in plain words is not recognised. Example:
