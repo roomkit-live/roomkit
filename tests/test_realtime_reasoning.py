@@ -501,7 +501,7 @@ class TestAIProviderReasoningBackend:
         assert first_call.system_prompt == "backend rules"
         # The re-read of a stored result is declared, as on any agent turn.
         assert [t.name for t in first_call.tools] == ["lookup", "read_stored_result"]
-        assert "USER: Is UA482 running?" in first_call.messages[0].content
+        assert "USER: “Is UA482 running?”" in first_call.messages[0].content
         assert "Voice conversation so far:" in first_call.messages[0].content
         assert [m.role for m in second_call.messages] == ["user", "assistant", "tool"]
         assert second_call.messages[2].content[0].result == '{"status": "cancelled"}'
@@ -1222,7 +1222,7 @@ class TestRendering:
         lines = [TranscriptLine("user", "hi"), TranscriptLine("assistant", "hello")]
         first = render_transcript_request(lines, first=True)
         later = render_transcript_request(lines, first=False)
-        assert first.startswith("Voice conversation so far:\nUSER: hi\nASSISTANT: hello\n")
+        assert first.startswith("Voice conversation so far:\nUSER: “hi”\nASSISTANT: “hello”\n")
         assert later.startswith("Voice conversation since the previous delegation:")
         assert first.endswith("Act on the user's most recent request in the conversation above.")
 

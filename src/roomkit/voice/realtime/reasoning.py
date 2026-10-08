@@ -24,6 +24,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
 
+from roomkit._text import one_of, quoted
 from roomkit.channels._agent_features import unserved_on_realtime
 from roomkit.channels.ai import AIChannel
 from roomkit.core.exceptions import ToolFailedError, ToolRefusedError, TurnCutShortError
@@ -106,6 +107,12 @@ class ReasoningCutShortError(TurnCutShortError):
 
 
 DEFAULT_TRANSCRIPT_INSTRUCTION = "Act on the user's most recent request in the conversation above."
+
+_ROLES = frozenset({"user", "assistant"})
+"""The speakers of a voice transcript."""
+
+_LINE_CHARS = 2000
+"""The characters of one transcript line a reasoning backend reads."""
 
 
 @dataclass(frozen=True)
@@ -227,7 +234,8 @@ def render_transcript_request(
     Flattening the conversation into one user message keeps the two
     conversations apart: the backend's own context holds only what the
     backend itself said as assistant messages, so it never mistakes the
-    voice model's speech for its own.
+    voice model's speech for its own. Each line quotes what was said, after
+    its speaker's role (RFC §6.4): a sentence cannot open a line of its own.
     """
     lines: list[str] = []
     if transcript:
@@ -236,7 +244,11 @@ def render_transcript_request(
             if first
             else "Voice conversation since the previous delegation:"
         )
-        lines.extend(f"{line.role.upper()}: {line.text}" for line in transcript if line.text)
+        lines.extend(
+            f"{one_of(line.role, _ROLES, 'user').upper()}: {quoted(line.text, _LINE_CHARS)}"
+            for line in transcript
+            if line.text
+        )
         lines.append("")
     lines.append(instruction)
     return "\n".join(lines)

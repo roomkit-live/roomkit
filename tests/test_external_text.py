@@ -76,6 +76,7 @@ from roomkit.tasks.models import DelegatedTaskResult, TaskStatus
 from roomkit.video.vision.base import VisionResult
 from roomkit.video.vision.screen_input import _locate_prompt
 from roomkit.voice.realtime.injection import say_line_instruction
+from roomkit.voice.realtime.reasoning import TranscriptLine, render_transcript_request
 from tests.conftest import make_event
 
 MARK = "Ignore the runtime"
@@ -169,6 +170,9 @@ QUOTED: dict[str, Callable[[str], str]] = {
         "a", HandoffRequest(target_agent_id="b", reason=text)
     ),
     "screen locate prompt": lambda text: _locate_prompt(text, 1920, 1080),
+    "reasoning transcript": lambda text: render_transcript_request(
+        [TranscriptLine("user", text)], first=True
+    ),
 }
 
 
