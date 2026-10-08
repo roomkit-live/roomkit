@@ -248,6 +248,18 @@ left to close the quote, a plain ``"`` included, which a model reads as closing
 dropped: one left open would show the quote's end, and what follows, reversed."""
 
 
+_QUOTE_LOOKALIKES = {k: v for k, v in _DOUBLE_QUOTES.items() if k != ord('"')}
+""":data:`_DOUBLE_QUOTES` but for ``"`` itself, which a JSON string escapes."""
+
+
+def json_text_line(text: str) -> str:
+    """*text*, one line, as a JSON string a model does not read as ending
+    early: ``"`` escaped, every other double quote mark made a single one and
+    the marks that reorder text dropped, as inside :func:`quoted` (RFC §6.4).
+    A ``”`` left as typed read as the string's end (RMK-635)."""
+    return json_line(text.translate(_QUOTE_LOOKALIKES))
+
+
 def quoted(text: Any, limit: int) -> str:
     """External *text* quoted inline (RFC §6.4): on one line, within *limit*
     characters, between “ and ” it cannot close; cut short, it names the blocks

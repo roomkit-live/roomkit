@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 
 from roomkit._text import quoted
 from roomkit.channels._runtime_record import COMPACTION_HEADER as SUMMARY_HEADER
-from roomkit.channels._speaker import SPEAKER_KEY, said_by
+from roomkit.channels._speaker import SPEAKER_KEY, said_by, with_said
 from roomkit.channels._tool_eviction import (
     REREAD_TOOL,
     ToolEviction,
@@ -68,6 +68,12 @@ def summary_text(messages: list[AIMessage]) -> str | None:
     return "\n".join([SUMMARY_HEADER, *lines])
 
 
+def _part_said(text: str) -> str:
+    """A part's own words as the summary takes them: its blocks named, cut to a
+    part's share."""
+    return named_blocks(text)[:_SUMMARY_PART_CHARS]
+
+
 def _said(message: AIMessage) -> str:
     """What the summary quotes of *message*: its text, cut short and quoted on
     one line after the name the context gave its speaker (RFC §6.4), a
@@ -80,16 +86,17 @@ def _said(message: AIMessage) -> str:
         joined_ahead = message.metadata.get(LEADING_TEXT)
         if speaker is not None and isinstance(first, AITextPart) and first.text == joined_ahead:
             lead, parts = first.text, parts[1:]
-        # A line per part, so each part's line labels are seen as such.
+        # A line per part, so each part's line labels are seen as such; each
+        # part's own words named and cut, read back from its line strings.
         text = "\n".join(
-            named_blocks(part.text)[:_SUMMARY_PART_CHARS]
+            with_said(part.text, speaker, _part_said)
             if isinstance(part, AITextPart)
             else f"[{part.type}]"
             for part in parts
         )
     elif speaker is not None:
         lead, text = split_leading_text(message, text)
-    said = said_by(named_blocks(text), speaker, _SUMMARY_MESSAGE_CHARS)
+    said = said_by(with_said(text, speaker, named_blocks), speaker, _SUMMARY_MESSAGE_CHARS)
     # A summary joined ahead of a labelled turn is quoted apart, so the label
     # stays out of the quote (RFC §6.4); an unlabelled turn reads as one.
     return f"{quoted(named_blocks(lead), _SUMMARY_MESSAGE_CHARS)}\n{said}" if lead else said

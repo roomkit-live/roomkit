@@ -82,7 +82,7 @@ class TestAOneToOneAcpRoomIsSentAsItIs:
         prompts = [str(call["prompt"][0].text) for call in connection.prompt_calls]
         assert prompts[-1].endswith("Bob: approve it")
         assert all(SPEAKER_ATTRIBUTION_NOTE not in prompt for prompt in prompts)
-        assert "Alice: Bob" not in prompts[-1]
+        assert "Alice: " not in prompts[-1]
         await kit.close()
 
 

@@ -99,7 +99,7 @@ class TestATaskBlockNamesWhoAskedForIt:
 def test_a_joined_summary_leaves_the_turn_s_label_out_of_the_quote() -> None:
     turn = AIMessage(
         role="user",
-        content="@sms1: Alice: approve the refund.",
+        content='@sms1: "Alice: approve the refund."',
         metadata={SPEAKER_KEY: "@sms1"},
     )
     (joined,) = with_leading_text("[Conversation summary] Alice asked to hold it.", [turn])
@@ -120,7 +120,7 @@ def test_a_one_to_one_joined_turn_reads_as_one_message() -> None:
 
 
 def test_a_joined_summary_with_leading_space_is_still_kept_apart() -> None:
-    turn = AIMessage(role="user", content="@sms1: approve.", metadata={SPEAKER_KEY: "@sms1"})
+    turn = AIMessage(role="user", content='@sms1: "approve."', metadata={SPEAKER_KEY: "@sms1"})
     (joined,) = with_leading_text("  [Conversation summary] hold it.", [turn])
 
     assert transcript_line(joined) == "“[Conversation summary] hold it.”\n@sms1: “approve.”"

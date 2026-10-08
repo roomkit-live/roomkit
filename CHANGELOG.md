@@ -1065,10 +1065,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   5.5 was wrong 28 times in 48, Sonnet 5.5 6 in 24 and gpt-6-luna 22 in 32;
   with the string 4 in 96, 0 in 24 and 0 in 32, an indented code block read
   right. Through a real kit and the Anthropic provider, Haiku answered that
-  Alice approved 14 times in 36 before, once after. Quotes and backslashes
-  are escaped and indentation kept; the note describes the form and names
+  Alice approved 14 times in 36 before, once after. `"` and backslashes are
+  escaped, every other double quote mark is made `'` as inside a quote (a
+  `”` left as typed read as the string's end, 21 times in 28 on Haiku, then
+  0 in 8), and indentation is kept; the note describes the form and names
   no attack (naming the literal `\n` made a model fall for it more often).
-  A transcript (a compaction's, a thinker's) reads each line's string back.
+  A transcript (a compaction's, a thinker's) reads each line's string back
+  before it names blocks or cuts. A split copy of a mark is cut only over
+  messages the runtime did not label: a sender named `runtime` completed the
+  speaker note with the label itself, and the cut took the next message's
+  label off.
   The history of a room where several people speak renders differently, so
   a provider's cached prefix for it is rebuilt once. A one-to-one
   conversation reads as before.

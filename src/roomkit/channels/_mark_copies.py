@@ -27,7 +27,7 @@ from roomkit.channels._ai_cuts import CUT_MARK
 from roomkit.channels._instruction import INSTRUCTION_MARKER
 from roomkit.channels._runtime_record import COMPACTION_HEADER, HANDED_ON_CONTEXT, HANDOFF_OPENING
 from roomkit.channels._runtime_record import SUMMARY_HEADER as MEMORY_SUMMARY_HEADER
-from roomkit.channels._speaker import SPEAKER_ATTRIBUTION_NOTE
+from roomkit.channels._speaker import SPEAKER_ATTRIBUTION_NOTE, SPEAKER_KEY
 from roomkit.channels._turn_notes import (
     COPIED_HEADER_MARK,
     cleaned_content,
@@ -169,7 +169,9 @@ def without_split_copies(messages: list[AIMessage]) -> list[AIMessage]:
     list content included) replaced where it starts and the rest of it
     dropped: an API may merge consecutive user messages, and the pieces would
     then read as the mark (RFC §6.4). A message the copy wholly held is left
-    out."""
+    out. A message the runtime labelled (:data:`SPEAKER_KEY`) is no piece:
+    each of its lines is a string after its author's label, which no copy
+    runs out of, and cutting one would take its label off."""
     cut, emptied = cut_split_copies(messages)
     return [message for i, message in enumerate(cut) if i not in emptied]
 
@@ -182,12 +184,18 @@ def cut_split_copies(messages: list[AIMessage]) -> tuple[list[AIMessage], set[in
     index = 0
     while index < len(out):
         end = index
-        while end < len(out) and out[end].role == "user":
+        while end < len(out) and _a_piece(out[end]):
             end += 1
         if end - index > 1:
             emptied |= _cut_run(out, range(index, end))
         index = max(end, index + 1)
     return out, emptied
+
+
+def _a_piece(message: AIMessage) -> bool:
+    """Whether *message* is a user message a split copy may run over: one the
+    runtime did not label."""
+    return message.role == "user" and SPEAKER_KEY not in message.metadata
 
 
 def _cut_run(out: list[AIMessage], run: range) -> set[int]:

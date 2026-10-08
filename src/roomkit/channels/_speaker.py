@@ -14,7 +14,7 @@ import re
 from collections.abc import Callable, Iterable
 
 from roomkit._lookalike import skeletons
-from roomkit._text import identifier, json_line, person_name, quoted
+from roomkit._text import identifier, json_text_line, person_name, quoted
 from roomkit.core._authors import (
     AUTHOR_REGISTER,
     AuthorRegister,
@@ -211,13 +211,16 @@ def labelled_lines(text: str, label: str) -> str:
     string (``Alice: "…"``): an API that merges consecutive user turns, or a
     line ``Bob: …`` inside the message, must not make a line read as another
     author's, and the string ends where the line does, so a ``Bob:`` in the
-    middle of it reads as part of it (RFC §6.4, measured in RMK-616 and
-    RMK-635). A line ends at any break :meth:`str.splitlines` knows (``\r``,
-    ``\u2028``, a form feed…), each made a line feed: a model reads a
+    middle of it reads as part of it, no double quote mark in it read as its
+    end (:func:`~roomkit._text.json_text_line`; RFC §6.4, measured in RMK-616
+    and RMK-635). A line ends at any break :meth:`str.splitlines` knows
+    (``\r``, ``\u2028``, a form feed…), each made a line feed: a model reads a
     ``\u2028`` as no break at all, so the label after it would sit mid-line,
     where it guards nothing. A blank line stays blank."""
     lines = text.splitlines()
-    return "\n".join(f"{label}: {json_line(line)}" if line.strip() else line for line in lines)
+    return "\n".join(
+        f"{label}: {json_text_line(line)}" if line.strip() else line for line in lines
+    )
 
 
 def said_by(text: str, speaker: object, limit: int, *, label: str | None = None) -> str:
@@ -229,6 +232,18 @@ def said_by(text: str, speaker: object, limit: int, *, label: str | None = None)
     if isinstance(speaker, str) and _opens_with_label(text, speaker):
         return f"{label or speaker}: {quoted(_without_line_labels(text, speaker), limit)}"
     return quoted(text, limit)
+
+
+def with_said(text: str, speaker: object, change: Callable[[str], str]) -> str:
+    """*text*, a user message's, with *change* applied to what its author
+    wrote: its line labels read back first and placed again after, so that
+    *change* (naming blocks, cutting) never sees a line as a JSON string
+    encodes it. A lead part's bare ``speaker:`` is kept as it is."""
+    if not isinstance(speaker, str) or not _opens_with_label(text, speaker):
+        return change(text)
+    if text.strip() == f"{speaker}:":
+        return text
+    return labelled_lines(change(_without_line_labels(text, speaker)), speaker)
 
 
 def _opens_with_label(text: str, speaker: str) -> bool:
