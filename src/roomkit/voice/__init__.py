@@ -129,6 +129,7 @@ from roomkit.voice.tts.filters import (
     StripBrackets,
     StripEmoji,
     StripInternalTags,
+    StripTechnicalText,
     TTSFilterChain,
     TTSStreamFilter,
 )
@@ -270,6 +271,7 @@ __all__ = [
     "StripEmoji",
     "TTSFilterChain",
     "StripInternalTags",
+    "StripTechnicalText",
     "TTSStreamFilter",
 ]
 

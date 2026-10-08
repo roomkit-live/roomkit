@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator, Iterable
+
+from roomkit.telemetry.redaction import redact
+
+logger = logging.getLogger("roomkit.voice.tts.filters")
 
 
 class TTSStreamFilter(ABC):
@@ -295,6 +300,190 @@ class StripEmoji(TTSStreamFilter):
 
     def flush(self) -> str:
         return ""
+
+
+# ---------------------------------------------------------------------------
+# StripTechnicalText — never read a tool call, a note to self or a separator
+# ---------------------------------------------------------------------------
+
+_TECHNICAL_START = re.compile(r"[{(-]")
+
+_JSON_OPENING = re.compile(r'\{\s*"')
+"""A JSON object as a model writes one: its first key is quoted."""
+
+_JSON_OPENING_SO_FAR = re.compile(r"\{\s*$")
+
+_NOTE_OPENING = re.compile(r"\(\s*(?:note|nb)\s*:", re.IGNORECASE)
+
+_NOTE_OPENING_SO_FAR = re.compile(r"\(\s*(?:n|no|not|note\s*|nb\s*)?$", re.IGNORECASE)
+
+_SEPARATOR_DASHES = 3
+
+
+class StripTechnicalText(TTSStreamFilter):
+    """Strip the technical text a model may write into a spoken reply.
+
+    - **A JSON object**, recognised by its quoted first key (``{"``, spaces
+      allowed): a tool call or a tool result the model wrote as words instead
+      of calling the tool. Nested objects go with it, and a brace inside one
+      of its strings does not end it.
+    - **A note to itself**: ``(Note: ...)`` or ``(NB: ...)``, any case.
+    - **A separator**: three dashes or more.
+
+    Whatever the model, a reply sometimes carries them: gpt-oss wrote its next
+    tool call as text, with a result it made up, or a note for itself. Removing
+    it from the voice does not make the call happen. The text stored in the
+    conversation is left as the model wrote it, so the slip stays visible; it
+    is just not heard. Each JSON object or note removed is logged as a warning
+    (its length; its text at DEBUG, through :func:`~roomkit.telemetry.redaction.redact`).
+
+    A parenthesis, a brace or a dash of ordinary text passes: ``(about ten
+    minutes)``, ``{x}``, ``well-known``, ``--``. A JSON object or a note still
+    open when the stream ends is removed. Reasoning written in plain words
+    ("Need no tool.") is not recognised: no rule tells it from an answer.
+
+    In streaming mode it works on the tokens, before a reply is cut into
+    sentences, so an object holding a sentence's full stop is removed whole.
+    """
+
+    _mode: str
+    """``"json"`` or ``"note"`` while the buffer holds one open, else ``""``."""
+    _depth: int
+    _scanned: int
+    """How much of the open object or note is scanned."""
+    _in_string: bool
+    _escaped: bool
+    _buf: str
+    _trim: bool
+
+    def __init__(self) -> None:
+        self.reset()
+
+    def reset(self) -> None:
+        self._buf = ""
+        self._trim = False  # the spacing after a removal is not emitted
+        self._settle()
+
+    def __call__(self, text: str) -> str:
+        return re.sub(r"  +", " ", super().__call__(text)).strip()
+
+    def feed(self, chunk: str) -> str:
+        self._buf += chunk
+        out: list[str] = []
+        while self._buf and self._step(out, ended=False):
+            pass
+        return "".join(out)
+
+    def flush(self) -> str:
+        out: list[str] = []
+        while self._buf and self._step(out, ended=True):
+            pass
+        if self._mode:
+            self._drop(len(self._buf))  # still open at the end
+        self.reset()
+        return "".join(out)
+
+    def _step(self, out: list[str], *, ended: bool) -> bool:
+        """Move the buffer on by one decision; ``False`` when it needs more text."""
+        if self._mode == "json":
+            return self._close_json()
+        if self._mode == "note":
+            return self._close_note()
+        found = _TECHNICAL_START.search(self._buf)
+        if found is None:
+            self._emit(out, self._buf)
+            self._buf = ""
+            return False
+        self._emit(out, self._buf[: found.start()])
+        self._buf = self._buf[found.start() :]
+        return self._open(out, ended=ended)
+
+    def _open(self, out: list[str], *, ended: bool) -> bool:
+        """Decide what the ``{``, ``(`` or ``-`` the buffer starts with opens."""
+        buf = self._buf
+        if buf[0] == "-":
+            dashes = len(buf) - len(buf.lstrip("-"))
+            if dashes == len(buf) and not ended:
+                return False  # more dashes may come
+            if dashes >= _SEPARATOR_DASHES:
+                self._removed("separator", buf[:dashes])
+                self._trim = True
+            else:
+                self._emit(out, buf[:dashes])
+            self._buf = buf[dashes:]
+            return True
+        opening, so_far, mode = (
+            (_JSON_OPENING, _JSON_OPENING_SO_FAR, "json")
+            if buf[0] == "{"
+            else (_NOTE_OPENING, _NOTE_OPENING_SO_FAR, "note")
+        )
+        if opening.match(buf):
+            self._mode = mode
+            return True
+        if so_far.match(buf) and not ended:
+            return False  # too early to tell
+        self._emit(out, buf[0])
+        self._buf = buf[1:]
+        return True
+
+    def _emit(self, out: list[str], text: str) -> None:
+        """Add plain *text* to what is spoken, without the spacing a removal left."""
+        if self._trim:
+            text = text.lstrip()
+            self._trim = not text
+        out.append(text)
+
+    def _close_json(self) -> bool:
+        """Scan the open object to its closing brace; ``False`` while it is open."""
+        for i in range(self._scanned, len(self._buf)):
+            char = self._buf[i]
+            if self._in_string:
+                if self._escaped:
+                    self._escaped = False
+                elif char == "\\":
+                    self._escaped = True
+                elif char == '"':
+                    self._in_string = False
+            elif char == '"':
+                self._in_string = True
+            elif char in "{}":
+                self._depth += 1 if char == "{" else -1
+                if self._depth == 0:
+                    return self._drop(i + 1)
+        self._scanned = len(self._buf)
+        return False
+
+    def _close_note(self) -> bool:
+        """Scan the open note to its closing parenthesis; ``False`` while it is open."""
+        for i in range(self._scanned, len(self._buf)):
+            if self._buf[i] in "()":
+                self._depth += 1 if self._buf[i] == "(" else -1
+                if self._depth == 0:
+                    return self._drop(i + 1)
+        self._scanned = len(self._buf)
+        return False
+
+    def _drop(self, end: int) -> bool:
+        """Remove the open object or note, which ends at *end*."""
+        self._removed(self._mode, self._buf[:end])
+        self._buf = self._buf[end:]
+        self._settle()
+        self._trim = True
+        return True
+
+    def _settle(self) -> None:
+        """Nothing open any more: the buffer reads as plain text."""
+        self._mode, self._depth, self._scanned = "", 0, 0
+        self._in_string = self._escaped = False
+
+    @staticmethod
+    def _removed(kind: str, text: str) -> None:
+        if kind == "separator":
+            logger.debug("Separator kept out of speech")
+            return
+        what = "JSON object" if kind == "json" else "note"
+        logger.warning("A %s (%d chars) was kept out of speech", what, len(text))
+        logger.debug("Kept out of speech: %s", redact(text))
 
 
 # ---------------------------------------------------------------------------
