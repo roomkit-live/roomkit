@@ -17,8 +17,16 @@ Two request contracts live here, chosen by model family:
 * The 3.1 and 2.5 models have no style field, so a direction can only travel
   inside the prompt. The text goes out as a ``<transcript>`` block under
   instructions that keep the model reciting the transcript rather than the
-  direction; the text cannot close the block, so it can neither cut the
-  transcript short nor open another (RFC §6.4).
+  direction; the text cannot close the block, so it can neither end the
+  transcript nor open another (RFC §6.4, §12.2).
+
+On every model the text itself can steer delivery: an audio tag is performed,
+and so is a sentence such as ``whisper very slowly`` (measured 2026-10-08 on
+``gemini-3.1-flash-tts-preview``, ``gemini-2.5-flash-preview-tts`` and
+``gemini-3.8-flash-tts``, whispered in every run that answered), whatever frame
+holds the text. Text you do not trust has such cues removed before it reaches
+the provider: a ``BEFORE_TTS`` hook where a channel speaks it, the
+application's own cleanup before ``kit.synthesize()`` or a direct call.
 * From 3.8 on, the model reads those instructions aloud (measured 2026-09-27:
   half the runs on ``gemini-3.8-flash-tts``, every run on the Lite model), so
   the text goes out alone and the direction rides as ``speech_metadata``.
@@ -135,15 +143,11 @@ class GeminiTTSConfig:
             of the text's ``speech_metadata``, a field the model takes as
             direction, never as words. The 3.1 and 2.5 models have no such
             field, so there it is written as a labelled ``Delivery direction:``
-            line above the ``Transcript:`` label in the same ``input`` string,
-            which is what keeps the model reciting the transcript instead of
-            the direction; the 3.1 preview can occasionally read it aloud
-            anyway. Every model performs a delivery cue written in the text
-            itself (an audio tag, a sentence such as "whisper this"), whatever
-            frame holds it (measured 2026-10-08, 3.8 included): remove such
-            cues from text you do not trust in a ``BEFORE_TTS`` hook. For cues
-            that steer a word or a phrase rather than the
-            whole utterance, put audio tags inline in the text itself. Google
+            line above the ``<transcript>`` block in the same ``input``
+            string, which is what keeps the model reciting the transcript
+            instead of the direction; the 3.1 preview can occasionally read it
+            aloud anyway. For cues that steer a word or a phrase rather than
+            the whole utterance, put audio tags inline in the text itself. Google
             documents ``<laugh>``, ``<sigh>`` and ``<short pause>`` for 3.8
             and ``[laughs]``, ``[whispers]`` for 3.1; the 3.8 models perform
             both spellings (measured 2026-09-27).
@@ -273,9 +277,13 @@ class GeminiTTSProvider(TTSProvider):
 
     def _build_prompt(self, text: str) -> str:
         """Build an explicit direction/transcript prompt for reliable recitation:
-        the text in a block it cannot close, so a text holding a
-        ``Delivery direction:`` or ``Transcript:`` line of its own neither cuts
-        the transcript short nor fails the request (measured 2026-10-08)."""
+        the text in a block it cannot close, so a ``Delivery direction:`` or
+        ``Transcript:`` line of its own neither ends the transcript nor opens
+        another. Measured 2026-10-08 on such a text: behind a ``Transcript:``
+        label 2.5 spoke only its first sentence in 2 runs of 3, as a block it
+        spoke all of it in 4 of 4; 3.1 answers it with a 400 in some runs with
+        either prompt (1 in 7 before, 3 in 8 as a block), never a text without
+        directions."""
         lines = [
             "Synthesize speech from the transcript below.",
             "Speak only the text inside the transcript block, exactly as written; "
