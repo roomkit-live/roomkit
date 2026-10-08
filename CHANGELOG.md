@@ -11,14 +11,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `VoiceChannel(max_sentences=N)`: at most N sentences spoken per reply
   (RMK-623, RFC §12.2 step 12s.e). Asked to "explain", a model talked for a
-  minute however short its prompt asked it to be. A streamed reply going on
-  past the budget ends at the first sentence over it, as a barge-in ends it:
-  the model stops generating, no tool call starts after that point, and the
-  room keeps the text produced so far, marked `cancelled`, so the next turn
-  does not take for said what nobody heard; the final transcript and
-  `AFTER_TTS` carry the sentences spoken. A reply of exactly N runs to its
-  end, a reply delivered whole is spoken to the budget, a sentence
-  `BEFORE_TTS` drops does not count, and `say()` has no budget. Example:
+  minute however short its prompt asked it to be. Once N sentences are said,
+  a streamed reply that goes on stops at its first word past them, as a
+  barge-in stops it: nothing more is generated, no tool call it would make
+  next starts, and the room keeps the text produced up to there (the N
+  sentences and the start of the next), marked `cancelled`, rather than the
+  whole answer nobody heard; the turn fires no `ON_AI_RESPONSE`, as any turn
+  its reader stopped. The final transcript and `AFTER_TTS` carry the
+  sentences spoken. A reply of exactly N runs to its end, a sentence
+  `BEFORE_TTS` drops does not count, a text delivered whole (a TTS without
+  streamed input, an orchestration farewell) is spoken to the budget, and
+  `say()` has no budget. `ConferenceChannel` has none. Example:
   `examples/voice_sentence_budget.py`.
 
 - `StripTechnicalText`, a TTS text filter that keeps technical text out of the

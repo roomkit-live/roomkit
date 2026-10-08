@@ -1,11 +1,11 @@
 """A voice agent that says at most four sentences per reply.
 
 Asked to "explain", a language model may talk for a minute however short the
-prompt asks it to be. ``VoiceChannel(max_sentences=4)`` caps what is spoken: a
-reply that goes on past four sentences ends at the fifth, as if the person had
-spoken over the agent. The model stops generating, no tool call starts after
-that point, and the room keeps the text produced up to there (marked
-``cancelled``), so the agent's next turn does not take for said what nobody
+prompt asks it to be. ``VoiceChannel(max_sentences=4)`` caps what is spoken:
+once four sentences are said, a reply that goes on stops at its first word past
+them, as if the person had spoken over the agent. The model generates nothing
+more, no tool call it would make next starts, and the room keeps the text
+produced up to there (marked ``cancelled``) rather than the whole answer nobody
 heard.
 
 The user's speech, the model and the TTS are scripted stand-ins, so the example

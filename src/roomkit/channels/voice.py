@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
+from roomkit.channels._tts_sentence_budget import checked_budget
 from roomkit.channels._voice_hooks import VoiceHooksMixin
 from roomkit.channels._voice_pipeline import VoicePipelineMixin
 from roomkit.channels._voice_recording_hooks import VoiceRecordingHooksMixin
@@ -283,11 +284,11 @@ class VoiceChannel(
     because it changes the name every message carries.
 
     ``max_sentences`` caps how long the agent speaks (RFC §12.2 step 12s.e):
-    a streamed reply that goes on past it ends at the first sentence over it,
-    as a barge-in ends it (no further generation, the text produced so far
-    stored, marked cancelled); a reply delivered whole is spoken to the
-    budget. A sentence BEFORE_TTS drops does not count, and :meth:`say` has
-    no budget.
+    once that many sentences are said, a streamed reply that goes on stops at
+    its first word past them, as a barge-in stops it (nothing more generated,
+    no tool call it would make next started, the text produced so far stored,
+    marked cancelled); a text delivered whole is spoken to the budget. A
+    sentence BEFORE_TTS drops does not count, and :meth:`say` has no budget.
     """
 
     channel_type = ChannelType.VOICE
@@ -445,10 +446,8 @@ class VoiceChannel(
         self._voice_map: dict[str, str] = voice_map or {}
         # TTS text filter: strips markers before synthesis
         self._tts_filter = tts_filter
-        if max_sentences is not None and max_sentences < 1:
-            raise ValueError("max_sentences must be at least 1")
         # Sentences spoken per reply at most (RFC §12.2 step 12s.e).
-        self._max_sentences = max_sentences
+        self._max_sentences = checked_budget(max_sentences)
         # Telemetry spans for voice sessions (session_id -> span_id)
         self._voice_session_spans: dict[str, str] = {}
         # Audio frame rate limiting (session_id -> (window_start, count))

@@ -4,13 +4,27 @@ reply ended at the first sentence over it (RMK-623, RFC §12.2 step 12s.e)."""
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncIterator
 from typing import Any
 
 import pytest
 
-from roomkit import HookResult, HookTrigger, RoomKit, VoiceChannel
+from roomkit import AIChannel, HookExecution, HookResult, HookTrigger, RoomKit, VoiceChannel
+from roomkit.models.delivery import InboundMessage
+from roomkit.models.event import TextContent
+from roomkit.providers.ai.base import (
+    AIContext,
+    AIProvider,
+    AIResponse,
+    AITool,
+    StreamDone,
+    StreamEvent,
+    StreamTextDelta,
+    StreamToolCall,
+)
 from roomkit.voice.backends.mock import MockVoiceBackend
 from roomkit.voice.tts.mock import MockTTSProvider
+from tests.test_voice_stream_barge_in import _SentenceTTS, _StoppableBackend
 from tests.voice.streamed_replies import StreamedReply, ask, said, voice_rooms
 
 SIX = [
@@ -42,6 +56,98 @@ async def test_a_reply_past_its_budget_ends_at_the_first_sentence_over_it() -> N
     assert "taxes" not in reply.content.body  # the room keeps about what was heard
     final = [text for _, text, role in backend.sent_transcriptions if role == "assistant"]
     assert final[-1] == heard
+    await kit.close()
+
+
+async def test_a_last_sentence_over_the_budget_ends_the_reply_too() -> None:
+    """Review of RMK-623: a sentence ends only when what follows it comes, and
+    the last one never had anything after it; the reply stops at its first
+    word, so it is cut like any other, and AFTER_TTS reports what was said."""
+    kit, _, backend, tts, [session] = await voice_rooms(SIX, max_sentences=5)
+    after: list[str] = []
+    responses: list[Any] = []
+
+    @kit.hook(HookTrigger.AFTER_TTS, execution=HookExecution.ASYNC)
+    async def spoken(text: str, ctx: Any) -> None:
+        after.append(text)
+
+    @kit.hook(HookTrigger.ON_AI_RESPONSE, execution=HookExecution.ASYNC)
+    async def answered(event: Any, ctx: Any) -> None:
+        responses.append(event)
+
+    await ask(backend, session)
+    [heard] = await said(tts, 1)
+
+    assert heard == "".join(SIX[:5]).strip()
+    assert after == [heard]
+    assert (await _stored(kit, session.room_id)).metadata.get("cancelled") is True
+    assert responses == []  # a turn its reader stopped fires nothing
+    await kit.close()
+
+
+class _BooksAfterTalking(AIProvider):
+    """Says two sentences, a third, then calls ``book_table``."""
+
+    def __init__(self) -> None:
+        self.booked = 0
+        self.rounds = 0
+
+    @property
+    def model_name(self) -> str:
+        return "books-after-talking"
+
+    @property
+    def supports_streaming(self) -> bool:
+        return True
+
+    @property
+    def supports_structured_streaming(self) -> bool:
+        return True
+
+    async def generate(self, context: AIContext) -> AIResponse:
+        return AIResponse(content="unused")
+
+    async def generate_structured_stream(self, context: AIContext) -> AsyncIterator[StreamEvent]:
+        self.rounds += 1
+        if self.rounds > 1:
+            yield StreamTextDelta(text=" Your table is booked.")
+            yield StreamDone(finish_reason="stop")
+            return
+        for text in SIX[:2]:
+            yield StreamTextDelta(text=text)
+        yield StreamTextDelta(text="Let me book that table for you.")
+        yield StreamToolCall(id="t1", name="book_table")
+        yield StreamDone(finish_reason="tool_calls")
+
+    async def book(self, name: str, arguments: dict[str, Any]) -> str:
+        self.booked += 1
+        return "booked"
+
+
+async def test_a_tool_call_after_the_sentence_over_the_budget_never_starts() -> None:
+    """Review of RMK-623: the person heard two sentences; the reply stops before
+    the turn asks for the call announced in the third, which is never made."""
+    backend, model = _StoppableBackend(), _BooksAfterTalking()
+    kit = RoomKit(voice=backend)
+    kit.register_channel(
+        VoiceChannel("voice-1", tts=_SentenceTTS(), backend=backend, max_sentences=2)
+    )
+    book = AITool(name="book_table", description="Book a table.", parameters={"type": "object"})
+    kit.register_channel(AIChannel("ai-0", provider=model, tools=[book], tool_handler=model.book))
+    room = await kit.create_room()
+    await kit.attach_channel(room.id, "voice-1")
+    await kit.attach_channel(room.id, "ai-0")
+    await kit.join(room.id, "voice-1", participant_id="user-0")
+
+    asked = InboundMessage(
+        channel_id="voice-1", sender_id="user-0", content=TextContent(body="Hi")
+    )
+    await asyncio.wait_for(kit.process_inbound(asked, room_id=room.id), 5)
+    await asyncio.sleep(0.2)
+
+    assert (model.booked, model.rounds) == (0, 1)
+    reply = await _stored(kit, room.id)
+    assert reply.metadata.get("cancelled") is True
     await kit.close()
 
 

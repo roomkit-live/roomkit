@@ -71,7 +71,7 @@ async def voice_rooms(
         room = await kit.create_room()
         await kit.attach_channel(room.id, "voice-1")
         await kit.attach_channel(room.id, f"ai-{n}")
-        sessions.append(await kit.connect_voice(room.id, f"user-{n}", "voice-1"))
+        sessions.append(await kit.join(room.id, "voice-1", participant_id=f"user-{n}"))
     return kit, voice, backend, tts, sessions
 
 

@@ -17,6 +17,7 @@ from roomkit.channels._tts_sentence_budget import SentenceBudget, first_sentence
 from roomkit.channels._tts_sentence_gate import SentenceHookGate
 from roomkit.channels._voice_unheard import UnheardTurns
 from roomkit.models.enums import EventType, HookTrigger, Visibility
+from roomkit.models.streaming import SegmentBreakMarker, ToolCallStartMarker
 from roomkit.telemetry.base import Attr, SpanKind, TelemetryProvider
 from roomkit.telemetry.noop import NoopTelemetryProvider
 from roomkit.telemetry.redaction import redact
@@ -435,7 +436,7 @@ class VoiceTTSMixin:
         # The stream is read, filtered and split once, then every session gets
         # its own copy of the sentences: reading it drives persistence upstream,
         # and each session must hear the whole response.
-        sentence_source, gate, budget = self._sentences(text.read(text_stream), room_id, context)
+        sentence_source, gate, budget = self._sentences(text, text_stream, room_id, context)
         fan_out = StreamFanOut(sentence_source, len(target_sessions))
         producer = asyncio.create_task(fan_out.run(), name=f"tts_fan_out:{event.id}")
         voice = self._resolve_voice(event.source.channel_id)
@@ -488,13 +489,19 @@ class VoiceTTSMixin:
         return ChannelOutputModel.empty()
 
     def _sentences(
-        self, tokens: AsyncIterator[str], room_id: str, context: RoomContext
+        self,
+        text: _ResponseText,
+        text_stream: AsyncIterator[Any],
+        room_id: str,
+        context: RoomContext,
     ) -> tuple[AsyncIterator[str], SentenceHookGate | None, SentenceBudget | None]:
-        """The sentences the sessions read from *tokens*: filtered, split, gated,
-        then held to the sentence budget."""
+        """The sentences the sessions read of *text_stream*: filtered, split,
+        gated, then held to the sentence budget, whose reply stops at the first
+        text past it."""
         from roomkit.voice.tts.sentence_splitter import split_sentences
 
-        token_source = tokens
+        budget = SentenceBudget(self._max_sentences) if self._max_sentences else None
+        token_source = text.read(text_stream, said=budget.spent if budget else None)
         if self._tts_filter is not None:
             from roomkit.voice.tts.filters import TTSStreamFilter, filtered_stream
 
@@ -508,7 +515,6 @@ class VoiceTTSMixin:
         gate = self._sentence_gate(room_id, context)
         if gate is not None:
             sentence_source = gate.run(sentence_source)
-        budget = SentenceBudget(self._max_sentences) if self._max_sentences else None
         if budget is not None:
             sentence_source = budget.run(sentence_source)
         return sentence_source, gate, budget
@@ -624,15 +630,15 @@ class VoiceTTSMixin:
         self,
         accumulated: list[str],
         gate: SentenceHookGate | None,
-        budget: SentenceBudget | None = None,
+        budget: SentenceBudget | None,
     ) -> str:
         """The text a streamed response leaves for its transcript and AFTER_TTS.
 
-        What the sessions were sent: the sentences the budget let through when
-        it ended the reply, the sentences as BEFORE_TTS left them when a hook
+        What the sessions were sent: the sentences the budget let through once
+        they are all said, the sentences as BEFORE_TTS left them when a hook
         changed or dropped one, the whole filtered stream otherwise.
         """
-        if budget is not None and budget.cut:
+        if budget is not None and budget.spent():
             return budget.text()
         if gate is not None and gate.changed:
             return gate.text()
@@ -1313,21 +1319,37 @@ class _ResponseText:
         self.accumulated: list[str] = []
         self.failure: Exception | None = None
 
-    async def read(self, text_stream: AsyncIterator[Any]) -> AsyncIterator[str]:
+    async def read(
+        self, text_stream: AsyncIterator[Any], *, said: Callable[[], bool] | None = None
+    ) -> AsyncIterator[str]:
         """Each text delta of *text_stream*, kept as it passes.
 
         A response that fails ends here, its failure kept: the splitter then
         hands on its last partial sentence, so the sessions speak all the
-        text the response produced (RFC §12.2 step 15s).
+        text the response produced (RFC §12.2 step 15s). Once *said* (a
+        sentence budget spent, step 12s.e), reading stops at the next text or
+        tool call: the reply goes on past the budget, and nothing more of it is
+        generated, no call it would make next starts.
         """
         try:
             async for delta in text_stream:
+                if said is not None and _goes_on(delta) and said():
+                    logger.info("Reply stopped past its sentence budget")
+                    return
                 if not isinstance(delta, str):
                     continue
                 self.accumulated.append(delta)
                 yield delta
         except Exception as exc:
             self.failure = exc
+
+
+def _goes_on(delta: Any) -> bool:
+    """Whether a stream item carries the reply on: words, a tool call, or a round
+    the loop goes on to."""
+    if isinstance(delta, str):
+        return bool(delta.strip())
+    return isinstance(delta, ToolCallStartMarker | SegmentBreakMarker)
 
 
 def _served_sessions(sessions: list[VoiceSession], results: list[Any]) -> list[VoiceSession]:
