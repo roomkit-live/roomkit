@@ -35,7 +35,7 @@ from roomkit.orchestration.strategies.supervisor.supervised import (
 )
 from roomkit.providers.ai.base import AITool
 from roomkit.tasks.status import TASK_STATUS_TOOL
-from roomkit.tools.context import current_tool_allowed_names
+from roomkit.tools.context import current_tool_allowed_names, current_tool_requester
 
 if TYPE_CHECKING:
     from roomkit.channels.agent import Agent
@@ -150,7 +150,9 @@ class _StrategyToolServer:
         # does not wait on it. A lock lives while a call holds it.
         self._locks: weakref.WeakValueDictionary[str, asyncio.Lock] = weakref.WeakValueDictionary()
         # Per-room dedup: prevents duplicate calls within the same turn
-        self._dedup_cache: dict[str, tuple[str, float]] = {}  # room_id → (result, timestamp)
+        # room_id → (result, timestamp, who asked): a result names who asked, so
+        # another person's call within the window runs its own (RFC §19.7).
+        self._dedup_cache: dict[str, tuple[str, float, str | None]] = {}
         # Per-room running flag for async_delivery mode — prevents re-dispatch
         # while the background pipeline is still in flight.
         self._running: set[str] = set()
@@ -170,7 +172,8 @@ class _StrategyToolServer:
             lock = self._locks[rid] = asyncio.Lock()
         async with lock:
             cached = self._dedup_cache.get(rid)
-            if cached is not None and (time.monotonic() - cached[1]) < self._DEDUP_WINDOW:
+            fresh = cached is not None and (time.monotonic() - cached[1]) < self._DEDUP_WINDOW
+            if cached is not None and fresh and cached[2] == current_tool_requester():
                 return cached[0]
             if self._async_delivery:
                 return self._dispatch(rid, task_desc)
@@ -293,7 +296,9 @@ class _StrategyToolServer:
         """Serve *response* again to a repeat in *rid* within the dedup window,
         and evict expired entries to prevent unbounded growth."""
         now = time.monotonic()
-        self._dedup_cache[rid] = (response, now)
-        stale = [k for k, (_, ts) in self._dedup_cache.items() if now - ts >= self._DEDUP_WINDOW]
+        self._dedup_cache[rid] = (response, now, current_tool_requester())
+        stale = [
+            k for k, (_, ts, _) in self._dedup_cache.items() if now - ts >= self._DEDUP_WINDOW
+        ]
         for k in stale:
             del self._dedup_cache[k]

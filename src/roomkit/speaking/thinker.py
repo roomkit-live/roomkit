@@ -163,10 +163,13 @@ def transcript_line(message: AIMessage) -> str:
         return ""
     if message.role == "assistant":
         return f"You: {quoted(text, LINE_LIMIT)}"
-    # A summary joined ahead of the turn is quoted apart, so the turn's label
+    speaker = message.metadata.get(SPEAKER_KEY)
+    if speaker is None:
+        return _said_by(text, speaker)
+    # A summary joined ahead of a labelled turn is quoted apart, so the label
     # opens its own line, out of the quote (RFC §6.4).
     lead, own = split_leading_text(message, text)
-    said = _said_by(own, message.metadata.get(SPEAKER_KEY)) if own else ""
+    said = _said_by(own, speaker) if own else ""
     return "\n".join(line for line in (quoted(lead, LINE_LIMIT) if lead else "", said) if line)
 
 

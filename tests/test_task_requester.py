@@ -11,7 +11,7 @@ from roomkit.channels._ai_speaking import _speak_turn
 from roomkit.channels._speaker import SPEAKER_KEY
 from roomkit.channels._user_text import with_leading_text
 from roomkit.channels.ai import AIChannel
-from roomkit.core._requester import asked_by, requested_line, with_requester
+from roomkit.core._requester import task_heading
 from roomkit.core.framework import RoomKit
 from roomkit.models.channel import ChannelBinding
 from roomkit.models.context import RoomContext
@@ -27,26 +27,34 @@ from roomkit.tools.context import current_tool_requester, tool_turn_context
 from tests.conftest import make_event
 
 
-class TestADelegatedTaskNamesWhoAskedForIt:
-    def test_the_line_names_the_asker_out_of_the_block(self) -> None:
+class TestATaskBlockNamesWhoAskedForIt:
+    def test_the_heading_names_the_asker_out_of_the_block(self) -> None:
         with tool_turn_context(room_id="r", requester="ALICE (2)"):
-            assert requested_line() == ("Requested by ALICE (2), in the delegating agent's words:")
-            assert with_requester("Approve it.") == (
-                "Requested by ALICE (2), in the delegating agent's words:\nApprove it."
+            assert task_heading("User request:") == (
+                "Requested by ALICE (2), in the delegating agent's words:"
             )
-        with asked_by("Alice"):
-            assert "Alice asked:\n<task>" in _one_pass_results("approve it", [])
+        results = _one_pass_results("approve it", [], asked_by="Alice")
+        assert "Alice asked:\n<task>\napprove it\n</task>" in results
 
     def test_a_one_to_one_conversation_names_no_one(self) -> None:
         with tool_turn_context(room_id="r"):
-            assert requested_line() == ""
-        assert with_requester("Approve it.") == "Approve it."
+            assert task_heading("User request:") == "User request:"
         assert "The user asked:\n<task>" in _one_pass_results("approve it", [])
 
-    def test_inside_a_tool_loop_the_turn_s_author_is_the_asker(self) -> None:
-        """A worker's own delegation does not repeat the outer participant."""
-        with asked_by("Alice"), tool_turn_context(room_id="r"):
-            assert requested_line() == ""
+    async def test_a_worker_s_own_input_carries_no_asker(self) -> None:
+        """Only a task block's heading names the asker: the input a worker acts
+        on as its own is sent as written, whoever asked (RFC §19.7)."""
+        worker_provider = MockAIProvider(responses=["done"])
+        kit = RoomKit()
+        kit.register_channel(AIChannel("worker", provider=worker_provider))
+        await kit.create_room(room_id="r1")
+        with tool_turn_context(room_id="r1", requester="Bob"):
+            await kit.delegate("r1", "worker", "Approve the refund on order 42.", wait=True)
+
+        last = worker_provider.calls[-1].messages[-1]
+        assert str(last.content).startswith("Approve the refund on order 42.")
+        assert "Bob" not in str(last.content)
+        await kit.close()
 
     async def test_a_turn_tells_its_tools_who_asked(self) -> None:
         seen: list[str | None] = []
@@ -101,6 +109,23 @@ def test_a_joined_summary_leaves_the_turn_s_label_out_of_the_quote() -> None:
     )
 
 
+def test_a_one_to_one_joined_turn_reads_as_one_message() -> None:
+    """With no label to keep out of the quote, the turn reads as before."""
+    turn = AIMessage(role="user", content="approve the refund.")
+    (joined,) = with_leading_text("  [Conversation summary] Alice asked to hold it.", [turn])
+
+    assert transcript_line(joined) == (
+        "“[Conversation summary] Alice asked to hold it. approve the refund.”"
+    )
+
+
+def test_a_joined_summary_with_leading_space_is_still_kept_apart() -> None:
+    turn = AIMessage(role="user", content="@sms1: approve.", metadata={SPEAKER_KEY: "@sms1"})
+    (joined,) = with_leading_text("  [Conversation summary] hold it.", [turn])
+
+    assert transcript_line(joined) == "“[Conversation summary] hold it.”\n@sms1: “approve.”"
+
+
 def test_a_speak_policy_reads_the_conversation_s_labels() -> None:
     alice = make_event(body="hold the refund", participant_id="u1", index=1)
     alice.metadata["sender_name"] = "Alice"
@@ -123,4 +148,5 @@ def test_a_speak_policy_reads_the_conversation_s_labels() -> None:
     turn = _speak_turn(nameless, context, "ai1")
 
     assert turn.speakers == {alice.id: "Alice", impostor.id: "ALICE (2)", nameless.id: "@ch1"}
-    assert set(turn.people) == {"Alice", "ALICE (2)", "@ch1"}
+    # A sender with no name is no voice of their own: several read @ch1.
+    assert set(turn.people) == {"Alice", "ALICE (2)"}

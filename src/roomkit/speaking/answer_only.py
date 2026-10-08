@@ -13,6 +13,7 @@ from collections.abc import Iterable
 from dataclasses import replace
 
 from roomkit._text import person_name
+from roomkit.channels._speaker import label_name
 from roomkit.speaking.base import SpeakDecision, SpeakPolicy, SpeakTurn
 
 LISTENED_TO = "only listened to"
@@ -20,10 +21,11 @@ LISTENED_TO = "only listened to"
 
 
 def _key(name: str) -> str:
-    """*name* as compared: kept to a name's characters, on one line, as the
-    room keeps a speaker's (so a configured name matches the one the room
+    """*name* as compared: the name a speaker's label gives, without its rank
+    (``ALICE (2)`` is ``ALICE``), kept to a name's characters, on one line, as
+    the room keeps a speaker's (so a configured name matches the one the room
     gives), then ignoring case."""
-    return person_name(name).casefold()
+    return person_name(label_name(name)).casefold()
 
 
 class AnswerOnly(SpeakPolicy):
@@ -37,11 +39,12 @@ class AnswerOnly(SpeakPolicy):
     only listened to does not turn a conversation with one person into a group
     one.
 
-    A speaker is matched by the label the room gives them (``SpeakTurn.speakers``:
-    the sender's name, ranked when it reads like an earlier source's, so a
-    sender writing ``ALICE`` after Alice reads ``ALICE (2)`` and is not
-    Alice), ignoring case and spacing. It chooses whom the agent answers; it
-    is not an access control, since a participant may take any display name.
+    A speaker is matched by the name the room gives them (``SpeakTurn.speakers``,
+    without the rank a look-alike name carries: ``ALICE (2)`` is matched as
+    ``ALICE``), ignoring case and spacing, so the person named is never
+    silenced by a sender who took their name first. It chooses whom the agent
+    answers; it is not an access control, since a participant may take any
+    display name.
 
     Args:
         policy: Decides on the turns of the people answered.

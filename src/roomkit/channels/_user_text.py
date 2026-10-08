@@ -54,6 +54,8 @@ def split_leading_text(message: AIMessage, text: str) -> tuple[str, str]:
     runtime joined ahead of it and the message's own; ``("", text)`` when it
     holds none."""
     lead = message.metadata.get(LEADING_TEXT)
-    if isinstance(lead, str) and lead and text.startswith(lead):
-        return lead, text[len(lead) :].strip()
+    lead = lead.strip() if isinstance(lead, str) else ""
+    body = text.lstrip()
+    if lead and body.startswith(lead):
+        return lead, body[len(lead) :].strip()
     return "", text

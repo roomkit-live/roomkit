@@ -1,18 +1,17 @@
-"""Who asked for the work a turn delegates (RFC §6.4, §19.7).
+"""Who asked for the task a strategy hands a model (RFC §6.4, §19.7).
 
-When several people speak in the room, a delegated task names out of its block
-who asked for it, by the label the conversation gives them. In a tool the
-delegating agent called, the task is that agent's wording and the asker the
-author of the turn it answers (:func:`~roomkit.tools.current_tool_requester`);
-where a strategy hands a participant's own words to its workers, the strategy
-names their author (:func:`asked_by`). A one-to-one conversation names no one.
+When several people speak in the room, the user's task a strategy copies into
+a model's input as a ``<task>`` block is headed by who asked for it, by the
+label the conversation gives them: ``Alice asked:`` before a participant's own
+words, named by the strategy that hands them on (:func:`asking_label`);
+``Requested by Alice (2), in the delegating agent's words:`` before a task an
+agent wrote in a tool call (:func:`~roomkit.tools.current_tool_requester`).
+Only the block's heading names the asker: the runtime's own prompts and the
+input a worker acts on as its own carry none. A one-to-one conversation names
+no one.
 """
 
 from __future__ import annotations
-
-from collections.abc import Iterator
-from contextlib import contextmanager
-from contextvars import ContextVar
 
 from roomkit.channels._speaker import several_speakers, turn_labels
 from roomkit.core.visibility import visible_events
@@ -20,9 +19,8 @@ from roomkit.memory.token_estimator import extract_event_text
 from roomkit.models.context import RoomContext
 from roomkit.models.enums import EventType
 from roomkit.models.event import RoomEvent
-from roomkit.tools.context import _current_loop_ctx, current_tool_requester
+from roomkit.tools.context import current_tool_requester
 
-_ASKED_BY: ContextVar[str | None] = ContextVar("roomkit_asked_by", default=None)
 _NOT_TURNS = frozenset({EventType.TOOL_CALL_START, EventType.TOOL_CALL_END})
 
 
@@ -47,37 +45,12 @@ def _a_turn(event: RoomEvent) -> bool:
     return bool(extract_event_text(event).strip())
 
 
-@contextmanager
-def asked_by(label: str | None) -> Iterator[None]:
-    """Run a delegation that hands *label*'s own words to its workers
-    (``None`` in a one-to-one conversation)."""
-    token = _ASKED_BY.set(label)
-    try:
-        yield
-    finally:
-        _ASKED_BY.reset(token)
-
-
-def requested_line() -> str:
-    """The line a delegated task opens with, out of its block: who asked for
-    it, ``Alice asked:`` for their own words, ``Requested by Alice (2), in the
-    delegating agent's words:`` for a task an agent wrote; ``""`` when no one
-    is named. Inside a tool loop the turn's author is the asker, whatever a
-    delegation around it named."""
-    if _current_loop_ctx.get() is not None:
-        label = current_tool_requester()
-        return f"Requested by {label}, in the delegating agent's words:" if label else ""
-    label = _ASKED_BY.get()
-    return f"{label} asked:" if label else ""
-
-
-def task_heading(default: str) -> str:
-    """The heading of a block holding the user's task: who asked for it when
-    someone is named, else *default* (``User request:``)."""
-    return requested_line() or default
-
-
-def with_requester(task: str) -> str:
-    """*task*, a model's own input, after the line that names who asked."""
-    line = requested_line()
-    return f"{line}\n{task}" if line else task
+def task_heading(default: str, *, asked_by: str | None = None) -> str:
+    """The heading of a ``<task>`` block holding the user's task: *asked_by*'s
+    label for a participant's own words, else who asked for the task the
+    delegating agent wrote in this tool call, else *default*
+    (``User request:``) when no one is named."""
+    if asked_by:
+        return f"{asked_by} asked:"
+    label = current_tool_requester()
+    return f"Requested by {label}, in the delegating agent's words:" if label else default

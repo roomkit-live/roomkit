@@ -73,11 +73,13 @@ def _said(message: AIMessage) -> str:
     """What the summary quotes of *message*: its text, cut short and quoted on
     one line after the name the context gave its speaker (RFC §6.4), a
     delimited block named rather than quoted."""
+    speaker = message.metadata.get(SPEAKER_KEY) if message.role == "user" else None
     parts = message.content if isinstance(message.content, list) else None
     lead, text = "", message.content if isinstance(message.content, str) else ""
     if parts is not None:
         first = parts[0] if parts else None
-        if isinstance(first, AITextPart) and first.text == message.metadata.get(LEADING_TEXT):
+        joined_ahead = message.metadata.get(LEADING_TEXT)
+        if speaker is not None and isinstance(first, AITextPart) and first.text == joined_ahead:
             lead, parts = first.text, parts[1:]
         text = " ".join(
             named_blocks(part.text)[:_SUMMARY_PART_CHARS]
@@ -85,12 +87,11 @@ def _said(message: AIMessage) -> str:
             else f"[{part.type}]"
             for part in parts
         )
-    elif message.role == "user":
+    elif speaker is not None:
         lead, text = split_leading_text(message, text)
-    speaker = message.metadata.get(SPEAKER_KEY) if message.role == "user" else None
     said = said_by(named_blocks(text), speaker, _SUMMARY_MESSAGE_CHARS)
-    # A summary joined ahead of the turn is quoted apart, so the turn's label
-    # stays out of the quote (RFC §6.4).
+    # A summary joined ahead of a labelled turn is quoted apart, so the label
+    # stays out of the quote (RFC §6.4); an unlabelled turn reads as one.
     return f"{quoted(named_blocks(lead), _SUMMARY_MESSAGE_CHARS)}\n{said}" if lead else said
 
 

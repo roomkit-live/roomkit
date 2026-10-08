@@ -9,6 +9,7 @@ names a person for a human reader, with their channel (:func:`speaker_label`).
 from __future__ import annotations
 
 import functools
+import re
 from collections.abc import Callable, Iterable
 
 from roomkit._lookalike import skeletons
@@ -169,6 +170,17 @@ def _agent_labels() -> frozenset[str]:
         | skeletons("assistant")
         | skeletons("user")
     )
+
+
+_LABEL_TAIL = re.compile(r"(?: \(a participant\))?(?: \(\d+\))?(?: \(a participant\))?$")
+
+
+def label_name(label: str) -> str:
+    """The name a label (:func:`turn_labels`) gives, without the rank a
+    look-alike name carries nor the ``(a participant)`` an agent-like name
+    does: ``ALICE (2)`` gives ``ALICE``. No name holds a parenthesis
+    (:func:`~roomkit._text.person_name`), so the tail is the runtime's."""
+    return _LABEL_TAIL.sub("", label)
 
 
 def participant_name(participant: Participant) -> str:

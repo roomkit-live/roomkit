@@ -49,6 +49,7 @@ from roomkit.orchestration.strategies.supervisor.supervised import _supervisor_r
 from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.tasks.handback import RESULT_TURN_NOTE
 from roomkit.tasks.models import DelegatedTaskResult
+from roomkit.tools.context import tool_turn_context
 from tests.tool_room import room_tool_names, tool_call_in
 
 # -- Helpers ------------------------------------------------------------------
@@ -606,6 +607,25 @@ class TestStrategyToolHandler:
         # (the first run made several: each worker + its supervisor review).
         assert calls_after_first > 0
         assert kit.delegate.call_count == calls_after_first
+
+    async def test_strategy_tool_dedup_serves_only_the_same_asker(self) -> None:
+        """A result names who asked: another person's call within the window
+        runs its own (RMK-615, RFC §19.7)."""
+        boss = _make_agent("boss")
+        kit = _make_mock_kit(Room(id="r1"))
+        kit.delegate = AsyncMock(return_value=_delegated_task_with_output("result"))
+        s = Supervisor(supervisor=boss, workers=[_make_agent("w1")], strategy="sequential")
+        await s.install(kit, "r1")
+
+        with tool_turn_context(room_id="r1", requester="Alice"):
+            first = await boss._channel_tool_handler("delegate_workers", {"task": "analyze"})
+        calls_after_first = kit.delegate.call_count
+        with tool_turn_context(room_id="r1", requester="Bob"):
+            second = await boss._channel_tool_handler("delegate_workers", {"task": "analyze"})
+
+        assert "Requested by Alice, in the delegating agent's words:" in first
+        assert "Requested by Bob, in the delegating agent's words:" in second
+        assert kit.delegate.call_count > calls_after_first
 
 
 # -- Tests: _run_workers ------------------------------------------------------

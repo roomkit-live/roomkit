@@ -9,7 +9,7 @@ import time
 from typing import TYPE_CHECKING
 
 from roomkit.channels._ai_cuts import cut_records, cut_reply
-from roomkit.channels._speaker import participant_name, turn_labels
+from roomkit.channels._speaker import author_name, participant_name, turn_labels
 from roomkit.core.visibility import visible_events
 from roomkit.models.enums import ChannelType, EventType, ParticipantRole, ParticipantStatus
 from roomkit.models.event import is_tool_call_record
@@ -170,6 +170,9 @@ def _people(
             if e.source.channel_id != channel_id
             and e.source.channel_type != ChannelType.AI
             and e.id in speakers
+            # A sender with no name is no voice of their own: several on one
+            # channel read alike (@sms1).
+            and author_name(e, context) is not None
         )
     )
     return voices if len(voices) > len(participants) else participants

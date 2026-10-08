@@ -15,7 +15,7 @@ from uuid import uuid4
 
 from roomkit.core._failure_log import mark_reported
 from roomkit.core._fallback import FALLBACK_FAILED
-from roomkit.core._requester import asked_by, asking_label, task_heading
+from roomkit.core._requester import asking_label, task_heading
 from roomkit.core.event_router import StreamingResponse, stream_record
 from roomkit.core.mixins._child_execution import persist_tool_calls
 from roomkit.models.channel import ChannelBinding, ChannelOutput
@@ -179,11 +179,13 @@ def _outcome_text(worker_results: list[dict[str, Any]] | None) -> str:
     return workers_text(header, _format_worker_results(each_bounded))
 
 
-def _one_pass_results(user_message: str, worker_results: list[dict[str, Any]]) -> str:
+def _one_pass_results(
+    user_message: str, worker_results: list[dict[str, Any]], *, asked_by: str | None = None
+) -> str:
     """What the supervisor presents from in one pass: the user's message as a
     ``<task>`` block, then each worker's output as a block of its own."""
     return (
-        f"{task_heading('The user asked:')}\n{fence('task', user_message)}\n\n"
+        f"{task_heading('The user asked:', asked_by=asked_by)}\n{fence('task', user_message)}\n\n"
         f"{_present_worker_results(worker_results)}"
     )
 
@@ -482,21 +484,22 @@ async def _one_pass_delegate(
     if not user_message:
         return await original_on_event(event, binding, context)
 
-    # Run workers with the raw user message — supervised between steps in
-    # sequential — naming its author when several people speak (RFC §19.7).
-    with asked_by(asking_label(event, context, supervisor.channel_id)):
-        worker_results = await _run_workers(
-            kit,
-            room_id,
-            strategy,
-            workers,
-            user_message,
-            supervisor=supervisor,
-            max_revisions=max_revisions,
-            share_channels=share_channels,
-            task_timeout=task_timeout,
-        )
-        results = _one_pass_results(user_message, worker_results)
+    # Run workers with the raw user message — supervised between steps in sequential.
+    worker_results = await _run_workers(
+        kit,
+        room_id,
+        strategy,
+        workers,
+        user_message,
+        supervisor=supervisor,
+        max_revisions=max_revisions,
+        share_channels=share_channels,
+        task_timeout=task_timeout,
+    )
+    # The supervisor reads the request under its author's label when several
+    # people speak (RFC §19.7).
+    asker = asking_label(event, context, supervisor.channel_id)
+    results = _one_pass_results(user_message, worker_results, asked_by=asker)
 
     # Inject results into context and let supervisor present
     results_event = _results_event(event, results)
