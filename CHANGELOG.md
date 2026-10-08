@@ -675,6 +675,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is still one append, and a block whose body is one long line (a JSON tool
   result, a URL) is cut inside it. A delegation's output, the agent's own
   answer, and a reconfigured prompt are split as before.
+- A text from outside can no longer leave a fenced block by a closing tag
+  spelled another way, and the helpers hold on any text (RMK-590, RFC §6.4,
+  a security review). `fence()` neutralised a closing tag only up to its `>`:
+  `</tool_result` with no bracket after it stayed, and everything up to the
+  next `>` was deleted. It now neutralises where a closing tag starts
+  (`</tool_result` made `</tool_result_`, what follows kept), compared under
+  NFKC and case folding (`＜／ｔｏｏｌ＿ｒｅｓｕｌｔ＞`, mathematical letters),
+  with control characters and lone surrogates a provider strips (Gemini
+  Live's sanitiser turned `</tool\x00_result>` into a real closing tag after
+  the fence), with several slashes or an escaped one (`<\/tool_result>`), with
+  bracket and slash look-alikes, combining marks or a braille blank in the
+  gap; an opening tag of the block's name is neutralised too. `quoted()`
+  drops bidirectional controls and folds more double-quote look-alikes;
+  a person's name drops letters that read as a colon or a quote (`ː`, `ꓽ`),
+  and the thinker names a participant called `You` as a participant and
+  escapes the line separators of its previous thought. The GPT-Live
+  splitter reads a bounded window per cut (1.6 MB went from 11.5 s, on the
+  event loop, to 0.2 s), takes lone surrogates, and keeps a block closed when
+  its own opening sits at a cut; Gemini closes a frame its 32 000-character
+  cut leaves open.
 - A closing tag with an invisible character in it (a zero-width space, a
   direction mark or bidirectional isolate, a variation selector, a tag
   character, a Hangul filler: any character Unicode marks as ignorable by

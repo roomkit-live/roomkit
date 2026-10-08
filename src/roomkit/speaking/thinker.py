@@ -135,7 +135,7 @@ def thinker_input(previous: Thought, messages: list[AIMessage]) -> str:
     what was just said. The previous thought comes first: read last, it was
     copied back, one thought held for two minutes."""
     lines = [
-        f"Your previous thought: {json.dumps(previous.as_state(), ensure_ascii=False)}",
+        f"Your previous thought: {_one_line_json(previous.as_state())}",
         "The conversation, up to what was just said:",
     ]
     lines += [line for m in messages if (line := transcript_line(m))]
@@ -167,8 +167,20 @@ def transcript_line(message: AIMessage) -> str:
 def _said_by(text: str, speaker: Any) -> str:
     """A user message's *text* quoted, after its *speaker*'s name when the
     context named one: the name the context gave, out of the quote, so that a
-    person who writes ``Name:`` is not read as someone else."""
+    person who writes ``Name:`` is not read as someone else, and a person named
+    ``You`` is not read as the agent."""
     prefix = f"{speaker}: "
     if isinstance(speaker, str) and text.startswith(prefix):
-        return f"{speaker}: {quoted(text[len(prefix) :], LINE_LIMIT)}"
+        name = f"{speaker} (a participant)" if speaker.casefold() == "you" else speaker
+        return f"{name}: {quoted(text[len(prefix) :], LINE_LIMIT)}"
     return quoted(text, LINE_LIMIT)
+
+
+def _one_line_json(value: Any) -> str:
+    """*value* as JSON on one line: the line and paragraph separators a JSON
+    string keeps raw are escaped, or a model's text would start a line."""
+    return (
+        json.dumps(value, ensure_ascii=False)
+        .replace("\u2028", "\\u2028")
+        .replace("\u2029", "\\u2029")
+    )

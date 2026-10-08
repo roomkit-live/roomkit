@@ -322,9 +322,35 @@ def token_count(text: str, tok: Tokenizer | None = None) -> int:
     return len((tok or _tokenizer or BYTES).encode(text))
 
 
+def _window(text: str, token_limit: int, tok: Tokenizer) -> tuple[str, list[int]]:
+    """The shortest prefix of *text* that holds more than *token_limit* tokens,
+    or *text* whole, with its tokens: what a cut reads, without encoding the
+    rest of a long text at every cut (the prefix doubles from four characters
+    a token)."""
+    span = token_limit * 4
+    while True:
+        window = text[:span]
+        tokens = tok.encode(window)
+        if len(tokens) > token_limit or len(window) == len(text):
+            return window, tokens
+        span *= 2
+
+
+def _fits(text: str, token_limit: int, tok: Tokenizer) -> bool:
+    """Whether *text* is one append within *token_limit*."""
+    window, tokens = _window(text, token_limit, tok)
+    return len(window) == len(text) and len(tokens) <= token_limit
+
+
+def _sendable(text: str) -> str:
+    """*text* as UTF-8 can carry it: a lone surrogate, which no encoding sends,
+    made a replacement character."""
+    return text.encode("utf-8", "surrogatepass").decode("utf-8", "replace")
+
+
 def _split_at_token_limit(text: str, token_limit: int, tok: Tokenizer) -> tuple[str, str]:
     """Take the longest prefix within ``token_limit``, preferring a sentence or space boundary."""
-    tokens = tok.encode(text)
+    window, tokens = _window(text, token_limit, tok)
     if len(tokens) <= token_limit:
         return text, ""
     # The first ``token_limit`` tokens spell a byte prefix of the text; a
@@ -363,7 +389,7 @@ def chunk_text(
     if token_limit <= 0:
         raise ValueError("token_limit must be positive")
     tok = tok or _tokenizer or BYTES
-    text = text.strip()
+    text = _sendable(text).strip()
     chunks: list[str] = []
     while text:
         head, text = _split_at_token_limit(text, token_limit, tok)
@@ -389,10 +415,10 @@ def chunk_framed_text(
     if token_limit <= 2 * _FRAME_RESERVE:
         raise ValueError("token_limit leaves no room for a frame")
     tok = tok or _tokenizer or BYTES
-    text, opening = text.strip(), ""
+    text, opening = _sendable(text).strip(), ""
     chunks: list[str] = []
     while text:
-        if len(tok.encode(opening + text)) <= token_limit:
+        if _fits(opening + text, token_limit, tok):
             chunks.append(opening + text)
             break
         opening = _affordable(opening, token_limit, tok)
@@ -424,6 +450,6 @@ def _close_at_cut(piece: str, rest: str) -> tuple[str, str, str]:
     piece, rest = piece.rstrip(), rest.lstrip()
     if rest.startswith(closing.strip()):
         return piece + closing, "", rest[len(closing.strip()) :].lstrip()
-    if piece.endswith(opening.strip()):
+    if piece.endswith(opening.strip()) and open_frame(piece[: -len(opening.strip())])[0] == "":
         return piece[: -len(opening.strip())].rstrip(), opening, rest
     return piece + closing, opening, rest

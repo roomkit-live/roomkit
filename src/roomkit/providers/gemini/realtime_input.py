@@ -12,7 +12,7 @@ import re
 from collections.abc import Callable
 from typing import Any
 
-from roomkit._text import fence
+from roomkit._text import fence, open_frame
 from roomkit.providers.gemini.realtime_config import genai_types
 from roomkit.providers.gemini.realtime_state import _GeminiSessionState
 from roomkit.voice.base import VoiceSession, VoiceSessionState
@@ -37,7 +37,9 @@ def _sanitize_gemini_text(text: str) -> str:
     text = _CONTROL_CHAR_RE.sub("", text)
     text = text.encode("utf-8", errors="surrogatepass").decode("utf-8", errors="ignore")
     if len(text) > _MAX_INJECT_TEXT_LENGTH:
-        text = text[:_MAX_INJECT_TEXT_LENGTH] + "... [truncated]"
+        cut = text[:_MAX_INJECT_TEXT_LENGTH]
+        # A frame the cut leaves open is closed after it (RFC §6.4).
+        text = cut + "... [truncated]" + open_frame(cut)[0]
     return text
 
 

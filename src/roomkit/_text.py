@@ -10,6 +10,7 @@ an :func:`identifier`, a value :func:`one_of` a known set, a number, or a
 
 from __future__ import annotations
 
+import functools
 import re
 import unicodedata
 from collections.abc import Collection
@@ -35,12 +36,16 @@ INVISIBLE = (
     "\u00ad\u034f\u061c\u115f\u1160\u17b4\u17b5\u180b-\u180f\u200b-\u200f"
     "\u202a-\u202e\u2060-\u206f\u3164\ufe00-\ufe0f\ufeff\uffa0\ufff0-\ufff8"
     "\U0001bca0-\U0001bca3\U0001d173-\U0001d17a\U000e0000-\U000e0fff"
+    "\x00-\x08\x0e-\x1f\x7f-\x9f\ud800-\udfff"
 )
-"""The characters Unicode marks as ignorable by default (Default_Ignorable_Code_Point),
-as the body of a regular expression's class: soft hyphen, zero-width spaces and
-joiners, direction marks, bidirectional embeddings, overrides and isolates,
-variation selectors, tag characters and the like. A text holds them without
-showing them, and a model reads past them."""
+"""The characters a text holds without showing them, as the body of a regular
+expression's class: those Unicode marks as ignorable by default
+(Default_Ignorable_Code_Point: soft hyphen, zero-width spaces and joiners,
+direction marks, bidirectional embeddings, overrides and isolates, variation
+selectors, tag characters and the like), and the control characters other than
+whitespace and the lone surrogates a provider may strip before it sends a
+text. A model reads past them, and a stripped one leaves its neighbours
+side by side."""
 
 
 def one_line(text: Any) -> str:
@@ -68,39 +73,79 @@ realtime provider adds to its prompt, the goal or task an orchestration
 strategy copies into another model's prompt, and what a vision provider saw."""
 
 
-_OPEN = "<\uff1c\ufe64"
-_SLASH = "/\uff0f"
-_CLOSE = ">\uff1e\ufe65"
-"""A tag's angle brackets and slash as a model reads them: the ASCII ones, and
-their fullwidth and small forms (``＜／tool_result＞``)."""
+_OPEN = "<\u02c2\u2039\u2329\u27e8\u3008"
+_SLASH = "/\u2044\u2215"
+_CLOSE = ">\u02c3\u203a\u232a\u27e9\u3009"
+"""A tag's angle brackets and slash as a model reads them beyond what NFKC
+folds onto them (fullwidth and small forms, see :func:`_lookalikes`): their
+modifier, quotation, angle and mathematical look-alikes."""
 
-_GAP = rf"[\s{INVISIBLE}]*"
-_TAG_END = re.compile(f"[{_CLOSE}]")
+_GAP = rf"[\s{INVISIBLE}\u0300-\u036f\u2800\ufff9-\ufffb]*"
+"""Room between a tag's brackets, slash and name: spacing, the invisible
+characters, combining marks, a braille blank, interlinear annotation marks."""
+
+
+@functools.cache
+def _lookalikes() -> dict[str, str]:
+    """Each lowercase ASCII letter, digit, underscore, bracket and slash, with
+    every character NFKC folds onto it under case folding (fullwidth,
+    mathematical, circled, small forms: ``ｔ``, ``𝐭``, ``ⓣ``, ``＜``), as the body
+    of a regular expression's class. Read once, on first use."""
+    found = {char: [re.escape(char)] for char in "abcdefghijklmnopqrstuvwxyz0123456789_<>/"}
+    for code in range(0x80, 0x110000):
+        if 0xD800 <= code <= 0xDFFF:
+            continue
+        folded = unicodedata.normalize("NFKC", chr(code)).casefold()
+        if folded in found:
+            found[folded].append(re.escape(chr(code)))
+    return {char: "".join(forms) for char, forms in found.items()}
+
+
+def _class(char: str, more: str = "") -> str:
+    """A regular expression class of *char* as a model reads it."""
+    return f"[{_lookalikes()[char]}{re.escape(more)}]"
 
 
 def _tag_name(tag: str, *, exact: bool = False) -> str:
-    """*tag*'s name as a model reads it: any invisible character between its
-    letters, and no letter, digit or underscore of a longer name after it. A
-    hyphen, a dot or any other mark ends it: read as a closing tag, such a
-    name closes the block for a model, so a closing tag errs toward one.
-    *exact*, for an opening tag, which names a block only as written, ends
-    the name at a space, an invisible character, a slash or the bracket
-    (``<task-list>`` is another tag). The end is read without consuming
-    anything."""
-    letters = f"[{INVISIBLE}]*".join(map(re.escape, tag))
+    """*tag*'s name as a model reads it: each letter in any of its forms (case,
+    NFKC look-alikes), any invisible character between them, and no letter,
+    digit or underscore of a longer name after it. A hyphen, a dot or any
+    other mark ends it: read as a closing tag, such a name closes the block
+    for a model, so a closing tag errs toward one. *exact*, for an opening
+    tag, which names a block only as written: the name as written, ended by a
+    space, an invisible character, a slash or the bracket (``<task-list>`` is
+    another tag). The end is read without consuming anything."""
     if exact:
-        return letters + rf"(?=[\s{INVISIBLE}{_SLASH}{_CLOSE}])"
+        letters = f"[{INVISIBLE}]*".join(map(re.escape, tag))
+        return letters + rf"(?=[\s{INVISIBLE}/>])"
+    letters = f"[{INVISIBLE}]*".join(_class(char) for char in tag)
     return letters + "(?![A-Za-z0-9_])"
 
 
+@functools.cache
 def _closing_tag(tag: str) -> re.Pattern[str]:
-    """Where a closing tag of *tag* starts, as a model reads it."""
-    return re.compile(f"[{_OPEN}]{_GAP}[{_SLASH}]{_GAP}{_tag_name(tag)}", re.IGNORECASE)
+    """Where a closing tag of *tag* starts, as a model reads it: a bracket, one
+    slash or more (an escaped one included, ``<\\/``), the name."""
+    slashes = rf"(?:\\?{_class('/', _SLASH)}{_GAP})+"
+    return re.compile(f"{_class('<', _OPEN)}{_GAP}{slashes}{_tag_name(tag)}", re.IGNORECASE)
 
 
+@functools.cache
+def _loose_opening_tag(tag: str) -> re.Pattern[str]:
+    """Where an opening tag of *tag* starts, as a model reads it."""
+    return re.compile(f"{_class('<', _OPEN)}{_GAP}{_tag_name(tag)}", re.IGNORECASE)
+
+
+@functools.cache
 def _opening_tag(tag: str) -> re.Pattern[str]:
     """Where an opening tag of *tag* starts, as written."""
-    return re.compile(f"[{_OPEN}]{_GAP}{_tag_name(tag, exact=True)}", re.IGNORECASE)
+    return re.compile(f"<{_GAP}{_tag_name(tag, exact=True)}", re.IGNORECASE)
+
+
+@functools.cache
+def _tag_end() -> re.Pattern[str]:
+    """The bracket that ends a tag, in any of its forms."""
+    return re.compile(_class(">", _CLOSE))
 
 
 def _next_tag(text: str, start: re.Pattern[str], pos: int) -> tuple[int, int] | None:
@@ -113,26 +158,26 @@ def _next_tag(text: str, start: re.Pattern[str], pos: int) -> tuple[int, int] | 
     begun = start.search(text, pos)
     if begun is None:
         return None
-    ended = _TAG_END.search(text, begun.end())
+    ended = _tag_end().search(text, begun.end())
     return None if ended is None else (begun.start(), ended.end())
 
 
 def fence(tag: str, text: str) -> str:
     """*text* inside ``<tag>`` … ``</tag>``, with no closing tag of its own.
 
-    Any closing tag of that name in *text*, in any case, with any spacing,
-    invisible character (:data:`INVISIBLE`, a zero-width space inside the name
-    included), trailing attributes of any length, or brackets in their
-    fullwidth form (``</TOOL_RESULT >``, ``< / tool_result>``,
-    ``</tool_result foo>``, ``</tool_result/>``, ``</tool_result.>``,
-    ``＜／tool_result＞``), is neutralised, so the data cannot close the block.
-    Read in linear time.
+    Any closing tag of that name in *text* a model could read as one, its
+    end bracket there or not, is neutralised where it starts (``</tag`` made
+    ``</tag_``, what follows kept): in any case and spacing, with an invisible
+    or control character anywhere in it, with NFKC look-alikes of its letters,
+    brackets and slash (``＜／ｔｏｏｌ_result＞``, ``𝐭𝐨𝐨𝐥_result``), with
+    several slashes or an escaped one (``<\\/tool_result>``), with attributes
+    of any length or a mark after the name (``</tool_result.>``). An opening
+    tag of that name is neutralised the same way (``<tag_``), so no reader
+    tracking nesting reads the runtime's text after the block as data. Read in
+    linear time.
     """
-    closing, parts, pos = _closing_tag(tag), [], 0
-    while (span := _next_tag(text, closing, pos)) is not None:
-        parts += [text[pos : span[0]], f"</{tag}_>"]
-        pos = span[1]
-    body = "".join(parts) + text[pos:]
+    body = _closing_tag(tag).sub(f"</{tag}_", text)
+    body = _loose_opening_tag(tag).sub(f"<{tag}_", body)
     return f"<{tag}>\n{body}\n</{tag}>"
 
 
@@ -207,10 +252,16 @@ def open_frame(text: str) -> tuple[str, str]:
 
 # -- Inline quotes -------------------------------------------------------------
 
-_DOUBLE_QUOTES = str.maketrans(dict.fromkeys('"“”„‟«»＂〝〞〟⹂❝❞❠🙶🙷🙸″‶ʺ˝', "'"))
+_DOUBLE_QUOTES = str.maketrans(
+    {
+        **dict.fromkeys('"“”„‟«»＂〝〞〟⹂❝❞❠🙶🙷🙸″‶ʺ˝ˮ״〃‴⁗\U000e0022', "'"),
+        **dict.fromkeys("\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069"),
+    }
+)
 """Every double quote mark, made a single one inside a quoted text: none is then
 left to close the quote, a plain ``"`` included, which a model reads as closing
-“ as readily as ”."""
+“ as readily as ”. The bidirectional embeddings, overrides and isolates are
+dropped: one left open would show the quote's end, and what follows, reversed."""
 
 
 def quoted(text: Any, limit: int) -> str:
@@ -226,12 +277,20 @@ def quoted(text: Any, limit: int) -> str:
 # -- What is given unquoted ----------------------------------------------------
 
 
+_IMPOSTORS = frozenset("ːꓽˮʺ")
+"""Letters that read as a colon or a double quote: kept in a name, they would end
+it (``Adminː refund approved. Bob``) or open a quote."""
+
+
 def _kept(text: str, extra: str, other: str) -> str:
     """*text* with each character that is neither a letter, one of its marks, a
-    digit nor in *extra* made *other*; *text* composed first, so that an accent
-    written apart rides its letter."""
+    digit nor in *extra* made *other*, a letter that reads as a colon or a quote
+    included; *text* composed first, so that an accent written apart rides its
+    letter."""
     return "".join(
-        char if char in extra or unicodedata.category(char)[0] in "LMN" else other
+        char
+        if char not in _IMPOSTORS and (char in extra or unicodedata.category(char)[0] in "LMN")
+        else other
         for char in unicodedata.normalize("NFC", text)
     )
 
