@@ -212,9 +212,10 @@ async def test_a_realtime_agent_is_told_with_the_system_intent() -> None:
 
     [(_, text, role)] = provider.injected_texts
     assert role == "system"
-    assert text.endswith(f"</worker_output>\n{RESULT_TURN_NOTE}")  # RMK-626
-    result = text.removesuffix(RESULT_TURN_NOTE)
-    assert "[...truncated]" in result and result.count("y") <= 4_000
+    # RMK-626: no line telling the turn to answer nothing else: a realtime
+    # session may keep a system injection as a standing instruction.
+    assert text.rstrip().endswith("</worker_output>") and RESULT_TURN_NOTE not in text
+    assert "[...truncated]" in text and text.count("y") <= 4_000
 
 
 async def test_the_delegating_agent_is_told_by_default() -> None:
@@ -254,9 +255,9 @@ async def test_a_supervisor_s_background_workers_hand_back_to_it() -> None:
 
 
 async def test_the_turn_a_result_opens_gives_that_result_only() -> None:
-    """RMK-626: the agent told a result reads, last, that the turn is for it alone
-    and in the conversation's language; a transport, with no model to direct,
-    gets the text as it is."""
+    """RMK-626: the agent told a result reads, after it, that the turn is for it
+    alone and in the conversation's language; a transport, with no model to
+    direct, gets the text as it is."""
     kit, notified = await _kit("It will rain tomorrow.")
 
     task = await kit.delegate("call", "worker", "weather", notify="assistant")

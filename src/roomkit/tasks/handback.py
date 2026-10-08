@@ -35,12 +35,17 @@ RESULT_TURN_NOTE = (
     "else that was said; another reply of yours is taking care of that. Say it in "
     "the language the conversation is in, whatever the result's."
 )
-"""Closes what a model is handed back (RFC §23.3 step 8). The turn reads the
-room's last messages, and one that answered them too repeated what another turn
-was saying: with a question asked as a result came back, Claude Haiku gave its
-answer again in 10 hand-backs out of 10 without this line, 4 out of 10 with it,
-and 4 out of 4 with a line that did not say another reply takes care of it. A
-worker's English result was also said in English to a French conversation."""
+"""Closes what an intelligence channel is handed back (RFC §23.3 step 8): its
+hand-back opens a turn of its own. That turn reads the room's last messages,
+and one that answered them too repeated what another turn was saying: with a
+question asked as a result came back, Claude Haiku 5.5 gave its answer again in
+10 hand-backs out of 10 without this line, 4 out of 10 with it, and 4 out of 4
+with a line that did not say another reply takes care of it (2026-10-08). A
+worker's English result was also said in English to a French conversation.
+
+A realtime session gets no such line: its injection may open no turn of its
+own (a silent one, an intent its provider keeps as a standing instruction), so
+the line would tell the reply to the person's next question not to answer it."""
 
 CALLER_HANDS_BACK = "roomkit:caller-hands-back"
 """The ``notify`` of a background delegation whose caller hands its result
@@ -98,7 +103,7 @@ async def hand_back(
     *notify* names who is told: an intelligence channel receives an instruction
     addressed to it, through the room's transport; a realtime voice channel, an
     instruction in a session: *session_id*, the session whose call started the
-    work, or its one session in the room. Either closes on
+    work, or its one session in the room. The intelligence channel's closes on
     :data:`RESULT_TURN_NOTE`. Another transport has no model to direct and
     receives a message through it. A channel not attached to the
     room is told nothing (``None``), and a hand-back that is not delivered is
@@ -147,9 +152,10 @@ def not_handed_back(outcome: DeliveryOutcome | None) -> str | None:
 
 
 def _addressed_text(text: str, target: dict[str, Any]) -> str:
-    """*text* as its target receives it: a model's closes on
-    :data:`RESULT_TURN_NOTE`, a transport's is left as it is."""
-    return f"{text}\n{RESULT_TURN_NOTE}" if target.get("instruction") else text
+    """*text* as its target receives it: an intelligence channel's, whose
+    hand-back opens a turn of its own, closes on :data:`RESULT_TURN_NOTE`; a
+    realtime session's and a transport's are left as they are."""
+    return f"{text}\n{RESULT_TURN_NOTE}" if "addressed_to" in target else text
 
 
 def _target(kit: RoomKit, notify: str, session_id: str | None) -> dict[str, Any]:
