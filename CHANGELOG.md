@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Microsoft's MAI speech models, on a Microsoft Foundry resource, without
+  an Azure SDK (RMK-608, `pip install roomkit[azure-speech]`). `AzureMAISTTProvider`
+  streams to MAI-Transcribe-2-Streaming over its realtime WebSocket: partials
+  while the speaker talks, then one final per utterance, committed when the
+  stream ends. The service detects no turns, so it runs behind a pipeline VAD.
+  60 languages, detected or set (`fr-CA` is sent as `fr`; an unsupported code
+  is refused rather than silently ignored by the service). `AzureSpeechTTSProvider`
+  renders Azure Speech voices over REST as streamed PCM: the MAI-Voice-2.1 and
+  MAI-Voice-2.1-Flash voices (`fr-FR-Soleil:MAI-Voice-2.1-Flash`) and Azure's
+  neural voices, with an optional speaking style; the provider builds and
+  escapes the SSML, so markup in a reply is spoken, never obeyed. Both models
+  are in public preview and neither provider has met the live service yet.
+  Example: `examples/voice_azure_mai.py`.
+
 - An agent knows its room's background tasks and how far each got without a
   tool call (RMK-564, RMK-544, RFC §23.3, §23.4). A worker's tool says how far
   its task got with `roomkit.tasks.post_task_progress(kit, detail)`: an `info`

@@ -357,6 +357,20 @@ def get_meta_stt_config() -> type:
     return MetaSTTConfig
 
 
+def get_azure_mai_stt_provider() -> type:
+    """Get AzureMAISTTProvider class for MAI-Transcribe (requires websockets)."""
+    from roomkit.voice.stt.azure_mai import AzureMAISTTProvider
+
+    return AzureMAISTTProvider
+
+
+def get_azure_mai_stt_config() -> type:
+    """Get AzureMAISTTConfig class."""
+    from roomkit.voice.stt.azure_mai import AzureMAISTTConfig
+
+    return AzureMAISTTConfig
+
+
 def get_gradium_tts_provider() -> type:
     """Get GradiumTTSProvider class (requires gradium)."""
     from roomkit.voice.tts.gradium import GradiumTTSProvider
@@ -523,6 +537,20 @@ def get_fluxions_tts_config() -> type:
     from roomkit.voice.tts.fluxions import FluxionsTTSConfig
 
     return FluxionsTTSConfig
+
+
+def get_azure_speech_tts_provider() -> type:
+    """Get AzureSpeechTTSProvider class for MAI-Voice and Azure voices (requires httpx)."""
+    from roomkit.voice.tts.azure_speech import AzureSpeechTTSProvider
+
+    return AzureSpeechTTSProvider
+
+
+def get_azure_speech_tts_config() -> type:
+    """Get AzureSpeechTTSConfig class."""
+    from roomkit.voice.tts.azure_speech import AzureSpeechTTSConfig
+
+    return AzureSpeechTTSConfig
 
 
 def get_pocket_tts_provider() -> type:
