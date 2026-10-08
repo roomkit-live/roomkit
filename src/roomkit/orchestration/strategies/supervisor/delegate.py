@@ -48,7 +48,8 @@ from roomkit.orchestration.strategies.supervisor.results import (
 from roomkit.orchestration.strategies.supervisor.supervised import (
     _run_supervised_sequential,
 )
-from roomkit.tasks.handback import bounded, result_text
+from roomkit.tasks.handback import bounded, workers_text
+from roomkit.tools.fence import fence
 
 if TYPE_CHECKING:
     from roomkit.channels.agent import Agent
@@ -174,7 +175,7 @@ def _outcome_text(worker_results: list[dict[str, Any]] | None) -> str:
         if _why_failed(worker_results) is None
         else "[Your background workers could not complete the work. Tell the user what failed.]"
     )
-    return result_text(header, _format_worker_results(each_bounded))
+    return workers_text(header, _format_worker_results(each_bounded))
 
 
 def _results_event(event: RoomEvent, body: str) -> RoomEvent:
@@ -486,7 +487,9 @@ async def _one_pass_delegate(
 
     # Inject results into context and let supervisor present
     results_event = _results_event(
-        event, f"The user asked: {user_message}\n\n{_present_worker_results(worker_results)}"
+        event,
+        f"The user asked:\n{fence('task', user_message)}\n\n"
+        f"{_present_worker_results(worker_results)}",
     )
 
     try:

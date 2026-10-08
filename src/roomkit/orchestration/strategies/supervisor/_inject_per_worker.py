@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any
 
+from roomkit._text import identifier
 from roomkit.channels._tool_registry import orchestration_tool
 from roomkit.orchestration._background import (
     BackgroundRun,
@@ -203,8 +204,9 @@ def _worker_told(worker_id: str, outcome: WorkerOutcome | None) -> str:
     if outcome is None:
         return background_failure_text(f"task for {worker_id}")
     status = "completed" if outcome.completed else "did not complete"
+    worker = identifier(worker_id, "worker")
     return result_text(
-        f"[Your background task for {worker_id} {status}. Share the outcome with the user.]",
+        f"[Your background task for {worker} {status}. Share the outcome with the user.]",
         bounded(outcome.output or "No output"),
     )
 

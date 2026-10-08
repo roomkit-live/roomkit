@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
 
+from roomkit._text import CONVERSATION_SUMMARY_TAG, fence, identifier, quoted
 from roomkit.channels._tool_registry import ToolEntry, orchestration_tool
 from roomkit.memory._wrapper import _MemoryWrapper
 from roomkit.memory.base import MemoryProvider, MemoryResult
@@ -377,11 +378,7 @@ class HandoffHandler:
         await self._kit.send_event(
             room_id=room_id,
             channel_id=self._event_channel_id or calling_agent_id,
-            content=TextContent(
-                body=(
-                    f"[Handoff: {calling_agent_id} -> {request.target_agent_id}] {request.reason}"
-                )
-            ),
+            content=TextContent(body=_handoff_line(calling_agent_id, request)),
             event_type=EventType.SYSTEM,
             visibility="all",
             metadata={
@@ -656,10 +653,28 @@ class HandoffMemoryProvider(_MemoryWrapper):
             return result
         handoff_msg = AIMessage(
             role="user",
-            content=(f"[Context from previous agent ({handoff_from})]: {summary}"),
+            content=(
+                f"[Context from previous agent ({identifier(handoff_from, 'agent')})]\n"
+                f"{fence(CONVERSATION_SUMMARY_TAG, str(summary))}"
+            ),
         )
         # A new result: the inner provider's may be one it keeps.
         return replace(result, messages=[handoff_msg, *result.messages])
+
+
+_REASON_CHARS = 500
+"""The characters of a handoff's reason the room's timeline records."""
+
+
+def _handoff_line(calling_agent_id: str, request: HandoffRequest) -> str:
+    """The timeline's record of a handoff: the agents by their ids, the reason
+    the calling model gave quoted (RFC §6.4, §19.6), since the target agent
+    reads it back in its history."""
+    source = identifier(calling_agent_id, "agent")
+    target = identifier(request.target_agent_id, "agent")
+    agents = f"{source} -> {target}"
+    reason = f" {quoted(request.reason, _REASON_CHARS)}" if request.reason.strip() else ""
+    return f"[Handoff: {agents}]{reason}"
 
 
 # -- Wiring -------------------------------------------------------------------

@@ -780,7 +780,7 @@ class TestSupervisedSequential:
         w2_tasks = [t for cid, t in calls if cid == "w2"]
         assert len(w2_tasks) == 1
         assert w2_tasks[0].startswith("Write a report from the research")
-        assert "[Researcher]:" in w2_tasks[0]
+        assert "[Researcher]\n<worker_output>\nworker output\n</worker_output>" in w2_tasks[0]
         assert "worker output" in w2_tasks[0]  # prior data embedded, not just referenced
         # Both steps reviewed + approved, role-labeled, in order.
         assert [s["role"] for s in steps] == ["Researcher", "Writer"]
@@ -1155,10 +1155,10 @@ class TestFormatWorkerResults:
             {"worker": "w2", "output": "Report ready"},
         ]
         text = _format_worker_results(results)
-        assert "--- w1 ---" in text
-        assert "Analysis complete" in text
-        assert "--- w2 ---" in text
-        assert "Report ready" in text
+        assert text == (
+            "[w1]\n<worker_output>\nAnalysis complete\n</worker_output>\n\n"
+            "[w2]\n<worker_output>\nReport ready\n</worker_output>"
+        )
 
     def test_empty_results(self) -> None:
         text = _format_worker_results([])
@@ -1167,7 +1167,7 @@ class TestFormatWorkerResults:
     def test_missing_keys_use_defaults(self) -> None:
         results = [{}]
         text = _format_worker_results(results)
-        assert "--- unknown ---" in text
+        assert text.startswith("[unknown]\n<worker_output>")
 
 
 class TestPresentWorkerResults:
