@@ -15,19 +15,11 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from roomkit.models.enums import EventType
-from roomkit.models.event import RoomEvent
-
 RUNTIME_RECORD = "runtime_record"
 """The metadata key, on an event or an ``AIMessage``, naming what the runtime
 wrote: ``"handoff"``, ``"summary"``, ``"handed_on_context"``."""
 
-HANDOFF_FLAG = "handoff"
-"""The metadata flag of the handoff relay, which alone names a relay stored
-before :data:`RUNTIME_RECORD` existed; the inbound pipeline removes it from a
-``SYSTEM`` event a sender supplies."""
-
-HANDOFF_OPENING = "[Handoff:"
+HANDOFF_OPENING = "[Handoff"
 """How the record of a handoff opens in the timeline (``[Handoff: a -> b]``)."""
 
 HANDED_ON_CONTEXT = "[Context from previous agent"
@@ -48,15 +40,6 @@ SUMMARY_HEADER = f"{SUMMARY_MARK} — earlier messages compacted]"
 def written_by_runtime(metadata: Mapping[str, Any]) -> bool:
     """Whether *metadata* (an event's or a message's) says the runtime wrote it."""
     return isinstance(metadata.get(RUNTIME_RECORD), str)
-
-
-def runtime_event(event: RoomEvent) -> bool:
-    """Whether the runtime wrote *event*: it says so, or it is a handoff relay
-    stored before the key existed, a ``SYSTEM`` event flagged
-    :data:`HANDOFF_FLAG`."""
-    if written_by_runtime(event.metadata):
-        return True
-    return event.type == EventType.SYSTEM and event.metadata.get(HANDOFF_FLAG) is True
 
 
 def runtime_record(kind: str) -> dict[str, str]:

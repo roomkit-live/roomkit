@@ -12,8 +12,8 @@ from roomkit.channels._mark_copies import without_mark_copies
 from roomkit.channels._runtime_record import (
     SUMMARY_HEADER,
     SUMMARY_MARK,
-    runtime_event,
     runtime_record,
+    written_by_runtime,
 )
 from roomkit.channels._speaker import several_speakers, turn_labels
 from roomkit.memory.token_estimator import extract_event_text
@@ -82,7 +82,7 @@ class SummaryLines:
         text = extract_event_text(event)
         # A copy of a runtime mark the summarizer could carry into the summary
         # is replaced at the source; the runtime's own records keep theirs.
-        if not runtime_event(event):
+        if not written_by_runtime(event.metadata):
             text = without_mark_copies(text)
         text = quoted(text, EVENT_TEXT_LIMIT)
         if label is not None and not self._own(event):

@@ -16,7 +16,7 @@ from roomkit.channels._mark_copies import (
     cut_split_copies,
     without_mark_copies,
 )
-from roomkit.channels._runtime_record import runtime_event, written_by_runtime
+from roomkit.channels._runtime_record import written_by_runtime
 from roomkit.channels._skill_constants import (
     SKILLS_NO_SCRIPTS_NOTE as _SKILLS_NO_SCRIPTS_NOTE,
 )
@@ -856,7 +856,7 @@ class AIContextMixin(_AIChannelContract):
         content = self._extract_content(event)
         if not content and self._describe_empty_event is not None:
             content = self._describe_empty_event(event) or ""
-        if runtime_event(event):
+        if written_by_runtime(event.metadata):
             # The runtime's own record (a handoff's): its marks are its own.
             return content
         return content_without_mark_copies(content)

@@ -21,7 +21,7 @@ from collections import OrderedDict
 from collections.abc import Iterator
 from typing import Any
 
-from roomkit._lookalike import COLON, phrase_pattern, phrase_space
+from roomkit._lookalike import phrase_pattern
 from roomkit.channels._acp_marks import ROOM_CONTEXT_END, ROOM_CONTEXT_OPENING
 from roomkit.channels._ai_cuts import CUT_MARK
 from roomkit.channels._instruction import INSTRUCTION_MARKER
@@ -74,18 +74,8 @@ def _copies() -> re.Pattern[str]:
     Compiled on first use."""
     whole = [phrase_pattern(mark) for mark in _MARKS]
     openings = [*filter(None, map(_opening, _MARKS)), *_SHORT_MARKS]
-    bracketed = [_bracketed(opening) for opening in openings]
+    bracketed = [phrase_pattern(opening, bracketed=True) for opening in openings]
     return re.compile("|".join(f"(?:{pattern})" for pattern in whole + bracketed), re.IGNORECASE)
-
-
-def _bracketed(opening: str) -> str:
-    """*opening* as a pattern, its bracket required, and its colon too when it
-    ends with one: ``[Handoff:`` is the runtime's, ``[HANDOFF] notes`` is
-    prose."""
-    if not opening.endswith(":"):
-        return phrase_pattern(opening, bracketed=True)
-    colon = re.escape(":" + COLON)
-    return rf"{phrase_pattern(opening[:-1], bracketed=True)}{phrase_space('')}*[{colon}]"
 
 
 class _Seen:

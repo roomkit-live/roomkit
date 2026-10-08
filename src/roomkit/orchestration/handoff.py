@@ -16,12 +16,7 @@ from pydantic import BaseModel, Field
 
 from roomkit._text import CONVERSATION_SUMMARY_TAG, fence, identifier, quoted
 from roomkit.channels._mark_copies import without_mark_copies
-from roomkit.channels._runtime_record import (
-    HANDED_ON_CONTEXT,
-    HANDOFF_FLAG,
-    HANDOFF_OPENING,
-    runtime_record,
-)
+from roomkit.channels._runtime_record import HANDED_ON_CONTEXT, HANDOFF_OPENING, runtime_record
 from roomkit.channels._tool_registry import ToolEntry, orchestration_tool
 from roomkit.memory._wrapper import _MemoryWrapper
 from roomkit.memory.base import MemoryProvider, MemoryResult
@@ -389,7 +384,7 @@ class HandoffHandler:
             event_type=EventType.SYSTEM,
             visibility="all",
             metadata={
-                HANDOFF_FLAG: True,
+                "handoff": True,
                 "from_agent": calling_agent_id,
                 "to_agent": request.target_agent_id,
                 "summary": request.summary,
@@ -480,7 +475,7 @@ class HandoffHandler:
             status=EventStatus.DELIVERED,
             visibility=Visibility.INTERNAL,
             metadata={
-                HANDOFF_FLAG: True,
+                "handoff": True,
                 "from_agent": calling_agent_id,
                 "to_agent": request.target_agent_id,
                 "accepted": result.accepted,
@@ -687,7 +682,7 @@ def _handoff_line(calling_agent_id: str, request: HandoffRequest) -> str:
     agents = f"{source} -> {target}"
     said = without_mark_copies(request.reason)
     reason = f" {quoted(said, _REASON_CHARS)}" if request.reason.strip() else ""
-    return f"{HANDOFF_OPENING} {agents}]{reason}"
+    return f"{HANDOFF_OPENING}: {agents}]{reason}"
 
 
 # -- Wiring -------------------------------------------------------------------
