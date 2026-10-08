@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import logging
 import os
 import time
@@ -493,7 +494,9 @@ class VoiceTTSMixin:
             from roomkit.voice.tts.filters import TTSStreamFilter, filtered_stream
 
             if isinstance(self._tts_filter, TTSStreamFilter):
-                token_source = filtered_stream(token_source, self._tts_filter)
+                # Its own copy: a filter holds what it buffers, and several
+                # responses (one per room) may stream through the channel at once.
+                token_source = filtered_stream(token_source, copy.deepcopy(self._tts_filter))
             else:
                 token_source = _filter_sentences_plain(token_source, self._tts_filter)
         sentence_source = split_sentences(token_source)

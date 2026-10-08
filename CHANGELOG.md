@@ -319,6 +319,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A voice channel streams each response through its own copy of its
+  `tts_filter` (RMK-624): two rooms streaming at once through one channel
+  shared what a filter buffers, so a bracket `StripBrackets` held open in one
+  room let the other room's text through, and an object `StripTechnicalText`
+  held open swallowed it. A filter holding something that cannot be copied
+  defines `__deepcopy__`.
+
 - Two `find_tools` calls a realtime model runs in one response each reveal
   their matches (RMK-606), as two of one round do on the text loop (RMK-604):
   the session's declaration kept only the search served last. A call carries
