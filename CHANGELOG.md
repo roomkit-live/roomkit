@@ -897,10 +897,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the sources and of what their names read as, salted with the room's id: no
   sender id nor name is kept), and rides the event (`metadata["author_rank"]`,
   any value it came with dropped), so it holds as the window slides and
-  across the prompts an ACP or realtime session keeps. Only a turn every
-  reader may see joins the register: a restricted turn is ranked without
-  joining it, and a blocked one takes no rank, so a rank tells no session of
-  a source it cannot see. A participant reached
+  across the prompts an ACP or realtime session keeps. Every turn that
+  reaches the room joins the register, whatever its visibility, and a
+  blocked one takes no rank: ranked without joining it, a restricted turn
+  left its rank to the next sender, and a reader who saw both read two
+  senders under one label. A rank may thus tell a reader that a sender it
+  does not see has a name that reads alike, never the sender nor the turn.
+  A participant reached
   through several channels is one source; a sender id is one only on its
   channel. A name that reads as the agent's own label (`You`, `you in a
   separate session`) carries `(a participant)`. Names are compared without

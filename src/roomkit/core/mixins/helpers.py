@@ -397,7 +397,9 @@ class HelpersMixin:
         is new (RFC §6.4, §10.1 step 12): under the room lock, before the
         commit, so a stored turn's rank never changes. A rank the event came
         with is dropped, the runtime's alone; a BLOCKED record takes none (only
-        a turn that reaches the room is ranked)."""
+        a turn that reaches the room is ranked). A restricted turn joins the
+        register too: ranked without joining it, a later source could take
+        its rank in the view of the readers who see both."""
         if AUTHOR_RANK in event.metadata:
             metadata = {k: v for k, v in event.metadata.items() if k != AUTHOR_RANK}
             event = event.model_copy(update={"metadata": metadata})
@@ -410,11 +412,8 @@ class HelpersMixin:
         register = register_of(room.metadata.get(AUTHOR_REGISTER))
         size = len(register)
         people = await self._store.list_participants(room_id)
-        # Only a turn every reader sees joins the register: a rank must not
-        # tell a session of a source it cannot see (RFC §7.5).
-        joins = event.visibility == Visibility.ALL
         context = RoomContext(room=room, participants=people)
-        rank = author_rank(event, context, register, enters=joins)
+        rank = author_rank(event, context, register)
         if rank is None:
             return event
         if len(register) != size:

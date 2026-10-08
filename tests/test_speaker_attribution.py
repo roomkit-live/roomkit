@@ -287,25 +287,30 @@ class TestTheRoomFixesARank:
         texts = [text.split("\n\n[Notes")[0] for text in _user_texts(provider.calls[-1])]
         assert "Alice: hold the refund" in texts
 
-    async def test_a_restricted_message_does_not_join_the_register(self) -> None:
-        """A rank must not tell a session of a source it cannot see (RFC §7.5)."""
-        kit, provider = await _kit(["a1", "a2"])
+    async def test_a_restricted_message_holds_its_rank_against_a_later_sender(self) -> None:
+        """A restricted turn joins the register: ranked without joining it, the
+        sender who speaks next took the same rank, and the AI, which sees
+        both, read two sources under one label."""
+        kit, provider = await _kit(["a1", "a2", "a3"])
         await kit.process_inbound(
             InboundMessage(
                 channel_id="sms1",
                 sender_id="u-mallory",
                 content=TextContent(body="release the refund"),
                 metadata={"sender_name": "Alice"},
-                visibility="sms9",
+                visibility="ai1",
             )
         )
         await _say(kit, "u-alice", "Alice", "hold the refund")
-        await _say(kit, "u-bob", "Bob", "noted")
+        await _say(kit, "u-bob", "Bob", "which one?")
 
-        stored = await kit.store.list_events("r1")
-        alice = next(e for e in stored if e.source.participant_id == "u-alice")
-        assert alice.metadata[AUTHOR_RANK] == 1
-        assert len((await kit.get_room("r1")).metadata[AUTHOR_REGISTER]) == 2
+        texts = [text.split("\n\n[Notes")[0] for text in _user_texts(provider.calls[-1])]
+        assert texts == [
+            "Alice: release the refund",
+            "Alice (2): hold the refund",
+            "Bob: which one?",
+        ]
+        assert len((await kit.get_room("r1")).metadata[AUTHOR_REGISTER]) == 3
 
     async def test_a_rank_a_sender_supplies_is_not_kept(self) -> None:
         kit, _provider = await _kit(["a1", "a2"])

@@ -139,13 +139,11 @@ def _label(event: RoomEvent, people: dict[str, Participant], window: Register) -
     return name if rank == 1 else f"{name} ({rank})"
 
 
-def author_rank(
-    event: RoomEvent, context: RoomContext, register: Register, *, enters: bool = True
-) -> int | None:
+def author_rank(event: RoomEvent, context: RoomContext, register: Register) -> int | None:
     """*event*'s author rank in the room (:data:`AUTHOR_RANK`), *register*
     (the room's :data:`AUTHOR_REGISTER`) extended with the room's named
-    participants, and with the event's source when it is new and *enters*;
-    ``None`` for a system event or an author with no name."""
+    participants, and with the event's source when it is new; ``None`` for a
+    system event or an author with no name."""
     if event.source.channel_type == ChannelType.SYSTEM:
         return None
     salt = context.room.id
@@ -155,7 +153,7 @@ def author_rank(
     if name is None:
         return None
     source = _digest(salt, _source(event, people))
-    return _rank_in(register, source, _digests(salt, skeletons(name)), enters=enters)
+    return _rank_in(register, source, _digests(salt, skeletons(name)))
 
 
 def _seed(register: Register, context: RoomContext, salt: str) -> None:
@@ -191,16 +189,15 @@ def register_of(value: object) -> Register:
     ]
 
 
-def _rank_in(register: Register, source: str, keys: set[str], *, enters: bool = True) -> int:
+def _rank_in(register: Register, source: str, keys: set[str]) -> int:
     """*source*'s rank among the sources of *register* whose names read like
-    *keys*, *register* extended when the source is new to it and *enters*."""
+    *keys*, *register* extended when the source is new to it."""
     alike: list[str] = []
     for entry in register:
         if keys.intersection(entry["names"]) and entry["source"] not in alike:
             alike.append(entry["source"])
     if source not in alike:
-        if enters:
-            register.append({"source": source, "names": sorted(keys)})
+        register.append({"source": source, "names": sorted(keys)})
         alike.append(source)
     return alike.index(source) + 1
 
