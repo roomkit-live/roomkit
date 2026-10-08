@@ -197,7 +197,8 @@ class TestConfig:
     def test_a_language_is_sent_as_its_code(self, language: str, code: str) -> None:
         assert language_code(language) == code
 
-    @pytest.mark.parametrize("language", ["klingon", "no", "x"])
+    # "as", "or" and "pa" are in Microsoft's list and refused by the endpoint.
+    @pytest.mark.parametrize("language", ["klingon", "no", "x", "as", "or", "pa"])
     def test_an_unsupported_language_is_refused(self, language: str) -> None:
         with pytest.raises(ValueError, match="does not support"):
             AzureMAISTTConfig(
@@ -224,25 +225,52 @@ class TestConfig:
 
 
 class TestEventMapping:
-    def test_deltas_and_intermediates_build_the_partial(self) -> None:
+    def test_an_intermediate_gives_the_final_text_and_its_rest(self) -> None:
         transcript = Transcript()
 
         results = [to_result(event, transcript) for event in _UTTERANCE[:4]]
 
         assert [r.text if r else None for r in results] == [
-            "Hello",
+            None,
             "Hello world",
             "Hello there",
-            "Hello there!",
+            None,
         ]
         assert not any(r.is_final for r in results if r)
 
+    def test_firming_up_a_guess_never_cuts_it_short(self) -> None:
+        # As the live service sent it on 2026-10-08: each delta takes the
+        # first words of the last guess, and the next intermediate the rest.
+        events = [
+            ("intermediate", "Hello! This sentence was"),
+            ("delta", "Hello!"),
+            ("intermediate", " This sentence was spoken"),
+            ("delta", " This sentence"),
+            ("intermediate", " was spoken by MAI Voice."),
+            ("delta", " was"),
+            ("intermediate", " spoken by MAI Voice and her"),
+        ]
+        transcript = Transcript()
+
+        partials = [
+            result.text
+            for kind, text in events
+            if (result := to_result({"type": _EVENT + kind, kind: text}, transcript))
+        ]
+
+        assert partials == [
+            "Hello! This sentence was",
+            "Hello! This sentence was spoken",
+            "Hello! This sentence was spoken by MAI Voice.",
+            "Hello! This sentence was spoken by MAI Voice and her",
+        ]
+
     def test_an_unchanged_guess_is_not_repeated(self) -> None:
         transcript = Transcript()
-        to_result({"type": _EVENT + "intermediate", "intermediate": "Hello"}, transcript)
+        event = {"type": _EVENT + "intermediate", "intermediate": "Hello"}
+        to_result(event, transcript)
 
-        # The service firms up exactly what it had guessed.
-        assert to_result({"type": _EVENT + "delta", "delta": "Hello"}, transcript) is None
+        assert to_result(event, transcript) is None
 
     def test_completed_is_the_final_even_when_empty(self) -> None:
         final = to_result({"type": _EVENT + "completed", "transcript": " Hi. "}, Transcript())
@@ -308,7 +336,7 @@ class TestStreaming:
                 "audio": {
                     "input": {
                         "format": {"type": "audio/pcm", "rate": 16000},
-                        "transcription": {"model": "MAI-Transcribe-2-Streaming", "language": None},
+                        "transcription": {"model": "MAI-Transcribe-2-Streaming"},
                         "turn_detection": None,
                         "noise_reduction": None,
                     }
@@ -318,10 +346,8 @@ class TestStreaming:
         assert bytes(record.audio) == _PCM_16K
         assert record.after_audio == [{"type": "input_audio_buffer.commit"}]
         assert [(r.text, r.is_final) for r in results] == [
-            ("Hello", False),
             ("Hello world", False),
             ("Hello there", False),
-            ("Hello there!", False),
             ("Hello there!", True),
         ]
 

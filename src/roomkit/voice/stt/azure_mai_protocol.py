@@ -21,18 +21,21 @@ TRANSCRIPTION_EVENT = "conversation.item.input_audio_transcription."
 
 SUPPORTED_LANGUAGES: frozenset[str] = frozenset(
     {
-        "af", "ar", "as", "az", "bg", "bn", "bs", "ca", "cs", "da",
-        "de", "el", "en", "es", "et", "fa", "fi", "fil", "fr", "gl",
-        "gu", "he", "hi", "hu", "hy", "id", "is", "it", "ja", "kk",
-        "kn", "ko", "lt", "lv", "mk", "ml", "mr", "ms", "nb", "ne",
-        "nl", "or", "pa", "pl", "pt", "ro", "ru", "sk", "sl", "sv",
-        "sw", "ta", "te", "th", "tr", "uk", "ur", "vi", "yue", "zh",
+        "af", "ar", "az", "bg", "bn", "bs", "ca", "cs", "da", "de",
+        "el", "en", "es", "et", "fa", "fi", "fil", "fr", "gl", "gu",
+        "he", "hi", "hu", "hy", "id", "is", "it", "ja", "kk", "kn",
+        "ko", "lt", "lv", "mk", "ml", "mr", "ms", "nb", "ne", "nl",
+        "pl", "pt", "ro", "ru", "sk", "sl", "sv", "sw", "ta", "te",
+        "th", "tr", "uk", "ur", "vi", "yue", "zh",
     }
 )  # fmt: skip
-"""The language codes MAI-Transcribe-2 takes, as Microsoft lists them.
+"""The language codes MAI-Transcribe-2 takes: Microsoft's list of 60, less the
+three the live endpoint refuses (``as``, ``or``, ``pa``; measured 2026-10-08).
 
-Checked here because the service does not: it treats a code it does not know
-(``"fr-CA"`` included) as no code at all, and silently detects instead.
+Checked here because the endpoint's own check is not the model's: it refuses
+a region tag (``"fr-CA"``) and those three with an error naming another list,
+and takes codes the model does not list (``no``, ``tl``, ``cy``…), which the
+model then reads as no language at all.
 """
 
 _LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
@@ -123,9 +126,14 @@ class Transcript:
     """What one stream has heard so far.
 
     ``delta`` events append text the service has made final; ``intermediate``
-    events replace the provisional rest. The service's best guess is always
-    the final text followed by the provisional rest, appended as sent: the
-    service carries the spaces.
+    events replace the provisional rest. The service's best guess is the final
+    text followed by the provisional rest, appended as sent: the service
+    carries the spaces.
+
+    Only an ``intermediate`` gives a partial. The live service firms up a
+    guess in two events, a ``delta`` with its first words then an
+    ``intermediate`` with the rest (observed 2026-10-08): a partial on the
+    ``delta`` would show the guess cut to those first words for an instant.
     """
 
     final: str = ""
@@ -157,7 +165,7 @@ def to_result(event: dict[str, Any], transcript: Transcript) -> TranscriptionRes
     if kind == TRANSCRIPTION_EVENT + "delta":
         transcript.final += str(event.get("delta") or "")
         transcript.provisional = ""
-        return transcript.partial()
+        return None
     if kind == TRANSCRIPTION_EVENT + "intermediate":
         transcript.provisional = str(event.get("intermediate") or "")
         return transcript.partial()

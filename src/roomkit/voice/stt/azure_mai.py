@@ -260,8 +260,13 @@ class AzureMAISTTProvider(STTProvider):
         """Transcription only, PCM at ``rate``, and no server turn detection.
 
         Turn detection must be off for the commit to decide where an
-        utterance ends; the service takes nothing else for it.
+        utterance ends; the service takes nothing else for it. Detection is
+        asked by leaving ``language`` out: the endpoint refuses an explicit
+        ``null`` (measured 2026-10-08), whatever its documentation shows.
         """
+        transcription = {"model": self._config.deployment}
+        if language is not None:
+            transcription["language"] = language
         return {
             "type": "session.update",
             "session": {
@@ -269,10 +274,7 @@ class AzureMAISTTProvider(STTProvider):
                 "audio": {
                     "input": {
                         "format": {"type": "audio/pcm", "rate": rate},
-                        "transcription": {
-                            "model": self._config.deployment,
-                            "language": language,
-                        },
+                        "transcription": transcription,
                         "turn_detection": None,
                         "noise_reduction": None,
                     }

@@ -14,13 +14,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   streams to MAI-Transcribe-2-Streaming over its realtime WebSocket: partials
   while the speaker talks, then one final per utterance, committed when the
   stream ends. The service detects no turns, so it runs behind a pipeline VAD.
-  60 languages, detected or set (`fr-CA` is sent as `fr`; an unsupported code
+  57 languages, detected or set (`fr-CA` is sent as `fr`; an unsupported code
   is refused rather than silently ignored by the service). `AzureSpeechTTSProvider`
   renders Azure Speech voices over REST as streamed PCM: the MAI-Voice-2.1 and
   MAI-Voice-2.1-Flash voices (`fr-FR-Soleil:MAI-Voice-2.1-Flash`) and Azure's
   neural voices, with an optional speaking style; the provider builds and
   escapes the SSML, so markup in a reply is spoken, never obeyed. Both models
-  are in public preview and neither provider has met the live service yet.
+  are in public preview. Measured on the live service (2026-10-08): the final
+  arrives about 0.13 s after the end of speech, and MAI-Voice-2.1-Flash streams
+  its first audio after about 0.65 s.
   Example: `examples/voice_azure_mai.py`.
 
 - An agent knows its room's background tasks and how far each got without a
