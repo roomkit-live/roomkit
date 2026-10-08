@@ -168,9 +168,10 @@ def _class(char: str, more: str = "") -> str:
 
 def reads_as(text: str, word: str) -> bool:
     """Whether *text* reads as *word* to a model: each letter in any of its forms
-    (case, NFKC look-alikes, homoglyphs), invisible characters ignored."""
+    (case, NFKC look-alikes, homoglyphs), invisible characters ignored, any
+    spacing, punctuation or mark around it (``You.``, ``YOU!``)."""
     letters = _NAME_JOIN.join(_class(char) for char in word.lower())
-    return re.fullmatch(rf"\s*{letters}\s*", text, re.IGNORECASE) is not None
+    return re.fullmatch(rf"[\W_]*{letters}[\W_]*", text, re.IGNORECASE) is not None
 
 
 def _tag_name(tag: str, *, exact: bool = False) -> str:
@@ -200,13 +201,13 @@ def _closing_tag(tag: str) -> re.Pattern[str]:
 @functools.lru_cache(maxsize=64)
 def _loose_opening_tag(tag: str) -> re.Pattern[str]:
     """Where an opening tag of *tag* starts, as a model reads it: its bracket in
-    any form, right before the name (no spacing: ``latency < task`` is prose),
-    the name ended as an opening tag ends (``<task-list>`` is another tag)."""
-    end = rf"(?=[\s{INVISIBLE}{_SLASH}{_CLOSE}\uff1e\ufe65])"
-    return re.compile(
-        f"{_class('<', _OPEN)}[{INVISIBLE}]*{_NAME_JOIN.join(_class(c) for c in tag)}{end}",
-        re.IGNORECASE,
-    )
+    any form, spaced from the name or not, the name ended by anything that does
+    not continue it, the text's end included (``<task-list>`` and
+    ``<task.v2>`` are other tags). It errs toward a tag: ``latency < task
+    deadline`` gets an underscore, while ``<task`` closing a block's text
+    would make the runtime's own closing tag close it instead."""
+    name = _NAME_JOIN.join(_class(char) for char in tag)
+    return re.compile(f"{_class('<', _OPEN)}{_GAP}{name}(?![\\w.:-])", re.IGNORECASE)
 
 
 @functools.lru_cache(maxsize=64)
@@ -246,9 +247,9 @@ def fence(tag: str, text: str) -> str:
     slash (``＜／ｔｏｏｌ_result＞``, ``𝐭𝐨𝐨𝐥_result``, ``</tооl_result>``), with
     several slashes or an escaped one (``<\\/tool_result>``), with attributes
     of any length or a mark after the name (``</tool_result.>``). An opening
-    tag of that name, its bracket right before it, is neutralised the same
-    way, so no reader tracking nesting reads the runtime's text after the
-    block as data. Read in linear time; any tag name works, one outside
+    tag of that name, in the same forms and spacing and at the text's end
+    too, is neutralised the same way, so no reader tracking nesting reads the
+    runtime's text after the block as data. Read in linear time; any tag name works, one outside
     ``[a-z0-9_]`` matched as written.
     """
     body = _closing_tag(tag).sub(_unnamed, text)

@@ -655,24 +655,43 @@ def test_a_custom_tag_fences_its_text(tag: str) -> None:
 @pytest.mark.parametrize(
     ("text", "kept"),
     [
-        ("Keep latency < task deadline", "Keep latency < task deadline"),
-        ("A <task-list> of items", "A <task-list> of items"),
         ('<Task id="1">x', '<Task_ id="1">x'),
         ("\u2039task\u203a x", "\u2039task_\u203a x"),
+        ("x <task", "x <task_"),
+        ("x < task>", "x < task_>"),
+        ("x <\ntask>", "x <\ntask_>"),
+        ('x <task"a">', 'x <task_"a">'),
+        ("Keep latency < task deadline", "Keep latency < task_ deadline"),
+        ("A <task-list>, <task.v2>, <task:ns>", "A <task-list>, <task.v2>, <task:ns>"),
     ],
-    ids=["prose", "longer tag", "attributes", "look-alike brackets"],
+    ids=[
+        "attributes",
+        "look-alike brackets",
+        "at the text's end",
+        "spaced",
+        "line break",
+        "quote after the name",
+        "prose errs toward a tag",
+        "other names",
+    ],
 )
 def test_an_opening_tag_is_neutralised_as_written(text: str, kept: str) -> None:
-    """An underscore after the name, the rest as written; a bracket that is
-    not right before the name is prose."""
+    """An underscore after the name, the rest as written; ``<task`` closing the
+    text would otherwise take the runtime's closing tag as its own."""
     assert fence("task", text) == f"<task>\n{kept}\n</task>"
 
 
-def test_text_reads_as_a_word_in_any_of_its_forms() -> None:
-    assert reads_as("Y\u043eu", "you")
-    assert reads_as("\uff39\uff2f\uff35", "you")
-    assert reads_as("Y\u200bou", "you")
-    assert not reads_as("Yours", "you")
+@pytest.mark.parametrize(
+    "text",
+    ["Y\u043eu", "\uff39\uff2f\uff35", "Y\u200bou", "You\u200b", "\u2060You", "You.", "YOU!"],
+)
+def test_text_reads_as_a_word_in_any_of_its_forms(text: str) -> None:
+    assert reads_as(text, "you")
+
+
+@pytest.mark.parametrize("text", ["Your", "Yours", "You 2"])
+def test_text_with_more_letters_is_another_word(text: str) -> None:
+    assert not reads_as(text, "you")
 
 
 def test_neutralising_a_closing_tag_keeps_what_follows_it() -> None:

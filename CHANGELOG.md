@@ -697,11 +697,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   box-drawing and mathematical brackets and slashes, and with a combining mark
   or a line break between its letters. An opening tag is neutralised as
   written, an underscore after its name (`<Task id="1">` becomes
-  `<Task_ id="1">`), and only with its bracket right before the name
-  (`latency < task deadline` and `<task-list>` stay as written).
+  `<Task_ id="1">`), spaced from its bracket or not and at the text's end
+  too (`<task` closing a block's text took the runtime's closing tag as its
+  own); `<task-list>` and `<task.v2>` are other tags and stay as written.
   `roomkit.tools.fence` takes any tag name (`Task`, `search-results`), which
   the look-alike matching above had broken with a `KeyError`. The thinker
-  names a participant called `You` in look-alike letters (`Yоu`) as a
+  names a participant called `You` in look-alike letters or with
+  punctuation or invisible characters around it (`Yоu`, `You.`) as a
   participant. The GPT-Live splitter reads with a cursor instead of copying
   what is left at every cut (1.6 M characters: 0.21 s to 0.07 s, four times
   the text now takes four times as long), and sends no whitespace-only append.
