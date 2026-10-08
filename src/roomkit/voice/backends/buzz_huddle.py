@@ -503,16 +503,7 @@ class BuzzHuddleWatcher:
         self._kit.register_channel(
             BuzzChannel(self._events_channel_id, provider=BuzzProvider(source))
         )
-        # The announcement feed gets its own room: it is an input, not a
-        # conversation participant. Attached to the voice room, every
-        # transcription RoomEvent would be delivered outbound through the
-        # Buzz channel (and fail with "channel_id must be a UUID").
-        announcements_room = f"{self._events_channel_id}-room"
-        await self._kit.create_room(room_id=announcements_room)
-        # Every member's announcement belongs to this one room: a group
-        # binding, or each new announcer would be routed to a room of their
-        # own (RFC §10.4).
-        await self._kit.attach_channel(announcements_room, self._events_channel_id, group=True)
+        await self._open_announcements_room()
 
         @self._kit.hook(
             HookTrigger.AFTER_BROADCAST,
@@ -531,6 +522,20 @@ class BuzzHuddleWatcher:
         logger.info(
             "Watching Buzz channel %s for huddles (kind %d)", self._parent_id, KIND_HUDDLE_STARTED
         )
+
+    async def _open_announcements_room(self) -> None:
+        """Open the room the announcement feed writes to, every announcer in it.
+
+        The feed gets its own room: it is an input, not a conversation
+        participant. Attached to the voice room, every transcription RoomEvent
+        would be delivered outbound through the Buzz channel (and fail with
+        "channel_id must be a UUID"). Its binding is a group: every member's
+        announcement belongs to this one room, or each new announcer would be
+        routed to a room of their own (RFC §10.4).
+        """
+        announcements_room = f"{self._events_channel_id}-room"
+        await self._kit.create_room(room_id=announcements_room)
+        await self._kit.attach_channel(announcements_room, self._events_channel_id, group=True)
 
     async def bridge(self, huddle_id: str) -> None:
         """Dial one huddle and keep the call bridged until it is over."""

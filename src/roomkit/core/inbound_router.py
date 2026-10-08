@@ -128,7 +128,7 @@ class DefaultInboundRoomRouter(InboundRoomRouter):
             # counts as a correspondent's: a sender borrowing the name, on a
             # channel whose senders choose their id, gets a room of its own.
             return False
-        own = await self._known_as(channel_type, sender)
+        own = await sender_known_as(self._store, channel_type, sender)
         if not binding_admits(binding, own):
             return False
         for participant in await self._store.list_participants(room_id):
@@ -139,19 +139,36 @@ class DefaultInboundRoomRouter(InboundRoomRouter):
                 return False
         return not await _heard_from_other(self._store, room_id, channel_id, own)
 
-    async def _known_as(self, channel_type: ChannelType, sender: str | None) -> frozenset[str]:
-        """The ids a room may know *sender* by: the address, and its identity.
 
-        Identity resolution names a participant and stamps an event with the
-        identity's id, not the address (RFC §11), so the identity the store
-        resolves the address to is the sender's own too. The router is not
-        given the caller's organization, so only an unscoped registration
-        resolves here (§17.2).
-        """
-        if sender is None:
-            return frozenset()
-        identity = await self._store.resolve_identity(str(channel_type), sender)
-        return frozenset({sender} if identity is None else {sender, identity.id})
+async def sender_known_as(
+    store: ConversationStore, channel_type: ChannelType, sender: str | None
+) -> frozenset[str]:
+    """The ids a room may know *sender* by: the address, and its identity.
+
+    Identity resolution names a participant and stamps an event with the
+    identity's id, not the address (RFC §11), so the identity the store
+    resolves the address to is the sender's own too. The router is not given
+    the caller's organization, so only an unscoped registration resolves
+    here (§17.2).
+    """
+    if sender is None:
+        return frozenset()
+    identity = await store.resolve_identity(str(channel_type), sender)
+    return frozenset({sender} if identity is None else {sender, identity.id})
+
+
+def recordable_sender(sender: str | None) -> bool:
+    """Whether *sender* can be a binding's correspondent (RFC §10.4).
+
+    Not an empty address, and not the framework's own sender: what the host
+    writes through ``deliver()`` names no correspondent.
+    """
+    return bool(sender) and sender != SYSTEM_SENDER_ID
+
+
+def binding_names_no_one(binding: ChannelBinding) -> bool:
+    """Whether *binding* carries one conversation and no correspondent yet."""
+    return not binding.group and binding.participant_id is None
 
 
 def binding_admits(binding: ChannelBinding, known_as: frozenset[str]) -> bool:

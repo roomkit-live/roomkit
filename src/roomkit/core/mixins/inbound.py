@@ -8,13 +8,17 @@ from contextlib import AsyncExitStack
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from roomkit.core.exceptions import ChannelNotRegisteredError, RoomNotFoundError
-from roomkit.core.inbound_router import binding_admits
+from roomkit.core.inbound_router import (
+    binding_admits,
+    binding_names_no_one,
+    recordable_sender,
+    sender_known_as,
+)
 from roomkit.core.mixins.channel_ops import is_channel_detached
 from roomkit.core.mixins.helpers import HelpersMixin
 from roomkit.core.mixins.inbound_identity import _IdentityBlockedError
 from roomkit.models.delivery import (
     STANDALONE,
-    SYSTEM_SENDER_ID,
     DeliveryHandle,
     InboundMessage,
     InboundResult,
@@ -70,6 +74,7 @@ class InboundHost(Protocol):
         create_room: From :class:`RoomLifecycleMixin`.
         get_room: From :class:`RoomLifecycleMixin` (the scoped read, RFC §17.2).
         attach_channel: From :class:`ChannelOpsMixin`.
+        _notify_binding_updated: From :class:`ChannelOpsMixin`.
     """
 
     _store: ConversationStore
@@ -115,6 +120,7 @@ class InboundMixin(HelpersMixin):
     create_room: Any  # see InboundHost
     get_room: Any  # see InboundHost
     attach_channel: Any  # see InboundHost
+    _notify_binding_updated: Any  # see InboundHost
 
     async def process_inbound(
         self,
@@ -628,8 +634,11 @@ class InboundMixin(HelpersMixin):
         their own.
         """
         room = await self.create_room(room_id=room_id, organization_id=organization_id)
+        sender = message.sender_id
         await self.attach_channel(
-            room.id, message.channel_id, participant_id=message.sender_id or None
+            room.id,
+            message.channel_id,
+            participant_id=sender if recordable_sender(sender) else None,
         )
         return room.id
 
@@ -642,48 +651,69 @@ class InboundMixin(HelpersMixin):
         hold the binding by the time this one claims it (RFC §10.1 step 2):
         the message is then routed once more, against a store where the
         router sees that sender and refuses this one. The second answer is
-        kept whatever its claim gives: when the binding still names someone
-        else, the sender is one of several members the router found by their
-        participant record, not a stranger admitted by step 3.
+        kept whatever its claim gives, so a router is asked twice at most;
+        with a custom router that sends several strangers to one room that
+        is not a group, every sender after the first is asked twice.
         """
         room_id, created = await self._find_or_open_room(message, channel, None, organization_id)
-        if created or await self._claim_binding(room_id, message):
+        if created or await self._claim_binding(room_id, message, channel.channel_type):
             return room_id, created
         room_id, created = await self._find_or_open_room(message, channel, None, organization_id)
         if not created:
-            await self._claim_binding(room_id, message)
+            await self._claim_binding(room_id, message, channel.channel_type)
         return room_id, created
 
-    async def _claim_binding(self, room_id: str, message: InboundMessage) -> bool:
-        """Record the routed sender on a binding naming no one; False if it names another.
+    async def _claim_binding(
+        self, room_id: str, message: InboundMessage, channel_type: ChannelType
+    ) -> bool:
+        """Whether the routed sender may stay in *room_id*, recording them on a free binding.
 
         A binding that is not a group carries one correspondent's conversation,
         and the first sender routed through it is that correspondent: the
         router then finds them there and admits no one else (RFC §10.4). The
-        unlocked read keeps the usual case, a binding that already names its
-        sender, free of the lock. The claim re-reads under the room lock,
-        where every binding mutation runs, and waits for it no longer than
-        ``process_timeout``: past that the message is refused (§13.6), never
+        sender stays when the binding names them, by their address or the
+        identity the store resolves it to, or when they are a participant of
+        the room (one of several members the router found by their record).
+        Anyone else was admitted against a binding another sender claimed
+        since, and is routed again.
+        """
+        sender = message.sender_id
+        if not recordable_sender(sender):
+            return True
+        binding = await self._store.get_binding(room_id, message.channel_id)
+        if binding is not None and binding_names_no_one(binding):
+            binding = await self._record_sender(room_id, message.channel_id, sender)
+        if binding is None or binding_admits(binding, frozenset({sender})):
+            return True
+        if binding_admits(binding, await sender_known_as(self._store, channel_type, sender)):
+            return True
+        return await self._store.get_participant(room_id, sender) is not None
+
+    async def _record_sender(
+        self, room_id: str, channel_id: str, sender: str
+    ) -> ChannelBinding | None:
+        """Write *sender* on a binding naming no one, under the room lock; return it as it stands.
+
+        Re-read under the lock, where every binding mutation runs, so a
+        concurrent claim or policy change is never undone, and pushed to the
+        channel as every binding update is. The wait for the lock is bounded
+        by ``process_timeout``: past it the message is refused (§13.6), never
         let in unrecorded, which would leave the room open to a concurrent
         stranger.
         """
-        sender = message.sender_id
-        if not sender or sender == SYSTEM_SENDER_ID:
-            return True
-        binding = await self._store.get_binding(room_id, message.channel_id)
-        if binding is None or not _names_no_one(binding):
-            return binding is None or binding_admits(binding, frozenset({sender}))
         async with AsyncExitStack() as stack:
             try:
                 async with asyncio.timeout(self._process_timeout):
                     await stack.enter_async_context(self._lock_manager.locked(room_id))
             except TimeoutError:
                 raise _ClaimTimeoutError(room_id) from None
-            binding = await self._store.get_binding(room_id, message.channel_id)
-            if binding is None or not _names_no_one(binding):
-                return binding is None or binding_admits(binding, frozenset({sender}))
-            await self._store.update_binding(binding.model_copy(update={"participant_id": sender}))
-            return True
+            binding = await self._store.get_binding(room_id, channel_id)
+            if binding is None or not binding_names_no_one(binding):
+                return binding
+            binding = binding.model_copy(update={"participant_id": sender})
+            await self._store.update_binding(binding)
+            self._notify_binding_updated(room_id, channel_id, binding)
+            return binding
 
     async def _maybe_auto_attach(self, room_id: str, channel_id: str) -> None:
         """Attach *channel_id* if it was never bound — not if it was revoked.
@@ -771,11 +801,6 @@ class _ClaimTimeoutError(Exception):
     def __init__(self, room_id: str) -> None:
         super().__init__(room_id)
         self.room_id = room_id
-
-
-def _names_no_one(binding: ChannelBinding) -> bool:
-    """Whether *binding* carries one conversation and no correspondent yet."""
-    return not binding.group and binding.participant_id is None
 
 
 def _apply_message_fields(event: RoomEvent, message: InboundMessage) -> RoomEvent:

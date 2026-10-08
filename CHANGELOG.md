@@ -662,10 +662,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   refused as a process timeout, and a message a hook refuses has been routed
   all the same. A sender is known by their address and by the identity the
   store resolves it to; what the host sends with `deliver()` (sender
-  `system`, `SYSTEM_SENDER_ID`) does not close a room to its customer's
-  reply, and a message routed under that sender is never let into an
-  existing room by step 3, so a sender borrowing the name gets a room of its
-  own. A member
+  `system`, `roomkit.models.delivery.SYSTEM_SENDER_ID`) does not close a room
+  to its customer's reply. A message routed under that sender is never
+  recorded on a binding nor let by step 3 into a room that is not a group, so
+  a sender borrowing the name gets a room of its own; a feed that writes as
+  `system` without naming its room declares that room's binding a group. A member
   added under an id that is neither their address nor a linked identity now
   closes a dedicated room to routing: route their messages with `room_id`, or
   `link_address()` their number. A binding speaks for its own channel: step 1
@@ -674,9 +675,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a participant of (`ConversationStore.find_room_id_by_participant`, both with
   a fallback for a store that does not implement them), so a `participant_id`
   set on one number's binding no longer routes that sender's texts to another
-  number into the same room. A delivery status that names no room reaches the
-  room whose binding names its recipient, else the one room bound to its
-  channel, else none: never the oldest of several rooms, which on a shared
+  number into the same room (a member added with `add_member` is still found
+  by their participant record, whatever number they write to). A delivery
+  status that names no room reaches the room whose binding names its
+  recipient, else the one room bound to its channel unless that binding names
+  another correspondent, else none: never the oldest of several rooms, which on a shared
   number is another customer's. A conversation of several senders on one
   channel routed without `room_id` (a group chat bound to its room) now
   declares it with `attach_channel(room_id, channel_id, group=True)`; without

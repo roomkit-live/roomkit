@@ -13,6 +13,7 @@ from roomkit.core.hooks import (
     HookRegistration,
     SyncHookFn,
 )
+from roomkit.core.inbound_router import binding_admits
 from roomkit.core.mixins.helpers import HelpersMixin
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import DeliveryStatus
@@ -328,7 +329,8 @@ class HooksApiMixin(HelpersMixin):
         """The room a delivery status belongs to, or ``None`` (RFC §10.4).
 
         The room whose binding of the channel names the status's recipient,
-        else the one active room bound to the channel. Never one of several:
+        else the one active room bound to the channel, unless its binding
+        names another correspondent. Never one of several:
         on a number shared by many correspondents, the oldest room is
         another customer's, and the status (its recipient's number among it)
         would be dispatched with that room's context.
@@ -341,7 +343,16 @@ class HooksApiMixin(HelpersMixin):
             if room_id is not None:
                 return room_id
         candidates = await self._store.find_room_ids_by_channel(channel_id, status=active, limit=2)
-        return candidates[0] if len(candidates) == 1 else None
+        if len(candidates) != 1:
+            return None
+        if not status.recipient:
+            return candidates[0]
+        # The one room is the recipient's only if its binding could name them:
+        # a binding naming another correspondent is that person's room.
+        binding = await self._store.get_binding(candidates[0], channel_id)
+        if binding is None or not binding_admits(binding, frozenset({status.recipient})):
+            return None
+        return candidates[0]
 
     def add_room_hook(
         self,

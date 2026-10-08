@@ -312,7 +312,7 @@ async def test_pages_are_rendered_by_index_not_by_clock_or_write_order(
 
 
 class _StoreWithoutTheLookup(InMemoryStore):
-    """A store written before ``find_room_id_by_binding``: the base fallback."""
+    """A store that does not override ``find_room_id_by_binding``: the base fallback."""
 
     find_room_id_by_binding = ConversationStore.find_room_id_by_binding
 

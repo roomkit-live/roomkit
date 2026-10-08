@@ -112,7 +112,7 @@ class SSESource(BaseSourceProvider):
                 return None
             return InboundMessage(
                 channel_id="custom",
-                sender_id="system",
+                sender_id="sse-chat",
                 content=TextContent(body=data),
                 external_id=event_id,
             )
