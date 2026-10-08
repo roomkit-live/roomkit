@@ -59,9 +59,10 @@ class SpeakTurn:
     """The agent's channel: its own answers in ``recent`` come from it."""
 
     speakers: Mapping[str, str] = field(default_factory=dict)
-    """Who said ``event`` and each of ``recent``, by event id, where the room
-    names them: the name the sender's transport stamped on the event, else the
-    participant's display name, as the AI context names speakers."""
+    """Who said ``event`` and each of ``recent``, by event id, by the label the
+    AI context gives them (RFC §6.4): the sender's name, the channel for a
+    sender with none (``@sms1``), and the rank of a sender whose name reads
+    like an earlier one's (``ALICE (2)``, not Alice)."""
 
     thought: Thought | None = None
     """What the agent has in mind, when its channel has a thinker."""

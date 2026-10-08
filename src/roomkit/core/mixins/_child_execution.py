@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple, Protocol, runtime_checkable
 from uuid import uuid4
 
 from roomkit.core._failure_log import mark_reported
+from roomkit.core._requester import with_requester
 from roomkit.core.event_router import responder_turn_entries, stream_record
 from roomkit.core.exceptions import TaskCutShortError, TaskTurnFailedError, TurnCutShortError
 from roomkit.core.lanes import DeliveryCascade
@@ -688,7 +689,11 @@ async def run_agent_in_child_room(
 
     *turns*, when given, receives each responder's turn entry (its end, its
     usage), the last turn's, however it ended (RFC §23.3 step 6).
+
+    When several people speak in the room the work comes from, the task opens
+    with who asked for it (RFC §19.7, :func:`~roomkit.core._requester.requested_line`).
     """
+    task_desc = with_requester(task_desc)
     if require_structured_result:
         return await _run_with_structured_result(
             kit, child_room_id, task_desc, max_result_retries, result_tool, turns=turns

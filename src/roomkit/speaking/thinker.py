@@ -16,6 +16,7 @@ from roomkit._lookalike import reads_as
 from roomkit._text import json_line, quoted
 from roomkit.channels._speaker import SPEAKER_KEY, said_by
 from roomkit.channels._turn_notes import split_turn_notes
+from roomkit.channels._user_text import split_leading_text
 from roomkit.providers.ai.base import AIContext, AIMessage, AIProvider, ProviderError
 from roomkit.speaking.thought import MAX_WANT_TO_SAY, Thought
 from roomkit.tools.fence import fence
@@ -162,7 +163,11 @@ def transcript_line(message: AIMessage) -> str:
         return ""
     if message.role == "assistant":
         return f"You: {quoted(text, LINE_LIMIT)}"
-    return _said_by(text, message.metadata.get(SPEAKER_KEY))
+    # A summary joined ahead of the turn is quoted apart, so the turn's label
+    # opens its own line, out of the quote (RFC §6.4).
+    lead, own = split_leading_text(message, text)
+    said = _said_by(own, message.metadata.get(SPEAKER_KEY)) if own else ""
+    return "\n".join(line for line in (quoted(lead, LINE_LIMIT) if lead else "", said) if line)
 
 
 def _said_by(text: str, speaker: Any) -> str:

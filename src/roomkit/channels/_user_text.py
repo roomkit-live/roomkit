@@ -30,11 +30,30 @@ def joined(message: AIMessage, text: str, *, before: bool) -> AIMessage:
     return message.model_copy(update={"content": joined_content})
 
 
+LEADING_TEXT = "leading_text"
+"""The ``AIMessage.metadata`` key holding the text the runtime joined ahead of a
+user message (a summary): a reader renders it apart, before the label the
+message opens with (RFC §6.4)."""
+
+
 def with_leading_text(text: str | None, messages: list[AIMessage]) -> list[AIMessage]:
-    """*text* ahead of *messages*, joined to the first when it is a user message."""
+    """*text* ahead of *messages*, joined to the first when it is a user
+    message, which keeps it apart in its metadata (:data:`LEADING_TEXT`)."""
     if text is None:
         return messages
     first = messages[0] if messages else None
     if first is None or first.role != "user":
         return [AIMessage(role="user", content=text), *messages]
-    return [joined(first, text, before=True), *messages[1:]]
+    lead = joined(first, text, before=True)
+    lead = lead.model_copy(update={"metadata": {**first.metadata, LEADING_TEXT: text}})
+    return [lead, *messages[1:]]
+
+
+def split_leading_text(message: AIMessage, text: str) -> tuple[str, str]:
+    """*text*, a rendering of *message*'s content, split into the text the
+    runtime joined ahead of it and the message's own; ``("", text)`` when it
+    holds none."""
+    lead = message.metadata.get(LEADING_TEXT)
+    if isinstance(lead, str) and lead and text.startswith(lead):
+        return lead, text[len(lead) :].strip()
+    return "", text

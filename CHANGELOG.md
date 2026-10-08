@@ -1008,6 +1008,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ACP request itself, memory summaries, delegated tasks and the speak policy
   follow in RMK-614, RMK-615 and RMK-616.
 
+- A delegated task, a turn a summary is joined to and a speak policy name the
+  author of a participant's turn (RMK-615, RFC §6.4, §19.7). In a room where
+  several people speak, a worker read `User request: <task>…` without
+  knowing who asked; a delegated task now names the asker out of its block:
+  `Alice asked:` before a participant's own words (the supervisor's one-pass
+  delegation), `Requested by Alice (2), in the delegating agent's words:`
+  before a task an agent wrote, read in a tool with the new
+  `roomkit.tools.current_tool_requester()` (the AI channel sets it from the
+  turn's label; `tool_turn_context(requester=…)` for a test), and every task
+  a worker receives through `run_agent_in_child_room` opens with that line;
+  a one-to-one conversation names no one. A thinker and a compaction quoted
+  the label of a turn a memory summary was joined to (`“[Conversation
+  summary…] … @sms1: Alice: …”`); the joined message keeps its summary apart
+  (`AIMessage.metadata["leading_text"]`) and both render the summary, then
+  `@sms1: “Alice: …”`. **Behaviour change:** `SpeakTurn.speakers` holds the
+  label the AI context gives each turn (`Alice`, `ALICE (2)`, `@sms1`)
+  rather than the raw name, the agent's own turns aside, so a classifier no
+  longer reads an impostor as Alice, nor a nameless sender as `someone`, and
+  `AnswerOnly("Alice")` no longer answers a sender who writes `ALICE`.
+
 - The request an ACP agent is prompted with and the lines a memory
   summarizer reads name the author of a participant's turn (RMK-614, RFC
   §6.4). After a room context naming Alice, an unnamed sender's request

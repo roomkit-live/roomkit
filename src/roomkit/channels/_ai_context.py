@@ -279,7 +279,11 @@ class AIContextMixin(_AIChannelContract):
         (*own_notes*) after what the memory retrieved. The notes' header is the
         channel's alone: a copy the conversation holds is replaced (RFC §6.4)."""
         memory_result = await self._visible_memory(event, context, standalone)
-        messages, attribute_speakers = self._turn_messages(event, context, memory_result, loop_ctx)
+        messages, attribute_speakers, requester = self._turn_messages(
+            event, context, memory_result, loop_ctx
+        )
+        # Who a task this turn delegates names as having asked (RFC §19.7).
+        loop_ctx.requester = requester
         messages = conversation_without_header_copies(messages)
         notes = self._turn_notes(
             own_notes, speakers=attribute_speakers, retrieved=memory_result.notes
@@ -375,9 +379,10 @@ class AIContextMixin(_AIChannelContract):
         context: RoomContext,
         memory_result: MemoryResult,
         loop_ctx: _ToolLoopContext,
-    ) -> tuple[list[AIMessage], bool]:
-        """The turn's messages, its history then its input, and whether several
-        speakers are labelled in them.
+    ) -> tuple[list[AIMessage], bool, str | None]:
+        """The turn's messages, its history then its input, whether several
+        speakers are labelled in them, and the label of the turn's author
+        when they are.
 
         ``_determine_role`` flattens every non-self event into one "user"
         stream, which erases who said what in a room where several people
@@ -412,7 +417,8 @@ class AIContextMixin(_AIChannelContract):
         if current_content:
             label = current_label if attribute_speakers else None
             messages.append(_turn_message("user", current_content, label))
-        return _after_memory(memory, messages[len(memory) :]), attribute_speakers
+        requester = current_label if attribute_speakers else None
+        return _after_memory(memory, messages[len(memory) :]), attribute_speakers, requester
 
     def _past_turns(
         self, memory_result: MemoryResult, context: RoomContext, labels: dict[str, str | None]

@@ -9,9 +9,9 @@ import time
 from typing import TYPE_CHECKING
 
 from roomkit.channels._ai_cuts import cut_records, cut_reply
-from roomkit.channels._speaker import author_name, participant_name
+from roomkit.channels._speaker import participant_name, turn_labels
 from roomkit.core.visibility import visible_events
-from roomkit.models.enums import EventType, ParticipantRole, ParticipantStatus
+from roomkit.models.enums import ChannelType, EventType, ParticipantRole, ParticipantStatus
 from roomkit.models.event import is_tool_call_record
 from roomkit.speaking.base import SpeakDecision, SpeakDecisionEvent, SpeakPolicy, SpeakTurn
 
@@ -129,8 +129,12 @@ def _speak_turn(
         for e in visible_events(context, channel_id)
         if e.id != event.id and e.type == EventType.MESSAGE and not is_tool_call_record(e)
     )
+    # The labels the AI context gives, the agent's own turns aside (RFC §6.4).
+    labels = turn_labels((*recent, event), context)
     speakers = {
-        e.id: name for e in (*recent, event) if (name := author_name(e, context)) is not None
+        e.id: label
+        for e in (*recent, event)
+        if e.source.channel_id != channel_id and (label := labels.get(e.id)) is not None
     }
     return SpeakTurn(
         event=event,
@@ -163,7 +167,9 @@ def _people(
         dict.fromkeys(
             speakers[e.id]
             for e in events
-            if e.source.channel_id != channel_id and e.id in speakers
+            if e.source.channel_id != channel_id
+            and e.source.channel_type != ChannelType.AI
+            and e.id in speakers
         )
     )
     return voices if len(voices) > len(participants) else participants

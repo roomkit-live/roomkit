@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from roomkit._text import quoted
 from roomkit.channels._speaker import SPEAKER_KEY, said_by
 from roomkit.channels._tool_eviction import (
     REREAD_TOOL,
@@ -20,6 +21,7 @@ from roomkit.channels._tool_eviction import (
     is_eviction_placeholder,
     kept_whole,
 )
+from roomkit.channels._user_text import LEADING_TEXT, split_leading_text
 from roomkit.providers.ai.base import AIMessage, AITextPart, AIToolResultPart
 from roomkit.tools.fence import named_blocks
 
@@ -71,17 +73,25 @@ def _said(message: AIMessage) -> str:
     """What the summary quotes of *message*: its text, cut short and quoted on
     one line after the name the context gave its speaker (RFC §6.4), a
     delimited block named rather than quoted."""
-    if isinstance(message.content, str):
-        text = message.content
-    else:
+    parts = message.content if isinstance(message.content, list) else None
+    lead, text = "", message.content if isinstance(message.content, str) else ""
+    if parts is not None:
+        first = parts[0] if parts else None
+        if isinstance(first, AITextPart) and first.text == message.metadata.get(LEADING_TEXT):
+            lead, parts = first.text, parts[1:]
         text = " ".join(
             named_blocks(part.text)[:_SUMMARY_PART_CHARS]
             if isinstance(part, AITextPart)
             else f"[{part.type}]"
-            for part in message.content
+            for part in parts
         )
+    elif message.role == "user":
+        lead, text = split_leading_text(message, text)
     speaker = message.metadata.get(SPEAKER_KEY) if message.role == "user" else None
-    return said_by(named_blocks(text), speaker, _SUMMARY_MESSAGE_CHARS)
+    said = said_by(named_blocks(text), speaker, _SUMMARY_MESSAGE_CHARS)
+    # A summary joined ahead of the turn is quoted apart, so the turn's label
+    # stays out of the quote (RFC §6.4).
+    return f"{quoted(named_blocks(lead), _SUMMARY_MESSAGE_CHARS)}\n{said}" if lead else said
 
 
 def with_results_stored(messages: list[AIMessage], eviction: ToolEviction) -> list[AIMessage]:

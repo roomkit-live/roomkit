@@ -37,10 +37,11 @@ class AnswerOnly(SpeakPolicy):
     only listened to does not turn a conversation with one person into a group
     one.
 
-    A speaker is matched by the name the room gives them (``SpeakTurn.speakers``:
-    the name the sender's transport stamped, else the participant's display
-    name), ignoring case and spacing. It chooses whom the agent answers; it is
-    not an access control, since a participant may take any display name.
+    A speaker is matched by the label the room gives them (``SpeakTurn.speakers``:
+    the sender's name, ranked when it reads like an earlier source's, so a
+    sender writing ``ALICE`` after Alice reads ``ALICE (2)`` and is not
+    Alice), ignoring case and spacing. It chooses whom the agent answers; it
+    is not an access control, since a participant may take any display name.
 
     Args:
         policy: Decides on the turns of the people answered.

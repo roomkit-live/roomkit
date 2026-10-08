@@ -196,6 +196,10 @@ class _ToolLoopContext:
     # participant's ``identification``, which is why
     # ``current_tool_actor_id()`` documents the resolution a host owes it.
     actor_id: str | None = None
+    # The label the conversation gives the turn's author when several people
+    # speak (RFC §6.4), ``None`` in a one-to-one conversation: who a task
+    # delegated in this turn names as having asked for it (RFC §19.7).
+    requester: str | None = None
     room_id: str | None = None
     # The channel whose loop runs the turn: the calls it announced are its
     # own, claimed by its reports alone (RFC §9.3).
@@ -339,6 +343,7 @@ class _ToolLoopContext:
         if parent is not None:
             ctx.current_participant_role = parent.current_participant_role
             ctx.actor_id = parent.actor_id
+            ctx.requester = parent.requester
             ctx.chain_depth = parent.chain_depth
             ctx.all_context_tools = parent.all_context_tools
             ctx.admits = parent.admits
@@ -428,6 +433,17 @@ def current_tool_room() -> Room | None:
     """
     ctx = _current_loop_ctx.get()
     return ctx.room if ctx is not None else None
+
+
+def current_tool_requester() -> str | None:
+    """Who asked, by the label the conversation gives the author of the turn
+    the caller executes under, when several people speak in the room
+    (``Alice``, ``ALICE (2)``, ``@sms1``; RFC §6.4): what a task delegated in
+    this turn names out of its block (RFC §19.7). ``None`` in a one-to-one
+    conversation, for a turn with no author, and outside a tool loop.
+    """
+    ctx = _current_loop_ctx.get()
+    return ctx.requester if ctx is not None else None
 
 
 def current_tool_actor_id() -> str | None:
@@ -583,6 +599,7 @@ def tool_turn_context(
     tools: Iterable[AITool] | None = None,
     chain_depth: int = 0,
     call: ToolCallContext | None = None,
+    requester: str | None = None,
 ) -> Iterator[None]:
     """Run the enclosed code as a tool call of a turn described by the arguments.
 
@@ -607,6 +624,8 @@ def tool_turn_context(
             (RFC §8.3), which a result delivered later on its behalf inherits.
             0, the default, is what outside a turn reads (RFC §21.4); an AI
             channel's turn answering a human's message runs at 1.
+        requester: Who asked, read by :func:`current_tool_requester`;
+            ``None`` for a one-to-one conversation.
         call: The per-call record :func:`current_tool_call` answers; a handler
             writing its ``structured_content`` writes this object. Its
             ``room_id`` is the turn's, as the tool loop builds it (``""`` for
@@ -623,6 +642,7 @@ def tool_turn_context(
     _check_one_room(room_id, room, call)
     ctx = _ToolLoopContext.for_loop(None, room_id, room)
     ctx.actor_id = actor_id
+    ctx.requester = requester
     ctx.chain_depth = chain_depth
     ctx.all_context_tools = None if tools is None else list(tools)
     with _installed(ctx, call):
