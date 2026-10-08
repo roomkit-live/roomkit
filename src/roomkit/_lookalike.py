@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import functools
 import re
+import unicodedata
 
 from roomkit._lookalike_data import FORMS, SEQUENCES
 
@@ -234,6 +235,35 @@ def phrase_space(marks: str) -> str:
     invisible character. Never a bracket: a run of brackets then starts no
     copy at each of its brackets."""
     return rf"(?:[\s{INVISIBLE}{_COMBINING}{_MARKUP}{marks}]|{_IOTA})"
+
+
+@functools.cache
+def _reads() -> dict[str, str]:
+    """Each form in the look-alike tables, with the letters it reads as."""
+    reads = {char: run for run, chars in SEQUENCES.items() for char in chars}
+    reads |= {form: target for target, forms in FORMS.items() for form in forms}
+    return reads
+
+
+@functools.cache
+def _joint() -> re.Pattern[str]:
+    return re.compile(JOINT, re.IGNORECASE)
+
+
+def skeletons(text: str) -> frozenset[str]:
+    """*text* as a model reads it, to tell whether two names read alike: each
+    character as the letters the look-alike tables read it as, in lower case,
+    an invisible character or a combining mark left out; once as written and
+    once in lower case, since a capital may read as another letter than its
+    lowercase (``Ian`` reads like ``lan``, ``ALICE`` like ``Alice``). Two
+    names read alike when they share one."""
+    bare = _joint().sub("", unicodedata.normalize("NFC", text))
+    return frozenset({_skeleton(bare), _skeleton(bare.lower())})
+
+
+def _skeleton(text: str) -> str:
+    reads = _reads()
+    return "".join(reads.get(char) or reads.get(char.lower()) or char.lower() for char in text)
 
 
 def reads_as(text: str, word: str) -> bool:

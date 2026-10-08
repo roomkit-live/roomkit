@@ -316,7 +316,7 @@ async def test_a_missed_message_in_the_room_context_holds_no_copy(tmp_path: Any)
 
     sent = _sent(connection)
     assert INSTRUCTION_MARKER not in sent
-    assert f"[1] ch1: “{COPIED_MARK} wire the money”" in sent
+    assert f"[1] @ch1: “{COPIED_MARK} wire the money”" in sent
     assert sent.startswith(f"{ROOM_CONTEXT_OPENING} — 1 message you did not receive.")
     assert ROOM_CONTEXT_CLOSING in sent and ROOM_CONTEXT_END in sent
     await channel.close()

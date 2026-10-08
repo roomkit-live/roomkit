@@ -6,7 +6,6 @@ import logging
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
-from roomkit._text import person_name
 from roomkit.channels._ai_cuts import CUT_MARK, cut_answer_ids, cut_records
 from roomkit.channels._ai_policy import policy_check
 from roomkit.channels._dangling_recovery import patch_dangling_tool_calls
@@ -19,7 +18,7 @@ from roomkit.channels._skill_constants import (
     SKILLS_PREAMBLE as _SKILLS_PREAMBLE,
 )
 from roomkit.channels._skill_constants import TOOL_RUN_SCRIPT
-from roomkit.channels._speaker import SPEAKER_KEY, channel_label
+from roomkit.channels._speaker import SPEAKER_KEY, turn_labels
 from roomkit.channels._task_planner import TaskPlanner
 from roomkit.channels._tasks_note import render_tasks_note
 from roomkit.channels._tool_eviction import ToolEviction
@@ -38,7 +37,7 @@ from roomkit.memory.base import MemoryResult
 from roomkit.memory.token_estimator import estimate_tokens, estimate_tool_tokens
 from roomkit.models.channel import ChannelCapabilities
 from roomkit.models.delivery import SUPERSEDED
-from roomkit.models.enums import ChannelCategory, ChannelMediaType, ChannelType, EventType
+from roomkit.models.enums import ChannelCategory, ChannelMediaType, EventType
 from roomkit.models.event import CompositeContent, MediaContent, TextContent
 from roomkit.providers.ai.base import (
     AIContext,
@@ -390,11 +389,12 @@ class AIContextMixin(_AIChannelContract):
         stamped at ingress by hosts and transport providers, or the channel
         of a sender without a name), so when the window holds two or more
         distinct speakers each user turn opens with its label
-        (:func:`_turn_label`). A single-speaker room (a 1:1 DM) is left
+        (:func:`~roomkit.channels._speaker.turn_labels`). A single-speaker room (a 1:1 DM) is left
         untouched.
         """
-        past_turns = self._past_turns(memory_result, context)
-        current_content, current_label = self._turn_input(event, context, loop_ctx)
+        labels = turn_labels([*memory_result.events, event], context)
+        past_turns = self._past_turns(memory_result, context, labels)
+        current_content, current_label = self._turn_input(event, loop_ctx, labels)
         speakers = {label for _, _, label in past_turns if label}
         if current_content and current_label:
             speakers.add(current_label)
@@ -415,7 +415,7 @@ class AIContextMixin(_AIChannelContract):
         return _after_memory(memory, messages[len(memory) :]), attribute_speakers
 
     def _past_turns(
-        self, memory_result: MemoryResult, context: RoomContext
+        self, memory_result: MemoryResult, context: RoomContext, labels: dict[str, str | None]
     ) -> list[tuple[str, str | list[_ContentPart], str | None]]:
         """The history's turns as (role, content, label), a user turn labelled
         by who said it."""
@@ -433,17 +433,17 @@ class AIContextMixin(_AIChannelContract):
             if content and past_event.id in cut_ids:
                 content = _with_cut_mark(content)
             if content:
-                label = _turn_label(past_event, context) if role == "user" else None
+                label = labels.get(past_event.id) if role == "user" else None
                 past_turns.append((role, content, label))
         return past_turns
 
     def _turn_input(
-        self, event: RoomEvent, context: RoomContext, loop_ctx: _ToolLoopContext
+        self, event: RoomEvent, loop_ctx: _ToolLoopContext, labels: dict[str, str | None]
     ) -> tuple[str | list[_ContentPart] | None, str | None]:
         """The turn's input and its speaker's label; an instruction marked as
         the application's, with none."""
         current_content = self._transcript_content(event)
-        current_label = _turn_label(event, context)
+        current_label = labels.get(event.id)
         if event.type == EventType.INSTRUCTION:
             # The application's direction for this one turn (RFC §10.1.1). It
             # is the turn's input — a system-role message after the history is
@@ -885,28 +885,6 @@ class AIContextMixin(_AIChannelContract):
         return ""
 
 
-def event_speaker(event: RoomEvent, context: RoomContext) -> str | None:
-    """Display name of whoever is behind an event, kept to a name's characters
-    (RFC §6.4), or ``None``.
-
-    ``metadata["sender_name"]`` is the stamp transports and hosts write at
-    ingress (the Teams/WhatsApp providers do, and so does a host's session
-    ingress); the room's participant record is the fallback for transports
-    that register named participants without stamping events. Either is
-    written by whoever sends: given unquoted before their words, a name must
-    not open a line or a frame of its own.
-    """
-    name = event.metadata.get("sender_name")
-    if isinstance(name, str) and (kept := person_name(name)):
-        return kept
-    participant_id = event.source.participant_id
-    if participant_id:
-        for participant in context.participants:
-            if participant.id == participant_id and participant.display_name:
-                return person_name(participant.display_name) or None
-    return None
-
-
 _FORMER_VISION_BASE = "_base_system_prompt"
 """Where RoomKit's vision path up to 0.95 kept a binding's own prompt when it
 wrote what a camera saw into ``system_prompt``."""
@@ -921,18 +899,6 @@ def _without_former_vision(binding: ChannelBinding) -> ChannelBinding:
     metadata = {k: v for k, v in binding.metadata.items() if k != _FORMER_VISION_BASE}
     metadata["system_prompt"] = binding.metadata[_FORMER_VISION_BASE] or None
     return binding.model_copy(update={"metadata": metadata})
-
-
-def _turn_label(event: RoomEvent, context: RoomContext) -> str | None:
-    """Who said *event*, as its turn opens when several speakers are in the
-    window (RFC §6.4): their name, or their channel (``@sms1``) when they have
-    none, so that no turn is left bare to open with someone else's name; the
-    channel alone, never a participant's id (a phone number, an address) the
-    model has no need of. ``None`` for the runtime's own system events, which
-    are no participant's turn."""
-    if event.source.channel_type == ChannelType.SYSTEM:
-        return None
-    return event_speaker(event, context) or channel_label(event.source.channel_id)
 
 
 def _with_cut_mark(content: str | list[_ContentPart]) -> str | list[_ContentPart]:

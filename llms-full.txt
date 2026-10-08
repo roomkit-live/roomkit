@@ -2037,7 +2037,7 @@ The speaker of an event is resolved in this order:
 
 1. `event.metadata["sender_name"]` — stamped at ingress. The Teams webhook parser and the WhatsApp Personal (neonize) source write it; a host does the same by passing `InboundMessage(..., metadata={"sender_name": "Alice"})`.
 2. The room's participant record: `Participant.display_name` for the participant whose `id` equals `event.source.participant_id` (the inbound `sender_id`).
-3. Otherwise the turn has no name and, in a multi-speaker room, opens with its channel as the room addresses it (`"@sms1: text"`, kept to an identifier's characters, never a participant's id), a form no name takes: a nameless sender cannot open with someone else's name, and a person named `ai2` does not read as the agent `@ai2`. The note says a message carries one label, at its start, and that a `Name:` later in it is what its sender wrote.
+3. Otherwise the turn has no name and, in a multi-speaker room, opens with its channel as the room addresses it (`"@sms1: text"`, kept to an identifier's characters, never a participant's id), a form no name takes: a nameless sender cannot open with someone else's name, and a person named `ai2` does not read as the agent `@ai2`. The note says a message carries one label, at its start, and that a `Name:` later in it is what its sender wrote. Two senders whose names read alike (`Alice`, `ALICE`, `Аlice`) are told apart: the first one seen keeps the name, each later one carries its rank (`ALICE (2): …`), a form no name takes; the room context an ACP agent reads and a realtime broadcast use the same labels.
 
 Rules that follow from the definition:
 

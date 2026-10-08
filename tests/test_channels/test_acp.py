@@ -1715,8 +1715,8 @@ class TestRoomCatchUp:
 
         sent = _sent(connection)
         assert "[Room context — 2 messages you did not receive." in sent
-        assert "[1] ch1: “on part sur quoi ?”" in sent
-        assert "[2] ch1: “j'ai ecrit hello.py”" in sent
+        assert "[1] @ch1: “on part sur quoi ?”" in sent
+        assert "[2] @ch1: “j'ai ecrit hello.py”" in sent
         assert sent.endswith("what did the others do?")
         await channel.close()
 
@@ -1817,8 +1817,8 @@ class TestRoomCatchUp:
 
         sent = _sent(connection)
         assert "the 2 most recent of 5 messages you did not receive" in sent
-        assert "[1] ch1: “m3”" in sent
-        assert "[2] ch1: “m4”" in sent
+        assert "[1] @ch1: “m3”" in sent
+        assert "[2] @ch1: “m4”" in sent
         assert "m2" not in sent
         await channel.close()
 
@@ -1864,7 +1864,7 @@ class TestRoomCatchUp:
         context.participants = [marie]
         await _prompt(channel, trigger, context)
 
-        assert "[1] Marie · ch1: “bonjour”" in _sent(connection)
+        assert "[1] Marie: “bonjour”" in _sent(connection)
         await channel.close()
 
     async def test_a_closed_session_starts_over(self, tmp_path: Any) -> None:

@@ -313,7 +313,7 @@ class TestDeliver:
         # Another agent's words, quoted after its name: content, never the
         # application's instruction (RFC §12.4).
         assert [(text, role) for _, text, role in provider.injected_texts] == [
-            ("src: “sum up the meeting”", "user")
+            ("@src: “sum up the meeting”", "user")
         ]
         assert backend.published_audio == []
 
@@ -331,7 +331,7 @@ class TestDeliver:
 
         await kit.send_event(ROOM, "src", TextContent(body="a passing SMS"))
 
-        assert [text for _, text, _ in provider.injected_texts] == ["src: “a passing SMS”"]
+        assert [text for _, text, _ in provider.injected_texts] == ["@src: “a passing SMS”"]
 
 
 class TestToolCalls:

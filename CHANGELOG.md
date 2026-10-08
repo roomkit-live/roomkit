@@ -849,6 +849,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `role="system", silent=True`; a silent injection with the default `user`
   intent is now content in a `<context>` block.
 
+- A sender who takes another's name, or a look-alike of it, no longer reads
+  as that person, and one label names a participant's turn wherever a model
+  reads it (RMK-607, RFC §6.4). Two resolvers named a turn's author: the
+  AIChannel's (sender name, then participant by id) and the ACP room
+  context's and realtime broadcast's (`Marie · sms`, participant by id or
+  identity, no sender name). One resolver in `channels/_speaker.py` now gives
+  the label everywhere a model reads a turn: the name (sender name, then the
+  participant by id or identity), `@channel` for a sender without one. When a
+  later source's name reads like an earlier one's in the window, in case or
+  in Unicode's confusables, it carries its rank: `Alice`, then `ALICE (2)`,
+  `Аlice (3)`, a form no name takes. The ACP room context now reads
+  `[1] Marie: “…”` and `[2] @claude-code: “…”`, a realtime broadcast
+  `Marie: “…”`, as the conversation does; the console keeps `Marie · sms`
+  for a human reader. The ACP request itself, memory summaries and delegated
+  tasks follow in RMK-614 and RMK-615.
+
 - The forms a fenced block's tag, a runtime mark and an agent's name are read
   in come from Unicode's confusables (RMK-602, RFC §6.4). A hand-written
   table of homoglyphs missed what UTS #39 lists: Coptic and Cherokee letters,

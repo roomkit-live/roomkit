@@ -33,7 +33,7 @@ from roomkit.channels._acp_marks import (
     ROOM_CONTEXT_OPENING,
 )
 from roomkit.channels._mark_copies import without_mark_copies
-from roomkit.channels._speaker import speaker_label
+from roomkit.channels._speaker import channel_label, turn_labels
 from roomkit.channels.base import Channel
 from roomkit.core.visibility import visible_events
 from roomkit.models.context import RoomContext
@@ -141,10 +141,11 @@ def room_context_block(
         )
 
     shown = missed[-limit:]
+    labels = turn_labels(shown, context)
     # Each message quoted on its line: it cannot end the block nor start a
     # line of its own (RFC §6.4).
     lines = [
-        f"[{position}] {_label(event, context, channel_id)}: "
+        f"[{position}] {_label(event, labels, channel_id)}: "
         f"{quoted(acp_event_text(event), ENTRY_LIMIT)}"
         for position, event in enumerate(shown, start=1)
     ]
@@ -158,10 +159,12 @@ def _from_standalone_turn(event: RoomEvent) -> bool:
     return isinstance(acp_meta, dict) and acp_meta.get("standalone") is True
 
 
-def _label(event: RoomEvent, context: RoomContext, channel_id: str) -> str:
+def _label(event: RoomEvent, labels: dict[str, str | None], channel_id: str) -> str:
+    """Who wrote *event*, as the agent reads it: itself in another session, or
+    the label the conversation gives the turn (RFC §6.4)."""
     if event.source.channel_id == channel_id:
         return "you (in a separate session)"
-    return speaker_label(event, context)
+    return labels.get(event.id) or channel_label(event.source.channel_id)
 
 
 def _count(number: int, noun: str) -> str:

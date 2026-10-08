@@ -91,7 +91,7 @@ class TestSupervisorTextInjection:
         # Content its author wrote, never the application's instruction
         assert len(provider.injected_texts) == 1
         assert provider.injected_texts[0][1:] == (
-            "supervisor: “Offer the customer a 20% discount”",
+            "@supervisor: “Offer the customer a 20% discount”",
             "user",
         )
 
@@ -197,6 +197,6 @@ class TestMutedChannelStillReceivesEvents:
         # on_event is still called on muted channels (per EventRouter)
         # So text should still be injected into the provider
         assert len(provider.injected_texts) == 1
-        assert provider.injected_texts[0][1] == "supervisor: “Muted but still injecting”"
+        assert provider.injected_texts[0][1] == "@supervisor: “Muted but still injecting”"
 
         await kit.close()

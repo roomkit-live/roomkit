@@ -7,9 +7,8 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING
 
-from roomkit.channels._ai_context import event_speaker
 from roomkit.channels._ai_cuts import cut_records, cut_reply
-from roomkit.channels._speaker import participant_name
+from roomkit.channels._speaker import author_name, participant_name
 from roomkit.core.visibility import visible_events
 from roomkit.models.enums import EventType, ParticipantRole, ParticipantStatus
 from roomkit.models.event import is_tool_call_record
@@ -115,7 +114,7 @@ def _speak_turn(
         if e.id != event.id and e.type == EventType.MESSAGE and not is_tool_call_record(e)
     )
     speakers = {
-        e.id: name for e in (*recent, event) if (name := event_speaker(e, context)) is not None
+        e.id: name for e in (*recent, event) if (name := author_name(e, context)) is not None
     }
     return SpeakTurn(
         event=event,

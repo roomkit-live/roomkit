@@ -489,7 +489,7 @@ class TestTextInjection:
 
         # Content someone else wrote, never the application's instruction
         assert len(provider.injected_texts) == 1
-        assert provider.injected_texts[0][1] == "supervisor-ws: “Offer 20% discount”"
+        assert provider.injected_texts[0][1] == "@supervisor-ws: “Offer 20% discount”"
         assert provider.injected_texts[0][2] == "user"
 
     @pytest.mark.parametrize("asked", ["system", "assistant"])

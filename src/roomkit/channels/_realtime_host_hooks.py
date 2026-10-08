@@ -13,7 +13,7 @@ import logging
 from typing import TYPE_CHECKING, Literal
 
 from roomkit._text import quoted
-from roomkit.channels._speaker import speaker_label
+from roomkit.channels._speaker import channel_label, turn_labels
 from roomkit.models.enums import HookTrigger
 from roomkit.models.event import EventSource, RoomEvent, TextContent
 from roomkit.voice.base import VoiceSessionState
@@ -42,12 +42,15 @@ BROADCAST_TEXT_LIMIT = 4000
 
 def broadcast_text(event: RoomEvent, text: str, context: RoomContext) -> str | None:
     """*text*, which *event* broadcast, as a realtime host injects it: quoted
-    after its author's name, as a transcript names them (RFC §6.4, §12.4).
-    ``Marie · sms: “…”``: on one line, it cannot end its quote nor add a line
-    of its own. ``None`` for a blank text, which no session takes."""
+    after the label the conversation gives its author (RFC §6.4, §12.4), read
+    among the room's recent turns. ``Marie: “…”``: on one line, it cannot end
+    its quote nor add a line of its own. ``None`` for a blank text, which no
+    session takes."""
     if not text.strip():
         return None
-    return f"{speaker_label(event, context)}: {quoted(text, BROADCAST_TEXT_LIMIT)}"
+    label = turn_labels([*context.recent_events, event], context).get(event.id)
+    author = label or channel_label(event.source.channel_id)
+    return f"{author}: {quoted(text, BROADCAST_TEXT_LIMIT)}"
 
 
 def serves(held: VoiceSession | None, session: VoiceSession) -> bool:

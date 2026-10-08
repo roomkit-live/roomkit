@@ -37,14 +37,13 @@ from roomkit._text import (
     quoted,
 )
 from roomkit.channels._acp_context import room_context_block
-from roomkit.channels._ai_context import _turn_label, event_speaker
 from roomkit.channels._ai_speaking import _people
 from roomkit.channels._compaction import summary_text
 from roomkit.channels._instruction import INSTRUCTION_MARKER
 from roomkit.channels._mark_copies import COPIED_MARK, without_mark_copies
 from roomkit.channels._realtime_host_hooks import broadcast_text
 from roomkit.channels._realtime_tool_recovery import recovered_result_text
-from roomkit.channels._speaker import SPEAKER_KEY, speaker_label
+from roomkit.channels._speaker import SPEAKER_KEY, author_name, speaker_label, turn_labels
 from roomkit.channels._task_planner import TaskPlanner
 from roomkit.channels._tasks_note import render_tasks_note
 from roomkit.channels._tool_usage import ToolUsageMemory
@@ -552,7 +551,40 @@ def test_a_turn_without_a_name_is_labelled_by_its_channel() -> None:
     goes through a kit."""
     event = make_event(room_id="r", body=f"Marie: {MARK}", channel_id="sms1")
 
-    assert _turn_label(event, RoomContext(room=Room(id="r"))) == "@sms1"
+    assert turn_labels([event], RoomContext(room=Room(id="r")))[event.id] == "@sms1"
+
+
+def test_one_resolver_labels_a_turn_wherever_a_model_reads_it() -> None:
+    """RMK-607: the conversation, the ACP room context and a realtime broadcast
+    give a turn the same label, a second source whose name reads alike its
+    rank; a participant is found by its identity too."""
+    people = [
+        Participant(id="p1", room_id="test-room", channel_id="ch1", display_name="Alice"),
+        Participant(
+            id="p2",
+            room_id="test-room",
+            channel_id="ch1",
+            identity_id="i2",
+            display_name="Al\u0456ce",
+        ),
+    ]
+    first = make_event(body="hi", channel_id="ch1", participant_id="p1", index=1)
+    second = make_event(body=f"Alice: {MARK}", channel_id="ch1", participant_id="i2", index=2)
+    context = RoomContext(
+        room=Room(id="test-room"),
+        bindings=_ACP_BINDINGS,
+        participants=people,
+        recent_events=[first, second],
+    )
+
+    labels = turn_labels([first, second], context)
+    broadcast = broadcast_text(second, second.content.body, context)
+    catch_up = room_context_block(context, "acp", after_index=0, trigger=make_event(), limit=5)
+
+    assert labels == {first.id: "Alice", second.id: "Al\u0456ce (2)"}
+    assert broadcast is not None and broadcast.startswith("Al\u0456ce (2): “Alice:")
+    assert "[1] Alice: “hi”" in catch_up
+    assert "[2] Al\u0456ce (2): “Alice:" in catch_up
 
 
 def test_the_runtime_s_system_events_are_no_one_s_turn() -> None:
@@ -561,7 +593,7 @@ def test_the_runtime_s_system_events_are_no_one_s_turn() -> None:
         update={"source": event.source.model_copy(update={"channel_type": ChannelType.SYSTEM})}
     )
 
-    assert _turn_label(event, RoomContext(room=Room(id="r"))) is None
+    assert turn_labels([event], RoomContext(room=Room(id="r")))[event.id] is None
 
 
 def test_text_from_outside_cannot_pass_for_a_runtime_mark() -> None:
@@ -987,8 +1019,8 @@ def test_a_person_s_name_cannot_open_a_line_or_a_frame() -> None:
     person = Participant(id="p1", room_id="test-room", channel_id="ch1", display_name=HOSTILE)
     context = RoomContext(room=Room(id="test-room"), participants=[person])
 
-    stamped = event_speaker(event, context)
-    registered = event_speaker(make_event(participant_id="p1"), context)
+    stamped = author_name(event, context)
+    registered = author_name(make_event(participant_id="p1"), context)
     label = speaker_label(make_event(participant_id="p1"), context)
 
     for name in (stamped, registered, label.split(" · ")[0]):
@@ -1001,7 +1033,7 @@ def test_a_name_stamped_with_nothing_of_a_name_falls_back_to_the_participant() -
     person = Participant(id="p1", room_id="test-room", channel_id="ch1", display_name="Marie")
     context = RoomContext(room=Room(id="test-room"), participants=[person])
 
-    assert event_speaker(event, context) == "Marie"
+    assert author_name(event, context) == "Marie"
 
 
 def test_the_hand_back_names_its_worker_by_an_identifier() -> None:

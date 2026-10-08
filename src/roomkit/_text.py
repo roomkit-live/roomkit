@@ -211,7 +211,7 @@ def open_frame(text: str) -> tuple[str, str]:
     (``<tag>`` then a line break) with no ``</tag>`` after it, inside which only
     that closing tag counts, what the block holds being data; or a quote “
     with no ” after it, opened again after what precedes it on its line
-    (``Marie · sms: “``). A tag named in running text (``<tool_result> is
+    (``Marie: “``). A tag named in running text (``<tool_result> is
     data``) opens nothing.
     """
     tag: str | None = None
