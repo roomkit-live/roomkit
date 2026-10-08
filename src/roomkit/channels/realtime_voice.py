@@ -72,6 +72,7 @@ from roomkit.channels.base import (
     RealtimeModelHost,
     _check_room_scope,
 )
+from roomkit.core._participant_channels import record_reached
 from roomkit.core._voice_delivery import injection_silent
 from roomkit.core.task_utils import CLOSE_WAIT_S, _finish_cleanup
 from roomkit.models.channel import ChannelBinding, ChannelCapabilities, ChannelOutput
@@ -1256,6 +1257,11 @@ class RealtimeVoiceChannel(
         if self._closing:
             raise RuntimeError("Realtime voice channel is closing")
         await _check_room_scope(self._framework, room_id, organization_id)
+        if self._framework is not None:
+            kit = self._framework
+            await record_reached(
+                kit.store, kit.lock_manager, room_id, participant_id, self.channel_id
+            )
         session = VoiceSession(
             id=uuid4().hex,
             room_id=room_id,

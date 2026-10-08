@@ -966,7 +966,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   names a participant by their id only on a channel they are reached
   through (`channel_id`, `connected_via`), and by the identity the identity
   pipeline resolved on any: a sender who posts another participant's id on
-  another channel reads as themself (`@sms2`). The register is read and
+  another channel reads as themself (`@sms2`); a voice, video or realtime
+  session started for a participant (`kit.join`, `start_session`) records
+  its channel in their `connected_via`, as RFC §5.5 asks. The register is read and
   written under the room lock, so a store shared across processes needs a
   distributed lock manager, which the init warning now says. The register
   keeps strings and numbers only, since every read of the room copies or

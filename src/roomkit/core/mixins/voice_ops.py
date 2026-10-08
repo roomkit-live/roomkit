@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 from uuid import uuid4
 
 from roomkit.channels.voice import VoiceChannel
+from roomkit.core._participant_channels import record_reached
 from roomkit.core.exceptions import (
     ChannelNotFoundError,
     ChannelNotRegisteredError,
@@ -18,6 +19,7 @@ from roomkit.core.mixins.helpers import HelpersMixin
 
 if TYPE_CHECKING:
     from roomkit.channels.base import Channel
+    from roomkit.core.locks import RoomLockManager
     from roomkit.models.channel import ChannelBinding
     from roomkit.models.event import AudioContent
     from roomkit.recorder._room_recorder_manager import RoomRecorderManager
@@ -54,6 +56,7 @@ class VoiceOpsHost(Protocol):
     """
 
     _store: ConversationStore
+    _lock_manager: RoomLockManager
     _channels: dict[str, Channel]
     _voice: VoiceBackend | None
     _stt: STTProvider | None
@@ -68,6 +71,7 @@ class VoiceOpsMixin(HelpersMixin):
     """
 
     _store: ConversationStore
+    _lock_manager: RoomLockManager
     _channels: dict[str, Channel]
     _voice: VoiceBackend | None
     _stt: STTProvider | None
@@ -222,6 +226,9 @@ class VoiceOpsMixin(HelpersMixin):
             raise RuntimeError("Voice session was not created by the backend")
 
         channel.bind_session(session, room_id, binding, backend=backend)
+        await record_reached(
+            self._store, self._lock_manager, room_id, session.participant_id, channel_id
+        )
         self._wire_audio_recording(room_id, channel_id, session, channel)
         # AudioVideoChannel — wire video via channel tap
         from roomkit.channels.av import AudioVideoChannel
@@ -284,6 +291,9 @@ class VoiceOpsMixin(HelpersMixin):
             )
 
         channel.bind_session(session, room_id, binding)
+        await record_reached(
+            self._store, self._lock_manager, room_id, session.participant_id, channel_id
+        )
         self._wire_video_recording(room_id, channel_id, session, channel)
         return session
 

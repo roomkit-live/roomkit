@@ -10,6 +10,8 @@ from typing import Any
 
 from roomkit.channels import SMSChannel
 from roomkit.channels._speaker import turn_labels
+from roomkit.channels.realtime_voice import RealtimeVoiceChannel
+from roomkit.channels.voice import VoiceChannel
 from roomkit.core._authors import AUTHOR, AUTHOR_REGISTER, AuthorRegister, People
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundMessage
@@ -20,6 +22,9 @@ from roomkit.models.room import Room
 from roomkit.orchestration.strategies.loop import _LoopOutcome, _save_loop_state
 from roomkit.tasks._child_status import record_task_end
 from roomkit.tasks.models import DelegatedTaskResult
+from roomkit.voice.backends.mock import MockVoiceBackend
+from roomkit.voice.pipeline import AudioPipelineConfig
+from roomkit.voice.realtime.mock import MockRealtimeProvider, MockRealtimeTransport
 from tests.test_speaker_attribution import _kit, _say, _user_texts
 
 
@@ -136,6 +141,41 @@ class TestAParticipantIdOnAnotherChannel:
         )
 
         assert _texts(provider) == ["Alice: hold the refund", "@sms2: release it"]
+
+    async def test_a_voice_join_reaches_them_on_the_voice_channel(self) -> None:
+        kit, provider = await _kit(["a1", "a2"])
+        kit.register_channel(
+            VoiceChannel("voice", backend=MockVoiceBackend(), pipeline=AudioPipelineConfig())
+        )
+        await kit.attach_channel("r1", "voice")
+        await kit.ensure_participant("r1", "sms1", "p-alice", display_name="Alice")
+        session = await kit.join("r1", "voice", participant_id="p-alice")
+        await _say(kit, "u-bob", "Bob", "hi all")
+        await kit.process_inbound(
+            InboundMessage(
+                channel_id="voice",
+                sender_id=session.participant_id,
+                content=TextContent(body="refund the order"),
+            ),
+            room_id="r1",
+        )
+
+        assert _texts(provider) == ["Bob: hi all", "Alice: refund the order"]
+        await kit.close()
+
+    async def test_a_realtime_session_reaches_them_on_its_channel(self) -> None:
+        kit, _provider = await _kit(["a1"])
+        realtime = RealtimeVoiceChannel(
+            "rt", provider=MockRealtimeProvider(), transport=MockRealtimeTransport()
+        )
+        kit.register_channel(realtime)
+        await kit.attach_channel("r1", "rt")
+        await kit.ensure_participant("r1", "sms1", "p-alice", display_name="Alice")
+        await realtime.start_session("r1", "p-alice", connection=None)
+
+        alice = await kit.store.get_participant("r1", "p-alice")
+        assert alice is not None and alice.connected_via == ["sms1", "rt"]
+        await kit.close()
 
     def test_an_identity_names_them_on_any_channel(self) -> None:
         person = Participant(id="p1", room_id="r", channel_id="sms1", identity_id="i1")

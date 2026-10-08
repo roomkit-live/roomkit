@@ -20,7 +20,9 @@ from __future__ import annotations
 
 import logging
 
+from roomkit.core.locks import RoomLockManager
 from roomkit.models.participant import Participant
+from roomkit.store.base import ConversationStore
 
 logger = logging.getLogger("roomkit.framework")
 
@@ -35,6 +37,28 @@ def channels_reached(existing: Participant, channel_id: str) -> list[str] | None
     """
     channels = list(dict.fromkeys([existing.channel_id, *existing.connected_via, channel_id]))
     return channels if channels != existing.connected_via else None
+
+
+async def record_reached(
+    store: ConversationStore,
+    locks: RoomLockManager,
+    room_id: str,
+    participant_id: str,
+    channel_id: str,
+) -> None:
+    """Add *channel_id* to the ``connected_via`` of *room_id*'s participant
+    *participant_id*, when the room has one: a session the application starts
+    for them on that channel reaches them there, and a turn the session
+    carries names them only on a channel they are reached through (RFC §5.5,
+    §6.4). An arrival, not a caller naming a channel: written without a
+    warning. Under the room lock, which the join may already hold."""
+    async with locks.locked(room_id):
+        existing = await store.get_participant(room_id, participant_id)
+        if existing is None:
+            return
+        channels = channels_reached(existing, channel_id)
+        if channels is not None:
+            await store.update_participant(existing.model_copy(update={"connected_via": channels}))
 
 
 def warn_cross_channel(existing: Participant, channel_id: str, *, rehomed: bool) -> None:
