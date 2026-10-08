@@ -1226,7 +1226,7 @@ class ConferenceChannel(
             # rather than being synthesized over it (RFC 12.10.12), as
             # content its author wrote, never as the application's
             # instruction (RFC §12.4), as on a realtime voice channel.
-            text = broadcast_text(event, event.content.body, context)
+            text = broadcast_text(event, event.content.body, context, self.channel_id)
             if text is None:
                 return ChannelOutput.empty()
             await self._realtime.deliver_text(

@@ -2074,7 +2074,7 @@ class RealtimeVoiceChannel(
         if event.source.channel_id == self.channel_id:
             return ChannelOutput.empty()
 
-        text = broadcast_text(event, self.extract_text(event), context)
+        text = broadcast_text(event, self.extract_text(event), context, self.channel_id)
         if text is None:
             return ChannelOutput.empty()
 

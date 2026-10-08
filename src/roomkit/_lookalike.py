@@ -250,20 +250,33 @@ def _joint() -> re.Pattern[str]:
     return re.compile(JOINT, re.IGNORECASE)
 
 
+@functools.lru_cache(maxsize=4096)
 def skeletons(text: str) -> frozenset[str]:
     """*text* as a model reads it, to tell whether two names read alike: each
-    character as the letters the look-alike tables read it as, in lower case,
-    an invisible character or a combining mark left out; once as written and
-    once in lower case, since a capital may read as another letter than its
-    lowercase (``Ian`` reads like ``lan``, ``ALICE`` like ``Alice``). Two
-    names read alike when they share one."""
+    character as the letters the look-alike tables read it as, in lower case;
+    an invisible character, a mark on a Latin letter (``Alice҉``), spacing and
+    punctuation left out (``A.lice``, ``Jean Luc`` and ``Jean-Luc``); once as
+    written and once in lower case, since a capital may read as another
+    letter than its lowercase (``Ian`` reads like ``lan``, ``ALICE`` like
+    ``Alice``). Two names read alike when they share one. A mark on another
+    script's letter (a Devanagari vowel sign) is kept: it makes another
+    name."""
     bare = _joint().sub("", unicodedata.normalize("NFC", text))
     return frozenset({_skeleton(bare), _skeleton(bare.lower())})
 
 
 def _skeleton(text: str) -> str:
     reads = _reads()
-    return "".join(reads.get(char) or reads.get(char.lower()) or char.lower() for char in text)
+    kept: list[str] = []
+    for char in text:
+        if unicodedata.category(char).startswith("M"):
+            if kept and kept[-1].isascii():
+                continue
+            kept.append(char)
+            continue
+        read = reads.get(char) or reads.get(char.lower()) or char.lower()
+        kept += [letter for letter in read if letter.isalnum()]
+    return "".join(kept)
 
 
 def reads_as(text: str, word: str) -> bool:

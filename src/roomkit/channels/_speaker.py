@@ -8,6 +8,7 @@ names a person for a human reader, with their channel (:func:`speaker_label`).
 
 from __future__ import annotations
 
+import functools
 from collections.abc import Callable, Iterable
 
 from roomkit._lookalike import skeletons
@@ -52,34 +53,36 @@ def speaker_label(
 
 
 def _participant(event: RoomEvent, context: RoomContext) -> Participant | None:
-    """The room's participant behind *event*: ``source.participant_id`` holds a
-    ``Participant.id`` when the channel names its own sender, and an
-    ``Identity.id`` when the identity pipeline resolved one (RFC §11), so both
-    are tried."""
-    participant_id = event.source.participant_id
-    if not participant_id:
-        return None
-    return next(
-        (p for p in context.participants if p.id == participant_id),
-        None,
-    ) or next((p for p in context.participants if p.identity_id == participant_id), None)
+    """The room's participant behind *event*."""
+    return _people(context).get(event.source.participant_id or "")
+
+
+def _people(context: RoomContext) -> dict[str, Participant]:
+    """The room's participants by id and by identity: ``source.participant_id``
+    holds a ``Participant.id`` when the channel names its own sender, and an
+    ``Identity.id`` when the identity pipeline resolved one (RFC §11); an id
+    wins over an identity."""
+    people = {p.identity_id: p for p in context.participants if p.identity_id}
+    return people | {p.id: p for p in context.participants}
 
 
 def author_name(event: RoomEvent, context: RoomContext) -> str | None:
     """Display name of whoever is behind *event*, kept to a name's characters
-    (RFC §6.4), or ``None``.
+    (RFC §6.4), or ``None`` (:func:`_author`)."""
+    return _author(event, _people(context))
 
-    ``metadata["sender_name"]`` is the stamp transports and hosts write at
+
+def _author(event: RoomEvent, people: dict[str, Participant]) -> str | None:
+    """``metadata["sender_name"]`` is the stamp transports and hosts write at
     ingress (the Teams and WhatsApp providers do, and so does a host's
     session ingress); the room's participant record is the fallback for
     transports that register named participants without stamping events.
     Either is written by whoever sends: given unquoted before their words, a
-    name must not open a line or a frame of its own.
-    """
+    name must not open a line or a frame of its own."""
     name = event.metadata.get("sender_name")
     if isinstance(name, str) and (kept := person_name(name)):
         return kept
-    person = _participant(event, context)
+    person = people.get(event.source.participant_id or "")
     return (person_name(person.display_name) or None) if person is not None else None
 
 
@@ -88,38 +91,67 @@ def turn_labels(events: Iterable[RoomEvent], context: RoomContext) -> dict[str, 
     its author's name, or its channel (:func:`channel_label`) when they have
     none; ``None`` for the runtime's system events, no participant's turn.
 
-    Names are told apart across sources (a channel and its sender): when a
+    Names are told apart across sources (a participant, or a sender): when a
     later source's name reads like an earlier one's (in case or in Unicode's
     confusables, ``Alice`` and ``Аlice``), it carries its rank, ``Аlice (2)``,
     a form no name takes, so a sender who takes another's name does not read
-    as that person. The first source seen keeps the name."""
-    labels: dict[str, str | None] = {}
-    ranks: list[tuple[frozenset[str], tuple[str, str | None]]] = []
-    for event in events:
-        labels[event.id] = _label(event, context, ranks)
-    return labels
+    as that person; the first source seen keeps the name. One person reached
+    through several channels is one source. A name that reads as a label the
+    agent's own turns carry (``You``) carries ``(a participant)``, so no one
+    reads as the agent."""
+    ranking = _Ranking(context)
+    return {event.id: ranking.label(event) for event in events}
 
 
-def _label(
-    event: RoomEvent,
-    context: RoomContext,
-    ranks: list[tuple[frozenset[str], tuple[str, str | None]]],
-) -> str | None:
-    """*event*'s label, *ranks* holding the sources whose names were seen, in
-    order, each with the forms its name reads as."""
-    if event.source.channel_type == ChannelType.SYSTEM:
-        return None
-    name = author_name(event, context)
-    if name is None:
-        return channel_label(event.source.channel_id)
-    source = (event.source.channel_id, event.source.participant_id)
-    keys = skeletons(name)
-    alike = [seen for read, seen in ranks if read & keys]
-    if source not in alike:
-        ranks.append((keys, source))
-        alike.append(source)
-    rank = alike.index(source) + 1
-    return name if rank == 1 else f"{name} ({rank})"
+class _Ranking:
+    """The sources whose names a window holds, each name's readings mapped to
+    the sources seen with it, in order."""
+
+    def __init__(self, context: RoomContext) -> None:
+        self._people = _people(context)
+        self._sources: dict[str, list[tuple[str, ...]]] = {}
+
+    def label(self, event: RoomEvent) -> str | None:
+        if event.source.channel_type == ChannelType.SYSTEM:
+            return None
+        name = _author(event, self._people)
+        if name is None:
+            return channel_label(event.source.channel_id)
+        keys = skeletons(name)
+        if keys & _agent_labels():
+            return f"{name} (a participant)"
+        rank = self._rank(_source(event, self._people, name), keys)
+        return name if rank == 1 else f"{name} ({rank})"
+
+    def _rank(self, source: tuple[str, ...], keys: frozenset[str]) -> int:
+        alike: list[tuple[str, ...]] = []
+        for key in sorted(keys):
+            alike += [seen for seen in self._sources.get(key, []) if seen not in alike]
+        if source not in alike:
+            alike.append(source)
+            for key in keys:
+                self._sources.setdefault(key, []).append(source)
+        return alike.index(source) + 1
+
+
+@functools.cache
+def _agent_labels() -> frozenset[str]:
+    """What the labels a model reads as its own turns read as: ``You`` (the
+    thinker) and ``you (in a separate session)`` (an ACP agent's room
+    context). A name reading as one carries ``(a participant)``."""
+    return skeletons("You") | skeletons("you (in a separate session)")
+
+
+def _source(event: RoomEvent, people: dict[str, Participant], name: str) -> tuple[str, ...]:
+    """Who *event* comes from: the room's participant, whichever channel and
+    id reached them; else its sender; else, on a channel that names no
+    sender, its channel and what its name reads as."""
+    person = people.get(event.source.participant_id or "")
+    if person is not None:
+        return ("participant", person.id)
+    if event.source.participant_id:
+        return ("sender", event.source.participant_id)
+    return ("channel", event.source.channel_id, *sorted(skeletons(name)))
 
 
 def participant_name(participant: Participant) -> str:
