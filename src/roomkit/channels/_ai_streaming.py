@@ -23,6 +23,7 @@ from roomkit.channels._ai_loop_rules import (
 from roomkit.channels._ai_stream_external_tools import _ExternalStreamTools
 from roomkit.channels._ai_stream_round import _StreamRound, _StreamRoundState
 from roomkit.channels._ai_tools import call_end_marker
+from roomkit.channels._mark_copies import compile_mark_patterns
 from roomkit.channels._turn_notes import add_turn_note
 from roomkit.core.task_utils import shielded
 from roomkit.models.channel import ChannelOutput
@@ -563,6 +564,9 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
         parent_span_id: str | None = None,
     ) -> AsyncGenerator[StreamDelta, None]:
         """Orchestrate generation, termination decisions and local tool rounds."""
+        # A loop driven without a built context (a realtime reasoning turn)
+        # cleans what steering injects with patterns not compiled yet.
+        await compile_mark_patterns()
         async with self._streaming_tool_turn(context, parent_loop_ctx, parent_span_id) as turn:
             loop_ctx = turn.loop_ctx
             external = self._external_stream_tools(turn)

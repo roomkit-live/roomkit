@@ -7,7 +7,7 @@ import logging
 from contextlib import AsyncExitStack
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
-from roomkit.channels._runtime_record import RUNTIME_RECORD
+from roomkit.channels._runtime_record import HANDOFF_FLAG, RUNTIME_RECORD
 from roomkit.core.exceptions import ChannelNotRegisteredError, RoomNotFoundError
 from roomkit.core.inbound_router import (
     binding_admits,
@@ -811,12 +811,6 @@ def _apply_message_fields(event: RoomEvent, message: InboundMessage) -> RoomEven
     (each builds its own RoomEvent and would otherwise have to remember to
     copy each one). A field the channel resolved itself keeps its value.
     """
-    # Which text is the runtime's is the runtime's to say (RFC §6.4): a key a
-    # sender supplied cannot make its text pass for a record of the runtime.
-    if RUNTIME_RECORD in event.metadata:
-        metadata = {k: v for k, v in event.metadata.items() if k != RUNTIME_RECORD}
-        event = event.model_copy(update={"metadata": metadata})
-
     if message.event_type == EventType.INSTRUCTION:
         event = _as_instruction(event, message)
 
@@ -852,7 +846,22 @@ def _apply_message_fields(event: RoomEvent, message: InboundMessage) -> RoomEven
     # rule: a channel that resolved one itself keeps it.
     if message.response_visibility is not None and event.response_visibility is None:
         event = event.model_copy(update={"response_visibility": message.response_visibility})
-    return event
+    return _without_runtime_record(event)
+
+
+def _without_runtime_record(event: RoomEvent) -> RoomEvent:
+    """*event* without a provenance its sender supplied: the key, and on a
+    ``SYSTEM`` event the flag that names a relay stored before the key
+    existed. Which text is the runtime's is the runtime's to say (RFC §6.4).
+    Last of the fields applied, so that no merge of the caller's metadata (an
+    instruction's) brings them back."""
+    claimed = {RUNTIME_RECORD}
+    if event.type == EventType.SYSTEM:
+        claimed.add(HANDOFF_FLAG)
+    if not claimed & event.metadata.keys():
+        return event
+    metadata = {k: v for k, v in event.metadata.items() if k not in claimed}
+    return event.model_copy(update={"metadata": metadata})
 
 
 def _as_instruction(event: RoomEvent, message: InboundMessage) -> RoomEvent:

@@ -33,7 +33,7 @@ from roomkit.channels._acp_marks import (
     ROOM_CONTEXT_OPENING,
 )
 from roomkit.channels._mark_copies import without_mark_copies
-from roomkit.channels._runtime_record import written_by_runtime
+from roomkit.channels._runtime_record import runtime_event
 from roomkit.channels._speaker import (
     SPEAKER_ATTRIBUTION_NOTE,
     channel_label,
@@ -74,7 +74,7 @@ def acp_event_text(event: RoomEvent) -> str:
     """
     text = _plain_text(event)
     # The runtime's own record (a handoff's) keeps its marks (RFC §6.4).
-    return text if written_by_runtime(event.metadata) else without_mark_copies(text)
+    return text if runtime_event(event) else without_mark_copies(text)
 
 
 def _plain_text(event: RoomEvent) -> str:

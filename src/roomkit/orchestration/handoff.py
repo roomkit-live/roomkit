@@ -15,7 +15,13 @@ from typing import TYPE_CHECKING, Any
 from pydantic import BaseModel, Field
 
 from roomkit._text import CONVERSATION_SUMMARY_TAG, fence, identifier, quoted
-from roomkit.channels._runtime_record import HANDED_ON_CONTEXT, HANDOFF_OPENING, runtime_record
+from roomkit.channels._mark_copies import without_mark_copies
+from roomkit.channels._runtime_record import (
+    HANDED_ON_CONTEXT,
+    HANDOFF_FLAG,
+    HANDOFF_OPENING,
+    runtime_record,
+)
 from roomkit.channels._tool_registry import ToolEntry, orchestration_tool
 from roomkit.memory._wrapper import _MemoryWrapper
 from roomkit.memory.base import MemoryProvider, MemoryResult
@@ -383,7 +389,7 @@ class HandoffHandler:
             event_type=EventType.SYSTEM,
             visibility="all",
             metadata={
-                "handoff": True,
+                HANDOFF_FLAG: True,
                 "from_agent": calling_agent_id,
                 "to_agent": request.target_agent_id,
                 "summary": request.summary,
@@ -474,7 +480,7 @@ class HandoffHandler:
             status=EventStatus.DELIVERED,
             visibility=Visibility.INTERNAL,
             metadata={
-                "handoff": True,
+                HANDOFF_FLAG: True,
                 "from_agent": calling_agent_id,
                 "to_agent": request.target_agent_id,
                 "accepted": result.accepted,
@@ -657,7 +663,9 @@ class HandoffMemoryProvider(_MemoryWrapper):
             role="user",
             content=(
                 f"{HANDED_ON_CONTEXT} ({identifier(handoff_from, 'agent')})]\n"
-                f"{fence(CONVERSATION_SUMMARY_TAG, str(summary))}"
+                # A model wrote the summary: a copy of a mark in it is replaced,
+                # since this message keeps its own (RFC §6.4).
+                f"{fence(CONVERSATION_SUMMARY_TAG, without_mark_copies(str(summary)))}"
             ),
             metadata=runtime_record("handed_on_context"),
         )
@@ -672,12 +680,14 @@ _REASON_CHARS = 500
 def _handoff_line(calling_agent_id: str, request: HandoffRequest) -> str:
     """The timeline's record of a handoff: the agents by their ids, the reason
     the calling model gave quoted (RFC §6.4, §19.6), since the target agent
-    reads it back in its history."""
+    reads it back in its history. The record keeps its own mark, so a copy of
+    one in the reason, which a model wrote, is replaced here."""
     source = identifier(calling_agent_id, "agent")
     target = identifier(request.target_agent_id, "agent")
     agents = f"{source} -> {target}"
-    reason = f" {quoted(request.reason, _REASON_CHARS)}" if request.reason.strip() else ""
-    return f"{HANDOFF_OPENING}: {agents}]{reason}"
+    said = without_mark_copies(request.reason)
+    reason = f" {quoted(said, _REASON_CHARS)}" if request.reason.strip() else ""
+    return f"{HANDOFF_OPENING} {agents}]{reason}"
 
 
 # -- Wiring -------------------------------------------------------------------

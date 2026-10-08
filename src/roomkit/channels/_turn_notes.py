@@ -46,7 +46,7 @@ not place (RFC §6.4)."""
 
 
 @functools.cache
-def _header_copy() -> re.Pattern[str]:
+def header_copies() -> re.Pattern[str]:
     """The notes' header as a model reads it (:func:`roomkit._lookalike.phrase_pattern`),
     compiled on first use: a pattern of every letter's forms takes a moment to
     compile."""
@@ -72,7 +72,7 @@ def turn_notes(blocks: list[str]) -> str | None:
 def without_header_copies(text: str) -> str:
     """*text* with each copy of the notes' header replaced by
     :data:`COPIED_HEADER_MARK` (RFC §6.4)."""
-    return _header_copy().sub(lambda _match: COPIED_HEADER_MARK, text)
+    return header_copies().sub(lambda _match: COPIED_HEADER_MARK, text)
 
 
 def conversation_without_header_copies(messages: list[AIMessage]) -> list[AIMessage]:

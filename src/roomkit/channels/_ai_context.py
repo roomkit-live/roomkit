@@ -13,10 +13,10 @@ from roomkit.channels._instruction import instruction_fingerprint, is_standalone
 from roomkit.channels._mark_copies import (
     compile_mark_patterns,
     content_without_mark_copies,
+    cut_split_copies,
     without_mark_copies,
-    without_split_copies,
 )
-from roomkit.channels._runtime_record import written_by_runtime
+from roomkit.channels._runtime_record import runtime_event, written_by_runtime
 from roomkit.channels._skill_constants import (
     SKILLS_NO_SCRIPTS_NOTE as _SKILLS_NO_SCRIPTS_NOTE,
 )
@@ -426,7 +426,7 @@ class AIContextMixin(_AIChannelContract):
             label = current_label if attribute_speakers else None
             messages.append(_turn_message("user", current_content, label))
         requester = current_label if attribute_speakers else None
-        conversation = without_split_copies(_after_memory(memory, messages[len(memory) :]))
+        conversation = _conversation(messages, len(memory))
         return conversation, attribute_speakers, requester
 
     def _past_turns(
@@ -856,7 +856,7 @@ class AIContextMixin(_AIChannelContract):
         content = self._extract_content(event)
         if not content and self._describe_empty_event is not None:
             content = self._describe_empty_event(event) or ""
-        if written_by_runtime(event.metadata):
+        if runtime_event(event):
             # The runtime's own record (a handoff's): its marks are its own.
             return content
         return content_without_mark_copies(content)
@@ -965,6 +965,17 @@ def _runtime_or_cleaned(message: AIMessage) -> AIMessage:
     return (
         message if cleaned == message.content else message.model_copy(update={"content": cleaned})
     )
+
+
+def _conversation(messages: list[AIMessage], built: int) -> list[AIMessage]:
+    """*messages*, the first *built* of them a memory's, as the model reads
+    them: a copy of a mark split over consecutive user messages cut, the
+    memory's last message and the turn after it included, then the memory's
+    user text joined to that turn (RFC §6.4)."""
+    cut, emptied = cut_split_copies(messages)
+    kept = [message for i, message in enumerate(cut) if i not in emptied]
+    built -= sum(1 for i in emptied if i < built)
+    return _after_memory(kept[:built], kept[built:])
 
 
 def _after_memory(memory: list[AIMessage], rest: list[AIMessage]) -> list[AIMessage]:
