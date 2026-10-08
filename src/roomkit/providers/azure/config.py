@@ -110,7 +110,8 @@ class AzureAIConfig(BaseModel):
     ``"high"``); ``None`` uses the model default. Sent on a turn without
     tools and left out on a turn with tools: a deployment name does not say
     which model it serves, nor so what that model accepts alongside function
-    tools (RFC §6.7). The turn's own effort outranks this one."""
+    tools (RFC §6.7), unless ``supports_reasoning_effort_with_tools`` says
+    so. The turn's own effort outranks this one."""
     extra_body: dict[str, Any] | None = None
     """Extra JSON fields merged into every request body via the SDK's
     ``extra_body`` — for deployment-specific params the OpenAI schema omits.
@@ -124,6 +125,12 @@ class AzureAIConfig(BaseModel):
     """Whether the server takes a ``json_schema`` response format beside function
     tools and still lets the model call them. ``None`` keeps the provider's
     default, on for Azure OpenAI deployments."""
+    supports_reasoning_effort_with_tools: bool | None = None
+    """Whether the deployment takes ``reasoning_effort`` beside function tools
+    (RFC §6.7). ``True`` sends the turn's effort on a turn with tools as on any
+    other (an o-series or GPT-5 deployment before GPT-5.4); ``False`` leaves it
+    out. ``None`` leaves it out too, since a deployment name does not say which
+    model it serves, and logs a warning once when an effort is left out."""
 
 
 class AzureImageConfig(BaseModel):

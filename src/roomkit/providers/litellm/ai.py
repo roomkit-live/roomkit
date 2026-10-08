@@ -89,9 +89,12 @@ class LiteLLMAIProvider(OpenAIAIProvider):
         OpenRouter provider): ``None`` passes the effort through, the turn's
         own effort outranking the configured one; ``>0`` maps to a
         ``thinking`` budget, sent via the SDK's ``extra_body`` passthrough.
-        Reasoning is omitted on tool turns: the model behind the alias is not
-        known here, and some upstreams reject it alongside tools (RFC §6.7
-        allows the omission where the model is unknown).
+        Reasoning is omitted on tool turns unless the config's
+        ``supports_reasoning_effort_with_tools`` says the proxy takes it there:
+        the model behind the alias is not known here, and some upstreams reject
+        it alongside tools (RFC §6.7 allows the omission where the model is
+        unknown). The flag covers the budget too, LiteLLM's other spelling of
+        the effort.
 
         ``0`` sends no reasoning parameters at all. LiteLLM has no disable
         token that survives every translator (verified live on 1.79.0: the
@@ -106,16 +109,18 @@ class LiteLLMAIProvider(OpenAIAIProvider):
         if context.temperature is not None and self._config.supports_custom_temperature:
             kwargs["temperature"] = context.temperature
         # Off, as the turn states it (RFC §6.7), sends nothing: see above.
-        if context.tools or thinking_switch(context) is False:
+        if thinking_switch(context) is False:
             return
         budget = context.thinking_budget
+        effort = turn_setting(context.reasoning_effort, self._config.reasoning_effort)
+        if context.tools and not self._server_takes_reasoning_with_tools(budget or effort):
+            return
         if budget:
             kwargs.setdefault("extra_body", {})["thinking"] = {
                 "type": "enabled",
                 "budget_tokens": budget,
             }
             return
-        effort = turn_setting(context.reasoning_effort, self._config.reasoning_effort)
         if effort is not None:
             kwargs["reasoning_effort"] = effort
 

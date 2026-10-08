@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `supports_reasoning_effort_with_tools` on `OpenAIConfig` and `AzureAIConfig`:
+  whether the server takes `reasoning_effort` beside function tools (RMK-557,
+  RFC §6.7). Behind a `base_url`, on an Azure deployment or a LiteLLM alias the
+  provider cannot know the model, so a turn with tools left the configured
+  effort out without a word; for an agent with tools that is nearly every turn.
+  `True` sends it there as on any turn (the LiteLLM budget too), `False` leaves
+  it out, and unset keeps today's behaviour and now logs one warning per
+  provider naming the field. A stated value outranks OpenAI's catalogue on its
+  own endpoint. Measured on Inception's Mercury 2.5 (2026-10-08), the same tool
+  turn at `low`: 393 to 851 reasoning tokens with the effort left out (one run
+  called no tool), 247 to 256 with the field on. Example:
+  `examples/openai_compatible_tool_effort.py`.
+
 - `AzureSpeechTTSConfig.rate`, the speaking rate as SSML `prosody` takes it
   (`"+15%"`, `"1.2"`, `"fast"`), validated and escaped (RMK-618).
   MAI-Voice-2.1-Flash speaks slowly for a conversation and follows it closely

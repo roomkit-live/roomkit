@@ -14,6 +14,7 @@ assembly, error mapping and result reading for the SDK's two response shapes.
 
 from __future__ import annotations
 
+import logging
 import time
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Any, ClassVar
@@ -67,6 +68,8 @@ from roomkit.providers.vendor_endpoint import OPENAI_BASE_URL, is_vendor_endpoin
 if TYPE_CHECKING:
     import httpx
 
+logger = logging.getLogger("roomkit.providers.openai.ai")
+
 OPENAI_TOOL_NAMES = ToolNameRule("openai", r"[A-Za-z0-9_-]{1,128}")
 """The tool names OpenAI's endpoint accepts (measured 2026-10-02)."""
 
@@ -114,6 +117,11 @@ class OpenAIAIProvider(AIProvider):
     config does not say. A derivative whose service only offers free-form JSON
     mode sets it false; ``supports_response_schema`` on the config overrides
     it either way, for a server behind ``base_url`` that differs."""
+
+    _reasoning_left_out_logged: bool = False
+    """Whether this provider already warned that a turn with tools left out a
+    reasoning setting the config did not say the server takes: once per
+    provider, set on the instance by the first warning."""
 
     def __init__(
         self, config: OpenAIConfig, *, transport: httpx.AsyncBaseTransport | None = None
@@ -327,21 +335,50 @@ class OpenAIAIProvider(AIProvider):
     def _tool_turn_effort(self, effort: str | None) -> str | None:
         """The reasoning effort a turn with tools sends on this endpoint.
 
-        Read from the catalogue on OpenAI's own endpoint: a model tagged
+        What the config states of the server decides first
+        (``supports_reasoning_effort_with_tools``, RFC §6.7). Unstated, it is
+        read from the catalogue on OpenAI's own endpoint: a model tagged
         ``tools_reasoning_none`` takes function tools only with ``none``, sent
         even unset since leaving it out answers 400 on the models that default
-        higher; one tagged ``tools_reasoning_effort`` takes *effort*. ``None``
-        omits it for any other model, and for any model behind a ``base_url``
-        or an Azure deployment name, whose real model this provider cannot
-        know.
+        higher; one tagged ``tools_reasoning_effort`` takes *effort*. Any other
+        model, and any model behind a ``base_url`` or an Azure deployment name,
+        whose real model this provider cannot know, has it left out
+        (``_server_takes_reasoning_with_tools``).
         """
-        if not self._is_openai_endpoint:
-            return None
-        info = self.catalog_entry()
-        capabilities = info.capabilities if info is not None else []
-        if "tools_reasoning_none" in capabilities:
-            return "none"
-        return effort if "tools_reasoning_effort" in capabilities else None
+        stated = getattr(self._config, "supports_reasoning_effort_with_tools", None)
+        if stated is None and self._is_openai_endpoint:
+            info = self.catalog_entry()
+            capabilities = info.capabilities if info is not None else []
+            if "tools_reasoning_none" in capabilities:
+                return "none"
+            if "tools_reasoning_effort" in capabilities:
+                return effort
+        return effort if self._server_takes_reasoning_with_tools(effort) else None
+
+    def _server_takes_reasoning_with_tools(self, setting: object) -> bool:
+        """Whether the config says the server takes *setting*, a turn's
+        reasoning setting, beside function tools; unsaid counts as no, warned
+        of once when it leaves a setting out (RFC §6.7)."""
+        stated = getattr(self._config, "supports_reasoning_effort_with_tools", None)
+        if stated is None and setting is not None:
+            self._warn_reasoning_left_out(setting)
+        return bool(stated)
+
+    def _warn_reasoning_left_out(self, setting: object) -> None:
+        """Warn, once per provider, that a turn with tools left out *setting*
+        because the config does not say the server takes it there."""
+        if self._reasoning_left_out_logged:
+            return
+        self._reasoning_left_out_logged = True
+        logger.warning(
+            "%s: reasoning setting %r left out of a turn with tools, since nothing says "
+            "the server behind model %r takes it there; set "
+            "supports_reasoning_effort_with_tools=True on the config if it does, or False "
+            "to leave it out without this warning (RFC 6.7)",
+            self._provider_name,
+            setting,
+            self._config.model,
+        )
 
     def _apply_extra_body(self, kwargs: dict[str, Any]) -> None:
         """Merge configured ``extra_body`` (server-specific request fields).

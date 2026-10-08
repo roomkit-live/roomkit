@@ -65,8 +65,9 @@ class OpenAIConfig(BaseModel):
     own effort outranks this one. On a turn with tools the model catalogue
     decides what is sent (RFC §6.7): the effort up to GPT-5.2, ``"none"``
     instead from GPT-5.4 on, and nothing at all for a model it does not tag or
-    one behind ``base_url``. Only configure this for reasoning models — others
-    reject the parameter."""
+    one behind ``base_url``, unless ``supports_reasoning_effort_with_tools``
+    says otherwise. Only configure this for reasoning models — others reject
+    the parameter."""
     default_headers: dict[str, str] | None = None
     """Extra HTTP headers sent on every request, passed to the SDK's
     ``default_headers``. Use for an OpenAI-compatible endpoint behind a
@@ -88,6 +89,16 @@ class OpenAIConfig(BaseModel):
     """Whether the server takes a ``json_schema`` response format beside function
     tools and still lets the model call them. ``None`` keeps the provider's
     default (on for OpenAI's own endpoint, off behind a ``base_url``)."""
+    supports_reasoning_effort_with_tools: bool | None = None
+    """Whether the server takes ``reasoning_effort`` beside function tools (RFC
+    §6.7). ``True`` sends the turn's effort on a turn with tools as on any
+    other; ``False`` leaves it out. ``None`` keeps the provider's default: the
+    model catalogue on OpenAI's own endpoint, left out behind a ``base_url``,
+    whose model the provider cannot know, with a warning logged once when an
+    effort is left out. Set it for an OpenAI-compatible server that takes the
+    pair. A stated value outranks the catalogue. Read by the OpenAI, Azure and
+    LiteLLM providers; a derivative that knows its vendor's rule (Meta,
+    Cerebras, xAI, OpenRouter, DeepSeek, Qwen) applies that rule instead."""
 
     def model_post_init(self, __context: Any) -> None:
         """Apply safe defaults for modern models on OpenAI's own endpoint."""
