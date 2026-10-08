@@ -27,7 +27,7 @@ from roomkit.tools.result import (
     undeclared_tool_refusal,
 )
 from roomkit.tools.validation import (
-    fold_hoisted_arguments,
+    repair_tool_arguments,
     rewritten_arguments_error,
     validate_tool_arguments,
 )
@@ -131,9 +131,9 @@ class ConferenceToolGate:
         params = declared.get(name, {}).get("parameters")
         schema = params if isinstance(params, dict) else None
         if schema is not None:
-            folded, fold_error = fold_hoisted_arguments(schema, call.arguments)
-            call.arguments = folded if folded is not None else call.arguments
-            error = fold_error or validate_tool_arguments(schema, call.arguments)
+            repair = repair_tool_arguments(schema, call.arguments)
+            call.arguments = repair.arguments
+            error = repair.error or validate_tool_arguments(schema, call.arguments)
             if error is not None:
                 return GateRefusal(_error(f"Invalid arguments for '{name}': {error}"))
         return await self._before_tool_use(call, schema)

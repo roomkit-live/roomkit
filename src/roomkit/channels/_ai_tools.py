@@ -88,7 +88,7 @@ from roomkit.tools.result import (
 )
 from roomkit.tools.timeout import ToolTimeouts, answer_within
 from roomkit.tools.validation import (
-    fold_hoisted_arguments,
+    repair_tool_arguments,
     rewritten_arguments_error,
     validate_tool_arguments,
 )
@@ -600,22 +600,30 @@ class AIToolsMixin(_AIChannelContract):
         if params is None:
             return call_arguments, None
         # Repair before validating: a model that flattened a hub tool's
-        # ``params`` gets its call folded back into shape instead of
-        # spending a round on an error it can only fix by re-issuing.
-        folded, fold_error = fold_hoisted_arguments(params, call_arguments)
-        if fold_error is not None:
-            logger.warning("Tool %s arguments ambiguous: %s", tc.name, fold_error)
+        # ``params``, or whose server quoted a primitive, gets its call put
+        # back into shape instead of spending a round on an error it can only
+        # fix by re-issuing.
+        repair = repair_tool_arguments(params, call_arguments)
+        if repair.error is not None:
+            logger.warning("Tool %s arguments ambiguous: %s", tc.name, repair.error)
             return call_arguments, _refused_with(
-                {"error": f"Invalid arguments for '{tc.name}': {fold_error}"}
+                {"error": f"Invalid arguments for '{tc.name}': {repair.error}"}
             )
-        if folded is not None:
+        if repair.folded:
             logger.info(
                 "Tool %s: folded hoisted arguments %s into its container (model=%s)",
                 tc.name,
-                sorted(set(call_arguments) - set(folded)),
+                list(repair.folded),
                 self._provider.model_name,
             )
-            call_arguments = folded
+        if repair.unquoted:
+            logger.info(
+                "Tool %s: read quoted %s as their declared types (model=%s)",
+                tc.name,
+                list(repair.unquoted),
+                self._provider.model_name,
+            )
+        call_arguments = repair.arguments
         arg_error = validate_tool_arguments(params, call_arguments)
         if arg_error is not None:
             logger.warning("Tool %s arguments rejected: %s", tc.name, arg_error)

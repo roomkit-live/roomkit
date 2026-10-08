@@ -7,14 +7,18 @@ pattern, nested object/array validation) are NOT enforced — this is a
 first-boundary sanity gate that stops obviously malformed tool calls before
 execution, not a full validator.
 
-:func:`fold_hoisted_arguments` sits beside the gate rather than inside it: it
-repairs one known shape mismatch *before* validation runs, so the validator
-itself stays a pure predicate over (schema, arguments).
+:func:`repair_tool_arguments` sits beside the gate rather than inside it: it
+repairs the known, unambiguous mismatches *before* validation runs (a hub
+tool's hoisted arguments, a primitive the model's server quoted), so the
+validator itself stays a pure predicate over (schema, arguments).
 """
 
 from __future__ import annotations
 
+import math
+import re
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any
 
 # Primitive JSON Schema type name -> predicate. ``bool`` is excluded from the
@@ -168,6 +172,88 @@ def fold_hoisted_arguments(
     folded = {key: value for key, value in arguments.items() if key not in hoisted}
     folded[_PARAMS_PROPERTY] = {key: arguments[key] for key in hoisted}
     return folded, None
+
+
+@dataclass(frozen=True)
+class RepairedArguments:
+    """A model's call arguments after the repairs every gate makes before it
+    validates them, and what each repair touched."""
+
+    arguments: dict[str, Any]
+    folded: tuple[str, ...] = ()
+    """Root keys folded into a hub tool's ``params``."""
+    unquoted: tuple[str, ...] = ()
+    """Arguments read off their quotes as the primitive their property declares."""
+    error: str | None = None
+    """Why the call is refused unrepaired: both hub forms at once."""
+
+
+def repair_tool_arguments(parameters: Any, arguments: Any) -> RepairedArguments:
+    """The repairs every gate runs on a model's call before validating it, in
+    order: a hub tool's hoisted arguments folded back into ``params``
+    (:func:`fold_hoisted_arguments`), then the primitives the model's server
+    quoted read as their declared types (:func:`unquote_primitive_arguments`).
+    Arguments a BEFORE_TOOL_USE hook rewrote are never repaired
+    (:func:`rewritten_arguments_error`)."""
+    folded, fold_error = fold_hoisted_arguments(parameters, arguments)
+    if fold_error is not None:
+        return RepairedArguments(arguments, error=fold_error)
+    hoisted = tuple(sorted(set(arguments) - set(folded))) if folded is not None else ()
+    unquoted, names = unquote_primitive_arguments(parameters, folded or arguments)
+    return RepairedArguments(unquoted, folded=hoisted, unquoted=names)
+
+
+# A literal's spelling, JSON's own: what a quoted primitive must be read as.
+_INTEGER_TEXT = re.compile(r"-?\d+")
+_NUMBER_TEXT = re.compile(r"-?\d+(\.\d+)?([eE][+-]?\d+)?")
+_NOT_A_LITERAL = object()
+
+
+def _read_literal(text: str, json_type: str) -> Any:
+    """What *text* is as a literal of *json_type*, or ``_NOT_A_LITERAL``."""
+    text = text.strip()
+    if json_type == "integer" and _INTEGER_TEXT.fullmatch(text):
+        return int(text)
+    if json_type == "number" and _NUMBER_TEXT.fullmatch(text):
+        number = float(text)
+        return number if math.isfinite(number) else _NOT_A_LITERAL
+    if json_type == "boolean" and text.lower() in ("true", "false"):
+        return text.lower() == "true"
+    return _NOT_A_LITERAL
+
+
+def unquote_primitive_arguments(parameters: Any, arguments: Any) -> tuple[Any, tuple[str, ...]]:
+    """Read a primitive the model's call quoted as the type its property
+    declares: ``"0"`` for an ``integer`` is ``0``, ``"0.5"`` for a ``number``
+    is ``0.5``, ``"true"`` for a ``boolean`` is ``true``.
+
+    Some servers parse a model's tool call into JSON by the schema the request
+    declared (vLLM's ``qwen3_xml`` and ``qwen3_coder``): for a tool missing from
+    the request, a catalogue tool recovered at call time, every value arrives
+    as a string whatever the model wrote, and an error cannot teach the model
+    to send what its server will not deliver. The reading is narrow: only a
+    property declaring a primitive ``type``, which the validator would refuse
+    the string for, and only a string that spells that type's literal exactly;
+    anything else is left to the validator, which names the expected type.
+
+    Returns the arguments, repaired or as given, and the names it read.
+    """
+    if not isinstance(parameters, dict) or not isinstance(arguments, dict):
+        return arguments, ()
+    properties = parameters.get("properties")
+    if not isinstance(properties, dict):
+        return arguments, ()
+    read: dict[str, Any] = {}
+    for key, value in arguments.items():
+        spec = properties.get(key)
+        json_type = spec.get("type") if isinstance(spec, dict) else None
+        if isinstance(value, str) and isinstance(json_type, str):
+            literal = _read_literal(value, json_type)
+            if literal is not _NOT_A_LITERAL:
+                read[key] = literal
+    if not read:
+        return arguments, ()
+    return {**arguments, **read}, tuple(read)
 
 
 def rewritten_arguments_error(

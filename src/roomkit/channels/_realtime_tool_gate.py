@@ -28,7 +28,7 @@ from roomkit.tools.result import (
     unknown_tool_error,
 )
 from roomkit.tools.validation import (
-    fold_hoisted_arguments,
+    repair_tool_arguments,
     rewritten_arguments_error,
     validate_tool_arguments,
 )
@@ -418,22 +418,30 @@ class RealtimeToolGateMixin:
         as the classic AI path."""
         if params is None:
             return arguments, None
-        folded, fold_error = fold_hoisted_arguments(params, arguments)
-        if fold_error is not None:
-            logger.warning("Realtime tool %s arguments ambiguous: %s", name, fold_error)
+        repair = repair_tool_arguments(params, arguments)
+        if repair.error is not None:
+            logger.warning("Realtime tool %s arguments ambiguous: %s", name, repair.error)
             return arguments, json.dumps(
-                {"error": f"Invalid arguments for '{name}': {fold_error}"}
+                {"error": f"Invalid arguments for '{name}': {repair.error}"}
             )
-        if folded is not None:
+        if repair.folded:
             logger.info(
                 "Realtime tool %s: folded hoisted arguments %s into its container "
                 "(provider=%s, model=%s)",
                 name,
-                sorted(set(arguments) - set(folded)),
+                list(repair.folded),
                 self._provider.name,
                 self._provider.model_name,
             )
-            arguments = folded
+        if repair.unquoted:
+            logger.info(
+                "Realtime tool %s: read quoted %s as their declared types (provider=%s, model=%s)",
+                name,
+                list(repair.unquoted),
+                self._provider.name,
+                self._provider.model_name,
+            )
+        arguments = repair.arguments
         arg_error = validate_tool_arguments(params, arguments)
         if arg_error is not None:
             logger.warning("Realtime tool %s arguments rejected: %s", name, arg_error)

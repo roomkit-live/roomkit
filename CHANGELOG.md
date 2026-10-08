@@ -222,6 +222,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A primitive the model's server quoted reaches the tool as the type its
+  property declares (RMK-605): `"0"` for an `integer` is `0`, `"0.5"` for a
+  `number` is `0.5`, `"true"` for a `boolean` is `true`. A server that turns a
+  model's call into JSON by the request's schema (vLLM `qwen3_xml`,
+  `qwen3_coder`) hands every value of an undeclared tool over as a string, a
+  catalogue tool recovered at call time included, whatever the model wrote; the
+  gate refused it and the model re-sent the same value until the turn ran out,
+  since no error can teach it to send what its server will not deliver. Only a
+  property declaring a primitive `type`, and only a string spelling that type's
+  literal exactly, is read; anything else is refused as before. The text,
+  realtime and conference gates run it through one repair,
+  `repair_tool_arguments`, beside the hub fold; arguments a BEFORE_TOOL_USE hook
+  rewrote are still never repaired.
+
 - Two `find_tools` calls the model runs side by side in one round each reveal
   their matches (RMK-604, RFC §24.4). Each result tells the model its matches
   are declared next round, but the search settled last swapped the window the

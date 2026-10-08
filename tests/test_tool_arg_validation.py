@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
-from roomkit.tools.validation import fold_hoisted_arguments, validate_tool_arguments
+from roomkit.tools.validation import (
+    fold_hoisted_arguments,
+    repair_tool_arguments,
+    unquote_primitive_arguments,
+    validate_tool_arguments,
+)
 
 _SCHEMA = {
     "type": "object",
@@ -244,3 +249,68 @@ def test_params_supplied_as_a_non_object_is_left_to_the_type_check() -> None:
     type_error = validate_tool_arguments(_HUB_SCHEMA, {"action": "x", "params": "a=1", "b": 2})
     assert type_error is not None
     assert "object" in type_error
+
+
+# -- Primitives a server quoted ----------------------------------------------
+
+
+def test_a_quoted_primitive_is_read_as_its_declared_type() -> None:
+    """A server that types a call by the declared schema leaves every value of
+    an undeclared tool a string: the reading puts the literal back."""
+    arguments = {"city": "Laval", "days": "0", "ratio": " 0.5 ", "metric": "True"}
+
+    unquoted, names = unquote_primitive_arguments(_SCHEMA, arguments)
+
+    assert unquoted == {"city": "Laval", "days": 0, "ratio": 0.5, "metric": True}
+    assert names == ("days", "ratio", "metric")
+    assert validate_tool_arguments(_SCHEMA, unquoted) is None
+
+
+def test_what_does_not_spell_the_literal_is_left_for_the_validator() -> None:
+    """Guessing is worse than a refusal: only a value spelling the declared
+    type's literal exactly is read."""
+    for key, sent in (
+        ("days", "top"),
+        ("days", "1.5"),
+        ("days", "1_000"),
+        ("ratio", "nan"),
+        ("ratio", "1e999"),
+        ("metric", "yes"),
+        ("metric", "1"),
+    ):
+        arguments = {"city": "Laval", "days": 1, key: sent}
+        unquoted, names = unquote_primitive_arguments(_SCHEMA, arguments)
+        assert (unquoted, names) == (arguments, ()), key
+        assert validate_tool_arguments(_SCHEMA, unquoted) is not None
+
+
+def test_a_string_property_keeps_its_digits() -> None:
+    arguments = {"city": "3", "days": 1}
+    assert unquote_primitive_arguments(_SCHEMA, arguments) == (arguments, ())
+
+
+def test_the_repair_folds_a_hub_call_then_reads_its_root_primitives() -> None:
+    schema = {
+        **_HUB_SCHEMA,
+        "properties": {**_HUB_SCHEMA["properties"], "limit": {"type": "integer"}},
+    }
+
+    repair = repair_tool_arguments(
+        schema, {"action": "list_columns", "board_id": "board-1", "limit": "5"}
+    )
+
+    assert repair.error is None
+    assert repair.arguments == {
+        "action": "list_columns",
+        "limit": 5,
+        "params": {"board_id": "board-1"},
+    }
+    assert (repair.folded, repair.unquoted) == (("board_id",), ("limit",))
+
+
+def test_an_ambiguous_hub_call_is_refused_unrepaired() -> None:
+    arguments = {"action": "x", "board_id": "b", "params": {"a": 1}}
+
+    repair = repair_tool_arguments(_HUB_SCHEMA, arguments)
+
+    assert repair.error is not None and repair.arguments is arguments
