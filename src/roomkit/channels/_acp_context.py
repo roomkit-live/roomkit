@@ -42,6 +42,15 @@ _SKIPPED_TYPES = frozenset({EventType.TOOL_CALL_START, EventType.TOOL_CALL_END})
 ENTRY_LIMIT = 4000
 """Characters of one message the room context quotes."""
 
+ROOM_CONTEXT_OPENING = "[Room context"
+"""How the room context block opens; what follows says how much it holds."""
+
+ROOM_CONTEXT_CLOSING = " Context only; the request follows.]"
+"""Ends the room context block's first line."""
+
+ROOM_CONTEXT_END = "[End of room context]"
+"""The room context block's last line."""
+
 ACPContextContributor = Callable[[RoomContext, RoomEvent], Awaitable[Sequence[str]]]
 """What a host adds to one turn's prompt: blocks, for this request, right now."""
 
@@ -124,8 +133,8 @@ def room_context_block(
         if not unloaded:
             return ""
         return (
-            f"[Room context — none of the loaded messages are new to you; "
-            f"{_not_loaded(unloaded)}.{_CLOSING}"
+            f"{ROOM_CONTEXT_OPENING} — none of the loaded messages are new to you; "
+            f"{_not_loaded(unloaded)}.{ROOM_CONTEXT_CLOSING}"
         )
 
     shown = missed[-limit:]
@@ -137,7 +146,7 @@ def room_context_block(
         for position, event in enumerate(shown, start=1)
     ]
     header = _header(len(shown), len(missed), unloaded)
-    return "\n".join([header, *lines, "[End of room context]"])
+    return "\n".join([header, *lines, ROOM_CONTEXT_END])
 
 
 def _from_standalone_turn(event: RoomEvent) -> bool:
@@ -150,9 +159,6 @@ def _label(event: RoomEvent, context: RoomContext, channel_id: str) -> str:
     if event.source.channel_id == channel_id:
         return "you (in a separate session)"
     return speaker_label(event, context)
-
-
-_CLOSING = " Context only; the request follows.]"
 
 
 def _count(number: int, noun: str) -> str:
@@ -177,13 +183,19 @@ def _header(shown: int, total: int, unloaded: int) -> str:
             if shown < total
             else f"the {_count(shown, 'most recent message')}"
         )
-        return f"[Room context — {lead} you did not receive; {_not_loaded(unloaded)}.{_CLOSING}"
+        return (
+            f"{ROOM_CONTEXT_OPENING} — {lead} you did not receive; "
+            f"{_not_loaded(unloaded)}.{ROOM_CONTEXT_CLOSING}"
+        )
     if shown < total:
         return (
-            f"[Room context — the {shown} most recent of {total} messages you did not "
-            f"receive; the earlier ones are not shown.{_CLOSING}"
+            f"{ROOM_CONTEXT_OPENING} — the {shown} most recent of {total} messages you did not "
+            f"receive; the earlier ones are not shown.{ROOM_CONTEXT_CLOSING}"
         )
-    return f"[Room context — {_count(shown, 'message')} you did not receive.{_CLOSING}"
+    return (
+        f"{ROOM_CONTEXT_OPENING} — {_count(shown, 'message')} you did not receive."
+        f"{ROOM_CONTEXT_CLOSING}"
+    )
 
 
 async def contributed_blocks(

@@ -6,8 +6,8 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING, Any
 
+from roomkit.channels._mark_copies import without_mark_copies
 from roomkit.channels._realtime_context import ending_cause, held_by
-from roomkit.channels._turn_notes import without_header_copies
 from roomkit.core.task_utils import CLOSE_WAIT_S
 from roomkit.models.steering import Cancel, InjectMessage, SteeringDirective, UpdateSystemPrompt
 from roomkit.providers.ai.base import AIContext, AIMessage
@@ -160,7 +160,7 @@ class AISteeringMixin(_AIChannelContract):
                 should_cancel = True
             elif isinstance(directive, InjectMessage):
                 logger.info("Steering: injecting %s message", directive.role)
-                content = without_header_copies(directive.content)
+                content = without_mark_copies(directive.content)
                 context.messages.append(AIMessage(role=directive.role, content=content))
             elif isinstance(directive, UpdateSystemPrompt):
                 logger.info("Steering: appending to system prompt")

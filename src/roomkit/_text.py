@@ -171,12 +171,42 @@ def _class(char: str, more: str = "") -> str:
     return f"[{forms}{re.escape(more)}]"
 
 
+_APOSTROPHES = "'\u2019\u02bc"
+
+
+def word_pattern(word: str) -> str:
+    """*word* as a model reads it, a regular expression to compile with
+    ``re.IGNORECASE``: each letter in any of its forms (NFKC look-alikes,
+    homoglyphs), an apostrophe straight or typographic, an invisible, control
+    or combining character between the letters."""
+    return _NAME_JOIN.join(
+        f"[{_APOSTROPHES}]" if char in _APOSTROPHES else _class(char) for char in word
+    )
+
+
+def phrase_pattern(phrase: str, *, bracketed: bool = False) -> str:
+    """*phrase* as a model reads it, a regular expression to compile with
+    ``re.IGNORECASE``: its words in order (:func:`word_pattern`), with any
+    spacing, punctuation and invisible character between them (none
+    included), its opening bracket optional unless *bracketed*, its last word
+    not part of a longer one, and the closing punctuation taken with the
+    copy.
+
+    One quantified class between two words, never two in a row: a long run of
+    spaces after a partial copy is then scanned once, not once per split."""
+    marks = re.escape("".join(sorted(set(re.findall(r"[^\w\s'\[\]]", phrase)))))
+    gap = rf"[\s{INVISIBLE}{marks}]*"
+    body = gap.join(map(word_pattern, re.findall(r"[\w']+", phrase)))
+    end = rf"(?:{gap}\]|[{marks}]+)?" if marks else rf"(?:{gap}\])?"
+    opening = rf"[\[\uff3b]{gap}" if bracketed else rf"(?:\[{gap})?"
+    return rf"{opening}{body}(?!\w){end}"
+
+
 def reads_as(text: str, word: str) -> bool:
     """Whether *text* reads as *word* to a model: each letter in any of its forms
     (case, NFKC look-alikes, homoglyphs), invisible characters ignored, any
     spacing, punctuation or mark around it (``You.``, ``YOU!``)."""
-    letters = _NAME_JOIN.join(_class(char) for char in word.lower())
-    return re.fullmatch(rf"[\W_]*{letters}[\W_]*", text, re.IGNORECASE) is not None
+    return re.fullmatch(rf"[\W_]*{word_pattern(word)}[\W_]*", text, re.IGNORECASE) is not None
 
 
 def _tag_name(tag: str, *, exact: bool = False) -> str:

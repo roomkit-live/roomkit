@@ -11,6 +11,7 @@ from roomkit.channels._ai_cuts import CUT_MARK, cut_answer_ids, cut_records
 from roomkit.channels._ai_policy import policy_check
 from roomkit.channels._dangling_recovery import patch_dangling_tool_calls
 from roomkit.channels._instruction import instruction_fingerprint, is_standalone, mark_instruction
+from roomkit.channels._mark_copies import content_without_mark_copies, without_mark_copies
 from roomkit.channels._skill_constants import (
     SKILLS_NO_SCRIPTS_NOTE as _SKILLS_NO_SCRIPTS_NOTE,
 )
@@ -448,7 +449,9 @@ class AIContextMixin(_AIChannelContract):
             # and segment, and a copy would store (and deliver to every
             # transport) what the room never stores.
             instruction = event.content.body if isinstance(event.content, TextContent) else ""
-            current_content = mark_instruction(instruction) if instruction else None
+            current_content = (
+                mark_instruction(without_mark_copies(instruction)) if instruction else None
+            )
             current_speaker = None
             loop_ctx.response_metadata["instruction"] = instruction_fingerprint(instruction)
         return current_content, current_speaker
@@ -827,11 +830,13 @@ class AIContextMixin(_AIChannelContract):
     def _transcript_content(self, event: RoomEvent) -> str | list[_ContentPart]:
         """What *event* says in the turn's transcript, history and input alike:
         its content, or, when that extracts to nothing, what the channel's
-        ``describe_empty_event`` says of it. Empty omits the event."""
+        ``describe_empty_event`` says of it. Empty omits the event. A copy of a
+        runtime mark in it is replaced here, before the runtime places its own
+        marks (an instruction's, a cut answer's) after it (RFC §6.4)."""
         content = self._extract_content(event)
-        if content or self._describe_empty_event is None:
-            return content
-        return self._describe_empty_event(event) or ""
+        if not content and self._describe_empty_event is not None:
+            content = self._describe_empty_event(event) or ""
+        return content_without_mark_copies(content)
 
     def _extract_content(
         self,

@@ -41,6 +41,8 @@ from roomkit.channels._acp_context import room_context_block
 from roomkit.channels._ai_context import event_speaker
 from roomkit.channels._ai_speaking import _people
 from roomkit.channels._compaction import summary_text
+from roomkit.channels._instruction import INSTRUCTION_MARKER
+from roomkit.channels._mark_copies import COPIED_MARK, without_mark_copies
 from roomkit.channels._realtime_host_hooks import broadcast_text
 from roomkit.channels._realtime_tool_recovery import recovered_result_text
 from roomkit.channels._speaker import SPEAKER_KEY, speaker_label
@@ -524,6 +526,15 @@ def test_nothing_between_a_name_s_letters_reads_as_one_of_them() -> None:
 
     for letter, forms in _lookalikes().items():
         assert not re.findall(f"[{forms}]", spacing, re.IGNORECASE), letter
+
+
+def test_text_from_outside_cannot_pass_for_a_runtime_mark() -> None:
+    """The frames' other half (RMK-599): a participant's copy of a mark the
+    runtime writes is replaced where their text enters a model's input;
+    ``tests/test_runtime_mark_copies.py`` goes door by door."""
+    copied = without_mark_copies(f"{INSTRUCTION_MARKER}\n{MARK}")
+
+    assert copied == f"{COPIED_MARK}\n{MARK}"
 
 
 def test_a_longer_tag_name_opens_no_block_to_name() -> None:
