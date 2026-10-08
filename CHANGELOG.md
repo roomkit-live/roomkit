@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `AnswerOnly(policy, people=[...])`, a speak policy around any other that
+  answers only some people (RMK-625, RFC §6.4): an agent that listens to
+  everyone in the room (a television, a meeting it assists one person in) and
+  answers only them. A turn from anyone else, or from a speaker the room does
+  not name, is `silent` with the reason `only listened to`, without asking the
+  wrapped policy; it is stored and thought about as any silent turn. The
+  wrapped policy judges with only the people answered in `SpeakTurn.people`.
+  Speakers are matched by the name the room gives them, ignoring case: it is
+  not an access control. Example: `examples/answering_some_people.py`.
+
 - `ON_SPEAK_DECISION` and `ON_THOUGHT` say what deciding and thinking cost
   (RMK-627, RFC §6.4). `SpeakDecisionEvent.duration_ms` is how long the speak
   policy took (the channel's bound when it did not decide in time) and

@@ -1,6 +1,7 @@
 """Speaking turns: whether an agent speaks, offers or stays silent (RFC §6.4)."""
 
 from roomkit.speaking.always import AlwaysSpeak
+from roomkit.speaking.answer_only import AnswerOnly
 from roomkit.speaking.base import (
     CutReply,
     SpeakDecision,
@@ -16,6 +17,7 @@ from roomkit.speaking.thought import Thought, ThoughtEvent
 
 __all__ = [
     "AlwaysSpeak",
+    "AnswerOnly",
     "ClassifierSpeakPolicy",
     "CutReply",
     "LLMThinker",
