@@ -15,7 +15,7 @@ import hashlib
 import logging
 from dataclasses import replace
 
-from roomkit.memory._summary import is_summary, summarized_line, summary_message
+from roomkit.memory._summary import SummaryLines, is_summary, summary_message
 from roomkit.memory._wrapper import _MemoryWrapper
 from roomkit.memory.base import MemoryProvider, MemoryResult
 from roomkit.memory.token_estimator import (
@@ -112,7 +112,8 @@ class SummarizingMemory(_MemoryWrapper):
         # Tier 2: LLM-based summarization
         tier2_threshold = int(self._max_context_tokens * self._tier2_ratio)
         if total_tokens > tier2_threshold and len(events) > self._min_events:
-            result = await self._apply_tier2(room_id, events, inner_result, tier2_threshold)
+            lines = SummaryLines(context, current_event, channel_id)
+            result = await self._apply_tier2(room_id, events, inner_result, tier2_threshold, lines)
             return self._enforce_budget(result)
 
         return self._enforce_budget(replace(inner_result, events=events))
@@ -154,6 +155,7 @@ class SummarizingMemory(_MemoryWrapper):
         events: list[RoomEvent],
         inner: MemoryResult,
         budget: int,
+        lines: SummaryLines,
     ) -> MemoryResult:
         """Summarize older events, keeping recent ones at full fidelity, and
         *inner*'s messages and notes as they are."""
@@ -182,7 +184,7 @@ class SummarizingMemory(_MemoryWrapper):
 
         # Extract any prior summary text for chaining
         prior_summary = self._extract_prior_summary(prior_messages)
-        summary = await self._get_or_create_summary(room_id, trimmed, prior_summary)
+        summary = await self._get_or_create_summary(room_id, trimmed, prior_summary, lines)
 
         # Preserve non-summary prior messages from the inner provider
         non_summary = [m for m in prior_messages if not is_summary(m)]
@@ -193,12 +195,14 @@ class SummarizingMemory(_MemoryWrapper):
         room_id: str,
         events: list[RoomEvent],
         prior_summary: str | None,
+        lines: SummaryLines,
     ) -> str:
         """Generate or retrieve a cached summary for the given events."""
-        # Content-derived cache key to avoid cross-room and temporal collisions
+        # Content-derived cache key to avoid cross-room and temporal collisions;
+        # the agent it is for too, since its own turns read [assistant].
         event_ids = ":".join(e.id for e in events)
         cache_key = hashlib.md5(
-            f"{room_id}:{event_ids}".encode(), usedforsecurity=False
+            f"{room_id}:{lines.channel_id}:{event_ids}".encode(), usedforsecurity=False
         ).hexdigest()
         now = asyncio.get_running_loop().time()
 
@@ -214,7 +218,7 @@ class SummarizingMemory(_MemoryWrapper):
             oldest_key = next(iter(self._summary_cache))
             del self._summary_cache[oldest_key]
 
-        event_texts = [summarized_line(e) for e in events]
+        event_texts = lines(events)
 
         prompt_parts = [
             "Summarize this conversation concisely. Focus on: decisions made, "

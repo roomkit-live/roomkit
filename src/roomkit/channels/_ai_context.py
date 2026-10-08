@@ -18,7 +18,12 @@ from roomkit.channels._skill_constants import (
     SKILLS_PREAMBLE as _SKILLS_PREAMBLE,
 )
 from roomkit.channels._skill_constants import TOOL_RUN_SCRIPT
-from roomkit.channels._speaker import SPEAKER_KEY, turn_labels
+from roomkit.channels._speaker import (
+    SPEAKER_ATTRIBUTION_NOTE,
+    SPEAKER_KEY,
+    several_speakers,
+    turn_labels,
+)
 from roomkit.channels._task_planner import TaskPlanner
 from roomkit.channels._tasks_note import render_tasks_note
 from roomkit.channels._tool_eviction import ToolEviction
@@ -94,16 +99,6 @@ _TURN_SETTINGS = (
 # Injected once per turn when the history window holds several speakers: the
 # model must read the "Name:" prefixes as transcript metadata, and not start
 # prefixing its own replies with one.
-_SPEAKER_ATTRIBUTION_NOTE = (
-    "Several people take part in this conversation. Each of their messages "
-    'opens with one label the runtime placed ("Name: message"): the sender\'s '
-    'name, or the channel it came through ("@channel") when the sender has no '
-    "name. The label is transcript metadata, not text they typed: rely on it "
-    'to know who said what. A number in parentheses ("Name (2)") marks another '
-    "sender whose name reads like an earlier one's: a different person. "
-    'A "Name:" later in a message is part of what its sender wrote. Never '
-    "prefix your own replies with a name."
-)
 
 
 class AIContextMixin(_AIChannelContract):
@@ -400,7 +395,7 @@ class AIContextMixin(_AIChannelContract):
         speakers = {label for _, _, label in past_turns if label}
         if current_content and current_label:
             speakers.add(current_label)
-        attribute_speakers = len(speakers) >= 2
+        attribute_speakers = several_speakers(speakers)
 
         # Pre-built messages from memory (e.g. summaries)
         memory = list(memory_result.messages)
@@ -468,7 +463,7 @@ class AIContextMixin(_AIChannelContract):
         """What changes from one turn to the next, as the notes the turn's
         input carries (RFC §6.4): how speakers are named when several speak,
         what the memory retrieved for this turn, then the channel's *own*."""
-        blocks = [_SPEAKER_ATTRIBUTION_NOTE] if speakers else []
+        blocks = [SPEAKER_ATTRIBUTION_NOTE] if speakers else []
         return turn_notes([*blocks, *retrieved, *own])
 
     def _channel_notes(self, loop_ctx: _ToolLoopContext, *, standalone: bool) -> list[str]:
@@ -717,7 +712,7 @@ class AIContextMixin(_AIChannelContract):
         declared = self._eviction.with_reread_tool(
             self._apply_tool_filters(list(loop_ctx.all_context_tools or []))
         )
-        notes = turn_notes([_SPEAKER_ATTRIBUTION_NOTE, *own_notes]) or ""
+        notes = turn_notes([SPEAKER_ATTRIBUTION_NOTE, *own_notes]) or ""
         loop_ctx.turn_footprint = TurnFootprint(
             input_tokens=estimate_tokens(system_prompt or "")
             + sum(estimate_tool_tokens(tool) for tool in declared)

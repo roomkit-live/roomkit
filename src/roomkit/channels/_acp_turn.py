@@ -18,7 +18,7 @@ from copy import deepcopy
 from typing import TYPE_CHECKING, Any
 
 from roomkit.channels._acp_client import _SDK, _TurnDone, _TurnState
-from roomkit.channels._acp_context import compose_prompt, room_context_block
+from roomkit.channels._acp_context import compose_prompt, labelled_request, room_context_block
 from roomkit.channels._acp_usage import (
     _apply_transport_usage,
     _report_context,
@@ -216,7 +216,8 @@ class ACPTurnMixin:
                 limit=self._room_history,
             )
         )
-        prompt_text = compose_prompt(blocks, catch_up, text)
+        request = labelled_request(context, trigger, text, self.channel_id)
+        prompt_text = compose_prompt(blocks, catch_up, request)
         prompt = [self._sdk().acp.text_block(prompt_text)]
         # The cursor commits only after the agent accepts the prompt. A
         # generator body that never runs, or a prompt rejected before

@@ -14,7 +14,7 @@ from typing import Any
 from unittest.mock import AsyncMock
 
 from roomkit import split_turn_notes
-from roomkit.channels._ai_context import _SPEAKER_ATTRIBUTION_NOTE
+from roomkit.channels._speaker import SPEAKER_ATTRIBUTION_NOTE
 from roomkit.channels._turn_notes import turn_notes
 from roomkit.channels.agent import Agent
 from roomkit.memory import (
@@ -114,7 +114,7 @@ def _input_tokens(sent: AIContext, *, notes: list[str]) -> int:
     return (
         estimate_tokens(sent.system_prompt or "")
         + sum(estimate_tool_tokens(tool) for tool in sent.tools or [])
-        + estimate_tokens(turn_notes([_SPEAKER_ATTRIBUTION_NOTE, *notes]) or "")
+        + estimate_tokens(turn_notes([SPEAKER_ATTRIBUTION_NOTE, *notes]) or "")
     )
 
 

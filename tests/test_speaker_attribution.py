@@ -16,12 +16,9 @@ from typing import Any
 import pytest
 
 from roomkit.channels import SMSChannel
-from roomkit.channels._ai_context import (
-    _SPEAKER_ATTRIBUTION_NOTE,
-    _with_speaker_prefix,
-)
+from roomkit.channels._ai_context import _with_speaker_prefix
 from roomkit.channels._instruction import INSTRUCTION_MARKER
-from roomkit.channels._speaker import author_name, turn_labels
+from roomkit.channels._speaker import SPEAKER_ATTRIBUTION_NOTE, author_name, turn_labels
 from roomkit.channels.ai import AIChannel
 from roomkit.core._authors import AUTHOR, AUTHOR_REGISTER
 from roomkit.core.framework import RoomKit
@@ -90,8 +87,8 @@ class TestMultiSpeakerAttribution:
         # The model is told how to read the prefixes, once, in the turn's
         # notes: which speakers the window holds changes from turn to turn,
         # and the system prompt does not (RFC §6.4).
-        assert texts[-1].count(_SPEAKER_ATTRIBUTION_NOTE) == 1
-        assert _SPEAKER_ATTRIBUTION_NOTE not in (last.system_prompt or "")
+        assert texts[-1].count(SPEAKER_ATTRIBUTION_NOTE) == 1
+        assert SPEAKER_ATTRIBUTION_NOTE not in (last.system_prompt or "")
 
     async def test_assistant_turns_are_never_prefixed(self) -> None:
         kit, provider = await _kit(["first answer", "a2"])
@@ -112,8 +109,8 @@ class TestMultiSpeakerAttribution:
         assert "first message" in texts
         assert "second message" in texts
         assert not any(t.startswith("Alice:") for t in texts)
-        assert _SPEAKER_ATTRIBUTION_NOTE not in (last.system_prompt or "")
-        assert _SPEAKER_ATTRIBUTION_NOTE not in texts[-1]
+        assert SPEAKER_ATTRIBUTION_NOTE not in (last.system_prompt or "")
+        assert SPEAKER_ATTRIBUTION_NOTE not in texts[-1]
 
     async def test_an_unnamed_turn_opens_with_its_channel_in_a_multi_speaker_room(self) -> None:
         """A turn without a name is labelled too, so it cannot open with
@@ -197,7 +194,7 @@ class TestMultiSpeakerAttribution:
         texts = _user_texts(provider.calls[-1])
         assert "first message" in texts
         assert texts[-1].startswith("Alice: second message")
-        assert _SPEAKER_ATTRIBUTION_NOTE not in texts[-1]
+        assert SPEAKER_ATTRIBUTION_NOTE not in texts[-1]
 
     async def test_a_person_and_another_agent_are_labelled(self) -> None:
         """Every distinct source counts, not only named ones (RMK-600)."""

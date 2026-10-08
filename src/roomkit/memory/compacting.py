@@ -8,7 +8,7 @@ import logging
 from collections import OrderedDict
 from dataclasses import replace
 
-from roomkit.memory._summary import summarized_line, summary_message
+from roomkit.memory._summary import SummaryLines, summary_message
 from roomkit.memory._wrapper import _MemoryWrapper
 from roomkit.memory.base import MemoryProvider, MemoryResult
 from roomkit.memory.token_estimator import (
@@ -105,7 +105,8 @@ class CompactingMemory(_MemoryWrapper):
         kept_events = events[keep_from:]
 
         # Summarize trimmed events
-        summary = await self._get_or_create_summary(room_id, trimmed_events, channel_id)
+        lines = SummaryLines(context, current_event, channel_id)
+        summary = await self._get_or_create_summary(room_id, trimmed_events, lines, channel_id)
 
         return replace(
             inner_result,
@@ -114,10 +115,14 @@ class CompactingMemory(_MemoryWrapper):
         )
 
     async def _get_or_create_summary(
-        self, room_id: str, events: list[RoomEvent], channel_id: str | None = None
+        self,
+        room_id: str,
+        events: list[RoomEvent],
+        lines: SummaryLines,
+        channel_id: str | None = None,
     ) -> str:
         # Generate summary
-        event_texts = [summarized_line(e) for e in events]
+        event_texts = lines(events)
 
         prompt = (
             "Summarize this conversation concisely. Focus on: decisions made, "

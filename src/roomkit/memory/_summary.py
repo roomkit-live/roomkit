@@ -4,8 +4,13 @@ shared by :class:`~roomkit.memory.summarizing.SummarizingMemory` and
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+from dataclasses import dataclass
+
 from roomkit._text import CONVERSATION_SUMMARY_TAG, fence, quoted
+from roomkit.channels._speaker import several_speakers, turn_labels
 from roomkit.memory.token_estimator import extract_event_text
+from roomkit.models.context import RoomContext
 from roomkit.models.enums import ChannelType
 from roomkit.models.event import RoomEvent
 from roomkit.providers.ai.base import AIMessage
@@ -21,12 +26,41 @@ EVENT_TEXT_LIMIT = 2000
 """Characters of one event the summarizer reads."""
 
 
-def summarized_line(event: RoomEvent) -> str:
-    """*event* as a summarizer reads it: whether an agent or a user said it, then
-    its text as the memory layer reads it, quoted on one line, so no event can
-    write a line of another."""
-    role = "assistant" if event.source.channel_type == ChannelType.AI else "user"
-    return f"[{role}]: {quoted(extract_event_text(event), EVENT_TEXT_LIMIT)}"
+@dataclass(frozen=True)
+class SummaryLines:
+    """The lines a summarizer reads for the turns it summarizes, for
+    *channel_id*'s agent answering *current* in the room of *context*: each
+    turn quoted on one line after who said it, so no turn can write a line
+    of another (RFC §6.4).
+
+    When the turns and *current* hold several speakers, a participant's line
+    opens with the label the runtime gives its author, out of the quote, and
+    ``[assistant]`` names only *channel_id*'s agent (another agent speaks
+    under its label, ``@ai2``); otherwise, as in a one-to-one conversation,
+    a line reads ``[assistant]`` or ``[user]``."""
+
+    context: RoomContext
+    current: RoomEvent | None = None
+    channel_id: str | None = None
+
+    def __call__(self, events: Sequence[RoomEvent]) -> list[str]:
+        turns = [*events, *([self.current] if self.current is not None else [])]
+        labels = turn_labels(turns, self.context)
+        several = several_speakers(labels[e.id] for e in turns if not self._own(e))
+        return [self._line(event, labels.get(event.id) if several else None) for event in events]
+
+    def _own(self, event: RoomEvent) -> bool:
+        """Whether *event* is the summarized agent's own turn."""
+        if event.source.channel_type != ChannelType.AI:
+            return False
+        return self.channel_id is None or event.source.channel_id == self.channel_id
+
+    def _line(self, event: RoomEvent, label: str | None) -> str:
+        text = quoted(extract_event_text(event), EVENT_TEXT_LIMIT)
+        if label is not None and not self._own(event):
+            return f"{label}: {text}"
+        role = "assistant" if event.source.channel_type == ChannelType.AI else "user"
+        return f"[{role}]: {text}"
 
 
 def summary_message(summary: str) -> AIMessage:

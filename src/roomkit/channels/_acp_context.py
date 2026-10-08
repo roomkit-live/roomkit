@@ -33,7 +33,12 @@ from roomkit.channels._acp_marks import (
     ROOM_CONTEXT_OPENING,
 )
 from roomkit.channels._mark_copies import without_mark_copies
-from roomkit.channels._speaker import channel_label, turn_labels
+from roomkit.channels._speaker import (
+    SPEAKER_ATTRIBUTION_NOTE,
+    channel_label,
+    several_speakers,
+    turn_labels,
+)
 from roomkit.channels.base import Channel
 from roomkit.core.visibility import visible_events
 from roomkit.models.context import RoomContext
@@ -236,6 +241,30 @@ async def contributed_blocks(
     except Exception:
         logger.exception("ACP context contributor failed (%s); prompting without it", channel_id)
         return []
+
+
+def labelled_request(context: RoomContext, trigger: RoomEvent, text: str, channel_id: str) -> str:
+    """The request an ACP turn sends for *trigger*: *text*, opened with its
+    sender's label after the note that says how labels read, when the agent's
+    visible window and the request hold several speakers (RFC §6.4), so an
+    unnamed sender who writes ``Alice:`` does not read as Alice. A one-to-one
+    room's request, and the application's instruction, are sent as they are.
+    """
+    if trigger.type == EventType.INSTRUCTION or not text.strip():
+        return text
+    window = [
+        event
+        for event in visible_events(context, channel_id)
+        if event.id != trigger.id
+        and event.source.channel_id != channel_id
+        and event.type not in _SKIPPED_TYPES
+        and acp_event_text(event).strip()
+    ]
+    labels = turn_labels([*window, trigger], context)
+    label = labels.get(trigger.id)
+    if label is None or not several_speakers(labels.values()):
+        return text
+    return f"{SPEAKER_ATTRIBUTION_NOTE}\n\n{label}: {text}"
 
 
 def compose_prompt(blocks: Sequence[str], catch_up: str, request: str) -> str:
