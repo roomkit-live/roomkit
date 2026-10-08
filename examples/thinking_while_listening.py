@@ -15,7 +15,9 @@ something to say, the policy decides again with that thought.
 
 ``ON_THOUGHT`` shows each thought, ``ON_SPEAK_DECISION`` each decision, each with
 how long the thinker or the policy took, and whether a decision is the one taken
-again once Nova thought: no wrapper around either is needed to measure them.
+again once Nova thought. The policy is measured on every decision; the thinker
+only on the calls that change the thought, since a call that fails or keeps it
+fires no ``ON_THOUGHT``.
 
 ``CLASSIFIER`` (``mock``, ``jev``) chooses the policy's judgments and ``THINKER``
 (``mock``, ``anthropic``) the thinker's model; the defaults need no key. With
@@ -102,7 +104,22 @@ def make_thinker() -> Thinker:
         key = require_env("ANTHROPIC_API_KEY")["ANTHROPIC_API_KEY"]
         config = AnthropicConfig(api_key=key, model="claude-haiku-5-5")
         return LLMThinker(AnthropicAIProvider(config))
-    return MockThinker([PRICE], delay=0.4)  # about what Claude Haiku took
+    return MockThinker([PRICE], delay=0.4)  # about what Claude Haiku takes
+
+
+def thought_line(event: ThoughtEvent) -> str:
+    """A new thought, and how long the thinker call that brought it took."""
+    took = f"{event.duration_ms} ms" if event.duration_ms is not None else "no call"
+    thought = event.thought
+    return f"  Nova thinks ({took}): {thought.text} {list(thought.want_to_say)}"
+
+
+def decision_line(event: SpeakDecisionEvent) -> str:
+    """A decision, how long the policy took, and whether it was taken again."""
+    decision = event.decision
+    judged = " ".join(f"{k}={v:.2f}" for k, v in decision.judgments.items() if v >= 0.05)
+    again = ", asked again" if event.asked_again else ""
+    return f"  → {decision.mode} ({decision.reason}, {event.duration_ms} ms{again}) {judged}"
 
 
 async def main() -> None:
@@ -134,23 +151,11 @@ async def main() -> None:
 
     @kit.hook(HookTrigger.ON_THOUGHT, execution=HookExecution.ASYNC)
     async def on_thought(event: ThoughtEvent, ctx: object) -> None:
-        took = f"{event.duration_ms} ms" if event.duration_ms is not None else "no call"
-        thought = event.thought
-        logger.info("  Nova thinks (%s): %s %s", took, thought.text, list(thought.want_to_say))
+        logger.info(thought_line(event))
 
     @kit.hook(HookTrigger.ON_SPEAK_DECISION, execution=HookExecution.ASYNC)
     async def on_decision(event: SpeakDecisionEvent, ctx: object) -> None:
-        decision = event.decision
-        judged = " ".join(f"{k}={v:.2f}" for k, v in decision.judgments.items() if v >= 0.05)
-        again = ", asked again" if event.asked_again else ""
-        logger.info(
-            "  → %s (%s, %d ms%s) %s",
-            decision.mode,
-            decision.reason,
-            event.duration_ms,
-            again,
-            judged,
-        )
+        logger.info(decision_line(event))
 
     for name, body in LINES:
         logger.info('%s: "%s"', name, body)
