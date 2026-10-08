@@ -204,6 +204,9 @@ def repair_tool_arguments(parameters: Any, arguments: Any) -> RepairedArguments:
 
 
 # A literal's spelling, JSON's own: what a quoted primitive must be read as.
+# Past this length a string is no literal a tool takes, and converting it costs
+# what the model chose to send (Python refuses an integer of 4300 digits).
+_MAX_LITERAL_CHARS = 64
 _INTEGER_TEXT = re.compile(r"-?\d+")
 _NUMBER_TEXT = re.compile(r"-?\d+(\.\d+)?([eE][+-]?\d+)?")
 _NOT_A_LITERAL = object()
@@ -212,6 +215,8 @@ _NOT_A_LITERAL = object()
 def _read_literal(text: str, json_type: str) -> Any:
     """What *text* is as a literal of *json_type*, or ``_NOT_A_LITERAL``."""
     text = text.strip()
+    if len(text) > _MAX_LITERAL_CHARS:
+        return _NOT_A_LITERAL
     if json_type == "integer" and _INTEGER_TEXT.fullmatch(text):
         return int(text)
     if json_type == "number" and _NUMBER_TEXT.fullmatch(text):

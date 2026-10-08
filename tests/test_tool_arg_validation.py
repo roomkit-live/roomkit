@@ -284,6 +284,16 @@ def test_what_does_not_spell_the_literal_is_left_for_the_validator() -> None:
         assert validate_tool_arguments(_SCHEMA, unquoted) is not None
 
 
+def test_an_oversized_literal_is_refused_never_raised() -> None:
+    """A model sending thousands of digits is refused like any other wrong
+    value: converting them would raise (Python caps integer strings at 4300
+    digits) and cost what the model chose to send."""
+    for key in ("days", "ratio"):
+        arguments = {"city": "Laval", "days": 1, key: "9" * 5000}
+        assert unquote_primitive_arguments(_SCHEMA, arguments) == (arguments, ())
+        assert validate_tool_arguments(_SCHEMA, arguments) is not None
+
+
 def test_a_string_property_keeps_its_digits() -> None:
     arguments = {"city": "3", "days": 1}
     assert unquote_primitive_arguments(_SCHEMA, arguments) == (arguments, ())

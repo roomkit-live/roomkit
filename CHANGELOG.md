@@ -230,8 +230,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   catalogue tool recovered at call time included, whatever the model wrote; the
   gate refused it and the model re-sent the same value until the turn ran out,
   since no error can teach it to send what its server will not deliver. Only a
-  property declaring a primitive `type`, and only a string spelling that type's
-  literal exactly, is read; anything else is refused as before. The text,
+  property declaring a primitive `type`, and only a string of at most 64
+  characters spelling that type's literal exactly, is read; anything else is
+  refused as before. The text,
   realtime and conference gates run it through one repair,
   `repair_tool_arguments`, beside the hub fold; arguments a BEFORE_TOOL_USE hook
   rewrote are still never repaired.
