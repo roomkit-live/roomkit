@@ -687,6 +687,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that escapes U+2028, U+2029 and U+0085 (`roomkit._text.json_line`);
   `DescribeWebcamTool` fences what the camera showed apart from its notes,
   and names a save failure by its class, not its message.
+- A fenced block holds against more spellings of its tags and against a
+  provider that deletes characters (RMK-590, RFC §6.4, deep review). Gemini
+  Live's sanitiser turns a control character into a space and a lone
+  surrogate into U+FFFD instead of deleting them, so it never joins what the
+  fence kept apart (`</tool\x0b_result>` became a real closing tag). `fence()`
+  also reads a closing tag in Greek capitals, Armenian letters and small
+  capitals (`</ΤOOL_RΕSULT>`, `</ᴛᴏᴏʟ_ʀᴇꜱᴜʟᴛ>`), with ornament, syllabics,
+  box-drawing and mathematical brackets and slashes, and with a combining mark
+  or a line break between its letters. An opening tag is neutralised as
+  written, an underscore after its name (`<Task id="1">` becomes
+  `<Task_ id="1">`), and only with its bracket right before the name
+  (`latency < task deadline` and `<task-list>` stay as written).
+  `roomkit.tools.fence` takes any tag name (`Task`, `search-results`), which
+  the look-alike matching above had broken with a `KeyError`. The thinker
+  names a participant called `You` in look-alike letters (`Yоu`) as a
+  participant. The GPT-Live splitter reads with a cursor instead of copying
+  what is left at every cut (1.6 M characters: 0.21 s to 0.07 s, four times
+  the text now takes four times as long), and sends no whitespace-only append.
 - A text from outside can no longer leave a fenced block by a closing tag
   spelled another way, and the helpers hold on any text (RMK-590, RFC §6.4,
   a security review). `fence()` neutralised a closing tag only up to its `>`:

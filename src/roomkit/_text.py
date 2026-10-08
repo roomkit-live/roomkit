@@ -86,12 +86,18 @@ realtime provider adds to its prompt, the goal or task an orchestration
 strategy copies into another model's prompt, and what a vision provider saw."""
 
 
-_OPEN = "<\u02c2\u2039\u2329\u27e8\u3008"
-_SLASH = "/\u2044\u2215"
-_CLOSE = ">\u02c3\u203a\u232a\u27e9\u3009"
+_OPEN = "<\u02c2\u1438\u2039\u2329\u276e\u27e8\u3008"
+_SLASH = "/\u2044\u2215\u2571\u29f8"
+_CLOSE = ">\u02c3\u1433\u203a\u232a\u276f\u27e9\u3009"
 """A tag's angle brackets and slash as a model reads them beyond what NFKC
 folds onto them (fullwidth and small forms, see :func:`_lookalikes`): their
-modifier, quotation, angle and mathematical look-alikes."""
+modifier, syllabics, quotation, angle, ornament, box-drawing and mathematical
+look-alikes."""
+
+_NAME_JOIN = rf"[{INVISIBLE}\t\n\x0b\x0c\r\u0300-\u036f\u20d0-\u20ff\ufe20-\ufe2f]*"
+"""What may sit between a tag's letters for a model still to read the name:
+an invisible, control or line-break character, a combining mark (underlined,
+struck letters)."""
 
 _GAP = rf"[\s{INVISIBLE}\u0300-\u036f\u2800\ufff9-\ufffb]*"
 """Room between a tag's brackets, slash and name: spacing, the invisible
@@ -99,35 +105,38 @@ characters, combining marks, a braille blank, interlinear annotation marks."""
 
 
 _CONFUSABLES = {
-    "a": "\u0430\u0251\u03b1",
-    "b": "\u044c",
+    "a": "\u0430\u0251\u03b1\u1d00",
+    "b": "\u044c\u0412\u0392\u0299",
     "c": "\u0441\u03f2\u1d04",
-    "d": "\u0501",
-    "e": "\u0435\u04bd",
-    "g": "\u0261\u0581",
-    "h": "\u04bb\u0570",
-    "i": "\u0456\u03b9\u0269\u04cf\u0131",
-    "j": "\u0458\u03f3",
-    "k": "\u03ba\u043a",
-    "l": "\u04cf\u01c0",
-    "m": "\u043c",
-    "n": "\u0578",
+    "d": "\u0501\u1d05",
+    "e": "\u0435\u04bd\u0395\u1d07",
+    "f": "\ua730",
+    "g": "\u0261\u0581\u0262",
+    "h": "\u04bb\u0570\u041d\u0397\u029c",
+    "i": "\u0456\u03b9\u0269\u04cf\u0131\u026a",
+    "j": "\u0458\u03f3\u1d0a",
+    "k": "\u03ba\u043a\u039a\u1d0b",
+    "l": "\u04cf\u01c0\u053c\u029f",
+    "m": "\u043c\u039c\u1d0d",
+    "n": "\u0578\u039d\u0274",
     "o": "\u043e\u03bf\u03c3\u0585\u1d0f",
-    "p": "\u0440\u03c1",
-    "q": "\u051b\u0566",
-    "r": "\u0433",
+    "p": "\u0440\u03c1\u1d18",
+    "q": "\u051b\u0566\ua7af",
+    "r": "\u0433\u0280",
     "s": "\u0455\ua731",
-    "t": "\u0442\u03c4",
+    "t": "\u0442\u03c4\u03a4\u1d1b",
     "u": "\u03c5\u057d\u1d1c",
     "v": "\u03bd\u0475\u1d20",
     "w": "\u051d\u0461\u1d21",
     "x": "\u0445\u03c7",
-    "y": "\u0443\u04af\u03b3",
-    "z": "\u1d22",
+    "y": "\u0443\u04af\u03b3\u03a5\u028f",
+    "z": "\u1d22\u0396",
 }
 """Letters of other scripts a model reads as a Latin one beyond what NFKC folds:
-the Cyrillic, Greek and Armenian homoglyphs (``о``, ``ο``, ``օ`` for ``o``), and
-small capitals; their capitals match through case folding."""
+the Cyrillic, Greek and Armenian homoglyphs (``о``, ``ο``, ``օ`` for ``o``), the
+capitals whose own lowercase reads as another letter (Greek ``Ν`` is a
+capital N, its ``ν`` a v), and the small capitals; other capitals match
+through case folding."""
 
 
 @functools.cache
@@ -150,8 +159,18 @@ def _lookalikes() -> dict[str, str]:
 
 
 def _class(char: str, more: str = "") -> str:
-    """A regular expression class of *char* as a model reads it."""
-    return f"[{_lookalikes()[char]}{re.escape(more)}]"
+    """A regular expression class of *char* as a model reads it; a character
+    the look-alike table does not hold (a custom tag's hyphen or accented
+    letter) is matched as it is."""
+    forms = _lookalikes().get(char.lower()) or re.escape(char)
+    return f"[{forms}{re.escape(more)}]"
+
+
+def reads_as(text: str, word: str) -> bool:
+    """Whether *text* reads as *word* to a model: each letter in any of its forms
+    (case, NFKC look-alikes, homoglyphs), invisible characters ignored."""
+    letters = _NAME_JOIN.join(_class(char) for char in word.lower())
+    return re.fullmatch(rf"\s*{letters}\s*", text, re.IGNORECASE) is not None
 
 
 def _tag_name(tag: str, *, exact: bool = False) -> str:
@@ -166,11 +185,11 @@ def _tag_name(tag: str, *, exact: bool = False) -> str:
     if exact:
         letters = f"[{INVISIBLE}]*".join(map(re.escape, tag))
         return letters + rf"(?=[\s{INVISIBLE}/>])"
-    letters = f"[{INVISIBLE}]*".join(_class(char) for char in tag)
+    letters = _NAME_JOIN.join(_class(char) for char in tag)
     return letters + "(?![A-Za-z0-9_])"
 
 
-@functools.cache
+@functools.lru_cache(maxsize=64)
 def _closing_tag(tag: str) -> re.Pattern[str]:
     """Where a closing tag of *tag* starts, as a model reads it: a bracket, one
     slash or more (an escaped one included, ``<\\/``), the name."""
@@ -178,13 +197,19 @@ def _closing_tag(tag: str) -> re.Pattern[str]:
     return re.compile(f"{_class('<', _OPEN)}{_GAP}{slashes}{_tag_name(tag)}", re.IGNORECASE)
 
 
-@functools.cache
+@functools.lru_cache(maxsize=64)
 def _loose_opening_tag(tag: str) -> re.Pattern[str]:
-    """Where an opening tag of *tag* starts, as a model reads it."""
-    return re.compile(f"{_class('<', _OPEN)}{_GAP}{_tag_name(tag)}", re.IGNORECASE)
+    """Where an opening tag of *tag* starts, as a model reads it: its bracket in
+    any form, right before the name (no spacing: ``latency < task`` is prose),
+    the name ended as an opening tag ends (``<task-list>`` is another tag)."""
+    end = rf"(?=[\s{INVISIBLE}{_SLASH}{_CLOSE}\uff1e\ufe65])"
+    return re.compile(
+        f"{_class('<', _OPEN)}[{INVISIBLE}]*{_NAME_JOIN.join(_class(c) for c in tag)}{end}",
+        re.IGNORECASE,
+    )
 
 
-@functools.cache
+@functools.lru_cache(maxsize=64)
 def _opening_tag(tag: str) -> re.Pattern[str]:
     """Where an opening tag of *tag* starts, as written."""
     return re.compile(f"<{_GAP}{_tag_name(tag, exact=True)}", re.IGNORECASE)
@@ -214,19 +239,27 @@ def fence(tag: str, text: str) -> str:
     """*text* inside ``<tag>`` … ``</tag>``, with no closing tag of its own.
 
     Any closing tag of that name in *text* a model could read as one, its
-    end bracket there or not, is neutralised where it starts (``</tag`` made
-    ``</tag_``, what follows kept): in any case and spacing, with an invisible
-    or control character anywhere in it, with NFKC look-alikes of its letters,
-    brackets and slash (``＜／ｔｏｏｌ_result＞``, ``𝐭𝐨𝐨𝐥_result``), with
+    end bracket there or not, is neutralised where it starts, an underscore
+    after its name and the rest kept as written (``</tag_``): in any case and
+    spacing, with an invisible, control or combining character anywhere in
+    it, with NFKC look-alikes and homoglyphs of its letters, brackets and
+    slash (``＜／ｔｏｏｌ_result＞``, ``𝐭𝐨𝐨𝐥_result``, ``</tооl_result>``), with
     several slashes or an escaped one (``<\\/tool_result>``), with attributes
     of any length or a mark after the name (``</tool_result.>``). An opening
-    tag of that name is neutralised the same way (``<tag_``), so no reader
-    tracking nesting reads the runtime's text after the block as data. Read in
-    linear time.
+    tag of that name, its bracket right before it, is neutralised the same
+    way, so no reader tracking nesting reads the runtime's text after the
+    block as data. Read in linear time; any tag name works, one outside
+    ``[a-z0-9_]`` matched as written.
     """
-    body = _closing_tag(tag).sub(f"</{tag}_", text)
-    body = _loose_opening_tag(tag).sub(f"<{tag}_", body)
+    body = _closing_tag(tag).sub(_unnamed, text)
+    body = _loose_opening_tag(tag).sub(_unnamed, body)
     return f"<{tag}>\n{body}\n</{tag}>"
+
+
+def _unnamed(match: re.Match[str]) -> str:
+    """A tag's start with an underscore after its name: another tag, kept as it
+    was written otherwise."""
+    return f"{match.group(0)}_"
 
 
 def named_blocks(text: str, tags: tuple[str, ...] = FENCED_TAGS) -> str:

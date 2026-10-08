@@ -222,6 +222,7 @@ def build_audio_format(rate: int, codec: str) -> tuple[dict[str, Any], str | Non
 # --- Append chunking ---------------------------------------------------------
 
 _SENTENCE_BOUNDARY = re.compile(r"(?<=[.!?])\s+|\n+")
+_SPACES = re.compile(r"\s*")
 
 #: The byte-pair encoding of the GPT-5 generation GPT-Live belongs to.
 TOKENIZER_ENCODING = "o200k_base"
@@ -322,24 +323,26 @@ def token_count(text: str, tok: Tokenizer | None = None) -> int:
     return len((tok or _tokenizer or BYTES).encode(text))
 
 
-def _window(text: str, token_limit: int, tok: Tokenizer) -> tuple[str, list[int]]:
-    """The shortest prefix of *text* that holds more than *token_limit* tokens,
-    or *text* whole, with its tokens: what a cut reads, without encoding the
-    rest of a long text at every cut (the prefix doubles from four characters
-    a token)."""
+def _window(text: str, start: int, token_limit: int, tok: Tokenizer) -> tuple[int, list[int]]:
+    """Where a prefix of *text* from *start* holding more than *token_limit*
+    tokens ends, or the end of *text*, with its tokens: what a cut reads,
+    without encoding the rest of a long text at every cut (the prefix doubles
+    from four characters a token)."""
     span = token_limit * 4
     while True:
-        window = text[:span]
-        tokens = tok.encode(window)
-        if len(tokens) > token_limit or len(window) == len(text):
-            return window, tokens
+        stop = min(start + span, len(text))
+        tokens = tok.encode(text[start:stop])
+        if len(tokens) > token_limit or stop == len(text):
+            return stop, tokens
         span *= 2
 
 
-def _fits(text: str, token_limit: int, tok: Tokenizer) -> bool:
-    """Whether *text* is one append within *token_limit*."""
-    window, tokens = _window(text, token_limit, tok)
-    return len(window) == len(text) and len(tokens) <= token_limit
+def _fits(text: str, start: int, token_limit: int, tok: Tokenizer, lead: str = "") -> bool:
+    """Whether *lead* and *text* from *start* are one append within *token_limit*."""
+    stop, tokens = _window(text, start, token_limit, tok)
+    if stop < len(text) or len(tokens) > token_limit:
+        return False
+    return not lead or len(tok.encode(lead + text[start:])) <= token_limit
 
 
 def _sendable(text: str) -> str:
@@ -348,31 +351,33 @@ def _sendable(text: str) -> str:
     return text.encode("utf-8", "surrogatepass").decode("utf-8", "replace")
 
 
-def _split_at_token_limit(text: str, token_limit: int, tok: Tokenizer) -> tuple[str, str]:
-    """Take the longest prefix within ``token_limit``, preferring a sentence or space boundary."""
-    window, tokens = _window(text, token_limit, tok)
+def _cut(text: str, start: int, token_limit: int, tok: Tokenizer) -> int:
+    """Where the longest piece of *text* from *start* within ``token_limit``
+    ends, preferring a sentence or space boundary. Read with a cursor, so a
+    long text is never copied once per cut."""
+    _, tokens = _window(text, start, token_limit, tok)
     if len(tokens) <= token_limit:
-        return text, ""
+        return len(text)
     # The first ``token_limit`` tokens spell a byte prefix of the text; a
     # multibyte character they cut in half is dropped, which only shortens it.
-    end = len(tok.decode_bytes(tokens[:token_limit]).decode("utf-8", errors="ignore"))
-    if end == 0:
+    end = start + len(tok.decode_bytes(tokens[:token_limit]).decode("utf-8", errors="ignore"))
+    if end == start:
         raise ValueError("token_limit cannot fit one UTF-8 character")
-    boundaries = list(_SENTENCE_BOUNDARY.finditer(text, 0, end))
+    boundaries = [b for b in _SENTENCE_BOUNDARY.finditer(text, start, end) if b.start() > start]
     if boundaries:
         end = boundaries[-1].end()
     else:
-        space = text.rfind(" ", 0, end)
-        if space >= 0:
+        space = text.rfind(" ", start, end)
+        if space >= start:
             end = space + 1
     # Re-encoded on its own, a prefix can cost a token more than the slice it
     # came from (a trailing space no longer merges with the word after it).
-    while len(tok.encode(text[:end])) > token_limit:
-        space = text.rfind(" ", 0, end - 1)
-        end = space + 1 if space > 0 else end - 1
-        if end == 0:
+    while len(tok.encode(text[start:end])) > token_limit:
+        space = text.rfind(" ", start, end - 1)
+        end = space + 1 if space > start else end - 1
+        if end == start:
             raise ValueError("token_limit cannot fit one UTF-8 character")
-    return text[:end], text[end:]
+    return end
 
 
 def chunk_text(
@@ -391,9 +396,11 @@ def chunk_text(
     tok = tok or _tokenizer or BYTES
     text = _sendable(text).strip()
     chunks: list[str] = []
-    while text:
-        head, text = _split_at_token_limit(text, token_limit, tok)
-        chunks.append(head)
+    start = 0
+    while start < len(text):
+        end = _cut(text, start, token_limit, tok)
+        chunks.append(text[start:end])
+        start = end
     return chunks
 
 
@@ -415,16 +422,16 @@ def chunk_framed_text(
     if token_limit <= 2 * _FRAME_RESERVE:
         raise ValueError("token_limit leaves no room for a frame")
     tok = tok or _tokenizer or BYTES
-    text, opening = _sendable(text).strip(), ""
+    text, opening, start = _sendable(text).strip(), "", 0
     chunks: list[str] = []
-    while text:
-        if _fits(opening + text, token_limit, tok):
-            chunks.append(opening + text)
+    while start < len(text):
+        if _fits(text, start, token_limit, tok, lead=opening):
+            chunks.append(opening + text[start:])
             break
         opening = _affordable(opening, token_limit, tok)
         room = token_limit - _FRAME_RESERVE - len(tok.encode(opening))
-        head, text = _split_at_token_limit(text, room, tok)
-        piece, opening, text = _close_at_cut(opening + head, text)
+        end = _cut(text, start, room, tok)
+        piece, opening, start = _close_at_cut(opening + text[start:end], text, end)
         if piece:
             chunks.append(piece)
     return chunks
@@ -438,18 +445,25 @@ def _affordable(opening: str, token_limit: int, tok: Tokenizer) -> str:
     return "“"
 
 
-def _close_at_cut(piece: str, rest: str) -> tuple[str, str, str]:
+def _close_at_cut(piece: str, text: str, end: int) -> tuple[str, str, int]:
     """*piece* closing the frame it leaves open, the opening the next append
-    starts with, and *rest*: a block ends and starts over, a quote too, after
-    its author or the instruction that quotes it. A frame the cut falls right
-    after the opening of, or right before the end of, stays whole on one side
-    rather than leave an empty one on the other."""
+    starts with, and where in *text* that append resumes after *end*: a block
+    ends and starts over, a quote too, after its author or the instruction
+    that quotes it. A frame the cut falls right after the opening of, or right
+    before the end of, stays whole on one side rather than leave an empty one
+    on the other."""
     closing, opening = open_frame(piece)
     if not closing:
-        return piece, "", rest
-    piece, rest = piece.rstrip(), rest.lstrip()
-    if rest.startswith(closing.strip()):
-        return piece + closing, "", rest[len(closing.strip()) :].lstrip()
+        return piece, "", end
+    piece, end = piece.rstrip(), _past_spaces(text, end)
+    if text.startswith(closing.strip(), end):
+        return piece + closing, "", _past_spaces(text, end + len(closing.strip()))
     if piece.endswith(opening.strip()) and open_frame(piece[: -len(opening.strip())])[0] == "":
-        return piece[: -len(opening.strip())].rstrip(), opening, rest
-    return piece + closing, opening, rest
+        return piece[: -len(opening.strip())].rstrip(), opening, end
+    return piece + closing, opening, end
+
+
+def _past_spaces(text: str, pos: int) -> int:
+    """The first position of *text* from *pos* that is not a space."""
+    match = _SPACES.match(text, pos)
+    return match.end() if match else pos

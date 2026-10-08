@@ -31,11 +31,14 @@ _CONTROL_CHAR_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]")
 def _sanitize_gemini_text(text: str) -> str:
     """Sanitize text for safe injection into the Gemini Live API.
 
-    Strips null bytes, control characters (except whitespace),
-    unpaired surrogates, and truncates to max length.
+    Replaces control characters (except whitespace) with a space and unpaired
+    surrogates with a replacement character, and truncates to max length.
+    Nothing is deleted outright: the text was framed before it got here, and
+    joining two neighbours could spell a closing tag the frame neutralised
+    (RFC §6.4).
     """
-    text = _CONTROL_CHAR_RE.sub("", text)
-    text = text.encode("utf-8", errors="surrogatepass").decode("utf-8", errors="ignore")
+    text = _CONTROL_CHAR_RE.sub(" ", text)
+    text = text.encode("utf-8", errors="surrogatepass").decode("utf-8", errors="replace")
     if len(text) > _MAX_INJECT_TEXT_LENGTH:
         cut = text[:_MAX_INJECT_TEXT_LENGTH]
         # A frame the cut leaves open is closed after it (RFC §6.4).

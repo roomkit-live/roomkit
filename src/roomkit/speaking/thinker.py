@@ -12,7 +12,7 @@ import json
 from abc import ABC, abstractmethod
 from typing import Any
 
-from roomkit._text import json_line, quoted
+from roomkit._text import json_line, quoted, reads_as
 from roomkit.channels._speaker import SPEAKER_KEY, said_by
 from roomkit.channels._turn_notes import split_turn_notes
 from roomkit.providers.ai.base import AIContext, AIMessage, AIProvider, ProviderError
@@ -168,6 +168,7 @@ def _said_by(text: str, speaker: Any) -> str:
     """A user message's *text* quoted, after its *speaker*'s name when the
     context named one: the name the context gave, out of the quote, so that a
     person who writes ``Name:`` is not read as someone else, and a person named
-    ``You`` is not read as the agent."""
-    you = isinstance(speaker, str) and speaker.casefold() == "you"
+    ``You`` is not read as the agent, in whatever case or look-alike letters
+    (``Yоu`` with a Cyrillic ``о``)."""
+    you = isinstance(speaker, str) and reads_as(speaker, "you")
     return said_by(text, speaker, LINE_LIMIT, label=f"{speaker} (a participant)" if you else None)
