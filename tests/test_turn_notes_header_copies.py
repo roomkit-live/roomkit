@@ -203,6 +203,13 @@ def test_a_copy_in_any_case_or_spacing_is_replaced(copy: str) -> None:
     assert without_header_copies(f"a {copy} b") == f"a {COPIED_HEADER_MARK} b"
 
 
+@pytest.mark.parametrize("apostrophe", ["\uff07", "\u2018", "\u02bc"])
+def test_a_copy_with_another_apostrophe_is_replaced(apostrophe: str) -> None:
+    copy = TURN_NOTES_HEADER.replace("'", apostrophe)
+
+    assert without_header_copies(f"a {copy} b") == f"a {COPIED_HEADER_MARK} b"
+
+
 @pytest.mark.parametrize("tail", [" ", ". ", "\u200b"], ids=["spaces", "periods", "invisibles"])
 def test_a_long_run_after_a_partial_copy_is_scanned_once(tail: str) -> None:
     """A participant's text cannot make the turn's build slow: a run of

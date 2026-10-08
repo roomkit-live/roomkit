@@ -48,7 +48,8 @@ not place (RFC §6.4)."""
 @functools.cache
 def _header_copy() -> re.Pattern[str]:
     """The notes' header as a model reads it (:func:`roomkit._lookalike.phrase_pattern`),
-    compiled on first use: its letters' look-alikes take a moment to gather."""
+    compiled on first use: a pattern of every letter's forms takes a moment to
+    compile."""
     return re.compile(phrase_pattern(TURN_NOTES_HEADER), re.IGNORECASE)
 
 

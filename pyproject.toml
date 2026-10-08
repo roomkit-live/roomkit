@@ -7,7 +7,7 @@ name = "roomkit"
 dynamic = ["version"]
 description = "Pure async Python library for multi-channel conversations"
 readme = "README.md"
-license = "MIT"
+license = "MIT AND Unicode-3.0"
 requires-python = ">=3.12"
 authors = [{ name = "Sylvain Boily", email = "sylvainboilydroid@gmail.com" }]
 keywords = ["async", "multi-channel", "chat", "voice", "sms", "rcs", "whatsapp", "ai", "rooms"]

@@ -1,13 +1,16 @@
 """Text as a model reads it: a word, a phrase or a tag's name in any of the
 forms a reader takes for it (RFC §6.4).
 
-A model reads past an invisible character and a combining mark, takes a
-fullwidth, mathematical or small-capital letter, or a Cyrillic, Greek or
-Armenian homoglyph, for the Latin letter, and a copy wrapped in markup for
-the words it wraps. The finders of a closing tag (:func:`roomkit._text.fence`),
-of a copy of a runtime mark and of a name that reads as the agent's are built
-from these patterns, compiled with ``re.IGNORECASE``. No class between two
-letters reads a letter: a run of such a character is then scanned once.
+A model reads past an invisible character and a combining mark, takes what
+Unicode lists as confusable with a Latin letter (a fullwidth, mathematical or
+accented letter, a Cyrillic, Greek, Armenian, Coptic or Cherokee one, ``0``
+for ``o``) and a small capital for that letter, a character such as ``ⅵ``
+for the letters it spells, and a copy wrapped in markup for the words it
+wraps. The forms come from :mod:`roomkit._lookalike_data`, generated ahead of
+time. The finders of a closing tag (:func:`roomkit._text.fence`), of a copy
+of a runtime mark and of a name that reads as the agent's are built from
+these patterns, compiled with ``re.IGNORECASE``. No class between two letters
+reads a letter: a run of such a character is then scanned once.
 """
 
 from __future__ import annotations
@@ -32,14 +35,6 @@ whitespace and the lone surrogates a provider may strip before it sends a
 text. A model reads past them, and a stripped one leaves its neighbours
 side by side."""
 
-
-OPEN = "<\u02c2\u1438\u2039\u2329\u276e\u27e8\u3008"
-SLASH = "/\u2044\u2215\u2571\u29f8"
-CLOSE = ">\u02c3\u1433\u203a\u232a\u276f\u27e9\u3009"
-"""A tag's angle brackets and slash as a model reads them beyond what NFKC
-folds onto them (fullwidth and small forms, see :func:`lookalikes`): their
-modifier, syllabics, quotation, angle, ornament, box-drawing and mathematical
-look-alikes."""
 
 _IOTA = "(?-i:\u0345)"
 """The combining iota, matched as itself only: under case folding it is the
@@ -70,120 +65,146 @@ _MARKUP = r"*_~`\-/|\\"
 code, hyphenated, slashed)."""
 
 
-_CONFUSABLES = {
-    "a": "\u0430\u0251\u03b1\u1d00",
-    "b": "\u044c\u0412\u0392\u0299",
-    "c": "\u0441\u03f2\u1d04",
-    "d": "\u0501\u1d05",
-    "e": "\u0435\u04bd\u0395\u1d07",
-    "f": "\ua730",
-    "g": "\u0261\u0581\u0262",
-    "h": "\u04bb\u0570\u041d\u0397\u029c",
-    "i": "\u0456\u03b9\u0269\u04cf\u0131\u026a",
-    "j": "\u0458\u03f3\u1d0a",
-    "k": "\u03ba\u043a\u039a\u1d0b",
-    "l": "\u04cf\u01c0\u053c\u029f",
-    "m": "\u043c\u039c\u1d0d",
-    "n": "\u0578\u039d\u0274",
-    "o": "\u043e\u03bf\u03c3\u0585\u1d0f",
-    "p": "\u0440\u03c1\u1d18",
-    "q": "\u051b\u0566\ua7af",
-    "r": "\u0433\u0280",
-    "s": "\u0455\ua731",
-    "t": "\u0442\u03c4\u03a4\u1d1b",
-    "u": "\u03c5\u057d\u1d1c",
-    "v": "\u03bd\u0475\u1d20",
-    "w": "\u051d\u0461\u1d21",
-    "x": "\u0445\u03c7",
-    "y": "\u0443\u04af\u03b3\u03a5\u028f",
-    "z": "\u1d22\u0396",
-}
-"""Letters a model reads as a Latin one that Unicode's confusables
-(:mod:`roomkit._lookalike_data`) do not list: lowercase Cyrillic and Greek
-letters that read as a small capital (``т``, ``к``, ``τ``), the small capitals
-themselves, Armenian ``Լ``; other capitals match through case folding."""
-
 COLON = FORMS[":"]
 """The characters a model reads as a colon (the Devanagari visarga ``ः``
 among them), from Unicode's confusables."""
 
+QUOTE = FORMS['"']
+"""The characters a model reads as a double quote (``ײ``, ``〃``), from
+Unicode's confusables."""
 
-@functools.cache
+_TURKISH_I = frozenset("iI\u0131\u0130")
+"""Letters ``re.IGNORECASE`` takes for one another beyond their simple case
+mappings."""
+
+
 def lookalikes() -> dict[str, str]:
     """Each lowercase ASCII letter, digit, underscore, bracket, slash, colon and
-    apostrophe, with the characters a model reads as it: Unicode's confusables
-    and compatibility forms (``ｔ``, ``𝐭``, ``ⓣ``, ``τ``, ``0`` for ``o``), and
-    :data:`_CONFUSABLES`, as the body of a regular expression's class. A
-    character that may also sit between letters or words (``|``, a combining
-    mark) is left out: a class holding it beside one that reads it too would be
-    read in quadratic time. Built once, on first use, from tables generated
-    ahead of time."""
-    return {
-        char: _class_body(char, {*forms, *_CONFUSABLES.get(char, "")})
-        for char, forms in FORMS.items()
-    }
+    apostrophe, as a regular expression class of the characters a model reads
+    as it in a tag's name (:func:`char_class`)."""
+    return _table(phrase=False)
 
 
 @functools.cache
-def _sequences() -> dict[str, str]:
+def _table(*, phrase: bool) -> dict[str, str]:
+    """:data:`FORMS` as regular expression classes. A form that may also sit
+    between a name's letters, or between a phrase's words when *phrase* (``|``
+    is markup there), is left out: a class holding it beside one that reads it
+    too would be read in quadratic time. Built once, on first use."""
+    spacing = _spacing(phrase)
+    return {char: _class(char, set(forms), spacing) for char, forms in FORMS.items()}
+
+
+@functools.cache
+def _sequences(*, phrase: bool) -> dict[str, str]:
     """Each run of two to four letters a single character reads as (``vi`` for
-    ``ⅵ``), with those characters as the body of a regular expression's class."""
-    return {run: _class_body("", set(chars)) for run, chars in SEQUENCES.items()}
+    ``ⅵ``), with a regular expression class of those characters."""
+    spacing = _spacing(phrase)
+    return {run: _class("", set(chars), spacing) for run, chars in SEQUENCES.items()}
 
 
-def _class_body(char: str, forms: set[str]) -> str:
-    """*char* and the *forms* that cannot sit between letters or words, escaped,
-    in code point order."""
-    spacing = re.compile(f"{JOINT}|{SPACE}|{phrase_space('')}", re.IGNORECASE)
-    kept = sorted(form for form in forms if form != char and not spacing.fullmatch(form))
-    return "".join(map(re.escape, [char, *kept] if char else kept))
+def _spacing(phrase: bool) -> re.Pattern[str]:
+    room = f"{JOINT}|{SPACE}|{phrase_space('')}" if phrase else f"{JOINT}|{SPACE}"
+    return re.compile(room, re.IGNORECASE)
 
 
-def char_class(char: str, more: str = "") -> str:
-    """A regular expression class of *char* as a model reads it; a character
+def _class(char: str, forms: set[str], spacing: re.Pattern[str]) -> str:
+    """A class of *char* and those of its *forms* that are not *spacing*. A
+    form whose other case reads as something else (``I`` is an ``l``, its
+    ``i`` is not; ``ſ`` is an ``f``, its ``s`` is not) is matched in its own
+    case only."""
+    kept = {form for form in forms if form != char and not spacing.fullmatch(form)}
+    members = {char, *kept} - {""}
+    exact = sorted(form for form in kept if not _case_safe(form, members))
+    loose = "".join(map(re.escape, sorted(members - set(exact))))
+    if not exact:
+        return f"[{loose}]"
+    return f"(?:(?-i:[{''.join(map(re.escape, exact))}])|[{loose}])"
+
+
+def _case_safe(form: str, members: set[str]) -> bool:
+    """Whether every character ``re.IGNORECASE`` takes for *form* is one of
+    *members* or of their own other case."""
+    others = {form.lower(), form.upper(), form.casefold(), form.swapcase()}
+    if form in _TURKISH_I:
+        others |= _TURKISH_I
+    cases = {member.lower() for member in members} | {m.upper() for m in members}
+    return all(other in members or other in cases for other in others - {form} if len(other) == 1)
+
+
+def char_class(char: str, *, phrase: bool = False) -> str:
+    """A regular expression of *char* as a model reads it, one character; one
     the look-alike table does not hold (a custom tag's hyphen or accented
-    letter) is matched as it is."""
-    forms = lookalikes().get(char.lower()) or re.escape(char)
-    return f"(?!{_IOTA})[{forms}{re.escape(more)}]"
+    letter) is matched as it is. *phrase* when it sits between a phrase's
+    words (:func:`phrase_space`)."""
+    forms = _table(phrase=phrase).get(char.lower()) or f"[{re.escape(char)}]"
+    return f"(?!{_IOTA}){forms}"
 
 
-_APOSTROPHES = "'\u2019\u02bc"
+_MAX_SPELLINGS = 64
+"""Spellings of one word a pattern holds in full; a word with more takes its
+runs from the left, without overlap."""
 
 
-def word_pattern(word: str) -> str:
+def word_pattern(word: str, *, phrase: bool = False) -> str:
     """*word* as a model reads it, a regular expression to compile with
-    ``re.IGNORECASE``: each letter in any of its forms (confusables,
-    compatibility forms), a run of its letters as the one character that reads
-    as it (``ⅵ`` for ``vi``), an apostrophe straight or typographic, an
-    invisible, control or combining character between the letters. The runs
-    are taken from the left and never overlap, so the pattern grows with the
-    word, not with the ways to spell it."""
-    units, at = [], 0
+    ``re.IGNORECASE``: each letter in any of its forms, any run of its letters
+    as the one character that reads as it (``ⅵ`` for ``vi``), an invisible,
+    control or combining character between them. Every way to spell the word
+    with such runs is held, up to :data:`_MAX_SPELLINGS`; each run's class
+    shares no character with its first letter's, so the alternatives never
+    read the same text twice. *phrase* when the word sits in a phrase."""
+    runs = _runs(word, phrase)
+    if _spellings(word, runs) > _MAX_SPELLINGS:
+        runs = _leftmost(word, runs)
+    return _spelled(word, 0, runs, phrase)
+
+
+def _runs(word: str, phrase: bool) -> dict[int, list[int]]:
+    """For each position of *word*, the sizes of the runs a single character
+    reads as there."""
+    sequences = _sequences(phrase=phrase)
+    runs = {}
+    for at in range(len(word)):
+        ends = (at + size for size in (2, 3, 4) if at + size <= len(word))
+        sizes = [end - at for end in ends if word[at:end].lower() in sequences]
+        if sizes:
+            runs[at] = sizes
+    return runs
+
+
+def _spellings(word: str, runs: dict[int, list[int]]) -> int:
+    count = [0] * len(word) + [1]
+    for at in range(len(word) - 1, -1, -1):
+        count[at] = count[at + 1] + sum(count[at + n] for n in runs.get(at, []))
+    return count[0]
+
+
+def _leftmost(word: str, runs: dict[int, list[int]]) -> dict[int, list[int]]:
+    kept, at = {}, 0
     while at < len(word):
-        size = _run_at(word, at)
-        letters = _NAME_JOIN.join(map(_letter, word[at : at + size]))
-        units.append(
-            letters if size == 1 else f"(?:{letters}|[{_sequences()[_run(word, at, size)]}])"
-        )
-        at += size
-    return _NAME_JOIN.join(units)
+        if at in runs:
+            kept[at] = [max(runs[at])]
+            at += kept[at][0]
+        else:
+            at += 1
+    return kept
 
 
-def _letter(char: str) -> str:
-    return f"[{_APOSTROPHES}]" if char in _APOSTROPHES else char_class(char)
+def _spelled(word: str, at: int, runs: dict[int, list[int]], phrase: bool) -> str:
+    """The pattern of *word* from *at*: its letter there, or a run's character."""
+    if at == len(word):
+        return ""
+    choices = [_then(char_class(word[at], phrase=phrase), word, at + 1, runs, phrase)]
+    for size in runs.get(at, []):
+        glyphs = _sequences(phrase=phrase)[word[at : at + size].lower()]
+        choices.append(_then(glyphs, word, at + size, runs, phrase))
+    return choices[0] if len(choices) == 1 else f"(?:{'|'.join(choices)})"
 
 
-def _run(word: str, at: int, size: int) -> str:
-    return word[at : at + size].lower()
-
-
-def _run_at(word: str, at: int) -> int:
-    """How many letters of *word* from *at* one character reads as: the longest
-    run of two to four that some character spells, or one."""
-    for size in (4, 3, 2):
-        if at + size <= len(word) and _run(word, at, size) in _sequences():
-            return size
-    return 1
+def _then(unit: str, word: str, at: int, runs: dict[int, list[int]], phrase: bool) -> str:
+    rest = _spelled(word, at, runs, phrase)
+    return f"{unit}{_NAME_JOIN}{rest}" if rest else unit
 
 
 def phrase_pattern(phrase: str, *, bracketed: bool = False) -> str:
@@ -199,7 +220,8 @@ def phrase_pattern(phrase: str, *, bracketed: bool = False) -> str:
     spaces after a partial copy is then scanned once, not once per split."""
     marks = re.escape("".join(sorted(set(re.findall(r"[^\w\s'\[\]]", phrase)))))
     gap = f"{phrase_space(marks)}*"
-    body = gap.join(map(word_pattern, re.findall(r"[\w']+", phrase)))
+    words = re.findall(r"[\w']+", phrase)
+    body = gap.join(word_pattern(word, phrase=True) for word in words)
     end = rf"(?:{gap}\]|[{marks}]+)?" if marks else rf"(?:{gap}\])?"
     bracket = rf"[\[\uff3b]{gap}"
     opening = bracket if bracketed else f"(?:{bracket})?"
@@ -216,6 +238,8 @@ def phrase_space(marks: str) -> str:
 
 def reads_as(text: str, word: str) -> bool:
     """Whether *text* reads as *word* to a model: each letter in any of its forms
-    (case, NFKC look-alikes, homoglyphs), invisible characters ignored, any
-    spacing, punctuation or mark around it (``You.``, ``YOU!``)."""
-    return re.fullmatch(rf"[\W_]*{word_pattern(word)}[\W_]*", text, re.IGNORECASE) is not None
+    (case, Unicode's confusables, a run as the character that spells it),
+    invisible characters ignored, any spacing, punctuation or mark around it
+    (``You.``, ``YOU!``)."""
+    letters = word_pattern(word, phrase=True)
+    return re.fullmatch(rf"[\W_]*{letters}[\W_]*", text, re.IGNORECASE) is not None
