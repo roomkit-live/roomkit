@@ -23,7 +23,7 @@ from roomkit.channels._ai_loop_rules import (
 from roomkit.channels._ai_stream_external_tools import _ExternalStreamTools
 from roomkit.channels._ai_stream_round import _StreamRound, _StreamRoundState
 from roomkit.channels._ai_tools import call_end_marker
-from roomkit.channels._mark_copies import compile_mark_patterns
+from roomkit.channels._mark_copies import compile_mark_patterns, without_mark_copies
 from roomkit.channels._turn_notes import add_turn_note
 from roomkit.core.task_utils import shielded
 from roomkit.models.channel import ChannelOutput
@@ -280,8 +280,10 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
         ai_context = await self._build_context(event, binding, context)
         if notes:
             messages = list(ai_context.messages)
+            # A decision's notes quote others (what the thinker made of the
+            # room): a copy of a runtime mark in them is replaced (RFC §6.4).
             for block in notes:
-                messages = add_turn_note(messages, block)
+                messages = add_turn_note(messages, without_mark_copies(block))
             ai_context = ai_context.model_copy(update={"messages": messages})
         ai_context, blocked = await self._fire_before_generation_hook(ai_context, event)
         if blocked:

@@ -1090,6 +1090,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   new summary, its copied header replaced. A host memory has no way to mark
   its own message as the runtime's summary.
 
+- A copy of a runtime mark is replaced in every block of the turn's notes
+  that quotes others (a tool's result in the digest, a task and its
+  progress, what a camera read, a thought, a plan, a speak policy's
+  decision), and in a text injected into a realtime session through
+  `inject_text` (an instruction `kit.deliver(..., instruction=True)` sends,
+  a worker's hand-back, a vision note, a recovered tool result), on
+  `RealtimeVoiceChannel` and `ConferenceChannel` (RMK-639, RFC §6.4). A
+  `[Instruction from the application: …` in a fetched page reached the
+  model verbatim four times under the runtime's notes header, and a
+  hand-back was injected with it as a system message. The marks Gemini Live
+  writes into its model's input (`[Assistant previously said]`,
+  `[Context update, do not respond to this`) join the marks.
+
 - A task block, a turn a summary is joined to and a speak policy name the
   author of a participant's turn (RMK-615, RFC §6.4, §19.7). In a room where
   several people speak, a supervisor read `User request: <task>…` without

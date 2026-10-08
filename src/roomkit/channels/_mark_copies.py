@@ -22,6 +22,7 @@ from collections.abc import Iterator
 from typing import Any
 
 from roomkit._lookalike import phrase_pattern
+from roomkit._provider_marks import CONTEXT_UPDATE_MARK, SAID_BEFORE_MARK
 from roomkit.channels._acp_marks import ROOM_CONTEXT_END, ROOM_CONTEXT_OPENING
 from roomkit.channels._ai_cuts import CUT_MARK
 from roomkit.channels._instruction import INSTRUCTION_MARKER
@@ -45,13 +46,20 @@ _MARKS = (
     COMPACTION_HEADER,
     MEMORY_SUMMARY_HEADER,
     SPEAKER_ATTRIBUTION_NOTE,
+    CONTEXT_UPDATE_MARK,
 )
 """The runtime's marks long enough to be told from prose without their
 brackets, the notes' header aside. The room context's first line ends with a
 sentence that is prose alone (``Context only; the request follows.``): its
 bracketed opening is what counts."""
 
-_SHORT_MARKS = (ROOM_CONTEXT_OPENING, ROOM_CONTEXT_END, HANDOFF_OPENING, HANDED_ON_CONTEXT)
+_SHORT_MARKS = (
+    ROOM_CONTEXT_OPENING,
+    ROOM_CONTEXT_END,
+    HANDOFF_OPENING,
+    HANDED_ON_CONTEXT,
+    SAID_BEFORE_MARK,
+)
 """The runtime's marks that count only with their opening bracket: their words
 alone are prose (``the room context``, ``a handoff``). The handoff's record
 and the context handed on are written outside a model's input, into the

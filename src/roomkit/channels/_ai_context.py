@@ -293,10 +293,9 @@ class AIContextMixin(_AIChannelContract):
         # Who a task this turn delegates names as having asked (RFC §19.7).
         loop_ctx.requester = requester
         messages = conversation_without_header_copies(messages)
-        # What a memory retrieved holds others' words: a copy of a mark in it
-        # is replaced, the channel's own notes being the runtime's (RFC §6.4).
-        retrieved = [without_mark_copies(note) for note in memory_result.notes]
-        notes = self._turn_notes(own_notes, speakers=attribute_speakers, retrieved=retrieved)
+        notes = self._turn_notes(
+            own_notes, speakers=attribute_speakers, retrieved=memory_result.notes
+        )
         messages = with_turn_notes(messages, notes)
         return messages
 
@@ -481,9 +480,14 @@ class AIContextMixin(_AIChannelContract):
     def _turn_notes(own: list[str], *, speakers: bool, retrieved: list[str]) -> str | None:
         """What changes from one turn to the next, as the notes the turn's
         input carries (RFC §6.4): how speakers are named when several speak,
-        what the memory retrieved for this turn, then the channel's *own*."""
+        what the memory retrieved for this turn, then the channel's *own*.
+        What the memory retrieved and the channel's own blocks quote others
+        (a passage, a tool's result, a task, what a camera read, a plan): a
+        copy of a runtime mark in them is replaced; the speaker note is the
+        runtime's."""
         blocks = [SPEAKER_ATTRIBUTION_NOTE] if speakers else []
-        return turn_notes([*blocks, *retrieved, *own])
+        quoting = [without_mark_copies(block) for block in (*retrieved, *own)]
+        return turn_notes([*blocks, *quoting])
 
     def _channel_notes(self, loop_ctx: _ToolLoopContext, *, standalone: bool) -> list[str]:
         """The notes the channel adds to the turn's input from the room's

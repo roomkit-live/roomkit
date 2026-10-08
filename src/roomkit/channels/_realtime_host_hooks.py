@@ -13,7 +13,7 @@ import logging
 from typing import TYPE_CHECKING, Literal
 
 from roomkit._text import quoted
-from roomkit.channels._mark_copies import without_mark_copies
+from roomkit.channels._mark_copies import compile_mark_patterns, without_mark_copies
 from roomkit.channels._runtime_record import written_by_runtime
 from roomkit.channels._speaker import channel_label, turn_labels
 from roomkit.core.visibility import visible_events
@@ -62,6 +62,17 @@ def broadcast_text(
     label = turn_labels([*seen, event], context).get(event.id)
     author = label or channel_label(event.source.channel_id)
     return f"{author}: {quoted(text, BROADCAST_TEXT_LIMIT)}"
+
+
+async def injected_text(text: str) -> str:
+    """*text*, injected into a realtime session through a host's
+    ``inject_text`` (an instruction, a worker's hand-back, what a camera read,
+    a tool result recovered), with a copy of a runtime mark replaced (RFC
+    §6.4), the patterns compiled off the event loop first. A broadcast does
+    not come this way: :func:`broadcast_text` cleans it, a record of the
+    runtime keeping its own marks."""
+    await compile_mark_patterns()
+    return without_mark_copies(text)
 
 
 def serves(held: VoiceSession | None, session: VoiceSession) -> bool:

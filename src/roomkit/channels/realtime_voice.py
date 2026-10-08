@@ -31,6 +31,7 @@ from roomkit.channels._realtime_host_hooks import (
     BROADCAST_INTENT,
     broadcast_text,
     fire_text_injected,
+    injected_text,
     serves,
 )
 from roomkit.channels._realtime_response import RealtimeResponseMixin
@@ -971,6 +972,7 @@ class RealtimeVoiceChannel(
         A session the channel no longer serves is not sent to:
         ``not_sent`` / ``realtime_session_gone``, as on a conference.
         """
+        text = await injected_text(text)
         return await self._inject(
             session,
             text,

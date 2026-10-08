@@ -62,7 +62,7 @@ from roomkit.channels._conference_shutdown import CloseStatus, ConferenceShutdow
 from roomkit.channels._conference_subscription import ConferenceSubscriptionMixin
 from roomkit.channels._conference_voice import ConferenceVoice
 from roomkit.channels._mark_copies import compile_mark_patterns
-from roomkit.channels._realtime_host_hooks import broadcast_text
+from roomkit.channels._realtime_host_hooks import broadcast_text, injected_text
 from roomkit.channels._served_tools import (
     dict_tool_name,
     refuse_host_tools,
@@ -766,6 +766,7 @@ class ConferenceChannel(
         *start_audio_stream* has no use here: the mix feeds the session from
         the moment it connects.
         """
+        text = await injected_text(text)
         return await self._realtime.inject_text(
             session, text, role=role, silent=silent, chain_depth=chain_depth
         )

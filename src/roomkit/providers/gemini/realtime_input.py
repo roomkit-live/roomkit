@@ -12,6 +12,7 @@ import re
 from collections.abc import Callable
 from typing import Any
 
+from roomkit._provider_marks import CONTEXT_UPDATE_MARK, SAID_BEFORE_MARK
 from roomkit._text import fence, open_frame
 from roomkit.providers.gemini.realtime_config import genai_types
 from roomkit.providers.gemini.realtime_state import _GeminiSessionState
@@ -243,10 +244,10 @@ class GeminiLiveInputMixin(RealtimeVoiceProvider):
                 "send_realtime_input — sending as user context instead",
                 state.session.id,
             )
-            text = f"[Assistant previously said] {text}"
+            text = f"{SAID_BEFORE_MARK} {text}"
 
         if silent:
-            text = f"[Context update, do not respond to this] {text}"
+            text = f"{CONTEXT_UPDATE_MARK}] {text}"
             logger.debug(
                 "inject_text session %s: silent mode is best-effort via "
                 "send_realtime_input (model may still respond)",
@@ -314,15 +315,13 @@ class GeminiLiveInputMixin(RealtimeVoiceProvider):
         # so text prompt and media are sent as separate messages.
         if prompt:
             if silent:
-                prompt = f"[Context update, do not respond to this] {prompt}"
+                prompt = f"{CONTEXT_UPDATE_MARK}] {prompt}"
             await state.live_session.send_realtime_input(text=prompt)
         elif silent:
             # No prompt but silent — send a standalone instruction so the
             # model doesn't react to the image (no turn_complete equivalent
             # on the realtime path).
-            await state.live_session.send_realtime_input(
-                text="[Context update, do not respond to this image]"
-            )
+            await state.live_session.send_realtime_input(text=f"{CONTEXT_UPDATE_MARK} image]")
 
         await state.live_session.send_realtime_input(
             media=types.Blob(mime_type=mime_type, data=image_data),
