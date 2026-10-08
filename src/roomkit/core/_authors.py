@@ -121,7 +121,8 @@ class AuthorRegister:
     then ``Ian (2)``, then ``ian (3)``), and a registered participant the
     lowest rank none of them holds. A source keeps its rank while no source
     whose name reads like the one it uses holds it, so a name that reads like
-    two others ranks after both and renumbers neither.
+    two others ranks after both and renumbers neither; a rank once given is
+    never given to another source, since a turn was recorded with it.
 
     Kept as JSON in the room's metadata, which every read of the room copies
     or parses, so its values are strings: ``names`` maps each hashed
@@ -189,25 +190,28 @@ class AuthorRegister:
         mine: set[int] = set()
         others: set[int] = set()
         for name in names:
-            for holder, rank in self._entries(name).items():
+            for holder, rank in self._entries(name):
                 (mine if holder == source else others).add(rank)
         return mine, others
 
-    def _entries(self, name: str) -> dict[str, int]:
-        """The sources filed under *name* and their ranks, its malformed pairs
-        left out."""
+    def _entries(self, name: str) -> list[tuple[str, int]]:
+        """The ranks filed under *name*, each with its source, its malformed
+        pairs left out."""
         value = self.data["names"].get(name)
         if not isinstance(value, str):
-            return {}
+            return []
         pairs = (_PAIR.fullmatch(pair) for pair in value.split())
-        return {found[1]: int(found[2]) for found in pairs if found}
+        return [(found[1], int(found[2])) for found in pairs if found]
 
     def _file(self, source: str, names: set[str], rank: int) -> None:
+        """*rank* filed for *source* under each of *names*, beside any rank it
+        held there before: a turn was recorded with that one, so no other
+        source may take it."""
         for name in sorted(names):
-            entries = self._entries(name)
-            if entries.get(source) != rank:
-                entries[source] = rank
-                self.data["names"][name] = " ".join(f"{s}:{r}" for s, r in entries.items())
+            if (source, rank) not in self._entries(name):
+                held = self.data["names"].get(name)
+                pair = f"{source}:{rank}"
+                self.data["names"][name] = f"{held} {pair}" if isinstance(held, str) else pair
                 self.changed = True
 
 

@@ -104,6 +104,25 @@ class TestRanksHoldAcrossNames:
             "ian: no, that was not me",
         ]
 
+    async def test_a_rank_a_source_leaves_is_never_given_again(self) -> None:
+        """A source that takes a new rank keeps the one its earlier turns
+        were recorded with: given to another, two sources would read alike."""
+        kit, provider = await _kit(["a1", "a2", "a3", "a4"])
+        await _say(kit, "u-t", "Lan", "first")
+        await _say(kit, "u-s", "ian", "release it")
+        await _say(kit, "u-s", "Ian", "now")
+        await kit.store.add_participant(
+            Participant(id="p-ian", room_id="r1", channel_id="sms1", display_name="ian")
+        )
+        await _say(kit, "p-ian", None, "that was not me")
+
+        assert _texts(provider) == [
+            "Lan: first",
+            "ian: release it",
+            "Ian (2): now",
+            "ian (3): that was not me",
+        ]
+
 
 class TestARoomFromBeforeTheRegister:
     async def _forget(self, kit: Any) -> None:
