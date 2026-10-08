@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any
 from pydantic import BaseModel, Field
 
 from roomkit._text import CONVERSATION_SUMMARY_TAG, fence, identifier, quoted
+from roomkit.channels._runtime_record import HANDED_ON_CONTEXT, HANDOFF_OPENING, runtime_record
 from roomkit.channels._tool_registry import ToolEntry, orchestration_tool
 from roomkit.memory._wrapper import _MemoryWrapper
 from roomkit.memory.base import MemoryProvider, MemoryResult
@@ -387,6 +388,8 @@ class HandoffHandler:
                 "to_agent": request.target_agent_id,
                 "summary": request.summary,
                 "_orchestration_internal": True,
+                # The runtime's record: its mark is kept, a copy replaced (§6.4).
+                **runtime_record("handoff"),
             },
         )
 
@@ -653,9 +656,10 @@ class HandoffMemoryProvider(_MemoryWrapper):
         handoff_msg = AIMessage(
             role="user",
             content=(
-                f"[Context from previous agent ({identifier(handoff_from, 'agent')})]\n"
+                f"{HANDED_ON_CONTEXT} ({identifier(handoff_from, 'agent')})]\n"
                 f"{fence(CONVERSATION_SUMMARY_TAG, str(summary))}"
             ),
+            metadata=runtime_record("handed_on_context"),
         )
         # A new result: the inner provider's may be one it keeps.
         return replace(result, messages=[handoff_msg, *result.messages])
@@ -673,7 +677,7 @@ def _handoff_line(calling_agent_id: str, request: HandoffRequest) -> str:
     target = identifier(request.target_agent_id, "agent")
     agents = f"{source} -> {target}"
     reason = f" {quoted(request.reason, _REASON_CHARS)}" if request.reason.strip() else ""
-    return f"[Handoff: {agents}]{reason}"
+    return f"{HANDOFF_OPENING}: {agents}]{reason}"
 
 
 # -- Wiring -------------------------------------------------------------------

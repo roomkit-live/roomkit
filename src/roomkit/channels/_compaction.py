@@ -14,6 +14,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from roomkit._text import quoted
+from roomkit.channels._runtime_record import COMPACTION_HEADER as SUMMARY_HEADER
 from roomkit.channels._speaker import SPEAKER_KEY, said_by
 from roomkit.channels._tool_eviction import (
     REREAD_TOOL,
@@ -36,8 +37,6 @@ _STORED_PREVIEW_CHARS = 1000
 # How much of each summarized message the summary quotes.
 _SUMMARY_MESSAGE_CHARS = 500
 _SUMMARY_PART_CHARS = 200
-
-SUMMARY_HEADER = "[Context compacted — earlier conversation summary]"
 
 
 def compaction_cut(messages: list[AIMessage], turn_input: AIMessage | None) -> tuple[int, int]:

@@ -50,6 +50,7 @@ from roomkit.channels._acp_events import ACPEventsMixin
 from roomkit.channels._acp_sessions import ACPSessionsMixin
 from roomkit.channels._acp_turn import ACPTurnMixin
 from roomkit.channels._instruction import instruction_fingerprint, is_standalone, mark_instruction
+from roomkit.channels._mark_copies import compile_mark_patterns
 from roomkit.channels.acp_transport import ACPTransport, StdioACPTransport
 from roomkit.channels.base import Channel
 from roomkit.models.channel import ChannelBinding, ChannelCapabilities, ChannelOutput
@@ -379,6 +380,7 @@ class ACPChannel(ACPConnectionMixin, ACPSessionsMixin, ACPTurnMixin, ACPEventsMi
         if is_tool_call_record(event):
             return ChannelOutput.empty()
 
+        await compile_mark_patterns()
         text = acp_event_text(event)
 
         room_id = context.room.id if context.room is not None else event.room_id

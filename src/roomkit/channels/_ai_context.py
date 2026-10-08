@@ -10,7 +10,13 @@ from roomkit.channels._ai_cuts import CUT_MARK, cut_answer_ids, cut_records
 from roomkit.channels._ai_policy import policy_check
 from roomkit.channels._dangling_recovery import patch_dangling_tool_calls
 from roomkit.channels._instruction import instruction_fingerprint, is_standalone, mark_instruction
-from roomkit.channels._mark_copies import content_without_mark_copies, without_mark_copies
+from roomkit.channels._mark_copies import (
+    compile_mark_patterns,
+    content_without_mark_copies,
+    without_mark_copies,
+    without_split_copies,
+)
+from roomkit.channels._runtime_record import written_by_runtime
 from roomkit.channels._skill_constants import (
     SKILLS_NO_SCRIPTS_NOTE as _SKILLS_NO_SCRIPTS_NOTE,
 )
@@ -167,6 +173,7 @@ class AIContextMixin(_AIChannelContract):
         that snapshots go stale. Without a provider, the metadata toolset
         is used.
         """
+        await compile_mark_patterns()
         binding = _without_former_vision(binding)
         turn, settings = await self._resolve_turn(binding, context)
         # The prompt grows below (skills, sandbox, planner, notes); the other
@@ -407,7 +414,7 @@ class AIContextMixin(_AIChannelContract):
         attribute_speakers = several_speakers(speakers)
 
         # Pre-built messages from memory (e.g. summaries)
-        memory = list(memory_result.messages)
+        memory = [_runtime_or_cleaned(message) for message in memory_result.messages]
         messages: list[AIMessage] = list(memory)
         for role, content, label in past_turns:
             messages.append(_turn_message(role, content, label if attribute_speakers else None))
@@ -419,7 +426,8 @@ class AIContextMixin(_AIChannelContract):
             label = current_label if attribute_speakers else None
             messages.append(_turn_message("user", current_content, label))
         requester = current_label if attribute_speakers else None
-        return _after_memory(memory, messages[len(memory) :]), attribute_speakers, requester
+        conversation = without_split_copies(_after_memory(memory, messages[len(memory) :]))
+        return conversation, attribute_speakers, requester
 
     def _past_turns(
         self, memory_result: MemoryResult, context: RoomContext, labels: dict[str, str | None]
@@ -848,6 +856,9 @@ class AIContextMixin(_AIChannelContract):
         content = self._extract_content(event)
         if not content and self._describe_empty_event is not None:
             content = self._describe_empty_event(event) or ""
+        if written_by_runtime(event.metadata):
+            # The runtime's own record (a handoff's): its marks are its own.
+            return content
         return content_without_mark_copies(content)
 
     def _extract_content(
@@ -942,6 +953,18 @@ def _with_speaker_prefix(content: str | list[_ContentPart], name: str) -> str | 
     if parts and isinstance(parts[0], AITextPart) and parts[0].text.strip():
         return parts
     return [AITextPart(text=f"{name}:"), *parts]
+
+
+def _runtime_or_cleaned(message: AIMessage) -> AIMessage:
+    """A message a memory built: a copy of a runtime mark in it replaced, unless
+    a memory of the runtime built it (a summary, the context handed on), whose
+    marks are its own (RFC §6.4)."""
+    if written_by_runtime(message.metadata):
+        return message
+    cleaned = content_without_mark_copies(message.content)
+    return (
+        message if cleaned == message.content else message.model_copy(update={"content": cleaned})
+    )
 
 
 def _after_memory(memory: list[AIMessage], rest: list[AIMessage]) -> list[AIMessage]:
