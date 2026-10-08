@@ -22,7 +22,10 @@ import pytest
 import roomkit
 from roomkit import TURN_NOTES_HEADER
 from roomkit._text import (
+    _GAP,
+    _NAME_JOIN,
     FENCED_TAGS,
+    _lookalikes,
     fence,
     identifier,
     json_line,
@@ -488,6 +491,7 @@ def test_a_header_copy_with_an_invisible_character_is_found(hidden: str) -> None
         lambda: named_blocks("<tool_result " * 70_000),
         lambda: quoted("<task " * 150_000, 500),
         lambda: named_blocks("<task>\n" + "</task " * 130_000),
+        lambda: fence("vision", "</v" + "\u0345" * 30_000 + "x"),
     ],
     ids=[
         "closing+invisibles",
@@ -496,6 +500,7 @@ def test_a_header_copy_with_an_invisible_character_is_found(hidden: str) -> None
         "openings",
         "quoted openings",
         "closings in a block",
+        "combining iota",
     ],
 )
 def test_tags_are_read_in_linear_time(read: Callable[[], object]) -> None:
@@ -507,6 +512,18 @@ def test_tags_are_read_in_linear_time(read: Callable[[], object]) -> None:
     read()
 
     assert time.perf_counter() - started < 1.0
+
+
+def test_nothing_between_a_name_s_letters_reads_as_one_of_them() -> None:
+    """A class between a name's letters that also holds one of its letters
+    reads a run of that character in quadratic time: U+0345, a combining mark,
+    folds to the Greek iota, one of ``i``'s look-alikes."""
+    between = re.compile(f"[{_NAME_JOIN[1:-2]}{_GAP[1:-2]}]", re.IGNORECASE)
+    every = "".join(chr(code) for code in range(0x110000) if not 0xD800 <= code <= 0xDFFF)
+    spacing = "".join(between.findall(every))
+
+    for letter, forms in _lookalikes().items():
+        assert not re.findall(f"[{forms}]", spacing, re.IGNORECASE), letter
 
 
 def test_a_longer_tag_name_opens_no_block_to_name() -> None:

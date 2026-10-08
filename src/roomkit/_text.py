@@ -94,12 +94,17 @@ folds onto them (fullwidth and small forms, see :func:`_lookalikes`): their
 modifier, syllabics, quotation, angle, ornament, box-drawing and mathematical
 look-alikes."""
 
-_NAME_JOIN = rf"[{INVISIBLE}\t\n\x0b\x0c\r\u0300-\u036f\u20d0-\u20ff\ufe20-\ufe2f]*"
+_COMBINING = "\u0300-\u0344\u0346-\u036f"
+"""The combining diacritical marks, but U+0345: under case folding it is the
+Greek iota, a letter of ``i``'s look-alikes, and a class that holds a letter
+of the name beside that letter's own reads a run of it in quadratic time."""
+
+_NAME_JOIN = rf"[{INVISIBLE}\t\n\x0b\x0c\r{_COMBINING}\u20d0-\u20ff\ufe20-\ufe2f]*"
 """What may sit between a tag's letters for a model still to read the name:
 an invisible, control or line-break character, a combining mark (underlined,
 struck letters)."""
 
-_GAP = rf"[\s{INVISIBLE}\u0300-\u036f\u2800\ufff9-\ufffb]*"
+_GAP = rf"[\s{INVISIBLE}{_COMBINING}\u2800\ufff9-\ufffb]*"
 """Room between a tag's brackets, slash and name: spacing, the invisible
 characters, combining marks, a braille blank, interlinear annotation marks."""
 
