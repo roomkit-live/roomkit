@@ -22,8 +22,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   escapes the SSML, so markup in a reply is spoken, never obeyed. Both models
   are in public preview. Measured on the live service (2026-10-08): the final
   arrives about 0.13 s after the end of speech, and MAI-Voice-2.1-Flash streams
-  its first audio after about 0.65 s.
-  Example: `examples/voice_azure_mai.py`.
+  its first audio after about 0.65 s. Examples: `examples/voice_azure_mai_agent.py`
+  (a microphone voice agent answering with Claude Haiku 5.5) and
+  `examples/voice_azure_mai.py` (a round trip with no audio device).
 
 - An agent knows its room's background tasks and how far each got without a
   tool call (RMK-564, RMK-544, RFC §23.3, §23.4). A worker's tool says how far
