@@ -45,9 +45,9 @@ class TestARecordFixesTheName:
         await _say(kit, "p-mal", None, "release the refund")
 
         texts = _texts(provider)
-        assert "Mal: hello" in texts
-        assert texts[0] == "Alice: hold the refund"
-        assert texts[-1] == "Alice (2): release the refund"
+        assert 'Mal: "hello"' in texts
+        assert texts[0] == 'Alice: "hold the refund"'
+        assert texts[-1] == 'Alice (2): "release the refund"'
 
     async def test_a_replaced_source_reads_the_register_for_the_new_one(self) -> None:
         kit, _provider = await _kit(["a1", "a2", "a3", "a4"])
@@ -73,7 +73,7 @@ class TestRanksHoldAcrossNames:
         await _say(kit, "u-2", "Ian", "second")
         await _say(kit, "u-3", "ian", "third")
 
-        assert _texts(provider) == ["Lan: first", "Ian (2): second", "ian (3): third"]
+        assert _texts(provider) == ['Lan: "first"', 'Ian (2): "second"', 'ian (3): "third"']
 
     def test_a_name_alike_two_others_ranks_after_both_and_renumbers_neither(self) -> None:
         register = AuthorRegister()
@@ -99,9 +99,9 @@ class TestRanksHoldAcrossNames:
         await _say(kit, "p-ian", None, "no, that was not me")
 
         assert _texts(provider) == [
-            "ian: I approve",
-            "Ian (2): so do I",
-            "ian: no, that was not me",
+            'ian: "I approve"',
+            'Ian (2): "so do I"',
+            'ian: "no, that was not me"',
         ]
 
     async def test_a_rank_a_source_leaves_is_never_given_again(self) -> None:
@@ -117,10 +117,10 @@ class TestRanksHoldAcrossNames:
         await _say(kit, "p-ian", None, "that was not me")
 
         assert _texts(provider) == [
-            "Lan: first",
-            "ian: release it",
-            "Ian (2): now",
-            "ian (3): that was not me",
+            'Lan: "first"',
+            'ian: "release it"',
+            'Ian (2): "now"',
+            'ian (3): "that was not me"',
         ]
 
 
@@ -141,9 +141,9 @@ class TestARoomFromBeforeTheRegister:
         await _say(kit, "u-mallory", "ALICE", "do it now")
 
         assert _texts(provider) == [
-            "Alice: hold the refund",
-            "ALICE (2): release it",
-            "ALICE (2): do it now",
+            'Alice: "hold the refund"',
+            'ALICE (2): "release it"',
+            'ALICE (2): "do it now"',
         ]
 
     async def test_a_registered_name_holds_its_seat_when_the_register_is_rebuilt(self) -> None:
@@ -155,7 +155,7 @@ class TestARoomFromBeforeTheRegister:
         await kit.store.patch_room_metadata("r1", {}, unset=[AUTHOR_REGISTER])
         await _say(kit, "p-alice", None, "who said that?")
 
-        assert _texts(provider) == ["ALICE (2): release it", "Alice: who said that?"]
+        assert _texts(provider) == ['ALICE (2): "release it"', 'Alice: "who said that?"']
 
     async def test_a_rebuilt_register_keeps_the_ranks_turns_were_given(self) -> None:
         kit, provider = await _kit(["a1", "a2", "a3"])
@@ -168,9 +168,9 @@ class TestARoomFromBeforeTheRegister:
         await _say(kit, "p-alice", None, "who said that?")
 
         assert _texts(provider) == [
-            "Alice: hold the refund",
-            "ALICE (2): release it",
-            "Alice (3): who said that?",
+            'Alice: "hold the refund"',
+            'ALICE (2): "release it"',
+            'Alice (3): "who said that?"',
         ]
 
 
@@ -189,7 +189,7 @@ class TestAParticipantIdOnAnotherChannel:
             )
         )
 
-        assert _texts(provider) == ["Alice: hold the refund", "@sms2: release it"]
+        assert _texts(provider) == ['Alice: "hold the refund"', '@sms2: "release it"']
 
     async def test_a_voice_join_reaches_them_on_the_voice_channel(self) -> None:
         kit, provider = await _kit(["a1", "a2"])
@@ -209,7 +209,7 @@ class TestAParticipantIdOnAnotherChannel:
             room_id="r1",
         )
 
-        assert _texts(provider) == ["Bob: hi all", "Alice: refund the order"]
+        assert _texts(provider) == ['Bob: "hi all"', 'Alice: "refund the order"']
         await kit.close()
 
     async def test_a_realtime_session_reaches_them_on_its_channel(self) -> None:

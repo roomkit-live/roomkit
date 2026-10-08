@@ -939,9 +939,10 @@ def _turn_message(role: str, content: str | list[_ContentPart], speaker: str | N
 
 
 def _with_speaker_prefix(content: str | list[_ContentPart], name: str) -> str | list[_ContentPart]:
-    """Carry the speaker on a user turn: ``"Name: text"`` on each line
-    (:func:`~roomkit.channels._speaker.labelled_lines`); each line of a text
-    part gets its label, and parts that open with an image a lead part."""
+    """Carry the speaker on a user turn: ``Name: "line"`` for each line, the
+    line a JSON string (:func:`~roomkit.channels._speaker.labelled_lines`);
+    each line of a text part gets its label, and parts that open with an
+    image a lead part."""
     if isinstance(content, str):
         return labelled_lines(content, name)
     parts = [
