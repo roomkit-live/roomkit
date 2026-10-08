@@ -222,6 +222,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `CompactingMemory` counts an event as the other memories do (RMK-589): an
+  image by the tokens a provider bills for it (about a thousand), never by its
+  URL's or its base64's length. An image by URL counted about 30 tokens, so a
+  window full of images was never compacted and the provider refused the turn;
+  a 150 kB inline image counted 50 000, so one picture summarized the whole
+  conversation.
+
 - A continuous STT stream that reconnects on a backlog no longer loses it to
   Meta's refusal (RMK-581, RFC §12.2). A handshake Meta did not answer held a
   stream for 10 s while the microphone audio queued up; the next stream sent

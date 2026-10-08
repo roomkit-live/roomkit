@@ -12,12 +12,12 @@ from roomkit.memory._summary import summarized_line, summary_message
 from roomkit.memory._wrapper import _MemoryWrapper
 from roomkit.memory.base import MemoryProvider, MemoryResult
 from roomkit.memory.token_estimator import (
+    estimate_event_tokens,
     estimate_message_tokens,
     estimate_notes_tokens,
-    estimate_tokens,
 )
 from roomkit.models.context import RoomContext
-from roomkit.models.event import RoomEvent, TextContent
+from roomkit.models.event import RoomEvent
 from roomkit.providers.ai.base import AIContext, AIMessage, AIProvider
 
 logger = logging.getLogger("roomkit.memory.compacting")
@@ -78,7 +78,9 @@ class CompactingMemory(_MemoryWrapper):
         budget = int(self._max_context_tokens * (1 - self._safety_margin_ratio)) - carried
 
         events = inner_result.events
-        event_costs = [self._estimate_event_tokens(e) for e in events]
+        # An image costs what the provider bills for its pixels, never its
+        # URL's or its base64's length (RMK-589).
+        event_costs = [estimate_event_tokens(e) for e in events]
         total_cost = sum(event_costs)
 
         if total_cost <= budget:
@@ -110,11 +112,6 @@ class CompactingMemory(_MemoryWrapper):
             messages=[*inner_result.messages, summary_message(summary)],
             events=kept_events,
         )
-
-    @staticmethod
-    def _estimate_event_tokens(event: RoomEvent) -> int:
-        text = event.content.body if isinstance(event.content, TextContent) else str(event.content)
-        return estimate_tokens(text)
 
     async def _get_or_create_summary(
         self, room_id: str, events: list[RoomEvent], channel_id: str | None = None
