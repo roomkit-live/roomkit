@@ -500,8 +500,7 @@ class HandoffHandler:
 
         Call this after setting the initial conversation state::
 
-            room = set_conversation_state(room, ConversationState(...))
-            await kit.store.update_room(room)
+            await save_conversation_state(kit.store, room_id, ConversationState(...))
             await handler.send_greeting(room_id, channel_id="voice")
 
         Does nothing when the active agent has no greeting configured.
