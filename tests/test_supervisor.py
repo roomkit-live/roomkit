@@ -779,7 +779,9 @@ class TestSupervisedSequential:
         assert [t for cid, t in calls if cid == "w1"] == ["Find the current facts on the topic"]
         w2_tasks = [t for cid, t in calls if cid == "w2"]
         assert len(w2_tasks) == 1
-        assert w2_tasks[0].startswith("Write a report from the research")
+        assert w2_tasks[0].startswith(
+            "Your task:\n<task>\nWrite a report from the research\n</task>"
+        )
         assert "[Researcher]\n<worker_output>\nworker output\n</worker_output>" in w2_tasks[0]
         assert "worker output" in w2_tasks[0]  # prior data embedded, not just referenced
         # Both steps reviewed + approved, role-labeled, in order.

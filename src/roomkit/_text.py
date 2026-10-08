@@ -11,6 +11,7 @@ an :func:`identifier`, a value :func:`one_of` a known set, a number, or a
 from __future__ import annotations
 
 import functools
+import json
 import re
 import unicodedata
 from collections.abc import Collection
@@ -51,6 +52,18 @@ side by side."""
 def one_line(text: Any) -> str:
     """*text* on one line: each run of whitespace, line breaks included, one space."""
     return " ".join(str(text).split())
+
+
+def json_line(value: Any) -> str:
+    """*value* as JSON on one line: the line separators a JSON string keeps raw
+    (U+2028, U+2029, U+0085) escaped, so a text inside cannot start a line of
+    its own (RFC §6.4)."""
+    return (
+        json.dumps(value, ensure_ascii=False)
+        .replace("\u2028", "\\u2028")
+        .replace("\u2029", "\\u2029")
+        .replace("\x85", "\\u0085")
+    )
 
 
 # -- Blocks --------------------------------------------------------------------

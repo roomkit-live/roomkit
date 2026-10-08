@@ -15,10 +15,10 @@ provider rather than imported here: the SDK is an optional dependency that
 from __future__ import annotations
 
 import base64
-import json
 from collections.abc import Collection
 from typing import Any
 
+from roomkit._text import fence, identifier, json_line
 from roomkit.providers.ai.base import (
     AIContext,
     AIImagePart,
@@ -115,7 +115,7 @@ def _round_as_text(types: Any, content: list[Any]) -> Any:
     then each call it made. Its reasoning is that vendor's and stays out."""
     lines = [p.text for p in content if isinstance(p, AITextPart) and p.text.strip()]
     lines += [
-        f"I called {p.name}({json.dumps(p.arguments, ensure_ascii=False)})."
+        f"I called {identifier(p.name, 'tool')}({json_line(p.arguments)})."
         for p in content
         if isinstance(p, AIToolCallPart)
     ]
@@ -129,7 +129,9 @@ def _results_as_text(types: Any, results: list[AIToolResultPart]) -> Any:
     images: list[Any] = []
     for result in results:
         text, parts = result.split_for_message()
-        lines.append(f"{result.name} {'failed' if result.is_error else 'returned'}: {text}")
+        verb = "failed" if result.is_error else "returned"
+        # What the tool returned is data, set apart in a block it cannot close.
+        lines.append(f"{identifier(result.name, 'tool')} {verb}:\n{fence('tool_result', text)}")
         images.extend(_image_part(types, image) for image in parts)
     return types.Content(role="user", parts=[types.Part.from_text(text="\n".join(lines)), *images])
 

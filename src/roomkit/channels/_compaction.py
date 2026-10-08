@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from roomkit._text import quoted
+from roomkit.channels._speaker import SPEAKER_KEY, said_by
 from roomkit.channels._tool_eviction import (
     REREAD_TOOL,
     ToolEviction,
@@ -63,13 +63,14 @@ def summary_text(messages: list[AIMessage]) -> str | None:
     """The summary of *messages*, one line each, or ``None`` when there are none."""
     if not messages:
         return None
-    lines = [f"[{message.role}]: {_quoted(message)}" for message in messages]
+    lines = [f"[{message.role}]: {_said(message)}" for message in messages]
     return "\n".join([SUMMARY_HEADER, *lines])
 
 
-def _quoted(message: AIMessage) -> str:
+def _said(message: AIMessage) -> str:
     """What the summary quotes of *message*: its text, cut short and quoted on
-    one line (RFC §6.4), a delimited block named rather than quoted."""
+    one line after the name the context gave its speaker (RFC §6.4), a
+    delimited block named rather than quoted."""
     if isinstance(message.content, str):
         text = message.content
     else:
@@ -79,7 +80,8 @@ def _quoted(message: AIMessage) -> str:
             else f"[{part.type}]"
             for part in message.content
         )
-    return quoted(named_blocks(text), _SUMMARY_MESSAGE_CHARS)
+    speaker = message.metadata.get(SPEAKER_KEY) if message.role == "user" else None
+    return said_by(named_blocks(text), speaker, _SUMMARY_MESSAGE_CHARS)
 
 
 def with_results_stored(messages: list[AIMessage], eviction: ToolEviction) -> list[AIMessage]:

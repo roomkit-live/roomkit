@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from roomkit._text import identifier, person_name
+from roomkit._text import identifier, person_name, quoted
 from roomkit.models.context import RoomContext
 from roomkit.models.event import RoomEvent
 from roomkit.models.participant import Participant
@@ -69,3 +69,14 @@ def participant_name(participant: Participant) -> str:
 def _channel_id_label(channel_id: str) -> str:
     """The channel id, unchanged — the default way to name a non-person."""
     return channel_id
+
+
+def said_by(text: str, speaker: object, limit: int, *, label: str | None = None) -> str:
+    """*text* quoted within *limit*, after the name the context gave its speaker
+    (``SPEAKER_KEY``) when it gave one, shown as *label* when given: the name
+    out of the quote, so a person who writes ``Name:`` is not read as someone
+    else (RFC §6.4)."""
+    prefix = f"{speaker}: "
+    if isinstance(speaker, str) and text.startswith(prefix):
+        return f"{label or speaker}: {quoted(text[len(prefix) :], limit)}"
+    return quoted(text, limit)

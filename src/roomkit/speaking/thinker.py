@@ -12,8 +12,8 @@ import json
 from abc import ABC, abstractmethod
 from typing import Any
 
-from roomkit._text import quoted
-from roomkit.channels._speaker import SPEAKER_KEY
+from roomkit._text import json_line, quoted
+from roomkit.channels._speaker import SPEAKER_KEY, said_by
 from roomkit.channels._turn_notes import split_turn_notes
 from roomkit.providers.ai.base import AIContext, AIMessage, AIProvider, ProviderError
 from roomkit.speaking.thought import MAX_WANT_TO_SAY, Thought
@@ -135,7 +135,7 @@ def thinker_input(previous: Thought, messages: list[AIMessage]) -> str:
     what was just said. The previous thought comes first: read last, it was
     copied back, one thought held for two minutes."""
     lines = [
-        f"Your previous thought: {_one_line_json(previous.as_state())}",
+        f"Your previous thought: {json_line(previous.as_state())}",
         "The conversation, up to what was just said:",
     ]
     lines += [line for m in messages if (line := transcript_line(m))]
@@ -169,18 +169,5 @@ def _said_by(text: str, speaker: Any) -> str:
     context named one: the name the context gave, out of the quote, so that a
     person who writes ``Name:`` is not read as someone else, and a person named
     ``You`` is not read as the agent."""
-    prefix = f"{speaker}: "
-    if isinstance(speaker, str) and text.startswith(prefix):
-        name = f"{speaker} (a participant)" if speaker.casefold() == "you" else speaker
-        return f"{name}: {quoted(text[len(prefix) :], LINE_LIMIT)}"
-    return quoted(text, LINE_LIMIT)
-
-
-def _one_line_json(value: Any) -> str:
-    """*value* as JSON on one line: the line and paragraph separators a JSON
-    string keeps raw are escaped, or a model's text would start a line."""
-    return (
-        json.dumps(value, ensure_ascii=False)
-        .replace("\u2028", "\\u2028")
-        .replace("\u2029", "\\u2029")
-    )
+    you = isinstance(speaker, str) and speaker.casefold() == "you"
+    return said_by(text, speaker, LINE_LIMIT, label=f"{speaker} (a participant)" if you else None)

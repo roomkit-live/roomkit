@@ -58,7 +58,7 @@ def test_a_foreign_round_of_the_current_turn_goes_back_as_text() -> None:
 
     assert _calls(contents) == []
     assert 'I called lookup({"q": "a"}).' in _texts(contents)
-    assert "lookup returned: found" in _texts(contents)
+    assert "lookup returned:\n<tool_result>\nfound\n</tool_result>" in _texts(contents)
 
 
 def test_an_earlier_turns_unsigned_round_keeps_its_form() -> None:
@@ -95,7 +95,7 @@ def test_a_foreign_rounds_image_result_reaches_the_model() -> None:
 
     [image] = [p for c in contents for p in c.parts or [] if p.inline_data]
     assert image.inline_data.mime_type == "image/png"
-    assert "screenshot returned: done" in _texts(contents)
+    assert "screenshot returned:\n<tool_result>\ndone\n</tool_result>" in _texts(contents)
 
 
 @pytest.mark.parametrize(

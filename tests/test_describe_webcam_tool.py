@@ -141,7 +141,7 @@ class TestDescribeWebcamTool:
         ):
             result = await tool.analyze("Read the text on this document")
 
-        assert result == "A document with text"
+        assert result == "<vision>\nA document with text\n</vision>"
 
     async def test_analyze_passes_query_as_prompt(self) -> None:
         vision = MockVisionProvider(descriptions=["result"])

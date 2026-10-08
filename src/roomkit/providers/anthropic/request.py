@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from typing import Any, cast
 
+from roomkit._text import fence, identifier
 from roomkit.providers.ai.base import (
     AIContext,
     AIImagePart,
@@ -118,10 +119,17 @@ def _result_beside_references(part: AIToolResultPart) -> list[dict[str, Any]]:
     if not part.references:
         return []
     body = _tool_result_content(part.result)
-    label = f"[Result of {part.name}]"
+    # What the tool returned is data, set apart in a block it cannot close.
+    label = f"[Result of {identifier(part.name, 'tool')}]"
     if isinstance(body, str):
-        return [{"type": "text", "text": f"{label}\n{body}"}] if body else []
-    return [{"type": "text", "text": label}, *body] if body else []
+        return [{"type": "text", "text": f"{label}\n{fence('tool_result', body)}"}] if body else []
+    fenced = [
+        {**block, "text": fence("tool_result", block["text"])}
+        if block.get("type") == "text"
+        else block
+        for block in body
+    ]
+    return [{"type": "text", "text": label}, *fenced] if body else []
 
 
 def _image_block(part: AIImagePart) -> dict[str, Any]:

@@ -13,6 +13,7 @@ import json
 from collections.abc import Mapping
 from typing import Any
 
+from roomkit._text import json_line
 from roomkit.classifiers.base import (
     Answer,
     Answers,
@@ -83,7 +84,9 @@ class LLMClassifier(Classifier):
 def _prompt(state: State, questions: Mapping[str, Question]) -> str:
     lines = [
         "State:",
-        state if isinstance(state, str) else json.dumps(state, ensure_ascii=False),
+        # On one line: a person's words in the state cannot start a line of
+        # the prompt (RFC §6.4).
+        json_line(state),
         "",
         "Questions:",
     ]

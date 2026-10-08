@@ -675,6 +675,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is still one append, and a block whose body is one long line (a JSON tool
   result, a URL) is cut inside it. A delegation's output, the agent's own
   answer, and a reconfigured prompt are split as before.
+- Six more renderings keep text from outside in its frame (RMK-590, RFC
+  §6.4), found by a sweep of the whole package. A tool's result Anthropic
+  receives beside its references and the results Gemini re-reads from another
+  vendor's round are fenced in `<tool_result>` (they went as plain text in the
+  user turn, `[Result of x]\n<result>`); the task a supervisor frames above
+  the team's work, and the task of a rework, are a `<task>` block (a framed
+  task could forge a worker's section); a compaction names a speaker out of
+  the quote, by the name the context gave (`[user]: Marie: “hello”`); the
+  classifier's state and the thinker's previous thought are one-line JSON
+  that escapes U+2028, U+2029 and U+0085 (`roomkit._text.json_line`);
+  `DescribeWebcamTool` fences what the camera showed apart from its notes,
+  and names a save failure by its class, not its message.
 - A text from outside can no longer leave a fenced block by a closing tag
   spelled another way, and the helpers hold on any text (RMK-590, RFC §6.4,
   a security review). `fence()` neutralised a closing tag only up to its `>`:

@@ -402,7 +402,7 @@ def test_anthropic_behind_a_base_url_holds_no_tool() -> None:
             [AITextPart(text="body")],
             [
                 {"type": "text", "text": "[Result of activate_skill]"},
-                {"type": "text", "text": "body"},
+                {"type": "text", "text": "<tool_result>\nbody\n</tool_result>"},
             ],
         ),
     ],

@@ -31,6 +31,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from roomkit._text import fence
 from roomkit.core.exceptions import UnservedToolCallError
 from roomkit.video.video_frame import VideoFrame
 from roomkit.video.vision.base import VisionProvider
@@ -353,12 +354,14 @@ class DescribeWebcamTool:
                 save_msg = f"\n\n[Image saved to {saved}]"
                 logger.info("Frame saved to %s", saved)
             except Exception as exc:
-                save_msg = f"\n\n[ERROR: Failed to save image: {exc}]"
+                save_msg = f"\n\n[ERROR: Failed to save image: {type(exc).__name__}]"
                 logger.warning("Failed to save frame to %s: %s", target, exc)
 
         result = await self._vision.analyze_frame(frame, prompt=query)
-        description = result.description or "Could not analyze the webcam image."
-        return description + save_msg
+        if not result.description:
+            return "Could not analyze the webcam image." + save_msg
+        # What the vision model saw is data, apart from the runtime's notes.
+        return fence("vision", result.description) + save_msg
 
     async def handler(
         self,
