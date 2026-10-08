@@ -267,6 +267,15 @@ class VideoHooksMixin:
             )
 
         await self._inject_vision_event(session, result, room_id, elapsed_ms)
+        self._note_room_vision(session, room_id, result)
+
+    def _note_room_vision(self, session: VideoSession, room_id: str, result: VisionResult) -> None:
+        """Keep *result* as what *room_id*'s video last showed, while *session*
+        is still held: the analysis and the vision hooks are awaited, and a
+        result that comes back after its session ended is not kept, or no
+        session end would ever drop it (RFC §12.8.7)."""
+        if session.id not in getattr(self, "_session_bindings", {}):
+            return
         self._room_vision[room_id] = (time.monotonic(), session.id, result)
 
     def _latest_vision(self, room_id: str) -> tuple[float, VisionResult] | None:

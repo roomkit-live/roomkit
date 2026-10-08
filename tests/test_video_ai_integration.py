@@ -17,8 +17,9 @@ from roomkit import (
 from roomkit.channels.ai import AIChannel
 from roomkit.channels.realtime_voice import RealtimeVoiceChannel
 from roomkit.models.delivery import InboundMessage
-from roomkit.models.enums import ChannelCategory, ChannelType
+from roomkit.models.enums import ChannelCategory, ChannelType, HookExecution, HookTrigger
 from roomkit.models.event import TextContent
+from roomkit.models.hook import HookResult
 from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.video.ai_integration import setup_realtime_vision, setup_video_vision
 from roomkit.video.backends.mock import MockVideoBackend
@@ -131,6 +132,42 @@ class TestVisionRidesTheTurnNotes:
 
         assert "<vision>" not in str(provider.calls[-1].messages[-1].content)
 
+    async def test_a_view_that_comes_back_after_its_session_ended_is_not_kept(
+        self, kit: RoomKit
+    ) -> None:
+        """The vision hooks are awaited after the analysis: a session that ends
+        meanwhile leaves no view behind for a later conversation (RFC §12.8.7)."""
+        released, held = asyncio.Event(), asyncio.Event()
+
+        @kit.hook(HookTrigger.ON_VISION_RESULT, execution=HookExecution.SYNC)
+        async def slow(event: object, ctx: object) -> HookResult:
+            held.set()
+            await released.wait()
+            return HookResult.allow()
+
+        backend = MockVideoBackend()
+        video = VideoChannel(
+            "video-1", backend=backend, vision=_ReadingCamera(), vision_interval_ms=0
+        )
+        provider = MockAIProvider(responses=["ok"])
+        for channel in (video, AIChannel("ai-1", provider=provider), SimpleChannel("sms")):
+            kit.register_channel(channel)
+        await kit.create_room(room_id="r1")
+        await kit.attach_channel("r1", "video-1")
+        await kit.attach_channel("r1", "ai-1", category=ChannelCategory.INTELLIGENCE)
+        await kit.attach_channel("r1", "sms")
+        session = await kit.connect_video("r1", "user-1", "video-1")
+        frame = VideoFrame(data=b"\x00" * 100, codec="h264", timestamp_ms=0.0)
+        await backend.simulate_video_received(session, frame)
+        await asyncio.wait_for(held.wait(), 2)
+
+        video.unbind_session(session)
+        released.set()
+        await asyncio.sleep(0.2)
+        await _ask(kit)
+
+        assert "<vision>" not in str(provider.calls[-1].messages[-1].content)
+
     async def test_a_standalone_turn_reads_no_view(self, kit: RoomKit) -> None:
         await _room_with_camera(kit)
         ai = kit.channels["ai-1"]
@@ -202,6 +239,8 @@ class TestVisionRidesTheTurnNotes:
         await kit.attach_channel("r1", "ai-1", category=ChannelCategory.INTELLIGENCE)
         await kit.attach_channel("r1", "sms")
         session = VideoSession(id="s1", room_id="r1", participant_id="p", channel_id="av")
+        # Held as a bound session is: a view is kept only while its session is.
+        channel._session_bindings[session.id] = ("r1", await kit._store.get_binding("r1", "av"))
         frame = VideoFrame(data=b"\0" * 12, codec="raw_rgb24", width=2, height=2)
         await channel._analyze_frame(session, frame, "r1")
 
