@@ -13,6 +13,7 @@ from functools import partial
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from roomkit.channels._stream_fanout import StreamBranch, StreamFanOut
+from roomkit.channels._tts_sentence_budget import SentenceBudget, first_sentences
 from roomkit.channels._tts_sentence_gate import SentenceHookGate
 from roomkit.channels._voice_unheard import UnheardTurns
 from roomkit.models.enums import EventType, HookTrigger, Visibility
@@ -74,6 +75,7 @@ class TTSHost(Protocol):
         _debug_frame_count: Counter for RMS debug logging.
         _voice_map: Per-channel TTS voice overrides.
         _tts_filter: Optional callable to filter/transform TTS text (Callable[[str], str] | None).
+        _max_sentences: Sentences spoken per reply at most (None: no budget).
         _tts_context: Per-session dialogue for a context-aware TTS (None when unused).
         _unheard_turns: The routed turn per session whose response is not heard yet.
         _state_lock: Threading lock protecting shared mutable state.
@@ -99,6 +101,7 @@ class TTSHost(Protocol):
     _debug_frame_count: int
     _voice_map: dict[str, str]
     _tts_filter: Any  # Callable[[str], str] | None
+    _max_sentences: int | None
     _tts_context: TTSContextStore | None
     _unheard_turns: UnheardTurns
     _state_lock: threading.Lock
@@ -131,6 +134,7 @@ class VoiceTTSMixin:
     _debug_frame_count: int
     _voice_map: dict[str, str]
     _tts_filter: Any  # Callable[[str], str] | None
+    _max_sentences: int | None
     _tts_context: TTSContextStore | None
     _unheard_turns: UnheardTurns
     _state_lock: Any  # threading.Lock — see TTSHost
@@ -431,7 +435,7 @@ class VoiceTTSMixin:
         # The stream is read, filtered and split once, then every session gets
         # its own copy of the sentences: reading it drives persistence upstream,
         # and each session must hear the whole response.
-        sentence_source, gate = self._sentences(text.read(text_stream), room_id, context)
+        sentence_source, gate, budget = self._sentences(text.read(text_stream), room_id, context)
         fan_out = StreamFanOut(sentence_source, len(target_sessions))
         producer = asyncio.create_task(fan_out.run(), name=f"tts_fan_out:{event.id}")
         voice = self._resolve_voice(event.source.channel_id)
@@ -476,7 +480,7 @@ class VoiceTTSMixin:
             raise fan_out.error
         delivered = _served_sessions(target_sessions, results)
 
-        full_text = self._streamed_text(text.accumulated, gate)
+        full_text = self._streamed_text(text.accumulated, gate, budget)
         await self._close_streamed_response(delivered, full_text, room_id, context, _vs_parent)
         if text.failure is not None:
             # The response failed: what it produced was spoken, the failure is the turn's.
@@ -485,8 +489,9 @@ class VoiceTTSMixin:
 
     def _sentences(
         self, tokens: AsyncIterator[str], room_id: str, context: RoomContext
-    ) -> tuple[AsyncIterator[str], SentenceHookGate | None]:
-        """The sentences the sessions read from *tokens*: filtered, split, then gated."""
+    ) -> tuple[AsyncIterator[str], SentenceHookGate | None, SentenceBudget | None]:
+        """The sentences the sessions read from *tokens*: filtered, split, gated,
+        then held to the sentence budget."""
         from roomkit.voice.tts.sentence_splitter import split_sentences
 
         token_source = tokens
@@ -503,7 +508,10 @@ class VoiceTTSMixin:
         gate = self._sentence_gate(room_id, context)
         if gate is not None:
             sentence_source = gate.run(sentence_source)
-        return sentence_source, gate
+        budget = SentenceBudget(self._max_sentences) if self._max_sentences else None
+        if budget is not None:
+            sentence_source = budget.run(sentence_source)
+        return sentence_source, gate, budget
 
     async def _stop_failed_sessions(
         self,
@@ -612,12 +620,20 @@ class VoiceTTSMixin:
             return None
         return SentenceHookGate(hooks, room_id, context)
 
-    def _streamed_text(self, accumulated: list[str], gate: SentenceHookGate | None) -> str:
+    def _streamed_text(
+        self,
+        accumulated: list[str],
+        gate: SentenceHookGate | None,
+        budget: SentenceBudget | None = None,
+    ) -> str:
         """The text a streamed response leaves for its transcript and AFTER_TTS.
 
-        What the sessions were sent: the sentences as BEFORE_TTS left them when
-        a hook changed or dropped one, the whole filtered stream otherwise.
+        What the sessions were sent: the sentences the budget let through when
+        it ended the reply, the sentences as BEFORE_TTS left them when a hook
+        changed or dropped one, the whole filtered stream otherwise.
         """
+        if budget is not None and budget.cut:
+            return budget.text()
         if gate is not None and gate.changed:
             return gate.text()
         full_text = "".join(accumulated)
@@ -995,11 +1011,10 @@ class VoiceTTSMixin:
 
             final_text = before_result.event if isinstance(before_result.event, str) else text
 
-            if self._tts_filter is not None:
-                final_text = self._tts_filter(final_text)
-                if not final_text:
-                    logger.debug("TTS text empty after filter — skipping")
-                    return
+            final_text = await self._text_to_speak(final_text)
+            if not final_text:
+                logger.debug("TTS text empty after filter — skipping")
+                return
 
             logger.debug("AI response: %s", redact(final_text))
 
@@ -1035,6 +1050,15 @@ class VoiceTTSMixin:
         except Exception:
             # Each session's failed synthesis was reported as it failed (_send_tts).
             logger.exception("Error delivering voice audio")
+
+    async def _text_to_speak(self, text: str) -> str:
+        """The text the TTS reads of a reply delivered whole: filtered, then cut
+        to the sentence budget (RFC §12.2 step 12s.e)."""
+        if self._tts_filter is not None:
+            text = self._tts_filter(text)
+        if self._max_sentences and text:
+            text = await first_sentences(text, self._max_sentences)
+        return text
 
     async def _report_tts_failure(
         self, room_id: str | None, provider: str, error: BaseException, session_id: str

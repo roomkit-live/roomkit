@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `VoiceChannel(max_sentences=N)`: at most N sentences spoken per reply
+  (RMK-623, RFC §12.2 step 12s.e). Asked to "explain", a model talked for a
+  minute however short its prompt asked it to be. A streamed reply going on
+  past the budget ends at the first sentence over it, as a barge-in ends it:
+  the model stops generating, no tool call starts after that point, and the
+  room keeps the text produced so far, marked `cancelled`, so the next turn
+  does not take for said what nobody heard; the final transcript and
+  `AFTER_TTS` carry the sentences spoken. A reply of exactly N runs to its
+  end, a reply delivered whole is spoken to the budget, a sentence
+  `BEFORE_TTS` drops does not count, and `say()` has no budget. Example:
+  `examples/voice_sentence_budget.py`.
+
 - `StripTechnicalText`, a TTS text filter that keeps technical text out of the
   voice (RMK-624): a JSON object (a tool call or a tool result the model wrote
   as words instead of calling the tool; nested objects and braces inside its
