@@ -91,7 +91,15 @@ class ChannelBinding(BaseModel):
     muted: bool = False
     output_muted: bool = False
     visibility: str = Visibility.ALL
+    # The binding's correspondent (RFC §10.4): the sender a room was created
+    # for, or the first one routed to it. The default router admits no one
+    # else through a binding that names someone, unless it is ``group``.
     participant_id: str | None = None
+    # Several senders share this binding's conversation (a group chat on a
+    # channel dedicated to its room), so every sender on it belongs here. The
+    # integrator declares it: nothing stored tells a group channel from a
+    # number shared by many correspondents (RFC §5.7).
+    group: bool = False
     # Not the read-tracking source of truth: the read position lives in the
     # ``read_markers`` table (see ``mark_read`` / ``list_read_markers``). This
     # field is an optional per-binding hint only and is not advanced by the

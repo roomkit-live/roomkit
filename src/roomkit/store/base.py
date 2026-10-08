@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
@@ -266,6 +267,30 @@ class ConversationStore(ABC):
         """
         room_id = await self.find_room_id_by_channel(channel_id, status=status)
         return [room_id] if room_id is not None else []
+
+    async def find_room_id_by_binding(
+        self, channel_id: str, participant_id: str, status: str | None = None
+    ) -> str | None:
+        """The latest room whose binding of *channel_id* names *participant_id*.
+
+        A binding names its correspondent (RFC §5.7): the sender a room was
+        created for, or the first one routed to it. It speaks for its own
+        channel only, so a correspondent of one number is not taken to that
+        room when they write to another (§10.4 step 1). Latest by creation
+        time, the room id breaking a tie, in every store.
+
+        This is not abstract, so a store written before it existed keeps
+        working: the fallback reads the binding of every room bound to the
+        channel. Override it with an indexed query.
+        """
+        room_ids = await self.find_room_ids_by_channel(
+            channel_id, status=status, limit=sys.maxsize
+        )
+        for room_id in reversed(room_ids):
+            binding = await self.get_binding(room_id, channel_id)
+            if binding is not None and binding.participant_id == participant_id:
+                return room_id
+        return None
 
     # Event operations
 

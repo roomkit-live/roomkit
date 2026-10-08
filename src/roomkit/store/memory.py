@@ -269,6 +269,23 @@ class InMemoryStore(ConversationStore):
         matches = await self.find_room_ids_by_channel(channel_id, status=status, limit=1)
         return matches[0] if matches else None
 
+    async def find_room_id_by_binding(
+        self, channel_id: str, participant_id: str, status: str | None = None
+    ) -> str | None:
+        # The participant index holds every room a binding names the
+        # participant in, so this reads a handful of rooms, not all of them.
+        best: tuple[Any, str] | None = None
+        for room_id in self._participant_room_index.get(participant_id, ()):
+            room = self._rooms.get(room_id)
+            binding = self._bindings.get(room_id, {}).get(channel_id)
+            if room is None or binding is None or binding.participant_id != participant_id:
+                continue
+            if status is not None and room.status.value != status:
+                continue
+            if best is None or (room.created_at, room.id) > best:
+                best = (room.created_at, room.id)
+        return best[1] if best is not None else None
+
     async def find_room_ids_by_channel(
         self, channel_id: str, status: str | None = None, limit: int = 2
     ) -> list[str]:

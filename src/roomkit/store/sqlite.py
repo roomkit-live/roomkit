@@ -791,6 +791,31 @@ class SQLiteStore(ConversationStore):
         matches = await self.find_room_ids_by_channel(channel_id, status=status, limit=1)
         return matches[0] if matches else None
 
+    async def find_room_id_by_binding(
+        self, channel_id: str, participant_id: str, status: str | None = None
+    ) -> str | None:
+        return await self._run(self._x_find_room_id_by_binding, channel_id, participant_id, status)
+
+    def _x_find_room_id_by_binding(
+        self, channel_id: str, participant_id: str, status: str | None
+    ) -> str | None:
+        where = ["b.channel_id = ?", "b.participant_id = ?"]
+        params: list[Any] = [channel_id, participant_id]
+        if status is not None:
+            where.append("r.status = ?")
+            params.append(status)
+        row = (
+            self._db()
+            .execute(
+                f"""SELECT r.id FROM bindings b JOIN rooms r ON r.id = b.room_id
+                    WHERE {" AND ".join(where)}
+                    ORDER BY r.created_ts DESC, r.id DESC LIMIT 1""",  # nosec B608 — fragments are internal, values parameterised
+                params,
+            )
+            .fetchone()
+        )
+        return row[0] if row is not None else None
+
     async def find_room_ids_by_channel(
         self, channel_id: str, status: str | None = None, limit: int = 2
     ) -> list[str]:

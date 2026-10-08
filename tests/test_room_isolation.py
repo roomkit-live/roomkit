@@ -112,10 +112,18 @@ async def test_two_rooms_run_at_once_and_leave_the_shared_agent_as_it_was(
     assert {json.loads(result)["worker"] for result in results} == {
         f"worker-{room_id}" for room_id in ROOMS
     }
-    # And the shared agent is as the installs left it.
+    # And the shared agent is as the installs left it. The one binding that
+    # changed is each room's SMS binding, which now names its sender: the
+    # router retains the first sender it routes to a room (RFC §10.4).
     assert _attributes(sup) == attributes
     assert _registered(sup) == registered
-    assert await _bindings(kit) == bindings
+    assert await _bindings(kit) == {
+        room_id: [
+            {**b, "participant_id": "u"} if b["channel_id"] == f"sms-{room_id}" else b
+            for b in room_bindings
+        ]
+        for room_id, room_bindings in bindings.items()
+    }
     await kit.close()
 
 

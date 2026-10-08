@@ -253,6 +253,9 @@ CREATE INDEX IF NOT EXISTS idx_bindings_channel_id ON bindings(channel_id);
 -- migrations are safe to rerun on startup and retain existing binding rows.
 ALTER TABLE bindings ADD COLUMN IF NOT EXISTS rate_limit JSONB;
 ALTER TABLE bindings ADD COLUMN IF NOT EXISTS retry_policy JSONB;
+-- A group binding admits every sender (RFC §10.4); existing rows are not one.
+-- Not named "group": a reserved word in SQL.
+ALTER TABLE bindings ADD COLUMN IF NOT EXISTS is_group BOOLEAN NOT NULL DEFAULT FALSE;
 
 -- participants
 CREATE TABLE IF NOT EXISTS participants (

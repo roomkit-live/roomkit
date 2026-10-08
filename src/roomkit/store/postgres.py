@@ -803,6 +803,24 @@ class PostgresStore(ConversationStore):
         matches = await self.find_room_ids_by_channel(channel_id, status=status, limit=1)
         return matches[0] if matches else None
 
+    async def find_room_id_by_binding(
+        self, channel_id: str, participant_id: str, status: str | None = None
+    ) -> str | None:
+        # Newest room first, id as tie-breaker, like the other stores.
+        query = (
+            "SELECT b.room_id FROM bindings b "
+            "JOIN rooms r ON r.id = b.room_id "
+            "WHERE b.channel_id = $1 AND b.participant_id = $2"
+        )
+        params: list[Any] = [channel_id, participant_id]
+        if status is not None:
+            query += " AND r.status = $3"
+            params.append(status.value if hasattr(status, "value") else status)
+        query += " ORDER BY r.created_at DESC, b.room_id DESC LIMIT 1"
+        async with self._acquire() as conn:
+            row = await conn.fetchrow(query, *params)
+        return row["room_id"] if row is not None else None
+
     async def find_room_ids_by_channel(
         self,
         channel_id: str,
@@ -1171,13 +1189,13 @@ class PostgresStore(ConversationStore):
                     " (channel_id, room_id, channel_type, category, direction,"
                     "  access, muted, output_muted, visibility, participant_id,"
                     "  last_read_index, attached_at, capabilities, metadata,"
-                    "  rate_limit, retry_policy)"
-                    " VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)"
+                    "  rate_limit, retry_policy, is_group)"
+                    " VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)"
                     " ON CONFLICT (room_id, channel_id) DO UPDATE SET"
                     "  channel_type=$3, category=$4, direction=$5, access=$6,"
                     "  muted=$7, output_muted=$8, visibility=$9, participant_id=$10,"
                     "  last_read_index=$11, capabilities=$13, metadata=$14,"
-                    "  rate_limit=$15, retry_policy=$16",
+                    "  rate_limit=$15, retry_policy=$16, is_group=$17",
                     binding.channel_id,
                     binding.room_id,
                     binding.channel_type.value,
@@ -1194,6 +1212,7 @@ class PostgresStore(ConversationStore):
                     binding.metadata,
                     binding.rate_limit.model_dump(mode="json") if binding.rate_limit else None,
                     binding.retry_policy.model_dump(mode="json") if binding.retry_policy else None,
+                    binding.group,
                 )
         return binding
 
@@ -1216,7 +1235,7 @@ class PostgresStore(ConversationStore):
                     "UPDATE bindings SET channel_type=$3, category=$4, direction=$5,"
                     " access=$6, muted=$7, output_muted=$8, visibility=$9,"
                     " participant_id=$10, last_read_index=$11, capabilities=$12, metadata=$13,"
-                    " rate_limit=$14, retry_policy=$15"
+                    " rate_limit=$14, retry_policy=$15, is_group=$16"
                     " WHERE room_id=$1 AND channel_id=$2",
                     binding.room_id,
                     binding.channel_id,
@@ -1233,6 +1252,7 @@ class PostgresStore(ConversationStore):
                     binding.metadata,
                     binding.rate_limit.model_dump(mode="json") if binding.rate_limit else None,
                     binding.retry_policy.model_dump(mode="json") if binding.retry_policy else None,
+                    binding.group,
                 )
         return binding
 

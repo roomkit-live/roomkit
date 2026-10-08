@@ -188,6 +188,7 @@ def _binding_row(binding: ChannelBinding) -> dict:
         "output_muted": binding.output_muted,
         "visibility": binding.visibility,
         "participant_id": binding.participant_id,
+        "is_group": binding.group,
         "last_read_index": binding.last_read_index,
         "attached_at": binding.attached_at,
         "capabilities": binding.capabilities.model_dump(mode="json"),

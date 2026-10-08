@@ -9,8 +9,9 @@ from uuid import uuid4
 
 import pytest
 
+from roomkit.core.inbound_router import DefaultInboundRoomRouter
 from roomkit.models.channel import ChannelBinding, RateLimit, RetryPolicy
-from roomkit.models.enums import ChannelType, EventStatus, EventType
+from roomkit.models.enums import ChannelType, EventStatus, EventType, RoomStatus
 from roomkit.models.room import Room
 from roomkit.models.store_filter import EventFilter
 from roomkit.store.base import ConversationStore
@@ -51,6 +52,7 @@ async def test_binding_round_trip_and_policy_updates(contract_store: Conversatio
         output_muted=True,
         visibility="private",
         participant_id="alice",
+        group=True,
         last_read_index=4,
         metadata={"nested": {"key": [1]}},
         rate_limit=RateLimit(max_per_minute=30),
@@ -304,5 +306,85 @@ async def test_pages_are_rendered_by_index_not_by_clock_or_write_order(
         assert [e.index for e in head] == [0, 1, 2]
         assert [e.index for e in tail] == [1, 2]
         assert [e.index for e in forward] == [1, 2]
+    finally:
+        await contract_store.delete_room(room.id)
+
+
+class _StoreWithoutTheLookup(InMemoryStore):
+    """A store written before ``find_room_id_by_binding``: the base fallback."""
+
+    find_room_id_by_binding = ConversationStore.find_room_id_by_binding
+
+
+@pytest.mark.parametrize("fallback", [False, True])
+async def test_a_binding_names_its_sender_for_its_own_channel_only(
+    contract_store: ConversationStore, fallback: bool
+) -> None:
+    """RFC §10.4 step 1: the newest room whose binding of this channel names
+    the sender, the room id breaking a tie, the same in every store."""
+    store = _StoreWithoutTheLookup() if fallback else contract_store
+    if fallback and not isinstance(contract_store, InMemoryStore):
+        pytest.skip("the fallback runs over the in-memory store")
+    channel, other = f"sms-{uuid4().hex}", f"sms-{uuid4().hex}"
+    t0 = datetime(2026, 10, 8, 12, tzinfo=UTC)
+    tag = uuid4().hex
+    rooms = [
+        (Room(id=f"a-{tag}", created_at=t0), channel, "alice"),
+        (Room(id=f"b-{tag}", created_at=t0 + timedelta(seconds=1)), channel, "alice"),
+        (Room(id=f"c-{tag}", created_at=t0 + timedelta(seconds=1)), channel, "alice"),
+        (Room(id=f"d-{tag}", created_at=t0 + timedelta(seconds=2)), channel, "bob"),
+        (Room(id=f"e-{tag}", created_at=t0 + timedelta(seconds=3)), other, "alice"),
+        (
+            Room(id=f"f-{tag}", created_at=t0 + timedelta(seconds=4), status=RoomStatus.CLOSED),
+            channel,
+            "alice",
+        ),
+    ]
+    for room, channel_id, sender in rooms:
+        await store.create_room(room)
+        await store.add_binding(
+            ChannelBinding(
+                room_id=room.id,
+                channel_id=channel_id,
+                channel_type=ChannelType.SMS,
+                participant_id=sender,
+            )
+        )
+    active = str(RoomStatus.ACTIVE)
+    try:
+        assert await store.find_room_id_by_binding(channel, "alice", status=active) == f"c-{tag}"
+        assert await store.find_room_id_by_binding(channel, "alice") == f"f-{tag}"
+        assert await store.find_room_id_by_binding(channel, "bob", status=active) == f"d-{tag}"
+        assert await store.find_room_id_by_binding(other, "bob", status=active) is None
+        assert await store.find_room_id_by_binding(channel, "carol") is None
+    finally:
+        for room, _channel_id, _sender in rooms:
+            await store.delete_room(room.id)
+
+
+async def test_step_three_gives_the_same_answer_in_every_store(
+    contract_store: ConversationStore,
+) -> None:
+    """RFC §10.4: what the one room bound to a channel received decides who it
+    admits, whatever the backend."""
+    channel = f"sms-{uuid4().hex}"
+    room = await contract_store.create_room(Room(id=uuid4().hex))
+    binding = ChannelBinding(room_id=room.id, channel_id=channel, channel_type=ChannelType.SMS)
+    await contract_store.add_binding(binding)
+    router = DefaultInboundRoomRouter(contract_store)
+
+    async def routes(sender: str) -> str | None:
+        return await router.route(channel, ChannelType.SMS, participant_id=sender)
+
+    try:
+        assert await routes("bob") == room.id
+        await contract_store.commit_event(
+            room.id,
+            make_event(room_id=room.id, channel_id=channel, participant_id="alice"),
+        )
+        assert await routes("alice") == room.id
+        assert await routes("bob") is None
+        await contract_store.update_binding(binding.model_copy(update={"group": True}))
+        assert await routes("bob") == room.id
     finally:
         await contract_store.delete_room(room.id)

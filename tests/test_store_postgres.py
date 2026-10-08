@@ -952,6 +952,22 @@ async def test_binding_policy_migration_preserves_old_rows(store) -> None:
     assert await store.get_binding("r1", "sms") == changed
 
 
+async def test_a_store_from_before_group_bindings_upgrades_its_rows(store) -> None:
+    """The additive ``is_group`` column (RFC §5.7): an existing binding reads as
+    not a group, and a group binding round-trips once the column is there."""
+    await store.create_room(Room(id="r1"))
+    binding = ChannelBinding(room_id="r1", channel_id="sms", channel_type="sms")
+    await store.add_binding(binding)
+    async with store._pool.acquire() as conn:
+        await conn.execute("ALTER TABLE bindings DROP COLUMN is_group")
+    await store.init()
+    await store.init()
+    assert await store.get_binding("r1", "sms") == binding
+    grouped = binding.model_copy(update={"group": True})
+    await store.update_binding(grouped)
+    assert await store.get_binding("r1", "sms") == grouped
+
+
 class TestEventFromRow:
     """A row the host reads with a query of its own maps as the store maps it."""
 

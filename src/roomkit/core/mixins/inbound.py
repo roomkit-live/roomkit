@@ -27,6 +27,7 @@ if TYPE_CHECKING:
     from roomkit.core.lanes import DeliveryCascade
     from roomkit.core.locks import RoomLockManager
     from roomkit.identity.base import IdentityResolver
+    from roomkit.models.channel import ChannelBinding
     from roomkit.models.context import RoomContext
     from roomkit.models.event import RoomEvent
     from roomkit.models.identity import Identity, IdentityResult
@@ -230,6 +231,7 @@ class InboundMixin(HelpersMixin):
     ) -> InboundResult:
         """Inner inbound processing (extracted for telemetry wrapping)."""
 
+        routed = room_id is None
         # Route to room (or auto-create). Deliberately outside the pre-commit
         # window below: routing is RFC §10.1 steps 1-2, the phase
         # ``process_timeout`` bounds is steps 3-11 — and this is the one part
@@ -270,6 +272,7 @@ class InboundMixin(HelpersMixin):
             room_id,
             deadline,
             defer_delivery=defer_delivery,
+            routed=routed,
         )
 
     async def _prepare_event(
@@ -348,6 +351,7 @@ class InboundMixin(HelpersMixin):
         deadline: float,
         *,
         defer_delivery: bool = False,
+        routed: bool = False,
     ) -> InboundResult:
         """RFC §10.1 steps 6-18: the locked region, then the delivery set.
 
@@ -374,6 +378,7 @@ class InboundMixin(HelpersMixin):
                 deadline,
                 cascade,
                 defer_delivery=defer_delivery,
+                routed=routed,
             )
         except BaseException:
             # The caller owns this cascade even if setup failed after commit,
@@ -394,6 +399,7 @@ class InboundMixin(HelpersMixin):
         cascade: DeliveryCascade,
         *,
         defer_delivery: bool,
+        routed: bool,
     ) -> InboundResult:
         async with AsyncExitStack() as stack:
             try:
@@ -418,6 +424,8 @@ class InboundMixin(HelpersMixin):
                 deadline=deadline,
                 precheck=precheck,
             )
+            if routed and not result.blocked:
+                await self._retain_routed_sender(room_id, message, context)
 
         if defer_delivery:
             # Every result that reached this locked region gets a handle — a
@@ -527,10 +535,7 @@ class InboundMixin(HelpersMixin):
                     participant_id=message.sender_id,
                 )
             if room_id is None:
-                # Auto-create room and attach channel
-                room = await self.create_room(organization_id=organization_id)
-                room_id = room.id
-                await self.attach_channel(room_id, message.channel_id)
+                room_id = await self._open_room_for(message, None, organization_id)
                 room_just_created = True
             else:
                 # Ensure room exists; auto-create if needed (e.g. voice session
@@ -558,8 +563,7 @@ class InboundMixin(HelpersMixin):
                         room_id, message.channel_id
                     )
                 if not room_present:
-                    await self.create_room(room_id=room_id, organization_id=organization_id)
-                    await self.attach_channel(room_id, message.channel_id)
+                    await self._open_room_for(message, room_id, organization_id)
                     room_just_created = True
                 elif not binding_present:
                     # Room exists but the channel is not attached — unless the
@@ -580,6 +584,58 @@ class InboundMixin(HelpersMixin):
             telemetry.set_attribute(inbound_span_id, "session_id", voice_session_id)
 
         return room_id, room_just_created
+
+    async def _open_room_for(
+        self, message: InboundMessage, room_id: str | None, organization_id: str | None
+    ) -> str:
+        """Create the room an inbound message opens, its binding naming the sender.
+
+        *room_id* is the caller's when it named a room that does not exist yet.
+        The binding names the sender (RFC §10.1 step 2), so the router finds
+        them there on their next message and admits no one else through it
+        (§10.4): on a shared number, the second correspondent gets a room of
+        their own.
+        """
+        room = await self.create_room(room_id=room_id, organization_id=organization_id)
+        await self.attach_channel(
+            room.id, message.channel_id, participant_id=message.sender_id or None
+        )
+        return room.id
+
+    async def _retain_routed_sender(
+        self, room_id: str, message: InboundMessage, context: RoomContext
+    ) -> None:
+        """Record a routed sender on a binding that names no one (RFC §10.1 step 2).
+
+        A binding that is not a group carries one correspondent's conversation,
+        and the first sender routed through it, whose message the room
+        received, is that correspondent: the router then finds them there by
+        the binding and admits no one else (§10.4). Runs under the room lock
+        the inbound commit holds, where every binding mutation runs. The
+        context's binding is the hint, so the usual case, a binding that
+        already names someone, reads nothing; the write re-reads the store.
+
+        The message is committed by then, so a store failure here is logged,
+        never raised: the router still refuses other senders by what the room
+        received (§10.4), and only this sender's next message may open a room
+        of its own.
+        """
+        hint = context.get_binding(message.channel_id)
+        if not message.sender_id or hint is None or not _names_no_one(hint):
+            return
+        try:
+            binding = await self._store.get_binding(room_id, message.channel_id)
+            if binding is not None and _names_no_one(binding):
+                await self._store.update_binding(
+                    binding.model_copy(update={"participant_id": message.sender_id})
+                )
+        except Exception:
+            logger.warning(
+                "Could not record sender on binding %s of room %s",
+                message.channel_id,
+                room_id,
+                exc_info=True,
+            )
 
     async def _maybe_auto_attach(self, room_id: str, channel_id: str) -> None:
         """Attach *channel_id* if it was never bound — not if it was revoked.
@@ -659,6 +715,11 @@ class InboundMixin(HelpersMixin):
             )
         except Exception:
             logger.exception("Error firing ON_SESSION_STARTED for text channel")
+
+
+def _names_no_one(binding: ChannelBinding) -> bool:
+    """Whether *binding* carries one conversation and no correspondent yet."""
+    return not binding.group and binding.participant_id is None
 
 
 def _apply_message_fields(event: RoomEvent, message: InboundMessage) -> RoomEvent:

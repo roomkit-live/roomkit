@@ -546,7 +546,8 @@ async def test_request_names_the_speaker_through_the_framework(streaming: bool) 
 
     await kit.create_room(room_id="ask-room")
     await kit.attach_channel("ask-room", "ai-ask")
-    await kit.attach_channel("ask-room", "ws-ask")
+    # Two people on one channel object: a group binding (RFC §10.4).
+    await kit.attach_channel("ask-room", "ws-ask", group=True)
     # Someone has to drain the AI's stream for the tool loop to advance.
     ws.register_connection("c1", lambda _conn, _ev: None, room_id="ask-room")
 

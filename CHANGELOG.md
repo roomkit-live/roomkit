@@ -646,6 +646,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **BREAKING — on a channel bound to one room, a second correspondent gets a
+  room of their own** (RMK-580, RFC §10.4, §5.7). On a number shared by many
+  customers, the default router put every new sender into the one ACTIVE room
+  bound to the channel: bob's first text was stored in alice's room, the agent
+  answered him with alice's history as context, and the answer went to
+  alice's number. Step 3 now admits a sender into that room only when its
+  binding is declared `group`, or names no one else, no other participant
+  joined the room through the channel, and the room received nothing on the
+  channel from another named sender. A room created for an inbound message
+  binds its sender (`ChannelBinding.participant_id`), and the first sender
+  routed through a binding that names no one is recorded on it, so their next
+  message finds their room. A binding speaks for its own channel: step 1 looks
+  for the binding of the channel the sender wrote on
+  (`ConversationStore.find_room_id_by_binding`, with a fallback for a store
+  that does not implement it), so a `participant_id` set on one number's
+  binding no longer routes that sender's texts to another number into the
+  same room. A conversation of several senders on one channel routed without
+  `room_id` (a group chat bound to its room) now declares it with
+  `attach_channel(room_id, channel_id, group=True)`; without it, its second
+  speaker gets a room of their own. `PostgresStore` adds the
+  `bindings.is_group` column on start. Example: `examples/shared_sms_number.py`.
+
 - Text from outside cannot leave its frame in an AI channel's context
   (RMK-589, RFC §6.4). A person's words or name, a worker's output, a thought or
   a task a tool call asked for, placed in a model's context, is either fenced in

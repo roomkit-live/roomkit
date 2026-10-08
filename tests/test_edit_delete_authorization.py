@@ -59,7 +59,8 @@ async def _setup() -> RoomKit:
     kit.register_channel(_Transport("src"))
     kit.register_channel(_SystemTransport("sys"))
     await kit.create_room(room_id="r1")
-    await kit.attach_channel("r1", "src")
+    # Author and non-author write on one channel: a group binding (RFC §10.4).
+    await kit.attach_channel("r1", "src", group=True)
     await kit.attach_channel("r1", "sys")
     return kit
 

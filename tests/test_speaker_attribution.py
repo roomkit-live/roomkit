@@ -38,7 +38,8 @@ async def _kit(responses: list[str]) -> tuple[RoomKit, MockAIProvider]:
     kit.register_channel(SMSChannel("sms1"))
     kit.register_channel(AIChannel("ai1", provider=provider))
     await kit.create_room(room_id="r1")
-    await kit.attach_channel("r1", "sms1")
+    # Several people on one channel of the room: a group binding (RFC §10.4).
+    await kit.attach_channel("r1", "sms1", group=True)
     await kit.attach_channel("r1", "ai1", category=ChannelCategory.INTELLIGENCE)
     return kit, provider
 
