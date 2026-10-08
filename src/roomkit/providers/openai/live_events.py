@@ -349,17 +349,8 @@ def _split_at_token_limit(text: str, token_limit: int, tok: Tokenizer) -> tuple[
     return text[:end], text[end:]
 
 
-_FRAME_RESERVE = 32
-"""Tokens a cut keeps for closing the frame it leaves open (``</tool_result>``
-on its own line, measured in bytes when no tokenizer is loaded)."""
-
-
 def chunk_text(
-    text: str,
-    token_limit: int = MAX_APPEND_TOKENS,
-    *,
-    tok: Tokenizer | None = None,
-    keep_frames: bool = False,
+    text: str, token_limit: int = MAX_APPEND_TOKENS, *, tok: Tokenizer | None = None
 ) -> list[str]:
     """Split appends within the token bound, preserving inner text.
 
@@ -368,35 +359,71 @@ def chunk_text(
     needs, since the model voices each piece. UTF-8 characters stay whole.
     Splits prefer sentences, then spaces, then character boundaries. RFC
     §12.4.1: bounded appends split rather than truncate or refuse content.
-    With *keep_frames*, a text the runtime set apart in a frame keeps it in
-    each piece (:func:`_keep_frame`).
     """
     if token_limit <= 0:
         raise ValueError("token_limit must be positive")
     tok = tok or _tokenizer or BYTES
     text = text.strip()
-    limit = max(token_limit - _FRAME_RESERVE, token_limit // 2) if keep_frames else token_limit
     chunks: list[str] = []
     while text:
-        head, text = _split_at_token_limit(text, limit, tok)
-        if keep_frames and text:
-            head, text = _keep_frame(head, text)
+        head, text = _split_at_token_limit(text, token_limit, tok)
         chunks.append(head)
     return chunks
 
 
-def _keep_frame(head: str, rest: str) -> tuple[str, str]:
-    """*head* closing the frame it leaves open, *rest* opening it again: a
-    block ends and starts over, a quote too, after its author or the
-    instruction that quotes it (RFC §6.4, §12.4.1). A frame the cut falls
-    right after the opening of, or right before the end of, stays whole on
-    one side rather than leave an empty one on the other."""
-    closing, opening = open_frame(head)
+_FRAME_RESERVE = 32
+"""Tokens a cut keeps for closing the frame it leaves open (``</tool_result>``
+on its own line, measured in bytes when no tokenizer is loaded)."""
+
+
+def chunk_framed_text(
+    text: str, token_limit: int = MAX_APPEND_TOKENS, *, tok: Tokenizer | None = None
+) -> list[str]:
+    """:func:`chunk_text` for an injected text, which the runtime may have set
+    apart in a frame (RFC §6.4, §12.4.1): each cut closes the frame it leaves
+    open, and the next append opens it again before the text that follows.
+
+    A text within the bound is one append. Every cut takes text from what is
+    left, never from the frame's opening, so each one advances.
+    """
+    if token_limit <= 2 * _FRAME_RESERVE:
+        raise ValueError("token_limit leaves no room for a frame")
+    tok = tok or _tokenizer or BYTES
+    text, opening = text.strip(), ""
+    chunks: list[str] = []
+    while text:
+        if len(tok.encode(opening + text)) <= token_limit:
+            chunks.append(opening + text)
+            break
+        opening = _affordable(opening, token_limit, tok)
+        room = token_limit - _FRAME_RESERVE - len(tok.encode(opening))
+        head, text = _split_at_token_limit(text, room, tok)
+        piece, opening, text = _close_at_cut(opening + head, text)
+        if piece:
+            chunks.append(piece)
+    return chunks
+
+
+def _affordable(opening: str, token_limit: int, tok: Tokenizer) -> str:
+    """*opening*, or its quote mark alone when its lead would take more than a
+    quarter of an append."""
+    if len(tok.encode(opening)) * 4 <= token_limit or not opening.endswith("“"):
+        return opening
+    return "“"
+
+
+def _close_at_cut(piece: str, rest: str) -> tuple[str, str, str]:
+    """*piece* closing the frame it leaves open, the opening the next append
+    starts with, and *rest*: a block ends and starts over, a quote too, after
+    its author or the instruction that quotes it. A frame the cut falls right
+    after the opening of, or right before the end of, stays whole on one side
+    rather than leave an empty one on the other."""
+    closing, opening = open_frame(piece)
     if not closing:
-        return head, rest
-    head, rest = head.rstrip(), rest.lstrip()
+        return piece, "", rest
+    piece, rest = piece.rstrip(), rest.lstrip()
     if rest.startswith(closing.strip()):
-        return head + closing, rest[len(closing.strip()) :].lstrip()
-    if head.endswith(opening.strip()) and len(head) > len(opening.strip()):
-        return head[: -len(opening.strip())].rstrip(), opening + rest
-    return head + closing, opening + rest
+        return piece + closing, "", rest[len(closing.strip()) :].lstrip()
+    if piece.endswith(opening.strip()):
+        return piece[: -len(opening.strip())].rstrip(), opening, rest
+    return piece + closing, opening, rest

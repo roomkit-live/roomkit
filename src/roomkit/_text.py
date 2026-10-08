@@ -31,10 +31,16 @@ def bounded_text(text: str, limit: int) -> str:
     return cut.rstrip() + "…"
 
 
-INVISIBLE = "\u00ad\u200b-\u200f\u2060-\u2064\ufeff"
-"""Characters a text holds without showing them, as the body of a regular
-expression's class: a soft hyphen, zero-width spaces and joiners, direction
-marks, word joiners, a byte order mark. A model reads past them."""
+INVISIBLE = (
+    "\u00ad\u034f\u061c\u115f\u1160\u17b4\u17b5\u180b-\u180f\u200b-\u200f"
+    "\u202a-\u202e\u2060-\u206f\u3164\ufe00-\ufe0f\ufeff\uffa0\ufff0-\ufff8"
+    "\U0001bca0-\U0001bca3\U0001d173-\U0001d17a\U000e0000-\U000e0fff"
+)
+"""The characters Unicode marks as ignorable by default (Default_Ignorable_Code_Point),
+as the body of a regular expression's class: soft hyphen, zero-width spaces and
+joiners, direction marks, bidirectional embeddings, overrides and isolates,
+variation selectors, tag characters and the like. A text holds them without
+showing them, and a model reads past them."""
 
 
 def one_line(text: Any) -> str:
@@ -55,17 +61,19 @@ realtime provider adds to its prompt."""
 
 def _tag_name(tag: str) -> str:
     """*tag*'s name as a model reads it: any invisible character between its
-    letters."""
-    return f"[{INVISIBLE}]*".join(map(re.escape, tag))
+    letters or after them (a Hangul filler is one, though Unicode counts it a
+    letter)."""
+    return f"[{INVISIBLE}]*".join(map(re.escape, tag)) + f"[{INVISIBLE}]*"
 
 
 def fence(tag: str, text: str) -> str:
     """*text* inside ``<tag>`` … ``</tag>``, with no closing tag of its own.
 
     Any closing tag of that name in *text*, in any case, with any spacing,
-    invisible character or trailing attributes (``</TOOL_RESULT >``,
-    ``< / tool_result>``, ``</tool_\u200bresult>``, ``</tool_result foo>``,
-    ``</tool_result/>``), is neutralised, so the data cannot close the block.
+    invisible character (:data:`INVISIBLE`, a zero-width space inside the name
+    included) or trailing attributes (``</TOOL_RESULT >``, ``< / tool_result>``,
+    ``</tool_result foo>``, ``</tool_result/>``), is neutralised, so the data
+    cannot close the block.
     """
     gap = rf"[\s{INVISIBLE}]*"
     closing = re.compile(rf"<{gap}/{gap}{_tag_name(tag)}\b[^>]*>", re.IGNORECASE)
@@ -94,11 +102,13 @@ def named_blocks(text: str, tags: tuple[str, ...] = FENCED_TAGS) -> str:
 
 # -- A frame across a cut ----------------------------------------------------
 
-_FRAME_EDGE = re.compile(
-    "|".join([rf"<(/?)({'|'.join(map(re.escape, (*FENCED_TAGS, 'instructions')))})>", "“", "”"])
-)
+_TAGS = "|".join(map(re.escape, FENCED_TAGS))
+_FRAME_EDGE = re.compile(rf"<({_TAGS})>\n|</({_TAGS})>|“|”")
+"""Where a frame :func:`fence` or :func:`quoted` wrote opens or ends: a block's
+opening exactly as written (its tag, then a line break), a block's closing
+tag, an opening or closing quote mark."""
 
-_LEAD_LIMIT = 200
+_LEAD_LIMIT = 120
 """The characters before a quote on its line that a reopened quote repeats: an
 author's name or the instruction that quotes it; a longer lead is not one."""
 
@@ -107,10 +117,12 @@ def open_frame(text: str) -> tuple[str, str]:
     """The frame left open at the end of *text*, as what closes it there and
     what opens it again (RFC §6.4, §12.4.1); ``("", "")`` when none is.
 
-    A block ``<tag>`` with no ``</tag>`` after it, inside which only that
-    closing tag counts, what the block holds being data; or a quote “ with no
-    ” after it, opened again after what precedes it on its line
-    (``Marie · sms: “``).
+    A block of one of :data:`FENCED_TAGS`, opened as :func:`fence` writes it
+    (``<tag>`` then a line break) with no ``</tag>`` after it, inside which only
+    that closing tag counts, what the block holds being data; or a quote “
+    with no ” after it, opened again after what precedes it on its line
+    (``Marie · sms: “``). A tag named in running text (``<tool_result> is
+    data``) opens nothing.
     """
     tag: str | None = None
     quote_at: int | None = None
@@ -122,8 +134,8 @@ def open_frame(text: str) -> tuple[str, str]:
             quote_at = None if mark == "”" else quote_at
         elif mark == "“":
             quote_at = edge.start()
-        elif edge.group(2) and not edge.group(1):
-            tag = edge.group(2)
+        elif edge.group(1):
+            tag = edge.group(1)
     if tag is not None:
         return f"\n</{tag}>", f"<{tag}>\n"
     if quote_at is None:

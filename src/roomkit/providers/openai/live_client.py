@@ -19,6 +19,7 @@ from roomkit.providers.openai.live_events import (
     EVT_INPUT_AUDIO_APPEND,
     EVT_INSTRUCTIONS_APPEND,
     EVT_THINKING_APPEND,
+    chunk_framed_text,
     chunk_text,
     tokenizer,
 )
@@ -97,7 +98,9 @@ class OpenAILiveClientMixin(RealtimeVoiceProvider):
             silent,
             session.id,
         )
-        await self._send_append(state, event_type, None, text, keep_frames=True)
+        # The runtime may have set the text apart in a frame: each piece keeps it.
+        pieces = chunk_framed_text(text, tok=await tokenizer())
+        await self._send_append(state, event_type, None, pieces)
         return VoiceInjectionResult(status="sent")
 
     async def submit_delegation_output(
@@ -119,28 +122,25 @@ class OpenAILiveClientMixin(RealtimeVoiceProvider):
             delegation_id,
             session.id,
         )
-        await self._send_append(state, event_type, delegation_id, text)
+        # The agent's own answer, no frame of the runtime's: split as it is.
+        pieces = chunk_text(text, tok=await tokenizer())
+        await self._send_append(state, event_type, delegation_id, pieces)
 
     async def _send_append(
         self,
         state: _LiveSession,
         event_type: str,
         delegation_id: str | None,
-        text: str,
-        *,
-        keep_frames: bool = False,
+        pieces: list[str],
     ) -> None:
-        """Append context in as many bounded pieces as the API needs.
+        """Append context in the bounded *pieces* a text was split into.
 
         One piece for a text within the bound: the model voices every
         commentary piece, so a split is only made where the API forces it.
-        An injected text the runtime framed keeps its frame in each piece
-        (*keep_frames*, RFC §12.4.1); a delegation's output is the agent's own
-        answer, split as it is. ``delegation_id`` is always sent, ``None``
-        included: on these events the field is required, and ``None`` means
-        general session context.
+        ``delegation_id`` is always sent, ``None`` included: on these events
+        the field is required, and ``None`` means general session context.
         """
-        for chunk in chunk_text(text, tok=await tokenizer(), keep_frames=keep_frames):
+        for chunk in pieces:
             await state.ws.send(
                 json.dumps({"type": event_type, "delegation_id": delegation_id, "content": chunk})
             )

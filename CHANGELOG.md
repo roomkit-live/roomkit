@@ -632,15 +632,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `<worker_output>`, up to 4000 characters) sent its middle pieces as bare
   worker text read as instructions, and a long broadcast lost its author and
   its quote. Each cut now closes the frame it leaves open and opens it again
-  in the next append (`roomkit._text.open_frame`): a block ends and starts
-  over, a quote is reopened after its author or the instruction that quotes
-  it. A delegation's output, the agent's own answer, is split as before.
-- A closing tag with an invisible character in it (`</tool_\u200bresult>`, a
-  soft hyphen, a word joiner, a byte order mark) no longer closes a fenced
-  block: a model reads past such characters, so `fence()` neutralises that
-  closing tag too, and `named_blocks()` names such a block (RMK-590, RFC
-  §6.4). The class of invisible characters is the one the turn's notes
-  header copy is found with (RMK-595), now shared from `roomkit._text`.
+  in the next append (`roomkit._text.open_frame`, read by
+  `chunk_framed_text`): a block ends and starts over, a quote is reopened
+  after its author or the instruction that quotes it. A text within the bound
+  is still one append, and a block whose body is one long line (a JSON tool
+  result, a URL) is cut inside it. A delegation's output, the agent's own
+  answer, and a reconfigured prompt are split as before.
+- A closing tag with an invisible character in it (a zero-width space, a
+  direction mark or bidirectional isolate, a variation selector, a tag
+  character, a Hangul filler: any character Unicode marks as ignorable by
+  default) no longer closes a fenced block: a model reads past such
+  characters, so `fence()` neutralises that closing tag too, and
+  `named_blocks()` names such a block (RMK-590, RFC §6.4). The class is
+  shared from `roomkit._text` (`INVISIBLE`) with the finder of a copy of the
+  turn's notes header (RMK-595), which reads past all of them as well.
 - A text another channel broadcast no longer enters a realtime session as the
   application's instruction (RMK-591, RFC §12.4). A realtime voice channel's
   `on_event` and a conference's realtime delivery injected it with the `system`

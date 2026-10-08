@@ -51,6 +51,7 @@ from roomkit.providers.openai.live_events import (
     EVT_SESSION_UPDATE,
     TurnGrouper,
     build_audio_format,
+    chunk_text,
     format_backend_tools,
     history_items,
     tokenizer,
@@ -581,7 +582,8 @@ class OpenAILiveProvider(
             logger.info(
                 "[%s →] instructions append (reconfigure, session %s)", _LOG_TAG, session.id
             )
-            await self._send_append(state, EVT_INSTRUCTIONS_APPEND, None, system_prompt)
+            pieces = chunk_text(system_prompt, tok=await tokenizer())
+            await self._send_append(state, EVT_INSTRUCTIONS_APPEND, None, pieces)
             state.system_prompt = system_prompt
 
         if tools is not None:
