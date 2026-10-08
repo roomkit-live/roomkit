@@ -632,6 +632,16 @@ def test_a_name_reading_as_the_agent_s_label_is_a_participant_s(name: str) -> No
     assert label == f"{name} (a participant)"
 
 
+def test_two_names_reading_as_the_agent_s_label_keep_their_ranks() -> None:
+    first = make_event(body="I ran it", participant_id="u1")
+    second = make_event(body="no, I did", participant_id="u2")
+    first.metadata["sender_name"], second.metadata["sender_name"] = "You", "YOU"
+
+    labels = turn_labels([first, second], RoomContext(room=Room(id="r")))
+
+    assert labels == {first.id: "You (a participant)", second.id: "YOU (2) (a participant)"}
+
+
 @pytest.mark.parametrize(
     ("first", "second", "alike"),
     [

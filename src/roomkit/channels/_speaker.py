@@ -106,9 +106,10 @@ def _label(event: RoomEvent, unrecorded: _Unrecorded) -> str | None:
         if name is None:
             return channel_label(event.source.channel_id)
         rank = unrecorded.rank(source, name_keys(salt, name))
+    label = name if rank == 1 else f"{name} ({rank})"
     if skeletons(name) & _agent_labels():
-        return f"{name} (a participant)"
-    return name if rank == 1 else f"{name} ({rank})"
+        return f"{label} (a participant)"
+    return label
 
 
 class _Unrecorded:
