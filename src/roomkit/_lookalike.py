@@ -116,21 +116,21 @@ def _class(char: str, forms: set[str], spacing: re.Pattern[str]) -> str:
     case only."""
     kept = {form for form in forms if form != char and not spacing.fullmatch(form)}
     members = {char, *kept} - {""}
-    exact = sorted(form for form in kept if not _case_safe(form, members))
+    cases = members | {m.lower() for m in members} | {m.upper() for m in members}
+    exact = sorted(form for form in kept if not _case_safe(form, cases))
     loose = "".join(map(re.escape, sorted(members - set(exact))))
     if not exact:
         return f"[{loose}]"
     return f"(?:(?-i:[{''.join(map(re.escape, exact))}])|[{loose}])"
 
 
-def _case_safe(form: str, members: set[str]) -> bool:
-    """Whether every character ``re.IGNORECASE`` takes for *form* is one of
-    *members* or of their own other case."""
+def _case_safe(form: str, cases: set[str]) -> bool:
+    """Whether every character ``re.IGNORECASE`` takes for *form* is in
+    *cases*, a class's members in either case."""
     others = {form.lower(), form.upper(), form.casefold(), form.swapcase()}
     if form in _TURKISH_I:
         others |= _TURKISH_I
-    cases = {member.lower() for member in members} | {m.upper() for m in members}
-    return all(other in members or other in cases for other in others - {form} if len(other) == 1)
+    return all(other in cases for other in others - {form} if len(other) == 1)
 
 
 def char_class(char: str, *, phrase: bool = False) -> str:

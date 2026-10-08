@@ -29,6 +29,7 @@ from dataclasses import replace
 from typing import TYPE_CHECKING, Any, Literal, Protocol, runtime_checkable
 from uuid import uuid4
 
+from roomkit.channels._speaker import AUTHOR_RANK, AUTHOR_REGISTER, author_rank, register_of
 from roomkit.core._participant_channels import channels_reached, warn_cross_channel
 from roomkit.core.exceptions import RoomNotFoundError
 from roomkit.core.hooks import SyncPipelineResult
@@ -368,7 +369,7 @@ class HelpersMixin:
             event.type
         ):
             return None
-        committed = await self._store.commit_event(room_id, event)
+        committed = await self._commit(room_id, event)
         await self._note_committed_index(room_id, committed.index)
         return committed
 
@@ -380,9 +381,35 @@ class HelpersMixin:
         policy: BLOCKED events (part of the timeline, they consume an index —
         RFC §8.3), injected events, child-room traces.
         """
-        committed = await self._store.commit_event(room_id, event)
+        committed = await self._commit(room_id, event)
         await self._note_committed_index(room_id, committed.index)
         return committed
+
+    async def _commit(self, room_id: str, event: RoomEvent) -> RoomEvent:
+        """Commit *event* (RFC §10.1 step 12) carrying its author's rank."""
+        return await self._store.commit_event(
+            room_id, await self._with_author_rank(room_id, event)
+        )
+
+    async def _with_author_rank(self, room_id: str, event: RoomEvent) -> RoomEvent:
+        """*event* carrying its author's rank among the room's sources whose
+        names read alike, the room's register extended first when its source
+        is new (RFC §6.4, §10.1 step 12): under the room lock, before the
+        commit, so a stored turn's rank never changes."""
+        if not (event.source.participant_id or event.metadata.get("sender_name")):
+            return event
+        room = await self._store.get_room(room_id)
+        if room is None:
+            return event
+        register = register_of(room.metadata.get(AUTHOR_REGISTER))
+        size = len(register)
+        people = await self._store.list_participants(room_id)
+        rank = author_rank(event, RoomContext(room=room, participants=people), register)
+        if rank is None:
+            return event
+        if len(register) != size:
+            await self._store.patch_room_metadata(room_id, {AUTHOR_REGISTER: register})
+        return event.model_copy(update={"metadata": {**event.metadata, AUTHOR_RANK: rank}})
 
     async def _note_committed_index(self, room_id: str, index: int) -> None:
         """Account a committed index that carries NO delivery set.

@@ -136,7 +136,8 @@ def add_unicode_forms(forms: Table, sequences: Table) -> Table:
     """Every character outside ASCII that NFKC and case folding turn into a
     target or a run of letters (fullwidth, mathematical, circled, ``ⅵ``), or
     whose canonical decomposition is a target letter or digit under accents
-    only (``ó``); returns what each other character's forms fold onto."""
+    only (``ó``), or that Unicode names a Latin letter with a decoration
+    (``ł``, ``ø``); returns what each other character's forms fold onto."""
     folds: Table = {}
     for code in range(0x80, 0x110000):
         if 0xD800 <= code <= 0xDFFF:
@@ -146,7 +147,7 @@ def add_unicode_forms(forms: Table, sequences: Table) -> Table:
         _file(char, read, forms, sequences)
         if read != char:
             folds.setdefault(read, set()).add(char)
-        base = _accented_base(char)
+        base = _accented_base(char) or _decorated_base(char)
         if base is not None:
             forms[base].add(char)
     return folds
@@ -160,6 +161,16 @@ def _accented_base(char: str) -> str | None:
     if accents and base.isascii() and base.isalnum():
         return base if all(map(unicodedata.combining, accents)) else None
     return None
+
+
+_DECORATED = re.compile(r"LATIN (?:SMALL|CAPITAL) LETTER ([A-Z]) WITH ")
+
+
+def _decorated_base(char: str) -> str | None:
+    """The Latin letter *char* is under a stroke, a bar, a hook or another
+    decoration Unicode does not decompose (``ł``, ``ø``, ``đ``)."""
+    found = _DECORATED.match(unicodedata.name(char, ""))
+    return found.group(1).lower() if found else None
 
 
 def add_curated(forms: Table, prototypes: Table, folds: Table) -> None:

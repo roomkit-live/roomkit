@@ -868,26 +868,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - A sender who takes another's name, or a look-alike of it, no longer reads
   as that person, and one label names a participant's turn wherever a model
-  reads it (RMK-607, RFC §6.4). Two resolvers named a turn's author: the
-  AIChannel's (sender name, then participant by id) and the ACP room
-  context's and realtime broadcast's (`Marie · sms`, participant by id or
-  identity, no sender name). One resolver in `channels/_speaker.py` now gives
-  the label everywhere a model reads a turn: the name (sender name, then the
-  participant by id or identity), `@channel` for a sender without one. When a
-  later source's name reads like an earlier one's in the window, in case or
-  in Unicode's confusables, it carries its rank: `Alice`, then `ALICE (2)`,
-  `Аlice (3)`, a form no name takes; one person reached through several
-  channels is one source, and a name that reads as the agent's own label
-  (`You`, `you in a separate session`) carries `(a participant)`. Names are
-  compared without spacing, punctuation or a mark on a Latin letter
-  (`A.lice`, `Alice҉`). The attribution note says what a rank means.
-  This changes the text an ACP prompt and a realtime injection carry: the
-  ACP room context now reads `[1] Marie: “…”` and `[2] @claude-code: “…”`
-  where it read `Marie · sms` and `claude-code`, a realtime broadcast
-  `Marie: “…”` or `@sms: “…”`, ranked among the turns its session may see;
-  the console keeps `Marie · sms` for a human reader. The ACP request
-  itself, memory summaries, delegated tasks and the speak policy follow in
-  RMK-614, RMK-615 and RMK-616.
+  reads it (RMK-607, RFC §6.4, §10.1 step 12). Two resolvers named a turn's
+  author: the AIChannel's (sender name, then participant by id) and the ACP
+  room context's and realtime broadcast's (`Marie · sms`, participant by id
+  or identity, no sender name). One resolver in `channels/_speaker.py` now
+  gives the label everywhere a model reads a turn: the sender name a
+  transport stamps (or a diarized voice), the participant's registered name
+  (by id or identity) otherwise, `@channel` for a sender with neither. When a
+  source's name reads like the name of a source the room saw earlier, in case
+  or in Unicode's confusables, it carries its rank: `Alice`, then
+  `ALICE (2)`, `Аlice (3)`, a form no name takes. The rank is fixed when the
+  turn is committed, from a register the room keeps in its metadata
+  (`author_register`, the sources and what their names read as), and rides
+  the event (`metadata["author_rank"]`), so it holds as the window slides and
+  across the prompts an ACP or realtime session keeps. A participant reached
+  through several channels is one source; a sender id is one only on its
+  channel. A name that reads as the agent's own label (`You`, `you in a
+  separate session`) carries `(a participant)`. Names are compared without
+  spacing, punctuation or a mark on a Latin letter (`A.lice`, `Alice҉`), a
+  letter under a stroke as that letter (`Łukasz`). The attribution note says
+  what a rank means. This changes the text an ACP prompt and a realtime
+  injection carry: the ACP room context now reads `[1] Marie: “…”` and
+  `[2] @claude-code: “…”` where it read `Marie · sms` and `claude-code`, a
+  realtime broadcast `Marie: “…”` or `@sms: “…”`, ranked among the turns its
+  session may see; the console keeps `Marie · sms` for a human reader. The
+  ACP request itself, memory summaries, delegated tasks and the speak policy
+  follow in RMK-614, RMK-615 and RMK-616.
 
 - The forms a fenced block's tag, a runtime mark and an agent's name are read
   in come from Unicode's confusables (RMK-602, RFC §6.4). A hand-written

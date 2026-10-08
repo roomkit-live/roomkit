@@ -73,12 +73,13 @@ def author_name(event: RoomEvent, context: RoomContext) -> str | None:
 
 
 def _author(event: RoomEvent, people: dict[str, Participant]) -> str | None:
-    """``metadata["sender_name"]`` is the stamp transports and hosts write at
-    ingress (the Teams and WhatsApp providers do, and so does a host's
-    session ingress); the room's participant record is the fallback for
-    transports that register named participants without stamping events.
-    Either is written by whoever sends: given unquoted before their words, a
-    name must not open a line or a frame of its own."""
+    """``metadata["sender_name"]`` first: the stamp a transport or host writes
+    at ingress, and the voice a channel's diarization names on a shared
+    microphone (RFC §12.2.3); the name the room's participant record holds
+    otherwise. Either is kept to a name's characters: given unquoted before
+    their words, a name must not open a line or a frame of its own. A sender
+    who takes a registered person's name is another source, and carries a
+    rank (:func:`turn_labels`)."""
     name = event.metadata.get("sender_name")
     if isinstance(name, str) and (kept := person_name(name)):
         return kept
@@ -86,52 +87,91 @@ def _author(event: RoomEvent, people: dict[str, Participant]) -> str | None:
     return (person_name(person.display_name) or None) if person is not None else None
 
 
+AUTHOR_RANK = "author_rank"
+"""The event metadata key holding its author's rank among the room's sources
+whose names read alike, fixed when the event is committed (RFC §10.1 step
+12)."""
+
+AUTHOR_REGISTER = "author_register"
+"""The room metadata key holding the sources whose names the room has seen,
+in order, each with what its name reads as (RFC §6.4)."""
+
+Register = list[dict[str, list[str]]]
+
+
 def turn_labels(events: Iterable[RoomEvent], context: RoomContext) -> dict[str, str | None]:
     """The label each of *events* opens with where a model reads it (RFC §6.4):
     its author's name, or its channel (:func:`channel_label`) when they have
     none; ``None`` for the runtime's system events, no participant's turn.
 
-    Names are told apart across sources (a participant, or a sender): when a
-    later source's name reads like an earlier one's (in case or in Unicode's
-    confusables, ``Alice`` and ``Аlice``), it carries its rank, ``Аlice (2)``,
-    a form no name takes, so a sender who takes another's name does not read
-    as that person; the first source seen keeps the name. One person reached
-    through several channels is one source. A name that reads as a label the
+    Names are told apart across sources (a participant, whichever channel
+    reached them, or a sender on its channel): when a later source's name
+    reads like an earlier one's (in case or in Unicode's confusables,
+    ``Alice`` and ``Аlice``), it carries its rank, ``Аlice (2)``, a form no
+    name takes, so a sender who takes another's name does not read as that
+    person. The rank an event carries (:data:`AUTHOR_RANK`, fixed for the room
+    when it was committed) is the one read; an event without one is ranked
+    after them, in the order *events* gives. A name that reads as a label the
     agent's own turns carry (``You``) carries ``(a participant)``, so no one
     reads as the agent."""
-    ranking = _Ranking(context)
-    return {event.id: ranking.label(event) for event in events}
+    people = _people(context)
+    window: Register = []
+    return {event.id: _label(event, people, window) for event in events}
 
 
-class _Ranking:
-    """The sources whose names a window holds, each name's readings mapped to
-    the sources seen with it, in order."""
+def _label(event: RoomEvent, people: dict[str, Participant], window: Register) -> str | None:
+    if event.source.channel_type == ChannelType.SYSTEM:
+        return None
+    name = _author(event, people)
+    if name is None:
+        return channel_label(event.source.channel_id)
+    keys = skeletons(name)
+    if keys & _agent_labels():
+        return f"{name} (a participant)"
+    rank = _rank_in(window, _source(event, people), keys)
+    stamped = event.metadata.get(AUTHOR_RANK)
+    rank = stamped if isinstance(stamped, int) and stamped > 0 else rank
+    return name if rank == 1 else f"{name} ({rank})"
 
-    def __init__(self, context: RoomContext) -> None:
-        self._people = _people(context)
-        self._sources: dict[str, list[tuple[str, ...]]] = {}
 
-    def label(self, event: RoomEvent) -> str | None:
-        if event.source.channel_type == ChannelType.SYSTEM:
-            return None
-        name = _author(event, self._people)
-        if name is None:
-            return channel_label(event.source.channel_id)
-        keys = skeletons(name)
-        if keys & _agent_labels():
-            return f"{name} (a participant)"
-        rank = self._rank(_source(event, self._people, name), keys)
-        return name if rank == 1 else f"{name} ({rank})"
+def author_rank(event: RoomEvent, context: RoomContext, register: Register) -> int | None:
+    """*event*'s author rank in the room (:data:`AUTHOR_RANK`), *register*
+    (the room's :data:`AUTHOR_REGISTER`) extended when its source is new;
+    ``None`` for a system event or an author with no name."""
+    if event.source.channel_type == ChannelType.SYSTEM:
+        return None
+    people = _people(context)
+    name = _author(event, people)
+    if name is None:
+        return None
+    return _rank_in(register, _source(event, people), skeletons(name))
 
-    def _rank(self, source: tuple[str, ...], keys: frozenset[str]) -> int:
-        alike: list[tuple[str, ...]] = []
-        for key in sorted(keys):
-            alike += [seen for seen in self._sources.get(key, []) if seen not in alike]
-        if source not in alike:
-            alike.append(source)
-            for key in keys:
-                self._sources.setdefault(key, []).append(source)
-        return alike.index(source) + 1
+
+def register_of(value: object) -> Register:
+    """A room's :data:`AUTHOR_REGISTER` as stored, its well-formed entries
+    only: the room's metadata is the application's to write too."""
+    if not isinstance(value, list):
+        return []
+    return [
+        {"source": list(entry["source"]), "names": list(entry["names"])}
+        for entry in value
+        if isinstance(entry, dict)
+        and isinstance(entry.get("source"), list)
+        and isinstance(entry.get("names"), list)
+    ]
+
+
+def _rank_in(register: Register, source: list[str], keys: frozenset[str]) -> int:
+    """*source*'s rank among the sources of *register* whose names read like
+    *keys*, *register* extended when the source is new to it."""
+    alike: list[list[str]] = []
+    for entry in register:
+        if keys.intersection(entry["names"]) and entry["source"] not in alike:
+            alike.append(entry["source"])
+    if source not in alike:
+        register.append({"source": source, "names": sorted(keys)})
+        alike.append(source)
+    return alike.index(source) + 1
 
 
 @functools.cache
@@ -142,16 +182,17 @@ def _agent_labels() -> frozenset[str]:
     return skeletons("You") | skeletons("you (in a separate session)")
 
 
-def _source(event: RoomEvent, people: dict[str, Participant], name: str) -> tuple[str, ...]:
+def _source(event: RoomEvent, people: dict[str, Participant]) -> list[str]:
     """Who *event* comes from: the room's participant, whichever channel and
-    id reached them; else its sender; else, on a channel that names no
-    sender, its channel and what its name reads as."""
+    id reached them (an identity is one person); else its sender on its
+    channel, since a sender id from one transport says nothing of another's;
+    else its channel."""
     person = people.get(event.source.participant_id or "")
     if person is not None:
-        return ("participant", person.id)
+        return ["participant", person.id]
     if event.source.participant_id:
-        return ("sender", event.source.participant_id)
-    return ("channel", event.source.channel_id, *sorted(skeletons(name)))
+        return ["sender", event.source.channel_id, event.source.participant_id]
+    return ["channel", event.source.channel_id]
 
 
 def participant_name(participant: Participant) -> str:
