@@ -128,10 +128,10 @@ class MetaImageProvider(ImageProvider):
             entry.image.validate_request(
                 options, size=None, n=n, references=len(references), mask=False
             )
-        if options.thinking_level and options.thinking_level not in _REASONING:
-            # The options admit levels other vendors take (Gemini's medium);
-            # Muse reasons low or high, catalogued model or not (RMK-654).
-            raise ValueError(f"thinking_level must be one of {', '.join(_REASONING)}")
+        elif options.model_dump(exclude_none=True):
+            # An uncatalogued model's capabilities are unknown, not Muse Image's
+            # (RFC §25.6): every option is refused, as Gemini and OpenAI do.
+            raise ValueError("Advanced controls require a model with known image capabilities")
         if n < 1:
             raise ValueError(f"n must be at least 1, got {n}")
         body = self._build_body(prompt, size, n, options)

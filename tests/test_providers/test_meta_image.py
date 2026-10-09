@@ -232,16 +232,39 @@ def test_catalog_describes_muse_image() -> None:
     assert provider.supports_editing is True
 
 
-@pytest.mark.parametrize("model", ["muse-image-1.0", "muse-image-uncatalogued"])
-async def test_a_thinking_level_muse_cannot_take_is_refused_before_the_call(model: str) -> None:
+async def test_a_thinking_level_muse_cannot_take_is_refused_before_the_call() -> None:
     """Muse Image reasons low or high only: ``medium``, a Gemini level the
-    options admit (RMK-654), is refused before the call, catalogued model or not."""
-    provider = _provider(model=model)
+    options admit (RMK-654), is refused before the call."""
+    provider = _provider()
     provider._client.images.generate = AsyncMock()
 
     with pytest.raises(ValueError, match="thinking_level"):
         await provider.generate_with_options(
             "a lighthouse", options=ImageOptions(thinking_level="medium")
         )
+
+    provider._client.images.generate.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    "options",
+    [
+        ImageOptions(thinking_level="medium"),
+        ImageOptions(thinking_level="high"),
+        ImageOptions(aspect_ratio="16:9", image_size="4K"),
+        ImageOptions(store=False),
+        ImageOptions(output_format="jpeg"),
+    ],
+)
+async def test_an_uncatalogued_model_refuses_every_option_before_the_call(
+    options: ImageOptions,
+) -> None:
+    """Its capabilities are unknown, not Muse Image's (RFC §25.6): an option it
+    may not express is refused, never dropped while the paid call goes out."""
+    provider = _provider(model="muse-image-uncatalogued")
+    provider._client.images.generate = AsyncMock()
+
+    with pytest.raises(ValueError, match="known image capabilities"):
+        await provider.generate_with_options("a lighthouse", options=options)
 
     provider._client.images.generate.assert_not_awaited()

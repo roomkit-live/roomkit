@@ -23,8 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ImageOptions.thinking_level` takes `medium` (RMK-654): Google's default
   level on Nano Banana 2.1 can be asked for there, and is refused before the
   call on the other Gemini image models and on Meta's Muse Image, which
-  reasons low or high only (a model Meta's catalog does not list included,
-  where the level reached an unguarded lookup).
+  reasons low or high only.
 
 - Staying quiet when asked (RMK-641, RFC §6.4): "just listen for now" puts the
   room in a listening state `ClassifierSpeakPolicy` keeps, per room and in
@@ -443,6 +442,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   which gemini-3-pro-image does not offer (its tiers: 1K, 2K, 4K)", and names
   the ratio the same way (`512x4096` is 1:8, absent from Pro). Still a refusal
   before the call: RFC §25.2 forbids substituting another size.
+
+- `MetaImageProvider` refuses every advanced option on a model its catalog
+  does not list, as Gemini and OpenAI do (RMK-654): it dropped the ones Muse
+  Image cannot express (`aspect_ratio`, `store`, ...) and sent the paid call
+  anyway, against RFC §25.2. Behavior change: an uncatalogued Muse model takes
+  no `ImageOptions`.
 
 - `GeminiImageProvider` reads the type of an image whose response declares
   none off its bytes, instead of labelling it `image/png` (RMK-656): Nano

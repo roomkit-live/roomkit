@@ -174,6 +174,8 @@ async def test_gemini_medium_thinking_reaches_the_wire_on_nano_banana_2_1() -> N
         ("gemini-3.1-flash-image", ImageOptions(thinking_level="medium")),
         ("gemini-3.1-flash-lite-image", ImageOptions(thinking_level="medium")),
         ("gemini-3-pro-image", ImageOptions(thinking_level="medium")),
+        ("gemini-2.5-flash-image", ImageOptions(thinking_level="medium")),
+        ("gemini-image-uncatalogued", ImageOptions(thinking_level="medium")),
     ],
 )
 async def test_gemini_capabilities_belong_to_the_selected_model(
