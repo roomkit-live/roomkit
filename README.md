@@ -463,10 +463,10 @@ kit = RoomKit(identity_resolver=MyResolver())
 ### MCP Tools
 
 ```python
-from roomkit import MCPToolProvider, compose_tool_handlers
+from roomkit.tools import MCPToolProvider, compose_tool_handlers
 
-mcp = MCPToolProvider(server_url="http://localhost:3000")
-handler = compose_tool_handlers(mcp.handler, my_custom_handler)
+async with MCPToolProvider.from_url("http://localhost:3000/mcp") as mcp:
+    handler = compose_tool_handlers(mcp.as_tool_handler(), my_custom_handler)
 ```
 
 ### Skills
