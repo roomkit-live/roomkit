@@ -248,14 +248,47 @@ class Channel(ABC):
         """
         return 0
 
+    def normalize_address(self, address: str) -> str:
+        """*address* in the one form this channel compares and stores it in.
+
+        The framework reads every inbound sender through it before routing,
+        and every address a host gives a binding or a member, so the same
+        person is the same string wherever the room meets them (RFC §10.4).
+        Unchanged by default; a channel addressed by phone number writes
+        E.164 (``+15550000001``).
+        """
+        return address
+
+    def recipient_address(self, binding: ChannelBinding) -> str | None:
+        """The correspondent's address *binding* delivers to, normalized; None if none.
+
+        On a channel whose replies go to the address the correspondent writes
+        from, a binding's recipient names its correspondent as much as its
+        ``participant_id`` does: the router admits no one else through it.
+        None on any other channel (a webhook URL, a chat or a conversation id
+        names no one).
+        """
+        return None
+
     def recipient_metadata(self, address: str) -> dict[str, str]:
         """The binding metadata that makes *address* this channel's recipient.
 
         The framework records an inbound sender as a binding's correspondent
-        (RFC §10.4); on a channel that delivers to an external address, the
-        same address is where its replies go, and this is how the framework
-        writes it where the channel reads it. A channel with no addressee of
-        its own (an intelligence channel, a WebSocket) records nothing.
+        (RFC §10.4); on a channel whose replies go to the address the sender
+        writes from (a phone number, an email address), the same address is
+        where its replies go, and this is how the framework writes it where
+        the channel reads it. Any other channel (an intelligence channel, a
+        WebSocket, a webhook, a group chat) records nothing.
+        """
+        return {}
+
+    def reply_metadata(self, message: InboundMessage) -> dict[str, str]:
+        """The binding metadata that makes a room reply where *message* came from.
+
+        The sender's own address on a channel that replies to it
+        (:meth:`recipient_metadata`), the chat or conversation the message
+        was posted in on one that replies there (Telegram, Teams, Discord);
+        nothing on a channel with no addressee of its own.
         """
         return {}
 

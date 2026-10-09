@@ -81,6 +81,12 @@ class _Shop:
             await self.kit.add_member(room_id, "sms", member)
         return room_id
 
+    async def open_free_room(self, room_id: str = "free") -> str:
+        """A room bound to the number with no correspondent or recipient yet."""
+        await self.kit.create_room(room_id=room_id)
+        await self.kit.attach_channel(room_id, "sms")
+        return room_id
+
     async def text(self, sender: str, body: str, room_id: str | None = None) -> InboundResult:
         return await self.kit.process_inbound(
             InboundMessage(channel_id="sms", sender_id=sender, content=TextContent(body=body)),
@@ -183,11 +189,24 @@ class TestARoomTheHostOpened:
         assert await shop.room_of(BOB) != room
         assert await shop.room_of(ALICE) == room
 
+    async def test_a_room_opened_for_a_number_admits_no_one_else(
+        self, store: ConversationStore
+    ) -> None:
+        """The number the room delivers to names its correspondent: bob,
+        writing first, is not let in, and alice is found by her binding."""
+        shop = _Shop(store)
+        room = await shop.open_room_for(ALICE)
+
+        assert await shop.named_on(room) == ALICE
+        assert await shop.room_of(BOB) != room
+        assert await shop.room_of(ALICE) == room
+        assert shop.sent_to(BOB) and shop.sent_to(ALICE)
+
     async def test_a_room_opened_for_no_one_keeps_its_first_sender(
         self, store: ConversationStore
     ) -> None:
         shop = _Shop(store)
-        room = await shop.open_room_for(ALICE)
+        room = await shop.open_free_room()
 
         assert await shop.room_of(ALICE) == room
         assert await shop.room_of(BOB) != room
@@ -200,7 +219,7 @@ class TestARoomTheHostOpened:
     ) -> None:
         """The router admits off the lock; the claim under it decides (RFC §10.1)."""
         shop = _Shop(store)
-        room = await shop.open_room_for(ALICE)
+        room = await shop.open_free_room()
 
         rooms = await asyncio.gather(shop.room_of(ALICE), shop.room_of(BOB))
 
@@ -213,7 +232,7 @@ class TestARoomTheHostOpened:
         """A room mixed before its binding could name anyone: what it received
         is the record (here, messages the host routed by room id)."""
         shop = _Shop(store)
-        room = await shop.open_room_for(ALICE)
+        room = await shop.open_free_room()
         await shop.text(ALICE, "hi", room_id=room)
         await shop.text(CAROL, "hi", room_id=room)
 
@@ -249,15 +268,16 @@ class TestAnIdentifiedCorrespondent:
         # an identity alone, once the number serves several rooms, is RMK-579.
         assert await shop.room_of(ALICE) == room
 
-    async def test_a_member_known_by_no_address_closes_the_room_to_routing(
+    async def test_a_member_known_by_no_address_does_not_hide_the_recipient(
         self, store: ConversationStore
     ) -> None:
-        """Nothing tells this member from a stranger: their messages need the
-        room id (or the address linked to their identity)."""
+        """The member's id says nothing of the number, the binding's recipient
+        does: the room is the conversation of the number it delivers to."""
         shop = _Shop(store)
         room = await shop.open_room_for(ALICE, member="user-42")
 
-        assert await shop.room_of(ALICE) != room
+        assert await shop.room_of(BOB) != room
+        assert await shop.room_of(ALICE) == room
 
     async def test_a_sender_identified_in_the_room_is_found_again(
         self, store: ConversationStore
@@ -278,7 +298,7 @@ class TestWhatTheBindingRetains:
         """Routing decides which conversation a message belongs to, a hook what
         becomes of it (RFC §10.4)."""
         shop = _Shop(store)
-        room = await shop.open_room_for(ALICE)
+        room = await shop.open_free_room()
 
         @shop.kit.hook(HookTrigger.BEFORE_BROADCAST)
         async def refuse_bob(event: Any, ctx: Any) -> HookResult:
@@ -297,7 +317,7 @@ class TestWhatTheBindingRetains:
     ) -> None:
         """The caller chose the room: the binding is left as the host set it."""
         shop = _Shop(store)
-        room = await shop.open_room_for(ALICE)
+        room = await shop.open_free_room()
 
         await shop.text(ALICE, "hi", room_id=room)
 

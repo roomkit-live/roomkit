@@ -309,7 +309,9 @@ class RoomKit(
         self._transcoder = DefaultContentTranscoder()
         self._event_handlers: list[tuple[str, FrameworkEventHandler]] = []
         self._identity_hooks: dict[HookTrigger, list[IdentityHookRegistration]] = {}
-        self._inbound_router = inbound_router or DefaultInboundRoomRouter(self._store)
+        self._inbound_router = inbound_router or DefaultInboundRoomRouter(
+            self._store, recipient_of=self._binding_recipient
+        )
         self._event_router: EventRouter | None = None
         # Inbound rate limiting
         self._inbound_rate_limit = inbound_rate_limit

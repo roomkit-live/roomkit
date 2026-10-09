@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from typing import Any
 
 from roomkit.models.channel import ChannelBinding
@@ -46,8 +47,16 @@ class DefaultInboundRoomRouter(InboundRoomRouter):
     room's channels, and read back as context by that room's agent.
     """
 
-    def __init__(self, store: ConversationStore) -> None:
+    def __init__(
+        self,
+        store: ConversationStore,
+        *,
+        recipient_of: Callable[[ChannelBinding], str | None] | None = None,
+    ) -> None:
         self._store = store
+        # The address a binding delivers to, normalized (the kit passes its
+        # channels' Channel.recipient_address); it names the correspondent.
+        self._recipient_of = recipient_of
 
     async def route(
         self,
@@ -130,6 +139,10 @@ class DefaultInboundRoomRouter(InboundRoomRouter):
             return False
         own = await sender_known_as(self._store, channel_type, sender)
         if not binding_admits(binding, own):
+            return False
+        recipient = self._recipient_of(binding) if self._recipient_of is not None else None
+        if recipient is not None and recipient not in own:
+            # The room delivers to someone else: it is their conversation.
             return False
         for participant in await self._store.list_participants(room_id):
             if channel_id in participant.connected_via and not own & {

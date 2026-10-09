@@ -189,6 +189,12 @@ class InboundMixin(HelpersMixin):
         channel = self._channels.get(message.channel_id)
         if channel is None:
             raise ChannelNotRegisteredError(f"Channel {message.channel_id} not registered")
+        # One form for the sender before anything reads it (RFC §10.4): the
+        # router, the bindings and the participants compare and store it.
+        # The provider's own spelling survives in raw_payload.
+        sender = channel.normalize_address(message.sender_id)
+        if sender != message.sender_id:
+            message = message.model_copy(update={"sender_id": sender})
 
         telemetry = self._telemetry
         inbound_span_id = telemetry.start_span(
@@ -642,10 +648,16 @@ class InboundMixin(HelpersMixin):
             room.id,
             message.channel_id,
             participant_id=recorded,
-            # Where the channel delivers: the correspondent's own address.
-            metadata=channel.recipient_metadata(recorded) if recorded and channel else {},
+            # Where the room replies: the sender's address, or the chat the
+            # message came from.
+            metadata=channel.reply_metadata(message) if recorded and channel else {},
         )
         return room.id
+
+    def _binding_recipient(self, binding: ChannelBinding) -> str | None:
+        """The address *binding* delivers to, in its channel's form (RFC §10.4)."""
+        channel = self._channels.get(binding.channel_id)
+        return channel.recipient_address(binding) if channel is not None else None
 
     async def _route_and_claim(
         self, message: InboundMessage, channel: Channel, organization_id: str | None
@@ -687,9 +699,9 @@ class InboundMixin(HelpersMixin):
             return True
         binding = await self._store.get_binding(room_id, message.channel_id)
         if binding is not None and (
-            binding_names_no_one(binding) or _lacks_recipient(binding, sender, channel)
+            binding_names_no_one(binding) or _lacks_recipient(binding, message, channel)
         ):
-            binding = await self._record_sender(room_id, message.channel_id, sender, channel)
+            binding = await self._record_sender(room_id, message, channel)
         if binding is None or binding_admits(binding, frozenset({sender})):
             return True
         if binding_admits(
@@ -699,12 +711,12 @@ class InboundMixin(HelpersMixin):
         return await self._store.get_participant(room_id, sender) is not None
 
     async def _record_sender(
-        self, room_id: str, channel_id: str, sender: str, channel: Channel
+        self, room_id: str, message: InboundMessage, channel: Channel
     ) -> ChannelBinding | None:
-        """Write *sender* on a binding naming no one, under the room lock; return it as it stands.
+        """Write the sender on a binding naming no one, under the room lock; return the binding.
 
         The binding that names the sender by their address also gets them as
-        its recipient where it has none (``channel.recipient_metadata``): the
+        its recipient where it has none (``channel.reply_metadata``): the
         room then replies to the person it is the conversation of, including
         a binding recorded before it carried a recipient. A recipient already
         there, the host's above all, is never replaced.
@@ -716,6 +728,7 @@ class InboundMixin(HelpersMixin):
         let in unrecorded, which would leave the room open to a concurrent
         stranger.
         """
+        channel_id, sender = message.channel_id, message.sender_id
         async with AsyncExitStack() as stack:
             try:
                 async with asyncio.timeout(self._process_timeout):
@@ -727,11 +740,14 @@ class InboundMixin(HelpersMixin):
                 return None
             update: dict[str, Any] = {}
             if binding_names_no_one(binding):
-                update["participant_id"] = sender
-            if _lacks_recipient(binding.model_copy(update=update), sender, channel):
+                # A binding stored with a recipient and no correspondent
+                # (before RFC §5.7 named one) is its recipient's: the sender
+                # is recorded only on a binding that delivers to no one.
+                update["participant_id"] = channel.recipient_address(binding) or sender
+            if _lacks_recipient(binding.model_copy(update=update), message, channel):
                 missing = {
                     key: value
-                    for key, value in channel.recipient_metadata(sender).items()
+                    for key, value in channel.reply_metadata(message).items()
                     if not binding.metadata.get(key)
                 }
                 update["metadata"] = {**binding.metadata, **missing}
@@ -908,8 +924,8 @@ def _as_instruction(event: RoomEvent, message: InboundMessage) -> RoomEvent:
     return event.model_copy(update={"metadata": metadata})
 
 
-def _lacks_recipient(binding: ChannelBinding, sender: str, channel: Channel) -> bool:
-    """Whether *binding* names *sender* by address but carries no recipient for *channel*."""
-    if binding.participant_id != sender:
+def _lacks_recipient(binding: ChannelBinding, message: InboundMessage, channel: Channel) -> bool:
+    """Whether *binding* names *message*'s sender but has no reply address for *channel*."""
+    if binding.participant_id != message.sender_id:
         return False
-    return any(not binding.metadata.get(key) for key in channel.recipient_metadata(sender))
+    return any(not binding.metadata.get(key) for key in channel.reply_metadata(message))

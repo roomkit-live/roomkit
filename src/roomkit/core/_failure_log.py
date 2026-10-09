@@ -12,7 +12,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from roomkit.core.exceptions import TaskTurnFailedError, TurnCutShortError
+from roomkit.core.exceptions import NoRecipientError, TaskTurnFailedError, TurnCutShortError
 from roomkit.providers.ai.base import ProviderError
 
 _REPORTED = "_roomkit_reported"
@@ -76,6 +76,10 @@ def log_failure(
     if isinstance(exc, TurnCutShortError):
         # A turn that ended before its answer: expected, never a defect.
         log.warning("%s failed: %s", what, exc, extra=extra)
+        return
+    if isinstance(exc, NoRecipientError):
+        # Refused before any send: the binding's configuration, not a defect.
+        log.warning("%s refused: the binding has no %s", what, exc.recipient_key, extra=extra)
         return
     if not isinstance(exc, ProviderError):
         # The traceback is *exc*'s, whether or not a handler is still active.

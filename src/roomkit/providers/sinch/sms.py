@@ -185,9 +185,13 @@ def parse_sinch_webhook(
                 }
             )
 
+    sender = payload.get("from", "")
+    if sender.isdigit():
+        # An MSISDN: Sinch writes the international number without its "+".
+        sender = f"+{sender}"
     return InboundMessage(
         channel_id=channel_id,
-        sender_id=payload.get("from", ""),
+        sender_id=sender,
         content=build_inbound_content(body, media),
         external_id=payload.get("id"),
         provider_message_id=payload.get("id"),

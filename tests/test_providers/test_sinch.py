@@ -299,6 +299,12 @@ class TestParseSinchWebhook:
         assert msg.metadata["received_at"] == "2026-01-28T12:00:00.000Z"
         assert msg.metadata["operator_id"] == "op-123"
 
+    def test_parse_webhook_msisdn_gets_its_plus(self) -> None:
+        """Sinch writes the sender's international number without "+"."""
+        msg = parse_sinch_webhook({"from": "15145551111", "body": "Hi"}, channel_id="sms-main")
+
+        assert msg.sender_id == "+15145551111"
+
     def test_parse_webhook_minimal(self) -> None:
         payload = {
             "from": "+15145551111",

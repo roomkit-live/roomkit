@@ -393,6 +393,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   against the channel's circuit breaker, which every room on the channel
   shares.
 
+- Per security review, a room prepared for one correspondent takes no one
+  else (RMK-646, RFC §10.4): a room the host opened with only a recipient
+  (`attach_channel(..., metadata={"phone_number": alice})`) let the first
+  stranger on the number in through the router's one-room step, and the agent
+  answered them to Alice. On a channel whose replies go to the address the
+  correspondent writes from (new `TransportChannel(replies_to_sender=True)`:
+  SMS, RCS, WhatsApp, WhatsApp Personal, email, Messenger), a binding's
+  recipient now names its correspondent as `participant_id` does:
+  `attach_channel` and `update_binding_metadata` record it as the
+  correspondent when the binding names no one, the router admits no one else
+  through a binding delivering to someone else, and each correspondent reaches
+  the room prepared for them when the number has several. On Telegram,
+  Teams, Discord and Buzz the recipient is a chat or a conversation: a room
+  opened for a message replies to the one it came from (new
+  `TransportChannel(reply_metadata_key=...)` and
+  `Channel.reply_metadata(message)`), where the entry above wrote the
+  sender's id, so a Telegram group's member was answered privately; on HTTP
+  the recipient is a URL and nothing is written. Neither names a
+  correspondent. Phone numbers are compared in one form,
+  E.164: the SMS, RCS, WhatsApp and WhatsApp Personal channels write an
+  inbound sender, a binding's correspondent and recipient and a member's id
+  that way (`whatsapp:+15550000001` and `+1 (555) 000-0001` are both
+  `+15550000001`), and a new `default_country_code` on their factories
+  places a national number. Digits with no country code configured are
+  never given one: `13800138000` is a national number in China and
+  `+13800138000` one in North America. The Sinch parser and WhatsApp
+  Personal's add the `+` their providers leave out (a WhatsApp `@lid` id is
+  no number and stays as it is). A binding stored with a recipient and no
+  correspondent is its recipient's when a message claims it. New
+  `Channel.normalize_address()`, `Channel.recipient_address()`,
+  `TransportChannel(address_normalizer=...)` and
+  `DefaultInboundRoomRouter(recipient_of=...)`. A delivery refused for want of
+  a recipient is logged as a warning naming the missing key, without a
+  traceback. Behavior change: on the phone channels the inbound pipeline reads
+  `sender_id` in E.164, so the event's `participant_id` is E.164 and an
+  identity address or a resolver keyed on another spelling no longer matches;
+  the provider's own payload (`raw_payload`) keeps its spelling.
+
 - A voice channel streams each response through its own copy of its
   `tts_filter` (RMK-624): two rooms streaming at once through one channel
   shared what a filter buffers, so a bracket `StripBrackets` held open in one

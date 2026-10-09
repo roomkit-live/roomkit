@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import time as _time
+from collections.abc import Callable
 from typing import Any
 
 from roomkit.channels.base import Channel
@@ -45,6 +46,9 @@ class TransportChannel(Channel):
         capabilities: ChannelCapabilities | None = None,
         recipient_key: str = "recipient_id",
         defaults: dict[str, Any] | None = None,
+        address_normalizer: Callable[[str], str] | None = None,
+        replies_to_sender: bool = False,
+        reply_metadata_key: str | None = None,
     ) -> None:
         """Initialise a transport channel.
 
@@ -57,6 +61,19 @@ class TransportChannel(Channel):
             defaults: Default kwargs passed to ``provider.send()``.  If a default
                 value is ``None``, the actual value is read from the binding metadata
                 at delivery time.
+            address_normalizer: How this channel writes an address (E.164 for
+                the channels addressed by phone number); unchanged if omitted.
+            replies_to_sender: Whether a reply goes to the address the
+                correspondent writes from (a phone number, an email address),
+                rather than to a conversation, a channel or a URL. Then the
+                framework records an inbound sender as the binding's
+                recipient, and a binding's recipient names its correspondent:
+                the router admits no one else through it (RFC §10.4).
+            reply_metadata_key: On a channel that replies to a chat or a
+                conversation rather than to the sender, the inbound
+                message's metadata key naming it (``chat_id`` on Telegram):
+                a room opened for a message replies there. That address
+                names no correspondent.
         """
         super().__init__(channel_id)
         self.channel_type = channel_type
@@ -64,6 +81,9 @@ class TransportChannel(Channel):
         self._capabilities = capabilities or ChannelCapabilities()
         self._recipient_key = recipient_key
         self._defaults: dict[str, Any] = defaults or {}
+        self._address_normalizer = address_normalizer
+        self._replies_to_sender = replies_to_sender
+        self._reply_metadata_key = reply_metadata_key
 
     def _propagate_telemetry(self) -> None:
         """Propagate telemetry to transport provider."""
@@ -80,9 +100,30 @@ class TransportChannel(Channel):
         """Return the channel's media and feature capabilities."""
         return self._capabilities
 
+    def normalize_address(self, address: str) -> str:
+        if self._address_normalizer is None or not address:
+            return address
+        return self._address_normalizer(address)
+
+    def recipient_address(self, binding: ChannelBinding) -> str | None:
+        if not self._replies_to_sender:
+            return None
+        value = binding.metadata.get(self._recipient_key)
+        return self.normalize_address(str(value)) if value else None
+
     def recipient_metadata(self, address: str) -> dict[str, str]:
-        """``{recipient_key: address}``: the binding then delivers to *address*."""
-        return {self._recipient_key: address} if address else {}
+        """``{recipient_key: address}`` when replies go to the sender's own address."""
+        if not self._replies_to_sender or not address:
+            return {}
+        return {self._recipient_key: address}
+
+    def reply_metadata(self, message: InboundMessage) -> dict[str, str]:
+        if self._replies_to_sender:
+            return self.recipient_metadata(message.sender_id)
+        if self._reply_metadata_key is None:
+            return {}
+        value = message.metadata.get(self._reply_metadata_key)
+        return {self._recipient_key: str(value)} if value else {}
 
     async def handle_inbound(self, message: InboundMessage, context: RoomContext) -> RoomEvent:
         """Convert an inbound message into a room event."""

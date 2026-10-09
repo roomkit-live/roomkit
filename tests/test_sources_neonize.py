@@ -167,9 +167,20 @@ class TestDefaultMessageParser:
 
         assert msg is not None
         assert msg.channel_id == "wa-test"
-        assert msg.sender_id == "1234567890"
+        assert msg.sender_id == "+1234567890"
         assert isinstance(msg.content, TextContent)
         assert msg.content.body == "Hello world"
+
+    async def test_a_hidden_number_id_is_not_read_as_a_number(self) -> None:
+        from roomkit.sources.neonize import default_message_parser
+
+        parser = default_message_parser("wa-test")
+        event = _make_message_event(sender="123456789012345@lid", chat="123456789012345@lid")
+
+        msg = await parser(_make_client_mock(), event)
+
+        assert msg is not None
+        assert msg.sender_id == "123456789012345"
 
     async def test_parses_extended_text(self) -> None:
         from roomkit.sources.neonize import default_message_parser

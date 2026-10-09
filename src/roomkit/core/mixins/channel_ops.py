@@ -53,6 +53,30 @@ def is_channel_detached(room: Room, channel_id: str) -> bool:
     return isinstance(detached, list) and channel_id in detached
 
 
+def _named_correspondent(binding: ChannelBinding, channel: Channel) -> ChannelBinding:
+    """*binding* naming its correspondent as the router compares senders (RFC §10.4).
+
+    The addresses the host gives, its recipient and its participant id, are
+    written as the channel writes an inbound sender (E.164 on a phone
+    channel). A binding that names no one but delivers to an address is that
+    person's conversation, so it names them: the router then finds the room
+    for them and admits no one else.
+    """
+    update: dict[str, Any] = {}
+    recipient = channel.recipient_address(binding)
+    if recipient is not None:
+        written = channel.recipient_metadata(recipient)
+        if any(binding.metadata.get(key) != value for key, value in written.items()):
+            update["metadata"] = {**binding.metadata, **written}
+    if binding.participant_id is not None:
+        named = channel.normalize_address(binding.participant_id)
+    else:
+        named = None if binding.group else recipient
+    if named != binding.participant_id:
+        update["participant_id"] = named
+    return binding.model_copy(update=update) if update else binding
+
+
 @runtime_checkable
 class ChannelOpsHost(Protocol):
     """Contract: capabilities a host class must provide for ChannelOpsMixin.
@@ -345,6 +369,7 @@ class ChannelOpsMixin(HelpersMixin):
                 capabilities=channel.capabilities(),
                 **kwargs,
             )
+            binding = _named_correspondent(binding, channel)
             # Read before it is replaced, so a refusal can put it back. An
             # attach over a live attachment is the case that needs it: the
             # channel is still attached when it refuses, and a room left with
@@ -734,6 +759,9 @@ class ChannelOpsMixin(HelpersMixin):
         async with self._lock_manager.locked(room_id):
             binding = await self._get_binding(room_id, channel_id, organization_id=organization_id)
             updated = binding.model_copy(update={"metadata": {**binding.metadata, **metadata}})
+            channel = self._channels.get(channel_id)
+            if channel is not None:
+                updated = _named_correspondent(updated, channel)
             result = await self._store.update_binding(updated)
             await self._emit_system_event(
                 room_id,

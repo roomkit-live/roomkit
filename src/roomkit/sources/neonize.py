@@ -84,7 +84,9 @@ def default_message_parser(
             user = getattr(sender_jid, "User", "")
             server = getattr(sender_jid, "Server", "")
             raw_jid = f"{user}@{server}" if user and server else user
-            sender_id = user or ""
+            # A phone JID's user is the international number without its "+";
+            # a hidden-number id (``@lid``) is no number and stays as it is.
+            sender_id = f"+{user}" if user and server == "s.whatsapp.net" else user or ""
             if not sender_id:
                 return None
 

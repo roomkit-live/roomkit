@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 from roomkit.channels._note_blocks import add_turn_note as add_turn_note
+from roomkit.channels._phone import normalize_phone_number
 from roomkit.channels._tool_search_constants import TOOL_FIND_TOOLS as TOOL_FIND_TOOLS
 from roomkit.channels._tool_search_constants import TOOL_LIST_TOOLS as TOOL_LIST_TOOLS
 from roomkit.channels._tool_search_constants import (
@@ -178,13 +180,27 @@ RCS_CAPABILITIES = ChannelCapabilities(
 # ---------------------------------------------------------------------------
 
 
+def _phone_normalizer(default_country_code: str | None) -> Callable[[str], str]:
+    """E.164 for a channel addressed by phone number (RFC §10.4)."""
+
+    def normalize(address: str) -> str:
+        return normalize_phone_number(address, default_country_code)
+
+    return normalize
+
+
 def SMSChannel(
     channel_id: str,
     *,
     provider: Any = None,
     from_number: str | None = None,
+    default_country_code: str | None = None,
 ) -> TransportChannel:
-    """Create an SMS transport channel."""
+    """Create an SMS transport channel.
+
+    Numbers are compared and stored in E.164; *default_country_code*
+    (``"1"``, ``"+44"``) places a national number a provider sends without it.
+    """
     return TransportChannel(
         channel_id,
         ChannelType.SMS,
@@ -192,6 +208,8 @@ def SMSChannel(
         capabilities=SMS_CAPABILITIES,
         recipient_key="phone_number",
         defaults={"from_": from_number},
+        address_normalizer=_phone_normalizer(default_country_code),
+        replies_to_sender=True,
     )
 
 
@@ -209,6 +227,7 @@ def EmailChannel(
         capabilities=EMAIL_CAPABILITIES,
         recipient_key="email_address",
         defaults={"from_": from_address, "subject": None},
+        replies_to_sender=True,
     )
 
 
@@ -216,14 +235,20 @@ def WhatsAppChannel(
     channel_id: str,
     *,
     provider: Any = None,
+    default_country_code: str | None = None,
 ) -> TransportChannel:
-    """Create a WhatsApp transport channel."""
+    """Create a WhatsApp transport channel.
+
+    Numbers are compared and stored in E.164 (see :func:`SMSChannel`).
+    """
     return TransportChannel(
         channel_id,
         ChannelType.WHATSAPP,
         provider=provider,
         capabilities=WHATSAPP_CAPABILITIES,
         recipient_key="phone_number",
+        address_normalizer=_phone_normalizer(default_country_code),
+        replies_to_sender=True,
     )
 
 
@@ -231,14 +256,20 @@ def WhatsAppPersonalChannel(
     channel_id: str,
     *,
     provider: Any = None,
+    default_country_code: str | None = None,
 ) -> TransportChannel:
-    """Create a WhatsApp Personal transport channel (neonize)."""
+    """Create a WhatsApp Personal transport channel (neonize).
+
+    Numbers are compared and stored in E.164 (see :func:`SMSChannel`).
+    """
     return TransportChannel(
         channel_id,
         ChannelType.WHATSAPP_PERSONAL,
         provider=provider,
         capabilities=WHATSAPP_PERSONAL_CAPABILITIES,
         recipient_key="phone_number",
+        address_normalizer=_phone_normalizer(default_country_code),
+        replies_to_sender=True,
     )
 
 
@@ -254,6 +285,7 @@ def MessengerChannel(
         provider=provider,
         capabilities=MESSENGER_CAPABILITIES,
         recipient_key="facebook_user_id",
+        replies_to_sender=True,
     )
 
 
@@ -269,6 +301,7 @@ def TelegramChannel(
         provider=provider,
         capabilities=TELEGRAM_CAPABILITIES,
         recipient_key="telegram_chat_id",
+        reply_metadata_key="chat_id",
     )
 
 
@@ -284,6 +317,7 @@ def TeamsChannel(
         provider=provider,
         capabilities=TEAMS_CAPABILITIES,
         recipient_key="teams_conversation_id",
+        reply_metadata_key="conversation_id",
     )
 
 
@@ -303,6 +337,7 @@ def DiscordChannel(
         provider=provider,
         capabilities=DISCORD_CAPABILITIES,
         recipient_key="discord_channel_id",
+        reply_metadata_key="channel_id",
     )
 
 
@@ -322,6 +357,7 @@ def BuzzChannel(
         provider=provider,
         capabilities=BUZZ_CAPABILITIES,
         recipient_key="buzz_channel_id",
+        reply_metadata_key="buzz_channel_id",
     )
 
 
@@ -345,6 +381,7 @@ def RCSChannel(
     *,
     provider: Any = None,
     fallback: bool = True,
+    default_country_code: str | None = None,
 ) -> TransportChannel:
     """Create an RCS (Rich Communication Services) transport channel.
 
@@ -352,6 +389,8 @@ def RCSChannel(
         channel_id: Unique identifier for this channel.
         provider: RCS provider instance (e.g., TwilioRCSProvider).
         fallback: If True (default), allow SMS fallback when RCS unavailable.
+        default_country_code: Places a national number (E.164, see
+            :func:`SMSChannel`).
 
     Returns:
         A TransportChannel configured for RCS messaging.
@@ -363,4 +402,6 @@ def RCSChannel(
         capabilities=RCS_CAPABILITIES,
         recipient_key="phone_number",
         defaults={"fallback": fallback},
+        address_normalizer=_phone_normalizer(default_country_code),
+        replies_to_sender=True,
     )

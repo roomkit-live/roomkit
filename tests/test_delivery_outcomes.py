@@ -62,10 +62,12 @@ async def _room(*channels: Channel) -> RoomKit:
         kit.register_channel(channel)
     await kit.create_room(room_id="r1")
     for channel in channels:
-        # A transport delivers to its binding's recipient (RMK-646): give it one.
-        await kit.attach_channel(
-            "r1", channel.channel_id, metadata=channel.recipient_metadata("+15550000009")
+        # A transport delivers to its binding's recipient (RMK-646): give it one,
+        # under the default recipient key the bare TransportChannels here use.
+        metadata = (
+            {"recipient_id": "+15550000009"} if isinstance(channel, TransportChannel) else {}
         )
+        await kit.attach_channel("r1", channel.channel_id, metadata=metadata)
     return kit
 
 

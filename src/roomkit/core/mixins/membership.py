@@ -81,6 +81,11 @@ class MembershipMixin(HelpersMixin):
         the move is logged naming both, since a caller reading ``channel_id``
         afterwards sees only the new one.
         """
+        channel = self._channels.get(channel_id)
+        if channel is not None:
+            # The member's address in the channel's form (E.164 on a phone
+            # channel), as the router compares it with an inbound sender.
+            participant_id = channel.normalize_address(participant_id)
         async with self._lock_manager.locked(room_id):
             await self.get_room(room_id)
             existing = await self._store.get_participant(room_id, participant_id)
