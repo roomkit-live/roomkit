@@ -50,7 +50,7 @@ async def main() -> None:
         "gemini": lambda: GeminiImageProvider(
             GeminiImageConfig(
                 api_key=require_env("GEMINI_API_KEY")["GEMINI_API_KEY"],
-                model="gemini-3.1-flash-image",
+                model="gemini-nano-banana-2.1",
             )
         ),
     }

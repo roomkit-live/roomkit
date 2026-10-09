@@ -372,6 +372,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `GeminiImageConfig.model` defaults to `gemini-nano-banana-2.1`, the model
+  Google recommends for new projects, instead of `gemini-3.1-flash-image`
+  (RMK-656). Behavior change for a config that names no model: an image costs
+  less (a 1K image about $0.034 instead of $0.067; image output $30 per
+  million tokens instead of $60), text in and out costs more ($1.50 / $7.50 per
+  million instead of $0.50 / $3), the image comes back as JPEG (the model
+  offers no PNG), and the `512` tier is refused before the call. Name
+  `gemini-3.1-flash-image` to keep the previous model.
+
 - The `mistral` extra admits mistralai 3.x (`mistralai>=2.0,<4`), and the
   `elevenlabs` and `realtime-elevenlabs` extras elevenlabs up to 2.71
   (`<2.72`), whose SDK patch canaries pass. mistralai 3.x runs on `httpx2` and

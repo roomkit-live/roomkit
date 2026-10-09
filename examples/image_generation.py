@@ -8,7 +8,7 @@ provider and draws through another; swap either and the other is unaffected::
         → AIChannel (any AI provider)  → calls the generate_image tool
         → ImageProvider (OpenAI / Gemini / mock)
         → ImageResult (a data URI)
-        → back into the room as MediaContent, and onto disk as a PNG
+        → back into the room as MediaContent, and onto disk as an image file
 
 ``ImageResult.data`` is always a ``data:`` URI, which is exactly what
 ``MediaContent.url`` accepts — so the generated image enters the room with no
@@ -40,7 +40,7 @@ Environment variables (first configured provider wins):
     IMAGE_MODEL    — override the model id for whichever provider is selected
     ANTHROPIC_API_KEY — optional: hold the conversation with Claude instead of
                         the mock AI, to see the decoupling for real
-    IMAGE_OUTPUT_DIR — where the PNGs go (default: roomkit-images in the
+    IMAGE_OUTPUT_DIR — where the images go (default: roomkit-images in the
                        system temp directory); the paths are printed at the end
 
 Run with:
@@ -175,7 +175,7 @@ def build_image_provider() -> ImageProvider:
         from roomkit.providers.gemini import GeminiImageConfig, GeminiImageProvider
 
         return GeminiImageProvider(
-            GeminiImageConfig(api_key=api_key, model=model or "gemini-3.1-flash-image")
+            GeminiImageConfig(api_key=api_key, model=model or "gemini-nano-banana-2.1")
         )
     if api_key := os.environ.get("XAI_API_KEY"):
         from roomkit.providers.xai import XAIImageConfig, XAIImageProvider

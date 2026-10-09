@@ -16,7 +16,9 @@ import pytest
 
 from roomkit.providers.ai.base import AIImagePart, ProviderError
 from roomkit.providers.gemini.config import GeminiImageConfig
+from roomkit.providers.gemini.image_models import MODELS
 from roomkit.providers.image import to_data_uri
+from roomkit.providers.image.options import ImageModelInfo, image_model_entry
 
 PNG = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk"
@@ -77,6 +79,15 @@ def _arm(provider: Any, *interactions: SimpleNamespace) -> AsyncMock:
     create = AsyncMock(side_effect=list(interactions) or [_interaction()])
     provider._client.aio.interactions.create = create
     return create
+
+
+def test_the_default_model_is_nano_banana_2_1_with_known_capabilities() -> None:
+    """Google's model for new projects (RMK-656), and a catalogued one: an
+    uncatalogued default would refuse every advanced control."""
+    model = GeminiImageConfig(api_key="k").model
+
+    assert model == "gemini-nano-banana-2.1"
+    assert isinstance(image_model_entry(MODELS, model), ImageModelInfo)
 
 
 async def test_generate_returns_a_decodable_data_uri() -> None:

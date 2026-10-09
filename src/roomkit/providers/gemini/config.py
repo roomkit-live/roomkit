@@ -35,15 +35,19 @@ class GeminiImageConfig(BaseModel):
 
     Attributes:
         api_key: API key for authentication.
-        model: Image model identifier (e.g. ``"gemini-3-pro-image"``).
+        model: Image model identifier. Defaults to ``"gemini-nano-banana-2.1"``,
+            the model Google recommends for new projects (RMK-656); it has no
+            ``"512"`` tier, which ``"gemini-3.1-flash-image"`` keeps.
         image_size: Default resolution tier — ``"512"`` | ``"1K"`` | ``"2K"`` |
             ``"4K"``. A per-call ``size`` wins over it, since the caller asking
             for specific pixels is more specific than a deployment default.
             ``None`` leaves the model's own default.
         output_mime_type: ``"image/jpeg"`` to ask for JPEG. ``None`` leaves the
-            vendor default (PNG); the response reports what it actually
-            produced and the provider reads that rather than assuming. Gemini
-            offers no other selectable output type here.
+            vendor default: PNG on ``gemini-3.1-flash-image``, JPEG on
+            ``gemini-nano-banana-2.1``, which offers no other. The response
+            reports what it actually produced and the provider reads that
+            rather than assuming. Gemini offers no other selectable output
+            type here.
         timeout: Read budget in seconds for one interaction. Higher than the
             chat default because an image is produced whole: nothing streams
             before it.
@@ -53,7 +57,7 @@ class GeminiImageConfig(BaseModel):
     """
 
     api_key: SecretStr
-    model: str = "gemini-3.1-flash-image"
+    model: str = "gemini-nano-banana-2.1"
     image_size: str | None = None
     output_mime_type: str | None = None
     timeout: float = 120.0
