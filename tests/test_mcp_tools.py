@@ -84,6 +84,7 @@ class TestMCPToolProvider:
                 "mcp.client": MagicMock(),
                 "mcp.client.streamable_http": mock_streamable,
                 "mcp.client.sse": mock_sse,
+                "mcp.types": MagicMock(),
             },
         ):
             importlib.invalidate_caches()
@@ -106,6 +107,7 @@ class TestMCPToolProvider:
                 "mcp.client": MagicMock(),
                 "mcp.client.streamable_http": mock_streamable,
                 "mcp.client.sse": mock_sse,
+                "mcp.types": MagicMock(),
             },
         ):
             importlib.invalidate_caches()

@@ -25,6 +25,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   where it parses a string and failed on every call; a location went to a
   `send_location` neonize never had, and now goes out as a location message.
 
+- `MCPToolProvider` reads every page of a server's `tools/list` (RMK-662, RFC
+  §21.2): it read the first page and ignored `nextCursor`, so a server that
+  pages its listing lost every tool after it. A cursor the server hands out
+  twice ends the reading with a warning rather than looping.
+
 ## [0.96.1] — 2026-10-09
 
 ### Fixed

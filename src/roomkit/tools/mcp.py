@@ -39,6 +39,30 @@ def _definition(tool: Any) -> AITool | None:
     )
 
 
+async def _list_tools(session: Any) -> list[Any]:
+    """Every tool the server lists, following its cursor across pages (RFC §21.2).
+
+    A cursor the server hands out twice ends the reading where it stands: a
+    server that loops must not hold the connection open forever.
+    """
+    from mcp.types import PaginatedRequestParams
+
+    tools: list[Any] = []
+    seen: set[str] = set()
+    params: Any = None
+    while True:
+        page = await session.list_tools(params=params)
+        tools.extend(page.tools)
+        cursor = getattr(page, "nextCursor", None)
+        if not isinstance(cursor, str) or not cursor:
+            return tools
+        if cursor in seen:
+            logger.warning("MCP tools/list repeated a cursor; keeping %d tools", len(tools))
+            return tools
+        seen.add(cursor)
+        params = PaginatedRequestParams(cursor=cursor)
+
+
 _DEFAULT_CALL_TIMEOUT = 30.0
 """Seconds a call to the server waits: one default shared by
 :meth:`MCPToolProvider.call_tool`, :meth:`~MCPToolProvider.call_tool_result`,
@@ -225,10 +249,10 @@ class MCPToolProvider:
             read_stream, write_stream = await self._open_transport(stack)
             session = await stack.enter_async_context(ClientSession(read_stream, write_stream))
             await session.initialize()
-            listed = await session.list_tools()
+            listed = await _list_tools(session)
             # Inside the try: a listing the catalogue cannot read releases what
             # was opened, the stdio server included (RFC §21.2).
-            self._catalogue(listed.tools)
+            self._catalogue(listed)
         except BaseException:
             await stack.aclose()
             raise
