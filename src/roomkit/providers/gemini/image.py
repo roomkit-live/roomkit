@@ -118,41 +118,9 @@ class GeminiImageProvider(ImageProvider):
             raise ValueError("n must be at least 1")
         if mask:
             raise ValueError("Gemini does not support explicit masks")
-        options = options or ImageOptions()
         references = reference_images or []
-        if size and (options.aspect_ratio or options.image_size):
-            raise ValueError("Use size or aspect_ratio/image_size, not both")
-        defaults: dict[str, Any] = {}
-        if self._config.image_size:
-            defaults["image_size"] = self._config.image_size
-        if self._config.output_mime_type:
-            defaults["output_format"] = self._config.output_mime_type.removeprefix("image/")
-        if size:
-            defaults["aspect_ratio"], defaults["image_size"] = self.resolve_size(size)
-        options = ImageOptions.model_validate(
-            {**defaults, **options.model_dump(exclude_none=True)}
-        )
-        entry = self.catalog_entry()
-        if isinstance(entry, ImageModelInfo):
-            entry.image.validate_request(
-                options, size=None, n=n, references=len(references), mask=False
-            )
-        elif set(options.model_dump(exclude_none=True)) - set(defaults) - {"store"}:
-            raise ValueError("Advanced controls require a model with known image capabilities")
-        request = self._build_request(prompt, None, references)
-        for field in ("aspect_ratio", "image_size"):
-            if (value := getattr(options, field)) is not None:
-                request["response_format"][field] = value
-        if options.output_format:
-            request["response_format"]["mime_type"] = "image/" + options.output_format
-        if options.store is not None:
-            request["store"] = options.store
-        if options.previous_interaction_id:
-            request["previous_interaction_id"] = options.previous_interaction_id
-        if options.search_types:
-            request["tools"] = [{"type": "google_search", "search_types": options.search_types}]
-        if options.thinking_level:
-            request["generation_config"] = {"thinking_level": options.thinking_level}
+        resolved = self._call_options(size, n, len(references), options or ImageOptions())
+        request = self._build_request(prompt, references, resolved)
         # Each call settles independently. A rejected sibling does not erase a
         # successful billed image or cancel a call whose outcome is still unknown.
         outcomes = await asyncio.gather(
@@ -234,13 +202,42 @@ class GeminiImageProvider(ImageProvider):
             ) from failure
         return attempt
 
+    def _call_options(
+        self, size: str | None, n: int, references: int, options: ImageOptions
+    ) -> ImageOptions:
+        """The options a call runs with: the config's defaults under the caller's,
+        checked against the model's capabilities before any billable request."""
+        if size and (options.aspect_ratio or options.image_size):
+            raise ValueError("Use size or aspect_ratio/image_size, not both")
+        defaults: dict[str, Any] = {}
+        if self._config.image_size:
+            defaults["image_size"] = self._config.image_size
+        if self._config.output_mime_type:
+            defaults["output_format"] = self._config.output_mime_type.removeprefix("image/")
+        if size:
+            # The requested pixels win over the deployment default: a caller
+            # naming a geometry is more specific than a configured tier.
+            defaults["aspect_ratio"], defaults["image_size"] = self.resolve_size(size)
+        resolved = ImageOptions.model_validate(
+            {**defaults, **options.model_dump(exclude_none=True)}
+        )
+        entry = self.catalog_entry()
+        if isinstance(entry, ImageModelInfo):
+            entry.image.validate_request(
+                resolved, size=None, n=n, references=references, mask=False
+            )
+        elif set(resolved.model_dump(exclude_none=True)) - set(defaults) - {"store"}:
+            raise ValueError("Advanced controls require a model with known image capabilities")
+        return resolved
+
     def _build_request(
         self,
         prompt: str,
-        size: str | None,
         reference_images: list[AIImagePart],
+        options: ImageOptions,
     ) -> dict[str, Any]:
-        """Assemble one ``interactions.create`` body, reused across the ``n`` calls."""
+        """Assemble one ``interactions.create`` body from the prompt, the
+        references and the call's resolved options, reused across the ``n`` calls."""
         content: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
         content.extend(
             self._image_content(part, index) for index, part in enumerate(reference_images)
@@ -254,22 +251,25 @@ class GeminiImageProvider(ImageProvider):
         # is enforced where it can actually be checked: on the response, in
         # :meth:`_result`.
         response_format: dict[str, Any] = {"type": "image"}
-        if size is not None:
-            # The requested pixels win over the deployment default: a caller
-            # naming a geometry is more specific than a configured tier.
-            aspect_ratio, tier = self.resolve_size(size)
-            response_format["aspect_ratio"] = aspect_ratio
-            response_format["image_size"] = tier
-        elif self._config.image_size is not None:
-            response_format["image_size"] = self._config.image_size
-        if self._config.output_mime_type is not None:
-            response_format["mime_type"] = self._config.output_mime_type
-
-        return {
+        for field in ("aspect_ratio", "image_size"):
+            if (value := getattr(options, field)) is not None:
+                response_format[field] = value
+        if options.output_format:
+            response_format["mime_type"] = "image/" + options.output_format
+        request: dict[str, Any] = {
             "model": self._config.model,
             "input": content,
             "response_format": response_format,
         }
+        if options.store is not None:
+            request["store"] = options.store
+        if options.previous_interaction_id:
+            request["previous_interaction_id"] = options.previous_interaction_id
+        if options.search_types:
+            request["tools"] = [{"type": "google_search", "search_types": options.search_types}]
+        if options.thinking_level:
+            request["generation_config"] = {"thinking_level": options.thinking_level}
+        return request
 
     async def _create(self, request: dict[str, Any]) -> Any:
         try:
