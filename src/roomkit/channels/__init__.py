@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+from roomkit.channels._email import normalize_email_address
 from roomkit.channels._note_blocks import add_turn_note as add_turn_note
 from roomkit.channels._phone import normalize_phone_number
 from roomkit.channels._tool_search_constants import TOOL_FIND_TOOLS as TOOL_FIND_TOOLS
@@ -219,7 +220,11 @@ def EmailChannel(
     provider: Any = None,
     from_address: str | None = None,
 ) -> TransportChannel:
-    """Create an Email transport channel."""
+    """Create an Email transport channel.
+
+    Addresses are compared and stored lower-case, without a display name
+    (``Alice <Alice@X.com>`` is ``alice@x.com``).
+    """
     return TransportChannel(
         channel_id,
         ChannelType.EMAIL,
@@ -227,6 +232,7 @@ def EmailChannel(
         capabilities=EMAIL_CAPABILITIES,
         recipient_key="email_address",
         defaults={"from_": from_address, "subject": None},
+        address_normalizer=normalize_email_address,
         replies_to_sender=True,
     )
 

@@ -403,6 +403,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Per review, email addresses are compared in one form (RMK-646):
+  `EmailChannel` reads a sender, a binding's correspondent and recipient and a
+  member's id lower-case and without a display name (`Alice Martin
+  <Alice@Example.com>` and `mailto:` are `alice@example.com`), so one mailbox
+  written two ways is one room. RFC 5321 lets a server treat the local part's
+  case as significant; no mainstream provider does. Behavior change: the
+  event's `participant_id` on the email channel is the lower-case address.
+
 - A member the host added under their identity is found by their number when
   it serves several rooms (RMK-579, RFC §10.4): step 1 of the default router
   looked a sender up by their address only, so with the address linked to
