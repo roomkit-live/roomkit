@@ -6,7 +6,7 @@ disjoint sets: no id here converses, and no id there draws (RFC §25.6). These
 are the ``*-image`` models the chat catalog's scope note explicitly excludes.
 
 Sourced from the Gemini API models and pricing docs (ai.google.dev), verified
-2026-08-07. Ids carry no ``models/`` prefix, matching the form
+2026-08-07 (Nano Banana 2.1: 2026-10-09). Ids carry no ``models/`` prefix, matching the form
 ``GeminiImageConfig.model`` and the generate-content calls use.
 
 Prices are the paid-tier **standard** rates (not Batch, not Flex, not
@@ -74,6 +74,12 @@ _LITE = _PRO.model_copy(
         "thinking_levels": ["minimal", "high"],
     }
 )
+# Nano Banana 2.1 keeps 3.1 Flash Image's controls but drops the 512 size.
+# Google also offers it a ``medium`` thinking level (its default), which
+# ``ImageOptions.thinking_level`` cannot express yet.
+_NB21 = _FLASH.model_copy(
+    update={"image_sizes": ["1K", "2K", "4K"], "verified": date(2026, 10, 9)}
+)
 _V25 = _LITE.model_copy(
     update={
         "max_references": 3,
@@ -84,6 +90,23 @@ _V25 = _LITE.model_copy(
 )
 
 MODELS: list[ModelInfo] = [
+    # Google's 4K per-image figure for Nano Banana 2.1 ($0.113) does not match
+    # its own token table (2520 tokens at $30/M is $0.0756); the per-token rate
+    # is what the usage is billed from, so that is what this entry states.
+    ImageModelInfo(
+        id="gemini-nano-banana-2.1",
+        image=_NB21,
+        display_name="Gemini Nano Banana 2.1",
+        supports_vision=True,
+        capabilities=_CAPS,
+        pricing=ModelPricing(
+            input_per_million=1.5,
+            output_per_million=7.5,
+            image_input_per_million=1.5,
+            image_output_per_million=30.0,
+            verified=date(2026, 10, 9),
+        ),
+    ),
     ImageModelInfo(
         id="gemini-3-pro-image",
         image=_PRO,

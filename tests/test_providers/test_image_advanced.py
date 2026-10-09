@@ -128,6 +128,25 @@ async def test_gemini_native_geometry_continuity_thinking_and_grounding() -> Non
     assert result.metadata["steps"][0]["search_suggestions"] == "<p>Sources</p>"
 
 
+async def test_gemini_nano_banana_2_1_takes_flash_controls_at_its_sizes() -> None:
+    """Nano Banana 2.1 is catalogued (RMK-652): an extreme ratio, 4K, image
+    search and a thinking level reach the wire instead of being refused as the
+    controls of a model with unknown capabilities."""
+    provider = gemini(model="gemini-nano-banana-2.1")
+    response = _interaction(usage=gemini_usage(output_total=2520, output_image=2520))
+    provider._client.aio.interactions.create = AsyncMock(return_value=response)
+    options = ImageOptions(
+        aspect_ratio="8:1", image_size="4K", search_types=["image_search"], thinking_level="high"
+    )
+
+    await provider.generate_with_options("a banner", options=options)
+
+    request = provider._client.aio.interactions.create.await_args.kwargs
+    assert request["response_format"]["aspect_ratio"] == "8:1"
+    assert request["response_format"]["image_size"] == "4K"
+    assert request["generation_config"] == {"thinking_level": "high"}
+
+
 @pytest.mark.parametrize(
     ("model", "options"),
     [
@@ -136,6 +155,7 @@ async def test_gemini_native_geometry_continuity_thinking_and_grounding() -> Non
         ("gemini-3-pro-image", ImageOptions(image_size="512")),
         ("gemini-3-pro-image", ImageOptions(thinking_level="minimal")),
         ("gemini-3-pro-image", ImageOptions(search_types=["image_search"])),
+        ("gemini-nano-banana-2.1", ImageOptions(image_size="512")),
     ],
 )
 async def test_gemini_capabilities_belong_to_the_selected_model(

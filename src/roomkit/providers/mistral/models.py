@@ -11,7 +11,10 @@ Sourced from the Mistral model cards (docs.mistral.ai/models), verified
 Scope is general chat/multimodal models; embeddings, moderation, OCR, audio
 (Voxtral), and code-completion (Codestral/Devstral) models are omitted. The whole
 current Mistral 3 family is multimodal, and every member carries a 256k window
-except Ministral 3 3B, which is half that. The deprecated 128k-tier models leave
+except Ministral 3 3B, which is half that. Mistral Large 4 (public preview
+since 2026-10-06, verified 2026-10-09 on the account's ``/v1/models``) is
+multimodal too and carries 1,048,576 tokens; ``mistral-large-latest`` still
+names Large 3. The deprecated 128k-tier models leave
 ``context_window`` as ``None`` — Mistral documents them only as "128k" without a
 firm token integer.
 
@@ -35,7 +38,31 @@ from roomkit.providers.ai.base import ModelInfo, ModelPricing
 _CTX = 262_144
 _VERIFIED = date(2026, 8, 5)
 
+# Mistral Large 4's launch price (model card, 2026-10-09): the card lists
+# $1.36 / $4.18 / $0.14 and charges half of it for now. The entry states what
+# Mistral charges on ``verified``, not a forecast.
+_LARGE_4_PRICING = ModelPricing(
+    input_per_million=0.68,
+    output_per_million=2.09,
+    cache_read_per_million=0.07,
+    verified=date(2026, 10, 9),
+)
+
 MODELS: list[ModelInfo] = [
+    ModelInfo(
+        id="mistral-large-4-0",
+        display_name="Mistral Large 4",
+        context_window=1_048_576,
+        supports_vision=True,
+        pricing=_LARGE_4_PRICING,
+    ),
+    ModelInfo(
+        id="mistral-large-4",
+        display_name="Mistral Large 4",
+        context_window=1_048_576,
+        supports_vision=True,
+        pricing=_LARGE_4_PRICING,
+    ),
     ModelInfo(
         id="mistral-large-latest",
         display_name="Mistral Large 3",

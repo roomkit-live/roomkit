@@ -280,6 +280,9 @@ DELIBERATE: dict[str, str] = {
     # model page still documents it with no deprecation, and its deprecation
     # table names it as the replacement for mistral-large-2407 (2026-09-22).
     "mistral-large-2512": "still documented and not deprecated on docs.mistral.ai",
+    # Mistral Large 4's undated alias; Mistral's /v1/models lists it beside
+    # mistral-large-4-0 (2026-10-09), the mirror carries the dated id only.
+    "mistral-large-4": "alias of mistral-large-4-0 on Mistral's API; mirror lists the dated id",
     # Meta's own id; the images mirror routes the same model as meta/muse-image
     # (Meta Model API GET /v1/models, 2026-09-27).
     "muse-image-1.0": "Meta's API id; the images mirror routes it as muse-image",

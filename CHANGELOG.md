@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Mistral Large 4 (`mistral-large-4-0`, alias `mistral-large-4`, public
+  preview since 2026-10-06) in the Mistral catalog (RMK-652): 1,048,576-token
+  window, vision, at its launch price ($0.68 / $2.09 per million, cache reads
+  $0.07; the list price is twice that). `mistral-large-latest` still names
+  Mistral Large 3. Gemini Nano Banana 2.1 (`gemini-nano-banana-2.1`) in the
+  Gemini image catalog: 3.1 Flash Image's controls without the 512 size,
+  $1.50 / $7.50 per million and $30 per million image tokens; before, the id
+  had no price and `GeminiImageProvider` refused every advanced control on it.
+  Google's `medium` thinking level is not offered: `ImageOptions.thinking_level`
+  takes `minimal` or `high`.
+
 - Staying quiet when asked (RMK-641, RFC §6.4): "just listen for now" puts the
   room in a listening state `ClassifierSpeakPolicy` keeps, per room and in
   memory, instead of a judgment remade from the recent turns, which faded as
@@ -402,6 +413,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   keep the SDK's own retries.
 
 ### Fixed
+
+- Anthropic catalog (RMK-652): a Claude Sonnet 5.5 cache read is billed $0.10
+  per million (0.05x input, as on Opus 5.5), not $0.20, and Claude Sonnet 4.5
+  is marked `deprecated` (retiring 2026-11-30 on the Claude API). The Pocket
+  TTS docstrings name Dutch, which pocket-tts 3.3 adds.
 
 - `MistralAIProvider.close()` closes the SDK's HTTP client (RMK-651): it
   called `close()` only if the client had one, and the `mistralai` client has
