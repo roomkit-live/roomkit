@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from pydantic import BaseModel, SecretStr
+from pydantic import BaseModel, SecretStr, field_validator
 
 from roomkit.models.delivery import InboundMessage
 from roomkit.models.event import RoomEvent
@@ -14,6 +14,7 @@ from roomkit.providers.sms.meta import (
     extract_text_body,
 )
 from roomkit.providers.twilio._signature import verify_twilio_signature
+from roomkit.providers.url_safety import validate_api_base_url
 from roomkit.providers.utils import http_timeout
 
 if TYPE_CHECKING:
@@ -29,10 +30,17 @@ class TwilioRCSConfig(BaseModel):
     timeout: float = 10.0
     connect_timeout: float = 5.0
     """TCP connect timeout in seconds, separate from the request ``timeout``."""
+    api_base_url: str = "https://api.twilio.com"
+    """Twilio's REST host; another one must be HTTPS, or HTTP on this machine only."""
+
+    @field_validator("api_base_url")
+    @classmethod
+    def _secure_api_base_url(cls, value: str) -> str:
+        return validate_api_base_url(value)
 
     @property
     def api_url(self) -> str:
-        return f"https://api.twilio.com/2010-04-01/Accounts/{self.account_sid}/Messages.json"
+        return f"{self.api_base_url}/2010-04-01/Accounts/{self.account_sid}/Messages.json"
 
 
 class TwilioRCSProvider(RCSProvider):

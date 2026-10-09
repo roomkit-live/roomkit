@@ -331,6 +331,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   on reaches it. `PolicyExternalToolHandler` reports it on the event's
   `error_detail`.
 
+- A provider's API host is configurable (RMK-648): `api_base_url` on
+  `TwilioConfig`, `TwilioRCSConfig` and `TelegramConfig` points a provider at a
+  sandbox, a self-hosted Telegram Bot API server or a local fake under test,
+  where `api.twilio.com` and `api.telegram.org` were written into the code and
+  a test against a fake needed a subclass. The vendor's host stays the
+  default. The provider's credentials go with every request, so the URL must
+  be HTTPS, or plain HTTP to this machine only, and carry no credentials of
+  its own (`roomkit.providers.url_safety.validate_api_base_url`); a config
+  naming another is refused when it is built.
+
 ### Changed
 
 - A background result handed back to an agent (an intelligence channel) now

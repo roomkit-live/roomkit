@@ -97,6 +97,49 @@ def _resolve_hostname(
     return addrs
 
 
+def _is_loopback_host(hostname: str) -> bool:
+    """Whether *hostname* names this machine, written as a name or an address."""
+    host = hostname.rstrip(".").lower()
+    if host in _LOCALHOST_NAMES:
+        return True
+    ipv4 = _parse_ipv4_numeric(host)
+    if ipv4 is not None:
+        return ipv4.is_loopback
+    try:
+        return ipaddress.IPv6Address(host).is_loopback
+    except (ipaddress.AddressValueError, ValueError):
+        return False
+
+
+def validate_api_base_url(url: str) -> str:
+    """Validate the base URL of a vendor API a provider sends its credentials to.
+
+    A sandbox, a self-hosted server or a local fake under test replaces the
+    vendor's host, and the provider's credentials go with every request: the
+    URL must be HTTPS, or plain HTTP to this machine only, and carry no
+    credentials of its own.
+
+    Returns:
+        *url* without its trailing slash.
+
+    Raises:
+        ValueError: Naming what was refused.
+    """
+    parsed = urlparse(url)
+    if not parsed.scheme or not parsed.hostname:
+        raise ValueError("API base URL must have a scheme and host")
+    if parsed.username or parsed.password:
+        raise ValueError("API base URL must not carry credentials")
+    if parsed.scheme == "https":
+        return url.rstrip("/")
+    if parsed.scheme == "http" and _is_loopback_host(parsed.hostname):
+        return url.rstrip("/")
+    raise ValueError(
+        f"API base URL must use https (plain http only to this machine), got {parsed.scheme}://"
+        f"{parsed.hostname}"
+    )
+
+
 def validate_public_url(
     url: str,
     *,
