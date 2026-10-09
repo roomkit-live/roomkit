@@ -62,7 +62,10 @@ async def _room(*channels: Channel) -> RoomKit:
         kit.register_channel(channel)
     await kit.create_room(room_id="r1")
     for channel in channels:
-        await kit.attach_channel("r1", channel.channel_id)
+        # A transport delivers to its binding's recipient (RMK-646): give it one.
+        await kit.attach_channel(
+            "r1", channel.channel_id, metadata=channel.recipient_metadata("+15550000009")
+        )
     return kit
 
 
@@ -145,6 +148,7 @@ class TestTheCallerIsToldWhatHappened:
             "r1",
             "out",
             retry_policy=RetryPolicy(max_retries=1, base_delay_seconds=0.001),
+            metadata={"recipient_id": "+15550000009"},
         )
 
         result = await kit.process_inbound(_msg("in"))

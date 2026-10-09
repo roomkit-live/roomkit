@@ -11,6 +11,7 @@ from typing import Any
 from roomkit.channels.base import Channel
 from roomkit.core._failure_log import log_failure
 from roomkit.core.circuit_breaker import CircuitBreaker
+from roomkit.core.exceptions import NoRecipientError
 from roomkit.core.lanes import DeliveryPlan
 from roomkit.core.rate_limiter import TokenBucketRateLimiter
 from roomkit.core.retry import retry_with_backoff
@@ -549,7 +550,11 @@ class EventRouter:
                             tr.delivery_output = delivery_output
                             breaker.record_success()
                         except Exception as exc:
-                            breaker.record_failure()
+                            if not isinstance(exc, NoRecipientError):
+                                # A binding with no recipient says nothing
+                                # about the provider; it must not trip the
+                                # breaker every room on the channel shares.
+                                breaker.record_failure()
                             tr.error = str(exc)
                             tr.error_exc = exc
                             log_failure(

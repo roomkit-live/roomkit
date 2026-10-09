@@ -636,10 +636,14 @@ class InboundMixin(HelpersMixin):
         """
         room = await self.create_room(room_id=room_id, organization_id=organization_id)
         sender = message.sender_id
+        recorded = sender if recordable_sender(sender) else None
+        channel = self._channels.get(message.channel_id)
         await self.attach_channel(
             room.id,
             message.channel_id,
-            participant_id=sender if recordable_sender(sender) else None,
+            participant_id=recorded,
+            # Where the channel delivers: the correspondent's own address.
+            metadata=channel.recipient_metadata(recorded) if recorded and channel else {},
         )
         return room.id
 
@@ -657,15 +661,15 @@ class InboundMixin(HelpersMixin):
         is not a group, every sender after the first is asked twice.
         """
         room_id, created = await self._find_or_open_room(message, channel, None, organization_id)
-        if created or await self._claim_binding(room_id, message, channel.channel_type):
+        if created or await self._claim_binding(room_id, message, channel):
             return room_id, created
         room_id, created = await self._find_or_open_room(message, channel, None, organization_id)
         if not created:
-            await self._claim_binding(room_id, message, channel.channel_type)
+            await self._claim_binding(room_id, message, channel)
         return room_id, created
 
     async def _claim_binding(
-        self, room_id: str, message: InboundMessage, channel_type: ChannelType
+        self, room_id: str, message: InboundMessage, channel: Channel
     ) -> bool:
         """Whether the routed sender may stay in *room_id*, recording them on a free binding.
 
@@ -682,18 +686,28 @@ class InboundMixin(HelpersMixin):
         if not recordable_sender(sender):
             return True
         binding = await self._store.get_binding(room_id, message.channel_id)
-        if binding is not None and binding_names_no_one(binding):
-            binding = await self._record_sender(room_id, message.channel_id, sender)
+        if binding is not None and (
+            binding_names_no_one(binding) or _lacks_recipient(binding, sender, channel)
+        ):
+            binding = await self._record_sender(room_id, message.channel_id, sender, channel)
         if binding is None or binding_admits(binding, frozenset({sender})):
             return True
-        if binding_admits(binding, await sender_known_as(self._store, channel_type, sender)):
+        if binding_admits(
+            binding, await sender_known_as(self._store, channel.channel_type, sender)
+        ):
             return True
         return await self._store.get_participant(room_id, sender) is not None
 
     async def _record_sender(
-        self, room_id: str, channel_id: str, sender: str
+        self, room_id: str, channel_id: str, sender: str, channel: Channel
     ) -> ChannelBinding | None:
         """Write *sender* on a binding naming no one, under the room lock; return it as it stands.
+
+        The binding that names the sender by their address also gets them as
+        its recipient where it has none (``channel.recipient_metadata``): the
+        room then replies to the person it is the conversation of, including
+        a binding recorded before it carried a recipient. A recipient already
+        there, the host's above all, is never replaced.
 
         Re-read under the lock, where every binding mutation runs, so a
         concurrent claim or policy change is never undone, and pushed to the
@@ -709,9 +723,21 @@ class InboundMixin(HelpersMixin):
             except TimeoutError:
                 raise _ClaimTimeoutError(room_id) from None
             binding = await self._store.get_binding(room_id, channel_id)
-            if binding is None or not binding_names_no_one(binding):
+            if binding is None:
+                return None
+            update: dict[str, Any] = {}
+            if binding_names_no_one(binding):
+                update["participant_id"] = sender
+            if _lacks_recipient(binding.model_copy(update=update), sender, channel):
+                missing = {
+                    key: value
+                    for key, value in channel.recipient_metadata(sender).items()
+                    if not binding.metadata.get(key)
+                }
+                update["metadata"] = {**binding.metadata, **missing}
+            if not update:
                 return binding
-            binding = binding.model_copy(update={"participant_id": sender})
+            binding = binding.model_copy(update=update)
             await self._store.update_binding(binding)
             self._notify_binding_updated(room_id, channel_id, binding)
             return binding
@@ -880,3 +906,10 @@ def _as_instruction(event: RoomEvent, message: InboundMessage) -> RoomEvent:
     if message.standalone:
         metadata[STANDALONE] = True
     return event.model_copy(update={"metadata": metadata})
+
+
+def _lacks_recipient(binding: ChannelBinding, sender: str, channel: Channel) -> bool:
+    """Whether *binding* names *sender* by address but carries no recipient for *channel*."""
+    if binding.participant_id != sender:
+        return False
+    return any(not binding.metadata.get(key) for key in channel.recipient_metadata(sender))

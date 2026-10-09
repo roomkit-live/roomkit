@@ -30,6 +30,33 @@ class ProviderDeliveryError(RoomKitError):
         self.retryable = declared_retryable if isinstance(declared_retryable, bool) else True
 
 
+class NoRecipientError(ProviderDeliveryError):
+    """A transport delivery refused before any send: the binding names no recipient.
+
+    The address a transport channel delivers to lives in its binding's
+    metadata (``phone_number`` for SMS, ``email_address`` for email, ...).
+    Without one there is nobody to send to, so the provider is never called
+    and the delivery fails as itself: not retryable, and not counted against
+    the channel's circuit breaker, since it says nothing about the provider.
+    """
+
+    def __init__(self, channel_id: str, recipient_key: str) -> None:
+        super().__init__(
+            ProviderResult(
+                success=False,
+                error="no_recipient",
+                metadata={
+                    "code": "no_recipient",
+                    "retryable": False,
+                    "channel_id": channel_id,
+                    "recipient_key": recipient_key,
+                },
+            )
+        )
+        self.channel_id = channel_id
+        self.recipient_key = recipient_key
+
+
 class RoomNotFoundError(RoomKitError):
     """Room does not exist."""
 

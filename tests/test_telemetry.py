@@ -797,6 +797,7 @@ class TestDeliveryTelemetry:
             channel_id="sms1",
             room_id="room1",
             channel_type=ChannelType.SMS,
+            metadata={"recipient_id": "+15551234567"},
         )
         from roomkit.models.context import RoomContext
         from roomkit.models.room import Room
@@ -832,6 +833,7 @@ class TestDeliveryTelemetry:
             channel_id="sms1",
             room_id="room1",
             channel_type=ChannelType.SMS,
+            metadata={"recipient_id": "+15551234567"},
         )
         from roomkit.models.context import RoomContext
         from roomkit.models.room import Room
@@ -1034,7 +1036,12 @@ class TestDeliveryTelemetryPhase3:
             source=EventSource(channel_id="other", channel_type=ChannelType.AI),
             content=TextContent(body="hello"),
         )
-        binding = ChannelBinding(channel_id="sms1", room_id="room1", channel_type=ChannelType.SMS)
+        binding = ChannelBinding(
+            channel_id="sms1",
+            room_id="room1",
+            channel_type=ChannelType.SMS,
+            metadata={"recipient_id": "+15551234567"},
+        )
         context = RoomContext(room=Room(id="room1"), bindings=[], recent_events=[])
         await ch.deliver(event, binding, context)
 
@@ -1059,7 +1066,12 @@ class TestDeliveryTelemetryPhase3:
             source=EventSource(channel_id="other", channel_type=ChannelType.AI),
             content=TextContent(body="hello"),
         )
-        binding = ChannelBinding(channel_id="sms1", room_id="room1", channel_type=ChannelType.SMS)
+        binding = ChannelBinding(
+            channel_id="sms1",
+            room_id="room1",
+            channel_type=ChannelType.SMS,
+            metadata={"recipient_id": "+15551234567"},
+        )
         context = RoomContext(room=Room(id="room1"), bindings=[], recent_events=[])
         with pytest.raises(ProviderDeliveryError) as raised:
             await ch.deliver(event, binding, context)
@@ -1088,7 +1100,12 @@ class TestDeliveryTelemetryPhase3:
             source=EventSource(channel_id="other", channel_type=ChannelType.AI),
             content=TextContent(body="hello"),
         )
-        binding = ChannelBinding(channel_id="sms1", room_id="room1", channel_type=ChannelType.SMS)
+        binding = ChannelBinding(
+            channel_id="sms1",
+            room_id="room1",
+            channel_type=ChannelType.SMS,
+            metadata={"recipient_id": "+15551234567"},
+        )
         context = RoomContext(room=Room(id="room1"), bindings=[], recent_events=[])
         await ch.deliver(event, binding, context)
 

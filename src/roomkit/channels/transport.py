@@ -7,7 +7,7 @@ import time as _time
 from typing import Any
 
 from roomkit.channels.base import Channel
-from roomkit.core.exceptions import ProviderDeliveryError
+from roomkit.core.exceptions import NoRecipientError, ProviderDeliveryError
 from roomkit.models.channel import ChannelBinding, ChannelCapabilities, ChannelOutput
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundMessage
@@ -79,6 +79,10 @@ class TransportChannel(Channel):
     def capabilities(self) -> ChannelCapabilities:
         """Return the channel's media and feature capabilities."""
         return self._capabilities
+
+    def recipient_metadata(self, address: str) -> dict[str, str]:
+        """``{recipient_key: address}``: the binding then delivers to *address*."""
+        return {self._recipient_key: address} if address else {}
 
     async def handle_inbound(self, message: InboundMessage, context: RoomContext) -> RoomEvent:
         """Convert an inbound message into a room event."""
@@ -162,6 +166,10 @@ class TransportChannel(Channel):
         telemetry = getattr(self, "_telemetry", None) or NoopTelemetryProvider()
 
         to = binding.metadata.get(self._recipient_key, "")
+        if not to:
+            # Nobody to send to: refused here rather than handed to the
+            # provider as "", which a lenient one would acknowledge (RFC §22.2).
+            raise NoRecipientError(self.channel_id, self._recipient_key)
         kwargs: dict[str, Any] = {}
         for key, value in self._defaults.items():
             kwargs[key] = binding.metadata.get(key, value) if value is None else value

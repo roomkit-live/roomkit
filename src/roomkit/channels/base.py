@@ -244,6 +244,17 @@ class Channel(ABC):
         """
         return 0
 
+    def recipient_metadata(self, address: str) -> dict[str, str]:
+        """The binding metadata that makes *address* this channel's recipient.
+
+        The framework records an inbound sender as a binding's correspondent
+        (RFC §10.4); on a channel that delivers to an external address, the
+        same address is where its replies go, and this is how the framework
+        writes it where the channel reads it. A channel with no addressee of
+        its own (an intelligence channel, a WebSocket) records nothing.
+        """
+        return {}
+
     @property
     def recent_events_window(self) -> int:
         """How many recent room events this channel reads per turn.

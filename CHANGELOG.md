@@ -375,6 +375,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A room RoomKit opens for an inbound sender replies to them (RMK-646): the
+  binding named the sender (`participant_id`, RMK-580), but a transport channel
+  reads its recipient only from the binding's metadata (`phone_number`,
+  `email_address`, ...), which nothing wrote, so every reply on SMS, WhatsApp,
+  email and the other transports went to `""`. The framework now writes the
+  sender's address as the recipient where it records them as the
+  correspondent: the room it creates, a free binding the sender claims, and a
+  binding naming the sender that has no recipient yet (a room recorded before
+  this fix). A recipient already there, the host's above all, is kept; a group
+  binding records none. New `Channel.recipient_metadata(address)` says which
+  metadata does it (`{}` by default, `{recipient_key: address}` on a
+  `TransportChannel`). With no recipient, a transport delivery is refused
+  before the provider is called (`NoRecipientError`, not retried,
+  `delivery_failed` with `error="no_recipient"`) instead of being sent to `""`,
+  which a lenient provider acknowledged (RFC §22.2); the refusal does not count
+  against the channel's circuit breaker, which every room on the channel
+  shares.
+
 - A voice channel streams each response through its own copy of its
   `tts_filter` (RMK-624): two rooms streaming at once through one channel
   shared what a filter buffers, so a bracket `StripBrackets` held open in one
