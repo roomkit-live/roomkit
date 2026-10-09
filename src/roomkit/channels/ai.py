@@ -558,13 +558,19 @@ class AIChannel(
         return (*await self._thought_notes(room_id), *speak_notes(decision))
 
     async def on_room_attached(self, room_id: str, binding: ChannelBinding) -> None:
-        """A room the channel joins starts from an empty thought, whatever an
-        earlier room of the same id left (RFC §6.4)."""
-        await self._forget_thought(room_id)
+        """A room the channel joins starts from an empty thought, and open to the
+        agent, whatever an earlier room of the same id left (RFC §6.4)."""
+        await self._forget_room(room_id)
 
     async def on_room_detached(self, room_id: str) -> None:
-        """The room's thought goes with the binding (RFC §6.4)."""
+        """The room's thought, and what the speak policy kept of it, go with the
+        binding (RFC §6.4)."""
+        await self._forget_room(room_id)
+
+    async def _forget_room(self, room_id: str) -> None:
         await self._forget_thought(room_id)
+        if self._speak_policy is not None:
+            self._speak_policy.forget_room(room_id)
 
     async def _thinking_context(
         self, event: RoomEvent, binding: ChannelBinding, context: RoomContext

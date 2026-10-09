@@ -82,6 +82,10 @@ class AnswerOnly(SpeakPolicy):
             return people
         return (*people, speaker)
 
+    def forget_room(self, room_id: str) -> None:
+        """Have the policy it wraps forget *room_id*."""
+        self._policy.forget_room(room_id)
+
     async def close(self) -> None:
         """Close the policy it wraps."""
         await self._policy.close()

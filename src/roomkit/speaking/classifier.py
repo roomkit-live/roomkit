@@ -11,6 +11,7 @@ as the classifier reads it.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Mapping
 from types import MappingProxyType
 from typing import Any
@@ -35,6 +36,8 @@ from roomkit.speaking.listening import (
     LISTEN_REQUEST,
     ListeningRooms,
 )
+
+logger = logging.getLogger("roomkit.speaking")
 
 DIRECTNESS = ScoreQuestion(
     "How directly does `last_turn` bring in the assistant named in `agent.name`? When "
@@ -237,8 +240,9 @@ class ClassifierSpeakPolicy(SpeakPolicy):
         agent_name: The agent's name, as people call it.
         agent_role: What the agent is there for, in a few words, when it helps
             to judge whether a turn is for it.
-        questions: Questions replacing :data:`QUESTIONS` by name, or added to
-            them for a :meth:`compose` of your own.
+        questions: Questions replacing :data:`QUESTIONS` and the listening
+            state's (``listen_request``, ``asked_me``, ``lift``) by name, or added
+            to them for a :meth:`compose` of your own.
         languages: The languages the agent answers in, each with the line its
             turn's notes carry when the speaker speaks it, best written in that
             language (``{"English": "Answer in English only."}``). Empty:
@@ -251,7 +255,8 @@ class ClassifierSpeakPolicy(SpeakPolicy):
     A request to stay quiet or only listen from now on puts the room in a
     listening state the policy keeps (RFC §6.4): the agent is silent, a
     question put to it and addressing it directly is answered while the room
-    goes on listening, and only a turn that lets it talk again ends it.
+    goes on listening, and only a turn that lets it talk again ends it. A turn
+    it cannot judge there (no text, a classifier that fails) stays silent.
     """
 
     def __init__(
@@ -279,10 +284,21 @@ class ClassifierSpeakPolicy(SpeakPolicy):
         self._rooms = ListeningRooms()
 
     async def decide(self, turn: SpeakTurn) -> SpeakDecision:
+        listening = self._rooms.of(turn.event.room_id) is not None
         if not _text(turn.event):
-            return SpeakDecision("speak", reason="nothing to judge")
-        answers = await self._classifier.classify(self.state(turn), self.questions(turn))
+            return _LISTENING_SILENCE if listening else SpeakDecision("speak", "nothing to judge")
+        try:
+            answers = await self._classifier.classify(self.state(turn), self.questions(turn))
+        except Exception:
+            if not listening:
+                raise  # the channel's fallback: the agent speaks
+            logger.warning("Classifier failed in listening room %s", turn.event.room_id)
+            return _LISTENING_SILENCE
         return self.decision(turn, answers)
+
+    def forget_room(self, room_id: str) -> None:
+        """*room_id* starts open again."""
+        self._rooms.stop(room_id)
 
     def questions(self, turn: SpeakTurn) -> dict[str, Question]:
         """The questions asked on *turn*: :data:`QUESTIONS` as replaced, those of
@@ -317,7 +333,7 @@ class ClassifierSpeakPolicy(SpeakPolicy):
             agent["role"] = self._agent_role
         listening = self._rooms.of(turn.event.room_id)
         if listening is not None:
-            agent["listening_only"] = {"asked": listening.asked}
+            agent["listening_only"] = listening.as_state()
         said = [e for e in turn.recent if _text(e)][-self._history :] if self._history else []
         state: dict[str, Any] = {
             "agent": agent,
@@ -338,25 +354,36 @@ class ClassifierSpeakPolicy(SpeakPolicy):
         """The decision from the answers: in a listening room, as it listens; in an
         open one, a request to only listen sets the state, else as composed."""
         room_id = turn.event.room_id
-        if self._rooms.of(room_id) is not None:
+        if self._judged_listening(turn, answers):
             return self._while_listening(turn, answers)
         judgments = judgments_of(answers)
         if judgments.get("listen_request", 0.0) >= 0.5:
-            self._rooms.start(room_id, _text(turn.event))
+            speaker = turn.speakers.get(turn.event.id, "someone")
+            self._rooms.start(room_id, speaker, _text(turn.event))
             return SpeakDecision("silent", "asked to listen", judgments, final=True)
         return self._composed(turn, answers)
+
+    def _judged_listening(self, turn: SpeakTurn, answers: Answers) -> bool:
+        """Whether *answers* were asked as the room listened. What was asked tells:
+        another turn of the room may have started or ended the state during the
+        classifier call, and a turn judged open is decided open."""
+        if "listen_request" in answers:
+            return False
+        if "asked_me" in answers or "lift" in answers:
+            return True
+        return self._rooms.of(turn.event.room_id) is not None
 
     def _while_listening(self, turn: SpeakTurn, answers: Answers) -> SpeakDecision:
         """While the room listens: a turn that lets the agent talk again opens it
         and is decided as usual; a question put to the agent, addressing it
-        directly, is answered and the room goes on listening; anything else is a
-        final silence."""
+        directly, is answered and the room goes on listening, unless the speaker
+        is not done, postpones it or asks for quiet; anything else is a final
+        silence."""
         judgments = {**judgments_of(answers), "listening": 1.0}
         if judgments.get("lift", 0.0) >= 0.5:
             self._rooms.stop(turn.event.room_id)
             return self._composed(turn, answers)
-        direct = judgments.get("directness", 0.0) >= DIRECT_ADDRESS
-        if direct and judgments.get("asked_me", 0.0) >= 0.5:
+        if _asked_while_listening(judgments):
             notes = self._language_notes(answers)
             return SpeakDecision("speak", "asked while listening", judgments, notes)
         return SpeakDecision("silent", "listening", judgments, final=True)
@@ -390,6 +417,18 @@ class ClassifierSpeakPolicy(SpeakPolicy):
         else:
             speaker = turn.speakers.get(event.id, "someone")
         return {"speaker": speaker, "text": _text(event)}
+
+
+_LISTENING_SILENCE = SpeakDecision("silent", "listening", {"listening": 1.0}, final=True)
+"""A turn a listening room cannot judge: the agent was asked to only listen."""
+
+
+def _asked_while_listening(judgments: Mapping[str, float]) -> bool:
+    """A question put to the agent and addressing it directly, the speaker done,
+    neither postponing it nor asking for quiet."""
+    held = any(judgments.get(n, 0.0) >= 0.5 for n in ("unfinished", "deferred", "hush"))
+    direct = judgments.get("directness", 0.0) >= DIRECT_ADDRESS
+    return direct and judgments.get("asked_me", 0.0) >= 0.5 and not held
 
 
 def _text(event: RoomEvent) -> str:

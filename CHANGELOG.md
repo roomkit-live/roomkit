@@ -14,18 +14,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   memory, instead of a judgment remade from the recent turns, which faded as
   they passed (0.63, then 0.33 two turns later, on a live session) and was lost
   once the request left them. In an open room the policy asks `listen_request`;
-  while the room listens, the classifier reads the request
-  (`agent.listening_only.asked`) and is asked `asked_me` and `lift` instead: a
-  question put to the agent with its name or "you" (directness 2 or more) is
-  answered and the room goes on listening, a turn that lets the agent talk
-  again opens it, anything else is silent (`listening`), and a cut answer is not
-  resumed. The three questions are replaceable by name
-  (`roomkit.speaking.listening`). New `SpeakDecision.final`: a silence the
-  agent's thought will not change, on which the channel's thinker thinks but
-  the channel neither waits for the thought nor asks the policy again, so the
-  next turn is not held back; a listening room's silences and `AnswerOnly`'s
-  `only listened to` are final. The `quiet_rule` question of RMK-561 is gone.
-  Example: `examples/speaking_judgments.py`.
+  while the room listens, the classifier reads the request and who made it
+  (`agent.listening_only`, bounded at a word) and is asked `asked_me` and `lift`
+  instead: a question put to the agent with its name or "you" (directness 2 or
+  more) is answered and the room goes on listening, unless the speaker has not
+  finished, postpones it or asks for quiet; a turn that lets the agent talk
+  again opens it; anything else is silent (`listening`), and so is a turn
+  without text or one the classifier fails on, where an open room falls back
+  to speaking; a cut answer is not resumed. A turn is decided as it was judged,
+  whatever another turn did to the state during the classifier call. The three
+  questions are replaceable by name (`roomkit.speaking.listening`). New
+  optional `SpeakPolicy.forget_room(room_id)`, which the AI channel calls when
+  it joins or leaves a room (`AnswerOnly` passes it on), so a room that reuses
+  an id inherits no request, as it inherits no thought. New
+  `SpeakDecision.final`, only on a silence: one the agent's thought will not
+  change, on which the channel's thinker thinks but the channel neither waits
+  for the thought nor asks the policy again, so the next turn is not held
+  back; a listening room's silences and `AnswerOnly`'s `only listened to` are
+  final. The `quiet_rule` question of RMK-561 is gone. Example:
+  `examples/speaking_judgments.py`.
 
 - The agent's thought is about what it hears (RMK-642, RFC §6.4): `LLMThinker`'s
   default instructions ask for what is being talked about, what the speaker is

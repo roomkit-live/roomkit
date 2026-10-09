@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from roomkit._text import bounded_text
 from roomkit.classifiers.base import YesNoQuestion
 
 LISTEN_REQUEST = YesNoQuestion(
@@ -49,15 +50,23 @@ ASKED_LIMIT = 200
 
 @dataclass(frozen=True)
 class Listening:
-    """A room the agent was asked to only listen in."""
+    """A room the agent was asked to only listen in: the request, as a turn."""
 
-    asked: str
-    """The request, as it was said, bounded."""
+    speaker: str
+    """Who asked, as the turns name them."""
+
+    text: str
+    """What they said, bounded at a word."""
+
+    def as_state(self) -> dict[str, str]:
+        """The request as the classifier reads it, attributed like any turn."""
+        return {"speaker": self.speaker, "text": self.text}
 
 
 class ListeningRooms:
     """The rooms in the listening state, in memory, by room id: not stored, so a
-    restart starts every room open, as it starts every thought empty."""
+    restart starts every room open, as it starts every thought empty; the channel
+    forgets a room it joins or leaves (``SpeakPolicy.forget_room``)."""
 
     def __init__(self) -> None:
         self._rooms: dict[str, Listening] = {}
@@ -66,9 +75,9 @@ class ListeningRooms:
         """The listening state of *room_id*; ``None`` when the room is open."""
         return self._rooms.get(room_id)
 
-    def start(self, room_id: str, asked: str) -> None:
-        """Put *room_id* in the listening state, *asked* being the request."""
-        self._rooms[room_id] = Listening(asked[:ASKED_LIMIT])
+    def start(self, room_id: str, speaker: str, text: str) -> None:
+        """Put *room_id* in the listening state, *speaker* having asked with *text*."""
+        self._rooms[room_id] = Listening(speaker, bounded_text(text, ASKED_LIMIT))
 
     def stop(self, room_id: str) -> None:
         """Open *room_id* again."""

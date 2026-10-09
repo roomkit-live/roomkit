@@ -98,6 +98,8 @@ class SpeakDecision:
     def __post_init__(self) -> None:
         if self.mode not in _MODES:
             raise ValueError(f"speak mode {self.mode!r} is not one of {sorted(_MODES)}")
+        if self.final and self.mode != "silent":
+            raise ValueError("only a silent decision can be final")
 
 
 @dataclass(frozen=True)
@@ -132,6 +134,11 @@ class SpeakPolicy(ABC):
     @abstractmethod
     async def decide(self, turn: SpeakTurn) -> SpeakDecision:
         """The decision on *turn*."""
+
+    def forget_room(self, room_id: str) -> None:  # noqa: B027 - optional hook
+        """Drop what the policy keeps about *room_id*: the channel calls it when it
+        joins or leaves the room, so a room that reuses an id inherits nothing
+        (RFC §6.4)."""
 
     async def close(self) -> None:  # noqa: B027 - optional hook
         """Release resources (a client, a model)."""
