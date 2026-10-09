@@ -18,8 +18,6 @@ from roomkit.providers.utils import http_timeout
 if TYPE_CHECKING:
     import httpx
 
-_API_URL = "https://api.telnyx.com/v2/messages"
-
 
 class TelnyxSMSProvider(SMSProvider):
     """SMS provider using the Telnyx REST API."""
@@ -81,7 +79,9 @@ class TelnyxSMSProvider(SMSProvider):
             import time
 
             t0 = time.monotonic()
-            resp = await self._client.post(_API_URL, headers=headers, json=payload)
+            resp = await self._client.post(
+                f"{self._config.api_base_url}/v2/messages", headers=headers, json=payload
+            )
             resp.raise_for_status()
             send_ms = (time.monotonic() - t0) * 1000
             data = resp.json()

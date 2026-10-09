@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from pydantic import BaseModel, SecretStr
+from pydantic import BaseModel, SecretStr, field_validator
 
 from roomkit.models.delivery import InboundMessage
 from roomkit.models.event import RoomEvent
@@ -14,13 +14,11 @@ from roomkit.providers.sms.meta import (
     extract_media_urls,
     extract_text_body,
 )
+from roomkit.providers.url_safety import validate_api_base_url
 from roomkit.providers.utils import http_timeout
 
 if TYPE_CHECKING:
     import httpx
-
-_API_URL = "https://api.telnyx.com/v2/messages"
-_RCS_CAPABILITY_URL = "https://api.telnyx.com/v2/messaging/rcs/capabilities"
 
 
 class TelnyxRCSConfig(BaseModel):
@@ -41,6 +39,13 @@ class TelnyxRCSConfig(BaseModel):
     messaging_profile_id: str | None = None
     timeout: float = 10.0
     connect_timeout: float = 5.0
+    api_base_url: str = "https://api.telnyx.com"
+    """Telnyx's API host; another one must be HTTPS, or HTTP on this machine only."""
+
+    @field_validator("api_base_url")
+    @classmethod
+    def _secure_api_base_url(cls, value: str) -> str:
+        return validate_api_base_url(value)
 
 
 class TelnyxRCSProvider(RCSProvider):
@@ -136,7 +141,9 @@ class TelnyxRCSProvider(RCSProvider):
             import time
 
             t0 = time.monotonic()
-            resp = await self._client.post(_API_URL, headers=headers, json=payload)
+            resp = await self._client.post(
+                f"{self._config.api_base_url}/v2/messages", headers=headers, json=payload
+            )
             resp.raise_for_status()
             send_ms = (time.monotonic() - t0) * 1000
             data = resp.json()
@@ -212,7 +219,10 @@ class TelnyxRCSProvider(RCSProvider):
             "Authorization": f"Bearer {self._config.api_key.get_secret_value()}",
         }
 
-        url = f"{_RCS_CAPABILITY_URL}/{self._config.agent_id}/{phone_number}"
+        url = (
+            f"{self._config.api_base_url}/v2/messaging/rcs/capabilities/"
+            f"{self._config.agent_id}/{phone_number}"
+        )
 
         try:
             resp = await self._client.get(url, headers=headers)

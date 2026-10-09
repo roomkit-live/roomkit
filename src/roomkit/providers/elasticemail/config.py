@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel, SecretStr, field_validator
 
+from roomkit.providers.url_safety import validate_api_base_url
+
 
 class ElasticEmailConfig(BaseModel):
     """Elastic Email provider configuration."""
@@ -20,6 +22,5 @@ class ElasticEmailConfig(BaseModel):
     @field_validator("base_url")
     @classmethod
     def _enforce_https(cls, v: str) -> str:
-        if not v.startswith("https://"):
-            raise ValueError("base_url must use HTTPS (API key is sent in request body)")
-        return v
+        # The API key rides in the request body: HTTPS, or this machine only.
+        return validate_api_base_url(v)

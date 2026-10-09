@@ -341,6 +341,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   its own (`roomkit.providers.url_safety.validate_api_base_url`); a config
   naming another is refused when it is built.
 
+- Per review, every messaging provider's API host is configurable (RMK-648):
+  `api_base_url` on `MessengerConfig`, `SinchConfig` (the region's host when
+  omitted), `VoiceMeUpConfig` (the environment's when omitted), `TelnyxConfig`
+  and `TelnyxRCSConfig`, under the same rule (HTTPS, or plain HTTP to this
+  machine only). `SendGridConfig.base_url` and `ElasticEmailConfig.base_url`
+  follow it too. Behavior change: SendGrid took any URL, so an `http://` host
+  elsewhere would have received the API key in clear, and is now refused;
+  ElasticEmail now accepts a local fake over plain HTTP. Teams sends to the
+  `serviceUrl` each activity carries, Discord goes through `discord.py`, and
+  Buzz already names its relay.
+
 - WhatsApp through Twilio (RMK-649): `TwilioWhatsAppProvider` sends on
   Twilio's Messages API with both addresses written `whatsapp:+1...`, from the
   same `TwilioConfig` as SMS, and `parse_twilio_whatsapp_webhook` reads its
