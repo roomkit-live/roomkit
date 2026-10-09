@@ -288,7 +288,10 @@ class RealtimeDelegationMixin:
             async for output in backend.run(request):
                 if session.state == VoiceSessionState.ENDED:
                     return
-                text = output.text.strip()
+                # A model wrote it, quoting what its tools returned: a copy of
+                # a runtime mark in it is replaced (RFC §6.4), the patterns
+                # compiled when the request was built.
+                text = without_mark_copies(output.text.strip())
                 if not text:
                     continue
                 answered = True

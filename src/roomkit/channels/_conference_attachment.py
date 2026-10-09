@@ -40,6 +40,7 @@ from typing import TYPE_CHECKING, Any
 # imported here would be a second copy to remember — see `_budget`.
 from roomkit.channels import _conference_activity
 from roomkit.channels._conference_operations import ConferenceResource
+from roomkit.channels._mark_copies import compile_mark_patterns
 from roomkit.core.exceptions import RoomNotAttachedError
 from roomkit.core.task_utils import log_task_exception
 
@@ -166,6 +167,9 @@ class ConferenceAttachmentMixin:
         starts the lazy join if anyone is in there. The attach is owed its
         answer now, and the probe's failure is never the attach's.
         """
+        # The patterns that find a copy of a runtime mark, compiled now rather
+        # than by the realtime model's first injection (RFC §6.4).
+        await compile_mark_patterns()
         await self._settle_previous_attachment(room_id)
         room = self._room(room_id)
         await self._hold_sfu_room(room_id)

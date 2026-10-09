@@ -938,6 +938,12 @@ class RealtimeVoiceChannel(
         """
         await self._provider.start_audio_stream(session)
 
+    async def on_room_attached(self, room_id: str, binding: ChannelBinding) -> None:
+        """Compile the patterns that find a copy of a runtime mark as the
+        channel joins a room, off the event loop: the first injection of a
+        session (a greeting) then does not wait for them (RFC §6.4)."""
+        await compile_mark_patterns()
+
     async def inject_text(
         self,
         session: VoiceSession,
@@ -968,6 +974,9 @@ class RealtimeVoiceChannel(
             chain_depth: The chain depth of what the text stands for; the
                 model's answer to it is one deeper (RFC §12.4). 0, the
                 default, for text that opens a chain.
+
+        A copy of a runtime mark in *text* is replaced before the provider
+        takes it (RFC §6.4).
 
         A session the channel no longer serves is not sent to:
         ``not_sent`` / ``realtime_session_gone``, as on a conference.
@@ -1061,9 +1070,11 @@ class RealtimeVoiceChannel(
             session: The active voice session.
             image_data: Raw image bytes.
             mime_type: MIME type of the image.
-            prompt: Optional text prompt accompanying the image.
+            prompt: Optional text prompt accompanying the image, a copy of
+                a runtime mark in it replaced (RFC §6.4).
             silent: If True, add to context without requesting a response.
         """
+        prompt = await injected_text(prompt) if prompt else prompt
         try:
             await self._provider.inject_image(
                 session, image_data, mime_type, prompt=prompt, silent=silent

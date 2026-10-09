@@ -80,7 +80,11 @@ class RealtimeModelHost(ABC):
         """Inject *text* into *session* with the intent *role* (RFC §12.4).
 
         Not sent (``not_sent``, ``realtime_session_gone``) when *session* is
-        not one the host holds or the provider ended it.
+        not one the host holds or the provider ended it. A host replaces a
+        copy of a runtime mark in *text* before its provider takes it
+        (:func:`~roomkit.channels._realtime_host_hooks.injected_text`, RFC
+        §6.4): what comes this way (an instruction, a worker's hand-back) may
+        quote others.
         """
 
     @abstractmethod

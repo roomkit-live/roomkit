@@ -138,26 +138,10 @@ def turn_input(messages: list[AIMessage]) -> AIMessage | None:
     return last if last is not None and last.role == "user" else None
 
 
-def add_turn_note(messages: list[AIMessage], block: str) -> list[AIMessage]:
-    """*messages* with *block* added to the turn's notes (RFC §6.4).
-
-    The block joins the section the channel opened, under its one header,
-    when the turn's input carries it, and opens the section as
-    :func:`with_turn_notes` does otherwise. Either way the notes read as if
-    they had been assembled at once (the same header, the blocks joined by a
-    blank line, a text input still text, an input with images keeping its
-    notes in one text part), so the prefix a provider caches is the same.
-
-    For a ``BEFORE_AI_GENERATION`` hook::
-
-        event.ai_context.messages = add_turn_note(event.ai_context.messages, block)
-
-    The header is the notes' only mark, and the channel replaces every copy
-    of it in the conversation and in a block, *block* included (RFC §6.4), so
-    the header found is the channel's: only one a hook wrote into the
-    messages itself is what this misreads. Add notes before anything a hook
-    appends to the input: a text input takes the block at its very end.
-    """
+def note_added(messages: list[AIMessage], block: str) -> list[AIMessage]:
+    """*messages* with *block* added to the turn's notes, a copy of their
+    header in it replaced: what :func:`roomkit.add_turn_note` does once it
+    has replaced a copy of the runtime's other marks."""
     block = without_header_copies(block)
     last = turn_input(messages)
     noted = _with_block(last, block) if last is not None else None

@@ -15,6 +15,7 @@ from roomkit.channels._mark_copies import (
     content_without_mark_copies,
     cut_split_copies,
     without_mark_copies,
+    without_split_blocks,
 )
 from roomkit.channels._runtime_record import written_by_runtime
 from roomkit.channels._skill_constants import (
@@ -490,7 +491,7 @@ class AIContextMixin(_AIChannelContract):
         runtime's."""
         blocks = [SPEAKER_ATTRIBUTION_NOTE] if speakers else []
         quoting = [without_mark_copies(block) for block in (*retrieved, *own)]
-        return turn_notes([*blocks, *quoting])
+        return turn_notes([*blocks, *without_split_blocks(quoting)])
 
     def _channel_notes(self, loop_ctx: _ToolLoopContext, *, standalone: bool) -> list[str]:
         """The notes the channel adds to the turn's input from the room's
@@ -738,7 +739,7 @@ class AIContextMixin(_AIChannelContract):
         declared = self._eviction.with_reread_tool(
             self._apply_tool_filters(list(loop_ctx.all_context_tools or []))
         )
-        notes = turn_notes([SPEAKER_ATTRIBUTION_NOTE, *own_notes]) or ""
+        notes = self._turn_notes(own_notes, speakers=True, retrieved=[]) or ""
         loop_ctx.turn_footprint = TurnFootprint(
             input_tokens=estimate_tokens(system_prompt or "")
             + sum(estimate_tool_tokens(tool) for tool in declared)

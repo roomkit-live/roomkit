@@ -184,6 +184,15 @@ def without_split_copies(messages: list[AIMessage]) -> list[AIMessage]:
     return [message for i, message in enumerate(cut) if i not in emptied]
 
 
+def without_split_blocks(blocks: list[str]) -> list[str]:
+    """*blocks*, joined as the turn's notes join them (a blank line between),
+    with each copy of a mark that runs over two or more of them cut as
+    :func:`without_split_copies` cuts it; a block left with nothing dropped."""
+    texts = list(blocks)
+    _cut_texts(texts)
+    return [text for text in texts if text.strip()]
+
+
 def cut_split_copies(messages: list[AIMessage]) -> tuple[list[AIMessage], set[int]]:
     """*messages*, as many, each split copy cut as :func:`without_split_copies`
     cuts it, and the indexes of the messages a copy wholly held."""
