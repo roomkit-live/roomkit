@@ -19,8 +19,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `output_mime_type`, is refused before the call; measured: Google answers
   400), $1.50 / $7.50 per million and $30 per million image tokens; before, the id
   had no price and `GeminiImageProvider` refused every advanced control on it.
-  Google's `medium` thinking level is not offered: `ImageOptions.thinking_level`
-  takes `minimal` or `high`.
+
+- `ImageOptions.thinking_level` takes `medium` (RMK-654): Google's default
+  level on Nano Banana 2.1 can be asked for there, and is refused before the
+  call on the other Gemini image models and on Meta's Muse Image, which
+  reasons low or high only (a model Meta's catalog does not list included,
+  where the level reached an unguarded lookup).
 
 - Staying quiet when asked (RMK-641, RFC §6.4): "just listen for now" puts the
   room in a listening state `ClassifierSpeakPolicy` keeps, per room and in

@@ -75,14 +75,14 @@ _LITE = _PRO.model_copy(
         "thinking_levels": ["minimal", "high"],
     }
 )
-# Nano Banana 2.1 keeps 3.1 Flash Image's controls but drops the 512 size, and
-# returns JPEG only: ``image/png`` is a 400 (measured 2026-10-09). Google's
-# default thinking level on it, ``medium``, is not offered:
-# ``ImageOptions.thinking_level`` takes ``minimal`` or ``high``.
+# Nano Banana 2.1 keeps 3.1 Flash Image's controls but drops the 512 size,
+# returns JPEG only (``image/png`` is a 400, measured 2026-10-09), and adds
+# ``medium``, its default thinking level (RMK-654).
 _NB21 = _FLASH.model_copy(
     update={
         "image_sizes": ["1K", "2K", "4K"],
         "formats": ["jpeg"],
+        "thinking_levels": ["minimal", "medium", "high"],
         "verified": date(2026, 10, 9),
     }
 )

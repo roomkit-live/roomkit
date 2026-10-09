@@ -230,3 +230,18 @@ def test_catalog_describes_muse_image() -> None:
     assert isinstance(entry, ImageModelInfo)
     assert entry.image.formats == ["png", "jpeg", "webp"]
     assert provider.supports_editing is True
+
+
+@pytest.mark.parametrize("model", ["muse-image-1.0", "muse-image-uncatalogued"])
+async def test_a_thinking_level_muse_cannot_take_is_refused_before_the_call(model: str) -> None:
+    """Muse Image reasons low or high only: ``medium``, a Gemini level the
+    options admit (RMK-654), is refused before the call, catalogued model or not."""
+    provider = _provider(model=model)
+    provider._client.images.generate = AsyncMock()
+
+    with pytest.raises(ValueError, match="thinking_level"):
+        await provider.generate_with_options(
+            "a lighthouse", options=ImageOptions(thinking_level="medium")
+        )
+
+    provider._client.images.generate.assert_not_awaited()

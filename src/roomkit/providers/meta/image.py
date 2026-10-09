@@ -128,6 +128,10 @@ class MetaImageProvider(ImageProvider):
             entry.image.validate_request(
                 options, size=None, n=n, references=len(references), mask=False
             )
+        if options.thinking_level and options.thinking_level not in _REASONING:
+            # The options admit levels other vendors take (Gemini's medium);
+            # Muse reasons low or high, catalogued model or not (RMK-654).
+            raise ValueError(f"thinking_level must be one of {', '.join(_REASONING)}")
         if n < 1:
             raise ValueError(f"n must be at least 1, got {n}")
         body = self._build_body(prompt, size, n, options)

@@ -149,6 +149,18 @@ async def test_gemini_nano_banana_2_1_takes_flash_controls_at_its_sizes() -> Non
     assert request["generation_config"] == {"thinking_level": "high"}
 
 
+async def test_gemini_medium_thinking_reaches_the_wire_on_nano_banana_2_1() -> None:
+    """Google's default level on Nano Banana 2.1, ``medium``, can be asked for
+    explicitly there and only there (RMK-654)."""
+    provider = gemini(model="gemini-nano-banana-2.1")
+    provider._client.aio.interactions.create = AsyncMock(return_value=_interaction())
+
+    await provider.generate_with_options("a poster", options=ImageOptions(thinking_level="medium"))
+
+    request = provider._client.aio.interactions.create.await_args.kwargs
+    assert request["generation_config"] == {"thinking_level": "medium"}
+
+
 @pytest.mark.parametrize(
     ("model", "options"),
     [
@@ -159,6 +171,9 @@ async def test_gemini_nano_banana_2_1_takes_flash_controls_at_its_sizes() -> Non
         ("gemini-3-pro-image", ImageOptions(search_types=["image_search"])),
         ("gemini-nano-banana-2.1", ImageOptions(image_size="512")),
         ("gemini-nano-banana-2.1", ImageOptions(output_format="png")),
+        ("gemini-3.1-flash-image", ImageOptions(thinking_level="medium")),
+        ("gemini-3.1-flash-lite-image", ImageOptions(thinking_level="medium")),
+        ("gemini-3-pro-image", ImageOptions(thinking_level="medium")),
     ],
 )
 async def test_gemini_capabilities_belong_to_the_selected_model(
