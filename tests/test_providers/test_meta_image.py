@@ -61,12 +61,12 @@ class TestGeneration:
         provider = _provider()
         provider._client.images.generate = AsyncMock(return_value=_response())
 
-        [result] = await provider.generate("un phare breton")
+        [result] = await provider.generate("a Breton lighthouse")
 
         # Meta enables all three tools when a request says nothing.
         assert provider._client.images.generate.await_args.kwargs == {
             "model": "muse-image-1.0",
-            "prompt": "un phare breton",
+            "prompt": "a Breton lighthouse",
             "n": 1,
             "response_format": "b64_json",
             "extra_body": {"tool_enablement": _TOOLS_OFF},
@@ -79,7 +79,7 @@ class TestGeneration:
         provider._client.images.generate = AsyncMock(return_value=_response(b64=JPEG_B64))
 
         [result] = await provider.generate_with_options(
-            "un phare",
+            "a lighthouse",
             size="1536x1024",
             options=ImageOptions(
                 output_format="jpeg", thinking_level="minimal", search_types=["web_search"]
