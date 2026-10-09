@@ -482,22 +482,25 @@ class AIGenerationEvent:
     room_id: str | None = None
     """Room where generation is happening."""
 
+    provider_name: str | None = None
+    """Name of the AI provider that will be invoked."""
+
+    timestamp: datetime = field(default_factory=_utcnow)
+    """When the generation was initiated."""
+
+    # Fields added after 0.95.0 come last, so an event built positionally
+    # keeps the meaning of each argument.
+
     trigger: RoomEvent | None = None
     """The event the turn answers (RFC §8.5): what its answer's ``responds_to``
     names. A stand-in an orchestration strategy hands the turn (a supervisor's
     workers' results) names the event it stands for in its own ``responds_to``."""
-
-    provider_name: str | None = None
-    """Name of the AI provider that will be invoked."""
 
     purpose: GenerationPurpose = "answer"
     """What the generation is for: ``answer``, the agent's turn; ``thought``, its
     thinker reading the event's context while the agent stays silent (RFC §6.4).
     A block on a thought keeps the thought it had; what a hook changes is what
     the thinker reads."""
-
-    timestamp: datetime = field(default_factory=_utcnow)
-    """When the generation was initiated."""
 
 
 @dataclass

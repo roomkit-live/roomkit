@@ -20,6 +20,7 @@ from roomkit.models.event import TextContent
 from roomkit.models.hook import HookResult
 from roomkit.models.room import Room
 from roomkit.models.tool_call import AIGenerationEvent
+from roomkit.providers.ai.base import AIContext
 from roomkit.providers.ai.mock import MockAIProvider
 from tests.conftest import make_event
 from tests.tool_loop_modes import read_reply, respond
@@ -318,3 +319,12 @@ class TestBeforeGenerationHookIntegration:
         await advance()
 
         assert order == ["first", "second"]
+
+
+def test_an_event_built_positionally_keeps_its_released_meaning() -> None:
+    """Fields added after 0.95.0 come last: the provider name stays one."""
+    event = AIGenerationEvent(AIContext(messages=[]), "ai1", "room-1", "anthropic")
+
+    assert event.provider_name == "anthropic"
+    assert event.trigger is None
+    assert event.purpose == "answer"
