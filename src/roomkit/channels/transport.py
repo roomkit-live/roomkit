@@ -236,7 +236,7 @@ class TransportChannel(Channel):
         to = binding.metadata.get(self._recipient_key, "")
         if not to and self._requires_recipient:
             # Nobody to send to: refused here rather than handed to the
-            # provider as "", which a lenient one would acknowledge (RFC §22.2).
+            # provider as "", which a lenient one would acknowledge (RFC §10.2 step 3d).
             raise NoRecipientError(self.channel_id, self._recipient_key)
         kwargs: dict[str, Any] = {}
         for key, value in self._defaults.items():

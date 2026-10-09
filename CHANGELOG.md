@@ -716,11 +716,11 @@ changes below are breaking; each states its migration.
   (`NoRecipientError`, not retried, `delivery_failed` with
   `error="no_recipient"`, logged as a warning naming the missing key,
   without a traceback) instead of being sent to `""`, which a lenient
-  provider acknowledged (RFC §22.2); the refusal does not count against the
-  channel's circuit breaker, which every room on the channel shares. An
-  `HTTPChannel`, whose webhook provider posts to its own configured URL,
-  delivers without one as before (new
-  `TransportChannel(requires_recipient=False)`, RFC §10.2 step 3d).
+  provider acknowledged (RFC §10.2 step 3d); the refusal does not count
+  against the channel's circuit breaker, which every room on the channel
+  shares. An `HTTPChannel`, whose webhook provider posts to its own
+  configured URL, delivers without one as before (new
+  `TransportChannel(requires_recipient=False)`).
 
 - Two `find_tools` calls a realtime model runs in one response each reveal
   their matches (RMK-606), as two of one round do on the text loop (RMK-604):
