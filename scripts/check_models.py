@@ -254,10 +254,6 @@ DELIBERATE: dict[str, str] = {
     # OpenRouter currently mirrors the Sol/Terra ceiling onto the whole 5.6
     # family. OpenAI's migration guide gives Luna its smaller live limit.
     "gpt-5.6-luna": "OpenAI documents 400K; mirror reports the 1.05M Sol/Terra ceiling",
-    # Released 2026-10-07; the mirror had not listed it the same day. Its id,
-    # 1M window and prompt-length prices come from Anthropic's Models API and
-    # pricing page (RMK-578). Drop this entry once the mirror lists it.
-    "claude-haiku-5-5": "released 2026-10-07, not yet mirrored; Models API + pricing page",
     # Project Glasswing only — never published on a public aggregator.
     "claude-mythos-5": "Project Glasswing access only, absent from public mirrors",
     "claude-mythos-5-1": "Project Glasswing access only, absent from public mirrors",
