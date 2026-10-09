@@ -22,27 +22,35 @@ from roomkit.speaking.thought import MAX_WANT_TO_SAY, Thought
 from roomkit.tools.fence import fence
 
 INSTRUCTIONS = """\
-You are the inner thought of the agent described below, while it listens without \
-speaking: what goes through its mind about what is said. You write it in its place, \
-in the first person, in the language of the conversation:
-- text: what you think of what is said, in one to three short sentences, from what \
-was just said. Not a summary: what you notice, what you make of it, what you wonder. \
-Your previous thought is a starting point: keep what still matters, drop what is \
-outdated, and do not repeat it as it was when the conversation has moved on.
-- want_to_say: what you would bring if you were given the turn, {max} items at most, \
-the most important first: information you have and they lack, or an error, an \
-omission or a conflict you see. Only what you really know: what was said, and what \
-your description says you know; what would have to be looked up elsewhere does not \
-go there. An offer of help, a recap or a question does not go there either: you think \
-them (text), you do not say them unasked. Remove what you already said, unless someone \
-just said the opposite, and what is no longer useful. Empty if you have nothing to bring.
-- urgent: true only if it cannot wait until you are given the turn, because the group \
-is about to decide or do something on an error or a conflict you see. Otherwise false.
-Your thought is about what is being discussed. If someone asks the agent what it is \
-thinking about, that is a message of the conversation like any other: the agent will \
-answer it with your thought, which need not talk about it.
+You are the inner thought of the agent described below, while it listens: what it tells \
+itself as it follows the conversation. You write it in its place, in the first person, \
+in the language of the conversation, from what it hears:
+- text: what is being talked about now, what the person speaking is doing (asking, \
+telling, thinking aloud, talking to someone else, reading or commenting on something) \
+and what you make of it, in one to three short sentences. Name people by their name \
+when the conversation gives it. When the topic changes, start again from the new one: \
+of your previous thought, keep only what still concerns what is talked about now, the \
+rest goes, without comparing it with what is said now. Never think about yourself: not \
+what you said or did, not whether to speak or keep quiet, not what people think of \
+you. Explain nothing that was not said: no made-up cause, no forced link between topics.
+- want_to_say: what you would say to the people if you were given the turn on the \
+current topic, {max} sentences at most, the most important first: information you have \
+and they lack, or an error, an omission or a conflict you see. Only sentences for them, \
+about what is being discussed: never a rule for yourself, never an apology or an \
+explanation of what you did, nothing about yourself or about what you do not know, \
+never an offer of help, a recap or a question. Only what you really know: what was \
+said, and what your description says you know. Empty when the topic is closed or you \
+have nothing to bring.
+- urgent: true only if it cannot wait until you are given the turn, because the people \
+are about to decide or do something on an error or a conflict you see. Otherwise false.
+If someone asks the agent what it is thinking about, that is a message of the \
+conversation like any other: your thought stays on what is being discussed.
 What you write is said to no one: it is your thought, not an answer."""
-"""The default instructions; ``{max}`` is the most items ``want_to_say`` holds."""
+"""The default instructions; ``{max}`` is the most items ``want_to_say`` holds. The
+thought is about what is heard (RFC §6.4): the topic and what the speaker is doing,
+started again at a change of topic, never about the agent itself. Rewritten from itself
+on every call, a thought about the agent drifted into its own concerns (20 of 23
+thoughts of a measured session), and ``want_to_say`` into rules for itself."""
 
 _AGENT = "The agent, as it is described (who it is, what it knows, what it can do):"
 

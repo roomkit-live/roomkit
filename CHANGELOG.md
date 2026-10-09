@@ -27,6 +27,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `only listened to` are final. The `quiet_rule` question of RMK-561 is gone.
   Example: `examples/speaking_judgments.py`.
 
+- The agent's thought is about what it hears (RMK-642, RFC §6.4): `LLMThinker`'s
+  default instructions ask for what is being talked about, what the speaker is
+  doing (asking, telling, thinking aloud, talking to someone else, reading
+  something) and what the agent makes of it, the people named; the thought
+  starts again at a change of topic and is never about the agent itself, and
+  `want_to_say` holds only sentences for the people. Rewritten from itself on
+  every call, the previous thought had drifted into the agent's own concerns
+  (20 of 23 thoughts of a measured session, 7 of 23 with these instructions).
+  The thinker's context names every speaker, the one person of a one-to-one
+  conversation too (an answer's context still leaves it unlabelled): unnamed,
+  the thought said "the person" 12 times in 35. Asked what it is thinking, the
+  agent answers with its thought (the turn's notes say so).
+
 - `VoiceChannel(max_sentences=N)`: at most N sentences spoken per reply
   (RMK-623, RFC §12.2 step 12s.e). Asked to "explain", a model talked for a
   minute however short its prompt asked it to be. Once N sentences are said,

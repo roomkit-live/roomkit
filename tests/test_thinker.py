@@ -155,7 +155,7 @@ async def test_llm_thinker_reads_the_agent_the_previous_thought_then_the_convers
     assert "<agent>\nYou are Nova, the team's assistant.\n</agent>" in (
         request.system_prompt or ""
     )
-    assert "3 items at most" in (request.system_prompt or "")
+    assert "3 sentences at most" in (request.system_prompt or "")
     lines = str(request.messages[0].content).splitlines()
     assert lines[0].startswith("Your previous thought: ") and "Earlier." in lines[0]
     assert lines[1:] == [
@@ -215,6 +215,32 @@ async def test_a_silent_turn_is_thought_about_from_its_context() -> None:
     assert context.system_prompt is not None and "You are Nova." in context.system_prompt
     assert "Paul, do you have the numbers?" in str(context.messages[-1].content)
     assert channel._thought_of("r1") == Thought("Paul has the figures.")
+
+
+async def test_the_thinker_reads_the_one_person_by_name() -> None:
+    """A one-to-one conversation is left unlabelled in an answer's context; the
+    thinker's names its speaker, so the thought can say who asks (RMK-642)."""
+    thinker = MockThinker([Thought()])
+    channel, provider = _channel(MockSpeakPolicy(["silent", "speak"]), thinker)
+    first = make_event(
+        body="My tablet does not work.",
+        channel_id="sms1",
+        room_id="r1",
+        metadata={"sender_name": "Sylvain"},
+    )
+    second = make_event(
+        body="Nova, any idea?",
+        channel_id="sms1",
+        room_id="r1",
+        metadata={"sender_name": "Sylvain"},
+    )
+
+    await channel.on_event(first, _BINDING, _context(first))
+    await respond(channel, second, _BINDING, _context(first, second))
+
+    [(_, thought_context)] = thinker.calls
+    assert "Sylvain" in str(thought_context.messages[-1].content)
+    assert "Sylvain" not in " ".join(str(m.content) for m in provider.calls[-1].messages)
 
 
 async def test_with_something_to_say_in_time_the_agent_raises_its_hand() -> None:

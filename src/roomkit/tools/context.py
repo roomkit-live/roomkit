@@ -200,6 +200,9 @@ class _ToolLoopContext:
     # speak (RFC §6.4), ``None`` in a one-to-one conversation: who a task
     # delegated in this turn names as having asked for it (RFC §19.7).
     requester: str | None = None
+    # A thinker's context (RFC §6.4): every speaker is named, the one person of a
+    # one-to-one conversation too, whom an answer's context leaves unlabelled.
+    names_every_speaker: bool = False
     room_id: str | None = None
     # The channel whose loop runs the turn: the calls it announced are its
     # own, claimed by its reports alone (RFC §9.3).

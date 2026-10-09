@@ -572,7 +572,9 @@ class AIChannel(
         """What the thinker reads on *event*: its context, built as for an answer
         and passed through BEFORE_AI_GENERATION as a thought (RFC §6.4), which a
         hook may change; ``None`` when a hook blocks it."""
-        token = _current_loop_ctx.set(self._turn_loop_ctx(event, context))
+        loop_ctx = self._turn_loop_ctx(event, context)
+        loop_ctx.names_every_speaker = True  # the thinker knows who speaks (§6.4)
+        token = _current_loop_ctx.set(loop_ctx)
         try:
             ai_context = await self._build_context(event, binding, context)
             ai_context, blocked = await self._fire_before_generation_hook(

@@ -400,7 +400,8 @@ class AIContextMixin(_AIChannelContract):
         of a sender without a name), so when the window holds two or more
         distinct speakers each user turn opens with its label
         (:func:`~roomkit.channels._speaker.turn_labels`). A single-speaker room (a 1:1 DM) is left
-        untouched.
+        untouched, except in a thinker's context, which names its one speaker too
+        (``loop_ctx.names_every_speaker``, RFC §6.4).
         """
         labels = turn_labels([*memory_result.events, event], context)
         past_turns = self._past_turns(memory_result, context, labels)
@@ -411,7 +412,9 @@ class AIContextMixin(_AIChannelContract):
         # The people a summary named count too: a summary that names Alice
         # leaves no unlabelled "Alice: ..." turn after it (RFC §6.4).
         speakers.update(memory_result.speakers)
-        attribute_speakers = several_speakers(speakers)
+        attribute_speakers = several_speakers(speakers) or (
+            loop_ctx.names_every_speaker and bool(speakers)
+        )
 
         # Pre-built messages from memory (e.g. summaries)
         memory = [_runtime_or_cleaned(message) for message in memory_result.messages]
