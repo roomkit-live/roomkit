@@ -70,7 +70,7 @@ class AnswerOnly(SpeakPolicy):
     async def decide(self, turn: SpeakTurn) -> SpeakDecision:
         speaker = turn.speakers.get(turn.event.id)
         if speaker is None or not self.answers(speaker):
-            return SpeakDecision("silent", reason=LISTENED_TO)
+            return SpeakDecision("silent", reason=LISTENED_TO, final=True)
         return await self._policy.decide(replace(turn, people=self._judged_with(turn, speaker)))
 
     def _judged_with(self, turn: SpeakTurn, speaker: str) -> tuple[str, ...]:

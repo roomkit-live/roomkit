@@ -90,6 +90,11 @@ class SpeakDecision:
     notes: tuple[str, ...] = ()
     """Blocks the turn's notes carry when the agent speaks or offers (RFC §6.4)."""
 
+    final: bool = False
+    """A silence the agent's thought will not change (a room that listens, a voice
+    only listened to): the thinker thinks, and the channel neither waits for it
+    nor asks again, so the next turn is not held back (RFC §6.4)."""
+
     def __post_init__(self) -> None:
         if self.mode not in _MODES:
             raise ValueError(f"speak mode {self.mode!r} is not one of {sorted(_MODES)}")

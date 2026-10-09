@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Staying quiet when asked (RMK-641, RFC §6.4): "just listen for now" puts the
+  room in a listening state `ClassifierSpeakPolicy` keeps, per room and in
+  memory, instead of a judgment remade from the recent turns, which faded as
+  they passed (0.63, then 0.33 two turns later, on a live session) and was lost
+  once the request left them. In an open room the policy asks `listen_request`;
+  while the room listens, the classifier reads the request
+  (`agent.listening_only.asked`) and is asked `asked_me` and `lift` instead: a
+  question put to the agent with its name or "you" (directness 2 or more) is
+  answered and the room goes on listening, a turn that lets the agent talk
+  again opens it, anything else is silent (`listening`), and a cut answer is not
+  resumed. The three questions are replaceable by name
+  (`roomkit.speaking.listening`). New `SpeakDecision.final`: a silence the
+  agent's thought will not change, on which the channel's thinker thinks but
+  the channel neither waits for the thought nor asks the policy again, so the
+  next turn is not held back; a listening room's silences and `AnswerOnly`'s
+  `only listened to` are final. The `quiet_rule` question of RMK-561 is gone.
+  Example: `examples/speaking_judgments.py`.
+
 - `VoiceChannel(max_sentences=N)`: at most N sentences spoken per reply
   (RMK-623, RFC §12.2 step 12s.e). Asked to "explain", a model talked for a
   minute however short its prompt asked it to be. Once N sentences are said,
@@ -167,8 +185,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - A speak policy on judgments: `ClassifierSpeakPolicy` (RMK-561, RFC §6.4). On
   each turn one classifier call answers narrow questions (directness, deferred,
-  unfinished, hush, a standing request for quiet, request, an answer to the
-  agent's own question) over the turn and the recent turns named by speaker,
+  unfinished, hush, request, an answer to the agent's own question) over the
+  turn and the recent turns named by speaker,
   and `compose()` reads them in order: not finished, postponed or asked for
   quiet stays silent; an answer to its question or being addressed speaks; being
   only wondered about offers. Every answer is reported in the decision's

@@ -28,6 +28,13 @@ from roomkit.classifiers.base import (
 )
 from roomkit.models.event import RoomEvent, TextContent
 from roomkit.speaking.base import SpeakDecision, SpeakMode, SpeakPolicy, SpeakTurn
+from roomkit.speaking.listening import (
+    ASKED_ME,
+    DIRECT_ADDRESS,
+    LIFT,
+    LISTEN_REQUEST,
+    ListeningRooms,
+)
 
 DIRECTNESS = ScoreQuestion(
     "How directly does `last_turn` bring in the assistant named in `agent.name`? When "
@@ -53,11 +60,6 @@ UNFINISHED = YesNoQuestion(
 HUSH = YesNoQuestion(
     "In `last_turn`, does the speaker ask the assistant not to answer, to stay quiet, or "
     "only to listen?"
-)
-QUIET_RULE = YesNoQuestion(
-    "In `recent_turns`, did someone ask the assistant itself to stay quiet, not to answer, "
-    "or only to listen, without lifting it since? Words said to someone else, or a "
-    "description of what people are doing, do not count."
 )
 REQUEST = YesNoQuestion(
     "Does `last_turn` ask the assistant to answer a question or to do something now? A "
@@ -86,13 +88,13 @@ QUESTIONS: Mapping[str, Question] = MappingProxyType(
         "deferred": DEFERRED,
         "unfinished": UNFINISHED,
         "hush": HUSH,
-        "quiet_rule": QUIET_RULE,
         "request": REQUEST,
         "answered": ANSWERED,
     }
 )
 """The questions :class:`ClassifierSpeakPolicy` asks, by the name :func:`compose`
-reads."""
+reads. A request to stay quiet from now on is not among them: it is the room's
+listening state (``listening.py``), not a judgment remade on every turn."""
 
 RESUME = YesNoQuestion(
     "The assistant was cut off while saying `assistant_cut_off.was_saying`: the speaker "
@@ -138,6 +140,12 @@ English ("What?") switched a conversation in another language to English."""
 
 _OTHER_LANGUAGE = "other"
 
+_LISTENING_QUESTIONS: Mapping[str, Question] = MappingProxyType(
+    {"listen_request": LISTEN_REQUEST, "asked_me": ASKED_ME, "lift": LIFT}
+)
+"""The questions of the listening state (RFC §6.4), by name: ``listen_request`` in an
+open room, ``asked_me`` and ``lift`` in a listening one."""
+
 
 def compose(
     judgments: Mapping[str, float],
@@ -151,9 +159,9 @@ def compose(
     ``directness`` is the expected level on 0 (not mentioned), 1 (tentatively),
     2 (indirectly), 3 (directly); the others are probabilities of yes. *alone*:
     one person talks with the agent, so a request is for it whatever the
-    directness says. In order: the speaker not done, postponing or asking for
-    quiet, or a standing request for quiet the turn does not lift, keeps the agent
-    silent; an answer to its question, or being addressed, makes it speak; being
+    directness says. In order: the speaker not done, postponing, or asking for
+    quiet on this turn keeps the agent silent; an answer to its question, or being
+    addressed, makes it speak; being
     only wondered about makes it offer, or speak when what it wants to say answers
     or corrects the turn (``answers``, ``corrects``). Not addressed, it offers when
     that reaches *proactivity* (lower is more eager), half of it when what it
@@ -167,8 +175,6 @@ def compose(
         return "silent", "postponed"
     if j["hush"] >= 0.5:
         return "silent", "asked to keep quiet"
-    if j["quiet_rule"] >= 0.5 and j["request"] < 0.5:
-        return "silent", "keeping quiet"
     if j["answered"] >= 0.5:
         return "speak", "answers its question"
     if addressed(j["directness"], j["request"], alone=alone):
@@ -185,11 +191,11 @@ def resume_after_cut(
     mode: SpeakMode, reason: str, judgments: Mapping[str, float]
 ) -> tuple[SpeakMode, str]:
     """After a cut: the agent goes on to finish its answer when the turn spoken
-    over it leaves it free to (``resume``), unless that turn asks for quiet, the
-    speaker is not done, or a request for quiet still stands; otherwise the turn
-    decides as without a cut."""
+    over it leaves it free to (``resume``), unless that turn asks for quiet or the
+    speaker is not done; otherwise the turn decides as without a cut. A room that
+    listens resumes nothing (:class:`ClassifierSpeakPolicy`)."""
     free = judgments.get("resume", 0.0) >= RESUME_THRESHOLD
-    held = any(judgments.get(n, 0.0) >= 0.5 for n in ("hush", "unfinished", "quiet_rule"))
+    held = any(judgments.get(n, 0.0) >= 0.5 for n in ("hush", "unfinished"))
     return ("speak", "resume after cut") if free and not held else (mode, reason)
 
 
@@ -241,6 +247,11 @@ class ClassifierSpeakPolicy(SpeakPolicy):
         proactivity: How sure the policy must be that what the agent wants to
             say answers or corrects the turn before it offers unasked, in
             (0, 1]: lower is more eager. Only a thinker gives it something to say.
+
+    A request to stay quiet or only listen from now on puts the room in a
+    listening state the policy keeps (RFC §6.4): the agent is silent, a
+    question put to it and addressing it directly is answered while the room
+    goes on listening, and only a turn that lets it talk again ends it.
     """
 
     def __init__(
@@ -265,6 +276,7 @@ class ClassifierSpeakPolicy(SpeakPolicy):
         self._languages = dict(languages or {})
         self._history = history
         self._proactivity = proactivity
+        self._rooms = ListeningRooms()
 
     async def decide(self, turn: SpeakTurn) -> SpeakDecision:
         if not _text(turn.event):
@@ -274,9 +286,10 @@ class ClassifierSpeakPolicy(SpeakPolicy):
 
     def questions(self, turn: SpeakTurn) -> dict[str, Question]:
         """The questions asked on *turn*: :data:`QUESTIONS` as replaced, those of
-        :data:`THOUGHT_QUESTIONS` when the agent has something to say, and the
-        language when the policy has languages."""
-        asked = dict(self._questions)
+        :data:`THOUGHT_QUESTIONS` when the agent has something to say, the
+        listening state's, and the language when the policy has languages."""
+        asked = {n: q for n, q in self._questions.items() if n not in _LISTENING_QUESTIONS}
+        asked |= self._listening_questions(turn)
         if turn.thought is not None and turn.thought.want_to_say:
             asked |= THOUGHT_QUESTIONS
         if turn.cut is not None:
@@ -287,13 +300,24 @@ class ClassifierSpeakPolicy(SpeakPolicy):
             asked["language"] = ChoiceQuestion(LANGUAGE_INSTRUCTIONS, options)
         return asked
 
+    def _listening_questions(self, turn: SpeakTurn) -> dict[str, Question]:
+        """In an open room, whether the turn asks the agent to only listen; in a
+        listening one, whether it is put to the agent and whether it lets it
+        talk again. Each replaceable by name, as the other questions are."""
+        listening = self._rooms.of(turn.event.room_id) is not None
+        names = ("asked_me", "lift") if listening else ("listen_request",)
+        return {n: self._questions.get(n, _LISTENING_QUESTIONS[n]) for n in names}
+
     def state(self, turn: SpeakTurn) -> dict[str, Any]:
-        """What the classifier reads: the agent, the people, the recent turns and
-        the last one, each with its speaker, and the agent's thought when it has
-        one."""
-        agent: dict[str, str] = {"name": self._agent_name}
+        """What the classifier reads: the agent (the request it was asked to only
+        listen with, when it was), the people, the recent turns and the last one,
+        each with its speaker, and the agent's thought when it has one."""
+        agent: dict[str, Any] = {"name": self._agent_name}
         if self._agent_role:
             agent["role"] = self._agent_role
+        listening = self._rooms.of(turn.event.room_id)
+        if listening is not None:
+            agent["listening_only"] = {"asked": listening.asked}
         said = [e for e in turn.recent if _text(e)][-self._history :] if self._history else []
         state: dict[str, Any] = {
             "agent": agent,
@@ -311,7 +335,34 @@ class ClassifierSpeakPolicy(SpeakPolicy):
         return state
 
     def decision(self, turn: SpeakTurn, answers: Answers) -> SpeakDecision:
-        """The decision from the answers: :func:`compose`, and the language's note."""
+        """The decision from the answers: in a listening room, as it listens; in an
+        open one, a request to only listen sets the state, else as composed."""
+        room_id = turn.event.room_id
+        if self._rooms.of(room_id) is not None:
+            return self._while_listening(turn, answers)
+        judgments = judgments_of(answers)
+        if judgments.get("listen_request", 0.0) >= 0.5:
+            self._rooms.start(room_id, _text(turn.event))
+            return SpeakDecision("silent", "asked to listen", judgments, final=True)
+        return self._composed(turn, answers)
+
+    def _while_listening(self, turn: SpeakTurn, answers: Answers) -> SpeakDecision:
+        """While the room listens: a turn that lets the agent talk again opens it
+        and is decided as usual; a question put to the agent, addressing it
+        directly, is answered and the room goes on listening; anything else is a
+        final silence."""
+        judgments = {**judgments_of(answers), "listening": 1.0}
+        if judgments.get("lift", 0.0) >= 0.5:
+            self._rooms.stop(turn.event.room_id)
+            return self._composed(turn, answers)
+        direct = judgments.get("directness", 0.0) >= DIRECT_ADDRESS
+        if direct and judgments.get("asked_me", 0.0) >= 0.5:
+            notes = self._language_notes(answers)
+            return SpeakDecision("speak", "asked while listening", judgments, notes)
+        return SpeakDecision("silent", "listening", judgments, final=True)
+
+    def _composed(self, turn: SpeakTurn, answers: Answers) -> SpeakDecision:
+        """The decision of an open room: :func:`compose`, and the language's note."""
         judgments = judgments_of(answers)
         thought = turn.thought
         mode, reason = compose(

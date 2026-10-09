@@ -3,16 +3,22 @@
 Two people meet in a room with an agent, Nova. Her AI channel carries a
 ``ClassifierSpeakPolicy``: on each message, one classifier call answers narrow
 questions about it (how directly is Nova brought in, did the speaker finish,
-are they asking her to keep quiet, does a request to keep quiet still stand...)
-and plain code composes the answers (RFC §6.4):
+are they asking her to keep quiet...) and plain code composes the answers
+(RFC §6.4):
 
 1. "Paul, do you have the September numbers?" goes to Paul: silent.
 2. "Nova, can you sum up where we are?" asks her: she speaks.
 3. "Maybe Nova has the demo date somewhere." only wonders about her: she
    offers.
-4. "Nova, don't answer, just listen for now." asks for quiet: silent.
-5. "Right, the budget, how much do we set it to?" asks the room, not her:
-   silent.
+4. "Nova, don't answer, just listen for now." puts the room in the listening
+   state the policy keeps: silent.
+5. "Right, the budget, how much do we set it to?" asks the room: silent, the
+   room listens.
+6. "Nova, what did we spend on it last year?" is put to her: she answers, and
+   the room goes on listening.
+7. "So we keep the same figure." silent.
+8. "Thanks Nova, feel free to chime in again." lets her talk again: the room
+   is open, and the turn decided as usual.
 
 Every decision reaches ``ON_SPEAK_DECISION`` with its reason and each judgment.
 Told the languages Nova answers in, the policy also judges the speaker's, and
@@ -73,22 +79,28 @@ LINES = [
     ("Sylvain", "Maybe Nova has the demo date somewhere."),
     ("Paul", "Nova, don't answer, just listen for now."),
     ("Sylvain", "Right, the budget, how much do we set it to?"),
+    ("Paul", "Nova, what did we spend on it last year?"),
+    ("Sylvain", "So we keep the same figure."),
+    ("Paul", "Thanks Nova, feel free to chime in again."),
 ]
 
 # What Jev answered on these lines, for the mock.
 SCRIPT = [
-    {"directness": 0.15, "request": 0.17, "language": "English"},
+    {"directness": 0.13, "request": 0.17, "language": "English"},
     {"directness": 2.98, "request": 0.95, "language": "English"},
-    {"directness": 1.02, "unfinished": 0.29, "request": 0.28, "language": "English"},
+    {"directness": 1.03, "unfinished": 0.31, "request": 0.28, "language": "English"},
     {
         "directness": 2.98,
         "deferred": 0.55,
-        "hush": 0.95,
-        "quiet_rule": 0.62,
-        "request": 0.48,
+        "hush": 0.94,
+        "request": 0.45,
+        "listen_request": 0.90,
         "language": "English",
     },
-    {"quiet_rule": 0.95, "request": 0.57, "unfinished": 0.09, "language": "English"},
+    {"request": 0.48, "asked_me": 0.30, "lift": 0.09, "language": "English"},
+    {"directness": 2.93, "request": 0.88, "asked_me": 0.94, "lift": 0.12, "language": "English"},
+    {"request": 0.09, "lift": 0.11, "language": "English"},
+    {"directness": 2.91, "request": 0.63, "asked_me": 0.34, "lift": 0.85, "language": "English"},
 ]
 
 LANGUAGES = {"English": "Answer in English only."}
@@ -115,6 +127,8 @@ async def main() -> None:
             responses=[
                 "We went through the September numbers: Paul sends them tomorrow.",
                 "I can look up the demo date if you like.",
+                "Last year the budget was 40,000 $.",
+                "Happy to.",
             ]
         ),
         system_prompt="You are Nova, the team's assistant.",
@@ -127,7 +141,8 @@ async def main() -> None:
     kit.register_channel(SMSChannel("sms", provider=MockSMSProvider()))
     await kit.create_room(room_id="meeting")
     await kit.attach_channel("meeting", "nova", category=ChannelCategory.INTELLIGENCE)
-    await kit.attach_channel("meeting", "sms")
+    # Several people write on this one channel: a group binding (RFC §10.4).
+    await kit.attach_channel("meeting", "sms", group=True)
 
     @kit.hook(HookTrigger.ON_SPEAK_DECISION, execution=HookExecution.ASYNC)
     async def on_decision(event: SpeakDecisionEvent, ctx: object) -> None:

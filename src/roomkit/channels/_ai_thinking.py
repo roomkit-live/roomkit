@@ -146,7 +146,8 @@ class AIThinkingMixin(_AIChannelContract):
         decision: SpeakDecision,
     ) -> SpeakDecision:
         """The agent stays silent on *event*: it thinks about it, and when the thought
-        comes back within the wait with something to say, the policy decides again."""
+        comes back within the wait with something to say, the policy decides again;
+        a final decision waits for no thought."""
         thinker = self._thinker
         if thinker is None:
             return decision
@@ -158,6 +159,8 @@ class AIThinkingMixin(_AIChannelContract):
         if ai_context is None:
             return decision  # BEFORE_AI_GENERATION kept it from the thinker
         ticket = mind.think(ai_context)
+        if decision.final:
+            return decision  # no thought changes it: nothing to wait for
         if not self._think_wait or not await mind.settled(ticket, self._think_wait):
             return decision
         if not mind.thought.want_to_say:

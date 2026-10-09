@@ -60,12 +60,6 @@ def _said(body: str, pid: str | None = "p1", channel_id: str = "sms1", **kwargs:
         ({"directness": 3.0, "unfinished": 0.9}, False, ("silent", "not finished")),
         ({"directness": 3.0, "deferred": 0.8}, False, ("silent", "postponed")),
         ({"directness": 3.0, "hush": 0.7}, False, ("silent", "asked to keep quiet")),
-        (
-            {"quiet_rule": 0.9, "request": 0.1, "directness": 2.0},
-            False,
-            ("silent", "keeping quiet"),
-        ),
-        ({"quiet_rule": 0.9, "request": 0.8, "directness": 3.0}, False, ("speak", "addressed")),
         ({"answered": 0.8}, False, ("speak", "answers its question")),
         ({"directness": 1.5}, False, ("speak", "addressed")),
         ({"directness": 0.8, "request": 0.7}, False, ("speak", "addressed")),
@@ -136,7 +130,7 @@ async def test_the_classifier_reads_the_turns_by_speaker_the_agent_under_its_nam
         ],
         "last_turn": {"speaker": "Sylvain", "text": "Nova, can you sum up?"},
     }
-    assert set(questions) == set(QUESTIONS)
+    assert set(questions) == {*QUESTIONS, "listen_request"}
     assert decision.judgments["directness"] == 3.0
     assert decision.notes == ()
 

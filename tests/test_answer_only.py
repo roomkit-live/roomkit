@@ -167,8 +167,8 @@ async def test_one_person_before_the_television_is_a_one_to_one_on_the_channel()
 
 
 async def test_a_voice_only_listened_to_is_thought_about_and_never_answered() -> None:
-    """The agent hears the television and thinks about it; with something to say,
-    it is asked again and stays silent; Sylvain then gets the thought."""
+    """The agent hears the television and thinks about it; the silence is final, so
+    the channel neither waits for the thought nor asks again; Sylvain then gets it."""
     inner = MockSpeakPolicy(["speak"])
     thinker = MockThinker([PRICE])
     provider = MockAIProvider(responses=["It costs 1,200 $ a year."])
@@ -191,12 +191,13 @@ async def test_a_voice_only_listened_to_is_thought_about_and_never_answered() ->
 
     assert output.responded is False
     assert provider.calls == []
-    assert len(thinker.calls) == 1
-    assert inner.turns == []  # asked again with the thought, still never the TV's
-    assert [(d.decision.reason, d.asked_again) for d in decisions] == [
-        (LISTENED_TO, False),
-        (LISTENED_TO, True),
+    assert [(d.decision.reason, d.decision.final, d.asked_again) for d in decisions] == [
+        (LISTENED_TO, True, False)
     ]
+    [mind] = channel._minds.values()
+    assert await mind.settled(1, 1.0)  # thought about, though nothing waited for it
+    assert len(thinker.calls) == 1
+    assert inner.turns == []
     sylvain = _said("Nova, did you catch that?", "Sylvain")
     run = await respond(channel, sylvain, _BINDING, _context(tv, sylvain))
 
