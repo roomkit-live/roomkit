@@ -15,8 +15,6 @@ unbounded concurrency and spend.
 from __future__ import annotations
 
 import asyncio
-import base64
-import binascii
 from typing import Any
 
 from roomkit.providers.ai.base import (
@@ -31,7 +29,7 @@ from roomkit.providers.image.base import (
     never_sent,
     parse_data_uri,
     parse_size,
-    sniff_mime_type,
+    payload_mime_type,
     to_data_uri,
 )
 from roomkit.providers.openrouter.config import OpenRouterImageConfig
@@ -237,16 +235,7 @@ class OpenRouterImageProvider(ImageProvider):
         routed model's output is unidentifiable; then the bytes answer for
         themselves.
         """
-        declared = image.get("media_type")
-        if declared:
-            return str(declared)
-        try:
-            # 32 base64 chars decode the 24 leading bytes every magic number
-            # fits in; the full payload is only decoded when a consumer reads it.
-            head = base64.b64decode(payload[:32], validate=True)
-        except (binascii.Error, ValueError):
-            return "image/png"
-        return sniff_mime_type(head)
+        return payload_mime_type(image.get("media_type"), payload)
 
     @staticmethod
     def _usage(payload: dict[str, Any]) -> dict[str, Any]:

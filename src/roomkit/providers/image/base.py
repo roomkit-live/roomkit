@@ -14,6 +14,8 @@ to the conversations already held by a model that draws.
 
 from __future__ import annotations
 
+import base64
+import binascii
 import re
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
@@ -101,6 +103,20 @@ def sniff_mime_type(data: bytes, *, fallback: str = "image/png") -> str:
     if data.startswith((b"GIF87a", b"GIF89a")):
         return "image/gif"
     return fallback
+
+
+def payload_mime_type(declared: str | None, payload: str, *, fallback: str = "image/png") -> str:
+    """The media type of a base64 image: the one its response declared, else
+    the one its leading bytes show (:func:`sniff_mime_type`)."""
+    if declared:
+        return str(declared)
+    try:
+        # 32 base64 chars decode the 24 leading bytes every magic number fits
+        # in; the full payload is only decoded when a consumer reads it.
+        head = base64.b64decode(payload[:32], validate=True)
+    except (binascii.Error, ValueError):
+        return fallback
+    return sniff_mime_type(head, fallback=fallback)
 
 
 class ImageResult(BaseModel):

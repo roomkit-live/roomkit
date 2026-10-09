@@ -10,8 +10,6 @@ absorb it.
 
 from __future__ import annotations
 
-import base64
-import binascii
 from math import gcd
 from typing import Any
 
@@ -27,7 +25,7 @@ from roomkit.providers.image.base import (
     never_sent,
     parse_data_uri,
     parse_size,
-    sniff_mime_type,
+    payload_mime_type,
     to_data_uri,
 )
 from roomkit.providers.utils import http_timeout
@@ -277,16 +275,7 @@ class XAIImageProvider(ImageProvider):
         bytes answer for themselves — Grok Imagine returns JPEG by default,
         so a fixed PNG fallback would mislabel most images.
         """
-        declared = getattr(image, "mime_type", None)
-        if declared:
-            return str(declared)
-        try:
-            # 32 base64 chars decode the 24 leading bytes every magic number
-            # fits in; the full payload is only decoded when a consumer reads it.
-            head = base64.b64decode(payload[:32], validate=True)
-        except (binascii.Error, ValueError):
-            return "image/png"
-        return sniff_mime_type(head)
+        return payload_mime_type(getattr(image, "mime_type", None), payload)
 
     @staticmethod
     def _usage(response: Any) -> dict[str, int]:
