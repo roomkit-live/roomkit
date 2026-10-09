@@ -12,12 +12,12 @@ from __future__ import annotations
 
 import asyncio
 import base64
-from math import gcd
 from typing import Any
 
 from roomkit.providers.ai.base import AIImagePart, ModelInfo, ProviderError
 from roomkit.providers.gemini.config import GeminiImageConfig
 from roomkit.providers.gemini.errors import wrap_gemini_error
+from roomkit.providers.gemini.image_geometry import ASPECT_RATIOS, TIERS, size_geometry
 from roomkit.providers.gemini.image_models import MODELS
 from roomkit.providers.gemini.sdk import build_genai_client, close_genai_client
 from roomkit.providers.image.base import (
@@ -28,7 +28,6 @@ from roomkit.providers.image.base import (
     ImageResult,
     notify_image_progress,
     parse_data_uri,
-    parse_size,
     payload_mime_type,
 )
 from roomkit.providers.image.options import (
@@ -38,54 +37,6 @@ from roomkit.providers.image.options import (
     plain_metadata,
 )
 from roomkit.providers.image.usage import gemini_image_usage
-
-# Aspect ratios the Interactions image format accepts. A requested size is
-# reduced to its ratio and looked up here; an unlisted one is refused rather
-# than rounded to a neighbour, because a silently different geometry is a
-# failure the caller can neither see nor correct (RFC §25.2).
-_ASPECT_RATIOS = frozenset(
-    {
-        "1:1",
-        "2:3",
-        "3:2",
-        "3:4",
-        "4:3",
-        "4:5",
-        "5:4",
-        "9:16",
-        "16:9",
-        "21:9",
-        "1:8",
-        "8:1",
-        "1:4",
-        "4:1",
-    }
-)
-
-# Resolution tiers, keyed by the largest dimension the caller asked for. Google
-# names tiers, not pixel counts, so the request is mapped to the smallest tier
-# that covers it.
-_SIZE_TIERS: tuple[tuple[int, str], ...] = ((512, "512"), (1024, "1K"), (2048, "2K"), (4096, "4K"))
-
-
-def _check_size_geometry(
-    size: str, aspect_ratio: str, tier: str, model: str, image: ImageCapabilities
-) -> None:
-    """Refuse a size whose ratio or tier the model does not offer, by the size's
-    own name: the caller passed pixels, not ``aspect_ratio`` or ``image_size``
-    (RMK-655). Refused, never substituted (RFC §25.2)."""
-    if aspect_ratio not in image.aspect_ratios:
-        offered = ", ".join(image.aspect_ratios) or "none"
-        raise ValueError(
-            f"size {size!r} reduces to aspect ratio {aspect_ratio}, which {model} "
-            f"does not offer (its ratios: {offered})"
-        )
-    if tier not in image.image_sizes:
-        offered = ", ".join(image.image_sizes) or "none"
-        raise ValueError(
-            f"size {size!r} needs Gemini's {tier} tier, which {model} does not offer "
-            f"(its tiers: {offered})"
-        )
 
 
 class GeminiImageProvider(ImageProvider):
@@ -235,28 +186,42 @@ class GeminiImageProvider(ImageProvider):
         if size and (options.aspect_ratio or options.image_size):
             raise ValueError("Use size or aspect_ratio/image_size, not both")
         entry = self.catalog_entry()
-        defaults: dict[str, Any] = {}
-        if self._config.image_size:
-            defaults["image_size"] = self._config.image_size
-        if self._config.output_mime_type:
-            defaults["output_format"] = self._config.output_mime_type.removeprefix("image/")
-        if size:
-            # The requested pixels win over the deployment default: a caller
-            # naming a geometry is more specific than a configured tier.
-            aspect_ratio, tier = self.resolve_size(size)
-            if isinstance(entry, ImageModelInfo):
-                _check_size_geometry(size, aspect_ratio, tier, self._config.model, entry.image)
-            defaults["aspect_ratio"], defaults["image_size"] = aspect_ratio, tier
+        image = entry.image if isinstance(entry, ImageModelInfo) else None
+        defaults = self._inherited_options(size, image)
         resolved = ImageOptions.model_validate(
             {**defaults, **options.model_dump(exclude_none=True)}
         )
-        if isinstance(entry, ImageModelInfo):
-            entry.image.validate_request(
-                resolved, size=None, n=n, references=references, mask=False
-            )
+        if image is not None:
+            image.validate_request(resolved, size=None, n=n, references=references, mask=False)
         elif set(resolved.model_dump(exclude_none=True)) - set(defaults) - {"store"}:
             raise ValueError("Advanced controls require a model with known image capabilities")
         return resolved
+
+    def _inherited_options(
+        self, size: str | None, image: ImageCapabilities | None
+    ) -> dict[str, Any]:
+        """The options a call inherits from the config and from a portable size,
+        each refused under the name the caller set when the model lacks it."""
+        defaults: dict[str, Any] = {}
+        if self._config.image_size:
+            defaults["image_size"] = self._config.image_size
+        if mime := self._config.output_mime_type:
+            defaults["output_format"] = mime.removeprefix("image/")
+            if image is not None and defaults["output_format"] not in image.formats:
+                offered = ", ".join(f"image/{fmt}" for fmt in image.formats) or "none"
+                raise ValueError(
+                    f"output_mime_type {mime!r} is not offered by {self._config.model} "
+                    f"(its types: {offered})"
+                )
+        if size:
+            # The requested pixels win over the deployment default: a caller
+            # naming a geometry is more specific than a configured tier.
+            defaults["aspect_ratio"], defaults["image_size"] = (
+                size_geometry(size, image.aspect_ratios, image.image_sizes, self._config.model)
+                if image is not None
+                else self.resolve_size(size)
+            )
+        return defaults
 
     def _build_request(
         self,
@@ -315,19 +280,7 @@ class GeminiImageProvider(ImageProvider):
         as pixels. Translating here is what lets a caller pass one size string
         to every provider (RFC §25.2) instead of learning each vendor's form.
         """
-        width, height = parse_size(size)
-        divisor = gcd(width, height)
-        aspect_ratio = f"{width // divisor}:{height // divisor}"
-        if aspect_ratio not in _ASPECT_RATIOS:
-            raise ValueError(
-                f"size {size!r} reduces to aspect ratio {aspect_ratio}, which Gemini does not "
-                f"offer; supported ratios are {', '.join(sorted(_ASPECT_RATIOS))}"
-            )
-        largest = max(width, height)
-        for ceiling, tier in _SIZE_TIERS:
-            if largest <= ceiling:
-                return aspect_ratio, tier
-        raise ValueError(f"size {size!r} exceeds Gemini's largest tier (4K)")
+        return size_geometry(size, ASPECT_RATIOS, TIERS, "Gemini")
 
     _geometry = resolve_size
 

@@ -209,6 +209,8 @@ async def test_size_translates_to_gemini_geometry(size: str, aspect_ratio: str, 
         ("gemini-nano-banana-2.1", "512x512", "512 tier"),
         ("gemini-3.1-flash-lite-image", "2048x2048", "2K tier"),
         ("gemini-3-pro-image", "512x4096", "aspect ratio 1:8"),
+        ("gemini-3-pro-image", "1024x2048", "aspect ratio 1:2"),
+        ("gemini-3.1-flash-lite-image", "8192x8192", "largest tier"),
     ],
 )
 async def test_a_size_the_model_cannot_produce_is_refused_by_its_own_name(
@@ -227,6 +229,19 @@ async def test_a_size_the_model_cannot_produce_is_refused_by_its_own_name(
     assert f"size {size!r}" in message
     assert names in message
     assert model in message
+    create.assert_not_awaited()
+
+
+async def test_a_configured_output_type_the_model_lacks_is_refused_by_its_own_name() -> None:
+    """``output_mime_type`` is set on the config, not as ``output_format``: the
+    refusal says so (RMK-655 review)."""
+    provider = _provider(model="gemini-nano-banana-2.1", output_mime_type="image/png")
+    create = _arm(provider)
+
+    refusal = r"output_mime_type 'image/png' is not offered.*its types: image/jpeg"
+    with pytest.raises(ValueError, match=refusal):
+        await provider.generate("a fox")
+
     create.assert_not_awaited()
 
 

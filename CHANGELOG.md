@@ -440,8 +440,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `gemini-nano-banana-2.1` said "image_size must be one of 1K, 2K, 4K", a field
   the caller never set; it now says "size '512x512' needs Gemini's 512 tier,
   which gemini-3-pro-image does not offer (its tiers: 1K, 2K, 4K)", and names
-  the ratio the same way (`512x4096` is 1:8, absent from Pro). Still a refusal
-  before the call: RFC §25.2 forbids substituting another size.
+  the ratio the same way, against the model's own list (`512x4096` is 1:8,
+  absent from Pro), and a size beyond 4K against the model's tiers. A
+  configured `output_mime_type` the model lacks is refused under that name too,
+  not as `output_format` (`image/png` on Nano Banana 2.1). Still refusals before
+  the call: RFC §25.2 forbids substituting another size. The geometry moved to
+  `roomkit.providers.gemini.image_geometry`; `resolve_size` is unchanged.
 
 - `MetaImageProvider` refuses every advanced option on a model its catalog
   does not list, as Gemini and OpenAI do (RMK-654): it dropped the ones Muse
