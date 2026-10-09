@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.96.1] — 2026-10-09
+
+### Fixed
+
+- The transport no-recipient refusal (RMK-646) cites RFC §10.2 step 3d, the
+  broadcast step that defines it, in its source comment and in the 0.96.0
+  notes below; both cited §22.2, which covers the built-in delivery
+  strategies. Documentation only: no behaviour changes.
+
 ## [0.96.0] — 2026-10-09
 
 This release gives an agent a say in when it speaks: a speak policy decides
