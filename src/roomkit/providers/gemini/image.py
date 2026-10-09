@@ -31,7 +31,12 @@ from roomkit.providers.image.base import (
     parse_size,
     payload_mime_type,
 )
-from roomkit.providers.image.options import ImageModelInfo, ImageOptions, plain_metadata
+from roomkit.providers.image.options import (
+    ImageCapabilities,
+    ImageModelInfo,
+    ImageOptions,
+    plain_metadata,
+)
 from roomkit.providers.image.usage import gemini_image_usage
 
 # Aspect ratios the Interactions image format accepts. A requested size is
@@ -61,6 +66,26 @@ _ASPECT_RATIOS = frozenset(
 # names tiers, not pixel counts, so the request is mapped to the smallest tier
 # that covers it.
 _SIZE_TIERS: tuple[tuple[int, str], ...] = ((512, "512"), (1024, "1K"), (2048, "2K"), (4096, "4K"))
+
+
+def _check_size_geometry(
+    size: str, aspect_ratio: str, tier: str, model: str, image: ImageCapabilities
+) -> None:
+    """Refuse a size whose ratio or tier the model does not offer, by the size's
+    own name: the caller passed pixels, not ``aspect_ratio`` or ``image_size``
+    (RMK-655). Refused, never substituted (RFC §25.2)."""
+    if aspect_ratio not in image.aspect_ratios:
+        offered = ", ".join(image.aspect_ratios) or "none"
+        raise ValueError(
+            f"size {size!r} reduces to aspect ratio {aspect_ratio}, which {model} "
+            f"does not offer (its ratios: {offered})"
+        )
+    if tier not in image.image_sizes:
+        offered = ", ".join(image.image_sizes) or "none"
+        raise ValueError(
+            f"size {size!r} needs Gemini's {tier} tier, which {model} does not offer "
+            f"(its tiers: {offered})"
+        )
 
 
 class GeminiImageProvider(ImageProvider):
@@ -209,6 +234,7 @@ class GeminiImageProvider(ImageProvider):
         checked against the model's capabilities before any billable request."""
         if size and (options.aspect_ratio or options.image_size):
             raise ValueError("Use size or aspect_ratio/image_size, not both")
+        entry = self.catalog_entry()
         defaults: dict[str, Any] = {}
         if self._config.image_size:
             defaults["image_size"] = self._config.image_size
@@ -217,11 +243,13 @@ class GeminiImageProvider(ImageProvider):
         if size:
             # The requested pixels win over the deployment default: a caller
             # naming a geometry is more specific than a configured tier.
-            defaults["aspect_ratio"], defaults["image_size"] = self.resolve_size(size)
+            aspect_ratio, tier = self.resolve_size(size)
+            if isinstance(entry, ImageModelInfo):
+                _check_size_geometry(size, aspect_ratio, tier, self._config.model, entry.image)
+            defaults["aspect_ratio"], defaults["image_size"] = aspect_ratio, tier
         resolved = ImageOptions.model_validate(
             {**defaults, **options.model_dump(exclude_none=True)}
         )
-        entry = self.catalog_entry()
         if isinstance(entry, ImageModelInfo):
             entry.image.validate_request(
                 resolved, size=None, n=n, references=references, mask=False

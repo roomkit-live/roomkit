@@ -436,6 +436,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A `size` the Gemini image model cannot produce is refused by its own name
+  (RMK-655): `generate(size="512x512")` on `gemini-3-pro-image` or
+  `gemini-nano-banana-2.1` said "image_size must be one of 1K, 2K, 4K", a field
+  the caller never set; it now says "size '512x512' needs Gemini's 512 tier,
+  which gemini-3-pro-image does not offer (its tiers: 1K, 2K, 4K)", and names
+  the ratio the same way (`512x4096` is 1:8, absent from Pro). Still a refusal
+  before the call: RFC §25.2 forbids substituting another size.
+
 - `GeminiImageProvider` reads the type of an image whose response declares
   none off its bytes, instead of labelling it `image/png` (RMK-656): Nano
   Banana 2.1 returns JPEG. xAI, OpenRouter, Meta and Gemini share one helper

@@ -202,6 +202,43 @@ async def test_size_translates_to_gemini_geometry(size: str, aspect_ratio: str, 
     assert response_format["image_size"] == tier
 
 
+@pytest.mark.parametrize(
+    ("model", "size", "names"),
+    [
+        ("gemini-3-pro-image", "512x512", "512 tier"),
+        ("gemini-nano-banana-2.1", "512x512", "512 tier"),
+        ("gemini-3.1-flash-lite-image", "2048x2048", "2K tier"),
+        ("gemini-3-pro-image", "512x4096", "aspect ratio 1:8"),
+    ],
+)
+async def test_a_size_the_model_cannot_produce_is_refused_by_its_own_name(
+    model: str, size: str, names: str
+) -> None:
+    """The refusal names the size the caller passed, what it needs and what the
+    model offers, not an ``image_size`` or ``aspect_ratio`` they never set
+    (RMK-655). It is still a refusal: RFC §25.2 forbids substituting a size."""
+    provider = _provider(model=model)
+    create = _arm(provider)
+
+    with pytest.raises(ValueError) as refused:
+        await provider.generate("a fox", size=size)
+
+    message = str(refused.value)
+    assert f"size {size!r}" in message
+    assert names in message
+    assert model in message
+    create.assert_not_awaited()
+
+
+async def test_a_size_the_model_offers_still_reaches_the_wire() -> None:
+    provider = _provider(model="gemini-3.1-flash-image")
+    create = _arm(provider)
+
+    await provider.generate("a fox", size="512x512")
+
+    assert create.await_args.kwargs["response_format"]["image_size"] == "512"
+
+
 async def test_an_unofferable_ratio_is_refused_not_rounded() -> None:
     provider = _provider()
     create = _arm(provider, _interaction())
