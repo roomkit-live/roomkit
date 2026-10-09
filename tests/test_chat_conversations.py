@@ -12,9 +12,12 @@ import asyncio
 from collections.abc import Callable
 from typing import Any
 
-from roomkit import HookTrigger, RoomKit
+import pytest
+
+from roomkit import HookTrigger, RoomKit, TransportChannel
 from roomkit.channels import TelegramChannel
 from roomkit.channels.ai import AIChannel
+from roomkit.models.enums import ChannelType
 from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.providers.telegram.mock import MockTelegramProvider
 from roomkit.providers.telegram.webhook import parse_telegram_webhook
@@ -108,3 +111,30 @@ async def test_a_groups_members_share_its_room_and_their_private_chats_stay_apar
     authors = {e.source.participant_id for e in events if e.source.channel_id == "tg"}
     assert authors == {str(ALICE), str(BOB)}
     await bot.kit.close()
+
+
+async def test_a_room_prepared_for_a_chat_takes_no_one_else() -> None:
+    """The host prepared Alice's chat; Bob, writing first, is not answered there."""
+    bot = _Bot()
+    await bot.kit.create_room(room_id="alice-chat")
+    await bot.kit.attach_channel("alice-chat", "ai")
+    await bot.kit.attach_channel("alice-chat", "tg", metadata={"telegram_chat_id": str(ALICE)})
+
+    bob = await bot.write(BOB, "hello")
+    assert bob != "alice-chat"
+    assert bot.last_reply_chat() == str(BOB)
+    alice = await bot.write(ALICE, "hi")
+
+    assert alice == "alice-chat"
+    assert bot.last_reply_chat() == str(ALICE)
+    await bot.kit.close()
+
+
+def test_a_channel_replies_to_the_sender_or_to_a_chat_not_both() -> None:
+    with pytest.raises(ValueError, match="not both"):
+        TransportChannel(
+            "x",
+            ChannelType.TELEGRAM,
+            replies_to_sender=True,
+            reply_metadata_key="chat_id",
+        )

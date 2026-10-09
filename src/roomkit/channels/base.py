@@ -263,10 +263,10 @@ class Channel(ABC):
         """The correspondent's address *binding* delivers to, normalized; None if none.
 
         On a channel whose replies go to the address the correspondent writes
-        from, a binding's recipient names its correspondent as much as its
+        from, or to a chat (whose id is its conversation's address), a
+        binding's recipient names its conversation as much as its
         ``participant_id`` does: the router admits no one else through it.
-        None on any other channel (a webhook URL, a chat or a conversation id
-        names no one).
+        None on any other channel (a webhook URL names no one).
         """
         return None
 

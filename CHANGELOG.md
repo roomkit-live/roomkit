@@ -392,6 +392,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Per security review, a room prepared for a chat takes no one else
+  (RMK-646): on Telegram, Teams, Discord and Buzz a binding's recipient (the
+  chat) did not name its conversation, so a room the host opened for Alice's
+  chat admitted the first stranger writing to the bot through the router's
+  one-room step and answered them in Alice's chat. The chat a binding delivers
+  to now names its conversation as a phone channel's recipient names its
+  correspondent. `TransportChannel` refuses `replies_to_sender` together with
+  `reply_metadata_key`.
+
 - `kit.deliver()` says what it is for (RMK-647): its docstring read "sends
   content to the target channel", and a host calling it to text a customer
   on SMS got `sent` while nothing reached the customer, or got the agent's

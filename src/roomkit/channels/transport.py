@@ -65,17 +65,24 @@ class TransportChannel(Channel):
                 the channels addressed by phone number); unchanged if omitted.
             replies_to_sender: Whether a reply goes to the address the
                 correspondent writes from (a phone number, an email address),
-                rather than to a conversation, a channel or a URL. Then the
-                framework records an inbound sender as the binding's
-                recipient, and a binding's recipient names its correspondent:
-                the router admits no one else through it (RFC §10.4).
+                rather than to a chat or a URL. Then the framework records an
+                inbound sender as the binding's recipient, and a binding's
+                recipient names its correspondent: the router admits no one
+                else through it (RFC §10.4).
             reply_metadata_key: On a channel that replies to a chat or a
                 conversation rather than to the sender, the inbound
                 message's metadata key naming it (``chat_id`` on Telegram):
                 a room opened for a message replies there, and the chat is
                 the message's conversation (:meth:`conversation_address`):
-                its room is found by the chat, not by the sender.
+                its room is found by the chat, not by the sender, and a
+                binding's recipient names its chat as a phone channel's names
+                its correspondent. Exclusive with *replies_to_sender*.
         """
+        if replies_to_sender and reply_metadata_key is not None:
+            raise ValueError(
+                "A channel replies to the sender's address or to a chat, not both: "
+                "pass replies_to_sender or reply_metadata_key"
+            )
         super().__init__(channel_id)
         self.channel_type = channel_type
         self._provider = provider
@@ -106,15 +113,20 @@ class TransportChannel(Channel):
             return address
         return self._address_normalizer(address)
 
+    @property
+    def _recipient_is_conversation(self) -> bool:
+        """Whether the recipient is a conversation's address: the sender's, or a chat."""
+        return self._replies_to_sender or self._reply_metadata_key is not None
+
     def recipient_address(self, binding: ChannelBinding) -> str | None:
-        if not self._replies_to_sender:
+        if not self._recipient_is_conversation:
             return None
         value = binding.metadata.get(self._recipient_key)
         return self.normalize_address(str(value)) if value else None
 
     def recipient_metadata(self, address: str) -> dict[str, str]:
-        """``{recipient_key: address}`` when replies go to the sender's own address."""
-        if not self._replies_to_sender or not address:
+        """``{recipient_key: address}`` when the recipient is a conversation's address."""
+        if not self._recipient_is_conversation or not address:
             return {}
         return {self._recipient_key: address}
 
