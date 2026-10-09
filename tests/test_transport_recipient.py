@@ -272,7 +272,8 @@ async def test_a_webhook_records_no_sender_as_recipient() -> None:
 
 @pytest.mark.parametrize("chat_id", ["7", "-100500"], ids=["private-chat", "group-chat"])
 async def test_a_chat_channel_replies_to_the_chat_the_message_came_from(chat_id: str) -> None:
-    """Telegram: a private chat's id is its user's, a group's is the group's."""
+    """Telegram: a private chat's id is its user's, a group's is the group's; the
+    chat is the conversation, so the binding names it."""
     telegram = MockTelegramProvider()
     kit = _kit_with_agent(TelegramChannel("tg", provider=telegram))
     message = InboundMessage(
@@ -288,8 +289,9 @@ async def test_a_chat_channel_replies_to_the_chat_the_message_came_from(chat_id:
 
     assert [m["to"] for m in telegram.sent] == [chat_id]
     binding = await kit.store.get_binding(result.event.room_id, "tg")
-    assert binding is not None and binding.participant_id == "7"
+    assert binding is not None and binding.participant_id == chat_id
     assert binding.metadata["telegram_chat_id"] == chat_id
+    assert result.event.source.participant_id == "7"
     await kit.close()
 
 

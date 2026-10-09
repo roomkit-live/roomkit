@@ -429,13 +429,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   correspondent when the binding names no one, the router admits no one else
   through a binding delivering to someone else, and each correspondent reaches
   the room prepared for them when the number has several. On Telegram,
-  Teams, Discord and Buzz the recipient is a chat or a conversation: a room
-  opened for a message replies to the one it came from (new
-  `TransportChannel(reply_metadata_key=...)` and
-  `Channel.reply_metadata(message)`), where the entry above wrote the
-  sender's id, so a Telegram group's member was answered privately; on HTTP
-  the recipient is a URL and nothing is written. Neither names a
-  correspondent. Phone numbers are compared in one form,
+  Teams, Discord and Buzz the conversation is the chat, not the sender: a
+  message is routed and recorded by the chat it was posted in (new
+  `Channel.conversation_address(message)`), and a room opened for it replies
+  there (new `TransportChannel(reply_metadata_key=...)` and
+  `Channel.reply_metadata(message)`). A user's private chat with the bot and
+  a group they write in are two rooms, and a group's members share one; the
+  entry above wrote the sender's id as the chat, and a room found by its
+  sender answered a group message in private and a private one in the group.
+  On HTTP the recipient is a URL and nothing is written. Phone numbers are
+  compared in one form,
   E.164: the SMS, RCS, WhatsApp and WhatsApp Personal channels write an
   inbound sender, a binding's correspondent and recipient and a member's id
   that way (`whatsapp:+15550000001` and `+1 (555) 000-0001` are both

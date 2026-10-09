@@ -282,6 +282,17 @@ class Channel(ABC):
         """
         return {}
 
+    def conversation_address(self, message: InboundMessage) -> str:
+        """The address naming the conversation *message* belongs to (RFC §10.4).
+
+        The sender's own by default. On a chat channel it is the chat the
+        message was posted in: a private chat is its user's, a group chat
+        the group's, which all its members share. The framework routes a
+        message, records a binding's correspondent and admits a sender by
+        it; the message's author stays the sender.
+        """
+        return message.sender_id
+
     def reply_metadata(self, message: InboundMessage) -> dict[str, str]:
         """The binding metadata that makes a room reply where *message* came from.
 

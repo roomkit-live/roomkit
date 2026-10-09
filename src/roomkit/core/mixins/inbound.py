@@ -581,7 +581,7 @@ class InboundMixin(HelpersMixin):
             room_id = await self._inbound_router.route(
                 channel_id=message.channel_id,
                 channel_type=channel.channel_type,
-                participant_id=message.sender_id,
+                participant_id=_conversation(message, channel),
             )
         if room_id is None:
             return await self._open_room_for(message, None, organization_id), True
@@ -641,9 +641,9 @@ class InboundMixin(HelpersMixin):
         their own.
         """
         room = await self.create_room(room_id=room_id, organization_id=organization_id)
-        sender = message.sender_id
-        recorded = sender if recordable_sender(sender) else None
         channel = self._channels.get(message.channel_id)
+        sender = _conversation(message, channel) if channel else message.sender_id
+        recorded = sender if recordable_sender(sender) else None
         await self.attach_channel(
             room.id,
             message.channel_id,
@@ -694,7 +694,7 @@ class InboundMixin(HelpersMixin):
         Anyone else was admitted against a binding another sender claimed
         since, and is routed again.
         """
-        sender = message.sender_id
+        sender = _conversation(message, channel)
         if not recordable_sender(sender):
             return True
         binding = await self._store.get_binding(room_id, message.channel_id)
@@ -728,7 +728,7 @@ class InboundMixin(HelpersMixin):
         let in unrecorded, which would leave the room open to a concurrent
         stranger.
         """
-        channel_id, sender = message.channel_id, message.sender_id
+        channel_id, sender = message.channel_id, _conversation(message, channel)
         async with AsyncExitStack() as stack:
             try:
                 async with asyncio.timeout(self._process_timeout):
@@ -924,8 +924,20 @@ def _as_instruction(event: RoomEvent, message: InboundMessage) -> RoomEvent:
     return event.model_copy(update={"metadata": metadata})
 
 
+def _conversation(message: InboundMessage, channel: Channel) -> str:
+    """The address *message* is routed and recorded by (RFC §10.4).
+
+    The channel's conversation address (the chat, on a chat channel), except
+    for a message the framework writes itself: its sender stays ``system``
+    whatever its metadata says, so it is never recorded on a binding.
+    """
+    if not recordable_sender(message.sender_id):
+        return message.sender_id
+    return channel.conversation_address(message)
+
+
 def _lacks_recipient(binding: ChannelBinding, message: InboundMessage, channel: Channel) -> bool:
-    """Whether *binding* names *message*'s sender but has no reply address for *channel*."""
-    if binding.participant_id != message.sender_id:
+    """Whether *binding* names *message*'s conversation but has no reply address for it."""
+    if binding.participant_id != _conversation(message, channel):
         return False
     return any(not binding.metadata.get(key) for key in channel.reply_metadata(message))

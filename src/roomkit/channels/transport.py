@@ -72,8 +72,9 @@ class TransportChannel(Channel):
             reply_metadata_key: On a channel that replies to a chat or a
                 conversation rather than to the sender, the inbound
                 message's metadata key naming it (``chat_id`` on Telegram):
-                a room opened for a message replies there. That address
-                names no correspondent.
+                a room opened for a message replies there, and the chat is
+                the message's conversation (:meth:`conversation_address`):
+                its room is found by the chat, not by the sender.
         """
         super().__init__(channel_id)
         self.channel_type = channel_type
@@ -116,6 +117,13 @@ class TransportChannel(Channel):
         if not self._replies_to_sender or not address:
             return {}
         return {self._recipient_key: address}
+
+    def conversation_address(self, message: InboundMessage) -> str:
+        if self._reply_metadata_key is not None:
+            chat = message.metadata.get(self._reply_metadata_key)
+            if chat:
+                return str(chat)
+        return message.sender_id
 
     def reply_metadata(self, message: InboundMessage) -> dict[str, str]:
         if self._replies_to_sender:

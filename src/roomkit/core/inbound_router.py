@@ -33,7 +33,12 @@ class InboundRoomRouter(ABC):
         participant_id: str | None = None,
         channel_data: dict[str, Any] | None = None,
     ) -> str | None:
-        """Return room_id for the message, or ``None`` to create a new room."""
+        """Return room_id for the message, or ``None`` to create a new room.
+
+        *participant_id* is the address naming the message's conversation
+        (``Channel.conversation_address``): the sender's, or on a chat
+        channel the chat it was posted in.
+        """
         ...
 
 
