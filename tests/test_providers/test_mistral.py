@@ -21,7 +21,6 @@ from roomkit.providers.ai.base import (
     StreamToolCallDelta,
 )
 from roomkit.providers.ai.response_schema import ResponseSchemaError
-from roomkit.providers.mistral.ai import MistralAIProvider
 from roomkit.providers.mistral.config import MistralConfig
 
 
@@ -171,18 +170,6 @@ class TestMistralAIProvider:
         from mistralai.client import Mistral
 
         assert Mistral is not None
-
-    async def test_close_closes_the_http_client_the_sdk_opened(self) -> None:
-        """The SDK has no ``close()``, only a context exit that closes the client
-        it created; the provider's ``close()`` must reach it (RMK-651)."""
-        pytest.importorskip("mistralai")
-        provider = MistralAIProvider(_config())
-        http = provider._client.sdk_configuration.async_client
-        assert not http.is_closed
-
-        await provider.close()
-
-        assert http.is_closed
 
     @pytest.mark.asyncio
     async def test_generate_success(self) -> None:

@@ -372,6 +372,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The `mistral` extra admits mistralai 3.x (`mistralai>=2.0,<4`), and the
+  `elevenlabs` and `realtime-elevenlabs` extras elevenlabs up to 2.71
+  (`<2.72`), whose SDK patch canaries pass. mistralai 3.x runs on `httpx2` and
+  no longer installs `httpx`, which `roomkit[mistral]` does not need: checked in
+  an environment without `httpx` (RMK-651).
+
 - A background result handed back to an agent (an intelligence channel) now
   closes on a line saying the turn it opens gives that result only, another of
   the agent's replies taking care of whatever else was said, in the language

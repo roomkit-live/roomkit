@@ -23,7 +23,6 @@ import ollama
 import openai
 import polargrid
 from google import genai
-from mistralai.client import Mistral
 from polargrid.client import _parse_error_response
 
 from roomkit.providers.ai.base import AIProvider
@@ -31,13 +30,11 @@ from roomkit.providers.anthropic.ai import AnthropicAIProvider
 from roomkit.providers.anthropic.config import AnthropicConfig
 from roomkit.providers.gemini.ai import GeminiAIProvider
 from roomkit.providers.gemini.config import GeminiConfig
-from roomkit.providers.mistral.ai import MistralAIProvider
-from roomkit.providers.mistral.config import MistralConfig
 from roomkit.providers.ollama.ai import OllamaAIProvider
 from roomkit.providers.ollama.config import OllamaConfig
 from roomkit.providers.polargrid.ai import PolarGridAIProvider
 from roomkit.providers.polargrid.config import PolarGridConfig
-from tests.text_conformance import openai_wire
+from tests.text_conformance import mistral_wire, openai_wire
 
 OVERLOAD = "The server is overloaded, please try again later"
 HTML = b"<html><body><h1>502 Bad Gateway</h1></body></html>"
@@ -207,11 +204,7 @@ def _gemini(handler: Callable[[Any], Any]) -> AIProvider:
 
 
 def _mistral(handler: Callable[[Any], Any]) -> AIProvider:
-    """mistralai 3.x runs on httpx2, as Anthropic's SDK does."""
-    provider = MistralAIProvider(MistralConfig(api_key="k", model="mistral-large-latest"))
-    http = httpx2.AsyncClient(transport=_httpx2_transport(handler))
-    provider._client = Mistral(api_key="k", async_client=http)
-    return provider
+    return mistral_wire.mistral_over(_httpx2_transport(handler))
 
 
 def _ollama(handler: Callable[[Any], Any]) -> AIProvider:

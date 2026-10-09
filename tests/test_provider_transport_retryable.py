@@ -24,7 +24,6 @@ import ollama
 import polargrid
 import pytest
 from google.genai import errors as genai_errors
-from mistralai.client import Mistral
 
 from roomkit.providers.ai.base import (
     AIContext,
@@ -37,14 +36,13 @@ from roomkit.providers.anthropic.ai import AnthropicAIProvider
 from roomkit.providers.anthropic.config import AnthropicConfig
 from roomkit.providers.gemini.ai import GeminiAIProvider
 from roomkit.providers.gemini.config import GeminiConfig
-from roomkit.providers.mistral.ai import MistralAIProvider
-from roomkit.providers.mistral.config import MistralConfig
 from roomkit.providers.ollama.ai import OllamaAIProvider
 from roomkit.providers.ollama.config import OllamaConfig
 from roomkit.providers.openai.ai import OpenAIAIProvider
 from roomkit.providers.openai.config import OpenAIConfig
 from roomkit.providers.polargrid.ai import PolarGridAIProvider
 from roomkit.providers.polargrid.config import PolarGridConfig
+from tests.text_conformance.mistral_wire import mistral_over
 
 Failure = Literal["refused", "dropped", "client_error"]
 
@@ -58,7 +56,9 @@ async def _dropped(client: ModuleType) -> AsyncIterator[bytes]:
     yield b""  # pragma: no cover
 
 
-def _transport(failure: Failure, client: ModuleType = httpx) -> Any:
+def _transport(
+    failure: Failure, client: ModuleType = httpx
+) -> httpx.MockTransport | httpx2.MockTransport:
     """A mock transport of the HTTP client *client* (httpx or httpx2) that
     answers *failure*."""
 
@@ -80,10 +80,7 @@ def _openai(failure: Failure) -> AIProvider:
 
 def _mistral(failure: Failure) -> AIProvider:
     """mistralai 3.x runs on httpx2 and lets its transport errors through."""
-    provider = MistralAIProvider(MistralConfig(api_key="k", model="mistral-large-latest"))
-    http = httpx2.AsyncClient(transport=_transport(failure, httpx2))
-    provider._client = Mistral(api_key="k", async_client=http)
-    return provider
+    return mistral_over(_transport(failure, httpx2))
 
 
 def _ollama(failure: Failure) -> AIProvider:

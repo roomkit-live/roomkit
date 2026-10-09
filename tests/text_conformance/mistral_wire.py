@@ -119,6 +119,17 @@ def _events(script: Script) -> bytes:
     return "".join(lines).encode()
 
 
+def mistral_over(transport: httpx2.AsyncBaseTransport) -> AIProvider:
+    """A Mistral provider whose real SDK client talks to *transport*.
+
+    mistralai 3.x runs on httpx2: an httpx client, which it accepts by duck
+    typing, would take a path the SDK never takes in production.
+    """
+    provider = MistralAIProvider(MistralConfig(api_key="k", model=_MODEL))
+    provider._client = Mistral(api_key="k", async_client=httpx2.AsyncClient(transport=transport))
+    return provider
+
+
 def _round_items(message: dict[str, Any]) -> list[Item]:
     """An assistant round, its ThinkChunks read as the signed blocks they are."""
     content = message.get("content")
@@ -156,7 +167,6 @@ class MistralWire(ChatDriver):
     accepted_names = ("lookup", "files.read")
 
     def provider(self, script: Script) -> AIProvider:
-        provider = MistralAIProvider(MistralConfig(api_key="k", model=_MODEL))
         events = _events(script)
 
         async def answer(request: httpx2.Request) -> httpx2.Response:
@@ -165,11 +175,7 @@ class MistralWire(ChatDriver):
                 200, headers={"content-type": "text/event-stream"}, content=events
             )
 
-        # mistralai 3.x runs on httpx2: an httpx client would take a path the
-        # SDK never takes in production.
-        http = httpx2.AsyncClient(transport=httpx2.MockTransport(answer))
-        provider._client = Mistral(api_key="k", async_client=http)
-        return provider
+        return mistral_over(httpx2.MockTransport(answer))
 
     def assistant_items(self, message: dict[str, Any]) -> list[Item]:
         return _round_items(message)
