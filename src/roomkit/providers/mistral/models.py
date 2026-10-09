@@ -14,9 +14,8 @@ current Mistral 3 family is multimodal, and every member carries a 256k window
 except Ministral 3 3B, which is half that. Mistral Large 4 (public preview
 since 2026-10-06, verified 2026-10-09 on the account's ``/v1/models``) is
 multimodal too and carries 1,048,576 tokens; ``mistral-large-latest`` still
-names Large 3. The deprecated 128k-tier models leave
-``context_window`` as ``None`` — Mistral documents them only as "128k" without a
-firm token integer.
+names Large 3. The deprecated 128k-tier models leave ``context_window`` as
+``None`` — Mistral documents them only as "128k" without a firm token integer.
 
 Both the dated ids and their ``-latest`` aliases are listed so either form
 resolves here.

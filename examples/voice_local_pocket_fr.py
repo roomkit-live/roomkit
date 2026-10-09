@@ -4,7 +4,7 @@ Everything runs on this machine, microphone included:
   - sherpa-onnx neural VAD and French speech-to-text (CPU)
   - a local LLM that RoomKit runs itself through llama.cpp (or Ollama)
   - optional tools from an MCP server started as a command (stdio)
-  - Kyutai's Pocket TTS, French model, on the CPU (default) or a CUDA GPU
+  - Kyutai / Gradium's Pocket TTS, French model, on the CPU (default) or a CUDA GPU
 
     Mic → [AEC] → VAD → sherpa-onnx STT (fr) → local LLM (+ MCP tools) → [StripEmoji] → Pocket TTS (fr) → Speaker
 

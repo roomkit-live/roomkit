@@ -6,8 +6,9 @@ disjoint sets: no id here converses, and no id there draws (RFC §25.6). These
 are the ``*-image`` models the chat catalog's scope note explicitly excludes.
 
 Sourced from the Gemini API models and pricing docs (ai.google.dev), verified
-2026-08-07 (Nano Banana 2.1: 2026-10-09). Ids carry no ``models/`` prefix, matching the form
-``GeminiImageConfig.model`` and the generate-content calls use.
+2026-08-07 (Nano Banana 2.1 and the 2.5 Flash Image shutdown date: 2026-10-09).
+Ids carry no ``models/`` prefix, matching the form ``GeminiImageConfig.model``
+and the generate-content calls use.
 
 Prices are the paid-tier **standard** rates (not Batch, not Flex, not
 Priority), per million tokens. Google quotes one input rate covering text and
@@ -75,24 +76,23 @@ _LITE = _PRO.model_copy(
     }
 )
 # Nano Banana 2.1 keeps 3.1 Flash Image's controls but drops the 512 size.
-# Google also offers it a ``medium`` thinking level (its default), which
-# ``ImageOptions.thinking_level`` cannot express yet.
+# Google's default thinking level on it, ``medium``, is not offered:
+# ``ImageOptions.thinking_level`` takes ``minimal`` or ``high``.
 _NB21 = _FLASH.model_copy(
     update={"image_sizes": ["1K", "2K", "4K"], "verified": date(2026, 10, 9)}
 )
 _V25 = _LITE.model_copy(
     update={
         "max_references": 3,
-        "retirement_date": date(2026, 10, 2),
+        # Google moved the shutdown from 2026-10-02 to 2027-03-15, its earliest
+        # date (deprecations page, 2026-10-09).
+        "retirement_date": date(2027, 3, 15),
         "thinking_levels": [],
         "options": [option for option in _LITE.options if option != "thinking_level"],
     }
 )
 
 MODELS: list[ModelInfo] = [
-    # Google's 4K per-image figure for Nano Banana 2.1 ($0.113) does not match
-    # its own token table (2520 tokens at $30/M is $0.0756); the per-token rate
-    # is what the usage is billed from, so that is what this entry states.
     ImageModelInfo(
         id="gemini-nano-banana-2.1",
         image=_NB21,

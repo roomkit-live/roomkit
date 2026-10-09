@@ -270,7 +270,7 @@ MODELS: list[ModelInfo] = [
     ),
     # Claude Sonnet 4.5 deprecated 2026-09-30, retiring 2026-11-30 on the
     # Claude API, replaced by Claude Sonnet 5.5 (model deprecations page,
-    # 2026-10-09); anthropic 1.11 warns on every request that names it.
+    # 2026-10-09); anthropic 1.11 lists both ids among its deprecated models.
     ModelInfo(
         id="claude-sonnet-4-5-20250929",
         display_name="Claude Sonnet 4.5",

@@ -3,8 +3,8 @@
 `Pocket TTS <https://github.com/kyutai-labs/pocket-tts>`_ (Kyutai / Gradium,
 MIT code) streams 24 kHz speech in 80 ms chunks. It speaks English, French,
 German, Portuguese, Italian, Spanish and, since pocket-tts 3.3, Dutch, one
-language per loaded model, and clones a
-voice from a short clip. It runs faster than real time on two CPU cores; a
+language per loaded model, and clones a voice from a short clip. It runs
+faster than real time on two CPU cores; a
 CUDA GPU also works (Kyutai does not support it officially, but the model is a
 plain ``torch`` module). Install with ``pip install roomkit[pocket-tts]``.
 
@@ -43,9 +43,9 @@ class PocketTTSConfig:
     Attributes:
         language: Pocket TTS model to load: ``english``, ``french``,
             ``german``, ``portuguese``, ``italian``, ``spanish``, ``dutch``
-            (pocket-tts 3.3+), each also as a larger ``_24l`` variant
-            (``french_24l``) that sounds better and is about three times
-            slower.
+            (pocket-tts 3.3+), each but ``english`` also as a larger ``_24l``
+            variant (``french_24l``) that sounds better and is about three
+            times slower.
         voices: Named voices; the first one is the default. Each value is a
             pre-made voice name (``alba``, ``estelle``...), a local audio clip
             to clone, an ``hf://`` path, or a ``.safetensors`` voice state

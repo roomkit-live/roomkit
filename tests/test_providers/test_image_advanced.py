@@ -133,7 +133,8 @@ async def test_gemini_nano_banana_2_1_takes_flash_controls_at_its_sizes() -> Non
     search and a thinking level reach the wire instead of being refused as the
     controls of a model with unknown capabilities."""
     provider = gemini(model="gemini-nano-banana-2.1")
-    response = _interaction(usage=gemini_usage(output_total=2520, output_image=2520))
+    # A 4K image on Nano Banana 2.1 is 3780 output tokens (measured 2026-10-09).
+    response = _interaction(usage=gemini_usage(output_total=3780, output_image=3780))
     provider._client.aio.interactions.create = AsyncMock(return_value=response)
     options = ImageOptions(
         aspect_ratio="8:1", image_size="4K", search_types=["image_search"], thinking_level="high"
@@ -144,6 +145,7 @@ async def test_gemini_nano_banana_2_1_takes_flash_controls_at_its_sizes() -> Non
     request = provider._client.aio.interactions.create.await_args.kwargs
     assert request["response_format"]["aspect_ratio"] == "8:1"
     assert request["response_format"]["image_size"] == "4K"
+    assert request["tools"][0]["search_types"] == ["image_search"]
     assert request["generation_config"] == {"thinking_level": "high"}
 
 
