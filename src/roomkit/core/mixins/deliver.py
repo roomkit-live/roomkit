@@ -64,10 +64,21 @@ class DeliverMixin(HelpersMixin):
         chain_depth: int = 0,
         instruction: bool = False,
     ) -> DeliveryOutcome:
-        """Deliver content to a room/channel.
+        """Bring *content* into a room from outside it, for the room's agents.
 
-        Sends *content* to the target channel with awareness of channel
-        state (voice playing, user speaking, idle).
+        A background task's result, an external event, a scheduled nudge,
+        what another room produced: *content* reaches the room's agents, who
+        read it and act on it, at a moment the target channel allows (voice
+        playing, user speaking, idle).
+
+        It is not a way to text the room's correspondent. On a text transport
+        (SMS, email, WhatsApp, WebSocket...) *content* enters the room as a
+        message received on that channel from the framework's own sender
+        (``system``): the correspondent receives the agents' answer, never
+        *content* itself, and with no agent in the room nothing is sent. A
+        message for the correspondent is published from a channel of the
+        host's own with :meth:`send_event` (``addressed_to=[]`` for no agent
+        to answer it).
 
         When a :class:`~roomkit.delivery.base.DeliveryBackend` is
         configured, the item is enqueued and the worker executes

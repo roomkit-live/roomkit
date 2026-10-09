@@ -392,6 +392,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `kit.deliver()` says what it is for (RMK-647): its docstring read "sends
+  content to the target channel", and a host calling it to text a customer
+  on SMS got `sent` while nothing reached the customer, or got the agent's
+  answer to its own words sent instead. It brings content into a room for the
+  room's agents; a message for the correspondent goes out with `send_event`
+  from a channel of the host's own. Documentation only.
+
 - A room RoomKit opens for an inbound sender replies to them (RMK-646): the
   binding named the sender (`participant_id`, RMK-580), but a transport channel
   reads its recipient only from the binding's metadata (`phone_number`,
