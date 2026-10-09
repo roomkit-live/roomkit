@@ -158,6 +158,7 @@ async def test_gemini_nano_banana_2_1_takes_flash_controls_at_its_sizes() -> Non
         ("gemini-3-pro-image", ImageOptions(thinking_level="minimal")),
         ("gemini-3-pro-image", ImageOptions(search_types=["image_search"])),
         ("gemini-nano-banana-2.1", ImageOptions(image_size="512")),
+        ("gemini-nano-banana-2.1", ImageOptions(output_format="png")),
     ],
 )
 async def test_gemini_capabilities_belong_to_the_selected_model(

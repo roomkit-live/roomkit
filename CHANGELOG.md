@@ -420,6 +420,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Nano Banana 2.1 returns JPEG only (RMK-652): its catalog entry offered PNG
+  too, so `ImageOptions(output_format="png")` reached Google and came back as a
+  400; it is now refused before the call.
+
 - Anthropic catalog (RMK-652): a Claude Sonnet 5.5 cache read is billed $0.10
   per million (0.05x input, as on Opus 5.5), not $0.20, and Claude Sonnet 4.5
   is marked `deprecated` (retiring 2026-11-30 on the Claude API). The Pocket
