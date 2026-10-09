@@ -44,10 +44,10 @@ class GeminiImageConfig(BaseModel):
             ``None`` leaves the model's own default.
         output_mime_type: ``"image/jpeg"`` to ask for JPEG. ``None`` leaves the
             vendor default: PNG on ``gemini-3.1-flash-image``, JPEG on
-            ``gemini-nano-banana-2.1``, which offers no other. The response
-            reports what it actually produced and the provider reads that
-            rather than assuming. Gemini offers no other selectable output
-            type here.
+            ``gemini-nano-banana-2.1``, its only format. The response reports
+            what it actually produced and the provider reads that, or the
+            bytes, rather than assuming. Gemini offers no other selectable
+            output type here.
         timeout: Read budget in seconds for one interaction. Higher than the
             chat default because an image is produced whole: nothing streams
             before it.

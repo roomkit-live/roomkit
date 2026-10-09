@@ -2595,7 +2595,7 @@ another geometry.
 | Provider | Import | Extra | Notes |
 |---|---|---|---|
 | `OpenAIImageProvider` | `roomkit.providers.openai` | `roomkit[openai]` | `/v1/images`; `gpt-image-2` takes near-arbitrary sizes, older models a fixed menu — the vendor judges |
-| `GeminiImageProvider` | `roomkit.providers.gemini` | `roomkit[gemini]` | Interactions API; size translated to aspect ratio + tier (`512`/`1K`/`2K`/`4K`) |
+| `GeminiImageProvider` | `roomkit.providers.gemini` | `roomkit[gemini]` | Interactions API; size translated to aspect ratio + tier (`512`/`1K`/`2K`/`4K`); the default `gemini-nano-banana-2.1` has no `512` tier and returns JPEG only |
 | `XAIImageProvider` | `roomkit.providers.xai` | `roomkit[xai]` | Grok Imagine; size translated to ratio + `1k`/`2k`; edits go as JSON to `/v1/images/edits` |
 | `OpenRouterImageProvider` | `roomkit.providers.openrouter` | `roomkit[openrouter]` | OpenRouter's Image API — 40+ aggregated models (Seedream, FLUX, Recraft, ...); billed cost surfaces as `usage["cost"]` |
 | `AzureImageProvider` | `roomkit.providers.azure` | `roomkit[azure]` | Azure OpenAI deployment; `model` is the deployment name |

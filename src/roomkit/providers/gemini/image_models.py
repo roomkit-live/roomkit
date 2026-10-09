@@ -15,9 +15,9 @@ Priority), per million tokens. Google quotes one input rate covering text and
 image alike — hence the same value on ``input_per_million`` and
 ``image_input_per_million`` — a text-and-thinking output rate, and a separate,
 far higher rate for the pixels. The per-image figures Google also advertises
-are that image rate times the token count of a given resolution
-(1120 tokens at 1K/2K), so they are the same price stated twice, not a second
-unit.
+are that image rate times the token count of a given resolution (1120
+tokens at 1K, 1680 at 2K on Flash and Nano Banana 2.1, 1120 at 2K on Pro), so
+they are the same price stated twice, not a second unit.
 
 Context windows are omitted deliberately: an image model's published limit
 describes a prompt these providers never trim against, and an unknown window

@@ -4,7 +4,7 @@ The point of the ``ImageProvider`` surface (RFC §25) is that drawing is *not*
 a mode of the conversation. The agent below holds the conversation through one
 provider and draws through another; swap either and the other is unaffected::
 
-    "dessine-moi un renard en origami"
+    "draw me an origami fox"
         → AIChannel (any AI provider)  → calls the generate_image tool
         → ImageProvider (OpenAI / Gemini / mock)
         → ImageResult (a data URI)
@@ -29,7 +29,7 @@ Requires:
 
 Environment variables (first configured provider wins):
     OPENAI_API_KEY — draws with OpenAI (gpt-image-2 by default)
-    GEMINI_API_KEY — draws with Gemini (gemini-3.1-flash-image by default)
+    GEMINI_API_KEY — draws with Gemini (gemini-nano-banana-2.1 by default)
     XAI_API_KEY    — draws with xAI (grok-imagine-image-2.0 by default)
     META_API_KEY   — draws with Meta Muse Image (muse-image-1.0), its web and
                      image search and shell tools off, one refinement pass
@@ -77,7 +77,7 @@ from roomkit.models.event import MediaContent
 from roomkit.providers.ai.base import AIResponse, AIToolCall
 from roomkit.providers.ai.mock import MockAIProvider
 
-ROOM_ID = "atelier"
+ROOM_ID = "studio"
 OUTPUT_DIR = Path(
     os.environ.get("IMAGE_OUTPUT_DIR") or Path(tempfile.gettempdir()) / "roomkit-images"
 )
@@ -128,7 +128,7 @@ class DrawTool:
         for index, result in enumerate(results):
             await self._kit.send_event(
                 room_id=self._room_id,
-                channel_id="atelier-bot",
+                channel_id="studio-bot",
                 content=MediaContent(
                     url=result.data,  # already a data: URI — nothing to convert
                     mime_type=result.mime_type,
@@ -223,17 +223,17 @@ def build_ai_provider() -> Any:
     return MockAIProvider(
         ai_responses=[
             AIResponse(
-                content="Je m'en occupe.",
+                content="On it.",
                 finish_reason="tool_calls",
                 tool_calls=[
                     AIToolCall(
                         id="tc-1",
                         name="generate_image",
-                        arguments={"prompt": "un renard en origami", "size": "1024x1024"},
+                        arguments={"prompt": "an origami fox", "size": "1024x1024"},
                     )
                 ],
             ),
-            AIResponse(content="Voilà le renard — il est dans la conversation."),
+            AIResponse(content="Here is the fox: it is in the conversation."),
         ]
     )
 
@@ -244,16 +244,16 @@ async def main() -> None:
     kit = RoomKit()
     images = build_image_provider()
 
-    ws = WebSocketChannel("atelier-bot")
+    ws = WebSocketChannel("studio-bot")
     kit.register_channel(ws)
 
     draw = DrawTool(kit, images, room_id=ROOM_ID)
     ai = AIChannel(
-        "artiste",
+        "artist",
         provider=build_ai_provider(),
         system_prompt=(
-            "Tu es un illustrateur. Quand on te demande une image, appelle "
-            "l'outil generate_image avec une description riche et précise."
+            "You are an illustrator. When asked for an image, call the "
+            "generate_image tool with a rich, precise description."
         ),
         tools=[draw],
     )
@@ -267,17 +267,17 @@ async def main() -> None:
     ws.register_connection("viewer", on_recv, room_id=ROOM_ID)
 
     await kit.create_room(room_id=ROOM_ID)
-    await kit.attach_channel(ROOM_ID, "atelier-bot")
-    await kit.attach_channel(ROOM_ID, "artiste", category=ChannelCategory.INTELLIGENCE)
+    await kit.attach_channel(ROOM_ID, "studio-bot")
+    await kit.attach_channel(ROOM_ID, "artist", category=ChannelCategory.INTELLIGENCE)
 
     print(f"Drawing with {images.name} ({images.model_name})\n")
     # Returns once the agent's turn is over, tool call and drawing included,
     # so the timeline below is complete whichever provider holds the turn.
     result = await kit.process_inbound(
         InboundMessage(
-            channel_id="atelier-bot",
+            channel_id="studio-bot",
             sender_id="viewer",
-            content=TextContent(body="Dessine-moi un renard en origami, carré."),
+            content=TextContent(body="Draw me an origami fox, square."),
         ),
         room_id=ROOM_ID,
     )

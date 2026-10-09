@@ -56,7 +56,10 @@ async def test_real_gemini_sdk_does_not_repeat_503(
         "AsyncClient",
         lambda **kw: client_class(**kw, transport=httpx.MockTransport(respond)),
     )
-    provider = GeminiImageProvider(GeminiImageConfig(api_key="test"))
+    # Pinned: the default (Nano Banana 2.1) returns JPEG only, and this answers PNG.
+    provider = GeminiImageProvider(
+        GeminiImageConfig(api_key="test", model="gemini-3.1-flash-image")
+    )
     try:
         if failure == "200":
             [result] = await provider.generate("a fox")

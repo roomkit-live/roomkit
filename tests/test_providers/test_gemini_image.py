@@ -47,7 +47,7 @@ def _provider(**overrides: Any) -> Any:
 def _interaction(
     *,
     data: str | None = PNG_B64,
-    mime_type: str = "image/png",
+    mime_type: str | None = "image/png",
     usage: Any = None,
     status: str = "completed",
 ) -> SimpleNamespace:
@@ -88,6 +88,38 @@ def test_the_default_model_is_nano_banana_2_1_with_known_capabilities() -> None:
 
     assert model == "gemini-nano-banana-2.1"
     assert isinstance(image_model_entry(MODELS, model), ImageModelInfo)
+
+
+@pytest.mark.parametrize(
+    ("config", "size"),
+    [({"output_mime_type": "image/png"}, None), ({}, "512x512")],
+    ids=["png-from-config", "512-from-size"],
+)
+async def test_the_default_model_refuses_what_it_cannot_produce_before_the_call(
+    config: dict[str, Any], size: str | None
+) -> None:
+    """Nano Banana 2.1 returns JPEG only and has no 512 tier: the config and a
+    portable size are refused before a billable request (RFC §25.2, RMK-656)."""
+    provider = _provider(model=GeminiImageConfig(api_key="k").model, **config)
+    create = _arm(provider)
+
+    with pytest.raises(ValueError):
+        await provider.generate("a fox", size=size)
+
+    create.assert_not_awaited()
+
+
+async def test_an_image_with_no_declared_type_is_read_off_its_bytes() -> None:
+    """The SDK types ``mime_type`` as optional; Nano Banana 2.1, the default,
+    returns JPEG only, so a PNG fallback would mislabel its images (RMK-656)."""
+    jpeg = base64.b64encode(b"\xff\xd8\xff\xe0" + bytes(28)).decode("ascii")
+    provider = _provider()
+    _arm(provider, _interaction(data=jpeg, mime_type=None))
+
+    [result] = await provider.generate("a fox")
+
+    assert result.mime_type == "image/jpeg"
+    assert result.data.startswith("data:image/jpeg;base64,")
 
 
 async def test_generate_returns_a_decodable_data_uri() -> None:

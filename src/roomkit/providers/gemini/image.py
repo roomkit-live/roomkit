@@ -29,6 +29,7 @@ from roomkit.providers.image.base import (
     notify_image_progress,
     parse_data_uri,
     parse_size,
+    payload_mime_type,
 )
 from roomkit.providers.image.options import ImageModelInfo, ImageOptions, plain_metadata
 from roomkit.providers.image.usage import gemini_image_usage
@@ -349,7 +350,9 @@ class GeminiImageProvider(ImageProvider):
                 retryable=False,
                 provider="gemini",
             )
-        mime_type = str(getattr(image, "mime_type", None) or "image/png")
+        # The SDK types ``mime_type`` as optional; Nano Banana 2.1 returns JPEG
+        # only, so an undeclared type is read off the bytes, not assumed PNG.
+        mime_type = payload_mime_type(getattr(image, "mime_type", None), payload)
         return ImageResult(
             data=f"data:{mime_type};base64,{payload}",
             mime_type=mime_type,

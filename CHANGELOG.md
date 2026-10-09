@@ -14,8 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   window, vision, at its launch price ($0.68 / $2.09 per million, cache reads
   $0.07; the list price is twice that). `mistral-large-latest` still names
   Mistral Large 3. Gemini Nano Banana 2.1 (`gemini-nano-banana-2.1`) in the
-  Gemini image catalog: 3.1 Flash Image's controls without the 512 size,
-  $1.50 / $7.50 per million and $30 per million image tokens; before, the id
+  Gemini image catalog: 3.1 Flash Image's controls without the 512 size and
+  with JPEG output only (a PNG request, per call or through
+  `output_mime_type`, is refused before the call; measured: Google answers
+  400), $1.50 / $7.50 per million and $30 per million image tokens; before, the id
   had no price and `GeminiImageProvider` refused every advanced control on it.
   Google's `medium` thinking level is not offered: `ImageOptions.thinking_level`
   takes `minimal` or `high`.
@@ -378,7 +380,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   less (a 1K image about $0.034 instead of $0.067; image output $30 per
   million tokens instead of $60), text in and out costs more ($1.50 / $7.50 per
   million instead of $0.50 / $3), the image comes back as JPEG (the model
-  offers no PNG), and the `512` tier is refused before the call. Name
+  offers no PNG), and the `512` tier, or a `size` of 512 px or less, is
+  refused before the call. Name
   `gemini-3.1-flash-image` to keep the previous model.
 
 - The `mistral` extra admits mistralai 3.x (`mistralai>=2.0,<4`), and the
@@ -429,9 +432,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Nano Banana 2.1 returns JPEG only (RMK-652): its catalog entry offered PNG
-  too, so `ImageOptions(output_format="png")` reached Google and came back as a
-  400; it is now refused before the call.
+- `GeminiImageProvider` reads the type of an image whose response declares
+  none off its bytes, instead of labelling it `image/png` (RMK-656): Nano
+  Banana 2.1 returns JPEG. xAI, OpenRouter, Meta and Gemini share one helper
+  for it, `payload_mime_type`.
 
 - Anthropic catalog (RMK-652): a Claude Sonnet 5.5 cache read is billed $0.10
   per million (0.05x input, as on Opus 5.5), not $0.20, and Claude Sonnet 4.5
