@@ -74,7 +74,7 @@ class DefaultInboundRoomRouter(InboundRoomRouter):
         # identifies the conversation, where a binding of the channel to some
         # room only identifies the pipe.
         if participant_id:
-            room_id = await self._senders_room(channel_id, participant_id)
+            room_id = await self._senders_room(channel_id, channel_type, participant_id)
             if room_id is not None:
                 return room_id
 
@@ -106,7 +106,9 @@ class DefaultInboundRoomRouter(InboundRoomRouter):
 
         return None
 
-    async def _senders_room(self, channel_id: str, sender: str) -> str | None:
+    async def _senders_room(
+        self, channel_id: str, channel_type: ChannelType, sender: str
+    ) -> str | None:
         """The latest active room that is *sender*'s own (RFC §10.4 step 1).
 
         First the room whose binding of this very channel names the sender: a
@@ -114,13 +116,22 @@ class DefaultInboundRoomRouter(InboundRoomRouter):
         is not taken to that room when they write to another. Then the room
         where the sender is a participant; the stores record which channels a
         participant reached, not their types, so that half matches whatever
-        the channel type.
+        the channel type. The sender is named by their address, then by the
+        identity the store resolves it to (``link_address``), as in step 3: a
+        member the host added under their identity is found by their number.
         """
         active = str(RoomStatus.ACTIVE)
-        room_id = await self._store.find_room_id_by_binding(channel_id, sender, status=active)
-        if room_id is not None:
-            return room_id
-        return await self._store.find_room_id_by_participant(sender, status=active)
+        known = await sender_known_as(self._store, channel_type, sender)
+        names = [sender, *sorted(known - {sender})]
+        for name in names:
+            room_id = await self._store.find_room_id_by_binding(channel_id, name, status=active)
+            if room_id is not None:
+                return room_id
+        for name in names:
+            room_id = await self._store.find_room_id_by_participant(name, status=active)
+            if room_id is not None:
+                return room_id
+        return None
 
     async def _admits(
         self, room_id: str, channel_id: str, channel_type: ChannelType, sender: str | None

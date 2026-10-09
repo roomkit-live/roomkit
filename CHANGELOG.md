@@ -403,6 +403,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A member the host added under their identity is found by their number when
+  it serves several rooms (RMK-579, RFC §10.4): step 1 of the default router
+  looked a sender up by their address only, so with the address linked to
+  the identity (`link_address`) and other rooms on the number, every message
+  of hers opened a new room. Step 1 now names the sender by their address,
+  then by the identity the store resolves it to, as step 3 already did; one
+  more store lookup per routed message.
+
 - Per security review, a room prepared for a chat takes no one else
   (RMK-646): on Telegram, Teams, Discord and Buzz a binding's recipient (the
   chat) did not name its conversation, so a room the host opened for Alice's

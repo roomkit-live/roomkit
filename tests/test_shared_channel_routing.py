@@ -264,9 +264,24 @@ class TestAnIdentifiedCorrespondent:
 
         assert await shop.room_of(ALICE) == room
         assert await shop.room_of(BOB) != room
-        # Found by the binding her first message claimed: finding a member by
-        # an identity alone, once the number serves several rooms, is RMK-579.
         assert await shop.room_of(ALICE) == room
+
+    async def test_a_member_added_under_their_identity_is_found_among_several_rooms(
+        self, store: ConversationStore
+    ) -> None:
+        """RMK-579: the number serves other rooms, so only step 1 can find her,
+        through the identity the store resolves her number to."""
+        shop = _Shop(store)
+        await shop.open_room_for(CAROL)
+        await shop.kit.create_room(room_id="alice-room")
+        await shop.kit.attach_channel("alice-room", "sms")
+        await shop.kit.add_member("alice-room", "sms", "id-alice")
+        await store.create_identity(Identity(id="id-alice"))
+        await store.link_address("id-alice", "sms", ALICE)
+
+        assert await shop.room_of(ALICE) == "alice-room"
+        assert await shop.room_of(BOB) != "alice-room"
+        assert await shop.room_of(ALICE) == "alice-room"
 
     async def test_a_member_known_by_no_address_does_not_hide_the_recipient(
         self, store: ConversationStore
