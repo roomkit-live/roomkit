@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-import httpx
+import httpx2
 from mistralai.client import Mistral
 
 from roomkit.providers.ai.base import AIProvider
@@ -159,13 +159,15 @@ class MistralWire(ChatDriver):
         provider = MistralAIProvider(MistralConfig(api_key="k", model=_MODEL))
         events = _events(script)
 
-        async def answer(request: httpx.Request) -> httpx.Response:
+        async def answer(request: httpx2.Request) -> httpx2.Response:
             self.requests.append(json.loads(request.content))
-            return httpx.Response(
+            return httpx2.Response(
                 200, headers={"content-type": "text/event-stream"}, content=events
             )
 
-        http = httpx.AsyncClient(transport=httpx.MockTransport(answer))
+        # mistralai 3.x runs on httpx2: an httpx client would take a path the
+        # SDK never takes in production.
+        http = httpx2.AsyncClient(transport=httpx2.MockTransport(answer))
         provider._client = Mistral(api_key="k", async_client=http)
         return provider
 

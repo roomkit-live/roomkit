@@ -353,6 +353,9 @@ class MistralAIProvider(AIProvider):
         return provider_error(exc, provider="mistral")
 
     async def close(self) -> None:
-        """Close the underlying HTTP client."""
-        if hasattr(self._client, "close"):
-            await self._client.close()
+        """Close the HTTP client the SDK opened.
+
+        The SDK has no ``close()``: leaving its async context is what closes the
+        client it created (RMK-651).
+        """
+        await self._client.__aexit__(None, None, None)

@@ -6,15 +6,15 @@ The channel retries a provider error only when it is ``retryable``
 answered then dropped before the first event, is the same failure whichever
 SDK surfaces it, so each provider says it is worth retrying, through
 ``generate()`` and through the stream; a 400 stays final everywhere. Each
-provider is driven as its SDK surfaces the failure: a client over an httpx
-transport where the SDK takes one (the OpenAI wire, Mistral, Ollama), and the
-SDK's own errors otherwise.
+provider is driven as its SDK surfaces the failure: a client over a mock
+transport of the HTTP client the SDK runs on, where it takes one (httpx for the
+OpenAI wire and Ollama, httpx2 for Mistral), and the SDK's own errors otherwise.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from types import SimpleNamespace
+from collections.abc import AsyncIterator, Callable
+from types import ModuleType, SimpleNamespace
 from typing import Any, Literal
 
 import anthropic
@@ -52,24 +52,25 @@ _CONTEXT = AIContext(messages=[AIMessage(role="user", content="go")])
 _REFUSED = "[Errno 111] Connection refused"
 
 
-class _Dropped(httpx.AsyncByteStream):
+async def _dropped(client: ModuleType) -> AsyncIterator[bytes]:
     """A body the server stops sending before its first byte."""
-
-    async def __aiter__(self) -> Any:
-        raise httpx.ReadTimeout("timed out")
-        yield b""  # pragma: no cover
+    raise client.ReadTimeout("timed out")
+    yield b""  # pragma: no cover
 
 
-def _transport(failure: Failure) -> httpx.MockTransport:
-    def answer(request: httpx.Request) -> httpx.Response:
+def _transport(failure: Failure, client: ModuleType = httpx) -> Any:
+    """A mock transport of the HTTP client *client* (httpx or httpx2) that
+    answers *failure*."""
+
+    def answer(request: Any) -> Any:
         if failure == "refused":
-            raise httpx.ConnectError(_REFUSED, request=request)
+            raise client.ConnectError(_REFUSED, request=request)
         if failure == "dropped":
             headers = {"content-type": "text/event-stream"}
-            return httpx.Response(200, headers=headers, stream=_Dropped())
-        return httpx.Response(400, json={"error": {"message": "bad request"}})
+            return client.Response(200, headers=headers, content=_dropped(client))
+        return client.Response(400, json={"error": {"message": "bad request"}})
 
-    return httpx.MockTransport(answer)
+    return client.MockTransport(answer)
 
 
 def _openai(failure: Failure) -> AIProvider:
@@ -78,8 +79,9 @@ def _openai(failure: Failure) -> AIProvider:
 
 
 def _mistral(failure: Failure) -> AIProvider:
+    """mistralai 3.x runs on httpx2 and lets its transport errors through."""
     provider = MistralAIProvider(MistralConfig(api_key="k", model="mistral-large-latest"))
-    http = httpx.AsyncClient(transport=_transport(failure))
+    http = httpx2.AsyncClient(transport=_transport(failure, httpx2))
     provider._client = Mistral(api_key="k", async_client=http)
     return provider
 

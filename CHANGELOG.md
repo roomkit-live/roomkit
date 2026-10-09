@@ -403,6 +403,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `MistralAIProvider.close()` closes the SDK's HTTP client (RMK-651): it
+  called `close()` only if the client had one, and the `mistralai` client has
+  none, so the connection pool stayed open until garbage collection. It now
+  leaves the SDK's async context, which closes the client the SDK created. The
+  tests that drive the real SDK give it an `httpx2` client, the one
+  `mistralai` 3.x runs on, instead of an `httpx` one it accepted by duck
+  typing.
+
 - Per review, email addresses are compared in one form (RMK-646):
   `EmailChannel` reads a sender, a binding's correspondent and recipient and a
   member's id lower-case and without a display name (`Alice Martin

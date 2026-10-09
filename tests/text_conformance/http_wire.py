@@ -4,8 +4,9 @@ The wire drivers of this suite stand behind the SDK, as its objects; a
 failure, though, is the SDK's own reading of what the server sent (an error
 event in a 200 stream, a gateway's HTML page), so the failure scenarios need
 the SDK itself in the path. Each :class:`HttpWire` builds one provider whose
-client talks to an ``httpx.MockTransport``, no network, and answers one way:
-an error status, an overload written into a 200 stream, or an HTML page.
+client talks to a mock transport of the HTTP client its SDK runs on (``httpx``,
+or ``httpx2`` for Anthropic and Mistral), no network, and answers one way: an
+error status, an overload written into a 200 stream, or an HTML page.
 """
 
 from __future__ import annotations
@@ -144,18 +145,25 @@ def _openai_wires() -> list[HttpWire]:
 # -- Anthropic (httpx2) --------------------------------------------------------------
 
 
-def _anthropic(handler: Callable[[Any], Any]) -> AIProvider:
+def _httpx2_transport(handler: Callable[[Any], Any]) -> httpx2.MockTransport:
+    """An httpx2 transport answering what the handler's httpx response says, for
+    the SDKs that run on httpx2 (Anthropic, Mistral)."""
+
     def answer(request: Any) -> Any:
         response = handler(request)
         return httpx2.Response(
             response.status_code, headers=dict(response.headers), content=response.content
         )
 
+    return httpx2.MockTransport(answer)
+
+
+def _anthropic(handler: Callable[[Any], Any]) -> AIProvider:
     provider = AnthropicAIProvider(AnthropicConfig(api_key="k", model="claude-sonnet-5-5"))
     provider._client = anthropic.AsyncAnthropic(
         api_key="k",
         max_retries=0,
-        http_client=anthropic.DefaultAsyncHttpxClient(transport=httpx2.MockTransport(answer)),
+        http_client=anthropic.DefaultAsyncHttpxClient(transport=_httpx2_transport(handler)),
     )
     return provider
 
@@ -199,8 +207,9 @@ def _gemini(handler: Callable[[Any], Any]) -> AIProvider:
 
 
 def _mistral(handler: Callable[[Any], Any]) -> AIProvider:
+    """mistralai 3.x runs on httpx2, as Anthropic's SDK does."""
     provider = MistralAIProvider(MistralConfig(api_key="k", model="mistral-large-latest"))
-    http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    http = httpx2.AsyncClient(transport=_httpx2_transport(handler))
     provider._client = Mistral(api_key="k", async_client=http)
     return provider
 
