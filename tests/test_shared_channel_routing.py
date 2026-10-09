@@ -16,7 +16,7 @@ from typing import Any
 import pytest
 
 from roomkit import HookResult, HookTrigger, RoomKit
-from roomkit.channels import SMSChannel
+from roomkit.channels import SMSChannel, WebSocketChannel
 from roomkit.channels.ai import AIChannel
 from roomkit.identity.mock import MockIdentityResolver
 from roomkit.models.channel import ChannelBinding
@@ -282,6 +282,23 @@ class TestAnIdentifiedCorrespondent:
         assert await shop.room_of(ALICE) == "alice-room"
         assert await shop.room_of(BOB) != "alice-room"
         assert await shop.room_of(ALICE) == "alice-room"
+
+    async def test_an_identity_does_not_pull_a_number_into_a_room_of_another_channel(
+        self, store: ConversationStore
+    ) -> None:
+        """Alice joined a team room on another channel under her identity: her
+        SMS opens a room of its own rather than bringing SMS into the team's."""
+        shop = _Shop(store)
+        shop.kit.register_channel(WebSocketChannel("web"))
+        await shop.open_room_for(CAROL)
+        await shop.kit.create_room(room_id="team")
+        await shop.kit.attach_channel("team", "web")
+        await shop.kit.add_member("team", "web", "id-alice")
+        await store.create_identity(Identity(id="id-alice"))
+        await store.link_address("id-alice", "sms", ALICE)
+
+        assert await shop.room_of(ALICE) != "team"
+        assert await shop.kit.store.get_binding("team", "sms") is None
 
     async def test_a_member_known_by_no_address_does_not_hide_the_recipient(
         self, store: ConversationStore

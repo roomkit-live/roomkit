@@ -119,19 +119,34 @@ class DefaultInboundRoomRouter(InboundRoomRouter):
         the channel type. The sender is named by their address, then by the
         identity the store resolves it to (``link_address``), as in step 3: a
         member the host added under their identity is found by their number.
+
+        An identity reaches further than an address, across every channel the
+        person uses, so a room found through it as a participant is the
+        sender's only when the identity joined it through this channel: an
+        SMS from a number linked to someone's identity does not land in a team
+        room they joined on another channel, which would then carry that
+        room's messages over SMS.
         """
         active = str(RoomStatus.ACTIVE)
         known = await sender_known_as(self._store, channel_type, sender)
-        names = [sender, *sorted(known - {sender})]
-        for name in names:
+        identities = sorted(known - {sender})
+        for name in (sender, *identities):
             room_id = await self._store.find_room_id_by_binding(channel_id, name, status=active)
             if room_id is not None:
                 return room_id
-        for name in names:
-            room_id = await self._store.find_room_id_by_participant(name, status=active)
-            if room_id is not None:
+        room_id = await self._store.find_room_id_by_participant(sender, status=active)
+        if room_id is not None:
+            return room_id
+        for identity in identities:
+            room_id = await self._store.find_room_id_by_participant(identity, status=active)
+            if room_id is not None and await self._joined_through(room_id, channel_id, identity):
                 return room_id
         return None
+
+    async def _joined_through(self, room_id: str, channel_id: str, participant_id: str) -> bool:
+        """Whether *participant_id* reached *room_id* through *channel_id*."""
+        participant = await self._store.get_participant(room_id, participant_id)
+        return participant is not None and channel_id in participant.connected_via
 
     async def _admits(
         self, room_id: str, channel_id: str, channel_type: ChannelType, sender: str | None

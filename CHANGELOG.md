@@ -417,7 +417,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the identity (`link_address`) and other rooms on the number, every message
   of hers opened a new room. Step 1 now names the sender by their address,
   then by the identity the store resolves it to, as step 3 already did; one
-  more store lookup per routed message.
+  more store lookup per routed message. Per security review, a room found
+  through the identity as a participant is the sender's only when the
+  identity joined it through the same channel: an SMS from a number linked
+  to someone's identity does not land in a team room they joined elsewhere,
+  which would then carry that room's messages over SMS.
 
 - Per security review, a room prepared for a chat takes no one else
   (RMK-646): on Telegram, Teams, Discord and Buzz a binding's recipient (the
