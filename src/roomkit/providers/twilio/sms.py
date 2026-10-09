@@ -18,9 +18,15 @@ from roomkit.providers.utils import http_timeout
 if TYPE_CHECKING:
     import httpx
 
+    from roomkit.telemetry.base import TelemetryProvider
+
 
 class TwilioSMSProvider(SMSProvider):
     """SMS provider using the Twilio REST API."""
+
+    # Set by the channel the provider serves (TransportChannel), or by the
+    # Twilio WhatsApp provider that sends through this one.
+    _telemetry: TelemetryProvider | None = None
 
     def __init__(self, config: TwilioConfig) -> None:
         try:

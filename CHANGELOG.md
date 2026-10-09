@@ -341,6 +341,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   its own (`roomkit.providers.url_safety.validate_api_base_url`); a config
   naming another is refused when it is built.
 
+- WhatsApp through Twilio (RMK-649): `TwilioWhatsAppProvider` sends on
+  Twilio's Messages API with both addresses written `whatsapp:+1...`, from the
+  same `TwilioConfig` as SMS, and `parse_twilio_whatsapp_webhook` reads its
+  webhook, whose `whatsapp:` sender `WhatsAppChannel` stores in E.164. RoomKit
+  had no production WhatsApp provider besides WhatsApp Personal. Example:
+  `examples/twilio_whatsapp.py`.
+
 ### Changed
 
 - A background result handed back to an agent (an intelligence channel) now

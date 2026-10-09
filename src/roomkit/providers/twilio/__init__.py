@@ -7,6 +7,10 @@ from roomkit.providers.twilio.rcs import (
     parse_twilio_rcs_webhook,
 )
 from roomkit.providers.twilio.sms import TwilioSMSProvider, parse_twilio_webhook
+from roomkit.providers.twilio.whatsapp import (
+    TwilioWhatsAppProvider,
+    parse_twilio_whatsapp_webhook,
+)
 
 __all__ = [
     "TwilioConfig",
@@ -15,4 +19,6 @@ __all__ = [
     "TwilioRCSConfig",
     "TwilioRCSProvider",
     "parse_twilio_rcs_webhook",
+    "TwilioWhatsAppProvider",
+    "parse_twilio_whatsapp_webhook",
 ]
