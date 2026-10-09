@@ -23,7 +23,7 @@ from roomkit.channels._ai_loop_rules import (
 from roomkit.channels._ai_stream_external_tools import _ExternalStreamTools
 from roomkit.channels._ai_stream_round import _StreamRound, _StreamRoundState
 from roomkit.channels._ai_tools import call_end_marker
-from roomkit.channels._mark_copies import compile_mark_patterns
+from roomkit.channels._mark_copies import compile_mark_patterns, without_mark_copies
 from roomkit.channels._note_blocks import add_turn_note
 from roomkit.core.task_utils import shielded
 from roomkit.models.channel import ChannelOutput
@@ -528,7 +528,12 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
         await hook(event)
         if event.withdrawn:
             turn.loop_ctx.withdraw(event.withdrawn)
-        context.messages.extend(AIMessage(role="user", content=text) for text in event.messages)
+        # What a hook adds after a round may quote the round's results: a copy
+        # of a runtime mark in it is replaced, as in a message steering
+        # injects (RFC §6.4).
+        context.messages.extend(
+            AIMessage(role="user", content=without_mark_copies(text)) for text in event.messages
+        )
 
     async def _stream_generation(
         self, round_: _StreamRound, context: AIContext, turn: _StreamTurnState, index: int

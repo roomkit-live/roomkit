@@ -1150,7 +1150,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that quote others (a tool's result in the digest, a task and its
   progress, what a camera read, a thought, a plan, a speak policy's
   decision, a block a hook adds with `add_turn_note`, a copy running over
-  two retrieved notes), and in a text injected into a realtime session
+  two retrieved notes), in a message an `AFTER_TOOL_ROUND` hook adds after a
+  round, as in one steering injects, and in a text injected into a realtime session
   through `inject_text` (an instruction `kit.deliver(..., instruction=True)`
   sends, a worker's hand-back, a vision note, a recovered tool result), an
   image's prompt and a reasoning backend's answer, on `RealtimeVoiceChannel`

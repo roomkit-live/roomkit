@@ -263,7 +263,9 @@ def test_a_long_run_after_a_partial_copy_is_scanned_once(tail: str) -> None:
     started = time.perf_counter()
     without_mark_copies(text)
 
-    assert time.perf_counter() - started < 1.0
+    # A scan that read the run once per split would take minutes: the bound
+    # leaves a slower runner room (a CI runner took 1.01 s, RMK-639).
+    assert time.perf_counter() - started < 3.0
 
 
 # -- where a participant's text enters ---------------------------------------------
