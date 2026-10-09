@@ -379,6 +379,9 @@ def HTTPChannel(
         provider=provider,
         capabilities=HTTP_CAPABILITIES,
         recipient_key="recipient_id",
+        # The webhook provider posts to its configured URL, whatever the
+        # recipient: a room opened for an inbound message replies there.
+        requires_recipient=False,
     )
 
 

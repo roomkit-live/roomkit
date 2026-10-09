@@ -295,6 +295,20 @@ async def test_a_chat_channel_replies_to_the_chat_the_message_came_from(chat_id:
     await kit.close()
 
 
+async def test_a_room_opened_for_a_webhook_message_replies_to_the_webhook() -> None:
+    """The webhook provider posts to its configured URL: no recipient is needed
+    (RFC §10.2 step 3d), so the room replies as it did before the refusal."""
+    http = MockHTTPProvider()
+    kit = _kit_with_agent(HTTPChannel("ch", provider=http))
+
+    result = await kit.process_inbound(_text("ch", "user-7"))
+    assert result.event is not None
+    await _eventually(lambda: http.sent)
+
+    assert [(m["to"], m["event"].content.body) for m in http.sent] == [("", "Hello back")]
+    await kit.close()
+
+
 async def test_a_webhook_recipient_names_no_correspondent() -> None:
     """The room delivers to the CRM's URL; the CRM writes as ``crm-system``."""
     kit = _kit_with_agent(HTTPChannel("crm", provider=MockHTTPProvider()))

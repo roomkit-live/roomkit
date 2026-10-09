@@ -49,6 +49,7 @@ class TransportChannel(Channel):
         address_normalizer: Callable[[str], str] | None = None,
         replies_to_sender: bool = False,
         reply_metadata_key: str | None = None,
+        requires_recipient: bool = True,
     ) -> None:
         """Initialise a transport channel.
 
@@ -77,6 +78,11 @@ class TransportChannel(Channel):
                 its room is found by the chat, not by the sender, and a
                 binding's recipient names its chat as a phone channel's names
                 its correspondent. Exclusive with *replies_to_sender*.
+            requires_recipient: Whether a delivery needs a recipient in the
+                binding's metadata. A channel whose provider delivers to a
+                destination of its own (a webhook's configured URL) passes
+                ``False``: its provider is called without one (RFC §10.2
+                step 3d).
         """
         if replies_to_sender and reply_metadata_key is not None:
             raise ValueError(
@@ -92,6 +98,7 @@ class TransportChannel(Channel):
         self._address_normalizer = address_normalizer
         self._replies_to_sender = replies_to_sender
         self._reply_metadata_key = reply_metadata_key
+        self._requires_recipient = requires_recipient
 
     def _propagate_telemetry(self) -> None:
         """Propagate telemetry to transport provider."""
@@ -227,7 +234,7 @@ class TransportChannel(Channel):
         telemetry = getattr(self, "_telemetry", None) or NoopTelemetryProvider()
 
         to = binding.metadata.get(self._recipient_key, "")
-        if not to:
+        if not to and self._requires_recipient:
             # Nobody to send to: refused here rather than handed to the
             # provider as "", which a lenient one would acknowledge (RFC §22.2).
             raise NoRecipientError(self.channel_id, self._recipient_key)
