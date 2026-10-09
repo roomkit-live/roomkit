@@ -12,7 +12,8 @@ import subprocess
 import sys
 import textwrap
 import time
-from collections.abc import Iterator
+import urllib.request
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -20,7 +21,9 @@ from typing import Any
 import httpx
 import pytest
 
-from roomkit.tools.mcp import MCPToolProvider, _list_tools
+from roomkit.core.exceptions import UnservedToolCallError
+from roomkit.tools._mcp_result import check_structured_content
+from roomkit.tools.mcp import _MAX_LIST_PAGES, MCPToolProvider, _list_tools
 
 pytest.importorskip("mcp.server.fastmcp")
 
@@ -184,7 +187,7 @@ async def test_calls_never_list_again_listed_or_not(server_port: int) -> None:
         assert await _listings(server_port) == before
 
 
-async def test_a_listed_tool_that_breaks_its_output_schema_is_refused(server_port: int) -> None:
+async def test_a_listed_tool_that_breaks_its_output_schema_fails(server_port: int) -> None:
     async with _provider(server_port) as mcp:
         with pytest.raises(RuntimeError, match="Invalid structured content returned by tool"):
             await mcp.call_tool_result("bad_count", {})
@@ -192,7 +195,7 @@ async def test_a_listed_tool_that_breaks_its_output_schema_is_refused(server_por
             await mcp.call_tool_result("bare_count", {})
 
 
-async def test_the_handler_refuses_a_broken_result_too(server_port: int) -> None:
+async def test_the_handler_fails_on_a_broken_result_too(server_port: int) -> None:
     async with _provider(server_port) as mcp:
         with pytest.raises(RuntimeError, match="Invalid structured content"):
             await mcp.as_tool_handler()("bad_count", {})
@@ -225,25 +228,84 @@ async def test_without_discovery_the_connection_lists_nothing(server_port: int) 
     assert await _listings(server_port) == before
 
 
-def test_the_factories_carry_discover() -> None:
-    assert not MCPToolProvider.from_url("http://x/mcp", discover=False)._discover
-    assert not MCPToolProvider.from_command("server", discover=False)._discover
-    assert MCPToolProvider("http://x/mcp")._discover
+async def test_without_discovery_the_gated_handler_serves_no_name(server_port: int) -> None:
+    async with _provider(server_port, discover=False) as mcp:
+        with pytest.raises(UnservedToolCallError):
+            await mcp.as_tool_handler()("add", {"a": 1, "b": 1})
 
 
-class _LoopingSession:
-    """A server whose listing hands out the same cursor forever."""
+_STDIO_SERVER = textwrap.dedent(
+    """\
+    from mcp.server.fastmcp import FastMCP
 
-    def __init__(self) -> None:
+    server = FastMCP("roomkit-stdio-listing-test", log_level="WARNING")
+
+    @server.tool()
+    def echo(text: str) -> str:
+        \"\"\"Say it back.\"\"\"
+        return text
+
+    server.run()
+    """
+)
+
+
+async def test_from_command_connects_without_listing(tmp_path: Path) -> None:
+    script = tmp_path / "stdio_server.py"
+    script.write_text(_STDIO_SERVER)
+    async with MCPToolProvider.from_command(sys.executable, [str(script)], discover=False) as mcp:
+        assert mcp.get_tools() == []
+        assert await mcp.call_tool("echo", {"text": "hi"}) == "hi"
+    async with MCPToolProvider.from_command(sys.executable, [str(script)]) as mcp:
+        assert mcp.tool_names == ["echo"]
+
+
+def test_a_remote_ref_is_refused_without_being_fetched(monkeypatch: pytest.MonkeyPatch) -> None:
+    fetched: list[Any] = []
+
+    def offline(*args: Any, **kwargs: Any) -> Any:
+        fetched.append(args)
+        raise OSError("offline")
+
+    monkeypatch.setattr(urllib.request, "urlopen", offline)
+    schema = {"$ref": "https://schemas.invalid/count.json"}
+    with pytest.raises(RuntimeError, match="Invalid schema for tool count"):
+        check_structured_content("count", schema, SimpleNamespace(structuredContent={"n": 1}))
+    assert fetched == []
+
+
+class _PagingSession:
+    """A server whose listing pages as *cursors* says, one tool a page while
+    *tools_until* allows, then empty pages."""
+
+    def __init__(self, cursors: Callable[[int], str], tools_until: int) -> None:
         self.pages = 0
+        self._cursors = cursors
+        self._tools_until = tools_until
 
     async def list_tools(self, *, params: Any = None) -> Any:
         self.pages += 1
-        return SimpleNamespace(tools=[SimpleNamespace(name=f"t{self.pages}")], nextCursor="again")
+        tools = [SimpleNamespace(name=f"t{self.pages}")] if self.pages <= self._tools_until else []
+        return SimpleNamespace(tools=tools, nextCursor=self._cursors(self.pages))
 
 
-async def test_a_repeated_cursor_ends_the_listing(caplog: pytest.LogCaptureFixture) -> None:
-    session = _LoopingSession()
-    tools = await _list_tools(session)
-    assert [tool.name for tool in tools] == ["t1", "t2"]
-    assert "repeated a cursor" in caplog.text
+@pytest.mark.parametrize(
+    ("cursors", "tools_until", "pages", "kept"),
+    [
+        pytest.param(lambda page: "again", 10**9, 2, 2, id="a repeated cursor"),
+        pytest.param(lambda page: str(page * 2), 1, 2, 1, id="an empty page with a cursor"),
+        pytest.param(lambda page: str(page), 10**9, _MAX_LIST_PAGES, _MAX_LIST_PAGES, id="no end"),
+    ],
+)
+async def test_a_listing_that_pages_without_end_stops(
+    caplog: pytest.LogCaptureFixture,
+    cursors: Callable[[int], str],
+    tools_until: int,
+    pages: int,
+    kept: int,
+) -> None:
+    session = _PagingSession(cursors, tools_until)
+    tools = await _list_tools(session, "http://looping.invalid/mcp")
+    assert session.pages == pages
+    assert len(tools) == kept
+    assert "http://looping.invalid/mcp pages tools/list without end" in caplog.text

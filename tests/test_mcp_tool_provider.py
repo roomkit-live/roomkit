@@ -100,8 +100,8 @@ def _make_provider_connected(
     session = AsyncMock()
     session.list_tools = AsyncMock(return_value=MockListToolsResult(tools))
     if call_tool_side_effect:
-        # The provider sends ``tools/call`` itself (RMK-662): the side effect
-        # still reads the tool's name and arguments.
+        # The provider sends ``tools/call`` itself: the side effect reads the
+        # tool's name and arguments from the request.
         session.send_request = AsyncMock(
             side_effect=lambda request, _result_type: call_tool_side_effect(
                 request.params.name, request.params.arguments

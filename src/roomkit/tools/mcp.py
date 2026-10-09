@@ -44,28 +44,41 @@ def _definition(tool: Any) -> AITool | None:
     )
 
 
-async def _list_tools(session: Any) -> list[Any]:
+_MAX_LIST_PAGES = 1000
+"""Pages of ``tools/list`` read at most: a bound on a server whose cursor never
+ends, far above any real catalogue."""
+
+
+async def _list_tools(session: Any, target: str) -> list[Any]:
     """Every tool the server lists, following its cursor across pages (RFC §21.2).
 
-    A cursor the server hands out twice ends the reading where it stands: a
-    server that loops must not hold the connection open forever.
+    The reading stops where it stands, with a warning naming *target*, when the
+    server pages on without bringing anything new (an empty page that still
+    carries a cursor, a cursor handed out twice) or past
+    :data:`_MAX_LIST_PAGES`: a server that pages forever must not hold the
+    connection open forever.
     """
     from mcp.types import PaginatedRequestParams
 
     tools: list[Any] = []
     seen: set[str] = set()
     params: Any = None
-    while True:
+    for _ in range(_MAX_LIST_PAGES):
         page = await session.list_tools(params=params)
         tools.extend(page.tools)
         cursor = getattr(page, "nextCursor", None)
         if not isinstance(cursor, str) or not cursor:
             return tools
-        if cursor in seen:
-            logger.warning("MCP tools/list repeated a cursor; keeping %d tools", len(tools))
-            return tools
+        if not page.tools or cursor in seen:
+            break
         seen.add(cursor)
         params = PaginatedRequestParams(cursor=cursor)
+    logger.warning(
+        "MCP server %s pages tools/list without end; keeping the %d tools read",
+        target,
+        len(tools),
+    )
+    return tools
 
 
 _DEFAULT_CALL_TIMEOUT = 30.0
@@ -298,7 +311,7 @@ class MCPToolProvider:
         every listed tool, as a host calls tools the model never saw (an MCP
         App's app-only tool) and their results are checked all the same.
         """
-        listed = await _list_tools(session)
+        listed = await _list_tools(session, self._target)
         self._catalogue(listed)
         self._output_schemas = {
             tool.name: schema
@@ -495,7 +508,8 @@ class MCPToolProvider:
         ``UnservedToolCallError``, so it sits last in a
         ``compose_tool_handlers`` chain: nothing after it would be reached.
         A provider connected with ``discover=False`` discovered nothing, so
-        its gated handler refuses every name.
+        its gated handler serves no name: every call raises
+        ``UnservedToolCallError``.
 
         A tool whose result says ``isError`` raises
         :class:`~roomkit.core.exceptions.ToolFailedError` either way: the tool

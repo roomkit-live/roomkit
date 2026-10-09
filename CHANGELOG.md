@@ -35,19 +35,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `MCPToolProvider` reads every page of a server's `tools/list` (RMK-662, RFC
   §21.2): it read the first page and ignored `nextCursor`, so a server that
-  pages its listing lost every tool after it. A cursor the server hands out
-  twice ends the reading with a warning rather than looping.
+  pages its listing lost every tool after it. A server that pages on without
+  bringing anything new (an empty page that still carries a cursor, a cursor
+  handed out twice) or past 1000 pages ends the reading, with a warning
+  naming it, rather than holding the connection open.
 
 - An MCP tool call never lists the server's tools again (RMK-662, RFC §21.2).
   `MCPToolProvider` called through the SDK's `ClientSession.call_tool`, which
   sends a whole `tools/list` before every call of a tool its listing does not
   name, to look for an output schema, and never remembers that it was absent:
-  a gateway's per-member tools and `as_tool_handler(gate_discovery=False)`
+  a gateway's per-caller tools and `as_tool_handler(gate_discovery=False)`
   paid the whole catalogue on each call. The provider now sends `tools/call`
   itself and checks a result against the output schema the tool was listed
   with at connection, with the SDK's messages (`RuntimeError`); a tool the
   listing did not name is called as it is. The schemas cover every listed
-  tool, `tool_filter` aside, so an app-only tool is still checked.
+  tool, `tool_filter` aside, so an app-only tool is still checked. A test
+  double of the provider's session answers `send_request(request,
+  result_type)`: one that wires `call_tool` is no longer called.
 
 ## [0.96.1] — 2026-10-09
 
