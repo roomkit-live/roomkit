@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `MCPToolProvider(..., discover=False)`, also on `from_url` and
+  `from_command`, connects without listing the server's tools (RMK-662, RFC
+  §21.2): a host that only reads a resource (an MCP App's HTML) skips the
+  catalogue. `get_tools()` and `tool_meta()` are then empty and no call is
+  checked against an output schema. Example: `examples/mcp_read_resource.py`.
+
 ### Fixed
 
 - WhatsApp Personal answers a group in the group and names a hidden-number
@@ -29,6 +37,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   §21.2): it read the first page and ignored `nextCursor`, so a server that
   pages its listing lost every tool after it. A cursor the server hands out
   twice ends the reading with a warning rather than looping.
+
+- An MCP tool call never lists the server's tools again (RMK-662, RFC §21.2).
+  `MCPToolProvider` called through the SDK's `ClientSession.call_tool`, which
+  sends a whole `tools/list` before every call of a tool its listing does not
+  name, to look for an output schema, and never remembers that it was absent:
+  a gateway's per-member tools and `as_tool_handler(gate_discovery=False)`
+  paid the whole catalogue on each call. The provider now sends `tools/call`
+  itself and checks a result against the output schema the tool was listed
+  with at connection, with the SDK's messages (`RuntimeError`); a tool the
+  listing did not name is called as it is. The schemas cover every listed
+  tool, `tool_filter` aside, so an app-only tool is still checked.
 
 ## [0.96.1] — 2026-10-09
 

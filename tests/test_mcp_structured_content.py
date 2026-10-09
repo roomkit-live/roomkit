@@ -41,7 +41,7 @@ class _CallToolResult:
 def _provider(result: _CallToolResult) -> MCPToolProvider:
     provider = MCPToolProvider("http://fake:8000/mcp")
     session = AsyncMock()
-    session.call_tool = AsyncMock(return_value=result)
+    session.send_request = AsyncMock(return_value=result)
     provider._session = session
     provider._connected = True
     provider._tool_set.add("get-menu")

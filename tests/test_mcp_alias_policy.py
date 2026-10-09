@@ -39,7 +39,8 @@ class _Server:
     def __init__(self) -> None:
         self.ran: list[str] = []
 
-    async def call_tool(self, name: str, arguments: dict[str, Any]) -> Any:
+    async def send_request(self, request: Any, result_type: Any) -> Any:
+        name = request.params.name
         self.ran.append(name)
         return mt.CallToolResult(
             content=[mt.TextContent(type="text", text=f"{name} done")], isError=False

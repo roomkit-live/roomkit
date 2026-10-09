@@ -172,6 +172,65 @@ async def test_discovery_reads_every_page(server_port: int) -> None:
     assert await _listings(server_port) - before == 3  # five tools, two a page
 
 
+async def test_calls_never_list_again_listed_or_not(server_port: int) -> None:
+    async with _provider(server_port) as mcp:
+        handler = mcp.as_tool_handler(gate_discovery=False)
+        before = await _listings(server_port)
+        for _ in range(3):
+            assert await mcp.call_tool("add", {"a": 1, "b": 2}) == "3"
+            assert await mcp.call_tool("unlisted", {}) == "served"
+            assert (await mcp.call_tool_result("good_count", {})).structuredContent == {"n": 1}
+            assert await handler("unlisted", {}) == "served"
+        assert await _listings(server_port) == before
+
+
+async def test_a_listed_tool_that_breaks_its_output_schema_is_refused(server_port: int) -> None:
+    async with _provider(server_port) as mcp:
+        with pytest.raises(RuntimeError, match="Invalid structured content returned by tool"):
+            await mcp.call_tool_result("bad_count", {})
+        with pytest.raises(RuntimeError, match="did not return structured content"):
+            await mcp.call_tool_result("bare_count", {})
+
+
+async def test_the_handler_refuses_a_broken_result_too(server_port: int) -> None:
+    async with _provider(server_port) as mcp:
+        with pytest.raises(RuntimeError, match="Invalid structured content"):
+            await mcp.as_tool_handler()("bad_count", {})
+
+
+async def test_an_error_result_is_not_validated(server_port: int) -> None:
+    async with _provider(server_port) as mcp:
+        result = await mcp.call_tool_result("failed_count", {})
+    assert result.isError
+
+
+async def test_a_tool_the_filter_hides_is_still_validated(server_port: int) -> None:
+    """The schemas come from the whole listing: a host calls a tool the model
+    never saw (an MCP App's app-only tool) and it is checked as before."""
+    async with _provider(server_port, tool_filter=lambda name: name == "add") as mcp:
+        assert mcp.tool_names == ["add"]
+        with pytest.raises(RuntimeError, match="Invalid structured content"):
+            await mcp.call_tool_result("bad_count", {})
+
+
+async def test_without_discovery_the_connection_lists_nothing(server_port: int) -> None:
+    before = await _listings(server_port)
+    async with _provider(server_port, discover=False) as mcp:
+        assert mcp.connected
+        assert mcp.get_tools() == []
+        assert mcp.tool_meta() == {}
+        assert await mcp.call_tool("add", {"a": 2, "b": 2}) == "4"
+        # Nothing was listed, so nothing is validated: the broken result passes.
+        assert (await mcp.call_tool_result("bad_count", {})).structuredContent == {"n": "many"}
+    assert await _listings(server_port) == before
+
+
+def test_the_factories_carry_discover() -> None:
+    assert not MCPToolProvider.from_url("http://x/mcp", discover=False)._discover
+    assert not MCPToolProvider.from_command("server", discover=False)._discover
+    assert MCPToolProvider("http://x/mcp")._discover
+
+
 class _LoopingSession:
     """A server whose listing hands out the same cursor forever."""
 

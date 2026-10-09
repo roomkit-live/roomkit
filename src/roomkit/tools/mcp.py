@@ -13,7 +13,12 @@ from typing import Any
 
 from roomkit.core.exceptions import ToolFailedError, UnservedToolCallError
 from roomkit.providers.ai.base import AITool, some_vendor_accepts_tool_name
-from roomkit.tools._mcp_result import error_text, handler_result, text_body
+from roomkit.tools._mcp_result import (
+    check_structured_content,
+    error_text,
+    handler_result,
+    text_body,
+)
 from roomkit.tools.compose import ToolHandler, ToolResult
 from roomkit.tools.policy import served_tool_name
 
@@ -120,6 +125,10 @@ class MCPToolProvider:
         async with MCPToolProvider.from_command("uvx", ["mcp-server-time"]) as mcp:
             ...
 
+    The tools are listed once, on entry; no call lists them again (RFC §21.2).
+    ``discover=False`` connects without listing, for a host that only reads
+    the server's resources.
+
     Enter and exit it in the same task (``async with``): the MCP SDK's
     transports hold anyio cancel scopes that must close where they opened.
     """
@@ -135,6 +144,7 @@ class MCPToolProvider:
         args: Sequence[str] = (),
         env: dict[str, str] | None = None,
         cwd: str | None = None,
+        discover: bool = True,
     ) -> None:
         if transport not in ("streamable_http", "sse", "stdio"):
             raise ValueError(f"Unsupported transport: {transport!r}")
@@ -156,11 +166,13 @@ class MCPToolProvider:
         self._args = list(args)
         self._env = env
         self._cwd = cwd
+        self._discover = discover
         self._session: Any = None
         self._stack: AsyncExitStack | None = None
         self._tools: list[AITool] = []
         self._tool_set: set[str] = set()
         self._tool_meta: dict[str, dict[str, Any]] = {}
+        self._output_schemas: dict[str, dict[str, Any]] = {}
         self._connected = False
 
     @classmethod
@@ -171,6 +183,7 @@ class MCPToolProvider:
         transport: str = "streamable_http",
         tool_filter: Callable[[str], bool] | None = None,
         headers: dict[str, str] | None = None,
+        discover: bool = True,
     ) -> MCPToolProvider:
         """Create an MCPToolProvider for the given URL.
 
@@ -181,11 +194,17 @@ class MCPToolProvider:
             transport: ``"streamable_http"`` (default) or ``"sse"``.
             tool_filter: Optional predicate to include only matching tool names.
             headers: Optional HTTP headers sent with every request.
+            discover: List the server's tools on entry (the default). ``False``
+                connects without listing, for a host that only reads
+                resources: :meth:`get_tools` and :meth:`tool_meta` are then
+                empty, and no call is checked against an output schema.
 
         Returns:
             An MCPToolProvider instance (not yet connected).
         """
-        return cls(url, transport=transport, tool_filter=tool_filter, headers=headers)
+        return cls(
+            url, transport=transport, tool_filter=tool_filter, headers=headers, discover=discover
+        )
 
     @classmethod
     def from_command(
@@ -196,6 +215,7 @@ class MCPToolProvider:
         env: dict[str, str] | None = None,
         cwd: str | None = None,
         tool_filter: Callable[[str], bool] | None = None,
+        discover: bool = True,
     ) -> MCPToolProvider:
         """Create an MCPToolProvider for a server started as a subprocess (stdio).
 
@@ -210,6 +230,8 @@ class MCPToolProvider:
                 an API key say, here.
             cwd: Working directory of the server.
             tool_filter: Optional predicate to include only matching tool names.
+            discover: List the server's tools on entry (the default); see
+                :meth:`from_url`.
 
         Returns:
             An MCPToolProvider instance (not yet connected).
@@ -221,6 +243,7 @@ class MCPToolProvider:
             env=env,
             cwd=cwd,
             tool_filter=tool_filter,
+            discover=discover,
         )
 
     @property
@@ -249,10 +272,10 @@ class MCPToolProvider:
             read_stream, write_stream = await self._open_transport(stack)
             session = await stack.enter_async_context(ClientSession(read_stream, write_stream))
             await session.initialize()
-            listed = await _list_tools(session)
             # Inside the try: a listing the catalogue cannot read releases what
             # was opened, the stdio server included (RFC §21.2).
-            self._catalogue(listed)
+            if self._discover:
+                await self._discover_tools(session)
         except BaseException:
             await stack.aclose()
             raise
@@ -261,12 +284,27 @@ class MCPToolProvider:
         self._session = session
         self._connected = True
         logger.info(
-            "Connected to MCP server %s (%s) — discovered %d tools",
+            "Connected to MCP server %s (%s) — %s",
             self._target,
             self._transport,
-            len(self._tools),
+            f"discovered {len(self._tools)} tools" if self._discover else "tools not listed",
         )
         return self
+
+    async def _discover_tools(self, session: Any) -> None:
+        """Read the server's whole tool listing into this provider.
+
+        The catalogue keeps what the filter admits; the output schemas cover
+        every listed tool, as a host calls tools the model never saw (an MCP
+        App's app-only tool) and their results are checked all the same.
+        """
+        listed = await _list_tools(session)
+        self._catalogue(listed)
+        self._output_schemas = {
+            tool.name: schema
+            for tool in listed
+            if isinstance(schema := getattr(tool, "outputSchema", None), dict)
+        }
 
     def _catalogue(self, listed: Sequence[Any]) -> None:
         """Keep the listed tools the filter admits and a provider accepts:
@@ -358,7 +396,7 @@ class MCPToolProvider:
         Read from the listing made at connection, so no second ``tools/list``:
         an MCP App's ``ui`` (``resourceUri``, ``csp``) among the rest. A tool
         listed without one, or not discovered (``tool_filter``, a name no
-        provider accepts), is absent.
+        provider accepts, ``discover=False``), is absent.
         """
         self._ensure_connected()
         return copy.deepcopy(self._tool_meta)
@@ -392,10 +430,23 @@ class MCPToolProvider:
         Like :meth:`call_tool`, it calls any tool the server has: ``tool_filter``
         shapes what discovery offers a model, not what the host may call (an
         app-only tool the frame calls, say). The host authorizes the call.
+
+        A successful result of a tool listed with an output schema is checked
+        against it, and one that breaks it raises ``RuntimeError``, as the MCP
+        SDK does. A tool the listing did not name is called as it is: no call
+        lists the server's tools (RFC §21.2).
         """
         self._ensure_connected()
-        result = await asyncio.wait_for(self._session.call_tool(name, arguments), timeout=timeout)
+        from mcp.types import CallToolRequest, CallToolRequestParams, CallToolResult
+
+        # Sent as a request: ``ClientSession.call_tool`` lists every tool to
+        # check a name its listing lacks, on every call of that name.
+        request = CallToolRequest(params=CallToolRequestParams(name=name, arguments=arguments))
+        sent = self._session.send_request(request, CallToolResult)
+        result = await asyncio.wait_for(sent, timeout=timeout)
         if not result.isError:
+            if (schema := self._output_schemas.get(name)) is not None:
+                check_structured_content(name, schema, result)
             _publish_structured_content(result)
         return result
 
@@ -443,6 +494,8 @@ class MCPToolProvider:
         the model may call. Such a handler never raises
         ``UnservedToolCallError``, so it sits last in a
         ``compose_tool_handlers`` chain: nothing after it would be reached.
+        A provider connected with ``discover=False`` discovered nothing, so
+        its gated handler refuses every name.
 
         A tool whose result says ``isError`` raises
         :class:`~roomkit.core.exceptions.ToolFailedError` either way: the tool

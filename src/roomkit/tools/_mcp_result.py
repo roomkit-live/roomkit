@@ -1,4 +1,4 @@
-"""How an MCP ``CallToolResult`` is rendered: as a string, or for the model."""
+"""How an MCP ``CallToolResult`` is checked, then rendered: as a string, or for the model."""
 
 from __future__ import annotations
 
@@ -81,3 +81,27 @@ def handler_result(result: Any) -> ToolResult:
     if any(isinstance(p, AIImagePart) for p in parts):
         return parts
     return _join([p.text for p in parts if isinstance(p, AITextPart)])
+
+
+def check_structured_content(name: str, schema: dict[str, Any], result: Any) -> None:
+    """Raise when a tool's result breaks the output schema it was listed with.
+
+    The MCP SDK's own check (``ClientSession.call_tool``), kept here so that a
+    call never lists the server's tools to find a schema (RFC §21.2): the same
+    ``RuntimeError`` messages, and a ``$ref`` resolved within the schema only,
+    never fetched.
+    """
+    from jsonschema import SchemaError, ValidationError, validate
+    from referencing import Registry
+    from referencing.exceptions import Unresolvable
+
+    if result.structuredContent is None:
+        raise RuntimeError(
+            f"Tool {name} has an output schema but did not return structured content"
+        )
+    try:
+        validate(result.structuredContent, schema, registry=Registry())
+    except ValidationError as e:
+        raise RuntimeError(f"Invalid structured content returned by tool {name}: {e}") from e
+    except (SchemaError, Unresolvable) as e:
+        raise RuntimeError(f"Invalid schema for tool {name}: {e}") from e
