@@ -11,6 +11,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- An identity is one person to a turn's author, however many participant
+  records name it (RMK-659, RFC §5.5, §6.4). A member the host added under
+  their identity (`Participant(id="member:u1", identity_id="u1")`) and the
+  record the identity pipeline keeps for the same identity (`id="u1"`) were
+  two sources since 0.96.0 (RMK-620): the register seated the first, so the
+  person's own turns read `Alice (2)`, or alternated between `Alice` and
+  `Alice (2)` with the order `list_participants` returned, and the speaker
+  note told the model they were two people. The record that joined first
+  now stands for the identity: one source and one rank, whichever record
+  and channel a turn came through, and one seat in the register. A room
+  without such a pair keeps its digests; a turn recorded under the other
+  record is ranked again as its person's.
+
 - The transport no-recipient refusal (RMK-646) cites RFC §10.2 step 3d, the
   broadcast step that defines it, in its source comment and in the 0.96.0
   notes below; both cited §22.2, which covers the built-in delivery

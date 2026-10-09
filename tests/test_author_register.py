@@ -6,13 +6,22 @@ does not undo it."""
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Any
 
 from roomkit.channels import SMSChannel
 from roomkit.channels._speaker import turn_labels
 from roomkit.channels.realtime_voice import RealtimeVoiceChannel
 from roomkit.channels.voice import VoiceChannel
-from roomkit.core._authors import AUTHOR, AUTHOR_REGISTER, AuthorRegister, People
+from roomkit.core._authors import (
+    AUTHOR,
+    AUTHOR_REGISTER,
+    AuthorRegister,
+    People,
+    digest,
+    name_keys,
+    source_of,
+)
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundMessage
 from roomkit.models.enums import ChannelType, TaskStatus
@@ -239,6 +248,85 @@ class TestAParticipantIdOnAnotherChannel:
         assert people.of(event("sms1", "p1")) is person
         assert people.of(event("email1", "i1")) is person
         assert people.of(event("email1", "p1")) is None
+
+
+class TestAnIdentityIsOnePerson:
+    """Two records of one identity (a member the host added under it, and the
+    record the identity pipeline keeps for it) are one source, one rank."""
+
+    async def test_a_member_added_under_their_identity_keeps_their_name(self) -> None:
+        kit, provider = await _kit(["a1", "a2"])
+        await kit.store.add_participant(
+            Participant(
+                id="member:u-alice",
+                room_id="r1",
+                channel_id="member:u-alice",
+                display_name="Alice",
+                identity_id="u-alice",
+            )
+        )
+        await kit.store.add_participant(
+            Participant(
+                id="u-alice",
+                room_id="r1",
+                channel_id="sms1",
+                display_name="Alice",
+                identity_id="u-alice",
+            )
+        )
+        await _say(kit, "u-bob", "Bob", "hi all")
+        await _say(kit, "u-alice", "Alice", "hold the refund")
+
+        assert _texts(provider) == ['Bob: "hi all"', 'Alice: "hold the refund"']
+
+    @staticmethod
+    def _records() -> tuple[Participant, Participant]:
+        """The member the host added under identity ``i1``, then the record
+        the identity pipeline keeps for it."""
+        first, later = (
+            Participant(
+                id=pid,
+                room_id="r",
+                channel_id=channel,
+                display_name="Alice",
+                identity_id="i1",
+                joined_at=datetime(2026, 1, day, tzinfo=UTC),
+            )
+            for pid, channel, day in (("member:i1", "member:i1", 1), ("i1", "sms1", 2))
+        )
+        return first, later
+
+    @staticmethod
+    def _turn(metadata: dict[str, Any] | None = None) -> RoomEvent:
+        source = EventSource(channel_id="sms1", channel_type=ChannelType.SMS, participant_id="i1")
+        return RoomEvent(
+            room_id="r", source=source, content=TextContent(body="x"), metadata=metadata or {}
+        )
+
+    def test_the_first_record_stands_for_the_identity_whatever_the_order(self) -> None:
+        first, later = self._records()
+        event = self._turn()
+
+        for records in ([first, later], [later, first]):
+            people = People(records)
+            assert people.of(event) is first
+            assert source_of(event, people) == ["participant", "member:i1"]
+
+    def test_a_turn_recorded_under_the_other_record_reads_as_its_person(self) -> None:
+        """The register 0.96.0 kept: the member seated, the pipeline's record
+        ranked after it, and a turn recorded with that rank."""
+        first, later = self._records()
+        names = name_keys("r", "Alice")
+        register = AuthorRegister()
+        register.seat(digest("r", ["participant", "member:i1"]), names)
+        other = digest("r", ["participant", "i1"])
+        recorded = {"name": "Alice", "rank": register.rank(other, names), "source": other}
+        event = self._turn({"sender_name": "Alice", AUTHOR: recorded})
+        room = Room(id="r", metadata={AUTHOR_REGISTER: register.data})
+
+        labels = turn_labels([event], RoomContext(room=room, participants=[first, later]))
+        assert recorded["rank"] == 2
+        assert labels[event.id] == "Alice"
 
 
 class TestAWriteMadeMeanwhileDoesNotUndoIt:

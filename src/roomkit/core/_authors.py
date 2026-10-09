@@ -46,12 +46,22 @@ class People:
     them: a ``Participant.id`` names its participant on a channel they are
     reached through (``channel_id``, ``connected_via``), since an id one
     transport gives says nothing of another's; an ``Identity.id`` the
-    identity pipeline resolved names its participant on any (RFC §5.5, §11)."""
+    identity pipeline resolved names its participant on any (RFC §5.5, §11).
+
+    An identity is one person however many records name it (a member the host
+    added under it, and the record the identity pipeline keeps for it): the
+    record that joined first stands for them all, so their turns share one
+    source and one rank whichever record and channel they came through."""
 
     def __init__(self, participants: Iterable[Participant]) -> None:
-        self.participants = list(participants)
-        self._by_id = {p.id: p for p in self.participants}
-        self._by_identity = {p.identity_id: p for p in self.participants if p.identity_id}
+        records = sorted(participants, key=lambda p: (p.joined_at, p.id))
+        self._by_id = {p.id: p for p in records}
+        self._by_identity: dict[str, Participant] = {}
+        for record in records:
+            if record.identity_id:
+                self._by_identity.setdefault(record.identity_id, record)
+        # One record per person, in the order they joined.
+        self.persons = [p for p in records if self._standing_for(p) is p]
 
     def of(self, event: RoomEvent) -> Participant | None:
         """The participant behind *event*, or ``None``."""
@@ -61,8 +71,14 @@ class People:
         person = self._by_id.get(pid)
         # connected_via holds the primary channel too.
         if person is not None and event.source.channel_id in person.connected_via:
-            return person
+            return self._standing_for(person)
         return self._by_identity.get(pid)
+
+    def _standing_for(self, record: Participant) -> Participant:
+        """The record standing for *record*'s person: its identity's first."""
+        if record.identity_id is None:
+            return record
+        return self._by_identity.get(record.identity_id, record)
 
 
 def author_name(event: RoomEvent, people: People) -> str | None:
@@ -180,7 +196,7 @@ class AuthorRegister:
         """The room's named participants take their seats, in the order they
         joined: a name the application registered holds the lowest rank free
         against a sender who takes it, whoever spoke first."""
-        for person in sorted(people.participants, key=lambda p: p.joined_at):
+        for person in people.persons:
             if name := person_name(person.display_name):
                 self.seat(digest(salt, ["participant", person.id]), name_keys(salt, name))
 
