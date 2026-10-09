@@ -47,6 +47,37 @@ NeonizeMessageParser = Callable[..., Awaitable[InboundMessage | None] | InboundM
 # ---------------------------------------------------------------------------
 
 
+_PHONE_SERVER = "s.whatsapp.net"
+_HIDDEN_NUMBER_SERVER = "lid"
+
+
+def sender_address(source: Any) -> str:
+    """The address RoomKit names a message's sender by (RFC §10.4).
+
+    A phone JID's user is the international number without its ``+``, so
+    ``+<user>``. A hidden-number id (``@lid``) is no number: when WhatsApp
+    also sends the phone behind it (``SenderAlt``), the sender is that
+    number, the one a room prepared for them names; otherwise the whole
+    ``<id>@lid``, which no phone normalizer reads as a number and a reply
+    still reaches. Empty when the source names no sender.
+    """
+    sender = getattr(source, "Sender", None)
+    user = getattr(sender, "User", "") or ""
+    server = getattr(sender, "Server", "") or ""
+    if user and server == _PHONE_SERVER:
+        return f"+{user}"
+    alt = getattr(source, "SenderAlt", None)
+    alt_user = getattr(alt, "User", "")
+    behind_hidden_id = (
+        server == _HIDDEN_NUMBER_SERVER and getattr(alt, "Server", "") == _PHONE_SERVER
+    )
+    if behind_hidden_id and isinstance(alt_user, str) and alt_user:
+        return f"+{alt_user}"
+    if user and server:
+        return f"{user}@{server}"
+    return user
+
+
 def default_message_parser(
     channel_id: str,
     *,
@@ -79,14 +110,11 @@ def default_message_parser(
             if src.IsFromMe and not self_chat:
                 return None
 
-            # Sender JID → readable ID (strip @s.whatsapp.net)
             sender_jid = src.Sender
             user = getattr(sender_jid, "User", "")
             server = getattr(sender_jid, "Server", "")
             raw_jid = f"{user}@{server}" if user and server else user
-            # A phone JID's user is the international number without its "+";
-            # a hidden-number id (``@lid``) is no number and stays as it is.
-            sender_id = f"+{user}" if user and server == "s.whatsapp.net" else user or ""
+            sender_id = sender_address(src)
             if not sender_id:
                 return None
 
@@ -100,6 +128,9 @@ def default_message_parser(
             metadata: dict[str, Any] = {
                 "raw_jid": raw_jid,
                 "chat_jid": chat_raw,
+                # A group is the conversation (WhatsAppPersonalChannel routes
+                # and answers by it); a private chat's is its sender.
+                "group_jid": chat_raw if is_group else "",
                 "chat_id": chat_user,
                 "is_from_me": bool(src.IsFromMe),
                 "is_group": is_group,
@@ -457,7 +488,6 @@ class WhatsAppPersonalSourceProvider(BaseSourceProvider):
                     src = info.MessageSource
                     chat_user = getattr(src.Chat, "User", "")
                     chat_server = getattr(src.Chat, "Server", "")
-                    sender_user = getattr(src.Sender, "User", "")
                     # key.ID is the message being reacted to
                     key = getattr(react, "key", None)
                     target_msg_id = getattr(key, "ID", "") if key else ""
@@ -467,7 +497,7 @@ class WhatsAppPersonalSourceProvider(BaseSourceProvider):
                         {
                             "chat_id": chat_user,
                             "chat_jid": f"{chat_user}@{chat_server}" if chat_user else "",
-                            "sender_id": sender_user,
+                            "sender_id": sender_address(src),
                             "is_from_me": bool(src.IsFromMe),
                             "target_message_id": target_msg_id,
                             "emoji": emoji,

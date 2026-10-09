@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- WhatsApp Personal answers a group in the group and names a hidden-number
+  sender by their phone (RMK-653): a group message's room was found by its
+  sender and answered them privately; the parser now names the group
+  (`metadata["group_jid"]`) and `WhatsAppPersonalChannel` routes and answers by
+  it, a private chat by the number (`TransportChannel` takes
+  `reply_metadata_key` with `replies_to_sender`, the chat first). A sender
+  WhatsApp hides behind an `@lid` id was kept as bare digits even when
+  `SenderAlt` carried their phone, and E.164 made a wrong number of them
+  (`+33123456789012345` with country code 33), answered at a wrong JID; the
+  sender is now that phone, or the whole `<id>@lid`, never digits a
+  normalizer reads (`roomkit.sources.neonize.sender_address`, also used for a
+  reaction's sender). neonize 0.5.2 addresses direct messages by LID, so these
+  ids get commoner. `send_typing` and `mark_read` handed the source a JID object
+  where it parses a string and failed on every call; a location went to a
+  `send_location` neonize never had, and now goes out as a location message.
+
 ## [0.96.1] — 2026-10-09
 
 ### Fixed

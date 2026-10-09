@@ -266,7 +266,9 @@ def WhatsAppPersonalChannel(
 ) -> TransportChannel:
     """Create a WhatsApp Personal transport channel (neonize).
 
-    Numbers are compared and stored in E.164 (see :func:`SMSChannel`).
+    Numbers are compared and stored in E.164 (see :func:`SMSChannel`). A
+    private chat is its sender's conversation; a group is the group's,
+    answered in the group (its JID under ``phone_number``).
     """
     return TransportChannel(
         channel_id,
@@ -276,6 +278,7 @@ def WhatsAppPersonalChannel(
         recipient_key="phone_number",
         address_normalizer=_phone_normalizer(default_country_code),
         replies_to_sender=True,
+        reply_metadata_key="group_jid",
     )
 
 

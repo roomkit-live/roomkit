@@ -194,11 +194,31 @@ class TestWhatsAppPersonalProvider:
         result = await provider.send(event, "1234567890")
 
         assert result.success is True
-        source.client.send_location.assert_called_once_with(
-            "1234567890@s.whatsapp.net",
-            45.5,
-            -73.5,
-            name="Montreal",
+        # neonize has no send_location: a location goes out as a Message.
+        jid, message = source.client.send_message.call_args.args
+        assert jid == "1234567890@s.whatsapp.net"
+        assert message.locationMessage.degreesLatitude == 45.5
+        assert message.locationMessage.degreesLongitude == -73.5
+        assert message.locationMessage.name == "Montreal"
+
+    async def test_typing_and_read_receipts_hand_the_source_jid_strings(
+        self, _mock_jid: MagicMock
+    ) -> None:
+        """The source parses a JID string itself; a JID object made it fail."""
+        source = _make_source()
+        source.send_composing = AsyncMock()
+        source.send_paused = AsyncMock()
+        source.mark_read = AsyncMock()
+        provider = WhatsAppPersonalProvider(source)
+
+        await provider.send_typing("+15550000001")
+        await provider.send_typing("+15550000001", is_typing=False)
+        await provider.mark_read(["m1"], chat="+15550000001", sender="123@lid")
+
+        source.send_composing.assert_awaited_once_with("15550000001@s.whatsapp.net", media="text")
+        source.send_paused.assert_awaited_once_with("15550000001@s.whatsapp.net")
+        source.mark_read.assert_awaited_once_with(
+            ["m1"], chat="15550000001@s.whatsapp.net", sender="123@lid"
         )
 
     async def test_send_when_disconnected(self, _mock_jid: MagicMock) -> None:

@@ -171,16 +171,45 @@ class TestDefaultMessageParser:
         assert isinstance(msg.content, TextContent)
         assert msg.content.body == "Hello world"
 
-    async def test_a_hidden_number_id_is_not_read_as_a_number(self) -> None:
+    async def test_a_hidden_number_id_stays_a_whole_jid(self) -> None:
+        """No phone behind it: the whole JID, which no normalizer reads as a
+        number and a reply still reaches."""
         from roomkit.sources.neonize import default_message_parser
 
         parser = default_message_parser("wa-test")
         event = _make_message_event(sender="123456789012345@lid", chat="123456789012345@lid")
+        event.Info.MessageSource.SenderAlt = _make_jid("")
 
         msg = await parser(_make_client_mock(), event)
 
         assert msg is not None
-        assert msg.sender_id == "123456789012345"
+        assert msg.sender_id == "123456789012345@lid"
+
+    async def test_a_hidden_number_id_with_its_phone_is_the_phone(self) -> None:
+        from roomkit.sources.neonize import default_message_parser
+
+        parser = default_message_parser("wa-test")
+        event = _make_message_event(sender="123456789012345@lid", chat="123456789012345@lid")
+        event.Info.MessageSource.SenderAlt = _make_jid("15550000001@s.whatsapp.net")
+
+        msg = await parser(_make_client_mock(), event)
+
+        assert msg is not None
+        assert msg.sender_id == "+15550000001"
+        assert msg.metadata["raw_jid"] == "123456789012345@lid"
+
+    async def test_a_group_message_names_its_group(self) -> None:
+        from roomkit.sources.neonize import default_message_parser
+
+        parser = default_message_parser("wa-test")
+        group = await parser(
+            _make_client_mock(),
+            _make_message_event(sender="15550000001@s.whatsapp.net", chat="120363@g.us"),
+        )
+        private = await parser(_make_client_mock(), _make_message_event())
+
+        assert group is not None and group.metadata["group_jid"] == "120363@g.us"
+        assert private is not None and private.metadata["group_jid"] == ""
 
     async def test_parses_extended_text(self) -> None:
         from roomkit.sources.neonize import default_message_parser

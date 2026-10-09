@@ -77,18 +77,15 @@ class TransportChannel(Channel):
                 the message's conversation (:meth:`conversation_address`):
                 its room is found by the chat, not by the sender, and a
                 binding's recipient names its chat as a phone channel's names
-                its correspondent. Exclusive with *replies_to_sender*.
+                its correspondent. With *replies_to_sender* too (WhatsApp
+                Personal), a message carrying the key is its chat's (a
+                group), any other its sender's (a private chat).
             requires_recipient: Whether a delivery needs a recipient in the
                 binding's metadata. A channel whose provider delivers to a
                 destination of its own (a webhook's configured URL) passes
                 ``False``: its provider is called without one (RFC §10.2
                 step 3d).
         """
-        if replies_to_sender and reply_metadata_key is not None:
-            raise ValueError(
-                "A channel replies to the sender's address or to a chat, not both: "
-                "pass replies_to_sender or reply_metadata_key"
-            )
         super().__init__(channel_id)
         self.channel_type = channel_type
         self._provider = provider
@@ -138,19 +135,24 @@ class TransportChannel(Channel):
         return {self._recipient_key: address}
 
     def conversation_address(self, message: InboundMessage) -> str:
-        if self._reply_metadata_key is not None:
-            chat = message.metadata.get(self._reply_metadata_key)
-            if chat:
-                return str(chat)
-        return message.sender_id
+        return self._chat_of(message) or message.sender_id
 
     def reply_metadata(self, message: InboundMessage) -> dict[str, str]:
+        # The same precedence as conversation_address: the chat the message
+        # carries, then the sender, so a room replies where it is found.
+        chat = self._chat_of(message)
+        if chat:
+            return {self._recipient_key: chat}
         if self._replies_to_sender:
             return self.recipient_metadata(message.sender_id)
+        return {}
+
+    def _chat_of(self, message: InboundMessage) -> str:
+        """The chat *message* was posted in, when this channel answers chats."""
         if self._reply_metadata_key is None:
-            return {}
-        value = message.metadata.get(self._reply_metadata_key)
-        return {self._recipient_key: str(value)} if value else {}
+            return ""
+        chat = message.metadata.get(self._reply_metadata_key)
+        return str(chat) if chat else ""
 
     async def handle_inbound(self, message: InboundMessage, context: RoomContext) -> RoomEvent:
         """Convert an inbound message into a room event."""

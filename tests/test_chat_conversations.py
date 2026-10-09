@@ -12,15 +12,13 @@ import asyncio
 from collections.abc import Callable
 from typing import Any
 
-import pytest
-
-from roomkit import HookTrigger, RoomKit, TransportChannel
-from roomkit.channels import TelegramChannel
+from roomkit import HookTrigger, InboundMessage, RoomKit, TextContent
+from roomkit.channels import TelegramChannel, WhatsAppPersonalChannel
 from roomkit.channels.ai import AIChannel
-from roomkit.models.enums import ChannelType
 from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.providers.telegram.mock import MockTelegramProvider
 from roomkit.providers.telegram.webhook import parse_telegram_webhook
+from roomkit.providers.whatsapp.mock import MockWhatsAppProvider
 
 ALICE, BOB = 1001, 1002
 GROUP = -100500
@@ -130,11 +128,38 @@ async def test_a_room_prepared_for_a_chat_takes_no_one_else() -> None:
     await bot.kit.close()
 
 
-def test_a_channel_replies_to_the_sender_or_to_a_chat_not_both() -> None:
-    with pytest.raises(ValueError, match="not both"):
-        TransportChannel(
-            "x",
-            ChannelType.TELEGRAM,
-            replies_to_sender=True,
-            reply_metadata_key="chat_id",
+async def test_whatsapp_personal_answers_a_private_chat_by_number_and_a_group_in_the_group() -> (
+    None
+):
+    """WhatsApp Personal is both: a private chat is its sender's, a group the group's."""
+    whatsapp = MockWhatsAppProvider()
+    kit = RoomKit()
+    kit.register_channel(WhatsAppPersonalChannel("wa", provider=whatsapp))
+    kit.register_channel(AIChannel("ai", provider=MockAIProvider(responses=["ok"])))
+
+    @kit.hook(HookTrigger.ON_ROOM_CREATED)
+    async def agent_joins(event: Any, ctx: Any) -> None:
+        await kit.attach_channel(ctx.room.id, "ai")
+
+    async def write(sender: str, group: str = "") -> str:
+        sent = len(whatsapp.sent)
+        message = InboundMessage(
+            channel_id="wa",
+            sender_id=sender,
+            content=TextContent(body="hi"),
+            metadata={"group_jid": group},
         )
+        result = await kit.process_inbound(message)
+        assert result.event is not None
+        await _eventually(lambda: len(whatsapp.sent) > sent)
+        return result.event.room_id
+
+    alice_private = await write("+15550000001")
+    assert whatsapp.sent[-1]["to"] == "+15550000001"
+    alice_group = await write("+15550000001", group="120363@g.us")
+    assert whatsapp.sent[-1]["to"] == "120363@g.us"
+    bob_group = await write("+15550000002", group="120363@g.us")
+    assert whatsapp.sent[-1]["to"] == "120363@g.us"
+
+    assert alice_group == bob_group != alice_private
+    await kit.close()

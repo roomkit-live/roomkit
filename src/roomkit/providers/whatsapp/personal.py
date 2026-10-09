@@ -50,6 +50,20 @@ def _build_jid(phone: str) -> Any:
     return WhatsAppPersonalSourceProvider._parse_jid(_build_jid_str(phone))
 
 
+def _location_message(content: LocationContent) -> Any:
+    """A WhatsApp location message: neonize has no send_location of its own."""
+    from neonize.proto.waE2E.WAWebProtobufsE2E_pb2 import LocationMessage, Message
+
+    location = LocationMessage(
+        degreesLatitude=content.latitude, degreesLongitude=content.longitude
+    )
+    if content.label:
+        location.name = content.label
+    if content.address:
+        location.address = content.address
+    return Message(locationMessage=location)
+
+
 async def _send_audio(client: Any, jid: Any, url: str, *, ptt: bool = True) -> Any:
     """Send audio with the correct mimetype for WhatsApp.
 
@@ -110,12 +124,7 @@ class WhatsAppPersonalProvider(WhatsAppProvider):
             elif isinstance(content, VideoContent):
                 resp = await client.send_video(jid, content.url)
             elif isinstance(content, LocationContent):
-                await client.send_location(
-                    jid,
-                    content.latitude,
-                    content.longitude,
-                    name=content.label or "",
-                )
+                resp = await client.send_message(jid, _location_message(content))
             else:
                 return ProviderResult(
                     success=False,
@@ -197,7 +206,8 @@ class WhatsAppPersonalProvider(WhatsAppProvider):
             is_typing: ``True`` for composing, ``False`` for paused.
             media: ``"text"`` for typing or ``"audio"`` for recording.
         """
-        jid = _build_jid(to)
+        # The source takes a JID string and parses it itself.
+        jid = _build_jid_str(to)
         if is_typing:
             await self._source.send_composing(jid, media=media)
         else:
@@ -218,8 +228,8 @@ class WhatsAppPersonalProvider(WhatsAppProvider):
         """
         await self._source.mark_read(
             message_ids,
-            chat=_build_jid(chat),
-            sender=_build_jid(sender),
+            chat=_build_jid_str(chat),
+            sender=_build_jid_str(sender),
         )
 
     async def send_reaction(
