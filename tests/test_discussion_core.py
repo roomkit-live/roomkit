@@ -22,9 +22,16 @@ from tests.test_framework import SimpleChannel
 
 
 class _Held:
-    """Stands for a discussion holding the room: no silence token here."""
+    """Stands for a discussion holding the room: it queues nobody and has no
+    silence token."""
 
     def silence_for(self, channel_id: str) -> Any:
+        return None
+
+    async def on_committed(self, event: RoomEvent, plan: Any) -> None:
+        return None
+
+    async def stop(self) -> None:
         return None
 
 

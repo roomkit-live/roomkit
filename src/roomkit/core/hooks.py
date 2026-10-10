@@ -25,6 +25,15 @@ logger = logging.getLogger("roomkit.hooks")
 SyncHookFn = Callable[[RoomEvent, RoomContext], Coroutine[Any, Any, HookResult]]
 AsyncHookFn = Callable[[RoomEvent, RoomContext], Coroutine[Any, Any, None]]
 
+_ROUTER_MARK = "_roomkit_router"
+
+
+def mark_router_hook(fn: SyncHookFn) -> SyncHookFn:
+    """Mark *fn* as a conversation router's hook (RFC §19.4), which a room a
+    discussion holds cannot have (RFC §19.7.5 rule 1)."""
+    setattr(fn, _ROUTER_MARK, True)
+    return fn
+
 
 @dataclass
 class HookRegistration:
@@ -195,6 +204,11 @@ class HookEngine:
                 room_id, HookTrigger.BEFORE_BROADCAST, HookExecution.SYNC, event=event
             )
         )
+
+    def has_router_hook(self, room_id: str) -> bool:
+        """Whether a conversation router's hook applies to *room_id*."""
+        hooks = [*self._global_hooks, *self._room_hooks.get(room_id, [])]
+        return any(getattr(h.fn, _ROUTER_MARK, False) for h in hooks)
 
     def has_sync_hooks(self, room_id: str, trigger: HookTrigger, event: RoomEvent) -> bool:
         """Whether a SYNC hook of *trigger* applies to *event* in *room_id*."""

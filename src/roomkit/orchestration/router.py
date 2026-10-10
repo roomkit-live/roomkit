@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
 
+from roomkit.core.hooks import mark_router_hook
 from roomkit.models.context import RoomContext
 from roomkit.models.enums import ChannelCategory, ChannelType, HookExecution, HookTrigger
 from roomkit.models.event import RoomEvent
@@ -174,6 +175,7 @@ class ConversationRouter:
         addressed event, which the router leaves alone (RFC §19.4, step 0).
         """
 
+        @mark_router_hook
         async def conversation_router(event: RoomEvent, context: RoomContext) -> HookResult:
             if event.addressed_to is not None:
                 # Step 0: the sender named its recipients, and a router does

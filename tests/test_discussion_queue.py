@@ -139,7 +139,7 @@ def test_dropping_the_queue_reports_the_instruction_turns_it_held() -> None:
     assert state.view().queue == ()
 
 
-def test_what_is_stored_leaves_out_who_speaks_and_whether_it_waits() -> None:
+def test_what_is_stored_leaves_out_who_speaks() -> None:
     state = SpeakQueueState()
     state.ask("sre", _person_ask("p1"), front=True)
     entry = state.next_turn(MAX_DEPTH).entry
@@ -148,6 +148,43 @@ def test_what_is_stored_leaves_out_who_speaks_and_whether_it_waits() -> None:
     state.waiting = True
 
     stored = state.model_dump()
-    assert "speaking" not in stored and "waiting" not in stored
+    assert "speaking" not in stored
     restored = SpeakQueueState.model_validate(stored)
-    assert (restored.speaking, restored.turns_given) == (None, 1)
+    assert (restored.speaking, restored.turns_given, restored.waiting) == (None, 1, True)
+
+
+def test_while_it_waits_for_a_person_only_a_turn_of_its_own_is_given() -> None:
+    state = SpeakQueueState(waiting=True)
+    state.ask("dev", _agent_ask("e1", 1, "sre"))
+    assert _next(state) is None
+
+    state.queue_regeneration("sre", _person_ask("p0"))
+    entry = state.next_turn(MAX_DEPTH).entry
+    assert entry is not None and (entry.agent, entry.regenerate) == ("sre", True)
+    state.take(entry)
+    assert state.waiting
+
+    state.person_wrote()
+    assert _next(state) == "dev"
+
+
+def test_a_regenerated_answer_is_not_merged_into_a_pending_turn() -> None:
+    state = SpeakQueueState()
+    state.ask("sre", _agent_ask("e1", 1, "dev"))
+    state.queue_regeneration("sre", _person_ask("p0"))
+    state.ask("sre", _agent_ask("e2", 1, "dev"))
+
+    assert [(e.regenerate, [a.event_id for a in e.asks]) for e in state.ordered()] == [
+        (True, ["p0"]),
+        (False, ["e1", "e2"]),
+    ]
+
+
+def test_a_restart_drops_the_instruction_turns_and_keeps_the_rest() -> None:
+    state = SpeakQueueState()
+    state.ask("dev", _agent_ask("e1", 1, "sre"))
+    state.queue_instruction("sre", "i1", depth=0)
+
+    dropped = state.drop_instructions()
+    assert [e.instruction for e in dropped] == ["i1"]
+    assert state.view().queue == ("dev",)

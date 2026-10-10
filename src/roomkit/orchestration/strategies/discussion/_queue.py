@@ -34,7 +34,15 @@ class Entry(BaseModel):
     """Arrival order among front requests, served first come first served."""
     instruction: str | None = None
     """The instruction this turn takes as its input, by event id."""
+    regenerate: bool = False
+    """The turn regenerates the answer to the event it was asked by."""
     depth_recorded: bool = False
+
+    @property
+    def own_turn(self) -> bool:
+        """A turn of its own, never merged: an instruction's or a regenerated
+        answer's, given even while the discussion waits or the agent listens."""
+        return self.instruction is not None or self.regenerate
 
     def answered(self) -> Ask | None:
         """The event the turn answers: the latest person's message among the
@@ -67,15 +75,16 @@ class SpeakQueueState(BaseModel):
     turns_given: int = 0
     last_speaker: str | None = None
     seq: int = 0
+    waiting: bool = False
     speaking: str | None = Field(default=None, exclude=True)
-    waiting: bool = Field(default=False, exclude=True)
+    """Who speaks belongs to the process that runs the turn (rule 16)."""
 
     # -- Asking --
 
     def ask(self, agent: str, ask: Ask, *, front: bool = False) -> None:
         """Queue *agent* for a turn *ask* asked for, or merge it into the turn it
         is owed: a front request (a person's) moves it to the front."""
-        entry = next((e for e in self.entries if e.agent == agent and not e.instruction), None)
+        entry = next((e for e in self.entries if e.agent == agent and not e.own_turn), None)
         if entry is None:
             entry = Entry(agent=agent)
             self.entries.append(entry)
@@ -96,6 +105,13 @@ class SpeakQueueState(BaseModel):
                 seq=self._next_seq(),
                 instruction=instruction_id,
             )
+        )
+
+    def queue_regeneration(self, agent: str, ask: Ask) -> None:
+        """A regenerated answer to the event *ask* names: a turn of its own,
+        at the front."""
+        self.entries.append(
+            Entry(agent=agent, asks=[ask], front=True, seq=self._next_seq(), regenerate=True)
         )
 
     def record_asked(self, agent: str, person: str) -> None:
@@ -123,11 +139,12 @@ class SpeakQueueState(BaseModel):
 
     def next_turn(self, max_depth: int) -> Pick:
         """The turn to give next, if any: the first entry that can take it, the
-        agent that just spoke only when no other can (RFC §19.7.5 rule 7)."""
+        agent that just spoke only when no other can (RFC §19.7.5 rule 7).
+        While the discussion waits for a person, only a turn of its own."""
         stopped: list[Entry] = []
         runnable: list[Entry] = []
         for entry in self.ordered():
-            if not self._may_take(entry):
+            if not self._may_take(entry) or (self.waiting and not entry.own_turn):
                 continue
             answered = entry.answered()
             if answered is not None and answered.depth + 1 >= max_depth:
@@ -142,7 +159,7 @@ class SpeakQueueState(BaseModel):
         return Pick(first, stopped)
 
     def _may_take(self, entry: Entry) -> bool:
-        if entry.instruction is not None:
+        if entry.own_turn:
             return True
         if entry.agent not in self.listening:
             return True
@@ -153,12 +170,15 @@ class SpeakQueueState(BaseModel):
         self.entries.remove(entry)
         self.speaking = entry.agent
         self.turns_given += 1
-        self.waiting = False
 
     def ended(self, agent: str) -> None:
         if self.speaking == agent:
             self.speaking = None
         self.last_speaker = agent
+
+    def person_wrote(self) -> None:
+        """A person's message: the discussion no longer waits (rule 10)."""
+        self.waiting = False
 
     def owes_a_person(self) -> bool:
         """Whether only a person can move the room on: an agent asked one, an
@@ -166,9 +186,16 @@ class SpeakQueueState(BaseModel):
         if self.asked:
             return True
         return any(
-            (e.agent in self.listening and e.instruction is None) or e.depth_recorded
+            (e.agent in self.listening and not e.own_turn) or e.depth_recorded
             for e in self.entries
         )
+
+    def drop_instructions(self) -> list[Entry]:
+        """Remove the instruction turns, whose text a stopped process held;
+        the turns removed."""
+        dropped = [e for e in self.entries if e.instruction is not None]
+        self.entries = [e for e in self.entries if e.instruction is None]
+        return dropped
 
     def drop(self) -> list[Entry]:
         """Empty the queue; the instruction turns it dropped."""

@@ -7,6 +7,7 @@ import logging
 from contextlib import AsyncExitStack
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
+from roomkit.core.event_router import CHAIN_DEPTH_LIMIT
 from roomkit.core.exceptions import RoomClosedError
 from roomkit.core.lanes import DeliveryCascade, DeliveryPlan
 from roomkit.core.mixins.helpers import _REFUSING_STATUSES, HelpersMixin
@@ -57,6 +58,7 @@ class RegenerateMixin(HelpersMixin):
     _lock_manager: RoomLockManager
     _process_timeout: float
     _max_chain_depth: int
+    _discussions: dict[str, Any]  # rooms a discussion holds (RFC §19.7.5)
 
     # Cross-mixin methods — attribute annotations avoid MRO shadowing
     _get_router: Any  # see RegenerateHost
@@ -203,7 +205,15 @@ class RegenerateMixin(HelpersMixin):
         duplicate bubble, no echo to other participants). Targets the single
         intelligence-channel path; orchestrated rooms (routing installed as
         BEFORE_BROADCAST hooks) are not re-routed here.
+
+        In a room a discussion holds (RFC §19.7.5 rule 7), each agent that
+        answered the trigger is queued at the front for a turn of its own,
+        and the call returns once they are queued, with no answer in its
+        result: the answers come in those turns.
         """
+        discussion = self._discussions.get(room_id)
+        if discussion is not None:
+            return await self._regenerate_in_discussion(discussion, room_id, trigger_id)
         cascade = DeliveryCascade(room_id, reentry_budget=self._max_chain_depth * 10)
         try:
             planned = await self._plan_regeneration(room_id, trigger_id, cascade)
@@ -238,6 +248,30 @@ class RegenerateMixin(HelpersMixin):
             trigger, source_binding = found
             plan = self._enqueue_regeneration(room_id, trigger, source_binding, context, cascade)
             return trigger, plan
+
+    async def _regenerate_in_discussion(
+        self, discussion: Any, room_id: str, trigger_id: str | None
+    ) -> InboundResult | None:
+        """Queue a regenerated answer to the trigger for every agent of the
+        discussion that answered it (RFC §19.7.5 rule 7)."""
+        async with AsyncExitStack() as stack:
+            try:
+                async with asyncio.timeout(self._process_timeout):
+                    await stack.enter_async_context(self._lock_manager.locked(room_id))
+                    context, found = await self._regenerate_target(room_id)
+            except TimeoutError:
+                return await self._refuse_on_timeout(room_id, operation="regenerate")
+            refusal = await self._refuse_regeneration(room_id, context, found, trigger_id)
+            if refusal is not None or found is None:
+                return refusal
+        trigger, _ = found
+        answered = [
+            e.source.channel_id
+            for e in context.recent_events
+            if e.responds_to == trigger.id and e.blocked_by != CHAIN_DEPTH_LIMIT
+        ]
+        await discussion.queue_regeneration(trigger, list(dict.fromkeys(answered)))
+        return InboundResult(event=trigger)
 
     async def _refuse_regeneration(
         self,

@@ -236,6 +236,11 @@ class LaneExecutionMixin(HelpersMixin):
         # An instruction takes the same index-less path whatever the policy:
         # it is delivered to the agent it directs and never stored (RFC
         # §10.1.1).
+        discussion = self._discussions.get(room_id)
+        if event.type == EventType.INSTRUCTION and discussion is not None:
+            # The discussion gives the agent its turn (RFC §19.7.5 rule 7).
+            await discussion.queue_instruction(event)
+            return None
         if event.type == EventType.INSTRUCTION or (
             policy_aware
             and self._persistence_policy is not None
@@ -254,6 +259,9 @@ class LaneExecutionMixin(HelpersMixin):
             return None
         committed = await self._commit(room_id, event)
         plan = plan_factory(committed) if plan_factory is not None else None
+        if discussion is not None:
+            # Queue whom it asks for, as committed (RFC §19.7.5 rule 8).
+            await discussion.on_committed(committed, plan)
         if plan is None:
             await self._note_committed_index(room_id, committed.index)
             return committed
@@ -907,12 +915,15 @@ class LaneExecutionMixin(HelpersMixin):
             for blocked in result.blocked_events:
                 await self._commit_blocked_response(room_id, blocked)
 
-    async def _commit_blocked_response(self, room_id: str, blocked: RoomEvent) -> None:
+    async def _commit_blocked_response(
+        self, room_id: str, blocked: RoomEvent, *, max_chain_depth: int | None = None
+    ) -> None:
         """Commit a record the router blocked, and announce why.
 
         Shared by every blocked record a delivery set leaves: an agent not
         asked past the depth limit, a muted source's response (RFC §8.3,
-        §7.5), so each is indexed and announced alike.
+        §7.5), so each is indexed and announced alike. ``max_chain_depth`` is
+        the limit that stopped it when not the kit's (a discussion's, §19.7.5).
         """
         await self._commit_indexed(room_id, blocked)
         if blocked.blocked_by == CHAIN_DEPTH_LIMIT:
@@ -923,7 +934,7 @@ class LaneExecutionMixin(HelpersMixin):
                 channel_id=blocked.source.channel_id,
                 data={
                     "chain_depth": blocked.chain_depth,
-                    "max_chain_depth": self._max_chain_depth,
+                    "max_chain_depth": max_chain_depth or self._max_chain_depth,
                 },
             )
         else:

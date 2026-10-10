@@ -39,8 +39,12 @@ from roomkit.orchestration.state import (
 )
 from roomkit.orchestration.status_bus import StatusLevel
 from roomkit.orchestration.strategies import (
+    Discussion,
     Loop,
     Pipeline,
+    SpeakQueue,
+    SpeakQueueChange,
+    SpeakQueueEvent,
     Supervisor,
     Swarm,
 )
@@ -49,10 +53,15 @@ __all__ = [
     # ABC
     "Orchestration",
     # Strategies
+    "Discussion",
     "Loop",
     "Pipeline",
     "Supervisor",
     "Swarm",
+    # Discussion's speak queue (RFC §19.7.5)
+    "SpeakQueue",
+    "SpeakQueueChange",
+    "SpeakQueueEvent",
     # State
     "ConversationPhase",
     "ConversationState",

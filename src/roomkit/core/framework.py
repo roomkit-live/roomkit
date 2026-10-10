@@ -49,6 +49,7 @@ from roomkit.core.mixins import (
     ChannelOpsMixin,
     DelegationMixin,
     DeliverMixin,
+    DiscussionMixin,
     EventOpsMixin,
     FrameworkEventHandler,
     GreetingMixin,
@@ -142,6 +143,7 @@ class RoomKit(
     InboundStreamingMixin,
     LaneExecutionMixin,
     RegenerateMixin,
+    DiscussionMixin,
     ChannelOpsMixin,
     RoomLifecycleMixin,
     MembershipMixin,
@@ -587,9 +589,11 @@ class RoomKit(
         # Stop delivery backend worker loop
         if self._delivery_backend is not None:
             await self._delivery_backend.close()
-        # Cancel in-flight background work first: the strategies' runs, which
-        # end their workers' delegations as they end, and the hand-backs under
-        # way, then delegated tasks.
+        # Stop the discussions' turns first, their queues kept (RFC §19.7.5
+        # rule 16). Then cancel in-flight background work: the strategies'
+        # runs, which end their workers' delegations as they end, and the
+        # hand-backs under way, then delegated tasks.
+        await self._stop_discussions()
         await self._cancel_background_runs()
         await self._task_runner.close()
         await self._cancel_pending_tasks()

@@ -7,5 +7,6 @@ agent may address any other by ``@name``, and one agent speaks at a time.
 from __future__ import annotations
 
 from .models import SpeakQueue, SpeakQueueChange, SpeakQueueEvent
+from .strategy import Discussion
 
-__all__ = ["SpeakQueue", "SpeakQueueChange", "SpeakQueueEvent"]
+__all__ = ["Discussion", "SpeakQueue", "SpeakQueueChange", "SpeakQueueEvent"]
