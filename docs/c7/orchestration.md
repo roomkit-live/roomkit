@@ -111,16 +111,20 @@ room = await kit.create_room(orchestration=Discussion(
   speaking agent cuts its turn as a `Cancel` does.
 - `kit.speak_queue(room_id)` returns the `SpeakQueue` (`speaking`, `queue`,
   `listening`, `asked`, `waiting`, `over`); `ON_SPEAK_QUEUE` announces each
-  change as a `SpeakQueueEvent`.
-- An `INSTRUCTION` addressed to an agent, and `regenerate_response()`, give a
-  turn of its own at the front. Once the discussion is over, an instruction
-  is refused with `reason="discussion_over"`.
+  change as a `SpeakQueueEvent`. The host calls take `organization_id`.
+- Agents address people by the transcript's names (`@AliceMartin`, `@sms1`
+  for a sender with no name, at most 32 characters); an ask is recorded
+  against that exact person, never one who takes their name.
+- An `INSTRUCTION` addressed to agents gives each a turn of its own at the
+  front; `regenerate_response()` does for each agent that answered (else each
+  the message asked), once per agent and message. Once the discussion is
+  over, both are refused with `reason="discussion_over"`.
 - `process_inbound()` returns no agent answer: the answers come in the turns.
 - The room is the discussion's: install refuses another intelligence
   channel, a voice or realtime channel, an agent with a thinker, a router
   or another strategy, and refuses binding or installing them afterwards.
   `await strategy.uninstall(kit, room_id)` gives the room back to its
-  `agent_response_policy`.
+  `agent_response_policy` and forgets the discussion.
 - The queue is stored in room metadata (`_speak_queue`) and outlives a
   restart (`await strategy.install(kit, room_id)` reads it); one process at a
   time gives a room's turns. Text only in this version.
