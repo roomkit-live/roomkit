@@ -12,6 +12,7 @@ from collections.abc import Collection, Sequence
 
 from roomkit._text import person_name
 from roomkit.channels._speaker import channel_label, label_name, turn_labels
+from roomkit.core._authors import People, source_of
 from roomkit.core.visibility import effective_visibility, visibility_allows
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import SYSTEM_SENDER_ID
@@ -25,13 +26,18 @@ from roomkit.models.enums import (
 from roomkit.models.event import RoomEvent
 from roomkit.models.participant import Participant
 
-from ._names import NAME_LIMIT, name_key, same_name
+from ._names import NAME_LIMIT, name_key
 
 _NOT_PEOPLE = frozenset({ParticipantRole.AGENT, ParticipantRole.BOT})
 _READS = frozenset({Access.READ_WRITE, Access.READ_ONLY})
 
-PeopleIndex = dict[str, list[str]]
-"""Each name people are addressed by, ignoring case, and the labels it names."""
+Source = tuple[str, ...]
+"""Who a turn comes from (``core._authors.source_of``): a participant, whichever
+channel reached them; else a sender on its channel; else a channel."""
+
+PeopleIndex = dict[str, list[tuple[str, Source]]]
+"""Each name people are addressed by, ignoring case, and the people behind it:
+their label and their source. Two sources behind one name make it ambiguous."""
 
 
 def sees(agent: str, event: RoomEvent, context: RoomContext) -> bool:
@@ -81,13 +87,20 @@ def people_index(
     agent's channel id nor longer than :data:`NAME_LIMIT`; two labels behind
     one name (``Alice Martin``, ``AliceMartin``) make it ambiguous, and a
     look-alike's ranked label (``Alice (2)``) is addressed by no name."""
-    labels = [_label_of(p) for p in context.participants if _active_person(p)]
-    spoken = turn_labels([e for e in context.recent_events if is_person(e, context)], context)
-    labels += [label for label in spoken.values() if label and label == label_name(label)]
+    people = People(context.participants)
+    entries: list[tuple[str, Source]] = [
+        (_label_of(p), ("participant", p.id)) for p in context.participants if _active_person(p)
+    ]
+    spoken_events = [e for e in context.recent_events if is_person(e, context)]
+    labels = turn_labels(spoken_events, context)
+    for event in spoken_events:
+        label = labels.get(event.id)
+        if label and label == label_name(label):
+            entries.append((label, tuple(source_of(event, people))))
     allowed = None if listed is None else {name_key(p).casefold() for p in listed}
     taken = {a.casefold() for a in agents}
     index: PeopleIndex = {}
-    for label in labels:
+    for label, source in entries:
         name = name_key(label.removeprefix("@"))
         key = name.casefold()
         if not name or len(name) > NAME_LIMIT or key in taken:
@@ -95,14 +108,23 @@ def people_index(
         if allowed is not None and key not in allowed:
             continue
         named = index.setdefault(key, [])
-        if not any(same_name(known, label) for known in named):
-            named.append(label)
+        # One person once, whatever their label's case; another source behind
+        # the same name (a sender stamping a participant's name) is another.
+        if not any(known == source for _label, known in named):
+            named.append((label, source))
     return index
 
 
 def names_of(index: PeopleIndex) -> list[str]:
     """The names an index addresses people by, each once."""
-    return [name_key(labels[0].removeprefix("@")) for labels in index.values()]
+    return [name_key(named[0][0].removeprefix("@")) for named in index.values()]
+
+
+def one_person(index: PeopleIndex, name: str) -> str | None:
+    """The label of the one person *name* addresses, or None when no one or
+    several sources answer to it: neither may then answer for the other."""
+    named = index.get(name.casefold(), [])
+    return named[0][0] if len(named) == 1 else None
 
 
 def _participant(event: RoomEvent, context: RoomContext) -> Participant | None:

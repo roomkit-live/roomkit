@@ -693,3 +693,21 @@ async def test_an_agent_the_room_never_delivers_to_learns_nothing_and_is_not_que
 
     assert learned == [] and len(b._provider.calls) == 0  # type: ignore[attr-defined]
     await kit.close()
+
+
+async def test_a_name_a_sender_stamped_before_the_participant_records_no_ask() -> None:
+    """A sender stamps ``Alice`` before the room records its participant
+    Alice: two sources behind one name. Neither may answer for the other, so
+    the agent's ask records no one, rather than whoever spoke first."""
+    a = _provider("noted", "@Alice can you confirm?")
+    kit = RoomKit()
+    await _room(kit, {"a": a}, addressed_only=True)
+    await _say(kit, "@a hello", sender="m", metadata={"sender_name": "Alice"})
+    await _settle(kit)
+    await _person(kit, "alice", "Alice", ParticipantRole.MEMBER)
+
+    await _say(kit, "@a please check the deploy", sender="alice")
+    await _settle(kit)
+
+    assert _queue(kit).asked == ()
+    await kit.close()

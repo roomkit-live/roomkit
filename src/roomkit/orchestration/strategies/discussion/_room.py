@@ -33,6 +33,7 @@ from ._people import (
     PeopleIndex,
     is_person,
     names_of,
+    one_person,
     people_index,
     person_label,
     records_people,
@@ -383,11 +384,9 @@ class DiscussionRoom:
             index = self.people_index(context)
             names = read_names(event.content.body, self.agents, people=names_of(index))
             for name in names.people:
-                labels = index.get(name.casefold(), [])
-                # A name two people answer to records no one: neither may
-                # answer for the other.
-                if len(labels) == 1:
-                    state.record_asked(agent, labels[0])
+                label = one_person(index, name)
+                if label is not None:
+                    state.record_asked(agent, label)
         return named
 
     # -- Who is who --
