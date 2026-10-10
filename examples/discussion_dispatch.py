@@ -19,6 +19,8 @@ The classifier is chosen by ``CLASSIFIER``:
   needed;
 - ``jev``: TypeSafe's Jev, calibrated, ~150 ms a decision
   (``pip install roomkit[typesafe]``, ``TYPESAFE_API_KEY``);
+- ``openai``: OpenAI's Decisions API on ``gpt-6-luna``, ~150-450 ms a decision
+  (``pip install roomkit[openai]``, ``OPENAI_API_KEY``);
 - ``anthropic``: Claude Haiku under a JSON schema (``ANTHROPIC_API_KEY``),
   about a second and a half a decision.
 
@@ -56,6 +58,7 @@ from roomkit import (
     JevClassifier,
     LLMClassifier,
     MockClassifier,
+    OpenAIClassifier,
     RoomKit,
     SpeakQueueChange,
     SpeakQueueEvent,
@@ -71,7 +74,7 @@ from roomkit.providers.anthropic.config import AnthropicConfig
 logger = setup_logging("example.discussion_dispatch")
 # The room's own records of each silent turn, and each classifier request,
 # would drown the comparison.
-for noisy in ("roomkit", "httpx", "httpx2", "typesafe_sdk"):
+for noisy in ("roomkit", "httpx", "httpx2", "typesafe_sdk", "openai"):
     logging.getLogger(noisy).setLevel(logging.WARNING)
 
 ROOM = "incident-room"
@@ -157,6 +160,8 @@ class Scripted(MockAIProvider):
 def make_classifier(kind: str) -> Classifier:
     if kind == "jev":
         return JevClassifier(require_env("TYPESAFE_API_KEY")["TYPESAFE_API_KEY"])
+    if kind == "openai":
+        return OpenAIClassifier(require_env("OPENAI_API_KEY")["OPENAI_API_KEY"])
     if kind == "anthropic":
         key = require_env("ANTHROPIC_API_KEY")["ANTHROPIC_API_KEY"]
         return LLMClassifier(

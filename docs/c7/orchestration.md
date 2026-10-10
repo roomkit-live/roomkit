@@ -173,7 +173,7 @@ Discussion(
   the message, the candidates, the `DispatchDecision` with its `reason` and
   `judgments`, `duration_ms`).
 - `ClassifierDispatchPolicy` asks one yes/no question per candidate in one
-  classifier call; `MockDispatchPolicy` scripts decisions for tests; any
+  classifier call (`JevClassifier`, `OpenAIClassifier`, `LLMClassifier`); `MockDispatchPolicy` scripts decisions for tests; any
   `DispatchPolicy.decide(DispatchTurn) -> DispatchDecision` will do.
   Example: `examples/discussion_dispatch.py`.
 

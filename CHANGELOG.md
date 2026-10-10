@@ -27,11 +27,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `OpenAIClassifier` (RMK-667, RFC §6.8): a classifier on OpenAI's Decisions
   API (`POST /v1/decisions`, public beta, `gpt-6-luna`), which answers
   yes/no, choice and score questions with probabilities, ~150–450 ms for the
-  whole call. It serves `ClassifierSpeakPolicy` and `ClassifierDispatchPolicy` as
-  `JevClassifier` does. A
-  structured state goes as its JSON; a question the API declines fails the
-  call with `ClassifierError`. No new dependency: the `openai` extra, through
-  the SDK client's generic `post`. `CLASSIFIER=openai` in
+  whole call. It serves `ClassifierSpeakPolicy` and `ClassifierDispatchPolicy`
+  as `JevClassifier` does. A structured state goes as its JSON; a question the
+  API declines fails the call with `ClassifierError`. No new dependency: the
+  `openai` extra, through the SDK client's generic `post`. `CLASSIFIER=openai` in
   `examples/classifier_judgments.py`, `examples/speaking_judgments.py` and
   `examples/discussion_dispatch.py`.
 - `Discussion` orchestration strategy (RMK-665, RFC §19.7.5): several agents and
