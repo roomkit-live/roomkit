@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `Discussion` orchestration strategy (RFC §19.7.5): several agents and
+- `Discussion` orchestration strategy (RMK-665, RFC §19.7.5): several agents and
   people hold one conversation in a room, any agent addressing any other by
   `@channel_id`, one agent speaking at a time. The strategy queues the agents
   each message asks for (a person's names first, else the agents that asked
@@ -24,13 +24,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   whether the room waits for a person. The queue is stored with the room.
   Text only. Example: `examples/discussion_group_chat.py`.
 - In a discussion, each agent's memory provider is handed every message the
-  agent may see, as it commits, as in a room with no discussion (RFC
-  §19.7.5 rule 3). Before, a memory that learns as messages arrive (a
+  agent may see, as it commits, as in a room with no discussion (RMK-665,
+  RFC §19.7.5 rule 3). Before, a memory that learns as messages arrive (a
   retrieval index, a summary) only learned the messages that asked for the
   agent, so it lost the rest of the conversation once it left the history
   window.
 - `kit.install_strategy(room_id, strategy)` and
-  `kit.uninstall_strategy(room_id)` (RFC §19.7):
+  `kit.uninstall_strategy(room_id)` (RMK-665, RFC §19.7):
   - A room holds one strategy at a time, and can change it while it lives.
     `create_room(orchestration=...)` installs through the same path.
   - An install on a live room registers and attaches the strategy's agents
@@ -45,7 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     is the claim a strategy installed directly makes, and `kit.room_strategy()`
     names the installed one.
   - Example: `examples/strategy_on_the_fly.py`.
-- A discussion is served by several processes (RFC §19.7.5 rule 16).
+- A discussion is served by several processes (RMK-665, RFC §19.7.5 rule 16).
   - Its configuration and speak queue are stored with the room. Every
     process serving the room follows them, even one whose host did not
     install the discussion: it asks no agent at broadcast, reads names and
@@ -54,7 +54,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     lease it renews, and another takes over once it expires.
   - An instruction's turn moves the lease to the process holding its text.
   - Example: `examples/discussion_two_workers.py`.
-- `DiscussionConsole` (`roomkit.console`, `console` extra): a full-screen
+- `DiscussionConsole` (RMK-665, `roomkit.console`, `console` extra): a full-screen
   terminal on a room a discussion holds. The room on the left (messages,
   tool calls, who asks you), the agents on the right with their identity,
   model and live state (speaking, next, listening, asking), the speak queue
@@ -62,7 +62,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   slash commands, and the kit's logs sent to a file while the screen is up.
   It follows the room through hooks it removes when it closes. Example:
   `examples/discussion_console.py`.
-- While a discussion holds a room, `attach_channel` refuses another
+- While a discussion holds a room (RMK-665), `attach_channel` refuses another
   intelligence channel or a voice or realtime channel, the hook engine
   refuses a `ConversationRouter` hook, and `Loop`, `Pipeline`, `Supervisor`
   and `Swarm` refuse to install there.
