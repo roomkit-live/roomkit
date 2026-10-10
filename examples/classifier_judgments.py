@@ -17,6 +17,8 @@ The classifier is chosen by ``CLASSIFIER``:
 - ``mock`` (default): answers scripted from a run on Jev, no key needed;
 - ``jev``: TypeSafe's Jev, calibrated probabilities, ~150 ms a call
   (``pip install roomkit[typesafe]``, ``TYPESAFE_API_KEY``);
+- ``openai``: OpenAI's Decisions API on ``gpt-6-luna``, probabilities, ~150-450 ms
+  a call (``pip install roomkit[openai]``, ``OPENAI_API_KEY``);
 - ``anthropic``: Claude Haiku answering under a JSON schema, every probability 0
   or 1 (``ANTHROPIC_API_KEY``).
 
@@ -44,6 +46,7 @@ from roomkit import (
     JevClassifier,
     LLMClassifier,
     MockClassifier,
+    OpenAIClassifier,
     ScoreQuestion,
     YesNoQuestion,
 )
@@ -108,6 +111,8 @@ def classifier_for(turn: int) -> Classifier:
     kind = os.environ.get("CLASSIFIER", "mock")
     if kind == "jev":
         return JevClassifier(require_env("TYPESAFE_API_KEY")["TYPESAFE_API_KEY"])
+    if kind == "openai":
+        return OpenAIClassifier(require_env("OPENAI_API_KEY")["OPENAI_API_KEY"])
     if kind == "anthropic":
         key = require_env("ANTHROPIC_API_KEY")["ANTHROPIC_API_KEY"]
         config = AnthropicConfig(api_key=key, model="claude-haiku-5-5")

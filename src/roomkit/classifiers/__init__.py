@@ -17,6 +17,7 @@ from roomkit.classifiers.base import (
 from roomkit.classifiers.jev import JevClassifier
 from roomkit.classifiers.llm import LLMClassifier
 from roomkit.classifiers.mock import MockClassifier
+from roomkit.classifiers.openai import OpenAIClassifier
 
 __all__ = [
     "Answer",
@@ -28,6 +29,7 @@ __all__ = [
     "JevClassifier",
     "LLMClassifier",
     "MockClassifier",
+    "OpenAIClassifier",
     "Question",
     "ScoreAnswer",
     "ScoreQuestion",
