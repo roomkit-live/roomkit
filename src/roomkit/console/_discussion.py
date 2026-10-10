@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
+from roomkit.channels._speaker import turn_labels
 from roomkit.console._discussion_screen import DiscussionScreen
 from roomkit.console._discussion_view import AgentCard, DiscussionView
 from roomkit.core.hooks import HookRegistration
@@ -241,7 +242,9 @@ class DiscussionConsole:
         if any(card.handle == source for card in view.cards):
             view.agent(source, event.addressed_to, text)
         else:
-            view.person(self._author(event, context), event.addressed_to, text)
+            view.person(
+                self._author(event, context), event.addressed_to, text, mine=self._mine(event)
+            )
 
     async def _on_tool_call(self, event: ToolCallEvent, context: RoomContext) -> None:
         self.view.tool(event.channel_id, event.name, event.arguments, event.result)
@@ -249,15 +252,18 @@ class DiscussionConsole:
     async def _on_speak_queue(self, event: SpeakQueueEvent, context: RoomContext) -> None:
         self.view.queue_changed(event)
 
-    def _author(self, event: RoomEvent, context: RoomContext) -> str:
-        if event.source.channel_id == self._channel_id:
-            return self._sender_id
-        pid = event.source.participant_id
-        participant = next((p for p in context.participants if p.id == pid), None)
-        if participant is not None:
-            return participant.display_name or participant.id
-        sender = (event.metadata or {}).get("sender_name")
-        return sender if isinstance(sender, str) and sender else event.source.channel_id
+    def _mine(self, event: RoomEvent) -> bool:
+        """Whether the person at the terminal sent *event*: their channel and
+        sender, whatever name it carries."""
+        sender = event.source.participant_id
+        return event.source.channel_id == self._channel_id and sender in (None, self._sender_id)
+
+    @staticmethod
+    def _author(event: RoomEvent, context: RoomContext) -> str:
+        """The label the transcript gives *event*'s author: their name kept to
+        a name's characters, with the rank a look-alike of an earlier source
+        carries, or their channel (``@sms1``) when they have none."""
+        return turn_labels([event], context).get(event.id) or f"@{event.source.channel_id}"
 
     def _refresh(self) -> None:
         if self._screen is not None:

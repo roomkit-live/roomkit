@@ -63,10 +63,14 @@ class DiscussionView:
 
     # -- What happens in the room --
 
-    def person(self, author: str, addressed: Sequence[str] | None, text: str) -> None:
-        mine = author == self.you
-        label = f"@{author} (you)" if mine else f"@{author}"
-        self._add(f"{label} → {_to(addressed)}", "class:you" if mine else "class:person")
+    def person(
+        self, label: str, addressed: Sequence[str] | None, text: str, *, mine: bool = False
+    ) -> None:
+        """A person's message, under the label the transcript gives its author
+        (``Alice (2)`` for a second source taking Alice's name). Whether it is
+        the person at the terminal is the console's to say, never a name's."""
+        shown = f"@{self.you} (you)" if mine else label
+        self._add(f"{shown} → {_to(addressed)}", "class:you" if mine else "class:person")
         self._body(text)
 
     def agent(self, author: str, addressed: Sequence[str] | None, text: str) -> None:

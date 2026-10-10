@@ -110,12 +110,15 @@ def test_an_agent_asking_the_person_is_called_out_once() -> None:
 
 def test_people_and_tools_are_shown_and_counted() -> None:
     view = DiscussionView(CARDS, you="ops")
-    view.person("ops", None, "what happened?")
-    view.person("alice", ["dev"], "@dev and you?")
+    view.person("ops", None, "what happened?", mine=True)
+    view.person("Alice", ["dev"], "@dev and you?")
+    view.person("ops", None, "I am ops too")
     view.tool("dev", "query_logs", {"level": "ERROR"}, "line one\nline two")
 
     room = _room(view)
-    assert "@ops (you) → the room" in room and "@alice → @dev" in room
+    assert "@ops (you) → the room" in room and "Alice → @dev" in room
+    # A name is no proof: only the console says which messages are yours.
+    assert room.count("(you)") == 1 and "ops → the room" in room
     assert "@dev ⚙ query_logs(level='ERROR') → line one | line two" in room
     assert view.used["dev"] == 1
 
