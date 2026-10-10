@@ -238,7 +238,9 @@ class AIResilienceMixin(_AIChannelContract):
                 retryable=False,
             )
         loop_ctx = self._get_loop_ctx()
-        summarized, shortened = compaction_cut(messages, loop_ctx.turn_input)
+        # A discussion's turn keeps the message it answers, wherever it reads.
+        kept = loop_ctx.answered_input or loop_ctx.turn_input
+        summarized, shortened = compaction_cut(messages, kept)
         rounds = messages[summarized:shortened]
         kept = [*with_results_stored(rounds, self._eviction), *messages[shortened:]]
         summary = summary_text(messages[:summarized])

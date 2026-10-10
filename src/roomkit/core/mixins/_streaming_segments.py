@@ -104,6 +104,7 @@ class SegmentWriter:
         parent_event_id: str | None = None,
         streamed_to: set[str] | None = None,
         response_events: list[RoomEvent] | None = None,
+        silent: Any = None,
     ) -> None:
         self._kit = kit
         self._sr = sr
@@ -128,6 +129,12 @@ class SegmentWriter:
         self._record_owed = False
         self._accumulated: list[str] = []
         self._writing: set[asyncio.Task[RoomEvent | None]] = set()
+        # A discussion's silence token (RFC §19.7.5): the start of each text
+        # segment is held back from the rendering channel while it may still
+        # become the token, since a delivered segment is not taken back (§6.4).
+        self._silent = silent
+        self._held: list[str] = []
+        self._released = False
         # The starts whose row was handed to the writer, by identity: two
         # calls under one id are two calls (RFC §12.4).
         self._started: list[ToolCallStartMarker] = []
@@ -228,16 +235,45 @@ class SegmentWriter:
             try:
                 delta = await reader.next()
             except StopAsyncIteration:
+                if held := self._end_held():
+                    yield held
                 return
             self._began = True
             if isinstance(delta, str):
                 self.add_text(delta)
-                yield delta
+                released = self._release_text(delta)
+                if released:
+                    yield released
             elif isinstance(delta, ThinkingDeltaMarker):
                 yield delta
             else:
+                if held := self._end_held():
+                    yield held
                 for row in await self.take(delta):
                     yield row
+                if not self._accumulated:
+                    self._released = False
+
+    def _release_text(self, delta: str) -> str:
+        """What of *delta* reaches the rendering channel now: all of it, unless
+        the segment's start may still become the silence token, which holds it
+        back; the held start goes out in one piece once it cannot."""
+        if self._silent is None or self._released:
+            return delta
+        self._held.append(delta)
+        if self._silent.may_become("".join(self._accumulated)):
+            return ""
+        self._released = True
+        held, self._held = "".join(self._held), []
+        return held
+
+    def _end_held(self) -> str:
+        """The held start of a segment that ends: what goes out, nothing when
+        the segment is the silence token (its row is stored, never delivered)."""
+        held, self._held = "".join(self._held), []
+        if held and self._silent.is_silent("".join(self._accumulated)):
+            return ""
+        return held
 
     async def stream(
         self, reader: ResponseReader

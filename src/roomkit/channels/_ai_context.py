@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 from roomkit.channels._ai_cuts import CUT_MARK, cut_answer_ids, cut_records
 from roomkit.channels._ai_policy import policy_check
 from roomkit.channels._dangling_recovery import patch_dangling_tool_calls
+from roomkit.channels._discussion_turn import discussion_notes, discussion_turn
 from roomkit.channels._instruction import instruction_fingerprint, is_standalone, mark_instruction
 from roomkit.channels._mark_copies import (
     compile_mark_patterns,
@@ -215,6 +216,7 @@ class AIContextMixin(_AIChannelContract):
         tools = self._reachable_tools(tools)
 
         own_notes = await self._own_notes(loop_ctx, context, standalone=standalone)
+        own_notes += discussion_notes(event)
         self._measure_turn(loop_ctx, system_prompt, own_notes, settings.get("max_tokens"))
         messages = await self._turn_conversation(event, context, loop_ctx, standalone, own_notes)
         loop_ctx.turn_input = turn_input(messages)
@@ -405,7 +407,7 @@ class AIContextMixin(_AIChannelContract):
         (``loop_ctx.names_every_speaker``, RFC §6.4).
         """
         labels = turn_labels([*memory_result.events, event], context)
-        past_turns = self._past_turns(memory_result, context, labels)
+        past_turns, past_indexes = self._past_turns(memory_result, context, labels)
         current_content, current_label = self._turn_input(event, loop_ctx, labels)
         speakers = {label for _, _, label in past_turns if label}
         if current_content and current_label:
@@ -423,22 +425,35 @@ class AIContextMixin(_AIChannelContract):
         for role, content, label in past_turns:
             messages.append(_turn_message(role, content, label if attribute_speakers else None))
 
+        current = (
+            _turn_message("user", current_content, current_label if attribute_speakers else None)
+            if current_content
+            else None
+        )
+        # A discussion's turn answers an event others may have followed: it
+        # reads at its place, before them, not as the last message (§19.7.5).
+        at = _answered_position(event, past_indexes)
+        if current is not None and at is not None:
+            messages.insert(len(memory) + at, current)
+            loop_ctx.answered_input = current
+            current = None
+
         # Patch orphaned tool calls from interrupted tool loops (barge-in)
         messages = patch_dangling_tool_calls(messages)
 
-        if current_content:
-            label = current_label if attribute_speakers else None
-            messages.append(_turn_message("user", current_content, label))
+        if current is not None:
+            messages.append(current)
         requester = current_label if attribute_speakers else None
         conversation = _conversation(messages, len(memory))
         return conversation, attribute_speakers, requester
 
     def _past_turns(
         self, memory_result: MemoryResult, context: RoomContext, labels: dict[str, str | None]
-    ) -> list[tuple[str, str | list[_ContentPart], str | None]]:
+    ) -> tuple[list[tuple[str, str | list[_ContentPart], str | None]], list[int | None]]:
         """The history's turns as (role, content, label), a user turn labelled
-        by who said it."""
+        by who said it, and the room index of the event each turn is."""
         past_turns: list[tuple[str, str | list[_ContentPart], str | None]] = []
+        indexes: list[int | None] = []
         # An answer cut off by a barge-in reads as cut, not as heard whole (§6.4).
         records = cut_records(context, self.channel_id)
         cut_ids = cut_answer_ids(memory_result.events, records, self.channel_id)
@@ -454,7 +469,8 @@ class AIContextMixin(_AIChannelContract):
             if content:
                 label = labels.get(past_event.id) if role == "user" else None
                 past_turns.append((role, content, label))
-        return past_turns
+                indexes.append(past_event.index)
+        return past_turns, indexes
 
     def _turn_input(
         self, event: RoomEvent, loop_ctx: _ToolLoopContext, labels: dict[str, str | None]
@@ -926,6 +942,16 @@ def _without_former_vision(binding: ChannelBinding) -> ChannelBinding:
     metadata = {k: v for k, v in binding.metadata.items() if k != _FORMER_VISION_BASE}
     metadata["system_prompt"] = binding.metadata[_FORMER_VISION_BASE] or None
     return binding.model_copy(update={"metadata": metadata})
+
+
+def _answered_position(event: RoomEvent, past_indexes: list[int | None]) -> int | None:
+    """Where a discussion's turn reads the event it answers among the history's
+    turns: before the first turn that came after it; None when it reads last
+    (no discussion gave the turn, the event is unstored, or nothing followed)."""
+    if discussion_turn(event) is None or event.index is None:
+        return None
+    before = sum(1 for index in past_indexes if index is not None and index < event.index)
+    return before if before < len(past_indexes) else None
 
 
 def _with_cut_mark(content: str | list[_ContentPart]) -> str | list[_ContentPart]:

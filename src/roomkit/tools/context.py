@@ -161,6 +161,9 @@ class _ToolLoopContext:
     # BEFORE_AI_GENERATION hook left it: what an emergency compaction keeps
     # whole (RFC §6.4), found among the messages by identity.
     turn_input: AIMessage | None = None
+    # The message a discussion's turn answers, read at its place in the history
+    # (RFC §19.7.5): what a compaction keeps however it cuts (RFC §20.1).
+    answered_input: AIMessage | None = None
     # What the turn may spend, resolved with its other settings (RFC §6.4).
     turn_budget: TurnBudget | None = None
     # ``activate_skill`` calls whose activation waits for the call's outcome,

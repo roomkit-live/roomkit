@@ -123,6 +123,15 @@ class InboundStreamingMixin(HelpersMixin):
     # Stub for cross-mixin call — implemented by RoomKit._get_router().
     def _get_router(self) -> EventRouter: ...
 
+    _discussions: dict[str, Any]  # rooms a discussion holds (RFC §19.7.5)
+
+    def _discussion_silence(self, room_id: str, channel_id: str) -> Any:
+        """The silence token a stream of *channel_id* is held back on, when a
+        discussion holds the room and the channel is one of its agents (RFC
+        §19.7.5); None otherwise."""
+        discussion = self._discussions.get(room_id)
+        return discussion.silence_for(channel_id) if discussion is not None else None
+
     async def _handle_streaming_response(
         self,
         router: EventRouter,
@@ -181,6 +190,7 @@ class InboundStreamingMixin(HelpersMixin):
             parent_event_id=parent_event_id,
             streamed_to=streamed_to,
             response_events=response_events,
+            silent=self._discussion_silence(room_id, sr.source_channel_id),
         )
 
         reader = ResponseReader(sr.stream)

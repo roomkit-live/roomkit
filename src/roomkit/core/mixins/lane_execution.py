@@ -114,6 +114,10 @@ def _unavailable_targets(plan: DeliveryPlan, result: BroadcastResult) -> list[st
         for target in plan.targets
         if target.category == ChannelCategory.INTELLIGENCE
     }
+    if plan.defers_solicitation:
+        # A discussion asks its agents later, one turn at a time (RFC
+        # §19.7.5): an addressed agent bound to the room is not unavailable.
+        return [t for t in plan.event.addressed_to or [] if t not in intelligence]
     reached = result.outputs.keys() | result.errors.keys()
     return [
         target
@@ -195,6 +199,7 @@ class LaneExecutionMixin(HelpersMixin):
 
     _lock_manager: RoomLockManager
     _max_chain_depth: int
+    _discussions: dict[str, Any]  # rooms a discussion holds (RFC §19.7.5)
     _telemetry: TelemetryProvider
 
     # Cross-mixin methods — attribute annotations avoid MRO shadowing
@@ -673,6 +678,13 @@ class LaneExecutionMixin(HelpersMixin):
         for binding in plan.targets:
             channel = self._channels.get(binding.channel_id)
             if channel is None:
+                continue
+            if (
+                binding.category == ChannelCategory.INTELLIGENCE
+                and plan.event.room_id in self._discussions
+            ):
+                # A discussion's agents act only on the turns it gives (RFC
+                # §19.7.5); an injected event answers nothing anyway.
                 continue
             try:
                 await channel.on_event(plan.event, binding, plan.context)

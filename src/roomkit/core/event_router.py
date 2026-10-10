@@ -274,6 +274,9 @@ class EventRouter:
         # Set by RoomKit after construction — the router owns the breakers,
         # the framework owns the event surface (RFC §13.1 / §8.2).
         self._framework_emitter: Any = None
+        # Set by RoomKit: whether a discussion holds the room, so no agent is
+        # asked at broadcast (RFC §10.2, §19.7.5).
+        self._defers: Callable[[str], bool] | None = None
         self._breaker_tasks: set[asyncio.Task[Any]] = set()
 
     def _get_breaker(self, channel_id: str) -> CircuitBreaker:
@@ -363,6 +366,7 @@ class EventRouter:
             exclude_delivery=exclude_delivery,
             parent_span_id=parent_span_id,
             parent_span_ctx=parent_span_ctx,
+            defers_solicitation=self._defers is not None and self._defers(event.room_id),
         )
 
     async def execute_plan(self, plan: DeliveryPlan) -> BroadcastResult:
@@ -426,7 +430,7 @@ class EventRouter:
 
         async def _process_target(binding: ChannelBinding) -> None:
             if binding.category == ChannelCategory.INTELLIGENCE:
-                unasked = self._unasked_result(event, source_binding, binding, context)
+                unasked = self._unasked_result(event, source_binding, binding, context, plan)
                 if unasked is not None:
                     target_results.append(unasked)
                     return
@@ -584,8 +588,9 @@ class EventRouter:
                     # unless its channel named one itself; written back so every
                     # reader of the output (a delegated turn's) sees it.
                     output.response_events = _answering(output.response_events, event)
+                    limit = plan.max_chain_depth or self._max_chain_depth
                     for resp in output.response_events:
-                        if resp.chain_depth < self._max_chain_depth:
+                        if resp.chain_depth < limit:
                             tr.reentry_events.append(resp)
                         else:
                             blocked = resp.model_copy(
@@ -595,9 +600,7 @@ class EventRouter:
                                 }
                             )
                             tr.blocked_events.append(blocked)
-                            tr.observations.append(
-                                chain_depth_exceeded(blocked, self._max_chain_depth)
-                            )
+                            tr.observations.append(chain_depth_exceeded(blocked, limit))
 
             except Exception as exc:
                 tr.error = str(exc)
@@ -655,6 +658,7 @@ class EventRouter:
         source_binding: ChannelBinding,
         binding: ChannelBinding,
         context: RoomContext,
+        plan: DeliveryPlan | None = None,
     ) -> _TargetResult | None:
         """What an intelligence target leaves when it is not asked to act, or ``None``.
 
@@ -668,7 +672,20 @@ class EventRouter:
 
         Past the chain-depth limit a solicited channel is not asked either
         (RFC §8.3): no model call, no tool, streamed or buffered alike.
+
+        In a room a discussion holds, no agent is asked at broadcast; a turn
+        the discussion gives asks its one agent, against the discussion's own
+        depth limit (RFC §19.7.5).
         """
+        if plan is not None and plan.turn_for is not None:
+            if binding.channel_id != plan.turn_for:
+                return _TargetResult(channel_id=binding.channel_id)
+            limit = plan.max_chain_depth or self._max_chain_depth
+            if event.chain_depth + 1 >= limit:
+                return self._depth_limit_record(event, binding, limit)
+            return None
+        if plan is not None and plan.defers_solicitation:
+            return _TargetResult(channel_id=binding.channel_id)
         internal = bool((event.metadata or {}).get("_orchestration_internal"))
         asked = not internal and _solicits(
             event,
@@ -679,10 +696,12 @@ class EventRouter:
         if not asked:
             return _TargetResult(channel_id=binding.channel_id)
         if event.chain_depth + 1 >= self._max_chain_depth:
-            return self._depth_limit_record(event, binding)
+            return self._depth_limit_record(event, binding, self._max_chain_depth)
         return None
 
-    def _depth_limit_record(self, event: RoomEvent, binding: ChannelBinding) -> _TargetResult:
+    def _depth_limit_record(
+        self, event: RoomEvent, binding: ChannelBinding, limit: int
+    ) -> _TargetResult:
         """The BLOCKED record of an agent not asked past the depth limit (RFC §8.3).
 
         One per agent, in place of the response it was not asked for: its
@@ -697,7 +716,7 @@ class EventRouter:
             update={"status": EventStatus.BLOCKED, "blocked_by": CHAIN_DEPTH_LIMIT}
         )
         result.blocked_events.append(record)
-        result.observations.append(chain_depth_exceeded(record, self._max_chain_depth))
+        result.observations.append(chain_depth_exceeded(record, limit))
         return result
 
     async def broadcast(

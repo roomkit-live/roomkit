@@ -126,6 +126,12 @@ class DeliveryPlan:
     # when the lane takes it; ``refusal`` is what refused it then.
     rerun: bool = False
     refusal: InboundResult | None = None
+    # A discussion takes the room's turns (RFC §19.7.5): its plans ask no agent
+    # at broadcast, and a turn it gives is a rerun planned for one agent alone,
+    # bounded by the discussion's own depth limit.
+    defers_solicitation: bool = False
+    turn_for: str | None = None
+    max_chain_depth: int | None = None
 
     @property
     def answers_caller(self) -> bool:

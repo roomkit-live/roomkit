@@ -399,6 +399,9 @@ class RoomKit(
         self._store._telemetry = self._telemetry  # ty: ignore[invalid-assignment]
         # Default orchestration strategy
         self._default_orchestration = orchestration
+        # Rooms a discussion holds (RFC §19.7.5), by room id: the router asks
+        # none of their agents at broadcast, the discussion gives the turns.
+        self._discussions: dict[str, Any] = {}
         # Room-level media recording
         from roomkit.recorder._room_recorder_manager import RoomRecorderManager
 
@@ -517,6 +520,7 @@ class RoomKit(
                 greeting_gate_fn=self._wait_greeting_gate,
             )
             self._event_router._framework_emitter = self._emit_framework_event
+            self._event_router._defers = self._discussions.__contains__
         return self._event_router
 
     async def _cancel_background_runs(self) -> None:
