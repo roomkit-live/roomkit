@@ -6,7 +6,9 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from roomkit.channels.agent import Agent
+    from collections.abc import Sequence
+
+    from roomkit.channels.ai import AIChannel
     from roomkit.core.framework import RoomKit
 
 
@@ -25,7 +27,7 @@ class Orchestration(ABC):
     """
 
     @abstractmethod
-    def agents(self) -> list[Agent]:
+    def agents(self) -> Sequence[AIChannel]:
         """Return agents to register and attach to the room.
 
         The framework calls this to determine which agents should be

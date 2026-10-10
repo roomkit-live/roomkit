@@ -276,6 +276,8 @@ class HookTrigger(StrEnum):
     ON_SPEAK_DECISION = "on_speak_decision"
     # What an AI channel's agent thinks while it listens (RFC §6.4)
     ON_THOUGHT = "on_thought"
+    # A discussion's speak queue changed (RFC §19.7.5)
+    ON_SPEAK_QUEUE = "on_speak_queue"
     # AI generation (pre-flight — can block or modify context)
     BEFORE_AI_GENERATION = "before_ai_generation"
     # AI Thinking/Reasoning
