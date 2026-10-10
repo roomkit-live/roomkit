@@ -178,6 +178,7 @@ CONSOLE=1 uv run python examples/<example>.py
 | `orchestration_loop_cli.py` | Loop CLI | Interactive loop with multiple parallel reviewers |
 | `orchestration_swarm.py` | Swarm | Swarm where any agent can hand off to any other |
 | `orchestration_swarm_cli.py` | Swarm CLI | Interactive swarm orchestration with specialist agents |
+| `discussion_group_chat.py` | Discussion | Agents and a person in one conversation: `@name` addressing, one agent at a time, waiting for a person (offline) |
 | `orchestration_pipeline.py` | Pipeline | Multi-agent pipeline: triage -> handler -> resolver |
 | `orchestration_pipeline_cli.py` | Pipeline CLI | Interactive pipeline triage |
 | `orchestration_supervisor.py` | Supervisor | Manual delegation mode supervisor |

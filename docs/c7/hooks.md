@@ -342,6 +342,12 @@ bot never triggers them.
 | `ON_ACTIVE_SPEAKER_CHANGED` | ASYNC | `(event, ctx) -> None` | SFU reported a dominant-speaker change. `data`: `participant_id`. |
 | `ON_CONNECTION_QUALITY_CHANGED` | ASYNC | `(event, ctx) -> None` | SFU reported a participant's connection quality. `data`: `participant_id`, `quality`. |
 
+### Discussion
+
+| Trigger | Execution | Signature | Description |
+|---------|-----------|-----------|-------------|
+| `ON_SPEAK_QUEUE` | ASYNC | `(SpeakQueueEvent, ctx) -> None` | A discussion's speak queue changed (RFC §19.7.5): `event.change` is a `SpeakQueueChange` (`queued`, `turn_given`, `turn_ended`, `instruction_dropped`, `listening`, `talking_again`, `waiting`, `over`), `event.channel_ids` the agents it concerns, `event.queue` the `SpeakQueue` as it now is. Announced in the order the changes happened. |
+
 ### Planning
 
 | Trigger | Execution | Signature | Description |

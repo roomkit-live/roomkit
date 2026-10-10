@@ -74,6 +74,57 @@ kit = RoomKit(orchestration=Loop(
 ))
 ```
 
+### Discussion
+
+Several agents and people hold one conversation; one agent speaks at a time
+(RFC §19.7.5). Any agent may address any other with `@channel_id`, a person
+may address any agent, and who speaks next follows from who was addressed.
+The strategy queues the agents each message asks for and gives their turns
+one at a time; each turn reads the room as it is when it starts.
+
+```python
+from roomkit import Discussion
+
+room = await kit.create_room(orchestration=Discussion(
+    agents=[investigator, dev, sre],   # AI channels, Agents among them
+    everyone=["investigator", "dev", "sre"],  # a message naming nobody asks these, in order
+    people=["oncall"],                 # names agents address people by
+))
+```
+
+- A person's message puts the agents it names at the front of the queue;
+  naming nobody, it answers the agents that asked that person, else
+  `everyone`. With `addressed_only=True` it asks only the agents it names.
+- An agent's answer that names another queues it at the back once the turn
+  has ended, one turn per agent however often it is named. `@all` names
+  every agent.
+- An agent with nothing to add answers `silent_token` (`"(silent)"`): the row
+  is stored `BLOCKED` with `blocked_by="discussion_silent"` and never reaches
+  a transport, streamed or not.
+- `max_depth` bounds how far a chain of agent turns reaches from a person's
+  message (default: the kit's `max_chain_depth`); a stopped turn waits for
+  the next person's message. `max_turns` and `done(room_id)` end it.
+- The discussion waits for a person (`waiting`) when an agent asked one, an
+  agent of the queue only listens, or the depth limit stopped a turn.
+- `kit.listen_only(room_id, ids)` / `kit.talk_again(room_id, ids)`: an agent
+  that only listens answers only a person who names it; setting it on the
+  speaking agent cuts its turn as a `Cancel` does.
+- `kit.speak_queue(room_id)` returns the `SpeakQueue` (`speaking`, `queue`,
+  `listening`, `asked`, `waiting`, `over`); `ON_SPEAK_QUEUE` announces each
+  change as a `SpeakQueueEvent`.
+- An `INSTRUCTION` addressed to an agent, and `regenerate_response()`, give a
+  turn of its own at the front. Once the discussion is over, an instruction
+  is refused with `reason="discussion_over"`.
+- `process_inbound()` returns no agent answer: the answers come in the turns.
+- The room is the discussion's: install refuses another intelligence
+  channel, a voice or realtime channel, an agent with a thinker, a router
+  or another strategy, and refuses binding or installing them afterwards.
+  `await strategy.uninstall(kit, room_id)` gives the room back to its
+  `agent_response_policy`.
+- The queue is stored in room metadata (`_speak_queue`) and outlives a
+  restart (`await strategy.install(kit, room_id)` reads it); one process at a
+  time gives a room's turns. Text only in this version.
+
 ## Using Orchestration
 
 ```python

@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `Discussion` orchestration strategy (RFC §19.7.5): several agents and
+  people hold one conversation in a room, any agent addressing any other by
+  `@channel_id`, one agent speaking at a time. The strategy queues the agents
+  each message asks for (a person's names first, else the agents that asked
+  that person, else `everyone`; `addressed_only=True` asks only the named)
+  and gives each turn as a rerun of the event it answers, reading the room as
+  it is when the turn starts, bounded by its own `max_depth`. An agent with
+  nothing to add answers `"(silent)"`, stored `BLOCKED` as
+  `discussion_silent` and never streamed. `max_turns` and `done` end it.
+  `kit.speak_queue()`, `kit.listen_only()`, `kit.talk_again()` and the new
+  `ON_SPEAK_QUEUE` hook (`SpeakQueue`, `SpeakQueueChange`,
+  `SpeakQueueEvent`) let a console follow who speaks, who is next and
+  whether the room waits for a person. The queue is stored with the room.
+  Text only. Example: `examples/discussion_group_chat.py`.
+- While a discussion holds a room, `attach_channel` refuses another
+  intelligence channel or a voice or realtime channel, the hook engine
+  refuses a `ConversationRouter` hook, and `Loop`, `Pipeline`, `Supervisor`
+  and `Swarm` refuse to install there.
+
 - `MCPToolProvider(..., discover=False)`, also on `from_url` and
   `from_command`, connects without listing the server's tools (RMK-662, RFC
   §21.2): a host that only reads a resource (an MCP App's HTML) skips the
