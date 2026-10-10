@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import time
+
 import pytest
 
 from roomkit.orchestration.strategies.discussion._names import (
@@ -37,6 +39,19 @@ def test_all_names_every_agent_and_unknown_names_nobody() -> None:
 def test_names_in_code_or_quotes_are_not_read() -> None:
     text = "see\n```\n@dev run this\n```\n> @sre said this\nok @comms"
     assert read_names(text, AGENTS) == Names(("comms",))
+
+
+def test_a_hostile_text_is_read_in_linear_time() -> None:
+    """Thousands of unclosed fences and blank lines must not stall the room."""
+    hostile = "```\n" * 20_000 + "\n" * 20_000 + "> \n" * 20_000 + "@sre"
+    started = time.monotonic()
+    read_names(hostile, AGENTS)
+    read_names("~~~ x\n" + "@sre " * 50_000, AGENTS)
+    assert time.monotonic() - started < 1.0
+
+
+def test_an_unclosed_fence_hides_what_follows() -> None:
+    assert read_names("@dev before\n```\n@sre inside, never closed", AGENTS) == Names(("dev",))
 
 
 def test_people_are_named_too_and_an_agent_wins_a_shared_name() -> None:

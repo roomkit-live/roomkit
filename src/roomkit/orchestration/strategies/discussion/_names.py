@@ -17,9 +17,8 @@ from dataclasses import dataclass
 EVERYONE = "all"
 
 _NAME = re.compile(r"(?<![A-Za-z0-9_@])@([A-Za-z0-9_.\-]+)")
-_FENCE = re.compile(r"^\s*(```|~~~).*?^\s*\1[^\n]*$", re.MULTILINE | re.DOTALL)
-_QUOTED = re.compile(r"^\s*>.*$", re.MULTILINE)
 _NOT_ID = re.compile(r"[^A-Za-z0-9_.\-]")
+_FENCES = ("```", "~~~")
 _BRACKETS = {"(": ")", "[": "]", "{": "}", "<": ">"}
 
 
@@ -67,8 +66,26 @@ def read_names(
 
 def _spoken(text: str) -> str:
     """*text* without its fenced code blocks and quoted lines: what the speaker
-    says, not what it shows or repeats."""
-    return _QUOTED.sub("", _FENCE.sub("", text))
+    says, not what it shows or repeats.
+
+    One pass over the lines, never a regular expression: the text is a
+    participant's, and a pattern that backtracks across lines (an unclosed
+    fence, thousands of blank lines) would let one message stall the room.
+    """
+    kept: list[str] = []
+    fence: str | None = None
+    for line in text.splitlines():
+        start = line.lstrip(" \t")
+        if fence is not None:
+            if start.startswith(fence):
+                fence = None
+            continue
+        opening = next((f for f in _FENCES if start.startswith(f)), None)
+        if opening is not None:
+            fence = opening
+        elif not start.startswith(">"):
+            kept.append(line)
+    return "\n".join(kept)
 
 
 @dataclass(frozen=True)
