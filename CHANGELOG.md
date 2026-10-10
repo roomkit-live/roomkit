@@ -23,6 +23,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `SpeakQueueEvent`) let a console follow who speaks, who is next and
   whether the room waits for a person. The queue is stored with the room.
   Text only. Example: `examples/discussion_group_chat.py`.
+- `kit.install_strategy(room_id, strategy)` and
+  `kit.uninstall_strategy(room_id)` (RFC §19.7):
+  - A room holds one strategy at a time, and can change it while it lives.
+    `create_room(orchestration=...)` installs through the same path.
+  - An install on a live room registers and attaches the strategy's agents
+    and keeps the timeline. Before, a Swarm installed this way never
+    attached the agent it handed off to, so the handoff silently went
+    nowhere.
+  - An uninstall runs the strategy's new `Orchestration.uninstall()` step,
+    then takes back what its install added: room hooks, tools and turn
+    runners on the agents, agents it attached, room metadata it wrote. This
+    holds for a host's own strategy too.
+  - A second strategy is refused. `kit.claim_room_strategy(room_id, strategy)`
+    is the claim a strategy installed directly makes, and `kit.room_strategy()`
+    names the installed one.
+  - Example: `examples/strategy_on_the_fly.py`.
 - A discussion is served by several processes (RFC §19.7.5 rule 16).
   - Its configuration and speak queue are stored with the room. Every
     process serving the room follows them, even one whose host did not

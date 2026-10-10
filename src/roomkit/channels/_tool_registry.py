@@ -305,6 +305,23 @@ class ChannelRegistry:
         if room_id is not None and not scope:
             self._rooms.pop(room_id, None)
 
+    def room_tool_names(self, room_id: str) -> frozenset[str]:
+        """The names of the tools served in *room_id* alone."""
+        return frozenset(self._rooms.get(room_id, {}))
+
+    def release(self, room_id: str, names: Iterable[str], *, turn_runner: bool) -> None:
+        """Stop serving *names* in *room_id*, and the room's turn runner when
+        *turn_runner*: what a strategy's install set up there, which its
+        uninstall takes back (RFC §19.7)."""
+        scope = self._rooms.get(room_id)
+        if scope is not None:
+            for name in names:
+                scope.pop(name, None)
+            if not scope:
+                self._rooms.pop(room_id, None)
+        if turn_runner:
+            self._turn_runners.pop(room_id, None)
+
     def lookup(self, name: str, room_id: str | None) -> ToolEntry | None:
         """The entry serving *name* in *room_id* (the channel's, outside any room)."""
         held = self._rooms.get(room_id, {}).get(name) if room_id is not None else None

@@ -69,6 +69,7 @@ from roomkit.core.mixins import (
     RoomLifecycleMixin,
     RoomRecordingMixin,
     SourceOpsMixin,
+    StrategyMixin,
     VoiceOpsMixin,
 )
 from roomkit.core.task_utils import cancel_and_wait, held_runs
@@ -145,6 +146,7 @@ class RoomKit(
     LaneExecutionMixin,
     RegenerateMixin,
     DiscussionMixin,
+    StrategyMixin,
     ChannelOpsMixin,
     RoomLifecycleMixin,
     MembershipMixin,
@@ -406,6 +408,8 @@ class RoomKit(
         # none of their agents at broadcast, the discussion gives the turns.
         self._discussions: dict[str, Any] = {}
         self._installing_discussions: set[str] = set()
+        # The strategy each room holds, and what its install added (RFC §19.7).
+        self._room_strategies: dict[str, Any] = {}
         # This process among those serving the same rooms: a discussion's lease
         # names its holder by it (RFC §19.7.5 rule 16).
         self._instance_id = uuid4().hex

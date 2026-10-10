@@ -150,6 +150,29 @@ await DiscussionConsole(kit, room_id, channel_id="you", log_file="room.log").run
 
 Example: `examples/discussion_console.py`.
 
+### Installing a strategy while the room lives
+
+A room holds one strategy at a time, and can change it while it lives
+(RFC §19.7). `install_strategy` registers and attaches the strategy's agents,
+as `create_room(orchestration=...)` does, and keeps the timeline: the agents'
+turns read the conversation so far. `uninstall_strategy` runs the strategy's
+own `uninstall()` step, then takes back what its install added for the room:
+room hooks, tools and turn runners set up on the agents, agents it attached,
+room metadata it wrote.
+
+```python
+await kit.install_strategy(room_id, Discussion([assistant, dev]))   # on a live room
+await kit.uninstall_strategy(room_id)                               # back to the room's policy
+await kit.install_strategy(room_id, Swarm(agents=[assistant, billing], entry="assistant"))
+kit.room_strategy(room_id)                                          # the one installed
+```
+
+A second strategy is refused while one is installed. A host's own strategy
+gets the same treatment through `install_strategy`. If it is installed by
+calling its `install()` directly, it should call
+`kit.claim_room_strategy(room_id, self)` first, as the built-in ones do.
+Example: `examples/strategy_on_the_fly.py`.
+
 ## Using Orchestration
 
 ```python

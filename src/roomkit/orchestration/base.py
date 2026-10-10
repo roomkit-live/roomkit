@@ -40,5 +40,18 @@ class Orchestration(ABC):
 
         Called after agents are registered and attached. Implementations
         should install room-scoped hooks, set up handoff tools, and
-        initialise conversation state.
+        initialise conversation state. Install through
+        :meth:`RoomKit.install_strategy` (or ``create_room(orchestration=...)``),
+        which claims the room for one strategy and records what the install
+        adds, so :meth:`RoomKit.uninstall_strategy` can take it back.
+        """
+
+    async def uninstall(self, kit: RoomKit, room_id: str) -> None:  # noqa: B027
+        """Undo what :meth:`install` set up that the kit does not record.
+
+        :meth:`RoomKit.uninstall_strategy` calls it first, then removes what it
+        recorded of the install: the room hooks, the tools and turn runners set
+        up on the agents for the room, the agents the install attached, and the
+        room metadata the install wrote (RFC §19.7). A strategy with state of
+        its own elsewhere (a discussion's turns) stops it here. Default: nothing.
         """

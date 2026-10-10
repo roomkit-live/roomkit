@@ -208,6 +208,10 @@ class HookEngine:
             )
         )
 
+    def room_hook_names(self, room_id: str) -> list[str]:
+        """The names of the hooks registered for *room_id* alone."""
+        return [h.name for h in self._room_hooks.get(room_id, [])]
+
     def has_router_hook(self, room_id: str) -> bool:
         """Whether a conversation router's hook applies to *room_id*."""
         hooks = [*self._global_hooks, *self._room_hooks.get(room_id, [])]

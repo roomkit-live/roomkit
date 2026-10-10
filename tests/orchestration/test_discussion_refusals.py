@@ -117,7 +117,7 @@ async def test_installing_another_strategy_is_refused() -> None:
     kit = RoomKit()
     await _discussion_room(kit)
 
-    with pytest.raises(ValueError, match="no other strategy"):
+    with pytest.raises(ValueError, match="holds a (strategy|discussion)"):
         await Swarm(agents=[]).install(kit, "r1")  # type: ignore[arg-type]
     assert not kit.hook_engine.has_router_hook("r1")
     await kit.close()

@@ -16,7 +16,6 @@ from roomkit.core.exceptions import (
 from roomkit.core.mixins.helpers import HelpersMixin
 from roomkit.models.enums import (
     AgentResponsePolicy,
-    ChannelCategory,
     EventType,
     HookTrigger,
     IdentificationStatus,
@@ -82,6 +81,7 @@ class RoomLifecycleMixin(HelpersMixin):
     attach_channel: Any  # see RoomLifecycleHost
     _file_announced: Any  # see RoomLifecycleHost
     _stop_room_recordings: Any  # see RoomLifecycleHost
+    _install_strategy: Any  # see StrategyMixin
 
     async def create_room(
         self,
@@ -139,16 +139,8 @@ class RoomLifecycleMixin(HelpersMixin):
             else self._default_orchestration
         )
         if orch is not None:
-            for agent in orch.agents():
-                if agent.channel_id not in self._channels:
-                    self.register_channel(agent)
-            for agent in orch.agents():
-                await self.attach_channel(
-                    room.id,
-                    agent.channel_id,
-                    category=ChannelCategory.INTELLIGENCE,
-                )
-            await orch.install(self, room.id)  # ty: ignore[invalid-argument-type]
+            # The path install_strategy() takes: claimed, recorded (RFC §19.7).
+            await self._install_strategy(room.id, orch)
 
         await self._fire_lifecycle_hook(
             room.id,

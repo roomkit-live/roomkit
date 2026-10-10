@@ -106,16 +106,6 @@ class DiscussionMixin(HelpersMixin):
         """Whether *room_id* (any room, for None) holds a discussion."""
         return bool(self._discussions) if room_id is None else room_id in self._discussions
 
-    def _claim_room_strategy(self, room_id: str) -> None:
-        """Refuse another strategy in a room a discussion holds (RFC §19.7.5
-        rule 1): one rule decides who speaks, never two.
-
-        Raises:
-            ValueError: the room holds a discussion.
-        """
-        if room_id in self._discussions:
-            raise ValueError(f"Room {room_id} holds a discussion: no other strategy can join it")
-
     def _refuse_discussion_binding(
         self, room_id: str, channel: Channel, category: ChannelCategory | None
     ) -> None:
