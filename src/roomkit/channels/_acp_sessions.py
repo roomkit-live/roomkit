@@ -17,7 +17,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-from collections.abc import AsyncIterator, Callable, Coroutine
+from collections.abc import AsyncGenerator, Callable, Coroutine
 from pathlib import Path
 from typing import Any, Literal
 
@@ -101,7 +101,7 @@ class ACPSessionsMixin:
         return self._session_options.get(session_id, [])
 
     @contextlib.asynccontextmanager
-    async def _room_turn_lock(self, room_id: str) -> AsyncIterator[None]:
+    async def _room_turn_lock(self, room_id: str) -> AsyncGenerator[None, None]:
         """Hold the room's turn lock, tolerating its retirement.
 
         ``close_session`` drops the entry while still holding the lock, so

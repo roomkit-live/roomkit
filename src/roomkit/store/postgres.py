@@ -10,7 +10,7 @@ from __future__ import annotations
 import contextvars
 import json
 import logging
-from collections.abc import AsyncIterator, Generator, Sequence
+from collections.abc import AsyncGenerator, Generator, Sequence
 from contextlib import asynccontextmanager, contextmanager
 from datetime import UTC, datetime
 from typing import Any
@@ -62,7 +62,7 @@ _bound_connection: contextvars.ContextVar[tuple[object, Any] | None] = contextva
 
 
 @asynccontextmanager
-async def _lend(conn: Any) -> AsyncIterator[Any]:
+async def _lend(conn: Any) -> AsyncGenerator[Any, None]:
     """Yield an already-checked-out connection without releasing it.
 
     Lets a call site written as ``async with self._acquire() as conn`` run on a
@@ -282,7 +282,7 @@ class PostgresStore(ConversationStore):
         return self._ensure_pool().acquire(timeout=self._acquire_timeout)
 
     @asynccontextmanager
-    async def connection(self) -> AsyncIterator[None]:
+    async def connection(self) -> AsyncGenerator[None, None]:
         """Run this block's queries on ONE pooled connection.
 
         Implements :meth:`ConversationStore.connection` — read its contract

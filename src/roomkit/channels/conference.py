@@ -25,7 +25,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncGenerator, Sequence
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
@@ -804,7 +804,7 @@ class ConferenceChannel(
     # -------------------------------------------------------------------------
 
     @contextlib.asynccontextmanager
-    async def _participant_callback(self) -> AsyncIterator[bool]:
+    async def _participant_callback(self) -> AsyncGenerator[bool, None]:
         """Hold a closing channel open for one participant callback.
 
         The whole callback, from entry to exit, and not merely the write at the
@@ -832,7 +832,7 @@ class ConferenceChannel(
             done.set()
 
     @contextlib.asynccontextmanager
-    async def _roster_write(self, room_id: str) -> AsyncIterator[bool]:
+    async def _roster_write(self, room_id: str) -> AsyncGenerator[bool, None]:
         """Take the room lock for a roster write, if there is still any point.
 
         The lock orders the write against ``remove_member()`` and against a

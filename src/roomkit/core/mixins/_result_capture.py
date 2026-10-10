@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import contextlib
 import json
-from collections.abc import Iterator
+from collections.abc import Generator
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -37,7 +37,9 @@ class ResultSlot:
 
 
 @contextlib.contextmanager
-def capture_result(channel: Any, child_room_id: str, tool: ResultTool) -> Iterator[ResultSlot]:
+def capture_result(
+    channel: Any, child_room_id: str, tool: ResultTool
+) -> Generator[ResultSlot, None, None]:
     """Serve *tool*'s call made in *child_room_id* by the agent behind *channel*.
 
     The tool is declared and served in *child_room_id*'s turns for as long as

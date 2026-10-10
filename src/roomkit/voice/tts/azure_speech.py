@@ -18,7 +18,7 @@ import contextlib
 import html
 import logging
 import re
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -245,7 +245,7 @@ class AzureSpeechTTSProvider(TTSProvider):
         yield AudioChunk(data=b"", sample_rate=rate, is_final=True)
 
     @contextlib.asynccontextmanager
-    async def _render(self, ssml: str) -> AsyncIterator[httpx.Response]:
+    async def _render(self, ssml: str) -> AsyncGenerator[httpx.Response, None]:
         """Open the streamed render of *ssml*; a refused render raises."""
         headers = {
             "Content-Type": "application/ssml+xml",

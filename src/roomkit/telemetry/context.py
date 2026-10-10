@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import contextvars
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from typing import Any
 
@@ -53,7 +53,9 @@ def reset_span(token: contextvars.Token[str | None]) -> None:
 
 
 @contextmanager
-def restored_span(span_id: str | None, *, telemetry_ctx: Any = None) -> Iterator[None]:
+def restored_span(
+    span_id: str | None, *, telemetry_ctx: Any = None
+) -> Generator[None, None, None]:
     """Make a captured span the current one for the duration of the block.
 
     For work that runs on a fresh :mod:`contextvars` context — a delivery

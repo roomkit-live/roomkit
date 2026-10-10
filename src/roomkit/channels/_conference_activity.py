@@ -38,7 +38,7 @@ import asyncio
 import contextlib
 import itertools
 import logging
-from collections.abc import AsyncIterator, Coroutine
+from collections.abc import AsyncGenerator, Coroutine
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any
@@ -102,7 +102,7 @@ class RoomActivity:
         self._rooms: dict[str, set[_Activity]] = {}
 
     @contextlib.asynccontextmanager
-    async def track(self, room_id: str) -> AsyncIterator[None]:
+    async def track(self, room_id: str) -> AsyncGenerator[None, None]:
         """Mark the block as in-flight work for a room.
 
         The generation check that guards the work belongs *inside* this block,

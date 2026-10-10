@@ -9,7 +9,7 @@ call's, never its id's, so two calls under one id never share one.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
@@ -51,7 +51,7 @@ _reporting: ContextVar[AnnouncedCall | None] = ContextVar("_reporting_call", def
 
 
 @contextmanager
-def reporting(entry: AnnouncedCall | None) -> Iterator[None]:
+def reporting(entry: AnnouncedCall | None) -> Generator[None, None, None]:
     """Run the enclosed code for *entry*: a report claimed meanwhile under
     its id is its own, whichever other call holds the id."""
     token = _reporting.set(entry)

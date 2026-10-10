@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import contextvars
-from collections.abc import Iterator
+from collections.abc import Generator
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -56,7 +56,7 @@ _served_call: contextvars.ContextVar[_ServedCall | None] = contextvars.ContextVa
 
 
 @contextlib.contextmanager
-def serving_call(call: RealtimeToolCall) -> Iterator[None]:
+def serving_call(call: RealtimeToolCall) -> Generator[None, None, None]:
     """Run a provider call's handling as that call's own context."""
     served = _ServedCall(call)
     token = _served_call.set(served)

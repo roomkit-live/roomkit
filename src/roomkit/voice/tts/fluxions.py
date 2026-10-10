@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -162,7 +162,7 @@ class FluxionsTTSProvider(TTSProvider):
         return body
 
     @contextlib.asynccontextmanager
-    async def _render(self, text: str, voice: str | None) -> AsyncIterator[httpx.Response]:
+    async def _render(self, text: str, voice: str | None) -> AsyncGenerator[httpx.Response, None]:
         """Open the streamed render of *text*, listing the voices again once on a 404.
 
         A voice's full id carries the model's checkpoint, which changes with

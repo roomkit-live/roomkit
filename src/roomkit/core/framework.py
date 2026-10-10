@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-from collections.abc import Iterator
+from collections.abc import Generator
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
@@ -670,7 +670,7 @@ class RoomKit(
             )
 
     @contextlib.contextmanager
-    def _resource_lease(self) -> Iterator[None]:
+    def _resource_lease(self) -> Generator[None, None, None]:
         """Hold the store and the lock manager open across one operation.
 
         Taken by a channel around work those resources have already been

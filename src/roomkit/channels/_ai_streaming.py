@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import logging
 import time
-from collections.abc import AsyncGenerator, AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import aclosing, asynccontextmanager
 from dataclasses import dataclass, field
 from functools import partial
@@ -350,7 +350,7 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
         context: AIContext,
         parent_loop_ctx: _ToolLoopContext | None,
         parent_span_id: str | None = None,
-    ) -> AsyncIterator[_StreamTurnState]:
+    ) -> AsyncGenerator[_StreamTurnState, None]:
         """Own the invocation context, activity registration and telemetry span."""
         # This body runs in the CONSUMER's context, which may hold a loop
         # context of its own (a handler draining a child channel's stream):

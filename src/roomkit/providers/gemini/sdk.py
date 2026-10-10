@@ -34,7 +34,7 @@ objects and closes them together.
 from __future__ import annotations
 
 import logging
-from collections.abc import Awaitable, Callable, Iterator
+from collections.abc import Awaitable, Callable, Generator
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any, NamedTuple
 
@@ -103,7 +103,7 @@ class _DropEnvKeyWarning(logging.Filter):
 
 
 @contextmanager
-def _without_env_key_warning(*, explicit_key: bool) -> Iterator[None]:
+def _without_env_key_warning(*, explicit_key: bool) -> Generator[None, None, None]:
     """Silence the SDK's env-key warning around a construction we key ourselves.
 
     Installed for the duration of the ``genai.Client`` call and removed after,

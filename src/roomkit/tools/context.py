@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import asyncio
 import contextvars
+from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from functools import partial
@@ -36,7 +37,7 @@ from roomkit.models.room import Room
 from roomkit.tools._turn_calls import TurnCalls
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable, Iterator, Mapping
+    from collections.abc import Callable, Iterable, Mapping
 
     from roomkit.channels._turn_budget import TurnBudget
     from roomkit.models.steering import SteeringDirective
@@ -300,7 +301,7 @@ class _ToolLoopContext:
         return self.calls.was_reported(call_id)
 
     @contextmanager
-    def cut_by_close(self) -> Iterator[None]:
+    def cut_by_close(self) -> Generator[None, None, None]:
         """Run the enclosed code as one of the turn's calls: the channel's
         close cancels the current task while it is inside (RFC §9.3)."""
         task = asyncio.current_task()
@@ -574,7 +575,9 @@ def current_response_metadata() -> ResponseMetadata | None:
 
 
 @contextmanager
-def _installed(loop_ctx: _ToolLoopContext, call: ToolCallContext | None) -> Iterator[None]:
+def _installed(
+    loop_ctx: _ToolLoopContext, call: ToolCallContext | None
+) -> Generator[None, None, None]:
     """Run the enclosed code under a tool call's context, restored on the way out."""
     call_token = _current_tool_call.set(call)
     loop_token = _current_loop_ctx.set(loop_ctx)
@@ -606,7 +609,7 @@ def tool_turn_context(
     chain_depth: int = 0,
     call: ToolCallContext | None = None,
     requester: str | None = None,
-) -> Iterator[None]:
+) -> Generator[None, None, None]:
     """Run the enclosed code as a tool call of a turn described by the arguments.
 
     What a test calling a tool handler directly needs: inside the block the

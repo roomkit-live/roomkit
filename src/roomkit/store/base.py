@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sys
 from abc import ABC, abstractmethod
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncGenerator, Sequence
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import Any
@@ -61,7 +61,7 @@ class ConversationStore(ABC):
     # Connection tenure
 
     @asynccontextmanager
-    async def connection(self) -> AsyncIterator[None]:
+    async def connection(self) -> AsyncGenerator[None, None]:
         """Serve the store calls in this block from one backend connection.
 
         A pooled backend MAY bind a single connection for the duration of the

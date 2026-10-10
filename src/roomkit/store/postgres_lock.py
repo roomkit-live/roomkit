@@ -10,7 +10,7 @@ uses PostgreSQL **session** advisory locks for that.
 from __future__ import annotations
 
 import hashlib
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -78,7 +78,7 @@ class PostgresAdvisoryLockManager(RoomLockManager):
             self._pool = None
 
     @asynccontextmanager
-    async def locked(self, room_id: str) -> AsyncIterator[None]:
+    async def locked(self, room_id: str) -> AsyncGenerator[None, None]:
         """Hold a cross-process exclusive lock for *room_id* (reentrant)."""
         if _has_room_lock(room_id, self):
             # Reentrant: this execution context already holds the lock.

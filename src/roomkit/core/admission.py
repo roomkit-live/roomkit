@@ -21,7 +21,7 @@ from __future__ import annotations
 import asyncio
 import contextvars
 from collections import deque
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
 
@@ -101,7 +101,7 @@ class RoomAdmission:
     @asynccontextmanager
     async def admitted(
         self, room_id: str, event: RoomEvent, context: RoomContext | None
-    ) -> AsyncIterator[SyncPipelineResult | None]:
+    ) -> AsyncGenerator[SyncPipelineResult | None, None]:
         """Run *event*'s off-lock check, then hold its turn until exit.
 
         Yields ``None`` — nothing taken, every hook left to the locked pass —

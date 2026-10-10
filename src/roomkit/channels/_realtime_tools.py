@@ -9,7 +9,7 @@ import json
 import logging
 import threading
 import time
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncGenerator, Generator
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
@@ -421,7 +421,7 @@ class RealtimeToolsMixin:
     @contextlib.contextmanager
     def _tool_call_span(
         self, call: RealtimeToolCall, kind: SpanKind, prefix: str, **attributes: Any
-    ) -> Iterator[_ToolCallSpan]:
+    ) -> Generator[_ToolCallSpan, None, None]:
         """The call's telemetry span, under the session's, the session's span
         current while the call runs; a call cut short ends it cancelled."""
         session_id = call.session.id
@@ -583,7 +583,7 @@ class RealtimeToolsMixin:
     @contextlib.asynccontextmanager
     async def _tool_call_scope(
         self, call: RealtimeToolCall, gate_context: RoomContext | None
-    ) -> AsyncIterator[_ToolLoopContext]:
+    ) -> AsyncGenerator[_ToolLoopContext, None]:
         """The tool call context one call is served in (RFC §21.4): its room,
         actor and chain depth, the session, and ``current_tool_call()``."""
         session = call.session

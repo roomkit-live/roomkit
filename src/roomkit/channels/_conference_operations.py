@@ -32,7 +32,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-from collections.abc import Iterator
+from collections.abc import Generator
 from enum import Enum
 
 
@@ -124,7 +124,7 @@ class ConferenceOperations:
         return OperationLease(self, resources, lease_id)
 
     @contextlib.contextmanager
-    def use(self, *resources: ConferenceResource, what: str) -> Iterator[None]:
+    def use(self, *resources: ConferenceResource, what: str) -> Generator[None, None, None]:
         """Hold resources for the duration of a block."""
         lease = self.acquire(*resources, what=what)
         try:

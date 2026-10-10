@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
@@ -205,7 +205,7 @@ class SIPCallingMixin:
     # -------------------------------------------------------------------------
 
     @contextlib.asynccontextmanager
-    async def _call_setup(self, incoming_call: Any = None) -> AsyncIterator[_CallSetup]:
+    async def _call_setup(self, incoming_call: Any = None) -> AsyncGenerator[_CallSetup, None]:
         """Commit a call or release all of its resources, including on cancellation."""
         if self._closing:
             raise RuntimeError("SIP backend is closing")

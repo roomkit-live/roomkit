@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import contextlib
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from typing import Any
 
 from ._config import CONFIG_KEY, DiscussionConfig
@@ -50,7 +50,7 @@ class SharedQueue:
         return self.state
 
     @contextlib.asynccontextmanager
-    async def editing(self) -> AsyncIterator[SpeakQueueState]:
+    async def editing(self) -> AsyncGenerator[SpeakQueueState, None]:
         """Change the stored queue: read under the room lock, written back when
         the block changed it, its version moved when the queue itself changed
         (a lease renewal alone does not)."""

@@ -6,7 +6,7 @@ import asyncio
 import contextvars
 from abc import ABC, abstractmethod
 from collections import OrderedDict
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncGenerator, Generator
 from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass
 
@@ -39,7 +39,7 @@ def _has_room_lock(room_id: str, manager: RoomLockManager | None = None) -> bool
 
 
 @contextmanager
-def _mark_room_locked(manager: RoomLockManager, room_id: str) -> Iterator[None]:
+def _mark_room_locked(manager: RoomLockManager, room_id: str) -> Generator[None, None, None]:
     lease = _LockLease(manager, room_id)
     rooms_token = _held_rooms.set(_held_rooms.get() | {room_id})
     leases_token = _held_leases.set((*_held_leases.get(), lease))
@@ -70,7 +70,7 @@ class RoomLockManager(ABC):
 
     @abstractmethod
     @asynccontextmanager
-    async def locked(self, room_id: str) -> AsyncIterator[None]:
+    async def locked(self, room_id: str) -> AsyncGenerator[None, None]:
         """Acquire an exclusive lock for *room_id*.
 
         Acquisition MUST be cancellation-safe: the inbound pipeline bounds the
@@ -141,7 +141,7 @@ class InMemoryLockManager(RoomLockManager):
             self._refcounts.pop(key, None)
 
     @asynccontextmanager
-    async def locked(self, room_id: str) -> AsyncIterator[None]:
+    async def locked(self, room_id: str) -> AsyncGenerator[None, None]:
         """Acquire the lock for a room (reentrant via ContextVar)."""
         if _has_room_lock(room_id, self):
             # Reentrant: this execution context already holds the lock.

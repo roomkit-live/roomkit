@@ -14,7 +14,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-from collections.abc import Awaitable, Callable, Iterator
+from collections.abc import Awaitable, Callable, Generator
 from dataclasses import replace
 from typing import TYPE_CHECKING, Protocol
 
@@ -449,7 +449,7 @@ async def tool_loop_context(
 @contextlib.contextmanager
 def serving_tool_call(
     call: RealtimeToolCall, channel_id: str, loop_ctx: _ToolLoopContext
-) -> Iterator[None]:
+) -> Generator[None, None, None]:
     """Run a handler inside *call*'s tool call context: ``current_tool_call()``
     names the call, its room and the channel, as on every channel (RFC §21.4),
     and ``get_current_voice_session()`` the session that issued it, on every

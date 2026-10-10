@@ -25,7 +25,7 @@ from __future__ import annotations
 import asyncio
 import re
 import sqlite3
-from collections.abc import Iterator
+from collections.abc import Generator
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from datetime import UTC, datetime
@@ -167,7 +167,7 @@ def _load_event(data: str) -> RoomEvent:
 
 
 @contextmanager
-def _write_transaction(conn: sqlite3.Connection) -> Iterator[None]:
+def _write_transaction(conn: sqlite3.Connection) -> Generator[None, None, None]:
     """Run one immediate SQLite transaction with reliable rollback."""
     conn.execute("BEGIN IMMEDIATE")
     try:
