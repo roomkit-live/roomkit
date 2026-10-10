@@ -81,6 +81,10 @@ async def _say(
     )
 
 
+OPS = {"sender_name": "ops"}
+"""The on-call's messages, named by their transport."""
+
+
 async def _person(kit: RoomKit, pid: str, name: str, role: ParticipantRole) -> None:
     await kit.store.add_participant(
         Participant(id=pid, room_id="r1", channel_id="chat", display_name=name, role=role)
@@ -177,7 +181,7 @@ async def test_a_delivery_is_not_a_persons_answer() -> None:
     a = _provider("@ops which region?", "thanks")
     kit = RoomKit()
     await _room(kit, {"a": a}, people=["ops"])
-    await _say(kit, "@a deploy failed")
+    await _say(kit, "@a deploy failed", metadata=OPS)
     await _settle(kit)
     assert _queue(kit).waiting
 
@@ -309,7 +313,7 @@ async def test_a_persons_message_ends_the_wait_even_asking_no_one() -> None:
     b = _provider("b looked")
     kit = RoomKit()
     await _room(kit, {"a": a, "b": b}, people=["ops"], addressed_only=True)
-    await _say(kit, "@a go")
+    await _say(kit, "@a go", metadata=OPS)
     await _settle(kit)
     assert _queue(kit).waiting
     # An instruction is given while waiting; what it asks of b waits.
@@ -317,7 +321,7 @@ async def test_a_persons_message_ends_the_wait_even_asking_no_one() -> None:
     await _settle(kit)
     assert _queue(kit).queue == ("b",) and len(b.calls) == 0
 
-    await _say(kit, "just a note for the team")
+    await _say(kit, "just a note for the team", metadata=OPS)
     await _settle(kit)
     assert len(b.calls) == 1
     await kit.close()
@@ -592,4 +596,35 @@ async def test_names_are_read_after_every_host_hook() -> None:
     await _settle(kit)
 
     assert len(b.calls) == 0
+    await kit.close()
+
+
+async def test_a_name_stamped_like_a_nameless_senders_channel_is_not_them() -> None:
+    """A sender with no name is labelled by its channel (``@chat``), a form no
+    name takes: a later sender stamping the name ``chat`` is someone else."""
+    a = _provider("@chat may I roll back?", "noted")
+    kit = RoomKit()
+    await _room(kit, {"a": a}, people=["chat"], addressed_only=True)
+    await _say(kit, "@a deploy failed", sender="u1")
+    await _settle(kit)
+    assert _queue(kit).asked == (("a", "@chat"),)
+
+    await _say(kit, "yes", sender="u2", metadata={"sender_name": "chat"})
+    await _settle(kit)
+
+    assert _queue(kit).asked == (("a", "@chat"),) and len(a.calls) == 1
+    await kit.close()
+
+
+async def test_a_person_named_like_an_agent_is_still_a_person_in_the_notes() -> None:
+    a = _provider("a here")
+    kit = RoomKit()
+    await _room(kit, {"a": a, "b": _provider()})
+    await _person(kit, "pb", "b", ParticipantRole.MEMBER)
+
+    await _say(kit, "@a hello", sender="pb")
+    await _settle(kit)
+
+    notes = next(str(m.content) for m in a.calls[0].messages if "[Discussion:" in str(m.content))
+    assert "asked by “b”" in notes and "asked by @b" not in notes
     await kit.close()

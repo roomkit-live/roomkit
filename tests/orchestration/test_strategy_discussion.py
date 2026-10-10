@@ -374,7 +374,8 @@ async def test_an_agent_asking_a_person_is_answered_by_their_next_message() -> N
     await _say(kit, "@a deploy failed")
     await _settle(kit)
     queue = kit.speak_queue("r1")
-    assert queue is not None and queue.asked == (("a", "ops"),) and queue.waiting
+    # A sender with no name is asked by their channel's label.
+    assert queue is not None and queue.asked == (("a", "@ops"),) and queue.waiting
 
     await _say(kit, "eu-west")
     await _settle(kit)

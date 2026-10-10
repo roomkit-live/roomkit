@@ -251,7 +251,10 @@ class TurnDriver:
             room.people(context),
             kind=kind,
             answering=self._answering(answered, context),
-            askers=[f"@{a}" if a in room.agents else quoted(a, _LABEL) for a in entry.askers()],
+            askers=[
+                quoted(asker, _LABEL) if person else f"@{asker}"
+                for asker, person in entry.askers()
+            ],
             silent_token=room.silent.token,
         )
 

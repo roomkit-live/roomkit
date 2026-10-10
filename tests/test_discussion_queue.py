@@ -42,7 +42,7 @@ def test_an_agent_named_twice_is_owed_one_turn_answering_the_latest() -> None:
     entry = state.next_turn(MAX_DEPTH).entry
     assert entry is not None and entry.agent == "sre"
     assert entry.answered() == _agent_ask("e2", 2, "dev")
-    assert entry.askers() == ["investigator", "dev"]
+    assert entry.askers() == [("investigator", False), ("dev", False)]
     assert state.view().queue == ("sre",)
 
 
@@ -239,7 +239,7 @@ def test_a_flood_of_mentions_keeps_the_entry_small_and_the_persons_ask() -> None
     (entry,) = state.entries
     assert len(entry.asks) == KEPT_ASKS
     assert entry.answered() == _person_ask("p0", "alice")
-    assert len(entry.askers()) == KEPT_ASKERS and entry.askers()[-1] == "agent19"
+    assert len(entry.askers()) == KEPT_ASKERS and entry.askers()[-1] == ("agent19", False)
 
 
 def test_people_are_told_apart_ignoring_case_only() -> None:

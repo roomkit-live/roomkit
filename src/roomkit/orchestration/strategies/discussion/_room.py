@@ -17,7 +17,8 @@ import sys
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
-from roomkit.channels._speaker import label_name, participant_name, turn_labels
+from roomkit._text import person_name
+from roomkit.channels._speaker import channel_label, label_name, turn_labels
 from roomkit.core.hooks import HookRegistration
 from roomkit.core.visibility import effective_visibility, visibility_allows
 from roomkit.models.delivery import SYSTEM_SENDER_ID
@@ -378,10 +379,11 @@ class DiscussionRoom:
         """The person a message is from, as the transcript labels them: their
         name, with the rank a look-alike of an earlier source carries
         (``Alice (2)``), so a sender who takes another's name is not them."""
-        label = turn_labels([event], context).get(event.id)
-        # A sender with no name reads as their channel (``@sms1``): the name
-        # agents address them by drops the ``@``.
-        return (label or event.source.channel_id).removeprefix("@")
+        # A sender with no name reads as their channel (``@sms1``), a form no
+        # name takes: a name stamped later is never that sender.
+        return turn_labels([event], context).get(event.id) or channel_label(
+            event.source.channel_id
+        )
 
     def people(self, context: RoomContext) -> list[str]:
         """The names agents address people by, each once (§6.4)."""
@@ -389,26 +391,33 @@ class DiscussionRoom:
 
     def people_index(self, context: RoomContext) -> dict[str, list[str]]:
         """Each name agents address people by, ignoring case, and the people it
-        names, as the transcript labels them: ``people``, else the room's
-        active people and the speakers of its recent messages. A name is kept
-        to a name's characters (``@AliceMartin``), never an agent's channel id
-        nor longer than :data:`NAME_LIMIT`; two labels behind one name
-        (``Alice Martin``, ``AliceMartin``) make it ambiguous."""
-        if self.strategy.people is not None:
-            labels = list(self.strategy.people)
-        else:
-            labels = [participant_name(p) for p in context.participants if _is_person(p)]
-            spoken = turn_labels(
-                [e for e in context.recent_events if self.is_person(e, context)], context
-            )
-            labels += [label for label in spoken.values() if label and _plain(label)]
+        names, as the transcript labels them (§6.4): the room's active people
+        and the speakers of its recent messages, a sender with no name by its
+        channel (``@sms1``); with ``people``, only those it lists. A name is
+        kept to a name's characters (``@AliceMartin``), never an agent's
+        channel id nor longer than :data:`NAME_LIMIT`; two labels behind one
+        name (``Alice Martin``, ``AliceMartin``) make it ambiguous, and a
+        look-alike's ranked label (``Alice (2)``) is addressed by no name."""
+        labels = [_label_of(p) for p in context.participants if _is_person(p)]
+        spoken = turn_labels(
+            [e for e in context.recent_events if self.is_person(e, context)], context
+        )
+        labels += [label for label in spoken.values() if label and label == label_name(label)]
+        listed = (
+            None
+            if self.strategy.people is None
+            else {name_key(p).casefold() for p in self.strategy.people}
+        )
         taken = {a.casefold() for a in self.agents}
         index: dict[str, list[str]] = {}
         for label in labels:
-            name = name_key(label)
-            if not name or len(name) > NAME_LIMIT or name.casefold() in taken:
+            name = name_key(label.removeprefix("@"))
+            key = name.casefold()
+            if not name or len(name) > NAME_LIMIT or key in taken:
                 continue
-            named = index.setdefault(name.casefold(), [])
+            if listed is not None and key not in listed:
+                continue
+            named = index.setdefault(key, [])
             if not any(same_name(known, label) for known in named):
                 named.append(label)
         return index
@@ -495,7 +504,7 @@ class DiscussionRoom:
 
 
 def _names_of(index: dict[str, list[str]]) -> list[str]:
-    return [name_key(labels[0]) for labels in index.values()]
+    return [name_key(labels[0].removeprefix("@")) for labels in index.values()]
 
 
 def _participant(event: RoomEvent, context: RoomContext) -> Participant | None:
@@ -507,7 +516,7 @@ def _is_person(participant: Participant) -> bool:
     return participant.status == ParticipantStatus.ACTIVE and participant.role not in _NOT_PEOPLE
 
 
-def _plain(label: str) -> bool:
-    """Whether *label* is a name as written: not a look-alike's ranked one, nor
-    a nameless sender's channel (``@sms1``)."""
-    return label == label_name(label) and not label.startswith("@")
+def _label_of(participant: Participant) -> str:
+    """The label the transcript gives a participant's turns: their name, else
+    their channel's (``@sms1``)."""
+    return person_name(participant.display_name) or channel_label(participant.channel_id)

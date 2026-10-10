@@ -38,7 +38,9 @@ class Entry(BaseModel):
 
     agent: str
     asks: list[Ask] = Field(default_factory=list)
-    asked_by: list[str] = Field(default_factory=list)
+    asked_by: list[tuple[str, bool]] = Field(default_factory=list)
+    """Who asked, and whether a person (else an agent): a person whose label
+    reads as an agent's channel id is still a person."""
     front: bool = False
     seq: int = 0
     """Arrival order among front requests, served first come first served."""
@@ -57,8 +59,9 @@ class Entry(BaseModel):
     def add(self, ask: Ask) -> None:
         """Merge *ask* into the turn, keeping only what the turn reads."""
         self.asks.append(ask)
-        if ask.asker and ask.asker not in self.asked_by:
-            self.asked_by = [*self.asked_by, ask.asker][-KEPT_ASKERS:]
+        asker = (ask.asker, ask.person)
+        if ask.asker and asker not in self.asked_by:
+            self.asked_by = [*self.asked_by, asker][-KEPT_ASKERS:]
         if len(self.asks) > KEPT_ASKS:
             latest_person = next((a for a in reversed(self.asks) if a.person), None)
             kept = self.asks[-KEPT_ASKS:]
@@ -74,7 +77,8 @@ class Entry(BaseModel):
             return people[-1]
         return self.asks[-1] if self.asks else None
 
-    def askers(self) -> list[str]:
+    def askers(self) -> list[tuple[str, bool]]:
+        """Who asked for the turn, and whether a person, in order."""
         return list(self.asked_by)
 
 
