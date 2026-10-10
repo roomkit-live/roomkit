@@ -185,27 +185,32 @@ class DiscussionRoom:
             return
         if plan is None:
             return
-        await self._hand_to_memories(event, plan.context)
+        # Who the event reaches is the router's delivery set (§10.1 step 12):
+        # its memory hand-off and its queue never reach past it.
+        reach = {t.channel_id for t in plan.targets}
+        await self._hand_to_memories(event, plan.context, reach)
         speaker = event.source.channel_id
         if self.driver is not None and self.driver.speaking == speaker:
             self.turn_rows.append(event)
             return
         if speaker not in self.agents and is_person(event, plan.context):
-            await self._route_person(event, plan.context)
+            await self._route_person(event, plan.context, reach)
             # A person's message ends a wait even when it asks for no one.
             self.wake()
-        elif await self._queue_named(event, plan.context, asker=speaker):
+        elif await self._queue_named(event, reach, asker=speaker):
             self.wake()
 
-    async def _hand_to_memories(self, event: RoomEvent, context: RoomContext) -> None:
-        """Hand *event* to the memory of every agent that may see it but its
-        author, as a room with no discussion delivers it (rule 3): a memory
-        that learns as messages arrive learns the whole conversation."""
+    async def _hand_to_memories(
+        self, event: RoomEvent, context: RoomContext, reach: set[str]
+    ) -> None:
+        """Hand *event* to the memory of every agent it reaches but its author,
+        as a room with no discussion delivers it (rule 3): a memory that
+        learns as messages arrive learns the whole conversation."""
         for agent_id, agent in self.agents.items():
-            if agent is None or agent_id == event.source.channel_id:
+            if agent is None or agent_id == event.source.channel_id or agent_id not in reach:
                 continue
             ingest = getattr(agent, "_ingest_event", None)
-            if ingest is not None and sees(agent_id, event, context):
+            if ingest is not None:
                 await ingest(event, context)
 
     async def queue_instruction(self, event: RoomEvent) -> None:
@@ -296,17 +301,18 @@ class DiscussionRoom:
 
     # -- Routing (rules 8 and 10) --
 
-    async def _route_person(self, event: RoomEvent, context: RoomContext) -> list[str]:
+    async def _route_person(
+        self, event: RoomEvent, context: RoomContext, reach: set[str]
+    ) -> list[str]:
         """A person's message: the agents it addresses first; with no address
-        and no name, the agents that asked that person, else ``everyone``."""
+        and no name, the agents that asked that person, else ``everyone``;
+        each only when the message reaches it."""
         who = person_label(event, context)
         named = event.addressed_to is not None
         async with self.editing() as state:
             if state.over or self.closed:
                 return []
-            agents = [
-                a for a in self._person_asks(state, event, context, who) if sees(a, event, context)
-            ]
+            agents = [a for a in self._person_asks(state, event, context, who) if a in reach]
             for agent in agents:
                 ask = Ask(
                     event_id=event.id, depth=event.chain_depth, asker=who, person=True, named=named
@@ -340,15 +346,11 @@ class DiscussionRoom:
         names = read_names(event.content.body, self.agents, people=self.people(context))
         return bool(names.people)
 
-    async def _queue_named(
-        self, event: RoomEvent, context: RoomContext, *, asker: str
-    ) -> list[str]:
+    async def _queue_named(self, event: RoomEvent, reach: set[str], *, asker: str) -> list[str]:
         """An event from an agent outside its turn, or from any other sender:
-        the agents its address names, at the back."""
+        the agents its address names and it reaches, at the back."""
         named = [
-            a
-            for a in event.addressed_to or []
-            if a in self.agents and a != asker and sees(a, event, context)
+            a for a in event.addressed_to or [] if a in self.agents and a != asker and a in reach
         ]
         if not named:
             return []

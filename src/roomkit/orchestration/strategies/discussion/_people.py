@@ -15,7 +15,13 @@ from roomkit.channels._speaker import channel_label, label_name, turn_labels
 from roomkit.core.visibility import effective_visibility, visibility_allows
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import SYSTEM_SENDER_ID
-from roomkit.models.enums import Access, ChannelCategory, ParticipantRole, ParticipantStatus
+from roomkit.models.enums import (
+    Access,
+    ChannelCategory,
+    ChannelDirection,
+    ParticipantRole,
+    ParticipantStatus,
+)
 from roomkit.models.event import RoomEvent
 from roomkit.models.participant import Participant
 
@@ -29,10 +35,14 @@ PeopleIndex = dict[str, list[str]]
 
 
 def sees(agent: str, event: RoomEvent, context: RoomContext) -> bool:
-    """Whether *agent* may read *event*: a name is no way around visibility.
-    The scope is the event's own, else its source binding's (§7.5)."""
+    """Whether *agent* may read *event*, as the router's delivery set says
+    (§10.1 step 12): a binding that reads and receives, and a scope that is
+    the event's own, else its source binding's (§7.5). A name is no way
+    around it. Where the event's plan is at hand, its targets say it."""
     binding = context.get_binding(agent)
     if binding is None or binding.access not in _READS:
+        return False
+    if binding.direction == ChannelDirection.OUTBOUND:
         return False
     scope = effective_visibility(event, context.get_binding(event.source.channel_id))
     return visibility_allows(scope, binding)

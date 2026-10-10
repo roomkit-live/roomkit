@@ -17,6 +17,8 @@ from roomkit.memory.sliding_window import SlidingWindowMemory
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundMessage
 from roomkit.models.enums import (
+    ChannelCategory,
+    ChannelDirection,
     EventType,
     HookExecution,
     HookTrigger,
@@ -660,4 +662,34 @@ async def test_an_agents_memory_learns_every_message_it_may_see() -> None:
         "the customer is Acme",
         "@sre metrics?",
     ]
+    await kit.close()
+
+
+async def test_an_agent_the_room_never_delivers_to_learns_nothing_and_is_not_queued() -> None:
+    """The router's delivery set decides who an event reaches: an agent bound
+    outbound only is neither handed the message nor queued by its name."""
+    learned: list[str] = []
+
+    class _Recording(SlidingWindowMemory):
+        async def ingest(  # type: ignore[override]
+            self, room_id: str, event: RoomEvent, *, channel_id: str | None = None
+        ) -> None:
+            learned.append(event.id)
+
+    a = AIChannel("a", provider=_provider("a here"))
+    b = AIChannel("b", provider=_provider("b here"), memory=_Recording())
+    kit = RoomKit()
+    kit.register_channel(_People("chat"))
+    kit.register_channel(b)
+    await kit.create_room(room_id="r1")
+    await kit.attach_channel("r1", "chat")
+    await kit.attach_channel(
+        "r1", "b", category=ChannelCategory.INTELLIGENCE, direction=ChannelDirection.OUTBOUND
+    )
+    await Discussion([a, b]).install(kit, "r1")
+
+    await _say(kit, "@b are you there?")
+    await _settle(kit)
+
+    assert learned == [] and len(b._provider.calls) == 0  # type: ignore[attr-defined]
     await kit.close()
