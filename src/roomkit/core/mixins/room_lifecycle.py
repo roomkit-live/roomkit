@@ -140,7 +140,7 @@ class RoomLifecycleMixin(HelpersMixin):
         )
         if orch is not None:
             # The path install_strategy() takes: claimed, recorded (RFC §19.7).
-            await self._install_strategy(room.id, orch)
+            await self._install_strategy(room.id, orch, organization_id=room.organization_id)
 
         await self._fire_lifecycle_hook(
             room.id,

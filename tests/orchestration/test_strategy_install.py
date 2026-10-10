@@ -231,3 +231,43 @@ async def test_a_strategy_that_runs_turns_gives_them_back(kind: str) -> None:
         e.source.channel_id for e in result.response_events if e.type == EventType.MESSAGE
     ] == ["writer"]
     await kit.close()
+
+
+async def test_an_uninstall_that_cannot_finish_keeps_the_room_claimed() -> None:
+    sales = _agent("sales", "hi", "noted")
+    kit = RoomKit()
+    await _live_room(kit, sales)
+    await kit.install_strategy("r1", Swarm(agents=[sales, _agent("billing")], entry="sales"))
+    detach = kit.detach_channel
+    failing = True
+
+    async def flaky(room_id: str, channel_id: str, **kwargs: Any) -> bool:
+        if failing:
+            raise RuntimeError("store down")
+        return await detach(room_id, channel_id, **kwargs)
+
+    kit.detach_channel = flaky  # type: ignore[method-assign]
+    with pytest.raises(RuntimeError, match="still binds"):
+        await kit.uninstall_strategy("r1")
+
+    # Part of the swarm stays: the room is still its, never open to another.
+    assert kit.room_strategy("r1") is not None
+    with pytest.raises(ValueError, match="holds a strategy already"):
+        await kit.install_strategy("r1", Discussion([sales]))
+    failing = False
+    assert await kit.uninstall_strategy("r1")
+    assert kit.room_strategy("r1") is None and await _bound(kit) == {"ops", "sales"}
+    await kit.close()
+
+
+async def test_the_room_strategy_is_read_within_a_tenant() -> None:
+    kit = RoomKit()
+    await kit.create_room(room_id="r1", organization_id="acme")
+    swarm = Swarm(agents=[_agent("sales")], entry="sales")
+    await kit.install_strategy("r1", swarm, organization_id="acme")
+
+    assert kit.room_strategy("r1", organization_id="acme") is swarm
+    assert kit.room_strategy("r1", organization_id="other") is None
+    with pytest.raises(Exception, match="not found"):
+        await kit.uninstall_strategy("r1", organization_id="other")
+    await kit.close()
