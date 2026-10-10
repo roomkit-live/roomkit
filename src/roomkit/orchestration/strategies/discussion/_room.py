@@ -312,30 +312,20 @@ class DiscussionRoom:
         self, event: RoomEvent, context: RoomContext, reach: set[str]
     ) -> list[str]:
         """A person's message: the agents it addresses first; with no address
-        and no name, the agents that asked that person, else ``everyone`` or
-        those of them the dispatch policy picks; each only when the message
-        reaches it."""
+        and no name, the agents that asked that person, else ``everyone``, or
+        those the dispatch policy picks; each only when the message reaches
+        it."""
         who = person_label(event, context)
-        named = event.addressed_to is not None
         async with self.editing() as state:
             if state.over or self.closed:
                 return []
-            asks = self._person_asks(state, event, context, who)
             overflow = None
-            if asks is None and self.config.dispatch:
+            if self.config.dispatch and self._unaddressed(event, context):
                 overflow = self._leave_for_dispatch(state, event, who, reach)
-                asks = []
-            agents = [a for a in (self._everyone() if asks is None else asks) if a in reach]
-            for agent in agents:
-                ask = Ask(
-                    event_id=event.id,
-                    depth=event.chain_depth,
-                    asker=who,
-                    index=event.index,
-                    person=True,
-                    named=named,
-                )
-                state.ask(agent, ask, front=True)
+                agents: list[str] = []
+            else:
+                agents = [a for a in self._person_asks(state, event, context, who) if a in reach]
+            self._ask_at_front(state, agents, event, who)
             # Routed first, then what was asked of them is answered.
             state.clear_asked(who, agents=agents if self.config.addressed_only else None)
             was_waiting = state.person_wrote()
@@ -347,25 +337,50 @@ class DiscussionRoom:
             self.fire(SpeakQueueChange.WAITING, [])
         return agents
 
+    @staticmethod
+    def _ask_at_front(
+        state: SpeakQueueState, agents: list[str], event: RoomEvent, who: str
+    ) -> None:
+        for agent in agents:
+            ask = Ask(
+                event_id=event.id,
+                depth=event.chain_depth,
+                asker=who,
+                index=event.index,
+                person=True,
+                named=event.addressed_to is not None,
+            )
+            state.ask(agent, ask, front=True)
+
     def _person_asks(
         self, state: SpeakQueueState, event: RoomEvent, context: RoomContext, who: str
-    ) -> list[str] | None:
-        """The agents a person's message asks for, or None when it answers no
-        one: rule 8 gives it to ``everyone``."""
+    ) -> list[str]:
+        """The agents a person's message asks for with no dispatch policy."""
         if event.addressed_to is not None:
             return [a for a in event.addressed_to if a in self.agents]
-        if self.config.addressed_only or self._names_people(event, context):
+        if not self._unaddressed(event, context):
             return []
-        return state.asking(who) or None
+        return state.asking(who) or self._everyone()
+
+    def _unaddressed(self, event: RoomEvent, context: RoomContext) -> bool:
+        """A message with no address and no name, which ``addressed_only``
+        does not keep from every agent: rule 8 gives it to the agents that
+        asked its author, else ``everyone``; a dispatch policy decides it."""
+        if event.addressed_to is not None or self.config.addressed_only:
+            return False
+        return not self._names_people(event, context)
 
     def _leave_for_dispatch(
         self, state: SpeakQueueState, event: RoomEvent, who: str, reach: set[str]
     ) -> tuple[list[str], str] | None:
-        """Leave a message that answers no one to the dispatch policy: the
-        process holding the lease decides, off the lock, before its next
-        turn (rule 18). Once too many wait, the oldest asks its candidates;
-        those agents and that message are returned."""
-        candidates = [a for a in self._everyone() if a in reach]
+        """Leave an unaddressed message to the dispatch policy: the process
+        holding the lease decides, off the lock, before its next turn (rule
+        18). The candidates are the agents that asked its author, then
+        ``everyone``. Once too many wait, the oldest asks what it asks with no
+        policy; those agents and that message are returned."""
+        asked = [a for a in state.asking(who) if a in reach]
+        everyone = [a for a in self._everyone() if a in reach]
+        candidates = list(dict.fromkeys([*asked, *everyone]))
         if not candidates:
             return None
         pending = Pending(
@@ -374,17 +389,18 @@ class DiscussionRoom:
             asker=who,
             index=event.index,
             candidates=candidates,
+            asked=asked,
             seq=state.reserve_seq(),
         )
         oldest = state.wait_for_decision(pending)
         if oldest is None:
             return None
         logger.warning(
-            "Room %s: too many messages wait for a dispatch decision; %s asks every candidate",
+            "Room %s: too many messages wait for a dispatch decision; %s goes undecided",
             self.room_id,
             oldest.event_id,
         )
-        agents = [a for a in oldest.candidates if a not in state.listening]
+        agents = [a for a in oldest.undecided() if a not in state.listening]
         state.queue_picked(oldest, agents)
         return agents, oldest.event_id
 

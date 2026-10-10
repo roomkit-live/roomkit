@@ -11,7 +11,8 @@ from .base import DispatchDecision, DispatchPolicy, DispatchTurn
 class MockDispatchPolicy(DispatchPolicy):
     """Decides from a script: each call takes the next decision, given as a
     :class:`DispatchDecision` or as the agents' channel ids, and the last one
-    repeats. With no script, every candidate takes the message. *delay*
+    repeats. With no script, the message asks what it asks with no policy:
+    the candidates that asked its author, else every candidate. *delay*
     holds each decision back, *error* is raised instead. Records every turn.
     """
 
@@ -37,5 +38,6 @@ class MockDispatchPolicy(DispatchPolicy):
         if self._error is not None:
             raise self._error
         if not self._decisions:
-            return DispatchDecision(tuple(c.channel_id for c in turn.candidates), "everyone")
+            undecided = turn.asked or tuple(c.channel_id for c in turn.candidates)
+            return DispatchDecision(tuple(undecided), "as with no policy")
         return self._decisions[min(len(self.turns), len(self._decisions)) - 1]

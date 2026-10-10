@@ -6,7 +6,10 @@ identity), the recent conversation named by speaker and the message. The
 candidates whose probability reaches the threshold take it, likeliest first.
 The question was measured with Jev (TypeSafe's System One model) on sixteen
 messages to a team of four, then live: 15/16 right first picks, no agent
-woken for a thanks, 17 turns where asking everyone gave 64.
+woken for a thanks, 17 turns where asking everyone gave 64. An agent that
+waits for the speaker's answer is marked in the team: on ten messages after
+an agent's question (answers, new requests, a thanks), Jev picked right ten
+times with the mark, nine without.
 """
 
 from __future__ import annotations
@@ -88,20 +91,23 @@ class ClassifierDispatchPolicy(DispatchPolicy):
         """What the classifier reads: the team, the conversation, the message."""
         recent = [e for e in turn.recent if _text(e)][-self._recent :] if self._recent else []
         return {
-            "team": [_member(c) for c in turn.candidates],
+            "team": [_member(c, waits=c.channel_id in turn.asked) for c in turn.candidates],
             "conversation": [_line(e, turn) for e in recent],
             "message": _line(turn.event, turn),
         }
 
 
-def _member(candidate: DispatchCandidate) -> dict[str, str]:
-    member = {
+def _member(candidate: DispatchCandidate, *, waits: bool) -> dict[str, str | bool]:
+    described = {
         "agent": f"@{candidate.channel_id}",
         "name": candidate.name,
         "role": candidate.role,
         "can": candidate.description,
     }
-    return {key: value for key, value in member.items() if value}
+    member: dict[str, str | bool] = {key: value for key, value in described.items() if value}
+    if waits:
+        member["waits_for_an_answer_from_the_speaker"] = True
+    return member
 
 
 def _line(event: RoomEvent, turn: DispatchTurn) -> dict[str, str]:

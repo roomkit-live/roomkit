@@ -36,7 +36,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger("roomkit.orchestration.discussion")
 
 FALLBACK = "fallback"
-"""The reason of a decision the policy did not take: every candidate asked."""
+"""The reason of a decision the policy did not take: the message asks what it
+asks with no policy, the agents that asked its author, else every candidate."""
 
 
 class Dispatcher:
@@ -59,11 +60,11 @@ class Dispatcher:
             agents = report.decision.agents if report is not None else ()
         except Exception:
             logger.exception(
-                "The dispatch decision on %s in room %s failed; asking every candidate",
+                "The dispatch decision on %s in room %s failed; it goes undecided",
                 pending.event_id,
                 room.room_id,
             )
-            agents = tuple(candidates)
+            agents = tuple(a for a in pending.undecided() if a in candidates)
         if await self._apply(pending, agents) and report is not None:
             hooks = room.kit.hook_engine
             if hooks.has_hooks(HookTrigger.ON_DISPATCH_DECISION):
@@ -82,18 +83,23 @@ class Dispatcher:
         if event is None or event.room_id != room.room_id:
             return None
         context = await room.kit._build_context(room.room_id, reads_history=True)
-        decision, duration_ms = await self._bounded(self._turn(event, context, candidates))
+        asked = [a for a in pending.asked if a in candidates]
+        turn = self._turn(event, context, candidates, asked)
+        undecided = [a for a in pending.undecided() if a in candidates]
+        decision, duration_ms = await self._bounded(turn, undecided)
         return DispatchDecisionEvent(room.room_id, event, tuple(candidates), decision, duration_ms)
 
-    async def _bounded(self, turn: DispatchTurn) -> tuple[DispatchDecision, int]:
+    async def _bounded(
+        self, turn: DispatchTurn, undecided: list[str]
+    ) -> tuple[DispatchDecision, int]:
         """The policy's decision within the discussion's bound, cut down to
         the candidates, and how long it took: a policy that fails, does not
         decide in time or decides something unreadable, or none in this
-        process, asks every candidate."""
+        process, leaves the message *undecided*: what it asks with no policy."""
         strategy = self._room.strategy
         policy = strategy.dispatch if strategy is not None else None
         candidates = [c.channel_id for c in turn.candidates]
-        fallback = DispatchDecision(tuple(candidates), FALLBACK)
+        fallback = DispatchDecision(tuple(undecided), FALLBACK)
         if strategy is None or policy is None:
             logger.warning("No dispatch policy in this process for room %s", turn.room_id)
             return fallback, 0
@@ -105,20 +111,22 @@ class Dispatcher:
             return _within(decision, candidates), round((time.monotonic() - started) * 1000)
         except TimeoutError:
             logger.warning(
-                "Dispatch policy took over %.1f s on %s; asking every candidate",
+                "Dispatch policy took over %.1f s on %s; it goes undecided",
                 strategy.dispatch_timeout,
                 turn.event.id,
             )
             return fallback, round(strategy.dispatch_timeout * 1000)
         except Exception:
             logger.warning(
-                "Dispatch policy failed on %s; asking every candidate",
+                "Dispatch policy failed on %s; it goes undecided",
                 turn.event.id,
                 exc_info=True,
             )
             return fallback, round((time.monotonic() - started) * 1000)
 
-    def _turn(self, event: RoomEvent, context: RoomContext, candidates: list[str]) -> DispatchTurn:
+    def _turn(
+        self, event: RoomEvent, context: RoomContext, candidates: list[str], asked: list[str]
+    ) -> DispatchTurn:
         """What the policy judges: the room's messages before *event* a
         candidate may read (a policy may hand them to a classifier outside),
         who said each, and the candidates' identity."""
@@ -145,6 +153,7 @@ class Dispatcher:
             recent=recent,
             speakers=speakers,
             candidates=tuple(self._candidate(a) for a in candidates),
+            asked=tuple(asked),
         )
 
     def _candidate(self, agent_id: str) -> DispatchCandidate:

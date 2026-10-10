@@ -101,10 +101,18 @@ class Pending(BaseModel):
     """The person, as the transcript labels them."""
     index: int
     candidates: list[str]
-    """``everyone`` in its order, less the agents the message does not reach."""
+    """The agents that asked the person, then ``everyone`` in its order, less
+    the agents the message does not reach."""
+    asked: list[str] = Field(default_factory=list)
+    """The candidates that asked the person and wait for the answer (rule 10)."""
     seq: int
     """The message's place among the front requests, kept for the agents
     picked: they come before those a later message asked for."""
+
+    def undecided(self) -> list[str]:
+        """What the message asks with no policy (rule 8): the agents that asked
+        the person, else every candidate."""
+        return list(self.asked or self.candidates)
 
 
 @dataclass(frozen=True)

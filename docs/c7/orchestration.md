@@ -139,9 +139,11 @@ room = await kit.create_room(orchestration=Discussion(
   Text only in this version.
 
 A **dispatch policy** decides who takes a person's message that names no
-agent and answers none, in place of asking every agent of `everyone`
-(rule 18). In a room of specialists, most of those turns say `(silent)` and
-the agent that should answer may come third:
+agent, in place of giving it to the agents that asked that person, else to
+every agent of `everyone` (rule 18). In a room of specialists, most of those
+turns say `(silent)`, the agent that should answer may come third, and an
+agent that asked a question takes the next message even when it is a new
+request for someone else:
 
 ```python
 from roomkit import ClassifierDispatchPolicy, Discussion, JevClassifier
@@ -156,15 +158,16 @@ Discussion(
   lock, before it gives another turn; the agents picked go to the front in
   the order decided, at the message's place in the queue. An empty decision
   asks no agent (a thanks, small talk).
-- The candidates are `everyone` less the agents the message does not reach
-  and those that only listen; a decision naming anyone else is cut down to
-  them.
-- A name, an answer owed to an agent that asked the person, and
-  `addressed_only` (refused with a policy) are never decided.
+- The candidates are the agents that asked the person, then `everyone`,
+  less the agents the message does not reach and those that only listen; a
+  decision naming anyone else is cut down to them. `DispatchTurn.asked`
+  says which candidates wait for the person's answer, so the policy judges
+  whether the message answers them.
+- A name is never decided; `addressed_only` is refused with a policy.
 - A policy that fails, takes over `dispatch_timeout` (5 s) or returns no
-  readable decision asks every candidate, with the reason `fallback`. At
-  most 16 messages wait for a decision; past them, the oldest asks every
-  candidate.
+  readable decision leaves the message to rule 8 (the agents that asked the
+  person, else every candidate), with the reason `fallback`. At most 16
+  messages wait for a decision; past them, the oldest goes the same way.
 - `ON_DISPATCH_DECISION` reports each decision applied, once per message
   (`DispatchDecisionEvent`:
   the message, the candidates, the `DispatchDecision` with its `reason` and

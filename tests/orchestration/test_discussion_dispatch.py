@@ -9,6 +9,7 @@ off the room lock, bounded, falling back to every candidate.
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 from typing import Any
 
 import pytest
@@ -119,23 +120,63 @@ async def test_an_empty_decision_asks_no_agent() -> None:
     await kit.close()
 
 
-async def test_a_name_and_an_answer_owed_are_never_decided() -> None:
-    team = {
+async def test_a_name_is_never_decided() -> None:
+    team = _team()
+    policy = MockDispatchPolicy([[]])
+    kit = RoomKit()
+    await _room(kit, team, dispatch=policy)
+
+    await _say(kit, "@dev check the deploy")
+    await _settle(kit)
+
+    assert policy.turns == [] and await _answers(kit) == ["dev"]
+    await kit.close()
+
+
+def _asking_team() -> dict[str, MockAIProvider]:
+    return {
         "investigator": _provider("@ops which region?", "on it"),
         "dev": _provider("dev here"),
         "sre": _provider("sre here"),
     }
-    policy = MockDispatchPolicy([[]])
+
+
+async def test_a_message_after_an_agents_question_is_decided_knowing_who_waits() -> None:
+    team = _asking_team()
+    policy = MockDispatchPolicy([["sre"]])
     kit = RoomKit()
     await _room(kit, team, dispatch=policy, people=["ops"])
-
     await _say(kit, "@investigator checkout fails")
     await _settle(kit)
-    await _say(kit, "eu-west")  # answers the investigator's question
+
+    await _say(kit, "what does the error rate look like?")  # not an answer to the question
     await _settle(kit)
 
-    assert policy.turns == []
+    (turn,) = policy.turns
+    assert turn.asked == ("investigator",)
+    # The agent that asked comes first among the candidates, then everyone.
+    assert [c.channel_id for c in turn.candidates] == ["investigator", "dev", "sre"]
+    assert await _answers(kit) == ["investigator", "sre"]
+    queue = kit.speak_queue("r1")
+    assert queue is not None and queue.asked == ()  # what was asked is cleared all the same
+    await kit.close()
+
+
+async def test_undecided_a_message_after_a_question_goes_to_the_agent_that_asked() -> None:
+    team = _asking_team()
+    kit = RoomKit()
+    seen = _decisions(kit)
+    await _room(kit, team, dispatch=MockDispatchPolicy(error=RuntimeError("down")), people=["ops"])
+    await _say(kit, "@investigator checkout fails")
+    await _settle(kit)
+
+    await _say(kit, "eu-west")
+    await _settle(kit)
+
+    # As with no policy (rule 8): the agent that asked, not everyone.
     assert await _answers(kit) == ["investigator", "investigator"]
+    assert seen[0].decision.agents == ("investigator",)
+    assert seen[0].decision.reason == "fallback"
     await kit.close()
 
 
@@ -517,6 +558,18 @@ async def test_the_classifier_keeps_to_max_agents_and_may_pick_none() -> None:
     assert (await policy.decide(_turn("a", "b", "c"))).agents == ("b",)
     nobody = await policy.decide(_turn("a", "b", "c", text="thanks!"))
     assert nobody.agents == () and nobody.reason == "nobody above threshold"
+
+
+async def test_the_classifier_marks_the_agent_waiting_for_the_speakers_answer() -> None:
+    classifier = MockClassifier()
+    turn = dataclasses.replace(_turn("dev", "sre"), asked=("dev",))
+    await ClassifierDispatchPolicy(classifier).decide(turn)
+
+    ((state, _questions),) = classifier.calls
+    assert isinstance(state, dict)
+    dev, sre = state["team"]
+    assert dev["waits_for_an_answer_from_the_speaker"] is True
+    assert "waits_for_an_answer_from_the_speaker" not in sre
 
 
 async def test_the_classifier_reads_the_team_the_conversation_and_the_message() -> None:
