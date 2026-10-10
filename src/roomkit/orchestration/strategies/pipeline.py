@@ -89,6 +89,7 @@ class Pipeline(Orchestration):
 
     async def install(self, kit: RoomKit, room_id: str) -> None:
         """Wire pipeline routing and handoff into the room."""
+        kit._claim_room_strategy(room_id)
         stages = self._build_stages()
         cp = ConversationPipeline(
             stages=stages,

@@ -404,6 +404,7 @@ class RoomKit(
         # Rooms a discussion holds (RFC §19.7.5), by room id: the router asks
         # none of their agents at broadcast, the discussion gives the turns.
         self._discussions: dict[str, Any] = {}
+        self._hook_engine._holds_discussion = self._holds_discussion
         # Room-level media recording
         from roomkit.recorder._room_recorder_manager import RoomRecorderManager
 

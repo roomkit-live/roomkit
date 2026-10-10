@@ -122,6 +122,9 @@ class HookEngine:
         # Set by RoomKit after init — RFC §8.2 mandates a ``hook_timeout``
         # framework event, which the engine alone knows how to raise.
         self._framework_emitter: Any = None
+        # Set by RoomKit after init: whether a room (any room, for None) holds
+        # a discussion (RFC §19.7.5 rule 1), which a router's hook cannot join.
+        self._holds_discussion: Callable[[str | None], bool] | None = None
         self._suppressed_triggers: set[str] = {
             "on_input_audio_level",
             "on_output_audio_level",
@@ -214,14 +217,25 @@ class HookEngine:
         """Whether a SYNC hook of *trigger* applies to *event* in *room_id*."""
         return bool(self._get_hooks(room_id, trigger, HookExecution.SYNC, event=event))
 
+    def _check_router_placement(self, hook: HookRegistration, room_id: str | None) -> None:
+        """Refuse a router's hook where a discussion takes the turns (RFC
+        §19.7.5 rule 1): one rule decides who speaks, never two."""
+        holds = self._holds_discussion
+        if holds is None or not getattr(hook.fn, _ROUTER_MARK, False) or not holds(room_id):
+            return
+        where = f"Room {room_id} holds" if room_id is not None else "A room holds"
+        raise ValueError(f"{where} a discussion: a router cannot be installed there")
+
     def register(self, hook: HookRegistration) -> None:
         """Register a global hook."""
+        self._check_router_placement(hook, None)
         self._check_lock_placement(hook, None)
         self._global_hooks.append(hook)
         self._trigger_index.add(hook.trigger)
 
     def add_room_hook(self, room_id: str, hook: HookRegistration) -> None:
         """Register a hook for a specific room."""
+        self._check_router_placement(hook, room_id)
         self._check_lock_placement(hook, room_id)
         self._room_hooks.setdefault(room_id, []).append(hook)
         self._trigger_index.add(hook.trigger)

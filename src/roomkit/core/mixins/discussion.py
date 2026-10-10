@@ -85,6 +85,37 @@ class DiscussionMixin(HelpersMixin):
         """
         await self._discussion(room_id).talk_again(list(channel_ids))
 
+    def _holds_discussion(self, room_id: str | None) -> bool:
+        """Whether *room_id* (any room, for None) holds a discussion."""
+        return bool(self._discussions) if room_id is None else room_id in self._discussions
+
+    def _claim_room_strategy(self, room_id: str) -> None:
+        """Refuse another strategy in a room a discussion holds (RFC §19.7.5
+        rule 1): one rule decides who speaks, never two.
+
+        Raises:
+            ValueError: the room holds a discussion.
+        """
+        if room_id in self._discussions:
+            raise ValueError(f"Room {room_id} holds a discussion: no other strategy can join it")
+
+    def _refuse_discussion_binding(
+        self, room_id: str, channel: Channel, category: ChannelCategory | None
+    ) -> None:
+        """Refuse a binding a room's discussion cannot share it with (rule 1).
+
+        Raises:
+            ValueError: the room holds a discussion that refuses the binding.
+        """
+        discussion = self._discussions.get(room_id)
+        if discussion is None:
+            return
+        refusal = discussion_binding_refusal(
+            discussion, channel.channel_id, category or channel.category, channel
+        )
+        if refusal is not None:
+            raise ValueError(f"Room {room_id} holds a discussion: {refusal}")
+
     def _discussion(self, room_id: str) -> Any:
         discussion = self._discussions.get(room_id)
         if discussion is None:

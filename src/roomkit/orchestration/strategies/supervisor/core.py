@@ -216,6 +216,7 @@ class Supervisor(
 
     async def install(self, kit: RoomKit, room_id: str) -> None:
         """Wire supervisor routing and delegation tools."""
+        kit._claim_room_strategy(room_id)
         # Router only needed when the supervisor agent is in the room.
         # In voice async_delivery mode (auto_delegate=True), the voice
         # channel owns routing and the supervisor is not attached.

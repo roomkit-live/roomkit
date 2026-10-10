@@ -131,6 +131,7 @@ class ChannelOpsMixin(HelpersMixin):
     _clear_greeting_gate: Any  # see ChannelOpsHost
     _force_clear_greeting_gate: Any  # see ChannelOpsHost
     _build_room_tasks_loader: Any  # see ChannelOpsHost
+    _refuse_discussion_binding: Any  # see DiscussionMixin
 
     def register_channel(self, channel: Channel) -> None:
         """Register a channel implementation by its ID.
@@ -324,6 +325,7 @@ class ChannelOpsMixin(HelpersMixin):
             channel = self._channels.get(channel_id)
             if channel is None:
                 raise ChannelNotRegisteredError(f"Channel {channel_id} not registered")
+            self._refuse_discussion_binding(room_id, channel, category)
             # A conference maps 1:1 to a room (RFC 12.10.1 principle 2, made
             # normative in 12.10.4): a second conference channel is a second
             # bot, a second transcription of every utterance and a second AI
