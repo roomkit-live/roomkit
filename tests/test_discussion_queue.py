@@ -151,18 +151,17 @@ def test_dropping_the_queue_reports_the_instruction_turns_it_held() -> None:
     assert state.view().queue == ()
 
 
-def test_what_is_stored_leaves_out_who_speaks() -> None:
-    state = SpeakQueueState()
+def test_what_is_stored_keeps_who_speaks_with_the_lease() -> None:
+    state = SpeakQueueState(lease_holder="worker-a", lease_expires=1.0)
     state.ask("sre", _person_ask("p1"), front=True)
     entry = state.next_turn(MAX_DEPTH).entry
     assert entry is not None
     state.take(entry)
     state.waiting = True
 
-    stored = state.model_dump()
-    assert "speaking" not in stored
-    restored = SpeakQueueState.model_validate(stored)
-    assert (restored.speaking, restored.turns_given, restored.waiting) == (None, 1, True)
+    restored = SpeakQueueState.model_validate(state.model_dump())
+    assert (restored.speaking, restored.lease_holder) == ("sre", "worker-a")
+    assert (restored.turns_given, restored.waiting) == (1, True)
 
 
 def test_while_it_waits_for_a_person_only_a_turn_of_its_own_is_given() -> None:

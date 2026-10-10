@@ -91,7 +91,7 @@ class Discussion(Orchestration):
                 or realtime channel, an agent thinks while it listens, or a
                 router, another strategy or a discussion is installed.
         """
-        await kit._install_discussion(room_id, DiscussionRoom(kit, room_id, self))
+        await kit._install_discussion(room_id, DiscussionRoom.installed(kit, room_id, self))
 
     async def uninstall(self, kit: RoomKit, room_id: str) -> None:
         """Give the room back to its ``agent_response_policy``: the turns

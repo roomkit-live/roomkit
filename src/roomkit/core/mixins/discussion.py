@@ -3,9 +3,10 @@
 A discussion takes a room's turns: the strategy (``roomkit.orchestration``)
 keeps the speak queue and gives the turns; the kit installs it, plans each
 turn as a rerun for one agent, announces the queue's changes and gives the
-host ``speak_queue``, ``listen_only`` and ``talk_again``. The kit knows the
-installed discussion only through the methods it calls on it, so the core
-imports nothing of the strategy.
+host ``speak_queue``, ``listen_only`` and ``talk_again``. A room whose
+metadata holds a discussion another process installed is followed here too
+(rule 16): every context the kit builds for it joins it, so this process asks
+no agent at broadcast and queues by the stored configuration.
 """
 
 from __future__ import annotations
@@ -18,6 +19,8 @@ from roomkit.channels._discussion_turn import DISCUSSION_TURN
 from roomkit.core.lanes import DeliveryCascade
 from roomkit.core.mixins.helpers import HelpersMixin
 from roomkit.models.enums import ChannelCategory, ChannelType, HookTrigger
+from roomkit.orchestration.strategies.discussion._config import DiscussionConfig
+from roomkit.orchestration.strategies.discussion._room import DiscussionRoom
 
 if TYPE_CHECKING:
     from roomkit.channels.base import Channel
@@ -25,6 +28,7 @@ if TYPE_CHECKING:
     from roomkit.core.locks import RoomLockManager
     from roomkit.models.context import RoomContext
     from roomkit.models.event import RoomEvent
+    from roomkit.models.room import Room
     from roomkit.orchestration.strategies.discussion import SpeakQueue, SpeakQueueEvent
     from roomkit.store.base import ConversationStore
 
@@ -145,8 +149,13 @@ class DiscussionMixin(HelpersMixin):
             ValueError: the room holds a discussion already, or something the
                 discussion cannot share it with (rule 1).
         """
-        if room_id in self._discussions or room_id in self._installing_discussions:
+        held = self._discussions.get(room_id)
+        installing = room_id in self._installing_discussions
+        if (held is not None and held.driver is not None) or installing:
             raise ValueError(f"Room {room_id} holds a discussion already")
+        if held is not None:
+            # Followed here until now: installed, this process may give turns.
+            self._leave_discussion(room_id, held)
         # Claimed before the first await: two installs at once are one too many.
         self._installing_discussions.add(room_id)
         try:
@@ -185,6 +194,37 @@ class DiscussionMixin(HelpersMixin):
             self._hook_engine.remove_room_hook(room_id, hook.name)
         await discussion.stop()
         await discussion.reset()
+
+    def _follow_discussion(self, room: Room) -> None:
+        """Join, or leave, the discussion *room* holds as stored (rule 16): a
+        room another process gave a discussion is followed here, one whose
+        discussion is gone is left. Run for every context the kit builds."""
+        held = self._discussions.get(room.id)
+        config = DiscussionConfig.stored(room.metadata)
+        if held is None and config is not None and room.id not in self._installing_discussions:
+            follower = DiscussionRoom.following(self, room.id, config)
+            follower.organization_id = room.organization_id
+            self._discussions[room.id] = follower
+            for hook in follower.hooks():
+                self._hook_engine.add_room_hook(room.id, hook)
+        elif held is not None and held.driver is None and config is None:
+            self._leave_discussion(room.id, held)
+
+    async def _forget_discussion(self, room_id: str, discussion: Any) -> None:
+        """Another process uninstalled the discussion this one gave turns for:
+        leave it here, writing nothing back."""
+        if self._discussions.get(room_id) is not discussion:
+            return
+        self._leave_discussion(room_id, discussion)
+        if discussion.driver is not None:
+            await discussion.driver.stop()
+
+    def _leave_discussion(self, room_id: str, discussion: Any) -> None:
+        discussion.closed = True
+        if self._discussions.get(room_id) is discussion:
+            del self._discussions[room_id]
+        for hook in discussion.hooks():
+            self._hook_engine.remove_room_hook(room_id, hook.name)
 
     async def _stop_discussions(self) -> None:
         """Stop every discussion's turns; their queues stay stored (rule 16)."""

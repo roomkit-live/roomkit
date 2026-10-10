@@ -23,6 +23,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `SpeakQueueEvent`) let a console follow who speaks, who is next and
   whether the room waits for a person. The queue is stored with the room.
   Text only. Example: `examples/discussion_group_chat.py`.
+- A discussion is served by several processes (RFC §19.7.5 rule 16).
+  - Its configuration and speak queue are stored with the room. Every
+    process serving the room follows them, even one whose host did not
+    install the discussion: it asks no agent at broadcast, reads names and
+    queues turns, under the room lock.
+  - One process that installed the discussion gives the turns under a 15 s
+    lease it renews, and another takes over once it expires.
+  - An instruction's turn moves the lease to the process holding its text.
+  - Example: `examples/discussion_two_workers.py`.
 - `DiscussionConsole` (`roomkit.console`, `console` extra): a full-screen
   terminal on a room a discussion holds. The room on the left (messages,
   tool calls, who asks you), the agents on the right with their identity,

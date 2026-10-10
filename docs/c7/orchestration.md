@@ -125,9 +125,14 @@ room = await kit.create_room(orchestration=Discussion(
   or another strategy, and refuses binding or installing them afterwards.
   `await strategy.uninstall(kit, room_id)` gives the room back to its
   `agent_response_policy` and forgets the discussion.
-- The queue is stored in room metadata (`_speak_queue`) and outlives a
-  restart (`await strategy.install(kit, room_id)` reads it); one process at a
-  time gives a room's turns. Text only in this version.
+- The configuration (`_discussion`) and the queue (`_speak_queue`) are
+  stored with the room and outlive a restart. Every process serving the room
+  follows them, even one whose host did not install the discussion: no agent
+  asked at broadcast, names read, turns queued, under the room lock (use
+  `PostgresAdvisoryLockManager` across processes). One process that
+  installed it gives the turns under a 15 s lease it renews; another takes
+  over once it expires. Example: `examples/discussion_two_workers.py`.
+  Text only in this version.
 
 A full-screen terminal for such a room (`pip install roomkit[console]`): the
 room on the left, the agents with their identity and live state on the right,

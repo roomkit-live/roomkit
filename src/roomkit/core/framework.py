@@ -8,6 +8,7 @@ import logging
 from collections.abc import Iterator
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
+from uuid import uuid4
 
 if TYPE_CHECKING:
     from roomkit.delivery.base import DeliveryBackend
@@ -405,6 +406,9 @@ class RoomKit(
         # none of their agents at broadcast, the discussion gives the turns.
         self._discussions: dict[str, Any] = {}
         self._installing_discussions: set[str] = set()
+        # This process among those serving the same rooms: a discussion's lease
+        # names its holder by it (RFC §19.7.5 rule 16).
+        self._instance_id = uuid4().hex
         self._hook_engine._holds_discussion = self._holds_discussion
         # Room-level media recording
         from roomkit.recorder._room_recorder_manager import RoomRecorderManager

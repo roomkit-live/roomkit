@@ -1,10 +1,12 @@
-"""The turns of one room's discussion, one at a time (RFC §19.7.5 rules 6, 7, 9, 11, 15).
+"""The turns of one room's discussion, one at a time (RFC §19.7.5 rules 6, 7, 9, 11, 15, 16).
 
-A turn is a rerun of the event it answers, planned for one agent under the
-room lock and run in the room's delivery lane (``RoomKit._plan_discussion_turn``).
-The driver waits for it off every lock, then reads what the turn delivered.
-Once handed to the lane, a turn is always run to its end or abandoned: a
-failure after that point is logged, never allowed to orphan it.
+A process that installed the discussion runs a driver; the one holding the
+room's lease gives the turns. A turn is a rerun of the event it answers,
+planned for one agent under the room lock and run in the room's delivery lane
+(``RoomKit._plan_discussion_turn``). The driver reads the stored queue again
+at least once a second, so a turn another process queued, or an agent another
+process set to listen, reaches it; it renews the lease while a turn runs. Once
+handed to the lane, a turn is always run to its end or abandoned.
 """
 
 from __future__ import annotations
@@ -24,6 +26,7 @@ from roomkit.models.enums import ChannelType, EventStatus, RoomStatus
 from roomkit.models.event import TextContent
 
 from ._notes import AgentLine, TurnKind, turn_notes
+from ._people import person_label
 from .models import SpeakQueueChange
 
 if TYPE_CHECKING:
@@ -31,10 +34,13 @@ if TYPE_CHECKING:
     from roomkit.models.context import RoomContext
     from roomkit.models.event import RoomEvent
 
-    from ._queue import Entry
+    from ._queue import Entry, SpeakQueueState
     from ._room import DiscussionRoom
 
 logger = logging.getLogger("roomkit.orchestration.discussion")
+
+POLL_SECONDS = 1.0
+"""How often the driver reads the stored queue again (rule 16)."""
 
 _REFUSING = frozenset({RoomStatus.CLOSED, RoomStatus.ARCHIVED})
 _QUOTE = 160
@@ -49,10 +55,11 @@ class _Turn:
     cascade: DeliveryCascade
     mark: dict[str, Any]
     started: bool = False
+    cut: bool = False
 
 
 class TurnDriver:
-    """Gives a room's turns, the next once the current one has ended."""
+    """Gives a room's turns while this process holds the lease."""
 
     def __init__(self, room: DiscussionRoom) -> None:
         self._room = room
@@ -60,6 +67,12 @@ class TurnDriver:
         self._task: asyncio.Task[None] | None = None
         self._turn: _Turn | None = None
         self._stopping = False
+        self._seen_version = -1
+
+    @property
+    def speaking(self) -> str | None:
+        """The agent whose turn this process runs, if any."""
+        return self._turn.entry.agent if self._turn is not None else None
 
     def start(self) -> None:
         # A context of its own: the room lock is reentrant per context, and the
@@ -80,9 +93,7 @@ class TurnDriver:
         once that call returns."""
         self._stopping = True
         task, self._task = self._task, None
-        if task is None:
-            return
-        if task is asyncio.current_task():
+        if task is None or task is asyncio.current_task():
             return
         task.cancel()
         await asyncio.wait([task])
@@ -92,6 +103,7 @@ class TurnDriver:
         ``Cancel`` reaches: its delivery is abandoned."""
         turn = self._turn
         if turn is not None and turn.entry.agent == agent:
+            turn.cut = True
             await _abandon(turn, reason)
 
     async def _drive(self) -> None:
@@ -108,10 +120,10 @@ class TurnDriver:
                     logger.exception(
                         "The discussion of room %s could not give a turn", self._room.room_id
                     )
-                    await self._wait(min(2.0**failures, _RETRY_MAX))
+                    await self._wait(min(2.0 ** (failures - 1), _RETRY_MAX))
                     continue
                 if turn is None:
-                    await self._wait(None)
+                    await self._wait(POLL_SECONDS)
                 else:
                     await self._run(turn)
         except asyncio.CancelledError:
@@ -120,7 +132,7 @@ class TurnDriver:
                 await self._abandon_orphan(turn)
             raise
 
-    async def _wait(self, timeout: float | None) -> None:
+    async def _wait(self, timeout: float) -> None:
         with contextlib.suppress(TimeoutError):
             await asyncio.wait_for(self._wake.wait(), timeout)
 
@@ -128,58 +140,91 @@ class TurnDriver:
 
     async def _next_turn(self) -> _Turn | None:
         room = self._room
-        if room.state.over:
+        shared = room.shared
+        peek = await shared.read()
+        if shared.config is None:
+            # Another process uninstalled the discussion.
+            await room.kit._forget_discussion(room.room_id, room)
             return None
-        done = await self._done()
+        if peek.over or shared.held_elsewhere(peek):
+            return None
+        unchanged = peek.version == self._seen_version
+        if unchanged and shared.holds(peek) and not shared.renew_due(peek):
+            return None
+        done = await self._done() if peek.entries else False
         if self._stopping or room.closed:
             # done() may uninstall the discussion it is asked about.
-            return None
-        if done:
-            async with room.lock:
-                await self._end()
             return None
         async with room.kit._lock_manager.locked(room.room_id):
             context = await room.kit._build_context(room.room_id, reads_history=True)
             if context.room.status in _REFUSING:
                 return None
-            async with room.lock:
-                turn, stopped = await self._pick(context)
-            # Committed off the state lock: a commit's announcements reach the
-            # host, which may change the queue. A failure here never loses the
+            async with room.editing() as state:
+                if not shared.take(state):
+                    return None
+                turn, stopped = await self._pick(state, context, done=done)
+            self._seen_version = room.state.version
+            # Committed off the queue's edit: a failure here never loses the
             # turn already handed to the lane.
             for entry, regenerated in stopped:
                 await self._record_depth_stop(entry, regenerated=regenerated)
         return turn
 
-    async def _pick(self, context: RoomContext) -> tuple[_Turn | None, list[tuple[Entry, bool]]]:
+    async def _pick(
+        self, state: SpeakQueueState, context: RoomContext, *, done: bool
+    ) -> tuple[_Turn | None, list[tuple[Entry, bool]]]:
         """The turn to give, planned, and the turns the depth limit stopped on
-        the way. Under the room lock and the state lock."""
+        the way. While editing *state*, under the room lock."""
         room = self._room
         stopped: list[tuple[Entry, bool]] = []
-        if self._max_turns_given():
-            await self._end()
+        if state.over:
+            return None, stopped
+        if done or self._max_turns_given(state):
+            self._end(state)
             return None, stopped
         while True:
-            pick = room.state.next_turn(room.max_depth)
+            pick = state.next_turn(room.max_depth)
             stopped.extend((entry, False) for entry in pick.stopped)
             for entry in pick.dropped:
                 if entry.regenerate:
                     stopped.append((entry, True))
-                room.drop_instructions([entry])
-            if pick.entry is None:
-                await self._wait_or_idle(context)
+                room.drop_instructions([entry], keep=state)
+            entry = pick.entry
+            if entry is None:
+                self._wait_or_idle(state, context)
                 return None, stopped
-            turn = await self._give(pick.entry, context)
+            if self._hand_over(state, entry):
+                return None, stopped
+            if entry not in state.entries:
+                continue
+            turn = await self._give(state, entry, context)
             if turn is not None:
                 return turn, stopped
 
-    async def _give(self, entry: Entry, context: RoomContext) -> _Turn | None:
+    def _hand_over(self, state: SpeakQueueState, entry: Entry) -> bool:
+        """An instruction whose text another process holds: the lease goes to
+        that process, once; whether it went. Back here, the instruction is
+        dropped: its process did not take its turn (rule 16)."""
+        room = self._room
+        if entry.instruction is None or entry.holder in (None, room.shared.me):
+            return False
+        if entry.handed:
+            state.entries.remove(entry)
+            room.drop_instructions([entry], keep=state)
+            return False
+        entry.handed = True
+        room.shared.grant(state, entry.holder)
+        return True
+
+    async def _give(
+        self, state: SpeakQueueState, entry: Entry, context: RoomContext
+    ) -> _Turn | None:
         """Plan *entry*'s turn; None, the entry dropped, when it cannot be given
         (the event it answers is gone, or the agent may no longer read it)."""
         room = self._room
         answered = await self._answered(entry)
         if answered is None:
-            return self._not_given(entry)
+            return self._not_given(state, entry)
         mark = issue_mark([self._notes(entry, answered, context)])
         try:
             cascade = await room.kit._plan_discussion_turn(
@@ -190,31 +235,30 @@ class TurnDriver:
             raise
         if cascade is None:
             retire_mark(mark)
-            return self._not_given(entry)
+            return self._not_given(state, entry)
         # Handed to the lane: from here the turn is the driver's to finish.
         turn = self._turn = _Turn(entry, cascade, mark)
-        room.state.take(entry)
+        state.take(entry)
         room.turn_rows = []
-        if self._max_turns_given():
+        if self._max_turns_given(state):
             # Over once the last turn is given; that turn ends as it would.
-            await self._end()
-        await self._save_logged()
+            self._end(state)
         room.fire(SpeakQueueChange.TURN_GIVEN, [entry.agent], answered.id)
         return turn
 
-    def _not_given(self, entry: Entry) -> None:
+    def _not_given(self, state: SpeakQueueState, entry: Entry) -> None:
         room = self._room
-        room.state.entries.remove(entry)
-        room.drop_instructions([entry])
+        state.entries.remove(entry)
+        room.drop_instructions([entry], keep=state)
         logger.info(
             "Discussion turn of %s in room %s not given: nothing it can answer",
             entry.agent,
             room.room_id,
         )
 
-    def _max_turns_given(self) -> bool:
-        max_turns = self._room.strategy.max_turns
-        return max_turns is not None and self._room.state.turns_given >= max_turns
+    def _max_turns_given(self, state: SpeakQueueState) -> bool:
+        max_turns = self._room.config.max_turns
+        return max_turns is not None and state.turns_given >= max_turns
 
     async def _answered(self, entry: Entry) -> RoomEvent | None:
         room = self._room
@@ -261,12 +305,10 @@ class TurnDriver:
     def _answering(self, answered: RoomEvent, context: RoomContext) -> str:
         """The event a turn answers, as the notes name it: its author's label
         and a quote of what it says."""
-        room = self._room
-        source = answered.source.channel_id
-        if source in room.agents:
-            author = f"@{source}"
+        if answered.source.channel_id in self._room.agents:
+            author = f"@{answered.source.channel_id}"
         else:
-            author = quoted(room.person_label(answered, context), _LABEL)
+            author = quoted(person_label(answered, context), _LABEL)
         body = answered.content.body if isinstance(answered.content, TextContent) else ""
         return f"the message from {author}, {quoted(body, _QUOTE)}"
 
@@ -275,6 +317,7 @@ class TurnDriver:
     async def _run(self, turn: _Turn) -> None:
         room = self._room
         turn.started = True
+        watch = asyncio.get_running_loop().create_task(self._watch(turn))
         try:
             await room.kit._finish_cascade(turn.cascade, room.room_id)
         except asyncio.CancelledError:
@@ -283,9 +326,28 @@ class TurnDriver:
         except Exception:
             logger.exception("Turn of %s in room %s failed", turn.entry.agent, room.room_id)
         finally:
+            watch.cancel()
+            await asyncio.wait([watch])
             retire_mark(turn.mark)
             self._turn = None
             await self._ended(turn)
+
+    async def _watch(self, turn: _Turn) -> None:
+        """While *turn* runs: its agent set to listen elsewhere cuts it, and
+        the lease is renewed before it expires."""
+        room = self._room
+        while True:
+            await asyncio.sleep(POLL_SECONDS)
+            try:
+                state = await room.shared.read()
+                if turn.entry.agent in state.listening and not turn.cut:
+                    turn.cut = True
+                    await room.cut(turn.entry.agent)
+                if room.shared.renew_due(state):
+                    async with room.editing() as editing:
+                        room.shared.take(editing)
+            except Exception:
+                logger.warning("Watching the turn in room %s failed", room.room_id, exc_info=True)
 
     async def _ended(self, turn: _Turn) -> None:
         """The turn has ended (rule 6): what it delivered queues whom it names."""
@@ -293,17 +355,16 @@ class TurnDriver:
         agent = turn.entry.agent
         queued: list[str] = []
         try:
-            async with room.lock:
-                room.state.ended(agent)
+            async with room.editing() as state:
+                state.ended(agent)
                 if turn.entry.instruction is not None:
-                    room.forget_instruction(turn.entry.instruction)
+                    room.forget_instruction(turn.entry.instruction, state)
                 rows = {e.id: e for e in (*room.turn_rows, *turn.cascade.response_events)}
                 room.turn_rows = []
-                if not room.state.over:
+                if not state.over:
                     context = await room.kit._build_context(room.room_id)
                     for event in rows.values():
-                        queued.extend(room.queue_turn_names(agent, event, context))
-                await room.save()
+                        queued.extend(room.queue_turn_names(state, agent, event, context))
         except Exception:
             logger.exception("The end of %s's turn in room %s was not read", agent, room.room_id)
         room.fire(SpeakQueueChange.TURN_ENDED, [agent])
@@ -345,19 +406,18 @@ class TurnDriver:
                 room.room_id,
             )
 
-    async def _wait_or_idle(self, context: RoomContext) -> None:
+    def _wait_or_idle(self, state: SpeakQueueState, context: RoomContext) -> None:
         """No agent can take a turn: wait for a person when one is owed (rule
         10), else stay idle until an event asks for a turn."""
         room = self._room
-        state = room.state
-        if state.waiting or not state.owes_a_person(has_people=room.has_people(context)):
+        if state.waiting or not state.owes_a_person(has_people=room.has_people(state, context)):
             return
         state.waiting = True
-        await room.save()
         room.fire(SpeakQueueChange.WAITING, [])
 
     async def _done(self) -> bool:
-        done = self._room.strategy.done
+        strategy = self._room.strategy
+        done = strategy.done if strategy is not None else None
         if done is None:
             return False
         try:
@@ -367,22 +427,14 @@ class TurnDriver:
             logger.exception("The discussion's done() failed in room %s", self._room.room_id)
             return False
 
-    async def _end(self) -> None:
-        """The discussion is over (rule 15): no further turn, the queue dropped.
-        Under the state lock."""
+    def _end(self, state: SpeakQueueState) -> None:
+        """The discussion is over (rule 15): no further turn, the queue dropped."""
         room = self._room
-        if room.state.over:
+        if state.over:
             return
-        room.state.over = True
-        room.drop_instructions(room.state.drop())
-        await self._save_logged()
+        state.over = True
+        room.drop_instructions(state.drop(), keep=state)
         room.fire(SpeakQueueChange.OVER, [])
-
-    async def _save_logged(self) -> None:
-        try:
-            await self._room.save()
-        except Exception:
-            logger.exception("The speak queue of room %s was not stored", self._room.room_id)
 
 
 async def _abandon(turn: _Turn, reason: str) -> None:

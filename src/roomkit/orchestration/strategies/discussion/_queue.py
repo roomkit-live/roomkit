@@ -1,8 +1,9 @@
 """A room's speak queue: who is owed a turn, who gets the next one (RFC §19.7.5).
 
-Pure state, no I/O: the strategy reads and changes it under the room lock and
-stores it with the room. Who speaks now, and an instruction's text, live in the
-process that gives the turns and are never stored.
+Pure state, no I/O: every process that serves the room reads and changes it
+under the room lock and stores it with the room, the lease naming the one
+process that gives the turns (rule 16). An instruction's text is never stored:
+its entry names the process that holds it.
 """
 
 from __future__ import annotations
@@ -46,6 +47,10 @@ class Entry(BaseModel):
     """Arrival order among front requests, served first come first served."""
     instruction: str | None = None
     """The instruction this turn takes as its input, by event id."""
+    holder: str | None = None
+    """The process holding the instruction's text (rule 16)."""
+    handed: bool = False
+    """The lease was handed to that process for this turn once."""
     regenerate: bool = False
     """The turn regenerates the answer to the event it was asked by."""
     depth_recorded: bool = False
@@ -107,8 +112,13 @@ class SpeakQueueState(BaseModel):
     waiting: bool = False
     people_spoke: bool = False
     """A person's message reached the room: it has someone to wait for."""
-    speaking: str | None = Field(default=None, exclude=True)
-    """Who speaks belongs to the process that runs the turn (rule 16)."""
+    speaking: str | None = None
+    """The running turn of the process holding the lease (rule 16)."""
+    lease_holder: str | None = None
+    lease_expires: float = 0.0
+    version: int = 0
+    """Counts the changes of the queue, for the lease holder to notice another
+    process's."""
 
     # -- Asking --
 
@@ -125,10 +135,18 @@ class SpeakQueueState(BaseModel):
             entry.front = True
             entry.seq = self._next_seq()
 
-    def queue_instruction(self, agent: str, instruction_id: str, depth: int) -> None:
+    def queue_instruction(
+        self, agent: str, instruction_id: str, depth: int, *, holder: str | None = None
+    ) -> None:
         """An instruction addressed to *agent*: a turn of its own, at the front,
-        taking the instruction as its input."""
-        entry = Entry(agent=agent, front=True, seq=self._next_seq(), instruction=instruction_id)
+        taking the instruction as its input, whose text *holder* keeps."""
+        entry = Entry(
+            agent=agent,
+            front=True,
+            seq=self._next_seq(),
+            instruction=instruction_id,
+            holder=holder,
+        )
         entry.add(Ask(event_id=instruction_id, depth=depth, asker=""))
         self.entries.append(entry)
 

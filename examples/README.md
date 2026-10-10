@@ -179,6 +179,7 @@ CONSOLE=1 uv run python examples/<example>.py
 | `orchestration_swarm.py` | Swarm | Swarm where any agent can hand off to any other |
 | `orchestration_swarm_cli.py` | Swarm CLI | Interactive swarm orchestration with specialist agents |
 | `discussion_console.py` | Discussion console | Talk with three agents from a full-screen terminal: the room, the agents' live state, the speak queue |
+| `discussion_two_workers.py` | Discussion across processes | Two workers on one store: a worker that did not install the discussion follows it, one queue, one lease, a crash taken over (offline) |
 | `discussion_group_chat.py` | Discussion | Agents and a person in one conversation: `@name` addressing, one agent at a time, waiting for a person (offline) |
 | `orchestration_pipeline.py` | Pipeline | Multi-agent pipeline: triage -> handler -> resolver |
 | `orchestration_pipeline_cli.py` | Pipeline CLI | Interactive pipeline triage |

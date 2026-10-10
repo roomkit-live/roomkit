@@ -720,6 +720,10 @@ class HelpersMixin:
         # DELIVERED timeline event and must be reflected in the counters too.
         await self._persist_committed(room_id, event)
 
+    def _follow_discussion(self, room: Room) -> None:
+        """Join, or leave, the discussion *room* holds as stored (RFC §19.7.5
+        rule 16): the DiscussionMixin's, run for every context built."""
+
     async def _build_context(
         self,
         room_id: str,
@@ -771,6 +775,7 @@ class HelpersMixin:
                 room, bindings, participants = await self._store.load_room_context(room_id)
                 if room is None:
                     raise RoomNotFoundError(f"Room {room_id} not found")
+                self._follow_discussion(room)
                 if recent_limit is None:
                     recent_limit = self._resolve_recent_events_limit(
                         bindings, reads_history=reads_history

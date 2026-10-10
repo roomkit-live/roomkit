@@ -23,7 +23,10 @@ from tests.test_framework import SimpleChannel
 
 class _Held:
     """Stands for a discussion holding the room: it queues nobody and has no
-    silence token."""
+    silence token. Installed in this process (it has a driver), so the kit does
+    not look for it in the room's metadata."""
+
+    driver = object()
 
     def silence_for(self, channel_id: str) -> Any:
         return None
