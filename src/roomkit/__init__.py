@@ -295,6 +295,7 @@ from roomkit.voice.voices import DialogueTurn, VoiceInfo
 
 # Console (optional — requires `rich`)
 with contextlib.suppress(ImportError):
+    from roomkit.console import DiscussionConsole as DiscussionConsole
     from roomkit.console import RoomKitConsole as RoomKitConsole
 
 # AI documentation helpers (lazy import to avoid file I/O at import time)
@@ -642,6 +643,7 @@ __all__ = [
     "get_current_voice_session",
     # Console (optional)
     "RoomKitConsole",
+    "DiscussionConsole",
     # AI docs
     "get_agents_md",
     "get_ai_context",

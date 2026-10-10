@@ -23,6 +23,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `SpeakQueueEvent`) let a console follow who speaks, who is next and
   whether the room waits for a person. The queue is stored with the room.
   Text only. Example: `examples/discussion_group_chat.py`.
+- `DiscussionConsole` (`roomkit.console`, `console` extra): a full-screen
+  terminal on a room a discussion holds. The room on the left (messages,
+  tool calls, who asks you), the agents on the right with their identity,
+  model and live state (speaking, next, listening, asking), the speak queue
+  below, your input at the bottom; `/listen` and `/talk`, the host's own
+  slash commands, and the kit's logs sent to a file while the screen is up.
+  It follows the room through hooks it removes when it closes. Example:
+  `examples/discussion_console.py`.
 - While a discussion holds a room, `attach_channel` refuses another
   intelligence channel or a voice or realtime channel, the hook engine
   refuses a `ConversationRouter` hook, and `Loop`, `Pipeline`, `Supervisor`

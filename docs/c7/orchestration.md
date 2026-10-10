@@ -125,6 +125,22 @@ room = await kit.create_room(orchestration=Discussion(
   restart (`await strategy.install(kit, room_id)` reads it); one process at a
   time gives a room's turns. Text only in this version.
 
+A full-screen terminal for such a room (`pip install roomkit[console]`): the
+room on the left, the agents with their identity and live state on the right,
+the speak queue below, your input at the bottom. What you type goes into the
+room through the transport channel you name; `/listen @a`, `/talk @a`,
+`/help`, `/quit`, plus the host's own slash commands.
+
+```python
+from roomkit.console import DiscussionConsole
+
+kit.register_channel(WebSocketChannel("you"))
+await kit.attach_channel(room_id, "you")
+await DiscussionConsole(kit, room_id, channel_id="you", log_file="room.log").run()
+```
+
+Example: `examples/discussion_console.py`.
+
 ## Using Orchestration
 
 ```python
