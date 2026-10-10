@@ -86,11 +86,12 @@ def test_a_custom_token_without_brackets() -> None:
     assert not token.is_silent("(pass)")
 
 
-def test_names_hold_letters_of_any_script_and_stay_short() -> None:
+def test_names_hold_letters_of_any_script_and_are_never_cut() -> None:
     names = read_names("@Hélène, which region? café@dev", ["dev"], people=["Hélène"])
     assert names == Names((), ("Hélène",))
     assert name_key("Zoë O'Brien-Smith") == "ZoëOBrien-Smith"
-    assert len(name_key("x" * 500)) == NAME_LIMIT
+    # Cut short, a name could be another person's whole one.
+    assert len(name_key("x" * 500)) == 500 > NAME_LIMIT
 
 
 def test_only_one_final_period_is_dropped() -> None:

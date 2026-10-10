@@ -19,7 +19,9 @@ from dataclasses import dataclass
 EVERYONE = "all"
 
 NAME_LIMIT = 32
-"""The longest name a person is addressed by: a name joins every turn's notes."""
+"""The longest name a person is addressed by (a name joins every turn's notes):
+a longer one is not addressable, never cut short, since a cut name could be
+another person's whole one."""
 
 _NAME = re.compile(r"(?<![\w@])@([\w.\-]+)")
 _NOT_ID = re.compile(r"[^\w.\-]")
@@ -37,9 +39,8 @@ class Names:
 
 def name_key(name: str) -> str:
     """A person's name kept to the characters a name holds (``Alice Martin`` →
-    ``AliceMartin``, ``Hélène`` stays), the form a message names them by, at
-    most :data:`NAME_LIMIT` characters."""
-    return _NOT_ID.sub("", unicodedata.normalize("NFC", name))[:NAME_LIMIT]
+    ``AliceMartin``, ``Hélène`` stays), the form a message names them by."""
+    return _NOT_ID.sub("", unicodedata.normalize("NFC", name))
 
 
 def same_name(one: str, other: str) -> bool:
@@ -67,7 +68,7 @@ def read_names(
         elif key in by_agent:
             found = [by_agent[key]]
         else:
-            person = by_person.get(key[:NAME_LIMIT])
+            person = by_person.get(key)
             if person is not None and person != speaker and person not in named_people:
                 named_people.append(person)
             continue

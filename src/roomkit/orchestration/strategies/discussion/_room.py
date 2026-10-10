@@ -36,7 +36,7 @@ from roomkit.models.hook import HookResult
 from roomkit.models.steering import Cancel
 
 from ._driver import TurnDriver
-from ._names import SilentToken, name_key, read_names
+from ._names import NAME_LIMIT, SilentToken, name_key, read_names, same_name
 from ._queue import Ask, Entry, SpeakQueueState
 from .models import SpeakQueue, SpeakQueueChange, SpeakQueueEvent
 
@@ -337,9 +337,14 @@ class DiscussionRoom:
         for other in named:
             self.state.ask(other, Ask(event_id=event.id, depth=event.chain_depth, asker=agent))
         if isinstance(event.content, TextContent):
-            names = read_names(event.content.body, self.agents, people=self.people(context))
-            for person in names.people:
-                self.state.record_asked(agent, person)
+            index = self.people_index(context)
+            names = read_names(event.content.body, self.agents, people=_names_of(index))
+            for name in names.people:
+                labels = index.get(name.casefold(), [])
+                # A name two people answer to records no one: neither may
+                # answer for the other.
+                if len(labels) == 1:
+                    self.state.record_asked(agent, labels[0])
         return named
 
     # -- Who is who --
@@ -379,23 +384,34 @@ class DiscussionRoom:
         return (label or event.source.channel_id).removeprefix("@")
 
     def people(self, context: RoomContext) -> list[str]:
-        """The names agents address people by: ``people``, else the room's
-        active people and the speakers of its recent messages (§6.4), kept to
-        a name's characters, each once, never an agent's channel id."""
+        """The names agents address people by, each once (§6.4)."""
+        return _names_of(self.people_index(context))
+
+    def people_index(self, context: RoomContext) -> dict[str, list[str]]:
+        """Each name agents address people by, ignoring case, and the people it
+        names, as the transcript labels them: ``people``, else the room's
+        active people and the speakers of its recent messages. A name is kept
+        to a name's characters (``@AliceMartin``), never an agent's channel id
+        nor longer than :data:`NAME_LIMIT`; two labels behind one name
+        (``Alice Martin``, ``AliceMartin``) make it ambiguous."""
         if self.strategy.people is not None:
-            names = [name_key(p) for p in self.strategy.people]
+            labels = list(self.strategy.people)
         else:
-            names = [name_key(participant_name(p)) for p in context.participants if _is_person(p)]
-            labels = turn_labels(
+            labels = [participant_name(p) for p in context.participants if _is_person(p)]
+            spoken = turn_labels(
                 [e for e in context.recent_events if self.is_person(e, context)], context
             )
-            names += [name_key(label) for label in labels.values() if label and _plain(label)]
+            labels += [label for label in spoken.values() if label and _plain(label)]
         taken = {a.casefold() for a in self.agents}
-        kept: dict[str, str] = {}
-        for name in names:
-            if name and name.casefold() not in taken:
-                kept.setdefault(name.casefold(), name)
-        return list(kept.values())
+        index: dict[str, list[str]] = {}
+        for label in labels:
+            name = name_key(label)
+            if not name or len(name) > NAME_LIMIT or name.casefold() in taken:
+                continue
+            named = index.setdefault(name.casefold(), [])
+            if not any(same_name(known, label) for known in named):
+                named.append(label)
+        return index
 
     # -- The hooks --
 
@@ -476,6 +492,10 @@ class DiscussionRoom:
         if last is None or asyncio.current_task() in self._announcing:
             return
         await asyncio.wait([last], timeout=_STOP_WAIT)
+
+
+def _names_of(index: dict[str, list[str]]) -> list[str]:
+    return [name_key(labels[0]) for labels in index.values()]
 
 
 def _participant(event: RoomEvent, context: RoomContext) -> Participant | None:

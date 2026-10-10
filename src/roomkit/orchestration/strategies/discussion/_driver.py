@@ -38,6 +38,8 @@ logger = logging.getLogger("roomkit.orchestration.discussion")
 
 _REFUSING = frozenset({RoomStatus.CLOSED, RoomStatus.ARCHIVED})
 _QUOTE = 160
+_LABEL = 48
+"""A person's label in the notes is quoted, never given as the runtime's words."""
 _RETRY_MAX = 30.0
 
 
@@ -249,7 +251,7 @@ class TurnDriver:
             room.people(context),
             kind=kind,
             answering=self._answering(answered, context),
-            askers=[f"@{a}" if a in room.agents else a for a in entry.askers()],
+            askers=[f"@{a}" if a in room.agents else quoted(a, _LABEL) for a in entry.askers()],
             silent_token=room.silent.token,
         )
 
@@ -258,7 +260,10 @@ class TurnDriver:
         and a quote of what it says."""
         room = self._room
         source = answered.source.channel_id
-        author = f"@{source}" if source in room.agents else room.person_label(answered, context)
+        if source in room.agents:
+            author = f"@{source}"
+        else:
+            author = quoted(room.person_label(answered, context), _LABEL)
         body = answered.content.body if isinstance(answered.content, TextContent) else ""
         return f"the message from {author}, {quoted(body, _QUOTE)}"
 

@@ -2,11 +2,12 @@
 
 The notes join the turn's input as the runtime's own block. What they hold of
 the room comes in a form nobody can turn into the runtime's words: channel
-ids, people's names kept to a name's characters and bounded, the label each
-author carries in the transcript (``Alice (2)`` for a second source that
-takes Alice's name), and what a participant wrote only quoted, on one line,
-between marks it cannot close (``roomkit._text.quoted``). An Agent's name,
-role and description are the host's.
+ids, and the names people are addressed by, kept to a name's characters (no
+space, no punctuation but ``_ . -``) and bounded. Everything else a
+participant controls is quoted, on one line, between marks it cannot close
+(``roomkit._text.quoted``): the label an author carries in the transcript
+(``Alice (2)`` for a second source that takes Alice's name) and what they
+wrote. An Agent's name, role and description are the host's.
 """
 
 from __future__ import annotations
