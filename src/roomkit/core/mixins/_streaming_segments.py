@@ -34,6 +34,10 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("roomkit.inbound")
 
+_HOLD_LIMIT = 256
+"""The most text a segment's start is held back for, in case it is a
+discussion's silence token (RFC §19.7.5 rule 13): the token is short."""
+
 
 class RowSink(Protocol):
     """How a streamed turn's rows are committed, the one thing writers differ in."""
@@ -134,6 +138,7 @@ class SegmentWriter:
         # become the token, since a delivered segment is not taken back (§6.4).
         self._silent = silent
         self._held: list[str] = []
+        self._held_chars = 0
         self._released = False
         # The starts whose row was handed to the writer, by identity: two
         # calls under one id are two calls (RFC §12.4).
@@ -241,8 +246,9 @@ class SegmentWriter:
             self._began = True
             if isinstance(delta, str):
                 self.add_text(delta)
-                released = self._release_text(delta)
-                if released:
+                if self._silent is None:
+                    yield delta
+                elif released := self._release_text(delta):
                     yield released
             elif isinstance(delta, ThinkingDeltaMarker):
                 yield delta
@@ -261,16 +267,18 @@ class SegmentWriter:
         if self._silent is None or self._released:
             return delta
         self._held.append(delta)
-        if self._silent.may_become("".join(self._accumulated)):
+        self._held_chars += len(delta)
+        # A start this long is no bare token: released, and read no further.
+        if self._held_chars <= _HOLD_LIMIT and self._silent.may_become("".join(self._accumulated)):
             return ""
         self._released = True
-        held, self._held = "".join(self._held), []
+        held, self._held, self._held_chars = "".join(self._held), [], 0
         return held
 
     def _end_held(self) -> str:
         """The held start of a segment that ends: what goes out, nothing when
         the segment is the silence token (its row is stored, never delivered)."""
-        held, self._held = "".join(self._held), []
+        held, self._held, self._held_chars = "".join(self._held), [], 0
         if held and self._silent.is_silent("".join(self._accumulated)):
             return ""
         return held

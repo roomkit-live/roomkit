@@ -207,9 +207,11 @@ class RegenerateMixin(HelpersMixin):
         BEFORE_BROADCAST hooks) are not re-routed here.
 
         In a room a discussion holds (RFC §19.7.5 rule 7), each agent that
-        answered the trigger is queued at the front for a turn of its own,
-        and the call returns once they are queued, with no answer in its
-        result: the answers come in those turns.
+        answered the trigger (when no answer is left, each agent the trigger
+        asked for) is queued at the front for a turn of its own, and the call
+        returns once they are queued, with no answer in its result: the
+        answers come in those turns. A discussion that is over refuses it,
+        ``InboundResult(blocked=True, reason="discussion_over")``.
         """
         discussion = self._discussions.get(room_id)
         if discussion is not None:
@@ -264,13 +266,20 @@ class RegenerateMixin(HelpersMixin):
             refusal = await self._refuse_regeneration(room_id, context, found, trigger_id)
             if refusal is not None or found is None:
                 return refusal
+        if discussion.state.over:
+            return InboundResult(blocked=True, reason="discussion_over")
         trigger, _ = found
         answered = [
             e.source.channel_id
             for e in context.recent_events
             if e.responds_to == trigger.id and e.blocked_by != CHAIN_DEPTH_LIMIT
         ]
-        await discussion.queue_regeneration(trigger, list(dict.fromkeys(answered)))
+        # The answers may be gone (removed before regenerating, or out of the
+        # window): the agents the trigger asked for regenerate then.
+        agents = list(dict.fromkeys(answered)) or discussion.asked_by(trigger)
+        if not agents:
+            return None
+        await discussion.queue_regeneration(trigger, agents)
         return InboundResult(event=trigger)
 
     async def _refuse_regeneration(

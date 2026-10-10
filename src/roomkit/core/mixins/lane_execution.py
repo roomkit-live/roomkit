@@ -237,7 +237,11 @@ class LaneExecutionMixin(HelpersMixin):
         # it is delivered to the agent it directs and never stored (RFC
         # §10.1.1).
         discussion = self._discussions.get(room_id)
-        if event.type == EventType.INSTRUCTION and discussion is not None:
+        if (
+            event.type == EventType.INSTRUCTION
+            and discussion is not None
+            and any(a in discussion.agents for a in event.addressed_to or ())
+        ):
             # The discussion gives the agent its turn (RFC §19.7.5 rule 7).
             await discussion.queue_instruction(event)
             return None
@@ -259,15 +263,29 @@ class LaneExecutionMixin(HelpersMixin):
             return None
         committed = await self._commit(room_id, event)
         plan = plan_factory(committed) if plan_factory is not None else None
-        if discussion is not None:
-            # Queue whom it asks for, as committed (RFC §19.7.5 rule 8).
-            await discussion.on_committed(committed, plan)
         if plan is None:
             await self._note_committed_index(room_id, committed.index)
-            return committed
-        cascade.retain()
-        self._enqueue_exec(room_id, plan, cascade, index=committed.index)
+        else:
+            cascade.retain()
+            self._enqueue_exec(room_id, plan, cascade, index=committed.index)
+        if discussion is not None:
+            await self._queue_for_discussion(discussion, committed, plan)
         return committed
+
+    async def _queue_for_discussion(
+        self, discussion: Any, committed: RoomEvent, plan: DeliveryPlan | None
+    ) -> None:
+        """Queue whom a committed event asks for (RFC §19.7.5 rule 8), once its
+        index has reached the lane: a failure of the discussion's own never
+        leaves a committed event undelivered."""
+        try:
+            await discussion.on_committed(committed, plan)
+        except Exception:
+            logger.exception(
+                "The discussion of room %s did not read event %s",
+                committed.room_id,
+                committed.id,
+            )
 
     async def _commit_and_deliver(
         self,

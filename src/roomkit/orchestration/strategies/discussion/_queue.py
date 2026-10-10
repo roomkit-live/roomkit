@@ -11,7 +11,14 @@ from dataclasses import dataclass, field
 
 from pydantic import BaseModel, Field
 
+from ._names import same_name
 from .models import SpeakQueue
+
+KEPT_ASKS = 8
+"""The asks an entry keeps: the turn reads only the latest person's and the
+latest, so a flood of mentions does not grow the stored queue."""
+
+KEPT_ASKERS = 16
 
 
 class Ask(BaseModel):
@@ -20,8 +27,10 @@ class Ask(BaseModel):
     event_id: str
     depth: int
     asker: str
-    """Who asked: an agent's channel id or a person's name."""
+    """Who asked: an agent's channel id or a person's label."""
     person: bool = False
+    named: bool = False
+    """A person named the agent: the one ask an agent that only listens takes."""
 
 
 class Entry(BaseModel):
@@ -29,6 +38,7 @@ class Entry(BaseModel):
 
     agent: str
     asks: list[Ask] = Field(default_factory=list)
+    asked_by: list[str] = Field(default_factory=list)
     front: bool = False
     seq: int = 0
     """Arrival order among front requests, served first come first served."""
@@ -44,6 +54,18 @@ class Entry(BaseModel):
         answer's, given even while the discussion waits or the agent listens."""
         return self.instruction is not None or self.regenerate
 
+    def add(self, ask: Ask) -> None:
+        """Merge *ask* into the turn, keeping only what the turn reads."""
+        self.asks.append(ask)
+        if ask.asker and ask.asker not in self.asked_by:
+            self.asked_by = [*self.asked_by, ask.asker][-KEPT_ASKERS:]
+        if len(self.asks) > KEPT_ASKS:
+            latest_person = next((a for a in reversed(self.asks) if a.person), None)
+            kept = self.asks[-KEPT_ASKS:]
+            if latest_person is not None and latest_person not in kept:
+                kept = [latest_person, *kept[1:]]
+            self.asks = kept
+
     def answered(self) -> Ask | None:
         """The event the turn answers: the latest person's message among the
         events that asked for it, else the latest of them."""
@@ -53,16 +75,19 @@ class Entry(BaseModel):
         return self.asks[-1] if self.asks else None
 
     def askers(self) -> list[str]:
-        return list(dict.fromkeys(a.asker for a in self.asks))
+        return list(self.asked_by)
 
 
 @dataclass(frozen=True)
 class Pick:
-    """The next turn: the entry, the event it answers, and the turns the depth
-    limit stopped on the way (each recorded once, RFC §8.3)."""
+    """The next turn, if any, and what was set aside on the way: the turns the
+    depth limit stopped (each recorded once, RFC §8.3) and the turns of their
+    own past it, which do not wait (an instruction is dropped, a regenerated
+    answer recorded and dropped)."""
 
     entry: Entry | None
     stopped: list[Entry] = field(default_factory=list)
+    dropped: list[Entry] = field(default_factory=list)
 
 
 class SpeakQueueState(BaseModel):
@@ -76,6 +101,8 @@ class SpeakQueueState(BaseModel):
     last_speaker: str | None = None
     seq: int = 0
     waiting: bool = False
+    people_spoke: bool = False
+    """A person's message reached the room: it has someone to wait for."""
     speaking: str | None = Field(default=None, exclude=True)
     """Who speaks belongs to the process that runs the turn (rule 16)."""
 
@@ -88,7 +115,7 @@ class SpeakQueueState(BaseModel):
         if entry is None:
             entry = Entry(agent=agent)
             self.entries.append(entry)
-        entry.asks.append(ask)
+        entry.add(ask)
         entry.depth_recorded = False
         if front and not entry.front:
             entry.front = True
@@ -97,30 +124,32 @@ class SpeakQueueState(BaseModel):
     def queue_instruction(self, agent: str, instruction_id: str, depth: int) -> None:
         """An instruction addressed to *agent*: a turn of its own, at the front,
         taking the instruction as its input."""
-        self.entries.append(
-            Entry(
-                agent=agent,
-                asks=[Ask(event_id=instruction_id, depth=depth, asker="")],
-                front=True,
-                seq=self._next_seq(),
-                instruction=instruction_id,
-            )
-        )
+        entry = Entry(agent=agent, front=True, seq=self._next_seq(), instruction=instruction_id)
+        entry.add(Ask(event_id=instruction_id, depth=depth, asker=""))
+        self.entries.append(entry)
 
-    def queue_regeneration(self, agent: str, ask: Ask) -> None:
+    def queue_regeneration(self, agent: str, ask: Ask) -> bool:
         """A regenerated answer to the event *ask* names: a turn of its own,
-        at the front."""
-        self.entries.append(
-            Entry(agent=agent, asks=[ask], front=True, seq=self._next_seq(), regenerate=True)
-        )
+        at the front, once per agent and event; whether it was queued."""
+        if any(
+            e.regenerate and e.agent == agent and e.asks[0].event_id == ask.event_id
+            for e in self.entries
+        ):
+            return False
+        entry = Entry(agent=agent, front=True, seq=self._next_seq(), regenerate=True)
+        entry.add(ask)
+        self.entries.append(entry)
+        return True
 
     def record_asked(self, agent: str, person: str) -> None:
-        if (agent, person) not in self.asked:
+        if not any(a == agent and same_name(p, person) for a, p in self.asked):
             self.asked.append((agent, person))
 
     def asking(self, person: str | None) -> list[str]:
         """The agents that asked *person* (every person when None), in order."""
-        return list(dict.fromkeys(a for a, p in self.asked if person is None or p == person))
+        return list(
+            dict.fromkeys(a for a, p in self.asked if person is None or same_name(p, person))
+        )
 
     def clear_asked(self, person: str | None, *, agents: list[str] | None = None) -> None:
         """Clear what was asked of *person* (every person when None), only of
@@ -128,7 +157,7 @@ class SpeakQueueState(BaseModel):
         self.asked = [
             (a, p)
             for a, p in self.asked
-            if not ((person is None or p == person) and (agents is None or a in agents))
+            if not ((person is None or same_name(p, person)) and (agents is None or a in agents))
         ]
 
     # -- Giving turns --
@@ -139,32 +168,38 @@ class SpeakQueueState(BaseModel):
 
     def next_turn(self, max_depth: int) -> Pick:
         """The turn to give next, if any: the first entry that can take it, the
-        agent that just spoke only when no other can (RFC §19.7.5 rule 7).
-        While the discussion waits for a person, only a turn of its own."""
-        stopped: list[Entry] = []
+        agent that just spoke only when no other can (RFC §19.7.5 rule 7) or
+        for a turn of its own. While the discussion waits for a person, only a
+        turn of its own."""
+        pick = Pick(None)
         runnable: list[Entry] = []
         for entry in self.ordered():
             if not self._may_take(entry) or (self.waiting and not entry.own_turn):
                 continue
             answered = entry.answered()
             if answered is not None and answered.depth + 1 >= max_depth:
-                if not entry.depth_recorded:
-                    entry.depth_recorded = True
-                    stopped.append(entry)
+                self._set_aside(entry, pick)
                 continue
             runnable.append(entry)
-        if not runnable:
-            return Pick(None, stopped)
-        first = next((e for e in runnable if e.agent != self.last_speaker), runnable[0])
-        return Pick(first, stopped)
+        first = next(
+            (e for e in runnable if e.own_turn or e.agent != self.last_speaker),
+            runnable[0] if runnable else None,
+        )
+        return Pick(first, pick.stopped, pick.dropped)
+
+    def _set_aside(self, entry: Entry, pick: Pick) -> None:
+        if entry.own_turn:
+            self.entries.remove(entry)
+            pick.dropped.append(entry)
+        elif not entry.depth_recorded:
+            entry.depth_recorded = True
+            pick.stopped.append(entry)
 
     def _may_take(self, entry: Entry) -> bool:
-        if entry.own_turn:
-            return True
-        if entry.agent not in self.listening:
+        if entry.own_turn or entry.agent not in self.listening:
             return True
         # An agent that only listens answers a person who names it (§6.4).
-        return any(a.person for a in entry.asks)
+        return any(a.person and a.named for a in entry.asks)
 
     def take(self, entry: Entry) -> None:
         self.entries.remove(entry)
@@ -176,13 +211,19 @@ class SpeakQueueState(BaseModel):
             self.speaking = None
         self.last_speaker = agent
 
-    def person_wrote(self) -> None:
-        """A person's message: the discussion no longer waits (rule 10)."""
-        self.waiting = False
+    def person_wrote(self) -> bool:
+        """A person's message: the discussion no longer waits (rule 10);
+        whether it was waiting."""
+        self.people_spoke = True
+        was, self.waiting = self.waiting, False
+        return was
 
-    def owes_a_person(self) -> bool:
-        """Whether only a person can move the room on: an agent asked one, an
-        agent of the queue only listens, or the depth limit stopped a turn."""
+    def owes_a_person(self, *, has_people: bool) -> bool:
+        """Whether only a person can move the room on: the room has someone to
+        wait for, and an agent asked one, an agent of the queue only listens,
+        or the depth limit stopped a turn."""
+        if not (has_people or self.people_spoke):
+            return False
         if self.asked:
             return True
         return any(

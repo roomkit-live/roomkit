@@ -12,11 +12,15 @@ from __future__ import annotations
 
 import asyncio
 import contextvars
+import logging
+import sys
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
+from roomkit.channels._speaker import label_name, participant_name, turn_labels
 from roomkit.core.hooks import HookRegistration
-from roomkit.core.visibility import visibility_allows
+from roomkit.core.visibility import effective_visibility, visibility_allows
+from roomkit.models.delivery import SYSTEM_SENDER_ID
 from roomkit.models.enums import (
     Access,
     ChannelCategory,
@@ -25,6 +29,7 @@ from roomkit.models.enums import (
     HookExecution,
     HookTrigger,
     ParticipantRole,
+    ParticipantStatus,
 )
 from roomkit.models.event import RoomEvent, TextContent
 from roomkit.models.hook import HookResult
@@ -43,6 +48,8 @@ if TYPE_CHECKING:
 
     from .strategy import Discussion
 
+logger = logging.getLogger("roomkit.orchestration.discussion")
+
 STATE_KEY = "_speak_queue"
 """The room metadata key the speak queue is stored under."""
 
@@ -50,6 +57,13 @@ SILENT = "discussion_silent"
 """The ``blocked_by`` of an agent's row that says nothing (rule 13)."""
 
 NAMES = "discussion_names"
+
+_LAST = sys.maxsize
+"""Priority of the names hook: after every other, so names are read in the
+text the event commits with (rule 4); the silence check just before it."""
+
+_STOP_WAIT = 5.0
+"""How long stopping waits for the announcements still queued."""
 
 _NOT_PEOPLE = frozenset({ParticipantRole.AGENT, ParticipantRole.BOT})
 _READS = frozenset({Access.READ_WRITE, Access.READ_ONLY})
@@ -65,11 +79,16 @@ class DiscussionRoom:
         self.agents: dict[str, AIChannel] = {a.channel_id: a for a in strategy.agents()}
         self.silent = SilentToken(strategy.silent_token)
         self.max_depth: int = strategy.max_depth or kit._max_chain_depth
+        self.organization_id: str | None = None
         self.state = SpeakQueueState()
         self.lock = asyncio.Lock()
         self.instructions: dict[str, RoomEvent] = {}
+        self.turn_rows: list[RoomEvent] = []
+        """What the speaking agent committed during its turn, read at its end."""
+        self.closed = False
         self.driver = TurnDriver(self)
         self._last_fire: asyncio.Task[None] | None = None
+        self._announcing: set[asyncio.Task[None]] = set()
 
     # -- Lifecycle --
 
@@ -78,6 +97,7 @@ class DiscussionRoom:
         dropped: their text lived in that process only (rule 16)."""
         room = await self.kit.store.get_room(self.room_id)
         stored = (room.metadata or {}).get(STATE_KEY) if room is not None else None
+        self.organization_id = room.organization_id if room is not None else None
         async with self.lock:
             if stored:
                 self.state = SpeakQueueState.model_validate(stored)
@@ -92,7 +112,7 @@ class DiscussionRoom:
                 trigger=HookTrigger.BEFORE_BROADCAST,
                 execution=HookExecution.SYNC,
                 fn=self._block_silence,
-                priority=10_000,
+                priority=_LAST - 1,
                 name=SILENT,
                 event_types={EventType.MESSAGE},
             ),
@@ -100,23 +120,34 @@ class DiscussionRoom:
                 trigger=HookTrigger.BEFORE_BROADCAST,
                 execution=HookExecution.SYNC,
                 fn=self._read_names,
-                priority=10_001,
+                priority=_LAST,
                 name=NAMES,
                 event_types={EventType.MESSAGE},
             ),
         ]
 
     async def stop(self) -> None:
-        """Stop giving turns and finish the announcements; the queue stays stored."""
+        """Stop giving turns; the queue stays stored but for its instruction
+        turns, which this process alone could give (rule 16)."""
+        self.closed = True
         await self.driver.stop()
-        if self._last_fire is not None:
-            await asyncio.wait([self._last_fire])
+        try:
+            async with self.lock:
+                self.drop_instructions(self.state.drop_instructions())
+                await self.save()
+        except Exception:
+            logger.exception("The speak queue of room %s was not stored", self.room_id)
+        await self._finish_announcing()
 
-    async def drop(self) -> None:
-        """Empty the queue, reporting the instruction turns it held (rule 1)."""
+    async def reset(self) -> None:
+        """Forget the discussion: the queue, who listens, who asked whom, the
+        turns given and whether it is over (rule 1)."""
         async with self.lock:
-            self.drop_instructions(self.state.drop())
-            await self.save()
+            dropped = self.state.drop()
+            self.state = SpeakQueueState()
+            self.drop_instructions(dropped)
+            await self.kit.store.patch_room_metadata(self.room_id, {STATE_KEY: None})
+        await self._finish_announcing()
 
     def silence_for(self, channel_id: str) -> SilentToken | None:
         return self.silent if channel_id in self.agents else None
@@ -129,9 +160,10 @@ class DiscussionRoom:
     async def on_committed(self, event: RoomEvent, plan: DeliveryPlan | None) -> None:
         """Queue the agents a committed message asks for (rules 5 and 8): a
         person's at the front, any other sender's at the back. The speaking
-        agent's own rows are read when its turn ends."""
+        agent's own rows are kept for its turn's end."""
         if (
-            event.type != EventType.MESSAGE
+            self.closed
+            or event.type != EventType.MESSAGE
             or event.status == EventStatus.BLOCKED
             or plan is None
             or self.state.over
@@ -139,12 +171,13 @@ class DiscussionRoom:
             return
         speaker = event.source.channel_id
         if speaker == self.state.speaking:
+            self.turn_rows.append(event)
             return
         if speaker not in self.agents and self.is_person(event, plan.context):
-            queued = await self._route_person(event, plan.context)
-        else:
-            queued = await self._queue_named(event, plan.context, asker=speaker)
-        if queued:
+            await self._route_person(event, plan.context)
+            # A person's message ends a wait even when it asks for no one.
+            self.driver.wake()
+        elif await self._queue_named(event, plan.context, asker=speaker):
             self.driver.wake()
 
     async def queue_instruction(self, event: RoomEvent) -> None:
@@ -152,7 +185,7 @@ class DiscussionRoom:
         front, taking the instruction as its input (rule 7)."""
         agents = [a for a in event.addressed_to or [] if a in self.agents]
         async with self.lock:
-            if self.state.over:
+            if self.state.over or self.closed:
                 self.fire(SpeakQueueChange.INSTRUCTION_DROPPED, agents, event.id)
                 return
             if agents:
@@ -166,64 +199,94 @@ class DiscussionRoom:
 
     async def queue_regeneration(self, trigger: RoomEvent, agents: Sequence[str]) -> list[str]:
         """A regenerated answer to *trigger*: a turn of its own, at the front,
-        for each of *agents* (rule 7); the agents queued."""
-        queued = [a for a in agents if a in self.agents]
+        for each of *agents* not already queued for it (rule 7); the agents
+        queued."""
         async with self.lock:
-            if self.state.over or not queued:
+            if self.state.over or self.closed:
                 return []
-            for agent in queued:
-                ask = Ask(event_id=trigger.id, depth=trigger.chain_depth, asker="", person=True)
-                self.state.queue_regeneration(agent, ask)
-            await self.save()
-        self.fire(SpeakQueueChange.QUEUED, queued, trigger.id)
-        self.driver.wake()
+            ask = Ask(event_id=trigger.id, depth=trigger.chain_depth, asker="", person=True)
+            queued = [
+                a for a in agents if a in self.agents and self.state.queue_regeneration(a, ask)
+            ]
+            if queued:
+                await self.save()
+        if queued:
+            self.fire(SpeakQueueChange.QUEUED, queued, trigger.id)
+            self.driver.wake()
         return queued
+
+    def asked_by(self, trigger: RoomEvent) -> list[str]:
+        """The agents a person's message asks for by its address, else
+        ``everyone`` (none with ``addressed_only``): who regenerates when no
+        answer to it is left."""
+        if trigger.addressed_to is not None:
+            return [a for a in trigger.addressed_to if a in self.agents]
+        if self.strategy.addressed_only:
+            return []
+        everyone = self.strategy.everyone
+        return list(self.agents if everyone is None else everyone)
 
     # -- Listening only (rule 12) --
 
     async def listen_only(self, channel_ids: Sequence[str]) -> None:
-        agents = [a for a in channel_ids if a in self.agents]
         async with self.lock:
-            agents = [a for a in agents if a not in self.state.listening]
+            agents = [a for a in channel_ids if a in self.agents and a not in self.state.listening]
             self.state.listening.extend(agents)
             speaking = self.state.speaking
             await self.save()
-        if speaking in agents:
-            self.agents[speaking].steer(Cancel(reason="listen_only"), room_id=self.room_id)
         if agents:
             self.fire(SpeakQueueChange.LISTENING, agents)
+        if speaking in agents:
+            # A turn given but not started yet has no loop a Cancel reaches.
+            cancel = Cancel(reason="listen_only")
+            reached = self.agents[speaking].steer(cancel, room_id=self.room_id)
+            if not reached:
+                await self.driver.cut(speaking, "listen_only")
 
     async def talk_again(self, channel_ids: Sequence[str]) -> None:
         async with self.lock:
             agents = [a for a in channel_ids if a in self.state.listening]
             self.state.listening = [a for a in self.state.listening if a not in agents]
+            # The wait may have been for an agent that only listened.
+            ended = self.state.waiting and not self.state.owes_a_person(has_people=True)
+            if ended:
+                self.state.waiting = False
             await self.save()
         if agents:
             self.fire(SpeakQueueChange.TALKING_AGAIN, agents)
-            self.driver.wake()
+        if ended:
+            self.fire(SpeakQueueChange.WAITING, [])
+        self.driver.wake()
 
     # -- Routing (rules 8 and 10) --
 
     async def _route_person(self, event: RoomEvent, context: RoomContext) -> list[str]:
         """A person's message: the agents it addresses first; with no address
         and no name, the agents that asked that person, else ``everyone``."""
-        who = self._asked_key(event, context)
+        who = self.person_label(event, context)
+        named = event.addressed_to is not None
         async with self.lock:
-            named = [
+            if self.state.over or self.closed:
+                return []
+            agents = [
                 a for a in self._person_asks(event, context, who) if self.sees(a, event, context)
             ]
-            for agent in named:
-                ask = Ask(event_id=event.id, depth=event.chain_depth, asker=who or "", person=True)
+            for agent in agents:
+                ask = Ask(
+                    event_id=event.id, depth=event.chain_depth, asker=who, person=True, named=named
+                )
                 self.state.ask(agent, ask, front=True)
             # Routed first, then what was asked of them is answered.
-            self.state.clear_asked(who, agents=named if self.strategy.addressed_only else None)
-            self.state.person_wrote()
+            self.state.clear_asked(who, agents=agents if self.strategy.addressed_only else None)
+            was_waiting = self.state.person_wrote()
             await self.save()
-        if named:
-            self.fire(SpeakQueueChange.QUEUED, named, event.id)
-        return named
+        if agents:
+            self.fire(SpeakQueueChange.QUEUED, agents, event.id)
+        if was_waiting:
+            self.fire(SpeakQueueChange.WAITING, [])
+        return agents
 
-    def _person_asks(self, event: RoomEvent, context: RoomContext, who: str | None) -> list[str]:
+    def _person_asks(self, event: RoomEvent, context: RoomContext, who: str) -> list[str]:
         if event.addressed_to is not None:
             return [a for a in event.addressed_to if a in self.agents]
         if self.strategy.addressed_only or self._names_people(event, context):
@@ -236,13 +299,6 @@ class DiscussionRoom:
             return False
         names = read_names(event.content.body, self.agents, people=self.people(context))
         return bool(names.people)
-
-    def _asked_key(self, event: RoomEvent, context: RoomContext) -> str | None:
-        """The person of ``asked`` the sender is, or None when the discussion
-        cannot tell the room's people apart by the sender's name."""
-        key = name_key(person_name(event, context)).lower()
-        known = {name_key(p).lower() for p in self.people(context)}
-        return key if key and key in known else None
 
     async def _queue_named(
         self, event: RoomEvent, context: RoomContext, *, asker: str
@@ -257,6 +313,8 @@ class DiscussionRoom:
         if not named:
             return []
         async with self.lock:
+            if self.state.over or self.closed:
+                return []
             for agent in named:
                 self.state.ask(agent, Ask(event_id=event.id, depth=event.chain_depth, asker=asker))
             await self.save()
@@ -281,37 +339,63 @@ class DiscussionRoom:
         if isinstance(event.content, TextContent):
             names = read_names(event.content.body, self.agents, people=self.people(context))
             for person in names.people:
-                self.state.record_asked(agent, name_key(person).lower())
+                self.state.record_asked(agent, person)
         return named
 
+    # -- Who is who --
+
     def sees(self, agent: str, event: RoomEvent, context: RoomContext) -> bool:
-        """Whether *agent* may read *event*: a name is no way around visibility."""
+        """Whether *agent* may read *event*: a name is no way around visibility.
+        The scope is the event's own, else its source binding's (§7.5)."""
         binding = context.get_binding(agent)
-        return (
-            binding is not None
-            and binding.access in _READS
-            and visibility_allows(event.visibility, binding)
-        )
+        if binding is None or binding.access not in _READS:
+            return False
+        scope = effective_visibility(event, context.get_binding(event.source.channel_id))
+        return visibility_allows(scope, binding)
 
     def is_person(self, event: RoomEvent, context: RoomContext) -> bool:
         """A transport's event from a participant that is neither an agent nor
-        a bot, or with no participant record behind it (rule 2)."""
+        a bot, or with no participant record behind it (rule 2); never the
+        framework's own sender of a delivery (§22)."""
+        if event.source.participant_id == SYSTEM_SENDER_ID:
+            return False
         binding = context.get_binding(event.source.channel_id)
         if binding is None or binding.category != ChannelCategory.TRANSPORT:
             return False
         participant = _participant(event, context)
         return participant is None or participant.role not in _NOT_PEOPLE
 
+    def has_people(self, context: RoomContext) -> bool:
+        """Whether the room records a person, or one has written (rule 10)."""
+        return self.state.people_spoke or any(_is_person(p) for p in context.participants)
+
+    def person_label(self, event: RoomEvent, context: RoomContext) -> str:
+        """The person a message is from, as the transcript labels them: their
+        name, with the rank a look-alike of an earlier source carries
+        (``Alice (2)``), so a sender who takes another's name is not them."""
+        label = turn_labels([event], context).get(event.id)
+        # A sender with no name reads as their channel (``@sms1``): the name
+        # agents address them by drops the ``@``.
+        return (label or event.source.channel_id).removeprefix("@")
+
     def people(self, context: RoomContext) -> list[str]:
-        """The names agents address people by: ``people``, else the room's,
-        kept to an identifier's characters."""
+        """The names agents address people by: ``people``, else the room's
+        active people and the speakers of its recent messages (§6.4), kept to
+        a name's characters, each once, never an agent's channel id."""
         if self.strategy.people is not None:
-            return [name for p in self.strategy.people if (name := name_key(p))]
-        return [
-            name
-            for p in context.participants
-            if p.role not in _NOT_PEOPLE and (name := name_key(p.display_name or p.id))
-        ]
+            names = [name_key(p) for p in self.strategy.people]
+        else:
+            names = [name_key(participant_name(p)) for p in context.participants if _is_person(p)]
+            labels = turn_labels(
+                [e for e in context.recent_events if self.is_person(e, context)], context
+            )
+            names += [name_key(label) for label in labels.values() if label and _plain(label)]
+        taken = {a.casefold() for a in self.agents}
+        kept: dict[str, str] = {}
+        for name in names:
+            if name and name.casefold() not in taken:
+                kept.setdefault(name.casefold(), name)
+        return list(kept.values())
 
     # -- The hooks --
 
@@ -350,8 +434,14 @@ class DiscussionRoom:
         for entry in dropped:
             if entry.instruction is None:
                 continue
-            self.instructions.pop(entry.instruction, None)
+            self.forget_instruction(entry.instruction)
             self.fire(SpeakQueueChange.INSTRUCTION_DROPPED, [entry.agent], entry.instruction)
+
+    def forget_instruction(self, instruction_id: str) -> None:
+        """Forget an instruction's text once no queued turn takes it (one
+        instruction may be addressed to several agents)."""
+        if not any(e.instruction == instruction_id for e in self.state.entries):
+            self.instructions.pop(instruction_id, None)
 
     def fire(
         self, change: SpeakQueueChange, channel_ids: Sequence[str], event_id: str | None = None
@@ -374,9 +464,18 @@ class DiscussionRoom:
                 await asyncio.wait([previous])
             await self.kit._fire_speak_queue(event)
 
-        self._last_fire = asyncio.get_running_loop().create_task(
-            announce(), context=contextvars.Context()
-        )
+        task = asyncio.get_running_loop().create_task(announce(), context=contextvars.Context())
+        self._last_fire = task
+        self._announcing.add(task)
+        task.add_done_callback(self._announcing.discard)
+
+    async def _finish_announcing(self) -> None:
+        """Let the queued announcements run, briefly: never from one of them,
+        which the rest wait for."""
+        last = self._last_fire
+        if last is None or asyncio.current_task() in self._announcing:
+            return
+        await asyncio.wait([last], timeout=_STOP_WAIT)
 
 
 def _participant(event: RoomEvent, context: RoomContext) -> Participant | None:
@@ -384,11 +483,11 @@ def _participant(event: RoomEvent, context: RoomContext) -> Participant | None:
     return next((p for p in context.participants if p.id == pid), None) if pid else None
 
 
-def person_name(event: RoomEvent, context: RoomContext) -> str:
-    """The name a person's message is told apart by: their participant's name,
-    the name their transport stamped, else their channel."""
-    participant = _participant(event, context)
-    if participant is not None:
-        return participant.display_name or participant.id
-    sender = (event.metadata or {}).get("sender_name")
-    return sender if isinstance(sender, str) and sender else event.source.channel_id
+def _is_person(participant: Participant) -> bool:
+    return participant.status == ParticipantStatus.ACTIVE and participant.role not in _NOT_PEOPLE
+
+
+def _plain(label: str) -> bool:
+    """Whether *label* is a name as written: not a look-alike's ranked one, nor
+    a nameless sender's channel (``@sms1``)."""
+    return label == label_name(label) and not label.startswith("@")

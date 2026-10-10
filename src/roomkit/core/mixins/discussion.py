@@ -49,6 +49,7 @@ class DiscussionMixin(HelpersMixin):
     _hook_engine: HookEngine
     _channels: dict[str, Channel]
     _discussions: dict[str, Any]
+    _installing_discussions: set[str]
 
     # Cross-mixin methods — attribute annotations avoid MRO shadowing
     _get_router: Any  # RoomKit._get_router
@@ -58,13 +59,21 @@ class DiscussionMixin(HelpersMixin):
 
     # -- The host's side --
 
-    def speak_queue(self, room_id: str) -> SpeakQueue | None:
+    def speak_queue(
+        self, room_id: str, *, organization_id: str | None = None
+    ) -> SpeakQueue | None:
         """The speak queue of the discussion *room_id* holds in this process,
-        or None when it holds none (RFC §19.7.5 rule 17)."""
+        or None when it holds none (RFC §19.7.5 rule 17). *organization_id*
+        scopes the read to one tenant (RFC §17.2): a room of another reads as
+        holding none."""
         discussion = self._discussions.get(room_id)
-        return discussion.view() if discussion is not None else None
+        if discussion is None or not _in_scope(discussion, organization_id):
+            return None
+        return discussion.view()
 
-    async def listen_only(self, room_id: str, channel_ids: Sequence[str]) -> None:
+    async def listen_only(
+        self, room_id: str, channel_ids: Sequence[str], *, organization_id: str | None = None
+    ) -> None:
         """Have agents of a discussion only listen (RFC §19.7.5 rule 12).
 
         An agent that only listens keeps its place in the queue and takes no
@@ -73,17 +82,21 @@ class DiscussionMixin(HelpersMixin):
         that turn, as a ``Cancel`` does; what the turn committed stays.
 
         Raises:
-            ValueError: the room holds no discussion in this process.
+            ValueError: the room holds no discussion in this process (or in
+                *organization_id*'s scope).
         """
-        await self._discussion(room_id).listen_only(list(channel_ids))
+        await self._discussion(room_id, organization_id).listen_only(list(channel_ids))
 
-    async def talk_again(self, room_id: str, channel_ids: Sequence[str]) -> None:
+    async def talk_again(
+        self, room_id: str, channel_ids: Sequence[str], *, organization_id: str | None = None
+    ) -> None:
         """End the listening state of agents of a discussion (RFC §19.7.5 rule 12).
 
         Raises:
-            ValueError: the room holds no discussion in this process.
+            ValueError: the room holds no discussion in this process (or in
+                *organization_id*'s scope).
         """
-        await self._discussion(room_id).talk_again(list(channel_ids))
+        await self._discussion(room_id, organization_id).talk_again(list(channel_ids))
 
     def _holds_discussion(self, room_id: str | None) -> bool:
         """Whether *room_id* (any room, for None) holds a discussion."""
@@ -116,9 +129,9 @@ class DiscussionMixin(HelpersMixin):
         if refusal is not None:
             raise ValueError(f"Room {room_id} holds a discussion: {refusal}")
 
-    def _discussion(self, room_id: str) -> Any:
+    def _discussion(self, room_id: str, organization_id: str | None = None) -> Any:
         discussion = self._discussions.get(room_id)
-        if discussion is None:
+        if discussion is None or not _in_scope(discussion, organization_id):
             raise ValueError(f"Room {room_id} holds no discussion")
         return discussion
 
@@ -132,8 +145,23 @@ class DiscussionMixin(HelpersMixin):
             ValueError: the room holds a discussion already, or something the
                 discussion cannot share it with (rule 1).
         """
-        if room_id in self._discussions:
+        if room_id in self._discussions or room_id in self._installing_discussions:
             raise ValueError(f"Room {room_id} holds a discussion already")
+        # Claimed before the first await: two installs at once are one too many.
+        self._installing_discussions.add(room_id)
+        try:
+            await self._prepare_discussion(room_id, discussion)
+            await discussion.load()
+        finally:
+            self._installing_discussions.discard(room_id)
+        self._discussions[room_id] = discussion
+        for hook in discussion.hooks():
+            self._hook_engine.add_room_hook(room_id, hook)
+        discussion.driver.start()
+
+    async def _prepare_discussion(self, room_id: str, discussion: Any) -> None:
+        """Refuse what the room cannot share with *discussion*, then bind its
+        agents (rule 1)."""
         for agent in discussion.agents.values():
             if agent.channel_id not in self._channels:
                 self.register_channel(agent)
@@ -144,23 +172,19 @@ class DiscussionMixin(HelpersMixin):
         for agent_id in discussion.agents:
             if context.get_binding(agent_id) is None:
                 await self.attach_channel(room_id, agent_id, category=ChannelCategory.INTELLIGENCE)
-        await discussion.load()
-        self._discussions[room_id] = discussion
-        for hook in discussion.hooks():
-            self._hook_engine.add_room_hook(room_id, hook)
-        discussion.driver.start()
 
     async def _uninstall_discussion(self, room_id: str) -> None:
-        """Give *room_id* back to its policy: the turns stopped, the queue
-        dropped, the hooks removed (rule 1)."""
-        discussion = self._discussions.get(room_id)
+        """Give *room_id* back to its policy (rule 1): released first, so what
+        comes in meanwhile is the policy's, then the turns stopped and the
+        discussion forgotten."""
+        discussion = self._discussions.pop(room_id, None)
         if discussion is None:
             return
-        await discussion.stop()
-        await discussion.drop()
-        del self._discussions[room_id]
+        discussion.closed = True
         for hook in discussion.hooks():
             self._hook_engine.remove_room_hook(room_id, hook.name)
+        await discussion.stop()
+        await discussion.reset()
 
     async def _stop_discussions(self) -> None:
         """Stop every discussion's turns; their queues stay stored (rule 16)."""
@@ -242,6 +266,10 @@ class DiscussionMixin(HelpersMixin):
             )
         except Exception:
             logger.exception("ON_SPEAK_QUEUE hooks failed in room %s", event.room_id)
+
+
+def _in_scope(discussion: Any, organization_id: str | None) -> bool:
+    return organization_id is None or discussion.organization_id == organization_id
 
 
 def discussion_binding_refusal(

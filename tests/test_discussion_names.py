@@ -7,6 +7,7 @@ import time
 import pytest
 
 from roomkit.orchestration.strategies.discussion._names import (
+    NAME_LIMIT,
     Names,
     SilentToken,
     name_key,
@@ -83,3 +84,15 @@ def test_a_custom_token_without_brackets() -> None:
     token = SilentToken("PASS")
     assert token.is_silent("pass.") and token.may_become("pa")
     assert not token.is_silent("(pass)")
+
+
+def test_names_hold_letters_of_any_script_and_stay_short() -> None:
+    names = read_names("@Hélène, which region? café@dev", ["dev"], people=["Hélène"])
+    assert names == Names((), ("Hélène",))
+    assert name_key("Zoë O'Brien-Smith") == "ZoëOBrien-Smith"
+    assert len(name_key("x" * 500)) == NAME_LIMIT
+
+
+def test_only_one_final_period_is_dropped() -> None:
+    assert read_names("thanks @dev.", ["dev"]).agents == ("dev",)
+    assert read_names("thanks @dev..", ["dev"]).agents == ()

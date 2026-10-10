@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
-from roomkit.orchestration.strategies.discussion._queue import Ask, SpeakQueueState
+from roomkit.orchestration.strategies.discussion._queue import (
+    KEPT_ASKERS,
+    KEPT_ASKS,
+    Ask,
+    SpeakQueueState,
+)
 
 MAX_DEPTH = 5
 
@@ -11,8 +16,8 @@ def _agent_ask(event: str, depth: int, asker: str) -> Ask:
     return Ask(event_id=event, depth=depth, asker=asker)
 
 
-def _person_ask(event: str, person: str = "ops") -> Ask:
-    return Ask(event_id=event, depth=0, asker=person, person=True)
+def _person_ask(event: str, person: str = "ops", *, named: bool = False) -> Ask:
+    return Ask(event_id=event, depth=0, asker=person, person=True, named=named)
 
 
 def _next(state: SpeakQueueState) -> str | None:
@@ -86,9 +91,14 @@ def test_an_agent_that_only_listens_answers_only_a_person_who_names_it() -> None
     state = SpeakQueueState(listening=["sre"])
     state.ask("sre", _agent_ask("e1", 1, "dev"))
     assert _next(state) is None
-    assert state.owes_a_person()
+    assert state.owes_a_person(has_people=True)
 
+    # A person's message that does not name it (everyone, an answer to what it
+    # asked) gives it no turn either.
     state.ask("sre", _person_ask("p1"), front=True)
+    assert _next(state) is None
+
+    state.ask("sre", _person_ask("p2", named=True), front=True)
     assert _give(state) == "sre"
     assert state.listening == ["sre"]
 
@@ -109,7 +119,9 @@ def test_the_depth_limit_stops_a_turn_once_and_a_shallower_ask_resumes_it() -> N
     pick = state.next_turn(MAX_DEPTH)
     assert pick.entry is None and [e.agent for e in pick.stopped] == ["sre"]
     assert state.next_turn(MAX_DEPTH).stopped == []  # recorded once
-    assert state.owes_a_person()
+    assert state.owes_a_person(has_people=True)
+    # With nobody to wait for, the room is idle, not waiting.
+    assert not state.owes_a_person(has_people=False)
 
     state.ask("sre", _person_ask("p1"), front=True)
     entry = state.next_turn(MAX_DEPTH).entry
@@ -188,3 +200,52 @@ def test_a_restart_drops_the_instruction_turns_and_keeps_the_rest() -> None:
     dropped = state.drop_instructions()
     assert [e.instruction for e in dropped] == ["i1"]
     assert state.view().queue == ("dev",)
+
+
+def test_a_turn_of_its_own_past_the_depth_limit_is_set_aside_not_kept() -> None:
+    state = SpeakQueueState()
+    state.queue_instruction("sre", "i1", depth=MAX_DEPTH)
+    state.queue_regeneration("dev", Ask(event_id="e9", depth=MAX_DEPTH, asker=""))
+
+    pick = state.next_turn(MAX_DEPTH)
+    assert pick.entry is None
+    assert [(e.agent, e.own_turn) for e in pick.dropped] == [("sre", True), ("dev", True)]
+    assert state.entries == []
+
+
+def test_a_turn_of_its_own_is_not_held_back_by_the_last_speaker_rule() -> None:
+    state = SpeakQueueState(last_speaker="sre")
+    state.queue_instruction("sre", "i1", depth=0)
+    state.ask("dev", _person_ask("p1"), front=True)
+
+    entry = state.next_turn(MAX_DEPTH).entry
+    assert entry is not None and (entry.agent, entry.instruction) == ("sre", "i1")
+
+
+def test_a_regenerated_answer_is_queued_once_per_agent_and_event() -> None:
+    state = SpeakQueueState()
+    assert state.queue_regeneration("sre", _person_ask("p0"))
+    assert not state.queue_regeneration("sre", _person_ask("p0"))
+    assert state.queue_regeneration("sre", _person_ask("p1"))
+    assert len(state.entries) == 2
+
+
+def test_a_flood_of_mentions_keeps_the_entry_small_and_the_persons_ask() -> None:
+    state = SpeakQueueState()
+    state.ask("sre", _person_ask("p0", "alice"), front=True)
+    for i in range(100):
+        state.ask("sre", _agent_ask(f"e{i}", 1, f"agent{i % 20}"))
+
+    (entry,) = state.entries
+    assert len(entry.asks) == KEPT_ASKS
+    assert entry.answered() == _person_ask("p0", "alice")
+    assert len(entry.askers()) == KEPT_ASKERS and entry.askers()[-1] == "agent19"
+
+
+def test_people_are_told_apart_ignoring_case_only() -> None:
+    state = SpeakQueueState()
+    state.record_asked("dev", "Alice")
+    state.record_asked("dev", "alice")
+    assert state.asked == [("dev", "Alice")]
+    assert state.asking("ALICE") == ["dev"]
+    assert state.asking("Alice (2)") == []

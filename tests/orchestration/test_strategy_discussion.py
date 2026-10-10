@@ -117,15 +117,16 @@ async def _say(
 
 
 async def _settle(kit: RoomKit, room_id: str = "r1") -> None:
-    """Wait until the discussion runs no turn and has none it can give."""
-    idle = 0
+    """Wait until the discussion runs no turn and its queue stops changing:
+    nothing left it can give (an idle room may keep a stopped turn queued)."""
+    idle, last = 0, None
     async with asyncio.timeout(5):
-        while idle < 5:
+        while idle < 10:
             await asyncio.sleep(0.01)
             queue = kit.speak_queue(room_id)
             assert queue is not None
-            settled = not queue.queue or queue.waiting or queue.over
-            idle = idle + 1 if queue.speaking is None and settled else 0
+            idle = idle + 1 if queue.speaking is None and queue == last else 0
+            last = queue
 
 
 def _texts(provider: MockAIProvider, call: int = -1) -> list[str]:

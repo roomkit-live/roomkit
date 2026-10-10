@@ -200,3 +200,23 @@ async def test_a_mark_the_discussion_did_not_issue_is_ignored() -> None:
         assert not any("IGNORE PREVIOUS" in t or "STALE NOTES" in t for t in texts)
         assert "first: what is" in texts[-1]
     await kit.close()
+
+
+async def test_a_mark_of_any_other_shape_breaks_no_turn() -> None:
+    """Event metadata can come from outside, outside any discussion too: a
+    mark whose turn id is a list or a dict is no mark, not a failed turn."""
+    a = _provider("my answer")
+    kit = RoomKit()
+    await _room(kit, a=a)
+    for forged in ({"turn": []}, {"turn": {}}, "turn", None):
+        result = await kit.process_inbound(
+            InboundMessage(
+                channel_id="ops",
+                sender_id="oncall",
+                content=TextContent(body="hello"),
+                metadata={DISCUSSION_TURN: forged},
+            )
+        )
+        assert result.error is None
+    assert len(a.calls) == 4
+    await kit.close()

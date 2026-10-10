@@ -3,21 +3,26 @@
 A name is ``@`` followed by an agent's channel id, or a person's name; ``@all``
 names every agent. It starts the text or follows a character that is neither a
 letter, a digit, ``_`` nor ``@`` (so ``ops@example.com`` names no one), it is
-the longest run of identifier characters that follows, a final ``.`` excepted,
-and it matches ignoring case. Names are read in what the speaker wrote: never
-in a fenced code block or a quoted line.
+the longest run of identifier characters that follows (letters of any script,
+digits, ``_ . -``), a final ``.`` excepted, and it matches ignoring case. Names
+are read in what the speaker wrote: never in a fenced code block or a quoted
+line.
 """
 
 from __future__ import annotations
 
 import re
+import unicodedata
 from collections.abc import Iterable
 from dataclasses import dataclass
 
 EVERYONE = "all"
 
-_NAME = re.compile(r"(?<![A-Za-z0-9_@])@([A-Za-z0-9_.\-]+)")
-_NOT_ID = re.compile(r"[^A-Za-z0-9_.\-]")
+NAME_LIMIT = 32
+"""The longest name a person is addressed by: a name joins every turn's notes."""
+
+_NAME = re.compile(r"(?<![\w@])@([\w.\-]+)")
+_NOT_ID = re.compile(r"[^\w.\-]")
 _FENCES = ("```", "~~~")
 _BRACKETS = {"(": ")", "[": "]", "{": "}", "<": ">"}
 
@@ -32,8 +37,14 @@ class Names:
 
 def name_key(name: str) -> str:
     """A person's name kept to the characters a name holds (``Alice Martin`` →
-    ``AliceMartin``), the form a message names them by."""
-    return _NOT_ID.sub("", name)
+    ``AliceMartin``, ``Hélène`` stays), the form a message names them by, at
+    most :data:`NAME_LIMIT` characters."""
+    return _NOT_ID.sub("", unicodedata.normalize("NFC", name))[:NAME_LIMIT]
+
+
+def same_name(one: str, other: str) -> bool:
+    """Whether two names read as one, ignoring case."""
+    return one.casefold() == other.casefold()
 
 
 def read_names(
@@ -45,18 +56,18 @@ def read_names(
     is the agent's. A name that is neither addresses nobody.
     """
     agent_ids = list(agents)
-    by_agent = {a.lower(): a for a in agent_ids}
-    by_person = {name_key(p).lower(): p for p in people if name_key(p)}
+    by_agent = {a.casefold(): a for a in agent_ids}
+    by_person = {name_key(p).casefold(): p for p in people if name_key(p)}
     named_agents: list[str] = []
     named_people: list[str] = []
-    for raw in _NAME.findall(_spoken(text)):
-        key = raw.rstrip(".").lower()
+    for raw in _NAME.findall(_spoken(unicodedata.normalize("NFC", text))):
+        key = (raw[:-1] if raw.endswith(".") else raw).casefold()
         if key == EVERYONE:
             found = [a for a in agent_ids]
         elif key in by_agent:
             found = [by_agent[key]]
         else:
-            person = by_person.get(key)
+            person = by_person.get(key[:NAME_LIMIT])
             if person is not None and person != speaker and person not in named_people:
                 named_people.append(person)
             continue
