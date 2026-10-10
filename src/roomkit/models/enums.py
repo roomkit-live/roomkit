@@ -278,6 +278,8 @@ class HookTrigger(StrEnum):
     ON_THOUGHT = "on_thought"
     # A discussion's speak queue changed (RFC §19.7.5)
     ON_SPEAK_QUEUE = "on_speak_queue"
+    # A discussion's dispatch policy decided who takes a message (RFC §19.7.5 rule 18)
+    ON_DISPATCH_DECISION = "on_dispatch_decision"
     # AI generation (pre-flight — can block or modify context)
     BEFORE_AI_GENERATION = "before_ai_generation"
     # AI Thinking/Reasoning

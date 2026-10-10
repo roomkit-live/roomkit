@@ -9,6 +9,7 @@ from roomkit.channels.ai import AIChannel
 from roomkit.orchestration.base import Orchestration
 
 from ._room import DiscussionRoom
+from .dispatch import DispatchPolicy
 
 if TYPE_CHECKING:
     from roomkit.core.framework import RoomKit
@@ -54,6 +55,12 @@ class Discussion(Orchestration):
         done: ``done(room_id)``, checked before each turn: once it holds,
             the discussion is over.
         silent_token: The answer of an agent with nothing to add.
+        dispatch: Decides which agents take a person's message that names
+            none and answers none, in place of asking ``everyone`` (rule 18):
+            ``ClassifierDispatchPolicy`` asks a classifier who it is for.
+            Not with ``addressed_only``, where such a message asks no agent.
+        dispatch_timeout: Seconds a decision may take; past them, or when the
+            policy fails, the message asks ``everyone`` it reaches.
     """
 
     def __init__(
@@ -67,8 +74,11 @@ class Discussion(Orchestration):
         max_depth: int | None = None,
         done: DoneFn | None = None,
         silent_token: str = "(silent)",
+        dispatch: DispatchPolicy | None = None,
+        dispatch_timeout: float = 5.0,
     ) -> None:
         _check(agents, everyone, max_turns, max_depth, silent_token)
+        _check_dispatch(dispatch, dispatch_timeout, addressed_only=addressed_only)
         self._agents = list(agents)
         self.people = list(people) if people is not None else None
         self.addressed_only = addressed_only
@@ -77,6 +87,8 @@ class Discussion(Orchestration):
         self.max_depth = max_depth
         self.done = done
         self.silent_token = silent_token
+        self.dispatch = dispatch
+        self.dispatch_timeout = dispatch_timeout
 
     def agents(self) -> list[AIChannel]:
         """The agents of the discussion."""
@@ -127,3 +139,15 @@ def _check(
         raise ValueError("max_depth must be at least 2")
     if not silent_token.strip():
         raise ValueError("silent_token must not be blank")
+
+
+def _check_dispatch(
+    dispatch: DispatchPolicy | None, timeout: float, *, addressed_only: bool
+) -> None:
+    if dispatch is not None and addressed_only:
+        raise ValueError(
+            "A dispatch policy decides who takes a message that names nobody, which "
+            "addressed_only gives to no agent: use one or the other"
+        )
+    if timeout <= 0:
+        raise ValueError("dispatch_timeout must be positive")

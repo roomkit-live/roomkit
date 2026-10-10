@@ -39,8 +39,15 @@ from roomkit.orchestration.state import (
 )
 from roomkit.orchestration.status_bus import StatusLevel
 from roomkit.orchestration.strategies import (
+    ClassifierDispatchPolicy,
     Discussion,
+    DispatchCandidate,
+    DispatchDecision,
+    DispatchDecisionEvent,
+    DispatchPolicy,
+    DispatchTurn,
     Loop,
+    MockDispatchPolicy,
     Pipeline,
     SpeakQueue,
     SpeakQueueChange,
@@ -62,6 +69,14 @@ __all__ = [
     "SpeakQueue",
     "SpeakQueueChange",
     "SpeakQueueEvent",
+    # Discussion's dispatch policy (RFC §19.7.5 rule 18)
+    "ClassifierDispatchPolicy",
+    "DispatchCandidate",
+    "DispatchDecision",
+    "DispatchDecisionEvent",
+    "DispatchPolicy",
+    "DispatchTurn",
+    "MockDispatchPolicy",
     # State
     "ConversationPhase",
     "ConversationState",

@@ -25,6 +25,7 @@ from roomkit.core.event_router import CHAIN_DEPTH_LIMIT, chain_depth_exceeded, u
 from roomkit.models.enums import ChannelType, EventStatus, RoomStatus
 from roomkit.models.event import TextContent
 
+from ._dispatching import Dispatcher
 from ._notes import AgentLine, TurnKind, turn_notes
 from ._people import person_label
 from .models import SpeakQueueChange
@@ -34,7 +35,7 @@ if TYPE_CHECKING:
     from roomkit.models.context import RoomContext
     from roomkit.models.event import RoomEvent
 
-    from ._queue import Entry, SpeakQueueState
+    from ._queue import Entry, Pending, SpeakQueueState
     from ._room import DiscussionRoom
 
 logger = logging.getLogger("roomkit.orchestration.discussion")
@@ -68,6 +69,7 @@ class TurnDriver:
         self._turn: _Turn | None = None
         self._stopping = False
         self._seen_version = -1
+        self._dispatcher = Dispatcher(room)
 
     @property
     def speaking(self) -> str | None:
@@ -151,7 +153,7 @@ class TurnDriver:
         unchanged = peek.version == self._seen_version
         if unchanged and shared.holds(peek) and not shared.renew_due(peek):
             return None
-        done = await self._done() if peek.entries else False
+        done = await self._done() if peek.entries or peek.dispatching else False
         if self._stopping or room.closed:
             # done() may uninstall the discussion it is asked about.
             return None
@@ -162,13 +164,27 @@ class TurnDriver:
             async with room.editing() as state:
                 if not shared.take(state):
                     return None
-                turn, stopped = await self._pick(state, context, done=done)
+                pending = self._waiting_decision(state, done=done)
+                turn, stopped = None, []
+                if pending is None:
+                    turn, stopped = await self._pick(state, context, done=done)
             self._seen_version = room.state.version
             # Committed off the queue's edit: a failure here never loses the
             # turn already handed to the lane.
             for entry, regenerated in stopped:
                 await self._record_depth_stop(entry, regenerated=regenerated)
+        if pending is not None:
+            # Off the lock, before any other turn: the policy may take its bound.
+            await self._dispatcher.decide(pending)
+            self.wake()
         return turn
+
+    def _waiting_decision(self, state: SpeakQueueState, *, done: bool) -> Pending | None:
+        """The first message waiting for the dispatch policy, unless the
+        discussion is over or ends now (its queue dropped with them)."""
+        if not state.dispatching or state.over or done or self._max_turns_given(state):
+            return None
+        return state.dispatching[0]
 
     async def _pick(
         self, state: SpeakQueueState, context: RoomContext, *, done: bool

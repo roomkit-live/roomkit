@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A discussion's dispatch policy (RMK-666, RFC §19.7.5 rule 18):
+  `Discussion(dispatch=...)` decides which agents take a person's message
+  that names none and answers none, in order, or that none does, in place of
+  asking every agent of `everyone`. `ClassifierDispatchPolicy` asks a
+  classifier one yes/no question per agent in one call (Jev: about 150 ms);
+  `MockDispatchPolicy` scripts decisions. The lease holder decides off the
+  room lock, before its next turn, keeping the message's place in the queue;
+  a failure or `dispatch_timeout` (5 s) asks every candidate. The new
+  `ON_DISPATCH_DECISION` hook reports each decision (`DispatchDecisionEvent`).
+  On eight unaddressed messages to four agents, live on Jev: 8 turns and 2
+  silent ones, against 32 and 26 without a policy, for the same answers.
+  Example: `examples/discussion_dispatch.py`.
 - `Discussion` orchestration strategy (RMK-665, RFC §19.7.5): several agents and
   people hold one conversation in a room, any agent addressing any other by
   `@channel_id`, one agent speaking at a time. The strategy queues the agents

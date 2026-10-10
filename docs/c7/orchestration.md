@@ -138,6 +138,42 @@ room = await kit.create_room(orchestration=Discussion(
   over once it expires. Example: `examples/discussion_two_workers.py`.
   Text only in this version.
 
+A **dispatch policy** decides who takes a person's message that names no
+agent and answers none, in place of asking every agent of `everyone`
+(rule 18). In a room of specialists, most of those turns say `(silent)` and
+the agent that should answer may come third:
+
+```python
+from roomkit import ClassifierDispatchPolicy, Discussion, JevClassifier
+
+Discussion(
+    agents=[investigator, sre, dev, comms],  # Agents: name and description tell who does what
+    dispatch=ClassifierDispatchPolicy(JevClassifier(), threshold=0.5, max_agents=2),
+)
+```
+
+- One decision per message, by the process holding the lease, off the room
+  lock, before it gives another turn; the agents picked go to the front in
+  the order decided, at the message's place in the queue. An empty decision
+  asks no agent (a thanks, small talk).
+- The candidates are `everyone` less the agents the message does not reach
+  and those that only listen; a decision naming anyone else is cut down to
+  them.
+- A name, an answer owed to an agent that asked the person, and
+  `addressed_only` (refused with a policy) are never decided.
+- A policy that fails, takes over `dispatch_timeout` (5 s) or returns no
+  readable decision asks every candidate, with the reason `fallback`. At
+  most 16 messages wait for a decision; past them, the oldest asks every
+  candidate.
+- `ON_DISPATCH_DECISION` reports each decision applied, once per message
+  (`DispatchDecisionEvent`:
+  the message, the candidates, the `DispatchDecision` with its `reason` and
+  `judgments`, `duration_ms`).
+- `ClassifierDispatchPolicy` asks one yes/no question per candidate in one
+  classifier call; `MockDispatchPolicy` scripts decisions for tests; any
+  `DispatchPolicy.decide(DispatchTurn) -> DispatchDecision` will do.
+  Example: `examples/discussion_dispatch.py`.
+
 A full-screen terminal for such a room (`pip install roomkit[console]`): the
 room on the left, the agents with their identity and live state on the right,
 the speak queue below, your input at the bottom. What you type goes into the

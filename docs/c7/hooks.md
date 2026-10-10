@@ -346,6 +346,7 @@ bot never triggers them.
 
 | Trigger | Execution | Signature | Description |
 |---------|-----------|-----------|-------------|
+| `ON_DISPATCH_DECISION` | ASYNC | `(DispatchDecisionEvent, ctx) -> None` | A discussion's dispatch policy decided who takes a person's message that names no agent (RFC §19.7.5 rule 18): `event.candidates`, `event.decision` (`agents` in order, `reason`, `judgments`), `event.duration_ms`. The reason `fallback` means the policy failed or ran past `dispatch_timeout`, and every candidate was asked. |
 | `ON_SPEAK_QUEUE` | ASYNC | `(SpeakQueueEvent, ctx) -> None` | A discussion's speak queue changed (RFC §19.7.5): `event.change` is a `SpeakQueueChange` (`queued`, `turn_given`, `turn_ended`, `instruction_dropped`, `listening`, `talking_again`, `waiting`, `over`), `event.channel_ids` the agents it concerns, `event.queue` the `SpeakQueue` as it now is. Announced in the order the changes happened. |
 
 ### Planning

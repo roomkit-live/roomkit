@@ -29,6 +29,9 @@ class DiscussionConfig(BaseModel):
     max_turns: int | None = None
     max_depth: int
     silent_token: str = "(silent)"
+    dispatch: bool = False
+    """A dispatch policy decides who takes a person's unaddressed message: it
+    waits for the process holding the lease (rule 18)."""
 
     @classmethod
     def of(cls, strategy: Discussion, default_depth: int) -> DiscussionConfig:
@@ -40,6 +43,7 @@ class DiscussionConfig(BaseModel):
             max_turns=strategy.max_turns,
             max_depth=strategy.max_depth or default_depth,
             silent_token=strategy.silent_token,
+            dispatch=strategy.dispatch is not None,
         )
 
     @classmethod

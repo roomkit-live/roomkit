@@ -16,7 +16,7 @@ import asyncio
 import contextvars
 import logging
 import sys
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from contextlib import AbstractAsyncContextManager
 from typing import TYPE_CHECKING, Any
 
@@ -39,7 +39,7 @@ from ._people import (
     records_people,
     sees,
 )
-from ._queue import Ask, Entry, SpeakQueueState
+from ._queue import Ask, Entry, Pending, SpeakQueueState
 from ._shared import SharedQueue
 from .models import SpeakQueue, SpeakQueueChange, SpeakQueueEvent
 
@@ -242,7 +242,13 @@ class DiscussionRoom:
         async with self.editing() as state:
             if state.over or self.closed:
                 return []
-            ask = Ask(event_id=trigger.id, depth=trigger.chain_depth, asker="", person=True)
+            ask = Ask(
+                event_id=trigger.id,
+                depth=trigger.chain_depth,
+                asker="",
+                index=trigger.index,
+                person=True,
+            )
             queued = [a for a in agents if a in self.agents and state.queue_regeneration(a, ask)]
         if queued:
             self.fire(SpeakQueueChange.QUEUED, queued, trigger.id)
@@ -306,22 +312,35 @@ class DiscussionRoom:
         self, event: RoomEvent, context: RoomContext, reach: set[str]
     ) -> list[str]:
         """A person's message: the agents it addresses first; with no address
-        and no name, the agents that asked that person, else ``everyone``;
-        each only when the message reaches it."""
+        and no name, the agents that asked that person, else ``everyone`` or
+        those of them the dispatch policy picks; each only when the message
+        reaches it."""
         who = person_label(event, context)
         named = event.addressed_to is not None
         async with self.editing() as state:
             if state.over or self.closed:
                 return []
-            agents = [a for a in self._person_asks(state, event, context, who) if a in reach]
+            asks = self._person_asks(state, event, context, who)
+            overflow = None
+            if asks is None and self.config.dispatch:
+                overflow = self._leave_for_dispatch(state, event, who, reach)
+                asks = []
+            agents = [a for a in (self._everyone() if asks is None else asks) if a in reach]
             for agent in agents:
                 ask = Ask(
-                    event_id=event.id, depth=event.chain_depth, asker=who, person=True, named=named
+                    event_id=event.id,
+                    depth=event.chain_depth,
+                    asker=who,
+                    index=event.index,
+                    person=True,
+                    named=named,
                 )
                 state.ask(agent, ask, front=True)
             # Routed first, then what was asked of them is answered.
             state.clear_asked(who, agents=agents if self.config.addressed_only else None)
             was_waiting = state.person_wrote()
+        if overflow is not None and overflow[0]:
+            self.fire(SpeakQueueChange.QUEUED, *overflow)
         if agents:
             self.fire(SpeakQueueChange.QUEUED, agents, event.id)
         if was_waiting:
@@ -330,12 +349,44 @@ class DiscussionRoom:
 
     def _person_asks(
         self, state: SpeakQueueState, event: RoomEvent, context: RoomContext, who: str
-    ) -> list[str]:
+    ) -> list[str] | None:
+        """The agents a person's message asks for, or None when it answers no
+        one: rule 8 gives it to ``everyone``."""
         if event.addressed_to is not None:
             return [a for a in event.addressed_to if a in self.agents]
         if self.config.addressed_only or self._names_people(event, context):
             return []
-        return state.asking(who) or self._everyone()
+        return state.asking(who) or None
+
+    def _leave_for_dispatch(
+        self, state: SpeakQueueState, event: RoomEvent, who: str, reach: set[str]
+    ) -> tuple[list[str], str] | None:
+        """Leave a message that answers no one to the dispatch policy: the
+        process holding the lease decides, off the lock, before its next
+        turn (rule 18). Once too many wait, the oldest asks its candidates;
+        those agents and that message are returned."""
+        candidates = [a for a in self._everyone() if a in reach]
+        if not candidates:
+            return None
+        pending = Pending(
+            event_id=event.id,
+            depth=event.chain_depth,
+            asker=who,
+            index=event.index,
+            candidates=candidates,
+            seq=state.reserve_seq(),
+        )
+        oldest = state.wait_for_decision(pending)
+        if oldest is None:
+            return None
+        logger.warning(
+            "Room %s: too many messages wait for a dispatch decision; %s asks every candidate",
+            self.room_id,
+            oldest.event_id,
+        )
+        agents = [a for a in oldest.candidates if a not in state.listening]
+        state.queue_picked(oldest, agents)
+        return agents, oldest.event_id
 
     def _everyone(self) -> list[str]:
         everyone = self.config.everyone
@@ -359,7 +410,10 @@ class DiscussionRoom:
             if state.over or self.closed:
                 return []
             for agent in named:
-                state.ask(agent, Ask(event_id=event.id, depth=event.chain_depth, asker=asker))
+                ask = Ask(
+                    event_id=event.id, depth=event.chain_depth, asker=asker, index=event.index
+                )
+                state.ask(agent, ask)
         self.fire(SpeakQueueChange.QUEUED, named, event.id)
         return named
 
@@ -379,7 +433,8 @@ class DiscussionRoom:
             if a in self.agents and a != agent and sees(a, event, context)
         ]
         for other in named:
-            state.ask(other, Ask(event_id=event.id, depth=event.chain_depth, asker=agent))
+            ask = Ask(event_id=event.id, depth=event.chain_depth, asker=agent, index=event.index)
+            state.ask(other, ask)
         if isinstance(event.content, TextContent):
             index = self.people_index(context)
             names = read_names(event.content.body, self.agents, people=names_of(index))
@@ -459,12 +514,17 @@ class DiscussionRoom:
             channel_ids=tuple(channel_ids),
             event_id=event_id,
         )
+        self.announce(lambda: self.kit._fire_speak_queue(event))
+
+    def announce(self, run: Callable[[], Awaitable[None]]) -> None:
+        """Run the hooks *run* calls once the announcements before it have run,
+        without holding up the turns."""
         previous = self._last_fire
 
         async def announce() -> None:
             if previous is not None:
                 await asyncio.wait([previous])
-            await self.kit._fire_speak_queue(event)
+            await run()
 
         task = asyncio.get_running_loop().create_task(announce(), context=contextvars.Context())
         self._last_fire = task

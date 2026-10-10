@@ -181,6 +181,7 @@ CONSOLE=1 uv run python examples/<example>.py
 | `discussion_console.py` | Discussion console | Talk with three agents from a full-screen terminal: the room, the agents' live state, the speak queue |
 | `strategy_on_the_fly.py` | Strategies | A live room changes strategy: plain chat, then a Discussion that reads the history, then a Swarm (offline) |
 | `discussion_two_workers.py` | Discussion across processes | Two workers on one store: a worker that did not install the discussion follows it, one queue, one lease, a crash taken over (offline) |
+| `discussion_dispatch.py` | Discussion dispatch | Who takes a message that names nobody: every agent (32 turns, 26 silent) against a classifier's pick (8 turns, 2 silent); mock, Jev or Haiku |
 | `discussion_group_chat.py` | Discussion | Agents and a person in one conversation: `@name` addressing, one agent at a time, waiting for a person (offline) |
 | `orchestration_pipeline.py` | Pipeline | Multi-agent pipeline: triage -> handler -> resolver |
 | `orchestration_pipeline_cli.py` | Pipeline CLI | Interactive pipeline triage |

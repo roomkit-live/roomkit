@@ -8,6 +8,7 @@ its entry names the process that holds it.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 from pydantic import BaseModel, Field
@@ -21,6 +22,10 @@ latest, so a flood of mentions does not grow the stored queue."""
 
 KEPT_ASKERS = 16
 
+KEPT_PENDING = 16
+"""Messages that may wait for a dispatch decision; past them, the oldest asks
+every candidate, as a decision not taken in time does (rule 18)."""
+
 
 class Ask(BaseModel):
     """An event that asked for an agent's turn."""
@@ -29,6 +34,9 @@ class Ask(BaseModel):
     depth: int
     asker: str
     """Who asked: an agent's channel id or a person's label."""
+    index: int = 0
+    """The event's place in the room: the latest is read by place, not by
+    when it was asked (a dispatch decision comes after later messages)."""
     person: bool = False
     named: bool = False
     """A person named the agent: the one ask an agent that only listens takes."""
@@ -68,7 +76,7 @@ class Entry(BaseModel):
         if ask.asker and asker not in self.asked_by:
             self.asked_by = [*self.asked_by, asker][-KEPT_ASKERS:]
         if len(self.asks) > KEPT_ASKS:
-            latest_person = next((a for a in reversed(self.asks) if a.person), None)
+            latest_person = _latest([a for a in self.asks if a.person])
             kept = self.asks[-KEPT_ASKS:]
             if latest_person is not None and latest_person not in kept:
                 kept = [latest_person, *kept[1:]]
@@ -77,14 +85,26 @@ class Entry(BaseModel):
     def answered(self) -> Ask | None:
         """The event the turn answers: the latest person's message among the
         events that asked for it, else the latest of them."""
-        people = [a for a in self.asks if a.person]
-        if people:
-            return people[-1]
-        return self.asks[-1] if self.asks else None
+        return _latest([a for a in self.asks if a.person]) or _latest(self.asks)
 
     def askers(self) -> list[tuple[str, bool]]:
         """Who asked for the turn, and whether a person, in order."""
         return list(self.asked_by)
+
+
+class Pending(BaseModel):
+    """A person's message waiting for the dispatch policy's decision (rule 18)."""
+
+    event_id: str
+    depth: int
+    asker: str
+    """The person, as the transcript labels them."""
+    index: int
+    candidates: list[str]
+    """``everyone`` in its order, less the agents the message does not reach."""
+    seq: int
+    """The message's place among the front requests, kept for the agents
+    picked: they come before those a later message asked for."""
 
 
 @dataclass(frozen=True)
@@ -103,6 +123,8 @@ class SpeakQueueState(BaseModel):
     """The stored speak queue of one room."""
 
     entries: list[Entry] = Field(default_factory=list)
+    dispatching: list[Pending] = Field(default_factory=list)
+    """Messages waiting for a decision, in the order they were committed."""
     listening: list[str] = Field(default_factory=list)
     asked: list[tuple[str, str]] = Field(default_factory=list)
     over: bool = False
@@ -122,9 +144,10 @@ class SpeakQueueState(BaseModel):
 
     # -- Asking --
 
-    def ask(self, agent: str, ask: Ask, *, front: bool = False) -> None:
+    def ask(self, agent: str, ask: Ask, *, front: bool = False, seq: int | None = None) -> None:
         """Queue *agent* for a turn *ask* asked for, or merge it into the turn it
-        is owed: a front request (a person's) moves it to the front."""
+        is owed: a front request (a person's) moves it to the front, at *seq*
+        when the request kept its place, else after the requests before it."""
         entry = next((e for e in self.entries if e.agent == agent and not e.own_turn), None)
         if entry is None:
             entry = Entry(agent=agent)
@@ -133,7 +156,27 @@ class SpeakQueueState(BaseModel):
         entry.depth_recorded = False
         if front and not entry.front:
             entry.front = True
-            entry.seq = self._next_seq()
+            entry.seq = self._next_seq() if seq is None else seq
+
+    def wait_for_decision(self, pending: Pending) -> Pending | None:
+        """Leave *pending* to the dispatch policy; the oldest message waiting,
+        once more than :data:`KEPT_PENDING` wait, is returned for its
+        candidates to take."""
+        self.dispatching.append(pending)
+        return self.dispatching.pop(0) if len(self.dispatching) > KEPT_PENDING else None
+
+    def queue_picked(self, pending: Pending, agents: Sequence[str]) -> None:
+        """The agents a decision picked for *pending*: at the front, at the
+        message's place, as a person's message puts the agents it asks for."""
+        for agent in agents:
+            ask = Ask(
+                event_id=pending.event_id,
+                depth=pending.depth,
+                asker=pending.asker,
+                index=pending.index,
+                person=True,
+            )
+            self.ask(agent, ask, front=True, seq=pending.seq)
 
     def queue_instruction(
         self, agent: str, instruction_id: str, depth: int, *, holder: str | None = None
@@ -261,9 +304,11 @@ class SpeakQueueState(BaseModel):
         return dropped
 
     def drop(self) -> list[Entry]:
-        """Empty the queue; the instruction turns it dropped."""
+        """Empty the queue, the messages waiting for a decision with it; the
+        instruction turns it dropped."""
         dropped = [e for e in self.entries if e.instruction is not None]
         self.entries = []
+        self.dispatching = []
         return dropped
 
     def view(self) -> SpeakQueue:
@@ -276,6 +321,16 @@ class SpeakQueueState(BaseModel):
             over=self.over,
         )
 
+    def reserve_seq(self) -> int:
+        """A place among the front requests, for a request served later."""
+        return self._next_seq()
+
     def _next_seq(self) -> int:
         self.seq += 1
         return self.seq
+
+
+def _latest(asks: list[Ask]) -> Ask | None:
+    """The ask of the latest event by its place in the room, the last asked
+    among those of one place."""
+    return max(reversed(asks), key=lambda a: a.index) if asks else None

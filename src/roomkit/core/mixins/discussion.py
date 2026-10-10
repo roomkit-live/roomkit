@@ -29,7 +29,11 @@ if TYPE_CHECKING:
     from roomkit.models.context import RoomContext
     from roomkit.models.event import RoomEvent
     from roomkit.models.room import Room
-    from roomkit.orchestration.strategies.discussion import SpeakQueue, SpeakQueueEvent
+    from roomkit.orchestration.strategies.discussion import (
+        DispatchDecisionEvent,
+        SpeakQueue,
+        SpeakQueueEvent,
+    )
     from roomkit.store.base import ConversationStore
 
 logger = logging.getLogger("roomkit.framework")
@@ -296,6 +300,21 @@ class DiscussionMixin(HelpersMixin):
             )
         except Exception:
             logger.exception("ON_SPEAK_QUEUE hooks failed in room %s", event.room_id)
+
+    async def _fire_dispatch_decision(self, event: DispatchDecisionEvent) -> None:
+        """Run the ``ON_DISPATCH_DECISION`` hooks for a dispatch policy's decision."""
+        trigger = HookTrigger.ON_DISPATCH_DECISION
+        if not self._hook_engine.has_hooks(trigger):
+            return
+        context = await self._hook_context(event.room_id, trigger)
+        if context is None:
+            return
+        try:
+            await self._hook_engine.run_async_hooks(
+                event.room_id, trigger, event, context, skip_event_filter=True
+            )
+        except Exception:
+            logger.exception("ON_DISPATCH_DECISION hooks failed in room %s", event.room_id)
 
 
 def _in_scope(discussion: Any, organization_id: str | None) -> bool:
