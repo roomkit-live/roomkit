@@ -13,6 +13,7 @@ import pytest
 from roomkit.channels.ai import AIChannel
 from roomkit.core.framework import RoomKit
 from roomkit.core.hooks import HookRegistration
+from roomkit.memory.sliding_window import SlidingWindowMemory
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundMessage
 from roomkit.models.enums import (
@@ -627,4 +628,36 @@ async def test_a_person_named_like_an_agent_is_still_a_person_in_the_notes() -> 
 
     notes = next(str(m.content) for m in a.calls[0].messages if "[Discussion:" in str(m.content))
     assert "asked by “b”" in notes and "asked by @b" not in notes
+    await kit.close()
+
+
+async def test_an_agents_memory_learns_every_message_it_may_see() -> None:
+    """A memory that learns as messages arrive (an index, a summary) learns the
+    whole conversation, as in a room with no discussion: not its own rows, and
+    the message a turn answers once."""
+    learned: list[str] = []
+
+    class _Recording(SlidingWindowMemory):
+        async def ingest(  # type: ignore[override]
+            self, room_id: str, event: RoomEvent, *, channel_id: str | None = None
+        ) -> None:
+            learned.append(event.content.body if isinstance(event.content, TextContent) else "")
+
+    sre = AIChannel("sre", provider=_provider("sre: spike at 14:05"), memory=_Recording())
+    dev = AIChannel("dev", provider=_provider("dev: release 4.2"))
+    kit = RoomKit()
+    kit.register_channel(_People("chat"))
+    await kit.create_room(room_id="r1", orchestration=Discussion([sre, dev], addressed_only=True))
+    await kit.attach_channel("r1", "chat")
+
+    for body in ("@dev what was deployed?", "the customer is Acme", "@sre metrics?"):
+        await _say(kit, body)
+        await _settle(kit)
+
+    assert learned == [
+        "@dev what was deployed?",
+        "dev: release 4.2",
+        "the customer is Acme",
+        "@sre metrics?",
+    ]
     await kit.close()

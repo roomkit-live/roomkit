@@ -185,6 +185,7 @@ class DiscussionRoom:
             return
         if plan is None:
             return
+        await self._hand_to_memories(event, plan.context)
         speaker = event.source.channel_id
         if self.driver is not None and self.driver.speaking == speaker:
             self.turn_rows.append(event)
@@ -195,6 +196,17 @@ class DiscussionRoom:
             self.wake()
         elif await self._queue_named(event, plan.context, asker=speaker):
             self.wake()
+
+    async def _hand_to_memories(self, event: RoomEvent, context: RoomContext) -> None:
+        """Hand *event* to the memory of every agent that may see it but its
+        author, as a room with no discussion delivers it (rule 3): a memory
+        that learns as messages arrive learns the whole conversation."""
+        for agent_id, agent in self.agents.items():
+            if agent is None or agent_id == event.source.channel_id:
+                continue
+            ingest = getattr(agent, "_ingest_event", None)
+            if ingest is not None and sees(agent_id, event, context):
+                await ingest(event, context)
 
     async def queue_instruction(self, event: RoomEvent) -> None:
         """An instruction addressed to agents: a turn of its own each, at the

@@ -23,6 +23,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `SpeakQueueEvent`) let a console follow who speaks, who is next and
   whether the room waits for a person. The queue is stored with the room.
   Text only. Example: `examples/discussion_group_chat.py`.
+- In a discussion, each agent's memory provider is handed every message the
+  agent may see, as it commits, as in a room with no discussion (RFC
+  §19.7.5 rule 3). Before, a memory that learns as messages arrive (a
+  retrieval index, a summary) only learned the messages that asked for the
+  agent, so it lost the rest of the conversation once it left the history
+  window.
 - `kit.install_strategy(room_id, strategy)` and
   `kit.uninstall_strategy(room_id)` (RFC §19.7):
   - A room holds one strategy at a time, and can change it while it lives.

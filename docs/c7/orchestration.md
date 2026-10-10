@@ -120,6 +120,10 @@ room = await kit.create_room(orchestration=Discussion(
   the message asked), once per agent and message. Once the discussion is
   over, both are refused with `reason="discussion_over"`.
 - `process_inbound()` returns no agent answer: the answers come in the turns.
+- Each agent's memory provider is handed every message the agent may see
+  (not its own) as it commits, as in a room with no discussion, so a memory
+  that learns as messages arrive (an index, a summary) learns the whole
+  conversation; the turn that answers a message does not hand it again.
 - The room is the discussion's: install refuses another intelligence
   channel, a voice or realtime channel, an agent with a thinker, a router
   or another strategy, and refuses binding or installing them afterwards.

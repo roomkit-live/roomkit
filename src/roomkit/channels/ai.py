@@ -35,6 +35,7 @@ from roomkit.channels._ai_steering import AISteeringMixin
 from roomkit.channels._ai_streaming import AIStreamingMixin
 from roomkit.channels._ai_thinking import AIThinkingMixin
 from roomkit.channels._ai_tools import AIToolsMixin
+from roomkit.channels._discussion_turn import discussion_turn
 from roomkit.channels._served_tools import (
     CollisionLog,
     refuse_host_tools,
@@ -615,7 +616,9 @@ class AIChannel(
         if is_tool_call_record(event):
             return ChannelOutput.empty()
 
-        if not ingested:
+        # A discussion handed the event to memory when it committed (RFC
+        # §19.7.5 rule 3): its turn does not hand it again.
+        if not ingested and discussion_turn(event) is None:
             await self._ingest_event(event, context)
 
         token = _current_loop_ctx.set(self._turn_loop_ctx(event, context))
