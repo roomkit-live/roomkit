@@ -535,7 +535,12 @@ class AIToolsMixin(_AIChannelContract):
         # Bounded as any outcome the model reads (RFC §21.5): a hook's reason
         # can be as large as a result.
         bounded = self._bound_tool_result(tc.name, body, tc.id)
-        return ToolOutcome(OutcomeKind.REFUSED, bounded).as_part(tc.id, tc.name)
+        references = (
+            self._reference_shown(self._get_loop_ctx()) if stopped.invalid_arguments else []
+        )
+        return ToolOutcome(OutcomeKind.REFUSED, bounded).as_part(
+            tc.id, tc.name, references=references
+        )
 
     def _record_call_arguments(
         self, tc: Any, arguments: dict[str, Any], scope: _CallRound
@@ -571,6 +576,7 @@ class AIToolsMixin(_AIChannelContract):
                 # The tool is reachable; only the model's arguments were
                 # refused. Its next attempt needs the schema on the wire.
                 self._retain_called_tool(tc.name)
+                stopped = replace(stopped, invalid_arguments=True)
         if stopped is None:
             ran = await self._before_tool_use(tc, call_arguments, params, scope.room_id)
             if not isinstance(ran, GateRefusal):

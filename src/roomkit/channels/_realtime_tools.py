@@ -36,7 +36,11 @@ from roomkit.channels._served_execution import ServedExecutionGate
 from roomkit.channels._served_tools import dict_tool_name
 from roomkit.channels._skill_constants import TOOL_ACTIVATE_SKILL
 from roomkit.channels._tool_registry import ChannelRegistry, schema_tool
-from roomkit.channels._tool_search_constants import TOOL_CALL_TOOL, TOOL_LIST_TOOLS
+from roomkit.channels._tool_search_constants import (
+    TOOL_CALL_TOOL,
+    TOOL_LIST_TOOLS,
+    TOOL_SEARCH_INFRA_TOOL_NAMES,
+)
 from roomkit.core.exceptions import ToolRefusedError, UnservedToolCallError
 from roomkit.models.tool_call import (
     ToolCallEvent,
@@ -519,15 +523,25 @@ class RealtimeToolsMixin:
         """Retain a callable tool after its result went out, so a provider
         reconnect never discards the call id still waiting for that result."""
         search = self._tool_search_support
+        lock = self._session_config_locks.get(call.session.id)
         if (
             search is None
-            or self._call_ended(call)
-            or call.tool_catalogue is not self._session_base_tools(call.session.id)
+            or lock is None
+            or search.uses_call_tool
+            or call.name in TOOL_SEARCH_INFRA_TOOL_NAMES
+            or call.name == TOOL_ACTIVATE_SKILL
             or not (call.invalid_arguments or kept_in_tool_memory(outcome.kind))
         ):
             return
-        if search.retain(call.session.id, call.name):
-            await self._reveal_tools(call.session)
+        # Discovery and activation already publish under this same lock.
+        # A handoff must settle before the catalogue identity is checked.
+        async with lock:
+            if self._call_ended(call) or call.tool_catalogue is not self._session_base_tools(
+                call.session.id
+            ):
+                return
+            if search.retain(call.session.id, call.name):
+                await self._reveal_tools(call.session)
 
     def _call_ended(self, call: RealtimeToolCall) -> bool:
         return call.session.state == VoiceSessionState.ENDED

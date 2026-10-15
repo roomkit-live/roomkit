@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any
 from unittest.mock import AsyncMock
@@ -16,6 +17,7 @@ from roomkit.providers.ai.base import AIResponse, AIToolCall
 from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.tools.policy import ToolPolicy
 from roomkit.voice.realtime.mock import MockRealtimeProvider, MockRealtimeTransport
+from tests.test_deferred_tools import HoldingProvider, _results
 from tests.test_tool_search_text import _binding, _catalogue, _run
 
 _TABLE = {
@@ -178,3 +180,77 @@ async def test_a_catalogue_replacement_clears_retained_tools() -> None:
     finally:
         await kit.close()
     assert session.id not in support._retained
+
+
+async def test_a_handoff_serializes_retention_and_discards_an_old_call() -> None:
+    handler_started = asyncio.Event()
+    finish_handler = asyncio.Event()
+    replacement_started = asyncio.Event()
+    finish_replacement = asyncio.Event()
+    retention_waiting = asyncio.Event()
+
+    class ObservedLock(asyncio.Lock):
+        async def acquire(self) -> bool:
+            if self.locked():
+                retention_waiting.set()
+            return await super().acquire()
+
+    async def handler(name: str, args: dict[str, Any]) -> str:
+        handler_started.set()
+        await finish_handler.wait()
+        return '{"rows": []}'
+
+    async def reconfigure(*args: Any, **kwargs: Any) -> None:
+        replacement_started.set()
+        await finish_replacement.wait()
+
+    kit, channel, provider, session = await _session(tool_handler=handler)
+    channel._session_config_locks[session.id] = ObservedLock()
+    provider.reconfigure.side_effect = reconfigure
+    tasks: list[asyncio.Task[Any]] = []
+    try:
+        async with asyncio.timeout(2):
+            tasks.append(
+                asyncio.create_task(
+                    _call(channel, session, "old", _TABLE["name"], {"filters": []})
+                )
+            )
+            await handler_started.wait()
+            tasks.append(
+                asyncio.create_task(channel.reconfigure_session(session, tools=[_BOARDS]))
+            )
+            await replacement_started.wait()
+            finish_handler.set()
+            await retention_waiting.wait()
+            provider.reconfigure.assert_awaited_once()
+            finish_replacement.set()
+            await asyncio.gather(*tasks)
+        provider.reconfigure.assert_awaited_once()
+        support = channel._tool_search_support
+        assert _TABLE["name"] not in support._retained[session.id]
+        assert _TABLE["name"] not in {
+            tool["name"] for tool in provider.reconfigure.call_args.kwargs["tools"]
+        }
+    finally:
+        finish_handler.set()
+        finish_replacement.set()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        await kit.close()
+
+
+async def test_a_held_tool_with_invalid_arguments_references_its_schema(streaming: bool) -> None:
+    async def handler(name: str, arguments: dict[str, Any]) -> str:
+        raise AssertionError("invalid arguments must not execute the handler")
+
+    provider = HoldingProvider(
+        ai_responses=[
+            _round("invalid", _TABLE["name"], {"filters": "[]"}),
+            AIResponse(content="done", finish_reason="stop"),
+        ],
+        streaming=streaming,
+    )
+    channel = AIChannel("ai1", provider=provider, tool_search=True, tool_handler=handler)
+    await _run(channel, _binding(_TOOLS))
+    [result] = _results(provider.calls[1])
+    assert result.references == [_TABLE["name"]]
+    assert not channel._tool_usage.tool_names("r1")
