@@ -65,6 +65,11 @@ class RealtimeToolCall:
     structured_content: dict[str, Any] | None = None
     """The structured copy its handler left on the tool call context (MCP
     ``structuredContent``), carried to ON_TOOL_CALL (RFC §9.3)."""
+    tool_catalogue: list[dict[str, Any]] | None = field(default=None, repr=False)
+    """The catalogue this call was gated against, for retaining its schema
+    after delivery without reviving a tool from a replaced catalogue."""
+    invalid_arguments: bool = False
+    """Its gate admitted the tool but rejected the model's arguments."""
     task: asyncio.Task[Any] | None = field(default=None, repr=False)
     carrier: asyncio.Task[Any] | None = field(default=None, repr=False)
     """The task that holds the call's task, when another one does (a

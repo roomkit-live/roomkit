@@ -225,6 +225,9 @@ class GateRefusal:
     body: str
     detail: str | None = None
     arguments: dict[str, Any] | None = None
+    invalid_arguments: bool = False
+    """The model's arguments were invalid after the catalogue and access
+    gates admitted the tool. A retry needs its schema, unlike an access refusal."""
 
 
 def gated_tool_refusal(name: str, *, can_activate: bool = True, closed: bool = False) -> str:

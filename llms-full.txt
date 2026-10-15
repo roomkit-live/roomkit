@@ -1621,8 +1621,12 @@ Notes:
 - **Pinned tools** stay visible without a search. The discovery tools always
   pass tool-policy and skill gating, so they work even under a restrictive
   `tool_policy`.
-- A second `find_tools` call **swaps** the revealed window (keeping the visible
-  surface small); `list_tools` reveals nothing — it is purely informational.
+- A second `find_tools` call **swaps** the search window while retaining tools
+  already called in this turn. A call rejected solely for its model-supplied
+  arguments also retains its schema, so the provider can parse the next attempt
+  correctly; it is not remembered as an executed call. Access refusals and
+  skill gates still apply. Realtime sessions retain called schemas until their
+  catalogue is replaced or the session ends. `list_tools` reveals nothing.
 
 See `examples/ai_tool_search.py` for a runnable, no-API-key walkthrough.
 

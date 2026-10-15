@@ -5,8 +5,9 @@ Tool Search recovers an exact-name call to a catalogue tool it hides, and
 reveals the tool as the room's tool memory keeps any tool used: a call the
 tool answered (served, failed, withheld by an ON_TOOL_CALL hook) reveals it
 for the turn's next rounds and later turns; a call refused before it ran
-(BEFORE_TOOL_USE, its handler's refusal, its arguments) or that nothing
-served reveals nothing, and leaves every other reveal of the round as it was.
+(BEFORE_TOOL_USE, its handler's refusal) or that nothing served reveals
+nothing. Invalid model arguments retain the schema for this turn alone,
+without recording an executed call in the room's memory.
 """
 
 from __future__ import annotations
@@ -131,10 +132,9 @@ def _withhold_result(kit: RoomKit) -> None:
     [
         (_refusing, None, None),
         (_served, _deny_before_use, None),
-        (_served, None, {"to": "+15551234567"}),
         (_unserved, None, None),
     ],
-    ids=["handler-refusal", "before-tool-use-block", "invalid-arguments", "nothing-served"],
+    ids=["handler-refusal", "before-tool-use-block", "nothing-served"],
 )
 async def test_a_call_refused_before_it_ran_reveals_nothing(
     streaming: bool, handler: Any, hooks: Any, arguments: dict[str, Any] | None
@@ -143,6 +143,15 @@ async def test_a_call_refused_before_it_ran_reveals_nothing(
     await _two_turns(provider, handler, hooks)
 
     assert _revealed(provider) == (False, False)
+
+
+async def test_invalid_arguments_retain_the_schema_but_not_an_executed_call(
+    streaming: bool,
+) -> None:
+    provider = _provider(streaming, _sms(arguments={"to": "+15551234567"}))
+    await _two_turns(provider, _served)
+
+    assert _revealed(provider) == (True, False)
 
 
 @pytest.mark.parametrize(

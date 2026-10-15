@@ -567,6 +567,10 @@ class AIToolsMixin(_AIChannelContract):
             stopped = _refused_with(refusal) if refusal is not None else None
         if stopped is None:
             call_arguments, stopped = self._model_arguments(tc, params)
+            if stopped is not None:
+                # The tool is reachable; only the model's arguments were
+                # refused. Its next attempt needs the schema on the wire.
+                self._retain_called_tool(tc.name)
         if stopped is None:
             ran = await self._before_tool_use(tc, call_arguments, params, scope.room_id)
             if not isinstance(ran, GateRefusal):
@@ -691,8 +695,16 @@ class AIToolsMixin(_AIChannelContract):
         self._settle_recovery(tc.id, kept=kept)
         references = [] if outcome.failed else self._reference_shown(self._get_loop_ctx())
         if kept:
+            self._retain_called_tool(tc.name)
             self._remember_call(scope.room_id, tc.name, call_arguments, outcome.answer)
         return self._model_part(tc, outcome, references=references)
+
+    def _retain_called_tool(self, name: str) -> None:
+        """Keep an attempted tool declared for this turn, without recording
+        an invalid call as executed in the room's tool memory."""
+        loop_ctx = self._get_loop_ctx()
+        if loop_ctx.tool_search_active and name not in self._never_deferred(loop_ctx):
+            loop_ctx.sticky_tools.add(name)
 
     async def _judged_call(
         self, tc: Any, arguments: dict[str, Any], scope: _CallRound
@@ -1167,7 +1179,8 @@ class AIToolsMixin(_AIChannelContract):
     def _settle_recovery(self, tool_call_id: str, *, kept: bool) -> None:
         """Reveal the tool a call recovered for the turn's next rounds when the
         room's tool memory keeps the call, which re-reveals it on later turns
-        as any tool used; a call it does not keep reveals nothing (RFC §6.4).
+        as any tool used. A model-argument rejection is retained separately
+        for this turn only; other refusals reveal nothing (RFC §6.4).
         The reveal outlasts a ``find_tools`` of the round (``_reveal``)."""
         loop_ctx = self._get_loop_ctx()
         name = loop_ctx.pending_recoveries.pop(tool_call_id, None)

@@ -86,6 +86,9 @@ class RealtimeToolSearchSupport:
         self._validate_catalogue(catalogue)
         # session_id -> set of tool names currently exposed by find_tools
         self._exposed: dict[str, set[str]] = {}
+        # Called tools outlast a later search's window, until the catalogue
+        # is replaced or the session ends. This is declaration, not usage.
+        self._retained: dict[str, set[str]] = {}
         # session_id -> the model response whose search last swapped the window
         self._exposed_response: dict[str, int] = {}
         self._session_catalogues: dict[str, list[dict[str, Any]]] = {}
@@ -178,6 +181,7 @@ class RealtimeToolSearchSupport:
         effective = self._catalogue if catalogue is None else catalogue
         self._validate_catalogue(effective)
         self._exposed[session_id] = set()
+        self._retained[session_id] = set()
         self._exposed_response.pop(session_id, None)
         self._session_catalogues[session_id] = list(effective)
         self._active[session_id] = self.activates(session_id, effective)
@@ -199,6 +203,7 @@ class RealtimeToolSearchSupport:
 
     def cleanup_session(self, session_id: str) -> None:
         self._exposed.pop(session_id, None)
+        self._retained.pop(session_id, None)
         self._exposed_response.pop(session_id, None)
         self._session_catalogues.pop(session_id, None)
         self._active.pop(session_id, None)
@@ -228,7 +233,7 @@ class RealtimeToolSearchSupport:
         exposed = (
             set()
             if reset_exposure or self.uses_call_tool
-            else self._exposed.get(session_id, set())
+            else self._exposed.get(session_id, set()) | self._retained.get(session_id, set())
         )
         keep = self._pinned_names | set(keep) | exposed | TOOL_SEARCH_INFRA_TOOL_NAMES
         result: list[dict[str, Any]] = []
@@ -275,6 +280,25 @@ class RealtimeToolSearchSupport:
         else:
             self._exposed_response[session_id] = response
         return True
+
+    def retain(self, session_id: str, name: str) -> bool:
+        """Keep a called tool declared; whether its schema must be sent now.
+
+        A call whose arguments were rejected can retain its declaration
+        without becoming an executed call in any usage memory.
+        """
+        if self.uses_call_tool or not self.active(session_id):
+            return False
+        retained = self._retained.get(session_id)
+        if retained is None or name in self._never_revealed(session_id):
+            return False
+        if not any(t.get("name") == name for t in self._callable(session_id)):
+            return False
+        if self._reachable is not None and not self._reachable(name, session_id):
+            return False
+        changed = name not in retained and name not in self._exposed.get(session_id, set())
+        retained.add(name)
+        return changed
 
     def _never_revealed(self, session_id: str) -> set[str]:
         """What a reveal never names: what is declared anyway (pinned, never

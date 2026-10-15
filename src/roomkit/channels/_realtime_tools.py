@@ -44,7 +44,7 @@ from roomkit.models.tool_call import (
 from roomkit.skills.models import missing_tools_error, serves_exactly
 from roomkit.telemetry.base import Attr, SpanKind
 from roomkit.telemetry.context import reset_span, set_current_span
-from roomkit.tools._outcome import OutcomeKind, ToolOutcome
+from roomkit.tools._outcome import OutcomeKind, ToolOutcome, kept_in_tool_memory
 from roomkit.tools.result import (
     GateRefusal,
     bounded_result,
@@ -170,7 +170,12 @@ class _ProviderDoor:
 
     async def deliver(self, call: RealtimeToolCall, outcome: ToolOutcome) -> bool:
         text = result_text(outcome.result)
-        return await self._channel._submit_realtime_tool_result(call, text, failed=outcome.failed)
+        delivered = await self._channel._submit_realtime_tool_result(
+            call, text, failed=outcome.failed
+        )
+        if delivered:
+            await self._channel._retain_called_tool(call, outcome)
+        return delivered
 
 
 class _ToolCallSpan:
@@ -497,6 +502,7 @@ class RealtimeToolsMixin:
         self, call: RealtimeToolCall, door: ToolCallDoor
     ) -> tuple[GateRefusal | None, RoomContext | None]:
         """The pre-execution gate (RFC §12.4)."""
+        call.tool_catalogue = self._session_base_tools(call.session.id)
         call.arguments, denial, context = await self._authorize_realtime_tool(
             call.name,
             call.arguments,
@@ -506,7 +512,22 @@ class RealtimeToolsMixin:
             channel_serves=door.channel_serves,
             can_activate=door.can_activate,
         )
+        call.invalid_arguments = denial is not None and denial.invalid_arguments
         return denial, context
+
+    async def _retain_called_tool(self, call: RealtimeToolCall, outcome: ToolOutcome) -> None:
+        """Retain a callable tool after its result went out, so a provider
+        reconnect never discards the call id still waiting for that result."""
+        search = self._tool_search_support
+        if (
+            search is None
+            or self._call_ended(call)
+            or call.tool_catalogue is not self._session_base_tools(call.session.id)
+            or not (call.invalid_arguments or kept_in_tool_memory(outcome.kind))
+        ):
+            return
+        if search.retain(call.session.id, call.name):
+            await self._reveal_tools(call.session)
 
     def _call_ended(self, call: RealtimeToolCall) -> bool:
         return call.session.state == VoiceSessionState.ENDED

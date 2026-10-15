@@ -131,7 +131,9 @@ class _ToolLoopContext:
     # ToolUsageMemory. Unlike ``revealed_tools`` (per-loop find_tools swap
     # window, starts empty), these are INHERITED across for_loop and unioned
     # into the Tool Search keep-set by ``_apply_tool_filters`` — so a tool
-    # used or found once stays callable without re-running find_tools.
+    # used or found once stays callable without re-running find_tools. Calls
+    # served in this loop, and model-argument rejections, also join this set;
+    # the latter never enter the room's memory of executed calls.
     sticky_tools: set[str] = field(default_factory=set)
     # ``None`` means context construction has not run. An empty list is a
     # completed, deny-all toolset and must remain distinguishable from it.

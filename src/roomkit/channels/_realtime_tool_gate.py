@@ -405,7 +405,7 @@ class RealtimeToolGateMixin:
         params = self._tool_parameters(name, session)
         arguments, invalid = self._validated_realtime_arguments(name, arguments, params)
         if invalid is not None:
-            return arguments, GateRefusal(invalid), None
+            return arguments, GateRefusal(invalid, invalid_arguments=True), None
         return await self._before_realtime_tool_use(
             name, arguments, params, call_id, room_id, session
         )
