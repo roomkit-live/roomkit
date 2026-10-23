@@ -2068,6 +2068,16 @@ included, so an unset knob never overrides with a default. An
 `enable_thinking: False` set at a tier turns off a `thinking_budget` a less
 specific tier set.
 
+Resolve execution with the surface by returning `tool_handler` alongside
+`tools`. The handler serves the host's tools for that turn only, including
+every tool round, independently of concurrent turns on the same channel.
+`None` keeps the channel's default handler. Channel-managed tools (Tool Search,
+skills, orchestration), sandbox tools and human-input tools retain their own
+dispatch, and tools absent from the turn remain refused. The callback does not
+mutate `AIChannel.tool_handler`; binding metadata cannot carry a callable.
+See `examples/turn_tool_handler.py` for two rooms sharing one channel while
+each turn calls its own backend.
+
 ## Streaming
 
 AIChannel supports streaming responses to WebSocket clients:

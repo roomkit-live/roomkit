@@ -227,6 +227,7 @@ class AIContextMixin(_AIChannelContract):
 
         loop_ctx = self._get_loop_ctx()
         loop_ctx.turn_budget = self._turn_budget(binding, turn)
+        loop_ctx.tool_handler = turn.tool_handler if turn is not None else None
 
         # A standalone instruction reads nothing of the room (RFC §10.1.1 step
         # 7): no history below, and none of the room's working memories either

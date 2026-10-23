@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from roomkit.channels.ai import ToolHandler
     from roomkit.models.channel import ChannelBinding
     from roomkit.models.context import RoomContext
     from roomkit.providers.ai.base import AITool
@@ -40,6 +41,10 @@ class AIChannelTurnConfig:
     """Billed tokens the turn may spend, cache included (RFC §6.4)."""
     turn_budget_usd: float | None = None
     """What the turn may cost at the model's catalogue price (RFC §6.4)."""
+    tool_handler: ToolHandler | None = None
+    """Serve the host's tools for this turn. ``None`` keeps the channel's
+    handler. Channel-managed tools keep their own dispatch; a turn's handler
+    is never installed on the shared channel or reused by another turn."""
 
 
 ConfigProvider = Callable[["ChannelBinding", "RoomContext"], Awaitable[AIChannelTurnConfig | None]]

@@ -1069,12 +1069,15 @@ class AIToolsMixin(_AIChannelContract):
         # The person's tools, before the host's handler (RFC §9.3).
         if self._human_input.serves(name):
             return as_tool_result(await self._human_input.serve(name, arguments))
-        if self._user_tool_handler is None:
+        handler = self._get_loop_ctx().tool_handler
+        if handler is None:
+            handler = self._user_tool_handler
+        if handler is None:
             raise UnservedToolCallError(name)
         # The host's answer alone may be the "not mine" envelope (RFC §21.4):
         # the channel's own tools answer what they ran, a failing command's
         # error included.
-        answer = await self._user_tool_handler(name, arguments)
+        answer = await handler(name, arguments)
         return as_tool_result(declined_answer(answer, name))
 
     async def _handle_activate_skill(self, arguments: dict[str, Any]) -> str:

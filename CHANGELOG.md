@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- A config provider can return `AIChannelTurnConfig.tool_handler` with its
+  tools so a turn executes the same surface it resolved. The handler stays
+  isolated across concurrent rooms and all rounds of the turn; `None` keeps
+  the channel default. Channel-owned tools retain their dispatch and an
+  unoffered tool remains refused.
+
 ## [0.107.0] — 2026-10-21
 
 ### Added
