@@ -449,7 +449,11 @@ How it works:
 1. The model first sees only `find_tools`/`list_tools` plus the pinned set —
    the discretionary catalogue is hidden.
 2. It calls `find_tools("send a text message")`; the matches are scored and
-   returned, and their names are recorded for the turn.
+   returned, and their names are recorded for the turn. A query that is a
+   tool's name (`find_tools("send_sms")`) returns that tool first. Otherwise
+   a query word counts once per tool, more in its name than in its tags and
+   more in its tags than in its description, weighed by how rare it is in
+   the catalogue.
 3. On the **next** tool-loop round the matched tools are visible and directly
    callable. The text loop re-sends its (re-filtered) tool list every round,
    so no provider reconfigure is needed — this works on **any** text/HTTP

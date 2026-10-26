@@ -23,7 +23,7 @@ import json
 import math
 import re
 from collections.abc import Collection, Iterable
-from typing import Any
+from typing import Any, NamedTuple
 
 from roomkit.channels._tool_search_constants import (
     DEFAULT_FIND_TOOLS_LIMIT,
@@ -43,10 +43,14 @@ _ACRONYM_BOUNDARY = re.compile(r"(?<=[A-Z])(?=[A-Z][a-z])")
 
 # A name-token match counts this many times a description-token match.
 _NAME_WEIGHT = 3
-# A tag-token match weighs as much as a name match. Tags are curated English
-# keywords — the deliberate cross-lingual bridge — so they must weigh enough to
-# surface a tool whose name/description are written in another language.
-_TAGS_WEIGHT = 3
+# A tag-token match, for a word the name does not carry. Below the name: a tag
+# belongs to the source (a hub or a server puts the same words on every tool it
+# serves), the name to the tool alone, so ``search`` in ``acme_search`` says
+# more than the same word tagged on ``acme_send``. Well above the description:
+# tags are curated English keywords — the deliberate cross-lingual bridge — so
+# they must weigh enough to surface a tool whose name/description are written in
+# another language.
+_TAGS_WEIGHT = 2
 # Keep only matches scoring within this fraction of the best match — an
 # incidental hit is dropped when a genuinely relevant tool exists, but a
 # uniformly-weak query still returns its best candidates rather than nothing.
@@ -121,60 +125,104 @@ def search_catalogue(
     infra + pinned) so a match never points the model back at a tool it
     can already see.
 
-    Scoring is IDF-weighted: each query word is weighted by how *rare* it is in
-    this catalogue, so a word in nearly every tool (``on``, ``the``, ``de``,
-    ``la``) contributes little while a discriminating word (``spotify``)
+    A query that is a tool's name returns that tool first, whatever the scores
+    of the others (:func:`_exact_name_match`). The rest are scored: each query
+    word is weighted by how *rare* it is in this catalogue
+    (:func:`_word_weights`), so a word in nearly every tool (``on``, ``the``,
+    ``de``, ``la``) contributes little while a discriminating word (``spotify``)
     dominates — no stopword list, and it adapts to the catalogue and the query's
-    language. The IDF is smoothed (``log((n+1)/(df+1)) + 1``) so it never
-    collapses to zero on a tiny catalogue. Name matches weigh ``_NAME_WEIGHT``×
-    and tag matches ``_TAGS_WEIGHT``× (tags are curated English keywords — the
-    cross-lingual bridge — so an English-normalized query matches them even when
-    the tool's own name/description are in another language). Only matches within
+    language. A word counts once per tool, from the strongest field it appears
+    in: the name (``_NAME_WEIGHT``×), else the tags (``_TAGS_WEIGHT``×), plus the
+    description (:func:`_score_tool`). Only matches within
     ``_RELATIVE_SCORE_CUTOFF`` of the best are kept, which drops the
     common-word-only hits once a genuinely relevant tool exists.
     """
     query_tokens = _fold_all(tokenize(query))
     if not query_tokens:
         return []
-
-    # Tokenize every candidate once and build document frequency for IDF.
-    candidates: list[tuple[dict[str, Any], set[str], set[str], set[str]]] = []
-    df: dict[str, int] = {}
-    for tool in catalogue:
-        if tool.get("name", "") in exclude_names:
-            continue
-        name_tokens = _fold_all(tokenize(tool.get("name", "")))
-        desc_tokens = _fold_all(tokenize(tool.get("description", "")))
-        tags_tokens = _fold_all(tokenize(" ".join(str(t) for t in (tool.get("tags") or []))))
-        candidates.append((tool, name_tokens, desc_tokens, tags_tokens))
-        for tok in name_tokens | desc_tokens | tags_tokens:
-            df[tok] = df.get(tok, 0) + 1
-    n = len(candidates)
-    if n == 0:
+    candidates = [
+        _candidate(tool) for tool in catalogue if tool.get("name", "") not in exclude_names
+    ]
+    if not candidates:
         return []
-
-    weights = {
-        q: (math.log((n + 1) / (df[q] + 1)) + 1 if df.get(q) else 0.0) for q in query_tokens
-    }
-
-    scored: list[tuple[float, dict[str, Any]]] = []
-    for tool, name_tokens, desc_tokens, tags_tokens in candidates:
-        s = 0.0
-        for q in query_tokens:
-            w = weights[q]
-            if q in name_tokens:
-                s += _NAME_WEIGHT * w
-            if q in tags_tokens:
-                s += _TAGS_WEIGHT * w
-            if q in desc_tokens:
-                s += w
-        if s > 0:
-            scored.append((s, tool))
+    weights = _word_weights(candidates, query_tokens)
+    scored = [(score, c.tool) for c in candidates if (score := _score_tool(c, weights)) > 0]
     if not scored:
         return []
     scored.sort(key=lambda item: item[0], reverse=True)
     cutoff = scored[0][0] * _RELATIVE_SCORE_CUTOFF
-    return [tool for s, tool in scored if s >= cutoff][:max_results]
+    exact = _exact_name_match(candidates, query)
+    kept = [tool for score, tool in scored if score >= cutoff and tool is not exact]
+    first = [exact] if exact is not None else []
+    return (first + kept)[:max_results]
+
+
+class _Candidate(NamedTuple):
+    """A catalogue tool, its name, and the folded words of each field it is searched on."""
+
+    tool: dict[str, Any]
+    name: str
+    name_words: set[str]
+    description_words: set[str]
+    tag_words: set[str]
+
+
+def _candidate(tool: dict[str, Any]) -> _Candidate:
+    """A tool's name and searchable words, folded, one set per field."""
+    name = str(tool.get("name") or "")
+    return _Candidate(
+        tool,
+        name,
+        _fold_all(tokenize(name)),
+        _fold_all(tokenize(tool.get("description", ""))),
+        _fold_all(tokenize(" ".join(str(t) for t in (tool.get("tags") or [])))),
+    )
+
+
+def _exact_name_match(candidates: list[_Candidate], query: str) -> dict[str, Any] | None:
+    """The candidate tool whose name is the query, compared without case.
+
+    A model that asks for a tool by its name has already met it (in a skill, a
+    prompt, an earlier turn). Scored among the tools that share its words, the
+    named tool can come after tools carrying more of them, which reads to the
+    model as the tool not existing.
+    """
+    wanted = query.strip().casefold()
+    return next((c.tool for c in candidates if c.name.casefold() == wanted), None)
+
+
+def _word_weights(candidates: list[_Candidate], query_tokens: set[str]) -> dict[str, float]:
+    """How rare each query word is among the catalogue's tools.
+
+    Smoothed (``log((n+1)/(df+1)) + 1``) so it never collapses to zero on a
+    tiny catalogue; a word no tool carries weighs nothing.
+    """
+    n = len(candidates)
+    df = {
+        q: sum(
+            q in c.name_words or q in c.description_words or q in c.tag_words for c in candidates
+        )
+        for q in query_tokens
+    }
+    return {q: math.log((n + 1) / (df[q] + 1)) + 1 if df[q] else 0.0 for q in query_tokens}
+
+
+def _score_tool(candidate: _Candidate, weights: dict[str, float]) -> float:
+    """A tool's relevance: each query word once, from the strongest field it is in.
+
+    A word in the name and in the tags counts as a name word. Counting it twice
+    would put every tool tagged with its own name ahead of an untagged tool of
+    the same name. The description adds on top, as the weakest evidence.
+    """
+    score = 0.0
+    for word, weight in weights.items():
+        if word in candidate.name_words:
+            score += _NAME_WEIGHT * weight
+        elif word in candidate.tag_words:
+            score += _TAGS_WEIGHT * weight
+        if word in candidate.description_words:
+            score += weight
+    return score
 
 
 # Same-family siblings surfaced per find_tools result (names only). Small —
