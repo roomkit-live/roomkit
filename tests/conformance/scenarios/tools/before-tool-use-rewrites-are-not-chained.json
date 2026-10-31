@@ -1,0 +1,364 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/before-tool-use-rewrites-are-not-chained",
+  "title": "A BEFORE_TOOL_USE rewrite under metadata[\"arguments\"] is not read by the next hook, the last one is the call's, and a SYNC ON_TOOL_CALL hook may serve a call nothing served",
+  "rules": [
+    "§9.3"
+  ],
+  "notes": "Two BEFORE_TOOL_USE hooks rewrite call-1's arguments under metadata[\"arguments\"]: the second reads the model's, and the call runs with the second's. call-2's tool declines it, so nothing served it: the SYNC ON_TOOL_CALL hook serves it, and the model reads the hook's result. Each call is its own round, so each hook's reactions apply in order.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "",
+              "calls": [
+                {
+                  "id": "call-1",
+                  "name": "lookup_order",
+                  "arguments": {
+                    "order": "1"
+                  }
+                }
+              ],
+              "finish_reason": "tool_calls"
+            },
+            {
+              "text": "",
+              "calls": [
+                {
+                  "id": "call-2",
+                  "name": "quote",
+                  "arguments": {
+                    "item": "sofa"
+                  }
+                }
+              ],
+              "finish_reason": "tool_calls"
+            },
+            {
+              "text": "Shipped, and 120.",
+              "finish_reason": "stop"
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup_order",
+            "description": "Find an order by its number",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "order": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "order"
+              ]
+            },
+            "returns": "{\"status\": \"shipped\"}"
+          },
+          {
+            "name": "quote",
+            "description": "Price an item",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "item": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "item"
+              ]
+            },
+            "declines": true
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "detokenise",
+        "trigger": "before_tool_use",
+        "priority": 0,
+        "reactions": [
+          {
+            "result": {
+              "action": "allow",
+              "metadata": {
+                "arguments": {
+                  "order": "A-1"
+                }
+              }
+            }
+          }
+        ]
+      },
+      {
+        "name": "normalize",
+        "trigger": "before_tool_use",
+        "priority": 1,
+        "reactions": [
+          {
+            "result": {
+              "action": "allow",
+              "metadata": {
+                "arguments": {
+                  "order": "A-0001"
+                }
+              }
+            }
+          }
+        ]
+      },
+      {
+        "name": "price",
+        "trigger": "on_tool_call",
+        "reactions": [
+          {},
+          {
+            "result": {
+              "action": "allow",
+              "metadata": {
+                "result": "{\"price\": 120}"
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Where is my order, and what does the sofa cost?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "type": "message",
+          "source": {
+            "channel_id": "ws"
+          },
+          "content": {
+            "type": "text",
+            "body": "Where is my order, and what does the sofa cost?"
+          }
+        },
+        {
+          "index": 1,
+          "type": "tool_call_start",
+          "source": {
+            "channel_id": "agent",
+            "direction": "outbound"
+          },
+          "chain_depth": 1,
+          "content": {
+            "type": "tool_call",
+            "tool_name": "lookup_order",
+            "tool_id": "call-1",
+            "arguments": {
+              "order": "1"
+            },
+            "status": "pending",
+            "result": null
+          }
+        },
+        {
+          "index": 2,
+          "type": "tool_call_end",
+          "source": {
+            "channel_id": "agent",
+            "direction": "outbound"
+          },
+          "chain_depth": 1,
+          "content": {
+            "type": "tool_call",
+            "tool_name": "lookup_order",
+            "tool_id": "call-1",
+            "arguments": {
+              "order": "A-0001"
+            },
+            "status": "completed",
+            "outcome": "served",
+            "result": "{\"status\": \"shipped\"}"
+          }
+        },
+        {
+          "index": 3,
+          "type": "tool_call_start",
+          "source": {
+            "channel_id": "agent",
+            "direction": "outbound"
+          },
+          "chain_depth": 1,
+          "content": {
+            "type": "tool_call",
+            "tool_name": "quote",
+            "tool_id": "call-2",
+            "arguments": {
+              "item": "sofa"
+            },
+            "status": "pending",
+            "result": null
+          }
+        },
+        {
+          "index": 4,
+          "type": "tool_call_end",
+          "source": {
+            "channel_id": "agent",
+            "direction": "outbound"
+          },
+          "chain_depth": 1,
+          "content": {
+            "type": "tool_call",
+            "tool_name": "quote",
+            "tool_id": "call-2",
+            "arguments": {
+              "item": "sofa"
+            },
+            "status": "completed",
+            "outcome": "served",
+            "result": "{\"price\": 120}"
+          }
+        },
+        {
+          "index": 5,
+          "type": "message",
+          "source": {
+            "channel_id": "agent",
+            "direction": "outbound"
+          },
+          "chain_depth": 1,
+          "content": {
+            "type": "text",
+            "body": "Shipped, and 120."
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "normalize": [
+        {
+          "trigger": "before_tool_use",
+          "room_id": "room-1",
+          "tool_call": {
+            "name": "lookup_order",
+            "tool_call_id": "call-1",
+            "arguments": {
+              "order": "1"
+            }
+          }
+        },
+        {
+          "trigger": "before_tool_use",
+          "room_id": "room-1",
+          "tool_call": {
+            "name": "quote",
+            "tool_call_id": "call-2",
+            "arguments": {
+              "item": "sofa"
+            }
+          }
+        }
+      ],
+      "price": [
+        {
+          "trigger": "on_tool_call",
+          "room_id": "room-1",
+          "tool_call": {
+            "name": "lookup_order",
+            "tool_call_id": "call-1",
+            "arguments": {
+              "order": "A-0001"
+            },
+            "result": "{\"status\": \"shipped\"}",
+            "is_error": false
+          }
+        },
+        {
+          "trigger": "on_tool_call",
+          "room_id": "room-1",
+          "tool_call": {
+            "name": "quote",
+            "tool_call_id": "call-2",
+            "arguments": {
+              "item": "sofa"
+            },
+            "result": null,
+            "is_error": false
+          }
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {
+          "tool_results": []
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "call-1",
+              "content": "{\"status\": \"shipped\"}"
+            }
+          ]
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "call-1",
+              "content": "{\"status\": \"shipped\"}"
+            },
+            {
+              "tool_call_id": "call-2",
+              "content": "{\"price\": 120}"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

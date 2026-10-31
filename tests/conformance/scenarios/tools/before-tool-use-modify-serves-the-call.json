@@ -1,0 +1,203 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/before-tool-use-modify-serves-the-call",
+  "title": "A BEFORE_TOOL_USE MODIFY is read by the next hook and is the call's",
+  "rules": [
+    "§9.3"
+  ],
+  "notes": "The first BEFORE_TOOL_USE hook answers MODIFY with the call's arguments patched; the second reads them, and the call runs with them, as with an edit in place.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "",
+              "calls": [
+                {
+                  "id": "call-1",
+                  "name": "lookup_order",
+                  "arguments": {
+                    "order": "1"
+                  }
+                }
+              ],
+              "finish_reason": "tool_calls"
+            },
+            {
+              "text": "Shipped.",
+              "finish_reason": "stop"
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup_order",
+            "description": "Find an order by its number",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "order": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "order"
+              ]
+            },
+            "returns": "{\"status\": \"shipped\"}"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "detokenise",
+        "trigger": "before_tool_use",
+        "priority": 0,
+        "reactions": [
+          {
+            "result": {
+              "action": "modify",
+              "event": {
+                "arguments": {
+                  "order": "A-1"
+                }
+              }
+            }
+          }
+        ]
+      },
+      {
+        "name": "normalize",
+        "trigger": "before_tool_use",
+        "priority": 1
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Where is my order?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "type": "message",
+          "source": {
+            "channel_id": "ws"
+          },
+          "content": {
+            "type": "text",
+            "body": "Where is my order?"
+          }
+        },
+        {
+          "index": 1,
+          "type": "tool_call_start",
+          "source": {
+            "channel_id": "agent",
+            "direction": "outbound"
+          },
+          "chain_depth": 1,
+          "content": {
+            "type": "tool_call",
+            "tool_name": "lookup_order",
+            "tool_id": "call-1",
+            "arguments": {
+              "order": "1"
+            },
+            "status": "pending",
+            "result": null
+          }
+        },
+        {
+          "index": 2,
+          "type": "tool_call_end",
+          "source": {
+            "channel_id": "agent",
+            "direction": "outbound"
+          },
+          "chain_depth": 1,
+          "content": {
+            "type": "tool_call",
+            "tool_name": "lookup_order",
+            "tool_id": "call-1",
+            "arguments": {
+              "order": "A-1"
+            },
+            "status": "completed",
+            "outcome": "served",
+            "result": "{\"status\": \"shipped\"}"
+          }
+        },
+        {
+          "index": 3,
+          "type": "message",
+          "source": {
+            "channel_id": "agent",
+            "direction": "outbound"
+          },
+          "chain_depth": 1,
+          "content": {
+            "type": "text",
+            "body": "Shipped."
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "normalize": [
+        {
+          "trigger": "before_tool_use",
+          "room_id": "room-1",
+          "tool_call": {
+            "name": "lookup_order",
+            "tool_call_id": "call-1",
+            "arguments": {
+              "order": "A-1"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

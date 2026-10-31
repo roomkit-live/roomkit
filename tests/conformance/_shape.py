@@ -35,7 +35,17 @@ CHANNEL = {
 MODEL = {"rounds"}
 MODEL_ROUND = {"text", "deltas", "calls", "finish_reason", "usage", "fails"}
 MODEL_CALL = {"id", "name", "arguments", "cut"}
-TOOL = {"name", "description", "parameters", "returns", "raises", "fails", "refuses", "hangs"}
+TOOL = {
+    "name",
+    "description",
+    "parameters",
+    "returns",
+    "raises",
+    "fails",
+    "refuses",
+    "hangs",
+    "declines",
+}
 RAISES = {"kind", "message"}
 POLICY = {"allow", "deny"}
 ROOM = {"id", "organization_id", "metadata", "timers", "bindings", "participants", "status"}

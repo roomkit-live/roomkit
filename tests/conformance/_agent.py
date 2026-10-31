@@ -15,7 +15,7 @@ from collections.abc import AsyncIterator, Mapping
 from typing import Any
 
 from roomkit.channels.ai import AIChannel
-from roomkit.core.exceptions import ToolFailedError, ToolRefusedError
+from roomkit.core.exceptions import ToolFailedError, ToolRefusedError, UnservedToolCallError
 from roomkit.models.tool_call import ToolCallEvent
 from roomkit.providers.ai import AIContext, AIProvider, AIResponse, AITool, AIToolCall
 from roomkit.providers.ai.base import StreamEvent, StreamTextDelta, response_stream_events
@@ -130,6 +130,8 @@ def _tool_handler(tools: list[Mapping[str, Any]]) -> Any:
             raise ToolFailedError(tool["fails"])
         if "refuses" in tool:
             raise ToolRefusedError(tool["refuses"])
+        if tool.get("declines"):
+            raise UnservedToolCallError(f"{name} is not this handler's")
         await asyncio.Event().wait()
         raise AssertionError("a tool that hangs never answers")
 
