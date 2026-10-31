@@ -69,6 +69,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **A channel type is an open name** (RFC 6.2, RMK-986). An integrator's
+  channel for a platform the enum does not list (Slack, Signal, Line) had to
+  pick a wrong type, such as `WEBHOOK`, and lost the addressing its own
+  should give. `ChannelType("slack")` is now a type: any name of lowercase
+  ASCII letters, digits, `_` and `-`, read and written back as it is, the
+  same each time; another name raises `ValueError`. The members stay, as
+  the well-known names. A channel declares its addressing
+  (`TransportChannel(..., addressing=ChannelAddressing(...))`), its
+  well-known name's by default, as written for any other.
+
 - **BREAKING — four values are checked as roomkit-rs checks them**
   (RMK-1021, decision 19 of the API parity work).
   - `EditContent.edit_source` is an `EditSource` (`sender`, `system`) or

@@ -100,7 +100,7 @@ RoomKit exports **348 symbols** from `roomkit`. Providers and voice types import
 |--------|-------------|
 | `Access` | Channel access levels: READ_WRITE, READ_ONLY, WRITE_ONLY, NONE |
 | `ChannelCategory` | TRANSPORT or INTELLIGENCE |
-| `ChannelType` | 23 values: SMS, MMS, RCS, EMAIL, WHATSAPP, WHATSAPP_PERSONAL, WEBSOCKET, AI, VOICE, REALTIME_VOICE, REALTIME_AUDIO_VIDEO, PUSH, MESSENGER, TELEGRAM, TEAMS, DISCORD, BUZZ, WEBHOOK, VIDEO, AUDIO_VIDEO, CONFERENCE, CLI, SYSTEM |
+| `ChannelType` | An open name (RFC 6.2); the well-known ones are members: SMS, MMS, RCS, EMAIL, WHATSAPP, WHATSAPP_PERSONAL, WEBSOCKET, AI, VOICE, REALTIME_VOICE, REALTIME_AUDIO_VIDEO, PUSH, MESSENGER, TELEGRAM, TEAMS, DISCORD, BUZZ, WEBHOOK, VIDEO, AUDIO_VIDEO, CONFERENCE, CLI, HOST, SYSTEM; `ChannelType("slack")` names another |
 | `EventStatus` | PENDING, DELIVERED, READ, FAILED, BLOCKED |
 | `EventType` | 28 values (MESSAGE, SYSTEM, EDIT, DELETE, TOOL_CALL_START, DTMF, etc.) |
 | `HookExecution` | SYNC or ASYNC |

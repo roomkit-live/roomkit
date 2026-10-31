@@ -55,7 +55,7 @@ timer transitions first, and a delivered message resumes a PAUSED room.
 
 ## Channel Types
 
-The `ChannelType` enum defines 24 values: `SMS`, `MMS`, `RCS`, `EMAIL`, `WHATSAPP`, `WHATSAPP_PERSONAL`, `WEBSOCKET`, `AI`, `VOICE`, `REALTIME_VOICE`, `REALTIME_AUDIO_VIDEO`, `PUSH`, `MESSENGER`, `TELEGRAM`, `TEAMS`, `DISCORD`, `BUZZ`, `WEBHOOK`, `VIDEO`, `AUDIO_VIDEO`, `CONFERENCE`, `CLI`, `HOST`, `SYSTEM`. RoomKit ships with these factories and channel classes:
+The `ChannelType` enum names 24 well-known types: `SMS`, `MMS`, `RCS`, `EMAIL`, `WHATSAPP`, `WHATSAPP_PERSONAL`, `WEBSOCKET`, `AI`, `VOICE`, `REALTIME_VOICE`, `REALTIME_AUDIO_VIDEO`, `PUSH`, `MESSENGER`, `TELEGRAM`, `TEAMS`, `DISCORD`, `BUZZ`, `WEBHOOK`, `VIDEO`, `AUDIO_VIDEO`, `CONFERENCE`, `CLI`, `HOST`, `SYSTEM`. A type is an open name (RFC 6.2): a channel for a platform the list does not hold names its own, `ChannelType("slack")` (lowercase letters, digits, `_`, `-`), and declares its addressing (`TransportChannel(..., addressing=ChannelAddressing(Addressing.CHAT, recipient_key="slack_channel_id", chat_key="channel_id"))`); an unknown name's addresses are otherwise read as written. RoomKit ships with these factories and channel classes:
 
 | Channel | Factory / Class | Category | Use Case |
 |---------|----------------|----------|----------|
