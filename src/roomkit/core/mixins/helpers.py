@@ -683,7 +683,12 @@ class HelpersMixin:
         context: RoomContext | None = None,
     ) -> None:
         """Fire an async lifecycle hook with a synthetic system event, in
-        *context*, the room as the change left it, read now when not given."""
+        *context*, the room as the change left it, read now when not given.
+
+        The hooks are started and not waited for (RFC §9.3), but for
+        ``ON_ROOM_CREATED``'s, which the room's creation awaits: a hook that
+        attaches the room's agent has done so before anything is sent into
+        the room."""
         event = RoomEvent(
             room_id=room_id,
             type=event_type,
@@ -692,19 +697,20 @@ class HelpersMixin:
             status=EventStatus.DELIVERED,
             visibility=Visibility.INTERNAL,
         )
-        if context is not None:
+        if context is None:
+            try:
+                context = await self._build_context(room_id)
+            except Exception:
+                # Room may not exist yet (e.g. ON_ROOM_CREATED before bindings exist)
+                with self._resource_lease():
+                    room = await self._store.get_room(room_id)
+                if room is None:
+                    return
+                context = RoomContext(room=room, bindings=[])
+        if trigger is HookTrigger.ON_ROOM_CREATED:
             await self._hook_engine.run_async_hooks(room_id, trigger, event, context)
             return
-        try:
-            context = await self._build_context(room_id)
-        except Exception:
-            # Room may not exist yet (e.g. ON_ROOM_CREATED before bindings exist)
-            with self._resource_lease():
-                room = await self._store.get_room(room_id)
-            if room is None:
-                return
-            context = RoomContext(room=room, bindings=[])
-        await self._hook_engine.run_async_hooks(room_id, trigger, event, context)
+        self._hook_engine._start_async_hooks(room_id, trigger, event, context)
 
     async def _persist_side_effects(
         self,

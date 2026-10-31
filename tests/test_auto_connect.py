@@ -77,6 +77,7 @@ class TestAutoConnect:
             hook_fired.append("attached")
 
         await kit.attach_channel("room-1", "voice")
+        await kit.hook_engine.drain_observers()
 
         assert "attached" in hook_fired
         assert len(backend.list_sessions("room-1")) == 1

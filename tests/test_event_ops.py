@@ -91,6 +91,7 @@ class TestUpdateEventApi:
         updated_calls = _track(kit, HookTrigger.ON_EVENT_UPDATED)
 
         updated = await kit.update_event("r1", original.id, content=TextContent(body="v2"))
+        await kit.hook_engine.drain_observers()
 
         assert updated is not None
         assert isinstance(updated.content, TextContent)
@@ -215,6 +216,7 @@ class TestDeleteEventApi:
         deleted = await kit.delete_event("r1", root.id)
 
         assert deleted == [root.id, reply.id, edit.event.id]
+        await kit.hook_engine.drain_observers()
         assert [await kit.store.get_event(e) for e in deleted] == [None] * 3
         assert deleted_calls == as_stored
         assert deleted_calls[0].content == TextContent(body="v2")
@@ -369,6 +371,7 @@ class TestAChangeWhoseRoomCannotBeReadAfter:
             else:
                 assert await kit.delete_event("r1", original.id) == [original.id]
 
+        await kit.hook_engine.drain_observers()
         texts = ["v2"] if operation == "update" else []
         assert [(room, [t for t in seen if t in ("v1", "v2")]) for room, seen in fired] == [
             ("r1", texts)
@@ -419,6 +422,7 @@ class TestADirectChangesContext:
             await kit.update_event("r1", original.id, content=TextContent(body="v2"))
         else:
             await kit.delete_event("r1", original.id)
+        await kit.hook_engine.drain_observers()
 
         assert (store.context_reads, len(fired)) == ((2, 1) if hooked else (0, 0))
         await kit.close()

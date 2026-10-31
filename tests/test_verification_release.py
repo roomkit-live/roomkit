@@ -131,6 +131,7 @@ async def test_a_hook_updating_a_released_message_again_stops_at_the_cap() -> No
             refused.append(error)
 
     await kit.complete_verification(request.id, secret)
+    await asyncio.wait_for(kit.hook_engine.drain_observers(), 5)
 
     assert (len(runs), len(refused)) == (11, 1)
     await kit.close()

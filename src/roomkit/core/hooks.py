@@ -1464,15 +1464,34 @@ class HookEngine:
         context: RoomContext,
         *,
         budget: ReentryBudget | None = None,
+        skip_event_filter: bool = False,
     ) -> None:
         """Start the hooks :meth:`run_async_hooks` runs for *trigger* and
         return at once: an ASYNC trigger's hooks run after the operation
         that fired it and never hold it up (RFC §9.3). Held as observers
-        are (:meth:`_hold`), each body on *budget* when given."""
-        self._hold(
-            self.run_async_hooks(room_id, trigger, event, context, budget=budget),
-            name=str(trigger),
+        are (:meth:`_hold`), each body on *budget* when given.
+
+        The hooks, and the depth their bodies send at, are read here, as the
+        trigger fires: the turn or the tool call that fired it may be over
+        once they start, and a hook that tells the agent again still ends at
+        the depth limit (RFC §8.3)."""
+        if (engine := self._turn_engine(trigger)) is not None:
+            engine._start_async_hooks(
+                room_id,
+                trigger,
+                event,
+                context,
+                budget=budget,
+                skip_event_filter=skip_event_filter,
+            )
+            return
+        hooks = self._get_hooks(room_id, trigger, None, event=None if skip_event_filter else event)
+        if not hooks:
+            return
+        work = self._run_async_hooks_list(
+            hooks, room_id, trigger, event, context, budget=budget, floor=chain_floor()
         )
+        self._hold(work, name=str(trigger))
 
     def _has_async_hooks(self, room_id: str, trigger: HookTrigger, event: RoomEvent) -> bool:
         """Whether :meth:`run_async_hooks` finds hooks for *trigger* on *event*."""

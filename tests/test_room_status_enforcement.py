@@ -273,6 +273,7 @@ class TestClosedRoomRefuses:
             fired.append(ctx.room.id)
 
         await kit.close_room("r1")
+        await kit.hook_engine.drain_observers()
 
         assert fired == ["r1"]
 

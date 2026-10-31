@@ -112,7 +112,8 @@ class TimerTransitions:
     async def check(self, room_id: str, *, organization_id: str | None = None) -> Room:
         """Apply the room's due transitions under its lock, for a room nobody
         writes to, and return the room as stored once they are; their hooks
-        have fired when this returns (outside a lock held from before)."""
+        have started when this returns (outside a lock held from before), not
+        ended (RFC §9.3)."""
         hooks: list[asyncio.Task[None]] = []
         async with self._lock_manager.locked(room_id):
             room = await self._read_room(room_id, organization_id=organization_id)
@@ -228,10 +229,10 @@ class TimerTransitions:
         return await rebuild()
 
     async def settle(self, room_id: str, hooks: list[asyncio.Task[None]]) -> None:
-        """Wait, once the caller's section released the lock, for the hooks
-        :meth:`apply_due` started; not under a lock held from before it,
-        which their task waits for. The kit's close cutting them ends the
-        wait quietly: the caller was not cancelled."""
+        """Wait, once the caller's section released the lock, for the task
+        :meth:`apply_due` started to start their hooks; not under a lock held
+        from before it, which that task waits for. The kit's close cutting it
+        ends the wait quietly: the caller was not cancelled."""
         if hooks and not _has_room_lock(room_id, self._lock_manager):
             await await_unless_cut(asyncio.shield(asyncio.gather(*hooks)))
 
@@ -257,7 +258,7 @@ class TimerTransitions:
     def _fire_hooks(
         self, room_id: str, due: list[DueTransition], context: RoomContext
     ) -> asyncio.Task[None]:
-        """Fire *due*'s hooks, in order, with *context*, the room as the
+        """Start *due*'s hooks, in order, with *context*, the room as the
         transitions left it, once the section that applied them has released
         the room lock (RFC §5.1, §9.3).
 

@@ -171,6 +171,7 @@ class TestALeaveTheSFURefuses:
             detached.append(event)
 
         assert await kit.detach_channel(ROOM, "conf") is True
+        await kit.hook_engine.drain_observers()
         assert len(detached) == 1
         assert await kit.store.get_binding(ROOM, "conf") is None
 
@@ -267,6 +268,7 @@ class TestAnUnsubscribeTheSFURefuses:
 
         backend.fail("unsubscribe_track", SFUHeldTheBotError("held"))
         await backend.simulate_track_unpublished(track.id)
+        await kit.hook_engine.drain_observers()
 
         assert fired == [track.id]
 

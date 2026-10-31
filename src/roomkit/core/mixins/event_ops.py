@@ -139,14 +139,15 @@ class EventOpsMixin(HelpersMixin):
         source stays the one recorded; otherwise a reader ranks the event's
         author against the room's register.
 
-        Fires ON_EVENT_UPDATED with the updated event. Returns the updated
-        event, or ``None`` when *event_id* does not exist in *room_id* (no
-        hook fires). An update that changes nothing, no field or the values
-        the event holds, writes nothing, fires nothing and returns the event
-        as stored (RFC §10.3). Scoped to *organization_id* (RFC §17.2), the
-        room of another organization is a missing room: ``None``, nothing
-        written, its due timers included; unset, the call is unscoped, as the
-        kit's other calls.
+        Fires ON_EVENT_UPDATED with the updated event, and returns without
+        waiting for its hooks (RFC §9.3). Returns the updated event, or
+        ``None`` when *event_id* does not exist in *room_id* (no hook fires).
+        An update that changes nothing, no field or the values the event
+        holds, writes nothing, fires nothing and returns the event as stored
+        (RFC §10.3). Scoped to *organization_id* (RFC §17.2), the room of
+        another organization is a missing room: ``None``, nothing written, its
+        due timers included; unset, the call is unscoped, as the kit's other
+        calls.
 
         Made from the body of an ASYNC hook a cascade fires once an event's
         delivery set has run, an update that changes something draws one of
@@ -191,7 +192,7 @@ class EventOpsMixin(HelpersMixin):
             context = await self._context_after_change(
                 room_id, held.model_copy(update={"recent_events": recent})
             )
-            await self._hook_engine.run_async_hooks(
+            self._hook_engine._start_async_hooks(
                 room_id, HookTrigger.ON_EVENT_UPDATED, updated, context, budget=change.budget
             )
         return updated
@@ -209,12 +210,13 @@ class EventOpsMixin(HelpersMixin):
         Whatever *cascade_replies* says, the edits and deletes of every event
         removed go with it (RFC §10.3): an edit holds its target's corrected
         content. Fires ON_EVENT_DELETED once per removed event, each with the
-        event as it was stored, once the room lock is released. Returns the
-        removed event IDs (the root, its replies, then the changes), or an
-        empty list when *event_id* does not exist in *room_id* (no hook
-        fires). Scoped to *organization_id* (RFC §17.2), the room of another
-        organization is a missing room: an empty list, nothing written, its
-        due timers included; unset, the call is unscoped.
+        event as it was stored, once the room lock is released, and returns
+        without waiting for its hooks (RFC §9.3). Returns the removed event
+        IDs (the root, its replies, then the changes), or an empty list when
+        *event_id* does not exist in *room_id* (no hook fires). Scoped to
+        *organization_id* (RFC §17.2), the room of another organization is a
+        missing room: an empty list, nothing written, its due timers
+        included; unset, the call is unscoped.
 
         Made from the body of an ASYNC hook a cascade fires once an event's
         delivery set has run, a delete of an event the room holds draws one
@@ -247,7 +249,7 @@ class EventOpsMixin(HelpersMixin):
                 room_id, held.model_copy(update={"recent_events": recent})
             )
             for event in removed:
-                await self._hook_engine.run_async_hooks(
+                self._hook_engine._start_async_hooks(
                     room_id, HookTrigger.ON_EVENT_DELETED, event, context, budget=change.budget
                 )
         return [event.id for event in removed]

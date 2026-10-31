@@ -2066,7 +2066,7 @@ class TestADirectChangeFromAHook:
         ran = await _DIRECT_LOOPS[loop](kit, refused)
 
         try:
-            await asyncio.wait_for(_settled(kit), 5)
+            await asyncio.wait_for(_observed(kit), 5)
             assert (len(ran), len(refused)) == (runs, 1)
         finally:
             await kit.close()
@@ -2157,6 +2157,7 @@ class TestADirectChangeFromAHook:
             first = await kit.send_event("r1", "sms", TextContent(body="v"))
             with caplog.at_level(logging.WARNING, logger="roomkit"):
                 await asyncio.wait_for(kit.update_event("r1", first.id, metadata={"n": 0}), 5)
+                await asyncio.wait_for(_observed(kit), 5)
             [record] = [r for r in caplog.records if "again" in r.getMessage()]
             assert (record.levelno, record.exc_info) == (logging.WARNING, None)
         finally:

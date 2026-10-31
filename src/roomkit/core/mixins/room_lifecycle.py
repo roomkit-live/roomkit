@@ -370,8 +370,9 @@ class RoomLifecycleMixin(HelpersMixin):
         one long after both pauses the room at the first instant and closes
         it at the second, in one write. Each emits ``room_paused`` or
         ``room_closed`` (``reason = timer``), then fires ``ON_ROOM_PAUSED``
-        or ``ON_ROOM_CLOSED`` once the room lock is released, before this
-        returns. Every locked operation on the room applies them as well.
+        or ``ON_ROOM_CLOSED`` once the room lock is released: their hooks
+        have started when this returns, which does not wait for them (RFC
+        §9.3). Every locked operation on the room applies them as well.
 
         Returns the room as stored once its due transitions are applied.
         *organization_id* scopes the check to one tenant (RFC §17.2).

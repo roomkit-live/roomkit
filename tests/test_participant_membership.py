@@ -72,6 +72,7 @@ class TestMembership:
         kit.hook_engine.register(_async_hook(HookTrigger.ON_PARTICIPANT_JOINED, on_joined))
         await kit.create_room(room_id="r1")
         await kit.add_member("r1", "ws:u1:r1", "u1", identity_id="u1")
+        await kit.hook_engine.drain_observers()
         assert len(fired) == 1
         assert fired[0].room_id == "r1"
 
@@ -85,6 +86,7 @@ class TestMembership:
         await kit.create_room(room_id="r1")
         await kit.add_member("r1", "ws:u1:r1", "u1", identity_id="u1")
         await kit.add_member("r1", "ws:u1:r1", "u1", identity_id="u1")
+        await kit.hook_engine.drain_observers()
         # a second add on an already-active member is a no-op: one join event,
         # one participant row — safe to call on every room open
         assert len(fired) == 1
@@ -103,6 +105,7 @@ class TestMembership:
         await kit.add_member("r1", "sms-main", "u1", identity_id="u1")
 
         reached = await kit.add_member("r1", "email-main", "u1", identity_id="u1")
+        await kit.hook_engine.drain_observers()
 
         assert reached.channel_id == "sms-main"
         assert reached.connected_via == ["sms-main", "email-main"]
@@ -148,6 +151,7 @@ class TestMembership:
         await kit.create_room(room_id="r1")
         await kit.add_member("r1", "ws:u1:r1", "u1", identity_id="u1")
         await kit.remove_member("r1", "u1")
+        await kit.hook_engine.drain_observers()
         assert len(fired) == 1
         events = await kit.store.list_events("r1")
         assert any(e.type == EventType.PARTICIPANT_LEFT for e in events)
@@ -198,6 +202,7 @@ class TestRenameMember:
         await kit.create_room(room_id="r1")
         await kit.add_member("r1", "ws:u1:r1", "u1", identity_id="u1", display_name="Alice")
         await kit.rename_member("r1", "u1", "Alice T.")
+        await kit.hook_engine.drain_observers()
         events = await kit.store.list_events("r1")
         assert any(e.type == EventType.PARTICIPANT_UPDATED for e in events)
         assert len(fired) == 1

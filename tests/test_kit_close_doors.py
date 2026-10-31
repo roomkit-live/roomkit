@@ -36,7 +36,6 @@ from roomkit import (
     HookExecution,
     HookTrigger,
     HostChannel,
-    KitClosedError,
     MockConferenceBackend,
     RealtimeVoiceChannel,
     RoomKit,
@@ -1554,25 +1553,29 @@ async def test_a_caller_waiting_for_its_injected_events_returns_when_the_close_c
 
 
 async def test_a_timer_check_whose_hooks_outlast_the_grace_is_cut(close_grace: float) -> None:
-    """check_room_timers() paused the room and waits for its ON_ROOM_PAUSED
-    hook when the kit closes: a room change is running work, so once the
-    grace ran out the check is cut, KitClosedError, never a CancelledError
-    its caller did not ask for; the room stays as stored (RMK-1030)."""
+    """check_room_timers() paused the room and returns, its ON_ROOM_PAUSED
+    hook still running (RFC §9.3): the kit's close gives that hook the
+    grace, then cuts it; the room stays as stored (RMK-1030, RMK-1020)."""
     kit = RoomKit()
     await kit.create_room(room_id="r1", timers=RoomTimers(inactive_after_seconds=0))
     in_hook = asyncio.Event()
+    steps: list[str] = []
 
     @kit.hook(HookTrigger.ON_ROOM_PAUSED, name="slow")
     async def slow(event: RoomEvent, ctx: RoomContext) -> None:
         in_hook.set()
-        await asyncio.Event().wait()
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            steps.append("cut")
+            raise
 
-    check = asyncio.create_task(kit.check_room_timers("r1"))
+    checked = await asyncio.wait_for(kit.check_room_timers("r1"), 1)
     await asyncio.wait_for(in_hook.wait(), 1)
     await kit.close()
 
-    with pytest.raises(KitClosedError):
-        await asyncio.wait_for(check, 1)
+    assert steps == ["cut"]
+    assert checked.status is RoomStatus.PAUSED
     room = await kit.get_room("r1")
     assert room.status is RoomStatus.PAUSED
 

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 import pytest
@@ -14,7 +16,8 @@ from roomkit.models.enums import (
     HookExecution,
     HookTrigger,
 )
-from roomkit.models.event import RoomEvent
+from roomkit.models.event import RoomEvent, TextContent
+from roomkit.models.room import RoomTimers
 from tests.test_framework import SimpleChannel
 
 
@@ -25,7 +28,8 @@ def kit() -> RoomKit:
 
 class TestRoomLifecycleHooks:
     async def test_hook_fired_on_create_room(self, kit: RoomKit) -> None:
-        """ON_ROOM_CREATED fires when a room is created."""
+        """ON_ROOM_CREATED fires when a room is created, and the creation
+        awaits its hooks (RFC §9.3): they have run when it returns."""
         fired: list[RoomEvent] = []
 
         async def on_created(event: RoomEvent, ctx: RoomContext) -> None:
@@ -37,89 +41,85 @@ class TestRoomLifecycleHooks:
         assert len(fired) == 1
         assert fired[0].room_id == "r1"
 
-    async def test_hook_fired_on_close_room(self, kit: RoomKit) -> None:
-        """ON_ROOM_CLOSED fires when a room is closed."""
-        fired: list[RoomEvent] = []
 
-        async def on_closed(event: RoomEvent, ctx: RoomContext) -> None:
-            fired.append(event)
+async def _change(kit: RoomKit, trigger: HookTrigger) -> Callable[[], Awaitable[object]]:
+    """Set up room ``r1``, ``sms1`` attached, for the call that fires
+    *trigger*, and return that call."""
+    kit.register_channel(SimpleChannel("sms1"))
+    await kit.create_room(room_id="r1")
+    await kit.attach_channel("r1", "sms1")
+    match trigger:
+        case HookTrigger.ON_ROOM_CLOSED:
+            return lambda: kit.close_room("r1")
+        case HookTrigger.ON_ROOM_PAUSED:
+            await kit.set_room_timers("r1", RoomTimers(inactive_after_seconds=0))
+            return lambda: kit.check_room_timers("r1")
+        case HookTrigger.ON_CHANNEL_ATTACHED:
+            kit.register_channel(SimpleChannel("sms2"))
+            return lambda: kit.attach_channel("r1", "sms2")
+        case HookTrigger.ON_CHANNEL_DETACHED:
+            return lambda: kit.detach_channel("r1", "sms1")
+        case HookTrigger.ON_CHANNEL_MUTED:
+            return lambda: kit.mute("r1", "sms1")
+        case HookTrigger.ON_CHANNEL_UNMUTED:
+            await kit.mute("r1", "sms1")
+            return lambda: kit.unmute("r1", "sms1")
+        case HookTrigger.ON_EVENT_UPDATED:
+            said = await kit.send_event("r1", "sms1", TextContent(body="Hi."))
+            return lambda: kit.update_event("r1", said.id, content=TextContent(body="Hey."))
+        case HookTrigger.ON_EVENT_DELETED:
+            said = await kit.send_event("r1", "sms1", TextContent(body="Hi."))
+            return lambda: kit.delete_event("r1", said.id)
+        case HookTrigger.ON_PARTICIPANT_JOINED:
+            return lambda: kit.add_member("r1", "sms1", "p1")
+    await kit.add_member("r1", "sms1", "p1")
+    if trigger is HookTrigger.ON_PARTICIPANT_LEFT:
+        return lambda: kit.remove_member("r1", "p1")
+    return lambda: kit.rename_member("r1", "p1", "Bob")
 
-        kit.hook_engine.register(_async_hook(HookTrigger.ON_ROOM_CLOSED, on_closed))
 
-        await kit.create_room(room_id="r1")
-        await kit.close_room("r1")
-        assert len(fired) == 1
-        assert fired[0].room_id == "r1"
+@pytest.mark.parametrize(
+    "trigger",
+    [
+        HookTrigger.ON_ROOM_CLOSED,
+        HookTrigger.ON_ROOM_PAUSED,
+        HookTrigger.ON_CHANNEL_ATTACHED,
+        HookTrigger.ON_CHANNEL_DETACHED,
+        HookTrigger.ON_CHANNEL_MUTED,
+        HookTrigger.ON_CHANNEL_UNMUTED,
+        HookTrigger.ON_EVENT_UPDATED,
+        HookTrigger.ON_EVENT_DELETED,
+        HookTrigger.ON_PARTICIPANT_JOINED,
+        HookTrigger.ON_PARTICIPANT_LEFT,
+        HookTrigger.ON_PARTICIPANT_UPDATED,
+    ],
+    ids=str,
+)
+async def test_the_call_returns_before_its_hooks_end(kit: RoomKit, trigger: HookTrigger) -> None:
+    """RFC §9.3: an ASYNC trigger's hooks run after the change that fired
+    them, which does not wait for them, as roomkit-rs's do; only a room's
+    creation awaits its hooks (above). Each of these calls waited for them
+    (RMK-1020)."""
+    call = await _change(kit, trigger)
+    rooms: list[str] = []
+    started, release = asyncio.Event(), asyncio.Event()
+
+    @kit.hook(trigger, execution=HookExecution.ASYNC, name="slow")
+    async def slow(event: RoomEvent, ctx: RoomContext) -> None:
+        rooms.append(ctx.room.id)
+        started.set()
+        await release.wait()
+
+    try:
+        await asyncio.wait_for(call(), 0.5)
+        await asyncio.wait_for(started.wait(), 0.5)
+        assert rooms == ["r1"]
+    finally:
+        release.set()
+        await kit.close()
 
 
 class TestChannelLifecycleHooks:
-    async def test_hook_fired_on_attach(self, kit: RoomKit) -> None:
-        """ON_CHANNEL_ATTACHED fires when a channel is attached."""
-        fired: list[RoomEvent] = []
-
-        async def on_attached(event: RoomEvent, ctx: RoomContext) -> None:
-            fired.append(event)
-
-        kit.hook_engine.register(_async_hook(HookTrigger.ON_CHANNEL_ATTACHED, on_attached))
-
-        ch = SimpleChannel("sms1")
-        kit.register_channel(ch)
-        await kit.create_room(room_id="r1")
-        await kit.attach_channel("r1", "sms1")
-
-        # Filter to just ON_CHANNEL_ATTACHED events (ignoring ON_ROOM_CREATED)
-        assert len(fired) == 1
-        assert fired[0].room_id == "r1"
-
-    async def test_hook_fired_on_detach(self, kit: RoomKit) -> None:
-        """ON_CHANNEL_DETACHED fires when a channel is detached."""
-        fired: list[RoomEvent] = []
-
-        async def on_detached(event: RoomEvent, ctx: RoomContext) -> None:
-            fired.append(event)
-
-        kit.hook_engine.register(_async_hook(HookTrigger.ON_CHANNEL_DETACHED, on_detached))
-
-        ch = SimpleChannel("sms1")
-        kit.register_channel(ch)
-        await kit.create_room(room_id="r1")
-        await kit.attach_channel("r1", "sms1")
-        await kit.detach_channel("r1", "sms1")
-        assert len(fired) == 1
-
-    async def test_hook_fired_on_mute(self, kit: RoomKit) -> None:
-        """ON_CHANNEL_MUTED fires when a channel is muted."""
-        fired: list[RoomEvent] = []
-
-        async def on_muted(event: RoomEvent, ctx: RoomContext) -> None:
-            fired.append(event)
-
-        kit.hook_engine.register(_async_hook(HookTrigger.ON_CHANNEL_MUTED, on_muted))
-
-        ch = SimpleChannel("sms1")
-        kit.register_channel(ch)
-        await kit.create_room(room_id="r1")
-        await kit.attach_channel("r1", "sms1")
-        await kit.mute("r1", "sms1")
-        assert len(fired) == 1
-
-    async def test_hook_fired_on_unmute(self, kit: RoomKit) -> None:
-        """ON_CHANNEL_UNMUTED fires when a channel is unmuted."""
-        fired: list[RoomEvent] = []
-
-        async def on_unmuted(event: RoomEvent, ctx: RoomContext) -> None:
-            fired.append(event)
-
-        kit.hook_engine.register(_async_hook(HookTrigger.ON_CHANNEL_UNMUTED, on_unmuted))
-
-        ch = SimpleChannel("sms1")
-        kit.register_channel(ch)
-        await kit.create_room(room_id="r1")
-        await kit.attach_channel("r1", "sms1")
-        await kit.mute("r1", "sms1")
-        await kit.unmute("r1", "sms1")
-        assert len(fired) == 1
-
     async def test_detach_nonexistent_no_hook(self, kit: RoomKit) -> None:
         """ON_CHANNEL_DETACHED does not fire if channel was not attached."""
         fired: list[RoomEvent] = []
@@ -131,6 +131,7 @@ class TestChannelLifecycleHooks:
 
         await kit.create_room(room_id="r1")
         result = await kit.detach_channel("r1", "nonexistent")
+        await kit.hook_engine.drain_observers()
         assert result is False
         assert len(fired) == 0
 
@@ -194,6 +195,7 @@ async def test_a_binding_change_that_changes_nothing_writes_and_fires_nothing(
     channel.pushed.clear()
 
     result = await getattr(kit, operation)("r1", "sms1", *args)
+    await kit.hook_engine.drain_observers()
 
     assert result == before
     assert writes == []

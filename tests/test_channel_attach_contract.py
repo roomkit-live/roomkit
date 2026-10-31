@@ -105,6 +105,7 @@ class TestAttachOrder:
             channel.seen.append("hook")
 
         await kit.attach_channel(ROOM, "sms")
+        await kit.hook_engine.drain_observers()
 
         assert channel.seen == ["on_room_attached", "hook"]
 
@@ -273,6 +274,7 @@ class TestDetach:
 
         channel.seen.clear()
         await kit.detach_channel(ROOM, "sms")
+        await kit.hook_engine.drain_observers()
 
         assert channel.seen == ["on_room_detached", "hook"]
 
@@ -317,8 +319,9 @@ class TestDetach:
 
         with pytest.raises(RefusingBackendError):
             await kit.detach_channel(ROOM, "sms")
+        await kit.hook_engine.drain_observers()
 
-        assert fired == ["hook", "framework_event"]
+        assert sorted(fired) == ["framework_event", "hook"]
 
     async def test_an_announcement_that_fails_too_does_not_hide_why(
         self, caplog: pytest.LogCaptureFixture

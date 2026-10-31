@@ -186,6 +186,7 @@ class TestAttachOrder:
             rooms_when_observed.append(sorted(backend.rooms))
 
         await kit.attach_channel(ROOM, "conf")
+        await kit.hook_engine.drain_observers()
 
         assert rooms_when_observed == [[ROOM]]
 
@@ -210,5 +211,6 @@ class TestAttachOrder:
             rooms_when_observed.append(sorted(backend.rooms))
 
         await kit.detach_channel(ROOM, "conf")
+        await kit.hook_engine.drain_observers()
 
         assert rooms_when_observed == [[]]
