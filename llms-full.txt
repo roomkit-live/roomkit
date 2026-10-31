@@ -1282,12 +1282,10 @@ A `close()` from the kit's own work (a tool, a hook, a conference handler, a
 session's end) does not wait for that work nor cut it, but for the model turn
 it runs in (step 3), whether it started the shutdown or joined one under way;
 a delivery lane it runs in drops the delivery it kept, which could only run
-once the store is released. An event's `AFTER_BROADCAST` hook and a change's
-`ON_EVENT_UPDATED` or `ON_EVENT_DELETED` hook are that delivery's aftermath:
-their `close()` spares the room's lane too, which drops as the close starts
-the delivery the hook placed (one it sent, then closed). Any other ASYNC
-observer (of `BEFORE_BROADCAST`, `ON_TASK_CREATED`, `ON_ERROR`...) is not the
-work that fired it: its `close()` waits for that work as for any other. Concurrent `close()` calls share one
+once the store is released. An ASYNC observer is not the work that fired it:
+its `close()` waits for that work as for any other. A delivery the closing
+work itself placed, which its room's lane still holds (an `AFTER_BROADCAST`
+hook that sends, then closes the kit), is dropped as the close starts. Concurrent `close()` calls share one
 shutdown and its result: a channel that failed to close raises the same `ExceptionGroup` to
 every caller. A shutdown cut itself (every task cancelled, as `asyncio.run`
 does as it ends) raises `ShutdownCancelledError` to a caller nobody

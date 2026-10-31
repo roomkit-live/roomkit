@@ -74,7 +74,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     gives them the grace, then cuts them. A call no longer reads `kit_closed`
     for its hook alone.
   - An `AFTER_BROADCAST` hook that sends, then closes the kit: its send is
-    dropped, as before, whatever the store.
+    dropped as the close starts, as before, whatever the store; another
+    call's send under way gets the grace, then is cut, as any send.
 
 - **`LlamaCppAIProvider` runs llama.cpp's latest stable release, v0.8.0
   (build b11960)** (RMK-1024).
