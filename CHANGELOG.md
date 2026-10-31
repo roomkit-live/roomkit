@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`roomkit.testing`: a transport that records what it is handed, and an
+  agent that echoes** (RMK-1021). A test or an example saw a room work
+  through a channel of its own; roomkit-rs's examples and tests use the
+  same two from `roomkit::testing`.
+  - `RecordingTransport(channel_id, channel_type, *, capabilities=None)`
+    records every event delivered to it: `deliveries` holds each as a
+    `Delivery(event, text)`, `texts` the texts alone. It needs no
+    recipient and addresses its senders as its type does.
+  - `EchoAgent(channel_id, reply, *, quote=False)` answers every event it
+    is asked with `reply`, followed by the event's text when `quote` is set.
+  - `examples/testing_channels.py` shows both.
+
 - **A tool call's intent: the sentence the model writes for the person with
   each call** (RFC 6.4, RMK-1040). `AIChannel(..., tool_call_intents=True)`
   shows each tool's schema with the optional `_roomkit_intent` property; the
@@ -314,6 +326,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cut.
 
 ### Fixed
+
+- **A `BEFORE_TOOL_USE` MODIFY serves the call** (RFC 9.3, RMK-1021). The
+  next hook read the modified call, but the tool ran with the model's
+  arguments: a hook that redacted an argument by MODIFY sent the original
+  to the handler anyway. The call now runs with the arguments the chain
+  ended with, a MODIFY's or an in-place edit's, on every door (an AI
+  channel, a realtime model, a reasoning backend, a conference, an external
+  handler), validated again. A `metadata["arguments"]` rewrite keeps the
+  last word, as before.
 
 - **A transport that raises `asyncio.CancelledError` of its own is reported
   failed** (RFC 10.2, RMK-1041). A `deliver()` or an `on_event()` raising a

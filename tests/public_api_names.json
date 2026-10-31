@@ -1216,6 +1216,11 @@
     "TelemetryProvider",
     "get_current_span"
   ],
+  "roomkit.testing": [
+    "Delivery",
+    "EchoAgent",
+    "RecordingTransport"
+  ],
   "roomkit.tools": [
     "ExternalToolHandler",
     "FENCED_TAGS",

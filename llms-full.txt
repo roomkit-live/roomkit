@@ -7291,6 +7291,36 @@ class TestMyFeature:
         assert bob_inbox[0].content.body == "Hello"
 ```
 
+## Recording Transport and Echo Agent
+
+`roomkit.testing` gives a test or an example the two channels it needs to see
+a room work without a provider, as roomkit-rs's `roomkit::testing` does:
+
+```python
+from roomkit import ChannelCategory, ChannelType, RoomKit
+from roomkit.testing import EchoAgent, RecordingTransport
+
+kit = RoomKit()
+ws = RecordingTransport("ws", ChannelType.WEBSOCKET)
+kit.register_channel(ws)
+kit.register_channel(EchoAgent("echo", "You said: ", quote=True))
+await kit.create_room(room_id="r1")
+await kit.attach_channel("r1", "ws")
+await kit.attach_channel("r1", "echo", category=ChannelCategory.INTELLIGENCE)
+# ... a message into the room ...
+assert ws.texts == ["Hello.", "You said: Hello."]
+```
+
+- `RecordingTransport(channel_id, channel_type, *, capabilities=None)` records
+  every event delivered to it: `deliveries` holds each one as a
+  `Delivery(event, text)`, the event as transcoded for it and its text as a
+  person on the transport reads it; `texts` the texts alone. It needs no
+  recipient, and addresses its senders as its type does (an SMS one in E.164).
+  `capabilities` are those it declares: one that edits natively receives an
+  edit as it is.
+- `EchoAgent(channel_id, reply, *, quote=False)` answers every event it is
+  asked with `reply`, followed by the event's text when `quote` is set.
+
 ## Mock AI Provider
 
 ```python
