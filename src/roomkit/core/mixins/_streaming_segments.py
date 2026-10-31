@@ -595,7 +595,9 @@ class LaneSink:
             return None
         # The row's BEFORE_BROADCAST observers start once it is laned, or
         # refused (RFC §10.1).
-        async with observed_once_over(self._kit._hook_engine, self._room_id) as observed:
+        async with observed_once_over(
+            self._kit._hook_engine, self._room_id, closing=lambda: self._kit._closed
+        ) as observed:
             gated = await self._gate(event, observed)
             if gated is None:
                 return None

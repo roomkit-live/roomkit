@@ -239,7 +239,9 @@ class InjectedEventsMixin(HelpersMixin):
         queued = QueuedInjections()
         async with self._lock_manager.locked(room_id):
             with section(room_id, cascade.budget, queued):
-                async with observed_once_over(self._hook_engine, room_id) as observed:
+                async with observed_once_over(
+                    self._hook_engine, room_id, closing=lambda: self._closed
+                ) as observed:
                     await self._injected_section(
                         room_id, injected, cascade, queued, observed, cause=cause
                     )

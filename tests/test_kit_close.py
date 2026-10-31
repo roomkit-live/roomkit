@@ -898,6 +898,33 @@ class _NeverWrites(InMemoryStore):
         return await super().commit_event(room_id, event, **kw)
 
 
+async def test_a_pass_the_close_cuts_starts_no_before_broadcast_observer(
+    close_grace: float,
+) -> None:
+    """A message its BEFORE_BROADCAST chain allowed, whose commit never
+    ends, is cut by the close: its ASYNC observers never start, nothing new
+    starting once the close began, as in roomkit-rs (RFC §10.1 step 13,
+    §12.10.4)."""
+    store = _NeverWrites()
+    kit = await _kit(_Transport("ws"), store=store)
+    observed: list[str] = []
+
+    @kit.hook(HookTrigger.BEFORE_BROADCAST, execution=HookExecution.ASYNC, name="watch")
+    async def watch(event: RoomEvent, ctx: Any) -> None:
+        observed.append(getattr(event.content, "body", ""))
+
+    await kit.process_inbound(_message("fast"), room_id="r")
+    call = asyncio.ensure_future(kit.process_inbound(_message("slow"), room_id="r"))
+    await store.entered.wait()
+
+    await kit.close()
+    result = await call
+    await kit.hook_engine.drain_observers()
+
+    assert result.cancellation_reason == "kit_closed"
+    assert observed == ["fast"]
+
+
 async def test_a_write_outlasting_the_grace_is_cut_and_never_lands(close_grace: float) -> None:
     """A commit past its caller's decision (the caller cancelled) gets the
     grace, then is cut: nothing of it is written after close()."""

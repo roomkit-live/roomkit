@@ -196,6 +196,7 @@ class HelpersMixin:
     _room_timers: TimerTransitions  # the rooms' due timer transitions — set by RoomKit.__init__
     _process_timeout: float  # the pre-commit bound (RFC §13.6) — set by RoomKit.__init__
     _lock_manager: RoomLockManager  # the per-room lock — set by RoomKit.__init__
+    _closed: bool  # set once close() starts — set by RoomKit.__init__
     turn_executor: Any  # RoomKit's own TurnExecutor, whose wiring the turn triggers run on
     get_room: Any  # RoomLifecycleMixin's, the room read with the caller's scope (RFC §17.2)
 

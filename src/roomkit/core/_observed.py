@@ -5,13 +5,15 @@ A pass runs the chain under its room's lock, before its commit, and its
 observers start once the pass is over: its event committed and its delivery
 set placed in the room's lane, whatever the store's commit took. An observer
 that closes the kit then finds its event's set in the lane, running when the
-lane was idle (RFC §12.10.4).
+lane was idle (RFC §12.10.4). A pass the kit's close cuts starts none:
+nothing new starts once the close began.
 """
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -46,12 +48,20 @@ class Observed:
 
 
 @contextlib.asynccontextmanager
-async def observed_once_over(hooks: HookEngine, room_id: str) -> AsyncGenerator[Observed]:
+async def observed_once_over(
+    hooks: HookEngine, room_id: str, *, closing: Callable[[], bool]
+) -> AsyncGenerator[Observed]:
     """Around one pass of *room_id*: what its chain owes is started as it
-    ends, on every path, a refusal, a failure or a cut included, in the
-    pass's own context (the cascade's budget its section draws on)."""
+    ends, on every path, a refusal, a failure or a timeout included, in the
+    pass's own context (the cascade's budget its section draws on); but for
+    a pass cut while the kit is *closing*, which starts none (RFC §10.1 step
+    13, §12.10.4)."""
     observed = Observed()
     try:
         yield observed
+    except asyncio.CancelledError:
+        if closing():
+            observed.owed = None
+        raise
     finally:
         await observed.start(hooks, room_id)
