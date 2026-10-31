@@ -489,7 +489,12 @@ for the room (`await kit.enable_room_hook(room_id, name)`), as above.
 All 76 `HookTrigger` enum values (`src/roomkit/models/enums.py`). **Execution** is how
 the engine invokes the trigger: SYNC triggers run through the sequential,
 priority-ordered sync pipeline (can block/modify); ASYNC triggers run
-concurrently, fire-and-forget, errors logged. Registration mode is forgiving in
+concurrently, fire-and-forget, errors logged. An event's `AFTER_BROADCAST` hooks, a
+change's `ON_EVENT_UPDATED` and `ON_EVENT_DELETED`, `ON_TASK_CREATED` and
+`ON_ERROR` hold neither the call nor the room: `process_inbound` returns once
+its delivery set and its answers are done, and the room's next message and an
+agent's answer are delivered while they run; `event_processed` comes once the
+event's `AFTER_BROADCAST` hooks have ended (RMK-1020). Registration mode is forgiving in
 both directions: ASYNC-registered hooks on a SYNC trigger fire as observers
 after the sync pass, in the background: the operation goes on without waiting
 for them, so a hook whose work it needs first is registered SYNC (RMK-903).

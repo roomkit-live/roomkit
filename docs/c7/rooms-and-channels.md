@@ -716,7 +716,7 @@ shutdown, whoever calls it and however often:
    behind another is dropped and never sent (one placed in the lane while it
    was idle runs from its placement, and gets the grace of rule 4, whatever
    the store; the lane is idle once the sends ahead have answered, their
-   `AFTER_BROADCAST` hooks and responses still running: an ASYNC
+   responses still running, and no event's ASYNC hooks hold it: an ASYNC
    `BEFORE_BROADCAST` observer that closes the kit finds its event's
    delivery placed, an answer's included), the kit's background runs and its verification
    timers are cut, and a call waiting for its room's lock is cut, nothing of
@@ -774,8 +774,12 @@ A `close()` from the kit's own work (a tool, a hook, a conference handler, a
 session's end) does not wait for that work nor cut it, but for the model turn
 it runs in (step 3), whether it started the shutdown or joined one under way;
 a delivery lane it runs in drops the delivery it kept, which could only run
-once the store is released. An ASYNC observer is not the work that fired it:
-its `close()` waits for that work as for any other. Concurrent `close()` calls share one
+once the store is released. An event's `AFTER_BROADCAST` hook and a change's
+`ON_EVENT_UPDATED` or `ON_EVENT_DELETED` hook are that delivery's aftermath:
+their `close()` spares the room's lane too, which drops as the close starts
+the delivery the hook placed (one it sent, then closed). Any other ASYNC
+observer (of `BEFORE_BROADCAST`, `ON_TASK_CREATED`, `ON_ERROR`...) is not the
+work that fired it: its `close()` waits for that work as for any other. Concurrent `close()` calls share one
 shutdown and its result: a channel that failed to close raises the same `ExceptionGroup` to
 every caller. A shutdown cut itself (every task cancelled, as `asyncio.run`
 does as it ends) raises `ShutdownCancelledError` to a caller nobody

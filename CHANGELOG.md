@@ -57,6 +57,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **An event's ASYNC hooks no longer hold its call or its room** (RFC 9.3,
+  RMK-1020). An event's `AFTER_BROADCAST` hooks, the `ON_EVENT_UPDATED` or
+  `ON_EVENT_DELETED` of an edit or a delete, `ON_TASK_CREATED` and an
+  agent's `ON_ERROR` ran in the room's delivery lane: `process_inbound`
+  returned only once they had ended, a room's hooks ran one after the
+  other, and the room's next message and an agent's answer waited behind
+  them, so a 1 s audit hook added 1 s to every reply. They now run on tasks
+  of their own, as roomkit-rs runs them.
+  - The call returns once its delivery set and its answers are done: a
+    caller that reads a hook's effect right after it returns may not see it
+    yet. `event_processed` still comes once the event's `AFTER_BROADCAST`
+    hooks have ended.
+  - Each body still draws on its cascade's budget and depth, so a hook that
+    posts after every event still stops at the cap, and `kit.close()` still
+    gives them the grace, then cuts them. A call no longer reads `kit_closed`
+    for its hook alone.
+  - An `AFTER_BROADCAST` hook that sends, then closes the kit: its send is
+    dropped, as before, whatever the store.
+
 - **`LlamaCppAIProvider` runs llama.cpp's latest stable release, v0.8.0
   (build b11960)** (RMK-1024).
   - The pinned build was b11160, a nightly from September. It could not
