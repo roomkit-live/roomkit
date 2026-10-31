@@ -23,6 +23,7 @@ from roomkit.core.exceptions import KitClosedError, NoRecipientError
 from roomkit.core.lanes import DeliveryCascade, DeliveryPlan
 from roomkit.core.rate_limiter import TokenBucketRateLimiter
 from roomkit.core.retry import retry_with_backoff
+from roomkit.core.task_utils import cancels_current_task
 from roomkit.core.transcoder import DefaultContentTranscoder, takes_file, takes_files_of
 from roomkit.core.visibility import answers_reach, committed_visibility, visibility_allows
 from roomkit.models.channel import ChannelBinding, ChannelOutput
@@ -353,7 +354,7 @@ class BroadcastResult:
     # failure on ``InboundResult.error``) can classify it with the cause chain
     # intact — ``errors`` only carries ``str(exc)``. An intelligence turn's is
     # the one the owner rebuilt from the turn's error record (RFC §10.6.8).
-    errors_exc: dict[str, Exception] = field(default_factory=dict)
+    errors_exc: dict[str, BaseException] = field(default_factory=dict)
 
 
 def _merge_updates(
@@ -378,7 +379,7 @@ class _TargetResult:
     delivery_output: ChannelOutput | None = None
     streaming_response: StreamingResponse | None = None
     error: str | None = None
-    error_exc: Exception | None = None
+    error_exc: BaseException | None = None
     reentry_events: list[RoomEvent] = field(default_factory=list)
     blocked_events: list[RoomEvent] = field(default_factory=list)
     observations: list[Observation] = field(default_factory=list)
@@ -429,6 +430,18 @@ def _cut_sends(
         and binding.channel_id not in answered
         and binding.channel_id not in excluded
     ]
+
+
+def _leaves_no_result(exc: BaseException, binding: ChannelBinding) -> bool:
+    """Whether *exc* ends *binding*'s target without a result: a cancellation
+    aimed at the target's own task (its caller gave up, the kit's close cut
+    it), or one out of an agent's reaction, its turn's cut (an agent's own
+    ``CancelledError`` reaches here as its turn's failure). A transport's
+    own ``CancelledError`` is its failure, as any other exception it raises
+    (RFC §10.2 step 3)."""
+    if not isinstance(exc, asyncio.CancelledError):
+        return False
+    return cancels_current_task(exc) or binding.category == ChannelCategory.INTELLIGENCE
 
 
 class EventRouter:
@@ -783,7 +796,9 @@ class EventRouter:
                                 )
                             tr.delivery_output = delivery_output
                             breaker.record_success()
-                        except Exception as exc:
+                        except (Exception, asyncio.CancelledError) as exc:
+                            if _leaves_no_result(exc, binding):
+                                raise
                             if not isinstance(exc, NoRecipientError):
                                 # A binding with no recipient says nothing
                                 # about the provider; it must not trip the
@@ -832,7 +847,9 @@ class EventRouter:
                             tr.blocked_events.append(blocked)
                             tr.observations.append(chain_depth_exceeded(blocked, limit))
 
-            except Exception as exc:
+            except (Exception, asyncio.CancelledError) as exc:
+                if _leaves_no_result(exc, binding):
+                    raise
                 tr.error = str(exc)
                 tr.error_exc = exc
                 log_failure(

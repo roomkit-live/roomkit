@@ -115,7 +115,7 @@ def _delivery_results(result: BroadcastResult) -> dict[str, DeliveryResult]:
     return results
 
 
-def _delivery_error(message: str, exc: Exception | None) -> DeliveryError:
+def _delivery_error(message: str, exc: BaseException | None) -> DeliveryError:
     """A failed target's error: its exception's code and retryability, or
     for an agent the event solicits that is not registered, which ran no
     turn, ``channel_not_registered``, not retryable (RFC §10.2 step 3)."""

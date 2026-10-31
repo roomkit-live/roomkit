@@ -57,7 +57,7 @@ def provider_error_level(exc: ProviderError) -> int:
 
 def log_failure(
     log: logging.Logger,
-    exc: Exception,
+    exc: BaseException,
     what: str,
     *,
     caller_logs: bool = False,

@@ -467,6 +467,13 @@ def _cancellation_requests() -> int:
     return task.cancelling() if task is not None else 0
 
 
+def cancels_current_task(error: BaseException) -> bool:
+    """Whether *error* is a cancellation aimed at the current task, which it
+    lets through, rather than a ``CancelledError`` the work it awaited
+    raised of its own: that one is the work's failure."""
+    return isinstance(error, asyncio.CancelledError) and _cancellation_requests() > 0
+
+
 async def await_interruptible(task: asyncio.Future[Any]) -> bool:
     """Await *task*, which someone else may cancel; whether they did
     (:func:`await_unless_cut`)."""

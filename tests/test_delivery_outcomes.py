@@ -13,6 +13,7 @@ volume on a question nobody asks.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 import pytest
@@ -22,7 +23,7 @@ from roomkit.channels.base import Channel
 from roomkit.models.channel import ChannelBinding, ChannelOutput, RetryPolicy
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundMessage, ProviderResult
-from roomkit.models.enums import ChannelType
+from roomkit.models.enums import ChannelCategory, ChannelType
 from roomkit.models.event import RoomEvent, TextContent
 from roomkit.store.base import ConversationStore
 from roomkit.store.memory import InMemoryStore
@@ -30,11 +31,20 @@ from tests.test_framework import SimpleChannel
 
 
 class BrokenChannel(SimpleChannel):
-    """A transport whose provider refuses, the way a real one does."""
+    """A transport whose provider refuses, the way a real one does, when it
+    sends or, with *on_event*, when it is told of the event."""
 
-    def __init__(self, channel_id: str, error: Exception) -> None:
+    def __init__(self, channel_id: str, error: BaseException, *, on_event: bool = False) -> None:
         super().__init__(channel_id)
         self._error = error
+        self._on_event = on_event
+
+    async def on_event(
+        self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
+    ) -> ChannelOutput:
+        if self._on_event:
+            raise self._error
+        return await super().on_event(event, binding, context)
 
     async def deliver(
         self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
@@ -163,15 +173,50 @@ class TestTheCallerIsToldWhatHappened:
         assert result.delivery_results["out"].status == "sent"
         assert result.delivery_results["out"].provider_message_id == "accepted-after-retry"
 
-    async def test_an_unmarked_failure_reports_as_retryable(self) -> None:
-        kit = await _room(SimpleChannel("in"), BrokenChannel("out", RuntimeError("boom")))
+    @pytest.mark.parametrize(
+        ("error", "on_event"),
+        [
+            (RuntimeError("boom"), False),
+            # A cancellation of the transport's own, not one aimed at the
+            # call (RMK-1041): no result at all before.
+            (asyncio.CancelledError("socket closed"), False),
+            (asyncio.CancelledError("socket closed"), True),
+        ],
+        ids=["deliver-raises", "deliver-cancelled", "on-event-cancelled"],
+    )
+    async def test_an_unmarked_failure_reports_as_retryable(
+        self, error: BaseException, on_event: bool
+    ) -> None:
+        kit = await _room(SimpleChannel("in"), BrokenChannel("out", error, on_event=on_event))
 
         result = await kit.process_inbound(_msg("in"))
+        await kit.close()
 
         failed = result.delivery_results["out"]
+        assert failed.status == "failed"
         assert failed.error is not None
-        assert failed.error.code == "RuntimeError"
+        assert failed.error.code == type(error).__name__
+        assert failed.error.message == str(error)
         assert failed.error.retryable is True
+
+    async def test_an_agent_turn_its_strategy_cancels_is_no_error_of_the_call(self) -> None:
+        """A transport's own ``CancelledError`` is its failure; an agent's
+        turn ending cancelled is its turn's cut, never ``InboundResult.error``,
+        which a caller may raise (RMK-1041)."""
+
+        async def cancelled(*_: object) -> ChannelOutput:
+            raise asyncio.CancelledError
+
+        kit = await _room(SimpleChannel("in"))
+        kit.register_channel(SimpleChannel("ai", ChannelType.AI))
+        await kit.attach_channel("r1", "ai", category=ChannelCategory.INTELLIGENCE)
+        kit._turn_runners.take("r1", "ai", cancelled, owner=object())
+
+        result = await kit.process_inbound(_msg("in"))
+        await kit.close()
+
+        assert result.error is None
+        assert "ai" not in result.delivery_results
 
     async def test_the_map_covers_every_channel_in_the_set(self) -> None:
         kit = await _room(

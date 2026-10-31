@@ -256,6 +256,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A transport that raises `asyncio.CancelledError` of its own is reported
+  failed** (RFC 10.2, RMK-1041). A `deliver()` or an `on_event()` raising a
+  `CancelledError` the transport met itself (a request another task
+  cancelled, not the call's cancellation) left its target out of
+  `delivery_results`, with no log line: the delivery set caught `Exception`
+  only. The target now reads `failed`, code `CancelledError`, retryable, its
+  message the exception's, and is logged as any failed send is; a failed
+  `deliver()` counts against the circuit breaker, and a `retry_policy` does
+  not retry it.
+  - A cancellation aimed at the call ends it as before: its caller giving
+    up, or the kit's close cutting the send (`kit_closed`).
+  - An agent's turn ending cancelled is its turn's cut, never
+    `InboundResult.error`, which a caller may raise.
+
 - **A `kit.close()` while a cancelled task is still ending waits for it
   without spinning, and one called from that end returns** (RFC 12.10.4,
   RFC 23.3, RMK-1038). `cancel_task()` ends its task once the task's work
