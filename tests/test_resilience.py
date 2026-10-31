@@ -625,6 +625,21 @@ class TestRoomTimers:
         assert "r1" in ids
         assert "r2" not in ids
 
+    async def test_check_all_timers_reaches_every_room_past_a_page(self) -> None:
+        """RMK-1009: a sweep transitions every room due, past the 100 a store
+        read returns by default; it stopped at the first 100 per status."""
+        kit = await self._make_kit()
+        for i in range(150):
+            room = await kit.create_room(f"r{i}")
+            await _rewrite(
+                kit, room, timers={"inactive_after_seconds": 60, "last_activity_at": _ago(120)}
+            )
+
+        transitioned = await kit.check_all_timers()
+
+        assert len({room.id for room in transitioned}) == 150
+        await kit.close()
+
     async def test_check_all_timers_paused_to_closed(self) -> None:
         kit = await self._make_kit()
 

@@ -263,7 +263,7 @@ RoomKit exports **348 symbols** from `roomkit`. Providers and voice types import
 | `ReentryLoopCapError` | A direct `update_event()`, `delete_event()` or `regenerate_response()` an ASYNC hook's body made past the cascade's hook calls; nothing written (RFC §9.5.1, §10.3) |
 | `TransitionRefusedError` | A lifecycle transition from a status it does not leave, such as `close_room()` on an ARCHIVED room; nothing written (RFC §5.1) |
 | `ChangeRefusedError` | `send_event()` of an edit or a delete step 8a refused; `reason` says why (RFC §10.3) |
-| `EventNotFoundError` | A store's `commit_event()` of a change whose target the room no longer holds (RFC §14.3) |
+| `EventNotFoundError` | A store's `commit_event()` of a change whose target the room no longer holds, or `update_event()` of an event it does not hold (RFC §14.3) |
 | `IdempotencyKeyTakenError` | A store's `commit_event()` of an event under a key its source channel holds in the room for another event; nothing written (RFC §13.4, §14.3) |
 | `RoomNotAttachedError` | Channel acted on a room it is no longer attached to |
 | `ChannelNotFoundError` | Channel not attached to room |

@@ -229,6 +229,36 @@ async def _update_event_row(conn: Any, event: RoomEvent, *, room_id: str | None 
     return status != "UPDATE 0"
 
 
+async def _insert_participant(conn: Any, participant: Participant) -> None:
+    """Write *participant*'s row on *conn*, replacing the one of its id in its room."""
+    await conn.execute(
+        "INSERT INTO participants"
+        " (id, room_id, channel_id, display_name, role, status,"
+        "  identification, identity_id, external_id, joined_at,"
+        "  resolved_at, resolved_by, metadata, connected_via)"
+        " VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)"
+        " ON CONFLICT (room_id, id) DO UPDATE SET"
+        "  channel_id=$3, display_name=$4, role=$5, status=$6,"
+        "  identification=$7, identity_id=$8, external_id=$9,"
+        "  resolved_at=$11, resolved_by=$12, metadata=$13,"
+        "  connected_via=$14",
+        participant.id,
+        participant.room_id,
+        participant.channel_id,
+        participant.display_name,
+        participant.role.value,
+        participant.status.value,
+        participant.identification.value,
+        participant.identity_id,
+        participant.external_id,
+        participant.joined_at,
+        participant.resolved_at,
+        participant.resolved_by,
+        participant.metadata,
+        participant.connected_via,
+    )
+
+
 async def _mark_edits_deleted(conn: Any, room_id: str, target_id: str) -> None:
     """Mark every edit of *target_id* deleted, on *conn*'s transaction: an
     edit holds a version of the deleted text (RFC §10.3)."""
@@ -1220,7 +1250,8 @@ class PostgresStore(ConversationStore):
     async def update_event(self, event: RoomEvent) -> RoomEvent:
         with self._query_span("update_event", "events"):
             async with self._acquire() as conn:
-                await _update_event_row(conn, event)
+                if not await _update_event_row(conn, event):
+                    raise target_gone(event)
         return event
 
     async def write_change_target(self, room_id: str, target: RoomEvent) -> None:
@@ -1684,32 +1715,11 @@ class PostgresStore(ConversationStore):
     async def add_participant(self, participant: Participant) -> Participant:
         with self._query_span("add_participant", "participants"):
             async with self._acquire() as conn:
-                await conn.execute(
-                    "INSERT INTO participants"
-                    " (id, room_id, channel_id, display_name, role, status,"
-                    "  identification, identity_id, external_id, joined_at,"
-                    "  resolved_at, resolved_by, metadata, connected_via)"
-                    " VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)"
-                    " ON CONFLICT (room_id, id) DO UPDATE SET"
-                    "  channel_id=$3, display_name=$4, role=$5, status=$6,"
-                    "  identification=$7, identity_id=$8, external_id=$9,"
-                    "  resolved_at=$11, resolved_by=$12, metadata=$13,"
-                    "  connected_via=$14",
-                    participant.id,
-                    participant.room_id,
-                    participant.channel_id,
-                    participant.display_name,
-                    participant.role.value,
-                    participant.status.value,
-                    participant.identification.value,
-                    participant.identity_id,
-                    participant.external_id,
-                    participant.joined_at,
-                    participant.resolved_at,
-                    participant.resolved_by,
-                    participant.metadata,
-                    participant.connected_via,
-                )
+                try:
+                    await _insert_participant(conn, participant)
+                except self._asyncpg.ForeignKeyViolationError as exc:
+                    # The table's one foreign key is its room's (RFC §14.3).
+                    raise RoomNotFoundError(participant.room_id) from exc
         return participant
 
     async def get_participant(self, room_id: str, participant_id: str) -> Participant | None:

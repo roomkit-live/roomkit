@@ -112,6 +112,11 @@ _DEFAULT_CALL_TIMEOUT = 30.0
 :meth:`~MCPToolProvider.read_resource` and the tool handler, so they cannot
 drift apart."""
 
+# The seconds a server RoomKit starts may take to connect by default: its
+# start, the handshake and the listing, a first start that fetches its
+# package included (roomkit-rs's McpCommand default).
+_CONNECT_TIMEOUT = 60.0
+
 
 # Upper bound for publishing a structured result on the tool-call context
 # (serialized size). Tool-call events ride the room event pipeline — DB rows,
@@ -205,6 +210,7 @@ class MCPToolProvider:
         cwd: str | None = None,
         discover: bool = True,
         label: str | None = None,
+        connect_timeout: float | None = None,
     ) -> None:
         _check_label(label)
         if transport not in ("streamable_http", "sse", "stdio"):
@@ -217,8 +223,11 @@ class MCPToolProvider:
         else:
             if not url:
                 raise ValueError(f"the {transport} transport needs a url")
-            if command or args or env is not None or cwd is not None:
-                raise ValueError(f"command, args, env and cwd are for stdio, not {transport}")
+            stdio_only = command or args or env is not None or cwd is not None
+            if stdio_only or connect_timeout is not None:
+                raise ValueError(
+                    f"command, args, env, cwd and connect_timeout are for stdio, not {transport}"
+                )
         self._url = url
         self._transport = transport
         self._tool_filter = tool_filter
@@ -227,6 +236,12 @@ class MCPToolProvider:
         self._args = list(args)
         self._env = env
         self._cwd = cwd
+        # Only a server RoomKit starts has a connect bound, as in roomkit-rs.
+        self._connect_timeout = (
+            (_CONNECT_TIMEOUT if connect_timeout is None else connect_timeout)
+            if transport == "stdio"
+            else None
+        )
         self._discover = discover
         self._label = label
         self._session: Any = None
@@ -297,6 +312,7 @@ class MCPToolProvider:
         tool_filter: Callable[[str], bool] | None = None,
         discover: bool = True,
         label: str | None = None,
+        connect_timeout: float = _CONNECT_TIMEOUT,
     ) -> MCPToolProvider:
         """Create an MCPToolProvider for a server started as a subprocess (stdio).
 
@@ -314,6 +330,10 @@ class MCPToolProvider:
             discover: List the server's tools on entry (the default); see
                 :meth:`from_url`.
             label: The host's name for the server; see :meth:`from_url`.
+            connect_timeout: The seconds entering may take: the server's
+                start, the handshake and the listing of its tools, a first
+                start that fetches its package included. Past it the server
+                is stopped and entering raises :class:`TimeoutError`.
 
         Returns:
             An MCPToolProvider instance (not yet connected).
@@ -330,6 +350,7 @@ class MCPToolProvider:
             tool_filter=tool_filter,
             discover=discover,
             label=label,
+            connect_timeout=connect_timeout,
         )
 
     @property
@@ -354,16 +375,22 @@ class MCPToolProvider:
         # that exits, an initialize that errors) still closes what was opened:
         # for stdio, that is the server process.
         stack = AsyncExitStack()
+        bound = asyncio.timeout(self._connect_timeout)
         try:
-            read_stream, write_stream = await self._open_transport(stack)
-            session = await stack.enter_async_context(ClientSession(read_stream, write_stream))
-            init = await session.initialize()
-            # Inside the try: a listing the catalogue cannot read releases what
-            # was opened, the stdio server included (RFC §21.2).
-            if self._discover:
-                await self._discover_tools(session)
-        except BaseException:
+            async with bound:
+                read_stream, write_stream = await self._open_transport(stack)
+                session = await stack.enter_async_context(ClientSession(read_stream, write_stream))
+                init = await session.initialize()
+                # Inside the try: a listing the catalogue cannot read releases
+                # what was opened, the stdio server included (RFC §21.2).
+                if self._discover:
+                    await self._discover_tools(session)
+        except BaseException as exc:
             await stack.aclose()
+            if isinstance(exc, TimeoutError) and bound.expired():
+                raise TimeoutError(
+                    f"MCP server {self._target} did not connect within {self._connect_timeout} s"
+                ) from exc
             raise
 
         self._stack = stack

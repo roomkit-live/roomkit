@@ -189,6 +189,9 @@ What every store keeps alike (RFC §10.3, §14.1, §14.3):
 - `create_room()` refuses an id it holds with `RoomAlreadyExistsError`, nothing
   written: replacing the room would re-home its conversation, another
   organization's included.
+- `update_event()` of an event the store does not hold raises
+  `EventNotFoundError`, and `add_participant()` into a room it does not hold
+  `RoomNotFoundError`, nothing written.
 - `get_private_state(room_id, key)` and `set_private_state(room_id, key,
   value)` keep what a room holds for the runtime alone (RFC §14.1), apart
   from its metadata, which clients may read: a JSON object per key. The room's

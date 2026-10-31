@@ -145,6 +145,26 @@ async def test_pagination_order_contract(
         await contract_store.delete_room(room.id)
 
 
+@pytest.mark.parametrize(
+    "window",
+    [{}, {"newest_first": True}, {"after_index": 0}, {"before_index": 4}],
+    ids=["oldest", "newest", "after", "before"],
+)
+async def test_a_page_of_no_events_is_empty_whatever_its_window(
+    contract_store: ConversationStore, window: dict[str, Any]
+) -> None:
+    """``limit=0`` asks for no event, below a cursor as anywhere else: the
+    memory store's ``before_index`` window returned the whole window."""
+    room = await contract_store.create_room(Room(id=uuid4().hex))
+    try:
+        for i in range(6):
+            await contract_store.add_event(make_event(room_id=room.id, index=i, body=str(i)))
+
+        assert await contract_store.list_events(room.id, limit=0, **window) == []
+    finally:
+        await contract_store.delete_room(room.id)
+
+
 async def test_refused_rows_are_served_on_request_only(contract_store: ConversationStore) -> None:
     """RFC §14.1: a timeline read serves what the room received. A row stored
     BLOCKED is skipped by default, before the page is cut; ``include_blocked``

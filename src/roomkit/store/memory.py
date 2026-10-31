@@ -486,6 +486,8 @@ class InMemoryStore(ConversationStore):
         return self._events.get(event_id)
 
     async def update_event(self, event: RoomEvent) -> RoomEvent:
+        if event.id not in self._events:
+            raise target_gone(event)
         event = self._rewritten(event)
         self._events[event.id] = event
         return event
@@ -592,7 +594,7 @@ class InMemoryStore(ConversationStore):
         events = self._apply_event_filter(events, event_filter, visibility=effective_visibility)
 
         if before_index is not None:
-            return events[-limit:] if limit < len(events) else events
+            return events[max(0, len(events) - limit) :]
         if after_index is not None:
             return events[:limit]
         if newest_first:
@@ -806,6 +808,8 @@ class InMemoryStore(ConversationStore):
     # Participant operations
 
     async def add_participant(self, participant: Participant) -> Participant:
+        if participant.room_id not in self._rooms:
+            raise RoomNotFoundError(participant.room_id)
         participant = participant.model_copy(deep=True)
         self._participants.setdefault(participant.room_id, {})[participant.id] = participant
         self._index_participant(participant.id, participant.room_id)

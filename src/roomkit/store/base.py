@@ -131,8 +131,9 @@ def room_taken(room_id: str) -> RoomAlreadyExistsError:
 
 
 def target_gone(target: RoomEvent) -> EventNotFoundError:
-    """The refusal of a change whose *target* its room no longer holds
-    (``commit_event``, RFC §14.3): the whole commit fails."""
+    """The refusal of a write of *target*, which its room does not hold
+    (RFC §14.3): a change's target (``commit_event``, the whole commit
+    fails) or an update (``update_event``); nothing is written."""
     return EventNotFoundError(f"Event {target.id} is not in room {target.room_id}")
 
 
@@ -1065,7 +1066,7 @@ class ConversationStore(ABC):
         room_id: str,
         *,
         event_filter: EventFilter | None = None,
-        limit: int = 100,
+        limit: int = 50,
         after_index: int | None = None,
         newest_first: bool = False,
     ) -> list[RoomEvent]:

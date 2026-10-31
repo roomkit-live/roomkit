@@ -249,6 +249,14 @@ def _write_transaction(conn: sqlite3.Connection) -> Generator[None, None, None]:
         raise
 
 
+def _put_participant_row(conn: sqlite3.Connection, participant: Participant) -> None:
+    conn.execute(
+        """INSERT INTO participants(room_id, id, data) VALUES(?, ?, ?)
+           ON CONFLICT(room_id, id) DO UPDATE SET data=excluded.data""",
+        (participant.room_id, participant.id, participant.model_dump_json()),
+    )
+
+
 def _filter_rooms(where: list[str], params: list[Any], room_filter: RoomFilter | None) -> None:
     """Narrow a routing lookup joined on ``rooms r`` to the statuses and the
     organization *room_filter* names (RFC §10.4, §14.1, §17.2)."""
@@ -1408,6 +1416,8 @@ class SQLiteStore(ConversationStore):
     def _x_update_event(self, event: RoomEvent) -> RoomEvent:
         conn = self._db()
         with _write_transaction(conn):
+            if conn.execute("SELECT 1 FROM events WHERE id = ?", (event.id,)).fetchone() is None:
+                raise target_gone(event)
             self._write_event_row(conn, event, replace=True)
         return event
 
@@ -1893,17 +1903,23 @@ class SQLiteStore(ConversationStore):
     # -- Participant operations --------------------------------------------
 
     async def add_participant(self, participant: Participant) -> Participant:
-        return await self._run(self._x_put_participant, participant)
+        return await self._run(self._x_add_participant, participant)
 
     async def update_participant(self, participant: Participant) -> Participant:
         return await self._run(self._x_put_participant, participant)
 
+    def _x_add_participant(self, participant: Participant) -> Participant:
+        """*participant* into its room, which the store holds (RFC §14.3)."""
+        conn = self._db()
+        with _write_transaction(conn):
+            held = conn.execute("SELECT 1 FROM rooms WHERE id = ?", (participant.room_id,))
+            if held.fetchone() is None:
+                raise RoomNotFoundError(participant.room_id)
+            _put_participant_row(conn, participant)
+        return participant
+
     def _x_put_participant(self, participant: Participant) -> Participant:
-        self._db().execute(
-            """INSERT INTO participants(room_id, id, data) VALUES(?, ?, ?)
-               ON CONFLICT(room_id, id) DO UPDATE SET data=excluded.data""",
-            (participant.room_id, participant.id, participant.model_dump_json()),
-        )
+        _put_participant_row(self._db(), participant)
         return participant
 
     async def get_participant(self, room_id: str, participant_id: str) -> Participant | None:

@@ -93,7 +93,8 @@ class EventNotFoundError(RoomKitError):
     Raised by a store's ``commit_event`` when the target of the edit or the
     delete it commits is gone, or another room's: the change, its target's
     update and the room's counters are one transaction, which then fails
-    whole, nothing written.
+    whole, nothing written. Raised too by ``update_event`` of an event the
+    store does not hold, nothing written.
     """
 
 

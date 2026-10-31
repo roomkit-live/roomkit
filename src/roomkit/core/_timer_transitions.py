@@ -41,6 +41,9 @@ logger = logging.getLogger("roomkit.framework")
 # each one beaten by a commit off the room lock (a streamed row, a greeting).
 _ATTEMPTS = 3
 
+# The rooms a sweep reads per store call.
+_SWEEP_PAGE = 100
+
 RoomRead = Callable[..., Awaitable["Room"]]
 """A scoped room read: ``(room_id, *, organization_id)``, raising
 ``RoomNotFoundError`` for a room missing or another organization's."""
@@ -127,9 +130,7 @@ class TimerTransitions:
         rooms = [
             room
             for status in (RoomStatus.ACTIVE, RoomStatus.PAUSED)
-            for room in await self._store.find_rooms(
-                organization_id=organization_id, status=status.value
-            )
+            for room in await self._rooms_of(status, organization_id)
         ]
         changed: list[Room] = []
         for room in rooms:
@@ -137,6 +138,21 @@ class TimerTransitions:
             if checked.status != room.status:
                 changed.append(checked)
         return changed
+
+    async def _rooms_of(self, status: RoomStatus, organization_id: str | None) -> list[Room]:
+        """Every room of *status*, read page by page before any is checked:
+        one store read returns a page, 100 rooms by default (RMK-1009)."""
+        rooms: list[Room] = []
+        while True:
+            page = await self._store.find_rooms(
+                organization_id=organization_id,
+                status=status.value,
+                limit=_SWEEP_PAGE,
+                offset=len(rooms),
+            )
+            rooms.extend(page)
+            if len(page) < _SWEEP_PAGE:
+                return rooms
 
     async def apply_due(
         self, room: Room, *, hooks: list[asyncio.Task[None]] | None = None

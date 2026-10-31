@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`MCPToolProvider.from_command(..., connect_timeout=60.0)`** (RMK-1021,
+  as roomkit-rs's `McpCommand`). Entering a provider that starts its server
+  waited for the handshake and the listing for ever: a server that never
+  answered held its host. Entering now takes `connect_timeout` seconds at
+  most, the start, the handshake and the listing together; past it the
+  server is stopped and entering raises `TimeoutError`. The constructor
+  takes it too, for stdio only (`ValueError` on an HTTP transport).
+
 - **`pause_room()`, `resume_room()` and `reopen_room()`** (RFC 5.1,
   RMK-1021). The RFC names the three transitions and roomkit-rs has them;
   a host could only close or archive a room. A pause fires
@@ -80,6 +88,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `close()`. It needs the `typesafe` and `llamacpp` extras.
 
 ### Changed
+
+- **`ConversationStore.get_timeline()` reads 50 events by default**, as
+  `RoomKit.get_timeline()` and roomkit-rs's `EventQuery` (RMK-1021). The one
+  name had two defaults, 100 on the store and 50 on the kit. A caller of the
+  store's read that relied on 100 passes `limit=100`.
 
 - **BREAKING — a store implements `commit_event()` and
   `advance_delivered_index()` itself** (RFC 14.1, 14.3; RMK-1021). The base
@@ -395,6 +408,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cut.
 
 ### Fixed
+
+- **A store refuses a write naming what it lacks** (RFC 14.3, RMK-1021),
+  as roomkit-rs's stores. `update_event()` of an event the store does not
+  hold raises `EventNotFoundError`: the memory store kept it as a row no
+  timeline read found, SQLite raised an `IntegrityError` or kept it, and
+  Postgres wrote nothing without a word. `add_participant()` into a room the
+  store does not hold raises `RoomNotFoundError`: the memory and SQLite
+  stores kept a participant of no room, and Postgres raised asyncpg's
+  `ForeignKeyViolationError`. Nothing is written in either case.
+
+- **`list_events(before_index=..., limit=0)` returns no event** on the
+  memory store (RMK-1021), as the other stores and every other window: it
+  returned the whole window below the cursor.
+
+- **`check_all_timers()` reaches every room** (RMK-1009). A sweep read one
+  page of rooms per status, the store's 100 by default, so past the first
+  100 ACTIVE and 100 PAUSED rooms no timer ever paused or closed a room. It
+  now reads every page before it checks any room.
 
 - **A close from an observer on an agent's answer logs nothing** (RFC
   12.10.4, RMK-1043). The answer's row keeps the end its commit carried;

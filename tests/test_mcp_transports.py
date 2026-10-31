@@ -8,6 +8,7 @@ import socket
 import sys
 import textwrap
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -137,6 +138,20 @@ async def test_a_command_that_does_not_exist_says_so() -> None:
     assert provider._stack is None
 
 
+async def test_a_server_that_never_answers_is_stopped_at_the_connect_bound() -> None:
+    """RMK-1021 item 38: entering waits for the handshake and the listing
+    within ``connect_timeout``, then stops the server and raises; a server
+    that never answered held its host for ever."""
+    # Reads until its input closes and writes nothing: no handshake answer.
+    provider = MCPToolProvider.from_command(
+        sys.executable, ["-I", "-c", "import sys; sys.stdin.read()"], connect_timeout=0.05
+    )
+
+    with pytest.raises(TimeoutError, match="within 0.05 s"):
+        await provider.__aenter__()
+    assert provider._stack is None
+
+
 async def test_cwd_is_the_server_working_directory(server_script: str, tmp_path: Path) -> None:
     workdir = tmp_path / "work"
     workdir.mkdir()
@@ -169,9 +184,10 @@ class TestConstruction:
         with pytest.raises(ValueError, match="needs a url"):
             MCPToolProvider(transport="sse")
 
-    def test_stdio_options_are_refused_on_http(self) -> None:
+    @pytest.mark.parametrize("option", [{"env": {"A": "1"}}, {"connect_timeout": 5.0}])
+    def test_stdio_options_are_refused_on_http(self, option: dict[str, Any]) -> None:
         with pytest.raises(ValueError, match="for stdio"):
-            MCPToolProvider("http://localhost/mcp", env={"A": "1"})
+            MCPToolProvider("http://localhost/mcp", **option)
 
     def test_http_options_are_refused_on_stdio(self) -> None:
         with pytest.raises(ValueError, match="HTTP transports"):

@@ -407,6 +407,10 @@ async with MCPToolProvider.from_command("uvx", ["mcp-server-sqlite", "--db", "da
     ai = AIChannel("ai", provider=provider, tools=mcp.get_tools(), tool_handler=mcp.as_tool_handler())
 ```
 
+Entering a provider that starts its server waits `connect_timeout` seconds at
+most (`from_command(..., connect_timeout=60.0)`): the start, the handshake and
+the listing. Past it the server is stopped and entering raises `TimeoutError`.
+
 Beside the model's tools, a host reads what an MCP App needs from the same
 connection: `mcp.tool_meta()` (each discovered tool's `_meta`, `ui.resourceUri`
 and `ui.csp` among it, from the listing made at connection),
