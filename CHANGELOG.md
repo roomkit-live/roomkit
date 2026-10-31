@@ -249,7 +249,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   they allowed is observed even when its pass then ends without storing
   it as sent: its source may not write (stored `BLOCKED`), the room closed
   or an edit's target was refused meanwhile, `process_timeout` ran out, or
-  the commit failed.
+  the commit failed. A pass the kit's close cuts before its commit ended
+  now starts none (RMK-1046), as in roomkit-rs: nothing new starts once
+  the close began, where its observers started and were then refused or
+  cut.
 
 ### Fixed
 

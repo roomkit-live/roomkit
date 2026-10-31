@@ -498,7 +498,8 @@ whatever the store, for every pass (a message, a send, a post, an agent's
 answer, an injected event): the event stored and its delivery placed in the
 room's lane. One the SYNC hooks blocked has no observer; one they allowed is
 observed even when its pass then ends without storing it as sent (its source
-may not write, `process_timeout` ran out, the commit failed) (RMK-1039).
+may not write, `process_timeout` ran out, the commit failed) (RMK-1039), but
+for a pass the kit's close cuts, which starts none (RMK-1046).
 Fired from the room's work, such an observer is that cascade's work: what it
 sends into the room draws one of the cascade's hook calls, as an
 `AFTER_BROADCAST` body's does, so one that posts on every event it observes
