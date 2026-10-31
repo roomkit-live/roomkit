@@ -228,7 +228,12 @@ class SegmentWriter:
             updated = await self._kit.update_event(
                 self._room_id, last.id, metadata={**stored.metadata, **self._turn_record}
             )
-        except Exception:
+        except Exception as exc:
+            if ended_by_close(self._kit, exc):
+                # The kit's close refused it: the row keeps the end its
+                # commit carried (RFC §12.10.4).
+                logger.debug("The turn's end on message %s not rewritten: the kit closed", last.id)
+                return
             logger.warning(
                 "Could not record the turn's end on message %s (room %s)",
                 last.id,

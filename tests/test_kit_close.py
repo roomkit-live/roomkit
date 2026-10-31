@@ -464,6 +464,38 @@ async def test_a_call_from_a_hook_in_the_close_s_grace_is_refused(close_grace: f
     assert "from the hook" not in await _bodies(kit)
 
 
+@pytest.mark.parametrize("streaming", [False, True], ids=["plain", "streamed"])
+async def test_an_observer_closing_on_an_agent_s_answer_logs_nothing(
+    streaming: bool, caplog: pytest.LogCaptureFixture
+) -> None:
+    """RMK-1043: an observer closes the kit on the agent's answer, whose row
+    keeps the end its commit carried. The turn wrote that end again as the
+    kit closed, which refused it, and logged a WARNING with a traceback on
+    an ordinary close; roomkit-rs writes nothing (RFC §12.10.4)."""
+    kit = RoomKit()
+    kit.register_channel(SimpleChannel("sms"))
+    provider = MockAIProvider(responses=["Answer."], streaming=streaming)
+    kit.register_channel(Agent("ai", provider=provider))
+    await kit.create_room(room_id="r")
+    await kit.attach_channel("r", "sms")
+    await kit.attach_channel("r", "ai", category=ChannelCategory.INTELLIGENCE)
+    closed = asyncio.Event()
+
+    @kit.hook(HookTrigger.BEFORE_BROADCAST, execution=HookExecution.ASYNC, name="bye")
+    async def bye(event: RoomEvent, ctx: RoomContext) -> None:
+        if event.source.channel_id == "ai":
+            await kit.close()
+            closed.set()
+
+    with caplog.at_level(logging.WARNING, logger="roomkit"):
+        await kit.process_inbound(_message("Hi."), room_id="r")
+        await asyncio.wait_for(closed.wait(), 5)
+
+    [answer] = [e for e in await kit.store.list_events("r") if e.source.channel_id == "ai"]
+    assert answer.metadata["loop_end_reason"] == "completed"
+    assert [r.getMessage() for r in caplog.records if r.levelno >= logging.WARNING] == []
+
+
 async def test_a_call_an_observer_makes_as_the_kit_closes_is_refused(close_grace: float) -> None:
     """An observer still running as the kit closes commits into a room whose
     timer fell due: the call is refused (RMK-1030), no timer hook starts,

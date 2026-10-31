@@ -327,6 +327,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A close from an observer on an agent's answer logs nothing** (RFC
+  12.10.4, RMK-1043). The answer's row keeps the end its commit carried;
+  the turn wrote that end again as the kit closed, which refused it, and a
+  WARNING with a traceback came on an ordinary close. The refused rewrite
+  is now skipped quietly, as roomkit-rs does.
+
 - **A `BEFORE_TOOL_USE` MODIFY serves the call** (RFC 9.3, RMK-1021). The
   next hook read the modified call, but the tool ran with the model's
   arguments: a hook that redacted an argument by MODIFY sent the original
