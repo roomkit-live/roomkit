@@ -36,6 +36,7 @@ from roomkit.store.base import (
     marked_deleted,
     names_by_recipient,
     participant_exists,
+    participant_missing,
     reached_as,
     room_holds,
     room_taken,
@@ -823,6 +824,8 @@ class InMemoryStore(ConversationStore):
         return self._participants.get(room_id, {}).get(participant_id)
 
     async def update_participant(self, participant: Participant) -> Participant:
+        if participant.id not in self._participants.get(participant.room_id, {}):
+            raise participant_missing(participant)
         participant = participant.model_copy(deep=True)
         self._participants.setdefault(participant.room_id, {})[participant.id] = participant
         self._index_participant(participant.id, participant.room_id)

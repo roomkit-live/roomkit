@@ -56,6 +56,7 @@ from roomkit.store.base import (
     key_taken,
     link_target,
     participant_exists,
+    participant_missing,
     room_holds,
     room_taken,
     sender_names,
@@ -248,14 +249,6 @@ def _write_transaction(conn: sqlite3.Connection) -> Generator[None, None, None]:
         if conn.in_transaction:
             conn.execute("ROLLBACK")
         raise
-
-
-def _put_participant_row(conn: sqlite3.Connection, participant: Participant) -> None:
-    conn.execute(
-        """INSERT INTO participants(room_id, id, data) VALUES(?, ?, ?)
-           ON CONFLICT(room_id, id) DO UPDATE SET data=excluded.data""",
-        (participant.room_id, participant.id, participant.model_dump_json()),
-    )
 
 
 def _filter_rooms(where: list[str], params: list[Any], room_filter: RoomFilter | None) -> None:
@@ -1907,7 +1900,7 @@ class SQLiteStore(ConversationStore):
         return await self._run(self._x_add_participant, participant)
 
     async def update_participant(self, participant: Participant) -> Participant:
-        return await self._run(self._x_put_participant, participant)
+        return await self._run(self._x_update_participant, participant)
 
     def _x_add_participant(self, participant: Participant) -> Participant:
         """*participant* into its room, which the store holds (RFC §14.3)."""
@@ -1922,11 +1915,20 @@ class SQLiteStore(ConversationStore):
             )
             if taken.fetchone() is not None:
                 raise participant_exists(participant)
-            _put_participant_row(conn, participant)
+            conn.execute(
+                "INSERT INTO participants(room_id, id, data) VALUES(?, ?, ?)",
+                (participant.room_id, participant.id, participant.model_dump_json()),
+            )
         return participant
 
-    def _x_put_participant(self, participant: Participant) -> Participant:
-        _put_participant_row(self._db(), participant)
+    def _x_update_participant(self, participant: Participant) -> Participant:
+        """*participant*'s record rewritten, which its room holds (RFC §14.3)."""
+        written = self._db().execute(
+            "UPDATE participants SET data = ? WHERE room_id = ? AND id = ?",
+            (participant.model_dump_json(), participant.room_id, participant.id),
+        )
+        if written.rowcount == 0:
+            raise participant_missing(participant)
         return participant
 
     async def get_participant(self, room_id: str, participant_id: str) -> Participant | None:

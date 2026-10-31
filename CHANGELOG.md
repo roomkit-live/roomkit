@@ -96,14 +96,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **BREAKING — a store refuses a participant under an id its room has**
-  (RFC 5.5, 14.3; RMK-1021), as roomkit-rs's `ParticipantExists`.
+- **BREAKING — a store adds a participant once and updates only one it
+  holds** (RFC 5.5, 14.3; RMK-1021), as roomkit-rs's `ParticipantExists`
+  and `ParticipantNotFound`. A participant is one record per room and id.
   `add_participant()` replaced the record the room held, in the three
-  stores; a participant is one record per room and id. It now raises
-  `ParticipantExistsError`, exported from `roomkit`, and keeps the record.
+  stores; it now raises `ParticipantExistsError`, exported from `roomkit`,
+  and keeps the record. `update_participant()` of a record the room does
+  not hold created it in the memory and SQLite stores, and wrote nothing
+  without a word in Postgres; it now raises `ParticipantNotFoundError`.
   The kit's own paths read the record first, under the room lock, and are
   unchanged; a host that called the store's `add_participant()` to rewrite
-  a record calls `update_participant()`.
+  a record calls `update_participant()`, and the reverse.
 
 - **`ConversationStore.get_timeline()` reads 50 events by default**, as
   `RoomKit.get_timeline()` and roomkit-rs's `EventQuery` (RMK-1021). The one

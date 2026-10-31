@@ -39,6 +39,7 @@ from roomkit.store.base import (
     is_marked_deleted,
     key_taken,
     participant_exists,
+    participant_missing,
     room_holds,
     room_taken,
     sender_names,
@@ -1736,7 +1737,7 @@ class PostgresStore(ConversationStore):
     async def update_participant(self, participant: Participant) -> Participant:
         with self._query_span("update_participant", "participants"):
             async with self._acquire() as conn:
-                await conn.execute(
+                status = await conn.execute(
                     "UPDATE participants SET channel_id=$3, display_name=$4, role=$5,"
                     " status=$6, identification=$7, identity_id=$8, external_id=$9,"
                     " resolved_at=$10, resolved_by=$11, metadata=$12, connected_via=$13"
@@ -1755,6 +1756,8 @@ class PostgresStore(ConversationStore):
                     participant.metadata,
                     participant.connected_via,
                 )
+        if status == "UPDATE 0":
+            raise participant_missing(participant)
         return participant
 
     async def delete_participant(self, room_id: str, participant_id: str) -> None:

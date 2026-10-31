@@ -18,6 +18,7 @@ from roomkit.core.exceptions import (
     IdempotencyKeyTakenError,
     IdentityNotFoundError,
     ParticipantExistsError,
+    ParticipantNotFoundError,
     RoomAlreadyExistsError,
 )
 from roomkit.models.channel import ChannelBinding
@@ -143,6 +144,14 @@ def participant_exists(participant: Participant) -> ParticipantExistsError:
     §5.5, §14.3): nothing is written."""
     return ParticipantExistsError(
         f"Participant {participant.id} is already in room {participant.room_id}"
+    )
+
+
+def participant_missing(participant: Participant) -> ParticipantNotFoundError:
+    """The refusal of an update of *participant*, whose room has no record of
+    its id (RFC §14.3): nothing is written."""
+    return ParticipantNotFoundError(
+        f"Participant {participant.id} is not in room {participant.room_id}"
     )
 
 

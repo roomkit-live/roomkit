@@ -268,7 +268,7 @@ RoomKit exports **348 symbols** from `roomkit`. Providers and voice types import
 | `RoomNotAttachedError` | Channel acted on a room it is no longer attached to |
 | `ChannelNotFoundError` | Channel not attached to room |
 | `ChannelNotRegisteredError` | Channel not registered with framework (`send_event()` from it, whether or not the room still binds it) |
-| `ParticipantNotFoundError` | Participant not found in room |
+| `ParticipantNotFoundError` | Participant not found in room; a store's `update_participant()` of a record the room does not hold, nothing written (RFC §14.3) |
 | `ParticipantExistsError` | A store's `add_participant()` under an id the room has; nothing written, `update_participant()` rewrites a record (RFC §5.5, §14.3) |
 | `ParticipantNotAdmittedError` | Participant barred from what was asked for them |
 | `IdentityNotFoundError` | Identity not found |
