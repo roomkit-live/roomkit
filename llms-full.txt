@@ -1791,7 +1791,13 @@ hooks and returns without waiting for them: `attach_channel`, `detach_channel`,
 `mute`, `unmute`, `close_room`, `check_room_timers`, the member calls and a direct
 `update_event` or `delete_event`; `create_room` alone awaits its `ON_ROOM_CREATED`
 hooks, so one that attaches the room's agent has done so before anything is sent
-into the room. `await kit.hook_engine.drain_observers()` waits for the hooks still
+into the room. The triggers only this implementation has follow the same rule
+(RMK-1049), but for two more it awaits: `ON_RECORDING_STARTED`, the consent point
+no media reaches a recording before, and the triggers of a voice, realtime,
+conference or video session's stream, observed in order with the stream's next
+trigger. A framework event that reports the operation (`ai_response`, `feedback`,
+`recording_started`, `recording_stopped`) comes once its hooks have ended.
+`await kit.hook_engine.drain_observers()` waits for the hooks still
 running. Registration mode is forgiving in
 both directions: ASYNC-registered hooks on a SYNC trigger fire as observers
 after the sync pass, in the background: the operation goes on without waiting

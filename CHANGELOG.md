@@ -95,6 +95,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     cap; `kit.close()` gives them the grace, then cuts them, and no longer
     cuts the timer check that started them.
 
+- **The triggers only Python has no longer wait for their ASYNC hooks**
+  (RFC 9.3, RMK-1049). An agent's answer waited for its `ON_AI_RESPONSE`
+  hooks, `submit_feedback` for `ON_FEEDBACK`'s, `process_delivery_status`
+  for `ON_DELIVERY_STATUS`'s, a delegation for `ON_TASK_DELEGATED`'s and
+  `ON_TASK_COMPLETED`'s, a recording's stop for `ON_RECORDING_STOPPED`'s;
+  so did `ON_STATUS_POSTED`, `ON_PROTOCOL_TRACE`, `ON_SPEAK_QUEUE`,
+  `ON_DISPATCH_DECISION`, `ON_HANDOFF`, `AFTER_DELIVER`, the identity
+  observers and the turn observers. They now start the hooks and go on.
+  - The framework event that reports the operation (`ai_response`,
+    `feedback`, `recording_started`, `recording_stopped`) still comes once
+    its hooks have ended, as `event_processed` does.
+  - Two more awaited exceptions, beside `ON_ROOM_CREATED`, unchanged:
+    `ON_RECORDING_STARTED`, the consent point no media reaches a recording
+    before, and the triggers of a voice, realtime, conference or video
+    session's stream (speech edges, partials, barge-in, turns, DTMF,
+    `AFTER_TTS`...), observed in order with the stream's next trigger, so
+    a partial transcription never lands after its final.
+  - A task's line on the status bus reads ended as its `ON_TASK_COMPLETED`
+    hooks start, no longer once they end. The discussion console names a
+    task's owner whichever of its start and its tool call it hears first.
+
 - **`LlamaCppAIProvider` runs llama.cpp's latest stable release, v0.8.0
   (build b11960)** (RMK-1024).
   - The pinned build was b11160, a nightly from September. It could not
