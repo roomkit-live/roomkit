@@ -3112,7 +3112,7 @@
     "__init__": ["def", "*", "type='cancel'", "reason='cancelled'"]
   },
   "roomkit.models.ChannelData": {
-    "__init__": ["def", "*", "provider=None", "external_id=None", "thread_id=None", "extra=<factory>"]
+    "__init__": ["def", "*", "provider=None", "external_id=None", "thread_id=None", "extra=<factory>", "**extra_data"]
   },
   "roomkit.models.ChannelDirection": {
     "BIDIRECTIONAL": ["member", "'bidirectional'"],
@@ -3141,6 +3141,10 @@
   },
   "roomkit.models.EditContent": {
     "__init__": ["def", "*", "type='edit'", "target_event_id", "new_content", "edit_source=None"]
+  },
+  "roomkit.models.EditSource": {
+    "SENDER": ["member", "'sender'"],
+    "SYSTEM": ["member", "'system'"]
   },
   "roomkit.models.IdentificationStatus": {
     "AMBIGUOUS": ["member", "'ambiguous'"],
@@ -5010,6 +5014,9 @@
   },
   "roomkit.skills.SkillDiscoveryError": {},
   "roomkit.skills.SkillError": {},
+  "roomkit.skills.SkillManifestTooLargeError": {
+    "__init__": ["def", "characters", "limit"]
+  },
   "roomkit.skills.SkillParseError": {},
   "roomkit.skills.SkillPathError": {},
   "roomkit.skills.SkillValidationError": {},

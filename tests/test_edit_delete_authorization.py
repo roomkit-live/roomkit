@@ -12,6 +12,7 @@ import logging
 from collections.abc import Callable
 
 import pytest
+from pydantic import ValidationError
 
 from roomkit.channels.ai import AIChannel
 from roomkit.channels.base import Channel
@@ -205,31 +206,13 @@ class TestEditAuthorization:
         assert result.blocked is True
         assert result.reason == "not_original_author"
 
-    async def test_unknown_edit_source_does_not_skip_the_author_check(self) -> None:
-        """An ``edit_source`` outside the RFC vocabulary is not a privilege."""
-        kit = await _setup()
-        original = await _post(kit, "v1", sender_id="alice")
-
-        for forged in ("admin", "system_", "Sender", "alice", ""):
-            result = await _edit(kit, original, sender_id="mallory", edit_source=forged)
-
-            assert result.blocked is True, f"edit_source={forged!r} bypassed authorization"
-            assert result.reason == "not_original_author"
-
-        stored = await kit._store.get_event(original.id)
-        assert stored is not None and stored.content.body == "v1"
-
-    async def test_participant_id_as_edit_source_still_requires_authorship(self) -> None:
-        """The pattern the examples used to show must not grant authority."""
-        kit = await _setup()
-        original = await _post(kit, "v1", sender_id="alice")
-
-        # Alice editing her own message with her id as edit_source: allowed.
-        mine = await _edit(kit, original, sender_id="alice", edit_source="alice")
-        assert mine.blocked is False
-        # Mallory doing the same on Alice's message: refused.
-        theirs = await _edit(kit, original, sender_id="mallory", edit_source="mallory")
-        assert theirs.blocked is True
+    @pytest.mark.parametrize("named", ["admin", "system_", "Sender", "alice", ""])
+    def test_an_edit_naming_another_source_is_refused_as_it_is_built(self, named: str) -> None:
+        """``edit_source`` is ``sender``, ``system`` or none (RFC §10.3), as
+        roomkit-rs's ``EditSource``: any other value is refused before it
+        can claim anything (RMK-1021 item 2). It was read as the sender's."""
+        with pytest.raises(ValidationError, match="edit_source"):
+            EditContent(target_event_id="e1", new_content=TextContent(body="x"), edit_source=named)
 
     async def test_system_edit_source_requires_a_system_channel(self) -> None:
         kit = await _setup()

@@ -110,6 +110,16 @@ class EventType(StrEnum):
 
 
 @unique
+class EditSource(StrEnum):
+    """Whose authority an edit claims (RFC §5.3, §10.3)."""
+
+    SENDER = "sender"
+    """The message's sender."""
+    SYSTEM = "system"
+    """The system, for example auto-moderation."""
+
+
+@unique
 class DeleteType(StrEnum):
     SENDER = "sender"
     SYSTEM = "system"

@@ -32,6 +32,16 @@ class SkillVerificationError(SkillError):
     (RFC §24.7). The content is not used."""
 
 
+class SkillManifestTooLargeError(SkillError):
+    """The skills' manifest, which every system prompt carries, would be
+    longer than its bound (RFC §24.1): *characters* past *limit*."""
+
+    def __init__(self, characters: int, limit: int) -> None:
+        super().__init__(f"the skills' manifest would take {characters} characters, past {limit}")
+        self.characters = characters
+        self.limit = limit
+
+
 class SkillPathError(SkillError, ValueError):
     """A skill-relative path escapes the directory it must stay inside.
 

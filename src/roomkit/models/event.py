@@ -8,6 +8,7 @@ from uuid import uuid4
 
 from pydantic import (
     BaseModel,
+    ConfigDict,
     Field,
     SerializerFunctionWrapHandler,
     field_validator,
@@ -21,6 +22,7 @@ from roomkit.models._time import UtcDatetime
 from roomkit.models.enums import (
     ChannelType,
     DeleteType,
+    EditSource,
     EventDirection,
     EventStatus,
     EventType,
@@ -200,7 +202,7 @@ class EditContent(BaseModel):
     type: Literal["edit"] = "edit"
     target_event_id: str
     new_content: EventContent
-    edit_source: str | None = None
+    edit_source: EditSource | None = None
 
 
 class DeleteContent(BaseModel):
@@ -272,7 +274,11 @@ EventContent = Annotated[
 
 
 class ChannelData(BaseModel):
-    """Provider-specific channel metadata."""
+    """Provider-specific channel metadata, typed per channel (RFC §5.4):
+    the keys a channel writes beside these (an SMS's ``segments``, an
+    email's ``subject``) are kept."""
+
+    model_config = ConfigDict(extra="allow")
 
     provider: str | None = None
     external_id: str | None = None

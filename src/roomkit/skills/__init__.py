@@ -3,6 +3,7 @@
 from roomkit.skills.errors import (
     SkillDiscoveryError,
     SkillError,
+    SkillManifestTooLargeError,
     SkillParseError,
     SkillPathError,
     SkillValidationError,
@@ -41,6 +42,7 @@ __all__ = [
     "SkillDiscoveryError",
     "SkillEntry",
     "SkillError",
+    "SkillManifestTooLargeError",
     "SkillExecutionRequest",
     "SkillMetadata",
     "SkillParseError",

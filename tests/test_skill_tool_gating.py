@@ -118,18 +118,14 @@ class TestGlobsGate:
 )
 def test_requires_reads_a_value_as_allowed_tools_does(value: object, expected: list[str]) -> None:
     # One reader for both keys (RFC §24.2): a form one of them takes, the
-    # other takes too; allowed_tools adds the glob a bracketed text is.
+    # other takes too.
     metadata = SkillMetadata(
         name="research-helper",
         description="d",
         allowed_tools=value,  # type: ignore[arg-type]
         extra_metadata={} if value is None else {"requires": value},  # type: ignore[dict-item]
     )
-    assert metadata.required_tool_names == expected
-    # allowed_tools gates the same names, and a text in brackets as the one
-    # glob it also is.
-    bracketed = isinstance(value, str) and value.startswith("[")
-    assert metadata.gated_tool_names == [*expected, *([value] if bracketed else [])]
+    assert metadata.required_tool_names == metadata.gated_tool_names == expected
 
 
 def _read_by(path: str, allowed_tools: str, tmp_path: Path) -> SkillMetadata:
@@ -159,18 +155,19 @@ def _read_by(path: str, allowed_tools: str, tmp_path: Path) -> SkillMetadata:
 @pytest.mark.parametrize(
     ("allowed_tools", "gated", "open_"),
     [
-        ("[sw]earch_*, fetch_v[12]", ["search_x", "wearch_x", "fetch_v1"], ["fetch_v3"]),
-        ("[ab]", ["a", "b", "ab"], ["c"]),
+        ("[sw]earch_*, fetch_v?", ["[sw]earch_x", "fetch_v1"], ["search_x", "wearch_x"]),
+        ("[ab]", ["ab"], ["a", "b", "[ab]"]),
         ("[a, b]", ["a", "b"], ["c"]),
     ],
-    ids=["character classes", "one class or a list of one", "a list"],
+    ids=["a bracket within an entry", "a list of one", "a list"],
 )
-def test_a_bracketed_text_gates_every_reading_of_it(
+def test_a_bracketed_text_reads_as_a_list(
     path: str, allowed_tools: str, gated: list[str], open_: list[str], tmp_path: Path
 ) -> None:
-    # Entries are fnmatch globs: a bracket is a character class as well as
-    # the edge of a list, and gating both readings leaves neither tool open,
-    # whichever reader read the text and however it was joined.
+    # A text in brackets is a list, whichever reader read it and however it
+    # was joined; an entry's globs are ToolPolicy's, ``*`` and ``?`` alone,
+    # so a bracket within one is itself (RFC §21.1, §24.2; RMK-1021 item 5).
+    # It also read as a character class: ``[ab]`` gated ``a`` and ``b``.
     metadata = _read_by(path, allowed_tools, tmp_path)
     assert all(metadata.gates(tool) for tool in gated)
     assert not any(metadata.gates(tool) for tool in open_)

@@ -9,6 +9,7 @@ import pytest
 from roomkit.skills.errors import (
     SkillDiscoveryError,
     SkillError,
+    SkillManifestTooLargeError,
     SkillParseError,
     SkillPathError,
     SkillValidationError,
@@ -673,6 +674,31 @@ class TestSkillRegistry:
         with pytest.raises(SkillValidationError):
             registry.discover(broken)
         assert registry.skill_names == ["already-here"]
+
+    def test_a_manifest_past_its_bound_registers_nothing(self, tmp_path: Path) -> None:
+        """The skills' manifest, which every system prompt carries, stays
+        within 65,536 characters, as roomkit-rs's (RFC §24.1, RMK-1021 item
+        6): a discovery or a registration that would pass it raises and
+        leaves the registry as it was. A discovery went on to 108,038."""
+        registry = SkillRegistry()
+        registry.register(_make_skill_dir(tmp_path, "already-here"))
+        many = tmp_path / "many"
+        many.mkdir()
+        for i in range(400):
+            _make_skill_dir_full(many, f"skill-{i:03d}", extra_fm=f"license: {'l' * 200}\n")
+
+        with pytest.raises(SkillManifestTooLargeError) as raised:
+            registry.discover(many)
+        assert (raised.value.limit, raised.value.characters > 65_536) == (65_536, True)
+        assert registry.skill_names == ["already-here"]
+
+        registered = 0
+        with pytest.raises(SkillManifestTooLargeError):
+            for i in range(400):
+                registry.register(many / f"skill-{i:03d}")
+                registered += 1
+        assert registry.skill_count == registered + 1
+        assert len(registry.to_prompt_xml()) <= 65_536
 
     def test_discover_lenient_skips_invalid(self, tmp_path: Path) -> None:
         """strict=False keeps the old warn-and-continue behaviour."""

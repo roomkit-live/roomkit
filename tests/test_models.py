@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
@@ -51,6 +52,7 @@ from roomkit.models import (
 )
 from roomkit.models.channel import RetryPolicy
 from roomkit.models.event import ToolCallContent
+from roomkit.store.sqlite import SQLiteStore
 
 # -- Content models --
 
@@ -140,6 +142,25 @@ class TestRoomEvent:
                 source=EventSource(channel_id="ch1", channel_type=ChannelType.SMS),
                 content=TextContent(body="msg"),
             )
+
+    async def test_channel_data_keeps_the_keys_its_channel_writes(self, tmp_path: Path) -> None:
+        """RFC §5.4: a channel's own data (an SMS's ``segments``) travels on
+        the event and is stored with it, as roomkit-rs's map keeps it
+        (RMK-1021 item 3). ``ChannelData`` dropped every key it did not name."""
+        store = SQLiteStore(tmp_path / "rooms.db")
+        await store.create_room(Room(id="r1"))
+        event = RoomEvent(
+            room_id="r1",
+            source=EventSource(channel_id="ch1", channel_type=ChannelType.SMS),
+            content=TextContent(body="msg"),
+            channel_data={"provider": "twilio", "segments": 2, "encoding": "GSM-7"},
+        )
+        stored = await store.add_event(event)
+        read = await store.get_event(stored.id)
+        await store.close()
+        assert read is not None
+        data = read.channel_data.model_dump()
+        assert (data["provider"], data["segments"], data["encoding"]) == ("twilio", 2, "GSM-7")
 
 
 # -- Channel models --

@@ -5,6 +5,9 @@ from __future__ import annotations
 import pytest
 
 from roomkit.channels._phone import normalize_phone_number
+from roomkit.channels.addressing import addressing_of
+from roomkit.channels.transport import TransportChannel
+from roomkit.models.enums import ChannelType
 
 
 @pytest.mark.parametrize(
@@ -108,3 +111,21 @@ def test_what_is_no_e164_number_is_kept_as_written(address: str, country_code: s
     ``0``, which no country code is, is kept as written, and so is a short
     code."""
     assert normalize_phone_number(address, country_code) == address
+
+
+@pytest.mark.parametrize("code", ["0x", "0", "033", "1234", "", "+", "+0", "x1", "١"])
+def test_a_country_code_that_is_none_is_refused(code: str) -> None:
+    """A country code is one to three digits, the first not 0, with or
+    without its ``+``, as roomkit-rs's ``CountryCode`` (RMK-1021 item 4): a
+    channel given another, or a normalization asked with one, raises. The
+    number was kept unchanged, the mistake unseen."""
+    with pytest.raises(ValueError, match="is not a country code"):
+        addressing_of(ChannelType.SMS).normalize("06 12 34 56 78", code)
+    with pytest.raises(ValueError, match="is not a country code"):
+        TransportChannel("sms", ChannelType.SMS, provider=None, country_code=code)
+
+
+@pytest.mark.parametrize("code", ["1", "+33", "44", "+1", "999"])
+def test_a_country_code_with_or_without_its_plus_is_taken(code: str) -> None:
+    number = addressing_of(ChannelType.SMS).normalize("514 555 0100", code)
+    assert number.startswith("+" + code.removeprefix("+"))

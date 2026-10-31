@@ -36,19 +36,6 @@ def parse_tool_names(value: object) -> list[str]:
     return _names(entries)
 
 
-def gated_patterns(value: object) -> list[str]:
-    """The patterns an ``allowed_tools`` value gates: every reading of it.
-
-    A text in brackets reads as a list (``[a, b]``) and, being an ``fnmatch``
-    glob as well, as a character class (``[ab]`` covers ``a`` and ``b``).
-    Gating both readings leaves open neither tool.
-    """
-    patterns = parse_tool_names(value)
-    if isinstance(value, str) and _bracketed(value.strip()):
-        patterns = list(dict.fromkeys([*patterns, value.strip()]))
-    return patterns
-
-
 def _bracketed(text: str) -> bool:
     """Whether *text* is one pair of brackets around entries holding none."""
     inner = text[1:-1]
@@ -96,12 +83,12 @@ class SkillMetadata:
         is ``None`` or blank. The entries are patterns, not names — match them
         with :meth:`gates`, never with ``in``.
         """
-        return gated_patterns(self.allowed_tools)
+        return parse_tool_names(self.allowed_tools)
 
     def gates(self, tool_name: str) -> bool:
         """Whether this skill gates *tool_name* (RFC §24.2 glob semantics).
 
-        Uses the same ``fnmatch`` matching as :class:`~roomkit.tools.policy.ToolPolicy`,
+        Uses the same glob matching as :class:`~roomkit.tools.policy.ToolPolicy`,
         so a skill and a policy agree on what a pattern covers.
         """
         return matches_any_pattern(tool_name, self.gated_tool_names)

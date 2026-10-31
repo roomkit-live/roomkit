@@ -6,7 +6,12 @@ import logging
 import time as _time
 from typing import Any
 
-from roomkit.channels.addressing import ChannelAddressing, addressing_of, written_recipient
+from roomkit.channels.addressing import (
+    ChannelAddressing,
+    addressing_of,
+    checked_country_code,
+    written_recipient,
+)
 from roomkit.channels.base import Channel
 from roomkit.core.exceptions import NoRecipientError, ProviderDeliveryError
 from roomkit.models.channel import ChannelBinding, ChannelCapabilities, ChannelOutput
@@ -81,13 +86,19 @@ class TransportChannel(Channel):
                 ``False``: its provider is called without one (RFC §10.2
                 step 3d), and so is a channel whose addressing names no
                 recipient key.
+
+        Raises:
+            ValueError: *country_code* is not one to three digits, the first
+                not ``0``.
         """
         super().__init__(channel_id)
         self.channel_type = channel_type
         self._provider = provider
         self._capabilities = capabilities or ChannelCapabilities()
         self._addressing = addressing or addressing_of(channel_type)
-        self._country_code = country_code
+        self._country_code = (
+            checked_country_code(country_code) if country_code is not None else None
+        )
         self._defaults: dict[str, Any] = defaults or {}
         self._requires_recipient = (
             requires_recipient and self._addressing.recipient_key is not None

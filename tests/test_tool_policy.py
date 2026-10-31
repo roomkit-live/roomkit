@@ -28,6 +28,18 @@ class TestAllowPatterns:
         assert policy.is_allowed("mcp_delete") is True
         assert policy.is_allowed("local_search") is False
 
+    def test_a_pattern_reads_star_and_question_mark_alone(self) -> None:
+        """RFC §21.1: ``*`` stands for any characters, ``?`` for one, and a
+        bracket for itself, as roomkit-rs reads them (RMK-1021 item 5).
+        ``look[uv]p`` read as a character class, and allowed ``lookup``."""
+        policy = ToolPolicy(allow=["look?p", "fetch_[12]"])
+        assert [policy.is_allowed(name) for name in ("lookup", "lookXp", "lookuup")] == [
+            True,
+            True,
+            False,
+        ]
+        assert [policy.is_allowed(name) for name in ("fetch_1", "fetch_[12]")] == [False, True]
+
     def test_multiple_allow_patterns(self) -> None:
         policy = ToolPolicy(allow=["search", "read_*"])
         assert policy.is_allowed("search") is True

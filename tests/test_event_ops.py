@@ -259,7 +259,7 @@ class TestInboundMutationTriggers:
                 content=EditContent(
                     target_event_id=original.id,
                     new_content=TextContent(body="v2"),
-                    edit_source="u1",
+                    edit_source="sender",
                 ),
             )
         )
@@ -308,7 +308,7 @@ class TestInboundMutationTriggers:
                 content=EditContent(
                     target_event_id=original.id,
                     new_content=TextContent(body="v2"),
-                    edit_source="u1",
+                    edit_source="sender",
                 ),
             )
         )

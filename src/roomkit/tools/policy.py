@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Iterable
-from fnmatch import fnmatch
+from functools import lru_cache
 from typing import Literal
 
 from pydantic import BaseModel, Field, PrivateAttr
@@ -15,9 +16,19 @@ def matches_any_pattern(tool_name: str, patterns: Iterable[str]) -> bool:
     The single definition of what a tool pattern covers. Skill gating, skill
     ``allowed_tools`` and :class:`ToolPolicy` all decide which tools a caller
     may reach, so they have to agree on what ``search_*`` means — three
-    independent copies of one ``fnmatch`` loop is three chances to drift.
+    independent copies of one matching loop is three chances to drift.
+
+    A pattern's ``*`` stands for any characters, ``?`` for one, and every
+    other character for itself (RFC §21.1): a bracket is no character class.
     """
-    return any(fnmatch(tool_name, pattern) for pattern in patterns)
+    return any(_glob(pattern).fullmatch(tool_name) for pattern in patterns)
+
+
+@lru_cache(maxsize=1024)
+def _glob(pattern: str) -> re.Pattern[str]:
+    """*pattern* as the expression :func:`matches_any_pattern` reads it."""
+    parts = (".*" if c == "*" else "." if c == "?" else re.escape(c) for c in pattern)
+    return re.compile("".join(parts), re.DOTALL)
 
 
 class RoleOverride(BaseModel):
@@ -84,8 +95,8 @@ def policy_refusal(name: str) -> str:
 class ToolPolicy(BaseModel):
     """Per-agent allow/deny rules for tool access.
 
-    Rules use :func:`fnmatch.fnmatch` glob patterns (e.g. ``"mcp_*"``,
-    ``"search_*"``).
+    Rules are glob patterns (e.g. ``"mcp_*"``, ``"search_*"``): ``*`` stands
+    for any characters, ``?`` for one (RFC §21.1).
 
     Resolution order:
 

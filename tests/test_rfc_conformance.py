@@ -123,7 +123,7 @@ class TestEditDeleteMutationOrdering:
                 content=EditContent(
                     target_event_id=original.id,
                     new_content=TextContent(body="v2-should-not-apply"),
-                    edit_source="u1",
+                    edit_source="sender",
                 ),
             )
         )

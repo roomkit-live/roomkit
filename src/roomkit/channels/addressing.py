@@ -76,12 +76,32 @@ class ChannelAddressing:
     def normalize(self, address: str, country_code: str | None = None) -> str:
         """*address* in the form the channel compares and stores it in; a
         phone number written without its country code takes *country_code*
-        (``"1"``, ``"+44"``), or is kept as written without one."""
+        (``"1"``, ``"+44"``), or is kept as written without one.
+
+        Raises:
+            ValueError: *country_code* is not a country code
+                (:func:`checked_country_code`).
+        """
+        if country_code is not None:
+            country_code = checked_country_code(country_code)
         if self.addressing is Addressing.PHONE_NUMBER:
             return normalize_phone_number(address, country_code)
         if self.addressing is Addressing.EMAIL_ADDRESS:
             return normalize_email_address(address)
         return address
+
+
+def checked_country_code(code: str) -> str:
+    """*code*, a country code written with or without its ``+`` (``"1"``,
+    ``"+44"``), as its digits.
+
+    Raises:
+        ValueError: *code* is not one to three digits, the first not ``0``.
+    """
+    digits = code.removeprefix("+")
+    if not (1 <= len(digits) <= 3 and digits.isascii() and digits.isdigit()) or digits[0] == "0":
+        raise ValueError(f"{code!r} is not a country code: one to three digits, the first not 0")
+    return digits
 
 
 _PHONE = ChannelAddressing(

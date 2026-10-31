@@ -15,7 +15,7 @@ import pytest
 
 from roomkit.skills._frontmatter_lines import parse_lines
 from roomkit.skills.errors import SkillError
-from roomkit.skills.models import gated_patterns, parse_tool_names
+from roomkit.skills.models import parse_tool_names
 from roomkit.skills.parser import parse_frontmatter, read_frontmatter_yaml, split_frontmatter
 
 KEYS = ("allowed_tools", "requires")
@@ -119,7 +119,7 @@ def _gating_of(text: str, *, by_lines: bool) -> dict[str, set[str]] | None:
     except SkillError:
         return None
     return {
-        "allowed_tools": set(gated_patterns(data.get("allowed_tools"))),
+        "allowed_tools": set(parse_tool_names(data.get("allowed_tools"))),
         "requires": set(parse_tool_names(data.get("requires"))),
     }
 

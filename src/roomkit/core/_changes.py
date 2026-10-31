@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 from roomkit.models.enums import (
     ChannelType,
     DeleteType,
+    EditSource,
     EventDirection,
     EventStatus,
     EventType,
@@ -49,10 +50,9 @@ CHANGE_REFUSALS = frozenset(
 _CHANGE_TYPES = frozenset({EventType.EDIT, EventType.DELETE})
 _ADMINISTRATORS = frozenset({ParticipantRole.OWNER, ParticipantRole.AGENT})
 _GONE = frozenset({ParticipantStatus.LEFT, ParticipantStatus.BANNED})
-# RFC §10.3 fixes ``edit_source`` at "sender" | "system" | null. The field
-# stays a free-form ``str``; any other value is checked as the sender's, never
-# as the system's, since that is exactly what an attacker would send.
-_SYSTEM_SOURCE = "system"
+# RFC §10.3 fixes ``edit_source`` at "sender" | "system" | null, which
+# ``EditSource`` holds: any other value is refused as the edit is built.
+_SYSTEM_SOURCE = EditSource.SYSTEM
 
 
 @dataclass(frozen=True, slots=True)

@@ -7,7 +7,7 @@ from __future__ import annotations
 import re
 
 from roomkit.skills.errors import SkillParseError
-from roomkit.skills.models import gated_patterns, parse_tool_names
+from roomkit.skills.models import parse_tool_names
 
 GATING_KEYS = ("allowed_tools", "requires")
 """What a skill gates and what it requires: whichever reader, their value is
@@ -101,13 +101,7 @@ def _add_gating(data: dict[str, str | list[str]], key: str, value: str | list[st
     if earlier is None:
         data[key] = value
         return
-    data[key] = list(dict.fromkeys([*_readings(key, earlier), *_readings(key, value)]))
-
-
-def _readings(key: str, value: str | list[str]) -> list[str]:
-    """Every name or pattern a gating *value* stands for, the glob a
-    bracketed ``allowed_tools`` text also is included (RFC §24.2)."""
-    return gated_patterns(value) if key == "allowed_tools" else parse_tool_names(value)
+    data[key] = list(dict.fromkeys([*parse_tool_names(earlier), *parse_tool_names(value)]))
 
 
 def _list_value(key: str, text: str) -> str | list[str]:
@@ -130,7 +124,7 @@ def _append_item(data: dict[str, str | list[str]], key: str, text: str | None) -
     """Add what a ``- item`` line holds to the list of *key*."""
     items = data.get(key)
     if not isinstance(items, list):
-        items = _readings(key, items) if items else []
+        items = parse_tool_names(items) if items else []
         data[key] = items
     items.extend(_list_item(key, text))
 

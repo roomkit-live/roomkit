@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Container, Iterable, Sequence
+from collections.abc import Container, Iterable, Mapping, Sequence
 from html import escape
 from pathlib import Path
 
 from roomkit._text import quoted
 from roomkit.skills.errors import (
     SkillDiscoveryError,
+    SkillManifestTooLargeError,
     SkillParseError,
     SkillValidationError,
 )
@@ -28,6 +29,9 @@ from roomkit.skills.parser import (
 logger = logging.getLogger("roomkit.skills")
 
 _QUOTED_MAX = 1100
+_MANIFEST_MAX = 65_536
+"""The most characters the skills' manifest takes, which every system
+prompt carries (RFC §24.1)."""
 """Characters of a served skill's description, license or compatibility the
 manifest quotes: a description holds 1024 at most."""
 
@@ -93,6 +97,8 @@ class SkillRegistry:
                 scanned or a candidate escapes it through a symlink.
             SkillParseError: In strict mode, when a SKILL.md cannot be parsed.
             SkillValidationError: In strict mode, when metadata is invalid.
+            SkillManifestTooLargeError: The skills' manifest would pass
+                65,536 characters; nothing is registered.
         """
         parsed: list[tuple[Path, SkillMetadata]] = []
         for skill_dir in self._candidates(directories, strict=strict):
@@ -102,6 +108,7 @@ class SkillRegistry:
                 if strict:
                     raise
                 logger.warning("Skipping invalid skill %s: %s", skill_dir.name, exc)
+        self._check_manifest([metadata for _, metadata in parsed])
         for skill_dir, metadata in parsed:
             self._commit(skill_dir, metadata)
         return len(parsed)
@@ -163,12 +170,15 @@ class SkillRegistry:
         Raises:
             SkillParseError: If SKILL.md cannot be found or parsed.
             SkillValidationError: If metadata fails validation.
+            SkillManifestTooLargeError: The skills' manifest would pass
+                65,536 characters; nothing is registered.
         """
         try:
             skill_path = Path(skill_dir).resolve()
         except (OSError, RuntimeError) as exc:
             raise SkillDiscoveryError(f"Skill directory cannot be resolved: {skill_dir}") from exc
         metadata = parse_skill_metadata(skill_path)
+        self._check_manifest([metadata])
         self._commit(skill_path, metadata)
         return metadata
 
@@ -197,11 +207,14 @@ class SkillRegistry:
         Raises:
             SkillValidationError: The name holds ``:``, which only a skill an
                 MCP server serves is named with (RFC §24.7).
+            SkillManifestTooLargeError: The skills' manifest would pass
+                65,536 characters; nothing is registered.
         """
         if ":" in skill.metadata.name:
             raise SkillValidationError(
                 f"Skill name {skill.metadata.name!r} holds ':', which names a served skill"
             )
+        self._check_manifest([skill.metadata])
         self._commit(skill.path, skill.metadata, log_level=logging.DEBUG)
         self._skills[skill.metadata.name] = skill
 
@@ -593,7 +606,11 @@ class SkillRegistry:
         prevent injection.
         """
         listed = [meta for meta in self._metadata.values() if meta.name not in self._unlisted]
-        if not listed and not self._unavailable:
+        return self._manifest(listed, self._unavailable)
+
+    def _manifest(self, listed: list[SkillMetadata], unavailable: Mapping[str, str]) -> str:
+        """The manifest of *listed* skills and *unavailable* ones."""
+        if not listed and not unavailable:
             return ""
 
         lines: list[str] = []
@@ -602,14 +619,35 @@ class SkillRegistry:
             for meta in listed:
                 lines.extend(self._manifest_lines(meta))
             lines.append("</available_skills>")
-        if self._unavailable:
+        if unavailable:
             lines.append("<unavailable_skills>")
-            for name, reason in self._unavailable.items():
+            for name, reason in unavailable.items():
                 lines.append(f'  <skill name="{escape(name)}">')
                 lines.append(f"    <reason>{escape(reason)}</reason>")
                 lines.append("  </skill>")
             lines.append("</unavailable_skills>")
         return "\n".join(lines)
+
+    def _check_manifest(self, registered: list[SkillMetadata]) -> None:
+        """Refuse to register *registered* when the manifest would pass its
+        bound once they are, each clearing its marks as a registration does
+        (RFC §24.1): nothing is registered then.
+
+        Raises:
+            SkillManifestTooLargeError: The manifest would pass
+                65,536 characters.
+        """
+        names = {meta.name for meta in registered}
+        metadata = {**self._metadata, **{meta.name: meta for meta in registered}}
+        listed = [
+            meta
+            for meta in metadata.values()
+            if meta.name in names or meta.name not in self._unlisted
+        ]
+        unavailable = {n: r for n, r in self._unavailable.items() if n not in names}
+        characters = len(self._manifest(listed, unavailable))
+        if characters > _MANIFEST_MAX:
+            raise SkillManifestTooLargeError(characters, _MANIFEST_MAX)
 
     def _manifest_lines(self, meta: SkillMetadata) -> list[str]:
         """One skill of the manifest. A served skill names its origin, and what
