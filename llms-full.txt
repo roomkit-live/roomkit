@@ -7165,7 +7165,9 @@ What every store keeps alike (RFC §10.3, §14.1, §14.3):
   room's metadata, as before, and warns once: implement both to keep it
   private.
 - `commit_event(room_id, event, *, target=None, activity=True)` stores the
-  event and bumps the room's counters in one transaction. An activity commit
+  event and bumps the room's counters in one transaction; a store implements
+  it, and `advance_delivered_index()`, the delivery cursor's conditional
+  write, itself: the base class has no default for either. An activity commit
   (an event the pipeline stores DELIVERED) also moves `last_activity_at` and
   resumes a PAUSED room, in the same transaction (RFC §5.1); the framework
   passes `activity=False` for a lifecycle record, a BLOCKED record and a

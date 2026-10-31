@@ -424,6 +424,7 @@ class ConversationStore(ABC):
         room = await self.get_room(room_id)
         return -1 if room is None else room.delivered_index
 
+    @abstractmethod
     async def advance_delivered_index(
         self, room_id: str, index: int, *, force: bool = False
     ) -> bool:
@@ -434,22 +435,11 @@ class ConversationStore(ABC):
         policy, which advances from any lower value. Returns True if the
         cursor moved.
 
-        This default is read-check-write through :meth:`get_room` /
-        :meth:`update_room`; it is only correct under the room's delivery
-        claim, and only for stores whose ``update_room`` persists
-        ``delivered_index`` as given. A store that shields the field there
-        (as the shipped stores do) MUST override this with an atomic
-        conditional write.
+        A store implements it as one atomic conditional write (RFC §14.1):
+        a read-check-write default is correct only under the room's delivery
+        claim, and two processes would move the cursor past an index alike.
         """
-        room = await self.get_room(room_id)
-        if room is None:
-            return False
-        if room.delivered_index >= index:
-            return False
-        if not force and room.delivered_index != index - 1:
-            return False
-        await self.update_room(room.model_copy(update={"delivered_index": index}))
-        return True
+        ...
 
     async def patch_room_metadata(
         self,
@@ -908,6 +898,7 @@ class ConversationStore(ABC):
         indexed = event.model_copy(update={"index": count})
         return await self.add_event(indexed)
 
+    @abstractmethod
     async def commit_event(
         self,
         room_id: str,
@@ -972,61 +963,12 @@ class ConversationStore(ABC):
         provisional value the caller assigned before hooks ran, if the store
         serialized a concurrent writer.
 
-        The default implementation is **NOT atomic** — it looks the key up
-        (:meth:`get_event_by_idempotency_key`), indexes, inserts, then updates
-        the room in separate steps. Persistent backends that may be
-        shared across processes MUST override this with a single storage
-        transaction. It writes the counters through :meth:`update_room`, so a
-        store whose ``update_room`` keeps the stored counters (as the shipped
-        stores do) MUST override it too.
+        A store implements it as one storage transaction (RFC §14.3): a
+        read-then-write default would let a concurrent writer, in this
+        process or another, see the event without the counters, or index
+        two events alike.
         """
-        await self._refuse_a_taken_key(room_id, event)
-        stored = None
-        if target is not None:
-            stored = await self.get_event(target.id)
-            if stored is None or stored.room_id != room_id:
-                raise target_gone(target)
-        indexed = await self.add_event_auto_index(room_id, event)
-        if target is not None and stored is not None:
-            await self.update_event(_with_recorded_results(target, stored))
-        if target is not None and deletes_edits(event, target):
-            await self._mark_edits_deleted(room_id, target.id)
-        room = await self.get_room(room_id)
-        if room is not None:
-            await self.update_room(
-                room.model_copy(
-                    update={
-                        # The tally, incremented — same contract as the shipped
-                        # stores, so a custom backend inheriting this default
-                        # does not silently behave differently after deletions.
-                        "event_count": room.event_count + 1,
-                        "latest_index": indexed.index,
-                        **committed_state(room, activity),
-                    }
-                )
-            )
-        return indexed
-
-    async def _refuse_a_taken_key(self, room_id: str, event: RoomEvent) -> None:
-        """Refuse *event* when its source channel holds its key in *room_id*
-        for another event (RFC §13.4, §14.3), read through the store's own
-        lookup before the default commit writes anything. A store whose
-        lookup finds no event (the default's, which finds none) is asked
-        :meth:`check_idempotency`, which every store implements: the key held
-        by an event other than *event*, which the store does not hold, is
-        refused alike."""
-        key, channel_id = event.idempotency_key, event.source.channel_id
-        if not key:
-            return
-        held = await self.get_event_by_idempotency_key(room_id, key, channel_id=channel_id)
-        if held is not None:
-            if held.id != event.id:
-                raise key_taken(event)
-            return
-        if await self.check_idempotency(room_id, key, channel_id=channel_id) and (
-            await self.get_event(event.id) is None
-        ):
-            raise key_taken(event)
+        ...
 
     async def write_change_target(self, room_id: str, target: RoomEvent) -> None:
         """Write *target* as the edit or the delete the persistence policy

@@ -81,6 +81,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **BREAKING — a store implements `commit_event()` and
+  `advance_delivered_index()` itself** (RFC 14.1, 14.3; RMK-1021). The base
+  class gave both a default that read, then wrote, in separate steps: a
+  concurrent writer, in this process or another, could see an event without
+  its room's counters, index two events alike, or move the delivery cursor
+  past one index twice. Both are now abstract, as in roomkit-rs's `Store`;
+  the shipped stores already implemented each in one transaction. A store
+  written outside RoomKit that inherited them no longer instantiates:
+  implement `commit_event()` as one transaction (the event, the room's
+  `event_count` and `latest_index`, the target of an edit or a delete), and
+  `advance_delivered_index()` as one conditional write.
+
 - **BREAKING — no channel of the type `SYSTEM`, and no empty id**
   (RFC 5, 6.2, 10.3; RMK-1021).
   - `register_channel()` refuses a channel of the type `SYSTEM`

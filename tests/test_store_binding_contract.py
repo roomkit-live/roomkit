@@ -910,101 +910,11 @@ async def test_a_delete_marks_its_target_s_edits_deleted(
 
 
 class _DefaultCommit(InMemoryStore):
-    """A store that commits and writes a change's target through the ABC's
-    defaults, as a custom store inheriting them does."""
-
-    async def commit_event(
-        self,
-        room_id: str,
-        event: RoomEvent,
-        *,
-        target: RoomEvent | None = None,
-        activity: bool = True,
-    ) -> RoomEvent:
-        return await ConversationStore.commit_event(
-            self, room_id, event, target=target, activity=activity
-        )
+    """A store that writes a change's target through the ABC's default, as a
+    custom store inheriting it does."""
 
     async def write_change_target(self, room_id: str, target: RoomEvent) -> None:
         await ConversationStore.write_change_target(self, room_id, target)
-
-
-class _KeyBlindWrites(InMemoryStore):
-    """A custom store whose writes know nothing of keys, and which commits
-    through the ABC's defaults; it answers a key's lookup."""
-
-    commit_event = ConversationStore.commit_event
-    add_event_auto_index = ConversationStore.add_event_auto_index
-
-    def _refuse_taken_key(self, room_id: str, event: RoomEvent) -> None:
-        return None
-
-
-async def test_the_default_commit_refuses_a_key_its_channel_holds() -> None:
-    """RFC §14.3: the ABC's default ``commit_event`` looks the key up within
-    its channel before it writes: another event under it raises
-    ``IdempotencyKeyTakenError``, nothing written, a change's target
-    included."""
-    store = _KeyBlindWrites()
-    room = await store.create_room(Room(id=uuid4().hex))
-    first = await store.commit_event(
-        room.id, make_event(room_id=room.id, channel_id="sms", idempotency_key="k")
-    )
-    target = await store.commit_event(room.id, make_event(room_id=room.id, channel_id="sms"))
-    edit, edited = _edit_of(target, "changed")
-    edit = edit.model_copy(update={"source": first.source, "idempotency_key": "k"})
-
-    with pytest.raises(IdempotencyKeyTakenError):
-        await store.commit_event(room.id, edit, target=edited)
-
-    assert await store.get_event(edit.id) is None
-    kept = await store.get_event(target.id)
-    assert kept is not None and kept.content == target.content
-    other = await store.commit_event(
-        room.id, make_event(room_id=room.id, channel_id="web", idempotency_key="k")
-    )
-    assert other.source.channel_id == "web"
-
-
-class _KeyBlindMemory(InMemoryStore):
-    """An in-memory store whose writes know nothing of keys."""
-
-    def _refuse_taken_key(self, room_id: str, event: RoomEvent) -> None:
-        return None
-
-
-def _abstract_methods_only() -> ConversationStore:
-    """A custom store that implements the ABC's abstract methods only, each
-    answered by a key-blind in-memory store: every other method is the ABC's
-    default, the key's lookup (``get_event_by_idempotency_key``) included."""
-    inner = _KeyBlindMemory()
-
-    def answered_by_inner(name: str) -> Any:
-        async def method(self: ConversationStore, *args: Any, **kwargs: Any) -> Any:
-            return await getattr(inner, name)(*args, **kwargs)
-
-        return method
-
-    methods = {name: answered_by_inner(name) for name in ConversationStore.__abstractmethods__}
-    return type("_AbstractMethodsOnly", (ConversationStore,), methods)()
-
-
-async def test_the_default_commit_refuses_a_key_its_lookup_does_not_find() -> None:
-    """RFC §14.3: a custom store that implements only the ABC's abstract
-    methods has no key lookup to read the event back; the default commit
-    then asks the abstract ``check_idempotency``, and refuses another event
-    under a key its channel holds, nothing written."""
-    store = _abstract_methods_only()
-    room = await store.create_room(Room(id=uuid4().hex))
-    await store.commit_event(
-        room.id, make_event(room_id=room.id, channel_id="sms", idempotency_key="k")
-    )
-    second = make_event(room_id=room.id, channel_id="sms", idempotency_key="k")
-
-    with pytest.raises(IdempotencyKeyTakenError):
-        await store.commit_event(room.id, second)
-
-    assert await store.get_event(second.id) is None
 
 
 class _WritesTheRowAsGiven(InMemoryStore):
@@ -1053,13 +963,10 @@ class _DefaultsOverAnAsGivenRow(_WritesTheRowAsGiven):
     """A custom store on every ABC default, whose ``update_event`` writes the
     row as given."""
 
-    commit_event = ConversationStore.commit_event
-    add_event_auto_index = ConversationStore.add_event_auto_index
     write_change_target = ConversationStore.write_change_target
 
 
-@pytest.mark.parametrize("door", ["commit_event(target=)", "write_change_target"])
-async def test_the_default_target_write_keeps_the_recorded_results(door: str) -> None:
+async def test_the_default_target_write_keeps_the_recorded_results() -> None:
     """RFC §10.3, §14.3: a change's target written through the ABC's
     defaults keeps the delivery results recorded on the row since its copy
     was read, as the shipped stores do, over a store whose ``update_event``
@@ -1073,35 +980,18 @@ async def test_the_default_target_write_keeps_the_recorded_results(door: str) ->
     await store.record_delivery_results(room.id, event.id, results)
     edit, edited = _edit_of(read_before, "changed")
 
-    if door == "write_change_target":
-        await store.write_change_target(room.id, edited)
-    else:
-        await store.commit_event(room.id, edit, target=edited)
+    await store.write_change_target(room.id, edited)
 
     after = await store.get_event(event.id)
     assert after is not None
     assert (after.content, after.delivery_results) == (edited.content, results)
 
 
-async def test_the_default_target_write_marks_a_deleted_target_s_edits_too() -> None:
-    store = _DefaultCommit()
-    room = await store.create_room(Room(id=uuid4().hex))
-    target = await store.commit_event(room.id, make_event(room_id=room.id, body="v1"))
-    edit, edited = _edit_of(target, "v2")
-    edit = await store.commit_event(room.id, edit, target=edited)
-
-    await store.write_change_target(
-        room.id, edited.model_copy(update={"metadata": {**edited.metadata, "deleted": True}})
-    )
-
-    marked = await store.get_event(edit.id)
-    assert marked is not None and marked.metadata.get("deleted") is True
-
-
-async def test_the_default_commit_marks_a_deleted_target_s_edits_too() -> None:
-    """The ABC's default finds an edit by its content's target, as the
-    shipped stores do: a row typed otherwise that carries the edit (one
-    stored before step 8a told them apart) is marked too."""
+async def test_the_default_target_write_marks_a_deleted_target_s_edits() -> None:
+    """The ABC's default marks a deleted target's edits, found by their
+    content's target as the shipped stores do: a row typed otherwise that
+    carries an edit (one stored before step 8a told them apart) is marked
+    too."""
     store = _DefaultCommit()
     room = await store.create_room(Room(id=uuid4().hex))
     target = await store.commit_event(room.id, make_event(room_id=room.id, body="v1"))
@@ -1112,7 +1002,7 @@ async def test_the_default_commit_marks_a_deleted_target_s_edits_too() -> None:
     )
 
     deleted = edited.model_copy(update={"metadata": {**edited.metadata, "deleted": True}})
-    await store.commit_event(room.id, _delete_of(target), target=deleted)
+    await store.write_change_target(room.id, deleted)
 
     for row in (edit, untyped):
         marked = await store.get_event(row.id)
@@ -1360,3 +1250,11 @@ async def test_a_deleted_participant_is_gone_and_found_in_no_room(
     assert [p.id for p in await contract_store.list_participants(room.id)] == ["p-2"]
     assert await contract_store.get_participant(room.id, "p-1") is None
     assert await contract_store.find_room_id_by_participant("sms", "p-1") is None
+
+
+def test_a_store_commits_and_advances_the_cursor_atomically_itself() -> None:
+    """RFC §14.1, §14.3: a commit is one transaction and the delivered cursor
+    a compare-and-set, which only the store can make so (RMK-1021 item 16).
+    A store written outside RoomKit that left either to the base class got a
+    read-then-write its own docstring warned against; both are abstract."""
+    assert {"commit_event", "advance_delivered_index"} <= ConversationStore.__abstractmethods__
