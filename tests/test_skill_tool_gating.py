@@ -16,9 +16,10 @@ import pytest
 
 from roomkit.channels.ai import AIChannel
 from roomkit.providers.ai.base import AITool, AIToolCall
+from roomkit.skills.errors import SkillValidationError
 from roomkit.skills.mcp import parse_entry
 from roomkit.skills.mcp.catalog import served_metadata
-from roomkit.skills.models import SkillMetadata
+from roomkit.skills.models import Skill, SkillMetadata
 from roomkit.skills.parser import parse_frontmatter, parse_skill_metadata
 from roomkit.skills.registry import SkillRegistry
 from roomkit.tools.policy import ToolPolicy, matches_any_pattern
@@ -155,22 +156,40 @@ def _read_by(path: str, allowed_tools: str, tmp_path: Path) -> SkillMetadata:
 @pytest.mark.parametrize(
     ("allowed_tools", "gated", "open_"),
     [
-        ("[sw]earch_*, fetch_v?", ["[sw]earch_x", "fetch_v1"], ["search_x", "wearch_x"]),
-        ("[ab]", ["ab"], ["a", "b", "[ab]"]),
+        ("[ab]", ["ab"], ["a", "b"]),
         ("[a, b]", ["a", "b"], ["c"]),
+        ("search_*, fetch_v?", ["search_x", "fetch_v1"], ["fetch_v12"]),
     ],
-    ids=["a bracket within an entry", "a list of one", "a list"],
+    ids=["a list of one", "a list", "globs"],
 )
 def test_a_bracketed_text_reads_as_a_list(
     path: str, allowed_tools: str, gated: list[str], open_: list[str], tmp_path: Path
 ) -> None:
     # A text in brackets is a list, whichever reader read it and however it
-    # was joined; an entry's globs are ToolPolicy's, ``*`` and ``?`` alone,
-    # so a bracket within one is itself (RFC §21.1, §24.2; RMK-1021 item 5).
-    # It also read as a character class: ``[ab]`` gated ``a`` and ``b``.
+    # was joined; an entry's globs are ToolPolicy's, ``*`` and ``?`` alone
+    # (RFC §21.1, §24.2; RMK-1021 item 5). It also read as a character
+    # class: ``[ab]`` gated ``a`` and ``b``.
     metadata = _read_by(path, allowed_tools, tmp_path)
     assert all(metadata.gates(tool) for tool in gated)
     assert not any(metadata.gates(tool) for tool in open_)
+
+
+@pytest.mark.parametrize("path", ["yaml", "lines", "lines, key again", "lines, items after"])
+@pytest.mark.parametrize("allowed_tools", ["[sw]earch_*, fetch_v?", "rm_[a-z]*", "fetch]"])
+def test_a_bracket_within_an_entry_refuses_the_skill(
+    path: str, allowed_tools: str, tmp_path: Path
+) -> None:
+    """A gate written as a character class covered no tool once a pattern
+    read ``*`` and ``?`` alone, so the tools it was written for stayed open:
+    such a skill is refused instead (RFC §21.1, RMK-1021 item 5)."""
+    with pytest.raises(SkillValidationError, match="holds a bracket"):
+        _read_by(path, allowed_tools, tmp_path)
+
+
+def test_a_skill_added_with_a_bracketed_gate_is_refused(tmp_path: Path) -> None:
+    metadata = SkillMetadata(name="refunds", description="d", allowed_tools="rm_[a-z]*")
+    with pytest.raises(SkillValidationError, match="holds a bracket"):
+        SkillRegistry().add(Skill(metadata=metadata, instructions="B", path=tmp_path))
 
 
 def test_a_null_item_reads_as_nothing_on_a_local_and_a_served_skill(tmp_path: Path) -> None:

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Callable, Collection, Iterable
+from collections.abc import Callable, Collection, Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -12,7 +12,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from roomkit.skills.paths import _resolve_contained_directory, safe_join_filename
-from roomkit.tools.policy import matches_any_pattern
+from roomkit.tools.policy import bracket_error, matches_any_pattern
 
 logger = logging.getLogger("roomkit.skills")
 
@@ -34,6 +34,19 @@ def parse_tool_names(value: object) -> list[str]:
     else:
         return []
     return _names(entries)
+
+
+def bracketed_pattern_errors(fields: Mapping[str, object]) -> list[str]:
+    """Why the ``allowed_tools`` and ``requires`` of *fields* are refused:
+    an entry holding a bracket, which a tool pattern reads as itself (RFC
+    §21.1, :func:`~roomkit.tools.policy.bracket_error`). Read so, a gate
+    written as a character class would leave its tools open."""
+    errors: list[str] = []
+    for key in ("allowed_tools", "requires"):
+        for pattern in parse_tool_names(fields.get(key)):
+            if (error := bracket_error(pattern)) is not None:
+                errors.append(f"{key}: {error}")
+    return errors
 
 
 def _bracketed(text: str) -> bool:

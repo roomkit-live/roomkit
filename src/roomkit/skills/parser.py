@@ -13,7 +13,7 @@ import yaml
 
 from roomkit.skills._frontmatter_lines import GATING_KEYS, parse_lines
 from roomkit.skills.errors import SkillParseError, SkillValidationError
-from roomkit.skills.models import Skill, SkillMetadata
+from roomkit.skills.models import Skill, SkillMetadata, bracketed_pattern_errors
 
 __all__ = [
     "SkillParseError",
@@ -327,6 +327,7 @@ def validate_metadata(data: dict[str, FrontmatterValue], skill_dir: Path) -> lis
     elif len(description) > _DESC_MAX_LEN:
         errors.append(f"Description too long: {len(description)} chars (max {_DESC_MAX_LEN})")
 
+    errors.extend(bracketed_pattern_errors(data))
     return errors
 
 

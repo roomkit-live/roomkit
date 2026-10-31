@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from roomkit.tools.policy import RoleOverride, ToolPolicy
 
 
@@ -29,16 +31,23 @@ class TestAllowPatterns:
         assert policy.is_allowed("local_search") is False
 
     def test_a_pattern_reads_star_and_question_mark_alone(self) -> None:
-        """RFC §21.1: ``*`` stands for any characters, ``?`` for one, and a
-        bracket for itself, as roomkit-rs reads them (RMK-1021 item 5).
-        ``look[uv]p`` read as a character class, and allowed ``lookup``."""
-        policy = ToolPolicy(allow=["look?p", "fetch_[12]"])
-        assert [policy.is_allowed(name) for name in ("lookup", "lookXp", "lookuup")] == [
-            True,
-            True,
-            False,
-        ]
-        assert [policy.is_allowed(name) for name in ("fetch_1", "fetch_[12]")] == [False, True]
+        """RFC §21.1: ``*`` stands for any characters, ``?`` for one, as
+        roomkit-rs reads them (RMK-1021 item 5)."""
+        policy = ToolPolicy(allow=["look?p", "mcp_*"])
+        allowed = [policy.is_allowed(name) for name in ("lookup", "lookuup", "mcp_", "mcp_x")]
+        assert allowed == [True, False, True, True]
+
+    @pytest.mark.parametrize("where", ["allow", "deny", "role allow", "role deny"])
+    def test_a_pattern_holding_a_bracket_is_refused(self, where: str) -> None:
+        """A rule written as a character class covered none of its names once
+        a pattern read ``*`` and ``?`` alone: ``deny=["rm_[a-z]*"]`` let
+        ``rm_file`` through. It is refused instead (RMK-1021 item 5)."""
+        rule = {where.removeprefix("role "): ["rm_[a-z]*"]}
+        with pytest.raises(ValueError, match="holds a bracket"):
+            if where.startswith("role"):
+                ToolPolicy(role_overrides={"member": RoleOverride(**rule)})
+            else:
+                ToolPolicy(**rule)
 
     def test_multiple_allow_patterns(self) -> None:
         policy = ToolPolicy(allow=["search", "read_*"])

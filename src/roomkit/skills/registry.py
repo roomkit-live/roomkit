@@ -19,7 +19,13 @@ from roomkit.skills.mcp.approval import ApproveExecution
 from roomkit.skills.mcp.catalog import Listed, MCPSkillCatalog, ServedOrigin, SkillChangedError
 from roomkit.skills.mcp.server import MCPSkillServer
 from roomkit.skills.mcp.skill import MCPSkill
-from roomkit.skills.models import RequiresMatch, Skill, SkillMetadata, serves_exactly
+from roomkit.skills.models import (
+    RequiresMatch,
+    Skill,
+    SkillMetadata,
+    bracketed_pattern_errors,
+    serves_exactly,
+)
 from roomkit.skills.parser import (
     find_skill_md,
     parse_skill,
@@ -206,7 +212,8 @@ class SkillRegistry:
 
         Raises:
             SkillValidationError: The name holds ``:``, which only a skill an
-                MCP server serves is named with (RFC §24.7).
+                MCP server serves is named with (RFC §24.7), or a tool pattern
+                it gates or requires holds a bracket (RFC §21.1).
             SkillManifestTooLargeError: The skills' manifest would pass
                 65,536 characters; nothing is registered.
         """
@@ -214,6 +221,9 @@ class SkillRegistry:
             raise SkillValidationError(
                 f"Skill name {skill.metadata.name!r} holds ':', which names a served skill"
             )
+        fields = {**skill.metadata.extra_metadata, "allowed_tools": skill.metadata.allowed_tools}
+        if errors := bracketed_pattern_errors(fields):
+            raise SkillValidationError(f"Skill {skill.metadata.name!r}: {'; '.join(errors)}")
         self._check_manifest([skill.metadata])
         self._commit(skill.path, skill.metadata, log_level=logging.DEBUG)
         self._skills[skill.metadata.name] = skill

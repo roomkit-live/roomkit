@@ -5,9 +5,9 @@ from __future__ import annotations
 import re
 from collections.abc import Callable, Iterable
 from functools import lru_cache
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, PrivateAttr
+from pydantic import AfterValidator, BaseModel, Field, PrivateAttr
 
 
 def matches_any_pattern(tool_name: str, patterns: Iterable[str]) -> bool:
@@ -31,6 +31,27 @@ def _glob(pattern: str) -> re.Pattern[str]:
     return re.compile("".join(parts), re.DOTALL)
 
 
+def bracket_error(pattern: str) -> str | None:
+    """Why *pattern*, a tool pattern, is refused: it holds a bracket, which
+    a pattern reads as itself (RFC §21.1). Refused rather than read so, since
+    a rule written as a character class (``rm_[a-z]*``) would cover none of
+    the names it was written for, and a deny rule or a gate would open."""
+    if "[" in pattern or "]" in pattern:
+        return f"tool pattern {pattern!r} holds a bracket: a pattern reads * and ? alone"
+    return None
+
+
+def _without_brackets(pattern: str) -> str:
+    if (error := bracket_error(pattern)) is not None:
+        raise ValueError(error)
+    return pattern
+
+
+ToolPattern = Annotated[str, AfterValidator(_without_brackets)]
+"""A tool name or pattern: ``*`` stands for any characters, ``?`` for one,
+a bracket is refused (:func:`bracket_error`)."""
+
+
 class RoleOverride(BaseModel):
     """Per-role tool policy override.
 
@@ -41,8 +62,8 @@ class RoleOverride(BaseModel):
     - ``"replace"``: the override completely replaces the base policy.
     """
 
-    allow: list[str] = Field(default_factory=list)
-    deny: list[str] = Field(default_factory=list)
+    allow: list[ToolPattern] = Field(default_factory=list)
+    deny: list[ToolPattern] = Field(default_factory=list)
     mode: Literal["restrict", "replace"] = "restrict"
 
 
@@ -118,8 +139,8 @@ class ToolPolicy(BaseModel):
     merges the base rules with the role-specific override.
     """
 
-    allow: list[str] = Field(default_factory=list)
-    deny: list[str] = Field(default_factory=list)
+    allow: list[ToolPattern] = Field(default_factory=list)
+    deny: list[ToolPattern] = Field(default_factory=list)
     role_overrides: dict[str, RoleOverride] = Field(default_factory=dict)
 
     # Private: when set, is_allowed enforces dual-constraint (restrict mode)

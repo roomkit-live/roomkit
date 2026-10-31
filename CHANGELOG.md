@@ -79,10 +79,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `ChannelAddressing.normalize()` is one to three digits, the first not
     0, with or without its `+`; another raises `ValueError`. `"0x"` left
     every national number unchanged, the mistake unseen.
-  - A `ToolPolicy` pattern, and a skill's `allowed_tools`, read `*` and `?`
-    alone (RFC 21.1): a bracket is itself, no character class.
-    `look[uv]p` allowed `lookup`; a skill's `[ab]` gated `a` and `b`, and
-    now gates `ab`, the list it reads as.
+  - A `ToolPolicy` pattern, and a skill's `allowed_tools` and `requires`,
+    read `*` and `?` alone (RFC 21.1), and a pattern holding `[` or `]` is
+    refused: `ValueError` for a `ToolPolicy` or a `RoleOverride`,
+    `SkillValidationError` for a skill. `look[uv]p` allowed `lookup`;
+    read as written, `deny=["rm_[a-z]*"]` would have let `rm_file`
+    through, so a rule written as a character class now fails where it
+    is configured. A skill's `[ab]` reads as the list it is, gating `ab`.
   - The skills' manifest, which every system prompt carries, stays within
     65,536 characters (RFC 24.1): a discovery, a registration or an `add`
     that would pass it raises `SkillManifestTooLargeError`, a
