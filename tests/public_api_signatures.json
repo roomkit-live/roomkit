@@ -1568,6 +1568,7 @@
   "roomkit.Participant": {
     "__init__": ["def", "*", "id", "room_id", "channel_id", "display_name=None", "role=<ParticipantRole.MEMBER: 'member'>", "status=<ParticipantStatus.ACTIVE: 'active'>", "identification=<IdentificationStatus.PENDING: 'pending'>", "identity_id=None", "candidates=None", "connected_via=<factory>", "external_id=None", "resolved_at=None", "resolved_by=None", "joined_at=<factory>", "metadata=<factory>"]
   },
+  "roomkit.ParticipantExistsError": {},
   "roomkit.ParticipantNotAdmittedError": {},
   "roomkit.ParticipantNotFoundError": {},
   "roomkit.PendingInput": {
@@ -3231,6 +3232,9 @@
   },
   "roomkit.models.TemplateContent": {
     "__init__": ["def", "*", "type='template'", "template_id", "language='en'", "parameters=<factory>", "body=None"]
+  },
+  "roomkit.models.ThinkingDeltaMarker": {
+    "__init__": ["def", "thinking"]
   },
   "roomkit.models.UpdateSystemPrompt": {
     "__init__": ["def", "*", "type='update_system_prompt'", "append"]

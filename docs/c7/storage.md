@@ -191,7 +191,9 @@ What every store keeps alike (RFC §10.3, §14.1, §14.3):
   organization's included.
 - `update_event()` of an event the store does not hold raises
   `EventNotFoundError`, and `add_participant()` into a room it does not hold
-  `RoomNotFoundError`, nothing written.
+  `RoomNotFoundError`, nothing written. `add_participant()` under an id the
+  room has raises `ParticipantExistsError` and keeps the record:
+  `update_participant()` rewrites one.
 - `get_private_state(room_id, key)` and `set_private_state(room_id, key,
   value)` keep what a room holds for the runtime alone (RFC §14.1), apart
   from its metadata, which clients may read: a JSON object per key. The room's

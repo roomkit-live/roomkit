@@ -55,6 +55,7 @@ from roomkit.store.base import (
     is_marked_deleted,
     key_taken,
     link_target,
+    participant_exists,
     room_holds,
     room_taken,
     sender_names,
@@ -1915,6 +1916,12 @@ class SQLiteStore(ConversationStore):
             held = conn.execute("SELECT 1 FROM rooms WHERE id = ?", (participant.room_id,))
             if held.fetchone() is None:
                 raise RoomNotFoundError(participant.room_id)
+            taken = conn.execute(
+                "SELECT 1 FROM participants WHERE room_id = ? AND id = ?",
+                (participant.room_id, participant.id),
+            )
+            if taken.fetchone() is not None:
+                raise participant_exists(participant)
             _put_participant_row(conn, participant)
         return participant
 

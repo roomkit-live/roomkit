@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import MutableMapping
+from collections.abc import AsyncIterator, MutableMapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 from uuid import uuid4
@@ -34,6 +34,7 @@ from roomkit.models.response_metadata import (
     merge_caller_record,
     merge_channel_record,
 )
+from roomkit.models.streaming import ThinkingDeltaMarker
 from roomkit.providers.utils import _aclose_stream
 
 if TYPE_CHECKING:
@@ -289,8 +290,7 @@ class InboundStreamingMixin(HelpersMixin):
         response ends on included, failed or not (RFC §12.2 step 13s).
         """
         room_id = placeholder.room_id
-        # Rows ride it besides text: the ABC's AsyncIterator[str] names only the text.
-        segments: Any = writer.stream(reader)
+        segments = writer.stream(reader)
         try:
             channel_error = await self._deliver_segments(
                 channel, binding, placeholder, segments, sr, writer, reader, context
@@ -324,7 +324,7 @@ class InboundStreamingMixin(HelpersMixin):
         channel: Channel,
         binding: ChannelBinding,
         placeholder: RoomEvent,
-        segments: Any,
+        segments: AsyncIterator[str | ThinkingDeltaMarker | RoomEvent],
         sr: StreamingResponse,
         writer: SegmentWriter,
         reader: ResponseReader,

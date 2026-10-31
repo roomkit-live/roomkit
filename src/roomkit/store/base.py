@@ -17,6 +17,7 @@ from roomkit.core.exceptions import (
     EventNotFoundError,
     IdempotencyKeyTakenError,
     IdentityNotFoundError,
+    ParticipantExistsError,
     RoomAlreadyExistsError,
 )
 from roomkit.models.channel import ChannelBinding
@@ -135,6 +136,14 @@ def target_gone(target: RoomEvent) -> EventNotFoundError:
     (RFC §14.3): a change's target (``commit_event``, the whole commit
     fails) or an update (``update_event``); nothing is written."""
     return EventNotFoundError(f"Event {target.id} is not in room {target.room_id}")
+
+
+def participant_exists(participant: Participant) -> ParticipantExistsError:
+    """The refusal of *participant*, whose id its room already has (RFC
+    §5.5, §14.3): nothing is written."""
+    return ParticipantExistsError(
+        f"Participant {participant.id} is already in room {participant.room_id}"
+    )
 
 
 def key_taken(event: RoomEvent) -> IdempotencyKeyTakenError:

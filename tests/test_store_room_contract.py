@@ -17,6 +17,7 @@ import pytest
 from roomkit.core._authors import AUTHOR_REGISTER
 from roomkit.core.exceptions import (
     EventNotFoundError,
+    ParticipantExistsError,
     RoomAlreadyExistsError,
     RoomNotFoundError,
 )
@@ -155,6 +156,25 @@ async def test_a_write_naming_what_the_store_lacks_is_refused(
         assert await contract_store.get_room(missing) is None
         assert await contract_store.get_event(event.id) is None
         assert await contract_store.get_participant(missing, participant.id) is None
+    finally:
+        await contract_store.delete_room(room.id)
+
+
+async def test_a_participant_is_added_once(contract_store: ConversationStore) -> None:
+    """RFC §5.5, §14.3: a participant is one record per room and id, so a
+    store refuses to add one under an id the room has and keeps the record it
+    holds, as it refuses a room under an id it holds; the stores replaced it."""
+    room = await contract_store.create_room(Room(id=uuid4().hex))
+    first = Participant(id="p1", room_id=room.id, channel_id="sms", display_name="Ann")
+    try:
+        await contract_store.add_participant(first)
+
+        with pytest.raises(ParticipantExistsError):
+            await contract_store.add_participant(
+                first.model_copy(update={"channel_id": "ws", "display_name": "Bob"})
+            )
+
+        assert await contract_store.get_participant(room.id, "p1") == first
     finally:
         await contract_store.delete_room(room.id)
 

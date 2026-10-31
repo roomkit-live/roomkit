@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`ThinkingDeltaMarker` is public, from `roomkit.models`** (RMK-1021). A
+  streaming channel's `deliver_stream` reads one per chunk of the model's
+  reasoning, besides the text and the response's rows, and could name it
+  only through an internal module. `Channel.deliver_stream` now annotates
+  its stream `AsyncIterator[str | ThinkingDeltaMarker | RoomEvent]`, what it
+  carried already; an override typed `AsyncIterator[str]` widens to it.
+
 - **`MCPToolProvider.from_command(..., connect_timeout=60.0)`** (RMK-1021,
   as roomkit-rs's `McpCommand`). Entering a provider that starts its server
   waited for the handshake and the listing for ever: a server that never
@@ -88,6 +95,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `close()`. It needs the `typesafe` and `llamacpp` extras.
 
 ### Changed
+
+- **BREAKING — a store refuses a participant under an id its room has**
+  (RFC 5.5, 14.3; RMK-1021), as roomkit-rs's `ParticipantExists`.
+  `add_participant()` replaced the record the room held, in the three
+  stores; a participant is one record per room and id. It now raises
+  `ParticipantExistsError`, exported from `roomkit`, and keeps the record.
+  The kit's own paths read the record first, under the room lock, and are
+  unchanged; a host that called the store's `add_participant()` to rewrite
+  a record calls `update_participant()`.
 
 - **`ConversationStore.get_timeline()` reads 50 events by default**, as
   `RoomKit.get_timeline()` and roomkit-rs's `EventQuery` (RMK-1021). The one

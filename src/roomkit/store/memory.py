@@ -35,6 +35,7 @@ from roomkit.store.base import (
     link_target,
     marked_deleted,
     names_by_recipient,
+    participant_exists,
     reached_as,
     room_holds,
     room_taken,
@@ -810,6 +811,8 @@ class InMemoryStore(ConversationStore):
     async def add_participant(self, participant: Participant) -> Participant:
         if participant.room_id not in self._rooms:
             raise RoomNotFoundError(participant.room_id)
+        if participant.id in self._participants.get(participant.room_id, {}):
+            raise participant_exists(participant)
         participant = participant.model_copy(deep=True)
         self._participants.setdefault(participant.room_id, {})[participant.id] = participant
         self._index_participant(participant.id, participant.room_id)

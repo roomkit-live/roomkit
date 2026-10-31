@@ -955,9 +955,11 @@ if reply.metadata["loop_end_reason"] != "completed":
     logger.warning("agent stopped: %s", reply.metadata["loop_end_reason"])
 ```
 
-The framework's inbound streaming path forwards text deltas and the tool-call
-and thinking markers to a channel's `deliver_stream`, but **not** the terminal
-marker — it would reach a renderer as noise. Overriding `deliver_stream` on a
+The framework's inbound streaming path hands a channel's `deliver_stream` an
+`AsyncIterator[str | ThinkingDeltaMarker | RoomEvent]`: the text deltas, a
+`ThinkingDeltaMarker` (from `roomkit.models`) per chunk of reasoning, and each
+row of the response once stored (a text segment, a tool call's start or end),
+but **not** the terminal marker — it would reach a renderer as noise. Overriding `deliver_stream` on a
 WebSocket or CLI channel will therefore not see it; wrap the AI channel's own
 `response_stream` instead.
 

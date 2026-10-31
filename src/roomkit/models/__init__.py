@@ -69,7 +69,7 @@ from roomkit.models.room import Room, RoomTimers
 from roomkit.models.session_event import SessionStartedEvent
 from roomkit.models.steering import Cancel, InjectMessage, SteeringDirective, UpdateSystemPrompt
 from roomkit.models.store_filter import EventFilter, PersistencePolicy, RoomFilter
-from roomkit.models.streaming import LoopEndMarker
+from roomkit.models.streaming import LoopEndMarker, ThinkingDeltaMarker
 from roomkit.models.task import Observation, Task
 from roomkit.models.thinking_event import ThinkingEvent
 from roomkit.models.tool_call import (
@@ -159,6 +159,7 @@ __all__ = [
     "Cancel",
     "InjectMessage",
     "LoopEndMarker",
+    "ThinkingDeltaMarker",
     "STANDALONE",
     "SteeringDirective",
     "TURNS_KEY",

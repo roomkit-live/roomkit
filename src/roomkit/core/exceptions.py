@@ -257,6 +257,16 @@ class ParticipantNotFoundError(RoomKitError):
     """Participant not found in room."""
 
 
+class ParticipantExistsError(RoomKitError):
+    """A participant was added under an id its room already has (RFC §5.5,
+    §14.3).
+
+    A participant is one record per room and id: the store refuses the
+    addition and keeps the record it holds. Nothing is written; a host
+    rewrites a record with ``update_participant``.
+    """
+
+
 class IdentityNotFoundError(RoomKitError):
     """Identity not found."""
 

@@ -3032,9 +3032,11 @@ if reply.metadata["loop_end_reason"] != "completed":
     logger.warning("agent stopped: %s", reply.metadata["loop_end_reason"])
 ```
 
-The framework's inbound streaming path forwards text deltas and the tool-call
-and thinking markers to a channel's `deliver_stream`, but **not** the terminal
-marker — it would reach a renderer as noise. Overriding `deliver_stream` on a
+The framework's inbound streaming path hands a channel's `deliver_stream` an
+`AsyncIterator[str | ThinkingDeltaMarker | RoomEvent]`: the text deltas, a
+`ThinkingDeltaMarker` (from `roomkit.models`) per chunk of reasoning, and each
+row of the response once stored (a text segment, a tool call's start or end),
+but **not** the terminal marker — it would reach a renderer as noise. Overriding `deliver_stream` on a
 WebSocket or CLI channel will therefore not see it; wrap the AI channel's own
 `response_stream` instead.
 
@@ -7146,7 +7148,9 @@ What every store keeps alike (RFC §10.3, §14.1, §14.3):
   organization's included.
 - `update_event()` of an event the store does not hold raises
   `EventNotFoundError`, and `add_participant()` into a room it does not hold
-  `RoomNotFoundError`, nothing written.
+  `RoomNotFoundError`, nothing written. `add_participant()` under an id the
+  room has raises `ParticipantExistsError` and keeps the record:
+  `update_participant()` rewrites one.
 - `get_private_state(room_id, key)` and `set_private_state(room_id, key,
   value)` keep what a room holds for the runtime alone (RFC §14.1), apart
   from its metadata, which clients may read: a JSON object per key. The room's
@@ -7835,6 +7839,7 @@ RoomKit exports **348 symbols** from `roomkit`. Providers and voice types import
 | `ChannelNotFoundError` | Channel not attached to room |
 | `ChannelNotRegisteredError` | Channel not registered with framework (`send_event()` from it, whether or not the room still binds it) |
 | `ParticipantNotFoundError` | Participant not found in room |
+| `ParticipantExistsError` | A store's `add_participant()` under an id the room has; nothing written, `update_participant()` rewrites a record (RFC §5.5, §14.3) |
 | `ParticipantNotAdmittedError` | Participant barred from what was asked for them |
 | `IdentityNotFoundError` | Identity not found |
 | `SourceAlreadyAttachedError` | Source already attached |

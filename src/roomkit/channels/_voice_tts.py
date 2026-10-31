@@ -451,7 +451,7 @@ class VoiceTTSMixin:
 
     async def deliver_stream(
         self,
-        text_stream: AsyncIterator[str],
+        text_stream: AsyncIterator[str | ThinkingDeltaMarker | RoomEvent],
         event: RoomEvent,
         binding: ChannelBinding,
         context: RoomContext,
