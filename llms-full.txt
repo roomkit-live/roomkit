@@ -1786,7 +1786,13 @@ change's `ON_EVENT_UPDATED` and `ON_EVENT_DELETED`, `ON_TASK_CREATED` and
 `ON_ERROR` hold neither the call nor the room: `process_inbound` returns once
 its delivery set and its answers are done, and the room's next message and an
 agent's answer are delivered while they run; `event_processed` comes once the
-event's `AFTER_BROADCAST` hooks have ended (RMK-1020). Registration mode is forgiving in
+event's `AFTER_BROADCAST` hooks have ended (RMK-1020). A room change starts its
+hooks and returns without waiting for them: `attach_channel`, `detach_channel`,
+`mute`, `unmute`, `close_room`, `check_room_timers`, the member calls and a direct
+`update_event` or `delete_event`; `create_room` alone awaits its `ON_ROOM_CREATED`
+hooks, so one that attaches the room's agent has done so before anything is sent
+into the room. `await kit.hook_engine.drain_observers()` waits for the hooks still
+running. Registration mode is forgiving in
 both directions: ASYNC-registered hooks on a SYNC trigger fire as observers
 after the sync pass, in the background: the operation goes on without waiting
 for them, so a hook whose work it needs first is registered SYNC (RMK-903).

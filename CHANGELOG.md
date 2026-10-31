@@ -77,6 +77,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     dropped as the close starts, as before, whatever the store; another
     call's send under way gets the grace, then is cut, as any send.
 
+- **A room change no longer waits for its ASYNC hooks** (RFC 9.3,
+  RMK-1020). `attach_channel`, `detach_channel`, `mute`, `unmute`,
+  `close_room`, `check_room_timers`, `add_member`, `remove_member`,
+  `rename_member`, a conference's participant and track announcements, and
+  a direct `update_event` or `delete_event` returned only once their hooks
+  had ended: a 1 s hook on `ON_CHANNEL_ATTACHED` made every attach take
+  1 s. They now start the hooks and return, as roomkit-rs does.
+  - A caller that reads a hook's effect right after the call may not see
+    it yet; `kit.hook_engine.drain_observers()` waits for the hooks still
+    running.
+  - `create_room` still awaits its `ON_ROOM_CREATED` hooks: one that
+    attaches the room's agent has done so before anything is sent into the
+    room.
+  - A direct change's hooks still run on the budget of the work it is made
+    in, so a hook that edits its event on every edit still stops at the
+    cap; `kit.close()` gives them the grace, then cuts them, and no longer
+    cuts the timer check that started them.
+
 - **`LlamaCppAIProvider` runs llama.cpp's latest stable release, v0.8.0
   (build b11960)** (RMK-1024).
   - The pinned build was b11160, a nightly from September. It could not
