@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextvars
 import logging
-from collections.abc import Callable, Coroutine, Iterable
+from collections.abc import Awaitable, Callable, Coroutine, Iterable
 from dataclasses import dataclass, field, replace
 from typing import Any, ClassVar, Protocol
 
@@ -138,6 +138,15 @@ turn's work does: a post they make while the turn's delivery runs draws one
 of that cascade's passes, a direct change (``update_event``) draws nothing.
 What they send is at least as deep as the turn was when the trigger fired,
 as every ASYNC hook's body is (:func:`_run_body`)."""
+
+AWAITED_TRIGGERS: frozenset[HookTrigger] = frozenset(
+    {HookTrigger.ON_ROOM_CREATED, HookTrigger.ON_RECORDING_STARTED}
+)
+"""The ASYNC triggers whose operation awaits its hooks (RFC §9.3): a room's
+creation, so that a hook that attaches the room's agent has done so before
+anything is sent into the room, and a recording's start, the consent point
+no media reaches the recorder before (§12.11). Every other ASYNC trigger's
+hooks are started and not waited for (:meth:`HookEngine._fire_async_hooks`)."""
 
 TYPED_TURN_TRIGGERS: frozenset[HookTrigger] = frozenset(
     {HookTrigger.BEFORE_TOOL_USE, HookTrigger.ON_TOOL_CALL, HookTrigger.ON_USER_INPUT_REQUIRED}
@@ -1456,6 +1465,44 @@ class HookEngine:
         )
         self._observe(hooks, room_id, trigger, event, context)
 
+    async def _fire_async_hooks(
+        self,
+        room_id: str,
+        trigger: HookTrigger,
+        event: RoomEvent | Any,
+        context: RoomContext,
+        *,
+        budget: ReentryBudget | None = None,
+        skip_event_filter: bool = False,
+        then: Callable[[], Awaitable[None]] | None = None,
+    ) -> None:
+        """Fire *trigger*'s hooks as an ASYNC trigger's (RFC §9.3): awaited
+        for :data:`AWAITED_TRIGGERS`, started and not waited for otherwise
+        (:meth:`_start_async_hooks`). *then*, the framework event that
+        reports the operation, comes once they have ended, at once when
+        none is registered."""
+        if trigger in AWAITED_TRIGGERS:
+            await self.run_async_hooks(
+                room_id,
+                trigger,
+                event,
+                context,
+                budget=budget,
+                skip_event_filter=skip_event_filter,
+            )
+        elif self._start_async_hooks(
+            room_id,
+            trigger,
+            event,
+            context,
+            budget=budget,
+            skip_event_filter=skip_event_filter,
+            then=then,
+        ):
+            return
+        if then is not None:
+            await then()
+
     def _start_async_hooks(
         self,
         room_id: str,
@@ -1465,38 +1512,43 @@ class HookEngine:
         *,
         budget: ReentryBudget | None = None,
         skip_event_filter: bool = False,
-    ) -> None:
+        then: Callable[[], Awaitable[None]] | None = None,
+    ) -> bool:
         """Start the hooks :meth:`run_async_hooks` runs for *trigger* and
         return at once: an ASYNC trigger's hooks run after the operation
         that fired it and never hold it up (RFC §9.3). Held as observers
-        are (:meth:`_hold`), each body on *budget* when given.
+        are (:meth:`_hold`), each body on *budget* when given, *then* run
+        once they have all ended. Whether any was started: with none,
+        *then* is not run.
 
         The hooks, and the depth their bodies send at, are read here, as the
         trigger fires: the turn or the tool call that fired it may be over
         once they start, and a hook that tells the agent again still ends at
         the depth limit (RFC §8.3)."""
         if (engine := self._turn_engine(trigger)) is not None:
-            engine._start_async_hooks(
+            return engine._start_async_hooks(
                 room_id,
                 trigger,
                 event,
                 context,
                 budget=budget,
                 skip_event_filter=skip_event_filter,
+                then=then,
             )
-            return
         hooks = self._get_hooks(room_id, trigger, None, event=None if skip_event_filter else event)
         if not hooks:
-            return
-        work = self._run_async_hooks_list(
-            hooks, room_id, trigger, event, context, budget=budget, floor=chain_floor()
-        )
-        self._hold(work, name=str(trigger))
+            return False
+        floor = chain_floor()
 
-    def _has_async_hooks(self, room_id: str, trigger: HookTrigger, event: RoomEvent) -> bool:
-        """Whether :meth:`run_async_hooks` finds hooks for *trigger* on *event*."""
-        engine = self._turn_engine(trigger) or self
-        return bool(engine._get_hooks(room_id, trigger, None, event=event))
+        async def observed() -> None:
+            await self._run_async_hooks_list(
+                hooks, room_id, trigger, event, context, budget=budget, floor=floor
+            )
+            if then is not None:
+                await then()
+
+        self._hold(observed(), name=str(trigger))
+        return True
 
     def _hold(self, work: Coroutine[Any, Any, None], *, name: str) -> None:
         """Run *work*, hooks that observe an operation already over, as a

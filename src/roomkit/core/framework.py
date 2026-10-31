@@ -547,7 +547,7 @@ class RoomKit(
                 # terminal entry, published late): no hook fires (RFC §12.10.4).
                 logger.debug("The kit is closed: no ON_STATUS_POSTED for room %s", room_id)
                 return
-            await self._hook_engine.run_async_hooks(
+            self._hook_engine._start_async_hooks(
                 room_id,
                 HookTrigger.ON_STATUS_POSTED,
                 entry,

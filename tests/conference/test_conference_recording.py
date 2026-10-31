@@ -720,6 +720,7 @@ class TestRecordingResultReported:
 
         await backend.simulate_track_unpublished(alice.id)
 
+        await kit.hook_engine.drain_observers()
         assert len(stopped) == 1
         assert stopped[0].url == recorder.results[0].url
         assert stopped[0].url != ""

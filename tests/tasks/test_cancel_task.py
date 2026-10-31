@@ -312,9 +312,10 @@ class _Failing(MockAIProvider):
 @pytest.mark.parametrize("ended", ["completed", "failed"])
 @pytest.mark.parametrize("door", ["inline", "background"])
 async def test_a_task_whose_end_is_being_told_reads_ended_at_once(door: str, ended: str) -> None:
-    """While its ON_TASK_COMPLETED hooks run, its line still running, the
-    room's own task reads ended, with the status it ended with, answered at
-    once: its end is recorded before its hooks run (RFC §23.4)."""
+    """While its ON_TASK_COMPLETED hooks run, the room's own task reads
+    ended, with the status it ended with, answered at once: its end is
+    recorded before its hooks run (RFC §23.4), and its line says so as they
+    start, the hooks not waited for (§23.5, §9.3)."""
     worker = MockAIProvider(responses=["A thousand."]) if ended == "completed" else _Failing()
     room = await _Room(worker).open()
     in_hook = asyncio.Event()
@@ -335,7 +336,7 @@ async def test_a_task_whose_end_is_being_told_reads_ended_at_once(door: str, end
     await asyncio.gather(run, return_exceptions=True)
     await room.kit.close()
 
-    assert line["status"] == "running"
+    assert line["status"] == ended
     assert (answer["status"], answer["message"]) == (ended, "The task had already ended.")
     assert room.kit._room_tasks.running == []
 

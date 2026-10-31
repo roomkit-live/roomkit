@@ -16,7 +16,7 @@ from roomkit.core.hooks import HookEngine, HookRegistration
 from roomkit.core.locks import InMemoryLockManager
 from roomkit.models.channel import ChannelBinding, ChannelOutput
 from roomkit.models.context import RoomContext
-from roomkit.models.delivery import InboundMessage
+from roomkit.models.delivery import DeliveryStatus, InboundMessage
 from roomkit.models.enums import (
     ChannelCategory,
     ChannelType,
@@ -32,6 +32,7 @@ from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.store.memory import InMemoryStore
 from tests.test_event_ops import RecordingTransport
 from tests.test_framework import SimpleChannel
+from tests.test_room_recording_api import MockMediaRecorder, _binding
 
 
 def _ctx() -> RoomContext:
@@ -227,6 +228,65 @@ class TestTheRoomGoesOn:
         try:
             await asyncio.wait_for(kit.process_inbound(_said("Hi."), room_id="r1"), 1)
             assert _bodies(witness) == ["Hi.", "Answer."]
+        finally:
+            release.set()
+            await kit.close()
+
+    @pytest.mark.parametrize(
+        ("trigger", "reported"),
+        [
+            (HookTrigger.ON_AI_RESPONSE, "ai_response"),
+            (HookTrigger.ON_FEEDBACK, "feedback"),
+            (HookTrigger.ON_RECORDING_STOPPED, "recording_stopped"),
+            (HookTrigger.ON_DELIVERY_STATUS, None),
+        ],
+        ids=lambda value: str(value),
+    )
+    async def test_a_trigger_of_this_implementation_alone_holds_nothing_up(
+        self, trigger: HookTrigger, reported: str | None
+    ) -> None:
+        """The triggers roomkit-rs does not have follow the same rule (RFC
+        §9.3): an agent's answer is delivered, a feedback, a recording's stop
+        or a delivery status is handled, while their hooks run, and the
+        framework event that reports it comes once they have ended (RMK-1049).
+        Each call waited for them."""
+        kit, witness = await _room_with()
+        kit.register_channel(AIChannel("ai", provider=MockAIProvider(responses=["Answer."])))
+        await kit.attach_channel("r1", "ai", category=ChannelCategory.INTELLIGENCE)
+        await kit.start_room_recording("r1", [_binding(MockMediaRecorder())])
+        seen: list[str] = []
+        started, release, came = asyncio.Event(), asyncio.Event(), asyncio.Event()
+
+        @kit.hook(trigger, execution=HookExecution.ASYNC, name="slow")
+        async def slow(event: Any, ctx: RoomContext) -> None:
+            started.set()
+            await release.wait()
+            seen.append("hook ended")
+
+        if reported is not None:
+
+            @kit.on(reported)
+            async def on_reported(event: Any) -> None:
+                seen.append(reported)
+                came.set()
+
+        status = DeliveryStatus(provider="mock", message_id="m1", status="delivered", room_id="r1")
+        calls = {
+            HookTrigger.ON_AI_RESPONSE: lambda: kit.process_inbound(_said("Hi."), room_id="r1"),
+            HookTrigger.ON_FEEDBACK: lambda: kit.submit_feedback("r1", 0.9),
+            HookTrigger.ON_RECORDING_STOPPED: lambda: kit.stop_room_recording("r1"),
+            HookTrigger.ON_DELIVERY_STATUS: lambda: kit.process_delivery_status(status),
+        }
+        try:
+            await asyncio.wait_for(calls[trigger](), 0.5)
+            await asyncio.wait_for(started.wait(), 0.5)
+            seen.append("call returned")
+            if trigger is HookTrigger.ON_AI_RESPONSE:
+                assert _bodies(witness) == ["Hi.", "Answer."]
+            release.set()
+            if reported is not None:
+                await asyncio.wait_for(came.wait(), 0.5)
+                assert seen == ["call returned", "hook ended", reported]
         finally:
             release.set()
             await kit.close()

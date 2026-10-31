@@ -85,6 +85,9 @@ class DiscussionView:
         self.live: _Live | None = None
         self.working: dict[str, str] = {}
         """The room's running tasks: task id to the agent the task is for."""
+        self._owners: dict[str, str] = {}
+        """The agent a task is for, told before its start was observed: the
+        hooks that report a start are not waited for (RFC §9.3)."""
         self.version = 0
         """Bumped at every change, the live text's included."""
 
@@ -146,7 +149,7 @@ class DiscussionView:
     # -- The room's tasks --
 
     def task_started(self, task_id: str, agent: str, task: str) -> None:
-        self.working[task_id] = agent
+        self.working[task_id] = self._owners.pop(task_id, agent)
         self.note(
             f"task {short_task(task_id)} started: {self.label(agent)} — "
             f"{_cut(task, _TASK_PREVIEW)}"
@@ -154,11 +157,14 @@ class DiscussionView:
 
     def task_for(self, task_id: str, agent: str) -> None:
         """The task *task_id* is *agent*'s, whatever channel does its work."""
-        if task_id in self.working:
-            self.working[task_id] = agent
-            self._changed()
+        if task_id not in self.working:
+            self._owners[task_id] = agent
+            return
+        self.working[task_id] = agent
+        self._changed()
 
     def task_ended(self, task_id: str, status: str, seconds: float | None) -> None:
+        self._owners.pop(task_id, None)
         agent = self.working.pop(task_id, None)
         took = f" after {seconds:.0f} s" if seconds is not None else ""
         whose = f" ({self.label(agent)})" if agent else ""

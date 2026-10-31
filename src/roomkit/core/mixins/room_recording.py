@@ -214,10 +214,11 @@ class RoomRecordingMixin(HelpersMixin):
             raise
 
     async def _fire_recording_started(self, room_id: str, recording_id: str) -> None:
-        """Announce a room-level recording (ON_RECORDING_STARTED, RFC §17.6)."""
+        """Announce a room-level recording (ON_RECORDING_STARTED, RFC §17.6),
+        its hooks awaited: the consent point no media reaches it before."""
         try:
             context = await self._build_context(room_id)
-            await self._hook_engine.run_async_hooks(
+            await self._hook_engine._fire_async_hooks(
                 room_id,
                 HookTrigger.ON_RECORDING_STARTED,
                 RecordingStartedEvent(id=recording_id, room_id=room_id),
@@ -244,11 +245,8 @@ class RoomRecordingMixin(HelpersMixin):
             duration_seconds=result.duration_seconds,
             room_id=room_id,
         )
-        try:
-            context = await self._build_context(room_id)
-            await self._hook_engine.run_async_hooks(
-                room_id, HookTrigger.ON_RECORDING_STOPPED, event, context, skip_event_filter=True
-            )
+
+        async def reported() -> None:
             await self._emit_framework_event(
                 "recording_stopped",
                 room_id=room_id,
@@ -258,6 +256,19 @@ class RoomRecordingMixin(HelpersMixin):
                     "url": result.url,
                     "duration_seconds": result.duration_seconds,
                 },
+            )
+
+        try:
+            context = await self._build_context(room_id)
+            # The framework event once the hooks have ended, the stop not
+            # waiting for them (RFC §9.3).
+            await self._hook_engine._fire_async_hooks(
+                room_id,
+                HookTrigger.ON_RECORDING_STOPPED,
+                event,
+                context,
+                skip_event_filter=True,
+                then=reported,
             )
         except Exception:
             logger.exception("Error announcing the end of room recording %s", result.id)

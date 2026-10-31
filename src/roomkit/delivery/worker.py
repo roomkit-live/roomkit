@@ -108,7 +108,7 @@ async def fire_delivery_hooks(
     if trigger == HookTrigger.AFTER_DELIVER:
         try:
             context = await kit._build_context(item.room_id)
-            await hooks.run_async_hooks(item.room_id, trigger, event, context)
+            hooks._start_async_hooks(item.room_id, trigger, event, context)
         except Exception:
             logger.warning("AFTER_DELIVER failed for item %s", item.id, exc_info=True)
         return item.content

@@ -686,9 +686,8 @@ class HelpersMixin:
         *context*, the room as the change left it, read now when not given.
 
         The hooks are started and not waited for (RFC §9.3), but for
-        ``ON_ROOM_CREATED``'s, which the room's creation awaits: a hook that
-        attaches the room's agent has done so before anything is sent into
-        the room."""
+        ``ON_ROOM_CREATED``'s, which the room's creation awaits
+        (:data:`~roomkit.core.hooks.AWAITED_TRIGGERS`)."""
         event = RoomEvent(
             room_id=room_id,
             type=event_type,
@@ -707,10 +706,7 @@ class HelpersMixin:
                 if room is None:
                     return
                 context = RoomContext(room=room, bindings=[])
-        if trigger is HookTrigger.ON_ROOM_CREATED:
-            await self._hook_engine.run_async_hooks(room_id, trigger, event, context)
-            return
-        self._hook_engine._start_async_hooks(room_id, trigger, event, context)
+        await self._hook_engine._fire_async_hooks(room_id, trigger, event, context)
 
     async def _persist_side_effects(
         self,
@@ -1023,7 +1019,7 @@ class HelpersMixin:
         except Exception:
             self._pending_traces.setdefault(room_id, []).append(trace)
             return
-        await self._hook_engine.run_async_hooks(
+        self._hook_engine._start_async_hooks(
             room_id,
             HookTrigger.ON_PROTOCOL_TRACE,
             trace,
@@ -1041,7 +1037,7 @@ class HelpersMixin:
         except Exception:
             return
         for trace in traces:
-            await self._hook_engine.run_async_hooks(
+            self._hook_engine._start_async_hooks(
                 room_id,
                 HookTrigger.ON_PROTOCOL_TRACE,
                 trace,
@@ -1258,18 +1254,18 @@ class HelpersMixin:
             context = await self._build_context(room_id)
         except Exception:
             return
-        await self._hook_engine.run_async_hooks(
-            room_id,
-            HookTrigger.ON_FEEDBACK,
-            obs,
-            context,
-            skip_event_filter=True,
-        )
 
-        await self._emit_framework_event(
-            "feedback",
-            room_id=room_id,
-            channel_id=channel_id,
-            event_id=event_id,
-            data={"dimension": dimension, "rating": rating},
+        async def reported() -> None:
+            await self._emit_framework_event(
+                "feedback",
+                room_id=room_id,
+                channel_id=channel_id,
+                event_id=event_id,
+                data={"dimension": dimension, "rating": rating},
+            )
+
+        # The framework event once the hooks have ended, the call not waiting
+        # for them (RFC §9.3).
+        await self._hook_engine._fire_async_hooks(
+            room_id, HookTrigger.ON_FEEDBACK, obs, context, skip_event_filter=True, then=reported
         )

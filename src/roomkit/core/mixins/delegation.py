@@ -636,7 +636,7 @@ class DelegationMixin(HelpersMixin):
         )
         room_context = await self._build_context(room_id)
         handle._announced = True
-        await self._hook_engine.run_async_hooks(
+        self._hook_engine._start_async_hooks(
             room_id, HookTrigger.ON_TASK_DELEGATED, hook_event, room_context
         )
         if handle._post_status:
@@ -990,7 +990,7 @@ class DelegationMixin(HelpersMixin):
         )
         try:
             room_context = await self._build_context(result.parent_room_id)
-            await self._hook_engine.run_async_hooks(
+            self._hook_engine._start_async_hooks(
                 result.parent_room_id, HookTrigger.ON_TASK_COMPLETED, hook_event, room_context
             )
         except Exception:

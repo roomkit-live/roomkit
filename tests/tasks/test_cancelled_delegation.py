@@ -27,6 +27,7 @@ from roomkit.orchestration.strategies.supervisor import Supervisor
 from roomkit.orchestration.strategies.supervisor.execution import _run_sequential
 from roomkit.providers.ai.base import AIResponse, AITool, AIToolCall
 from roomkit.providers.ai.mock import MockAIProvider
+from roomkit.tasks import InMemoryTaskRunner
 from roomkit.tasks.models import DelegatedTaskResult, cancelled_task_fields
 from roomkit.telemetry.base import Attr, SpanKind
 from roomkit.telemetry.mock import MockTelemetryProvider
@@ -98,10 +99,12 @@ async def _found(name: str, arguments: dict[str, Any]) -> str:
 
 
 async def _kit(
-    responses: list[AIResponse] | None = None, handler: Any = _slow
+    responses: list[AIResponse] | None = None,
+    handler: Any = _slow,
+    task_runner: InMemoryTaskRunner | None = None,
 ) -> tuple[RoomKit, MockTelemetryProvider, list[Any]]:
     telemetry = MockTelemetryProvider()
-    kit = RoomKit(telemetry=telemetry)
+    kit = RoomKit(telemetry=telemetry, task_runner=task_runner)
     kit.register_channel(
         Agent(
             "worker",
@@ -437,15 +440,26 @@ async def test_an_inline_caller_timing_out_while_the_task_ends_leaves_its_end_wh
     await kit.close()
 
 
+class _SlowSubmit(InMemoryTaskRunner):
+    """A runner slow to take a task, as a remote queue can be."""
+
+    async def submit(self, kit: Any, task: Any, **kwargs: Any) -> None:
+        await asyncio.sleep(1)
+        await super().submit(kit, task, **kwargs)
+
+
 @pytest.mark.parametrize("wait", [True, False])
 async def test_a_delegation_cut_before_its_task_ran_ends_it(wait: bool) -> None:
-    kit, telemetry, completed = await _kit()
+    """The caller's deadline lands once the task is announced, before it
+    ran: the inline task starting, or the background one being handed to a
+    runner slow to take it. Its ON_TASK_DELEGATED hooks hold neither (RFC
+    §9.3)."""
+    kit, telemetry, completed = await _kit(task_runner=None if wait else _SlowSubmit())
     announcing = asyncio.Event()
 
-    @kit.hook(HookTrigger.ON_TASK_DELEGATED, execution=HookExecution.ASYNC, name="slow")
-    async def slow_announce(event: Any, ctx: Any) -> None:
+    @kit.hook(HookTrigger.ON_TASK_DELEGATED, execution=HookExecution.ASYNC, name="announced")
+    async def announced(event: Any, ctx: Any) -> None:
         announcing.set()
-        await asyncio.sleep(1)
 
     with pytest.raises(TimeoutError):
         async with asyncio.timeout(None) as deadline:

@@ -440,28 +440,35 @@ class TurnWiring:
 
     def build_after_response_hook(self, channel_id: str) -> AfterResponseCallback:
         """An ON_AI_RESPONSE callback, which also emits an ``ai_response``
-        framework event. Observational only — does not block the response
-        path."""
+        framework event once they have ended. Observational only: it starts
+        the hooks and does not wait for them, so they never hold the response
+        up (RFC §9.3)."""
 
         async def _callback(event: AIResponseEvent) -> None:
             if not event.room_id:
                 return
+            room_id = event.room_id
+
+            async def reported() -> None:
+                await self.emit(
+                    "ai_response",
+                    room_id=room_id,
+                    channel_id=channel_id,
+                    data={
+                        "tool_calls_count": event.tool_calls_count,
+                        "latency_ms": event.latency_ms,
+                        "streaming": event.streaming,
+                    },
+                )
+
             trigger = HookTrigger.ON_AI_RESPONSE
-            if self._hooks.has_hooks(trigger):
-                context = await self.hook_context(event.room_id, trigger)
-                if context is None:
-                    return
-                await self._hooks.run_async_hooks(event.room_id, trigger, event, context)
-            await self.emit(
-                "ai_response",
-                room_id=event.room_id,
-                channel_id=channel_id,
-                data={
-                    "tool_calls_count": event.tool_calls_count,
-                    "latency_ms": event.latency_ms,
-                    "streaming": event.streaming,
-                },
-            )
+            if not self._hooks.has_hooks(trigger):
+                await reported()
+                return
+            context = await self.hook_context(room_id, trigger)
+            if context is None:
+                return
+            await self._hooks._fire_async_hooks(room_id, trigger, event, context, then=reported)
 
         return _callback
 
@@ -493,10 +500,11 @@ class TurnWiring:
         return _callback
 
     async def _observe(self, room_id: str | None, trigger: HookTrigger, event: Any) -> None:
-        """Run *trigger*'s ASYNC hooks on *event* when one is registered."""
+        """Start *trigger*'s ASYNC hooks on *event* when one is registered,
+        and return without waiting for them (RFC §9.3)."""
         if not room_id or not self._hooks.has_hooks(trigger):
             return
         context = await self.hook_context(room_id, trigger)
         if context is None:
             return
-        await self._hooks.run_async_hooks(room_id, trigger, event, context)
+        self._hooks._start_async_hooks(room_id, trigger, event, context)

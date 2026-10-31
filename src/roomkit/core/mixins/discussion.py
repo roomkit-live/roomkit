@@ -447,7 +447,7 @@ class DiscussionMixin(HelpersMixin):
         return cascade
 
     async def _fire_speak_queue(self, event: SpeakQueueEvent) -> None:
-        """Run the ``ON_SPEAK_QUEUE`` hooks for a change of a speak queue."""
+        """Start the ``ON_SPEAK_QUEUE`` hooks for a change of a speak queue."""
         trigger = HookTrigger.ON_SPEAK_QUEUE
         if not self._hook_engine.has_hooks(trigger):
             return
@@ -455,14 +455,14 @@ class DiscussionMixin(HelpersMixin):
         if context is None:
             return
         try:
-            await self._hook_engine.run_async_hooks(
+            self._hook_engine._start_async_hooks(
                 event.room_id, trigger, event, context, skip_event_filter=True
             )
         except Exception:
             logger.exception("ON_SPEAK_QUEUE hooks failed in room %s", event.room_id)
 
     async def _fire_dispatch_decision(self, event: DispatchDecisionEvent) -> None:
-        """Run the ``ON_DISPATCH_DECISION`` hooks for a dispatch policy's decision."""
+        """Start the ``ON_DISPATCH_DECISION`` hooks for a dispatch policy's decision."""
         trigger = HookTrigger.ON_DISPATCH_DECISION
         if not self._hook_engine.has_hooks(trigger):
             return
@@ -470,7 +470,7 @@ class DiscussionMixin(HelpersMixin):
         if context is None:
             return
         try:
-            await self._hook_engine.run_async_hooks(
+            self._hook_engine._start_async_hooks(
                 event.room_id, trigger, event, context, skip_event_filter=True
             )
         except Exception:

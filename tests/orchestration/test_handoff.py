@@ -50,7 +50,7 @@ def _make_mock_kit(room: Room, bindings: list[ChannelBinding]) -> MagicMock:
     kit.store.list_bindings = AsyncMock(return_value=bindings)
     kit.store.update_room = AsyncMock()
     kit.send_event = AsyncMock()
-    kit.hook_engine.run_async_hooks = AsyncMock()
+    kit.hook_engine._start_async_hooks = MagicMock()
     kit._lock_manager = MagicMock()
     kit._lock_manager.locked = MagicMock(return_value=_NoopLock())
     return kit
@@ -598,7 +598,7 @@ class TestHandoffHookFiring:
         )
 
         # ON_HANDOFF and ON_PHASE_TRANSITION should both fire
-        hook_calls = kit.hook_engine.run_async_hooks.call_args_list
+        hook_calls = kit.hook_engine._start_async_hooks.call_args_list
         triggers = [c[0][1] for c in hook_calls]
         from roomkit.models.enums import HookTrigger
 
@@ -620,7 +620,7 @@ class TestHandoffHookFiring:
 
         assert result.accepted is False
 
-        hook_calls = kit.hook_engine.run_async_hooks.call_args_list
+        hook_calls = kit.hook_engine._start_async_hooks.call_args_list
         triggers = [c[0][1] for c in hook_calls]
         from roomkit.models.enums import HookTrigger
 

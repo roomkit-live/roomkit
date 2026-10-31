@@ -881,20 +881,18 @@ class LaneExecutionMixin(HelpersMixin):
         """Start *event*'s AFTER_BROADCAST hooks (:meth:`_run_after_delivery`)
         and, when *processed*, emit ``event_processed`` once they have ended
         (RFC §8.2): at once when the event has none."""
-        room_id = event.room_id
-        if not self._hook_engine._has_async_hooks(room_id, HookTrigger.AFTER_BROADCAST, event):
-            if processed:
-                await self._emit_processed(event)
-            return
 
-        async def hooks_then_processed() -> None:
-            await self._hook_engine.run_async_hooks(
-                room_id, HookTrigger.AFTER_BROADCAST, event, context, budget=cascade.budget
-            )
-            if processed:
-                await self._emit_processed(event)
+        async def processed_event() -> None:
+            await self._emit_processed(event)
 
-        self._hook_engine._hold(hooks_then_processed(), name=HookTrigger.AFTER_BROADCAST)
+        await self._hook_engine._fire_async_hooks(
+            event.room_id,
+            HookTrigger.AFTER_BROADCAST,
+            event,
+            context,
+            budget=cascade.budget,
+            then=processed_event if processed else None,
+        )
 
     async def _emit_processed(self, event: RoomEvent) -> None:
         await self._emit_framework_event(

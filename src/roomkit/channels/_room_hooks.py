@@ -3,6 +3,7 @@ only for a trigger a hook is registered on."""
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
 from roomkit.core.hooks import SyncPipelineResult
@@ -31,13 +32,39 @@ class RoomHooks:
         self._read: RoomContext | None = None
 
     async def run_async(self, trigger: HookTrigger, event: Any) -> None:
-        """Run *trigger*'s hooks on *event* as observers, when one is registered."""
+        """Run *trigger*'s hooks on *event*, when one is registered, and
+        return once they have ended: a trigger of a session's stream (a
+        speech boundary, a partial, a barge-in, what the agent said) is
+        observed in order with the stream's next triggers, its SYNC ones
+        included (RFC §9.3)."""
         engine = self._framework.hook_engine
         if not engine.has_hooks(trigger):
             return
         context = await self._context()
         await engine.run_async_hooks(
             self._room_id, trigger, event, context, skip_event_filter=True
+        )
+
+    async def fire(
+        self,
+        trigger: HookTrigger,
+        event: Any,
+        *,
+        then: Callable[[], Awaitable[None]] | None = None,
+    ) -> None:
+        """Fire *trigger*'s hooks on *event* as an ASYNC trigger's, outside
+        a session's stream (a recording's start or end): started and not
+        waited for, but for an awaited trigger's (``HookEngine._fire_async_hooks``,
+        RFC §9.3). *then*, the framework event that reports it, comes once
+        they have ended."""
+        engine = self._framework.hook_engine
+        if not engine.has_hooks(trigger):
+            if then is not None:
+                await then()
+            return
+        context = await self._context()
+        await engine._fire_async_hooks(
+            self._room_id, trigger, event, context, skip_event_filter=True, then=then
         )
 
     async def run_sync(self, trigger: HookTrigger, event: Any) -> SyncPipelineResult:

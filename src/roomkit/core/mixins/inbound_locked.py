@@ -980,16 +980,6 @@ class InboundLockedMixin(HelpersMixin):
         queued.add(blocked.injected_events, blocked_event)
         return blocked_event
 
-    async def _run_deferred_async_hooks(
-        self, room_id: str, pending: list[tuple[HookTrigger, RoomEvent, RoomContext]]
-    ) -> None:
-        """Run async-hook firings collected under the room lock, once it is
-        released (RFC §10.1). Still used by the regenerate path, which
-        broadcasts inline under the lock.
-        """
-        for trigger, ev, ctx in pending:
-            await self._hook_engine.run_async_hooks(room_id, trigger, ev, ctx)
-
 
 def committed_in(context: RoomContext, committed: RoomEvent) -> RoomContext:
     """*context* with *committed* as its newest event, in place of a copy

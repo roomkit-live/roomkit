@@ -341,7 +341,7 @@ class HooksApiMixin(HelpersMixin):
             )
             return
 
-        await self._hook_engine.run_async_hooks(
+        self._hook_engine._start_async_hooks(
             room_id,
             HookTrigger.ON_DELIVERY_STATUS,
             status,

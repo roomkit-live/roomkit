@@ -131,6 +131,7 @@ async def test_worker_after_hook_sees_rewrite_and_real_outcome() -> None:
         )
         assert result.status == "sent"
         assert agents["a"].solicited == ["redacted"]
+        await kit.hook_engine.drain_observers()
         assert observed[0].content.body == "redacted"
         assert observed[0].metadata["delivery_outcome"]["event_id"] == result.event_id
         assert observed[0].addressed_to == ["a"]

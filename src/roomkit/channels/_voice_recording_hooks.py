@@ -111,7 +111,7 @@ class VoiceRecordingHooksMixin:
         try:
             with self._recording_span_ctx(session):
                 event = RecordingStartedEvent(session=session, id=handle.id, room_id=room_id)
-                await RoomHooks(self._framework, room_id).run_async(
+                await RoomHooks(self._framework, room_id).fire(
                     HookTrigger.ON_RECORDING_STARTED, event
                 )
                 await self._emit_recording_started(session, handle.id, room_id)
@@ -132,11 +132,16 @@ class VoiceRecordingHooksMixin:
                     duration_seconds=result.duration_seconds,
                     room_id=room_id,
                 )
-                await RoomHooks(self._framework, room_id).run_async(
-                    HookTrigger.ON_RECORDING_STOPPED, event
-                )
-                await self._emit_recording_stopped(
-                    session, result.id, room_id, duration_seconds=result.duration_seconds
+
+                async def reported() -> None:
+                    await self._emit_recording_stopped(
+                        session, result.id, room_id, duration_seconds=result.duration_seconds
+                    )
+
+                # The framework event once the hooks have ended, the stop not
+                # waiting for them (RFC §9.3).
+                await RoomHooks(self._framework, room_id).fire(
+                    HookTrigger.ON_RECORDING_STOPPED, event, then=reported
                 )
         except Exception:
             logger.exception("Error firing ON_RECORDING_STOPPED hook")

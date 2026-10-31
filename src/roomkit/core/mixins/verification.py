@@ -440,7 +440,7 @@ class VerificationMixin(HelpersMixin):
         # on that work's budget, as a direct change's do (RFC §9.5.1, §10.3).
         budget = self._room_work.direct_change(request.room_id).budget
         for event in released:
-            await self._hook_engine.run_async_hooks(
+            self._hook_engine._start_async_hooks(
                 request.room_id, HookTrigger.ON_EVENT_UPDATED, event, context, budget=budget
             )
         await self._answer_released(request.room_id, released, cancelled)

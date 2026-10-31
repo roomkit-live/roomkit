@@ -172,21 +172,27 @@ class ConferenceRecordingEvents:
         framework_event: str,
         data: dict[str, object],
     ) -> None:
-        """Run the hooks, then emit the framework event, then give up quietly.
+        """Fire the hooks, emit the framework event once they have ended, and
+        give up quietly.
 
         The hooks come first because they are the documented interface and the
         framework event is the cross-channel echo of it; both are ASYNC, so
-        neither can refuse a recording that has already been written.
+        neither can refuse a recording that has already been written. A start
+        awaits its hooks, the consent point; a stop does not (RFC §9.3).
         """
-        if self._framework is None:
+        framework = self._framework
+        if framework is None:
             return
-        try:
-            await RoomHooks(self._framework, room_id).run_async(trigger, event)
-            await self._framework._emit_framework_event(
+
+        async def reported() -> None:
+            await framework._emit_framework_event(
                 framework_event,
                 room_id=room_id,
                 channel_id=self._channel_id,
                 data=data,
             )
+
+        try:
+            await RoomHooks(framework, room_id).fire(trigger, event, then=reported)
         except Exception:
             logger.exception("Error announcing conference recording (%s)", trigger.value)

@@ -141,6 +141,7 @@ async def test_an_explicit_stop_returns_and_announces_each_result() -> None:
     [handle] = await kit.start_room_recording("r1", [_binding(recorder)])
 
     results = await kit.stop_room_recording("r1", organization_id="tenant-a")
+    await kit.hook_engine.drain_observers()
 
     assert [result.id for result in results] == [handle.id]
     kind, event = heard[-1]
@@ -173,6 +174,7 @@ async def test_every_other_path_that_stops_a_recording_announces_its_end(operati
     else:
         await getattr(kit, operation)("r1")
 
+    await kit.hook_engine.drain_observers()
     assert [(kind, event.id) for kind, event in heard] == [
         ("started", handle.id),
         ("stopped", handle.id),
@@ -186,6 +188,7 @@ async def test_a_recording_resumed_after_a_stop_is_announced_again() -> None:
     kit, heard = await _kit()
     await kit.start_room_recording("r1", [_binding(MockMediaRecorder())])
     await kit.stop_room_recording("r1")
+    await kit.hook_engine.drain_observers()
 
     [resumed] = await kit.start_room_recording("r1", [_binding(MockMediaRecorder())])
 

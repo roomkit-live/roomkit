@@ -516,7 +516,7 @@ class HandoffHandler:
             },
         )
         context = RoomContext(room=room, bindings=bindings)
-        await self._kit.hook_engine.run_async_hooks(room_id, trigger, event, context)
+        self._kit.hook_engine._start_async_hooks(room_id, trigger, event, context)
 
     async def send_greeting(
         self,

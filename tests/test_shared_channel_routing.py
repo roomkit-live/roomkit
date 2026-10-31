@@ -528,6 +528,7 @@ class TestADeliveryStatus:
                 )
             )
 
+        await shop.kit.hook_engine.drain_observers()
         assert seen == [bob_room, alice_room]
 
     async def test_its_recipient_is_found_as_step_one_finds_a_sender(
@@ -564,6 +565,7 @@ class TestADeliveryStatus:
                 )
             )
 
+        await shop.kit.hook_engine.drain_observers()
         assert seen == ["stored", f"room-{CAROL}"]
 
     async def test_one_naming_no_known_recipient_is_not_given_a_room(
@@ -638,6 +640,7 @@ class TestADeliveryStatus:
         )
         await shop.kit.process_delivery_status(named, organization_id="acme")
 
+        await shop.kit.hook_engine.drain_observers()
         assert seen == ["acme-alice"]
 
     @pytest.mark.parametrize(
@@ -686,6 +689,7 @@ class TestADeliveryStatus:
             )
         )
 
+        await shop.kit.hook_engine.drain_observers()
         assert seen == (["alice"] if taken else [])
 
 
@@ -920,6 +924,7 @@ class TestAPausedConversation:
             )
         )
 
+        await shop.kit.hook_engine.drain_observers()
         assert seen == [room]
         stored = await store.get_room(room)
         assert stored is not None and stored.status == RoomStatus.PAUSED

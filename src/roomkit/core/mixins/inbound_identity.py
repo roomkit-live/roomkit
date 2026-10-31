@@ -277,7 +277,7 @@ class InboundIdentityMixin(HelpersMixin):
             room_id, HookTrigger.ON_IDENTITY_AMBIGUOUS, event, context, id_result
         )
         # Also fire regular async hooks for observation/logging
-        await self._hook_engine.run_async_hooks(
+        self._hook_engine._start_async_hooks(
             room_id, HookTrigger.ON_IDENTITY_AMBIGUOUS, event, context
         )
         if (
@@ -322,7 +322,7 @@ class InboundIdentityMixin(HelpersMixin):
             room_id, HookTrigger.ON_IDENTITY_UNKNOWN, event, context, id_result
         )
         # Also fire regular async hooks for observation/logging
-        await self._hook_engine.run_async_hooks(
+        self._hook_engine._start_async_hooks(
             room_id, HookTrigger.ON_IDENTITY_UNKNOWN, event, context
         )
         if hook_result and hook_result.status == IdentificationStatus.REJECTED:

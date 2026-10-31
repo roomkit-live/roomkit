@@ -10,7 +10,7 @@ import asyncio
 from types import SimpleNamespace
 from typing import Any
 
-from roomkit import HookExecution, HookResult, HookTrigger
+from roomkit import HookResult, HookTrigger
 from roomkit.console._discussion import DiscussionConsole
 from roomkit.models.enums import EventType, TaskStatus
 from roomkit.orchestration.status_bus import StatusLevel
@@ -24,15 +24,22 @@ _ENDED = "The task had already ended."
 
 
 def _held_end(room: _Room) -> tuple[asyncio.Event, asyncio.Event]:
-    """An ``ON_TASK_COMPLETED`` hook that holds a task's end being completed
-    until released: whether the end began, and its release."""
+    """Hold a task's end being completed until released, at its read of the
+    room it tells ``ON_TASK_COMPLETED`` in, a store slow to answer: whether
+    the end began, and its release. Its hooks would hold nothing: they are
+    started and not waited for (RFC §9.3)."""
     completing, release = asyncio.Event(), asyncio.Event()
+    store = room.kit.store
+    read = store.load_room_context
 
-    @room.kit.hook(HookTrigger.ON_TASK_COMPLETED, execution=HookExecution.ASYNC)
-    async def held(event: Any, ctx: Any) -> None:
-        completing.set()
-        await release.wait()
+    async def held(room_id: str) -> Any:
+        # The first read of the room once a task of it ended: its end's.
+        if room_id == "r" and room.kit._room_tasks._ended and not release.is_set():
+            completing.set()
+            await release.wait()
+        return await read(room_id)
 
+    store.load_room_context = held  # type: ignore[method-assign]
     return completing, release
 
 
