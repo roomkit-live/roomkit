@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from enum import StrEnum, unique
 from typing import Literal
 
@@ -9,8 +10,22 @@ ToolCallOutcome = Literal["served", "refused", "failed", "blocked", "unserved", 
 """How a tool call ended, as the channel determined it (RFC §6.4, §9.3)."""
 
 
+_CHANNEL_TYPE_NAME = re.compile(r"[a-z0-9_-]+")
+
+
 @unique
 class ChannelType(StrEnum):
+    """The kind of a channel (RFC §6.2): an open name of lowercase ASCII
+    letters, digits, ``_`` and ``-``, as roomkit-rs's ``ChannelType``.
+
+    The members are the well-known names. Any other such name is a type too,
+    ``ChannelType("slack")``, read and written back as it is; a name holding
+    another character is refused (``ValueError``). What a type means for its
+    channels, how their senders are addressed, is the channel's declaration
+    (:class:`~roomkit.channels.ChannelAddressing`), which takes a well-known
+    name's defaults and an unknown name's addresses as written.
+    """
+
     SMS = "sms"
     MMS = "mms"
     RCS = "rcs"
@@ -35,6 +50,18 @@ class ChannelType(StrEnum):
     CLI = "cli"
     HOST = "host"
     SYSTEM = "system"
+
+    @classmethod
+    def _missing_(cls, value: object) -> ChannelType | None:
+        """A type no member names: *value* when it is a valid name, kept so
+        that the same name is the same type."""
+        if not isinstance(value, str) or not _CHANNEL_TYPE_NAME.fullmatch(value):
+            return None
+        named = str.__new__(cls, value)
+        named._name_ = value.upper()
+        named._value_ = value
+        cls._value2member_map_.setdefault(value, named)
+        return cls(value)
 
 
 @unique
