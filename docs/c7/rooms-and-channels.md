@@ -523,8 +523,9 @@ injected change is logged at warning level.
 
 An event that travelled outbound (a channel's own output, an agent's response)
 is its channel's, whatever participant it names: an agent edits its own
-responses and no one else's. Any `edit_source` other than `"system"` is checked
-as the sender's. A hook's `modify` keeps the target, the `edit_source` or
+responses and no one else's. `edit_source` is an `EditSource`, `"sender"` or
+`"system"`, or none: an `EditContent` naming another is refused as it is built.
+A hook's `modify` keeps the target, the `edit_source` or
 `delete_type` and the kind of content; once a hook ran under the lock, the
 target is read and checked again, so a delete committed during an edit's hooks
 refuses the edit.

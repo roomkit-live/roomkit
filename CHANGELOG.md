@@ -69,6 +69,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **BREAKING — four values are checked as roomkit-rs checks them**
+  (RMK-1021, decision 19 of the API parity work).
+  - `EditContent.edit_source` is an `EditSource` (`sender`, `system`) or
+    none, so any other value raises `ValidationError` as the edit is built.
+    It was read as the sender's (RFC 10.3); an id written there, as old
+    examples did, now has to go.
+  - A country code given to `TransportChannel(country_code=...)` or to
+    `ChannelAddressing.normalize()` is one to three digits, the first not
+    0, with or without its `+`; another raises `ValueError`. `"0x"` left
+    every national number unchanged, the mistake unseen.
+  - A `ToolPolicy` pattern, and a skill's `allowed_tools`, read `*` and `?`
+    alone (RFC 21.1): a bracket is itself, no character class.
+    `look[uv]p` allowed `lookup`; a skill's `[ab]` gated `a` and `b`, and
+    now gates `ab`, the list it reads as.
+  - The skills' manifest, which every system prompt carries, stays within
+    65,536 characters (RFC 24.1): a discovery, a registration or an `add`
+    that would pass it raises `SkillManifestTooLargeError`, a
+    `SkillError`, and registers nothing.
+- **`channel_data` keeps the keys its channel writes** (RFC 5.4, RMK-1021).
+  `ChannelData` dropped every key it did not name (an SMS's `segments`, an
+  email's `subject`); they are now kept on the event and in the store.
+
 - **An event's ASYNC hooks no longer hold its call or its room** (RFC 9.3,
   RMK-1020). An event's `AFTER_BROADCAST` hooks, the `ON_EVENT_UPDATED` or
   `ON_EVENT_DELETED` of an edit or a delete, `ON_TASK_CREATED` and an
