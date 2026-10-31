@@ -48,6 +48,7 @@ from roomkit import (
 )
 from roomkit.channels.agent import Agent
 from roomkit.core.task_utils import hold_task, run_to_its_end
+from roomkit.models.channel import ChannelOutput
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundMessage
 from roomkit.models.enums import ChannelCategory, EventType
@@ -804,8 +805,8 @@ class _Closer:
 
 
 async def _delivery_door(witness: _Witness, work: _Closer) -> RoomKit:
-    """A delivery's ASYNC AFTER_BROADCAST hook closes the kit: it runs in the
-    room's delivery lane."""
+    """A delivery's ASYNC AFTER_BROADCAST hook closes the kit: the aftermath
+    of the delivery, its close spares the room's lane."""
     kit = RoomKit()
     kit.register_channel(SimpleChannel("sms"))
     kit.register_channel(witness)
@@ -1188,13 +1189,39 @@ async def test_a_close_from_a_cut_tool_joins_the_close_that_cut_it(door: str, ho
     assert witness.closed
 
 
+class _ClosingSend(SimpleChannel):
+    """A transport whose send is the kit's own work closing the kit: it runs
+    in the room's delivery lane."""
+
+    def __init__(self, channel_id: str, work: _Closer) -> None:
+        super().__init__(channel_id)
+        self.kit: RoomKit | None = None
+        self.work = work
+
+    async def deliver(
+        self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
+    ) -> ChannelOutput:
+        if self.kit is not None:
+            await self.work(self.kit)
+        return await super().deliver(event, binding, context)
+
+
 async def test_the_deliveries_queued_behind_a_lane_a_close_runs_in_are_dropped() -> None:
-    """A delivery's hook closes the kit while the room's next message waits
+    """A delivery's send closes the kit while the room's next message waits
     behind it in the lane: the lane is spared, not drained, so that message
     is never delivered, and its caller is not held (RMK-1015)."""
     witness = _Witness("witness")
     work = _Closer()
-    kit = await asyncio.wait_for(_delivery_door(witness, work), 5)
+    sender = _ClosingSend("sender", work)
+    kit = RoomKit()
+    for channel in (SimpleChannel("sms"), witness, sender):
+        kit.register_channel(channel)
+    await kit.create_room(room_id="r")
+    for channel_id in ("sms", "witness", "sender"):
+        await kit.attach_channel("r", channel_id)
+    sender.kit = kit
+    bye = InboundMessage(channel_id="sms", sender_id="u", content=TextContent(body="Bye."))
+    work.door = asyncio.ensure_future(kit.process_inbound(bye, room_id="r"))
     await asyncio.wait_for(work.entered.wait(), 1)
     message = InboundMessage(channel_id="sms", sender_id="u", content=TextContent(body="Again."))
     queued = asyncio.ensure_future(kit.process_inbound(message, room_id="r"))

@@ -799,13 +799,15 @@ class LaneExecutionMixin(HelpersMixin):
     ) -> None:
         """Per-event aftermath, off the claim and off the room lock.
 
-        Fires the RFC §10.3 mutation trigger first (observers see the
+        Starts the RFC §10.3 mutation trigger first (observers see the
         mutation before the edit/delete event's own AFTER_BROADCAST), then —
         on the root pass — delivery reporting and the intelligence ON_ERROR
         funnel, then blocked-event commits, side effects and AFTER_BROADCAST
-        (RFC §10.1 step 16: after the event's delivery set completes). A
-        rerun (a regeneration) reports only its replies and keeps its side
-        effects; it repeats nothing else of its first pass.
+        (RFC §10.1 step 16: after the event's delivery set completes). The
+        hooks run on tasks of their own: neither the call nor the room's
+        next delivery waits for them (§9.3). A rerun (a regeneration)
+        reports only its replies and keeps its side effects; it repeats
+        nothing else of its first pass.
         """
         event = plan.event
         context = plan.context
@@ -813,7 +815,7 @@ class LaneExecutionMixin(HelpersMixin):
 
         if plan.mutation_hook is not None:
             trigger, target = plan.mutation_hook
-            await self._run_after_delivery(
+            self._run_after_delivery(
                 room_id, cascade, trigger, target, plan.mutation_context or context
             )
 
@@ -830,9 +832,7 @@ class LaneExecutionMixin(HelpersMixin):
                 result.metadata_updates,
             )
             if plan.fire_after_broadcast:
-                await self._run_after_delivery(
-                    room_id, cascade, HookTrigger.AFTER_BROADCAST, event, context
-                )
+                await self._after_broadcast(cascade, event, context, processed=False)
             return
 
         # A failure before the cascade holds the streams leaves nobody to read them.
@@ -866,14 +866,44 @@ class LaneExecutionMixin(HelpersMixin):
                 result.metadata_updates,
             )
         if plan.fire_after_broadcast and not plan.rerun:
-            await self._run_after_delivery(
-                room_id, cascade, HookTrigger.AFTER_BROADCAST, event, context
+            await self._after_broadcast(cascade, event, context, processed=plan.emit_processed)
+        elif plan.emit_processed:
+            await self._emit_processed(event)
+
+    async def _after_broadcast(
+        self,
+        cascade: DeliveryCascade,
+        event: RoomEvent,
+        context: RoomContext,
+        *,
+        processed: bool,
+    ) -> None:
+        """Start *event*'s AFTER_BROADCAST hooks (:meth:`_run_after_delivery`)
+        and, when *processed*, emit ``event_processed`` once they have ended
+        (RFC §8.2): at once when the event has none."""
+        room_id = event.room_id
+        if not self._hook_engine._has_async_hooks(room_id, HookTrigger.AFTER_BROADCAST, event):
+            if processed:
+                await self._emit_processed(event)
+            return
+
+        async def hooks_then_processed() -> None:
+            await self._hook_engine.run_async_hooks(
+                room_id, HookTrigger.AFTER_BROADCAST, event, context, budget=cascade.budget
             )
+            if processed:
+                await self._emit_processed(event)
 
-        if plan.emit_processed:
-            await self._emit_framework_event("event_processed", room_id=room_id, event_id=event.id)
+        self._hook_engine._hold(
+            hooks_then_processed(), name=HookTrigger.AFTER_BROADCAST, aftermath=True
+        )
 
-    async def _run_after_delivery(
+    async def _emit_processed(self, event: RoomEvent) -> None:
+        await self._emit_framework_event(
+            "event_processed", room_id=event.room_id, event_id=event.id
+        )
+
+    def _run_after_delivery(
         self,
         room_id: str,
         cascade: DeliveryCascade,
@@ -881,14 +911,16 @@ class LaneExecutionMixin(HelpersMixin):
         payload: RoomEvent,
         context: RoomContext,
     ) -> None:
-        """Run *trigger*'s ASYNC hooks once an event's delivery set has run
-        (RFC §10.1 step 16, §10.3), each body as *cascade*'s delivery work:
-        what it sends into the room while it runs draws on the cascade's
-        hook calls, kept apart from its passes, so a hook that posts after
-        every event stops at the cap (§9.5.1), and is one deeper than the
-        hook's event (§8.3); a task it starts calls as work of its own."""
-        await self._hook_engine.run_async_hooks(
-            room_id, trigger, payload, context, budget=cascade.budget
+        """Start *trigger*'s ASYNC hooks once an event's delivery set has run
+        (RFC §10.1 step 16, §10.3), and return at once (§9.3), each body as
+        *cascade*'s delivery work: what it sends into the room while it runs
+        draws on the cascade's hook calls, kept apart from its passes, so a
+        hook that posts after every event stops at the cap (§9.5.1), and is
+        one deeper than the hook's event (§8.3); a task it starts calls as
+        work of its own. The delivery's aftermath, a ``close()`` it calls
+        spares the room's lane (RFC §12.10.4)."""
+        self._hook_engine._start_async_hooks(
+            room_id, trigger, payload, context, budget=cascade.budget, aftermath=True
         )
 
     def _report_cut(

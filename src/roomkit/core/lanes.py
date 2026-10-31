@@ -156,12 +156,13 @@ class DeliveryCascade:
     """Completion of a caller's delivery set, transitively.
 
     One unit per enqueued plan; the executor releases a unit only after the
-    plan's delivery set, its post-plan effects (AFTER_BROADCAST included) and
-    its reentry pass have run — and the reentry pass retains a unit for every
-    child plan *before* the parent's release, so the count never touches zero
-    between two passes of an AI chain. ``wait()`` therefore resolves exactly
-    when "the caller observes its event's delivery-set completion" (RFC §10.1
-    step 18) holds for the whole chain the call started.
+    plan's delivery set, its post-plan effects and its reentry pass have run
+    (its ASYNC hooks started, not waited for, RFC §9.3) — and the reentry
+    pass retains a unit for every child plan *before* the parent's release,
+    so the count never touches zero between two passes of an AI chain.
+    ``wait()`` therefore resolves exactly when "the caller observes its
+    event's delivery-set completion" (RFC §10.1 step 18) holds for the whole
+    chain the call started.
 
     Cancelling it stops its turns, not its delivery (RFC §10.1, *Explicit
     delivery cancellation*): its turn work (an intelligence target's turn,
@@ -527,6 +528,12 @@ class DeliveryCascade:
         return _active_lane_room.get() == self.room_id or _has_room_lock(self.room_id)
 
 
+def _placing_work() -> frozenset[asyncio.Task[Any]]:
+    """The tasks the current code runs as and the kit-held runs it runs
+    under: the work placing an entry."""
+    return frozenset({*task_utils.acting_tasks(), *task_utils.held_runs()})
+
+
 def anchor_index(latest_index: int | None) -> int:
     """The ``after_index`` of an index-less plan: the room's latest index, or
     -1 while the room has no event (RFC §5.1), the cursor's own start."""
@@ -548,6 +555,9 @@ class ExecEntry:
     cascade: DeliveryCascade
     index: int | None
     after_index: int = -1
+    placed_under: frozenset[asyncio.Task[Any]] = field(default_factory=_placing_work)
+    """The work whose call placed it: a ``close()`` from that work drops it
+    as it starts when the lane still keeps it (:meth:`RoomDeliveryLane.drop_kept`)."""
 
 
 @dataclass(slots=True)
@@ -684,8 +694,8 @@ class RoomDeliveryLane:
         self._task: asyncio.Task[None] | None = None
         self._busy = False
         # Whether a round's sets are sending: once their targets answered,
-        # their aftermath (AFTER_BROADCAST, the responses' passes) leaves the
-        # lane idle to a set placed meanwhile (RFC §12.10.4).
+        # their aftermath (the responses' passes) leaves the lane idle to a
+        # set placed meanwhile (RFC §12.10.4).
         self._sending = False
         self._closed = False
         # Set by seal(): the reason the entries it drops, and the ones a cut
@@ -741,13 +751,12 @@ class RoomDeliveryLane:
     def _note_placement(self, entry: ExecEntry | CursorEntry) -> None:
         """Note *entry* as running from its placement when the lane is idle,
         no set sending and nothing queued (RFC §12.10.4): a set ahead whose
-        targets all answered leaves the lane idle while its AFTER_BROADCAST
-        hooks and its responses' passes run, so an answer placed then runs
-        from its placement. A set placed behind another is queued. A set
-        placed later that the room's order runs first takes the lead: the
-        entry noted is queued behind it. A cursor entry runs nothing and the
-        close keeps it, so the index it fills never costs the noted entry its
-        place."""
+        targets all answered leaves the lane idle while its responses' passes
+        run, so an answer placed then runs from its placement. A set placed
+        behind another is queued. A set placed later that the room's order
+        runs first takes the lead: the entry noted is queued behind it. A
+        cursor entry runs nothing and the close keeps it, so the index it
+        fills never costs the noted entry its place."""
         if not self._sending and not self._indexed and not self._unindexed:
             self._placed_idle = entry if isinstance(entry, ExecEntry) else None
         elif (
@@ -797,13 +806,16 @@ class RoomDeliveryLane:
         self._cut = True
         task.cancel()
 
-    def drop_kept(self) -> None:
+    def drop_kept(self, placed_by: set[asyncio.Task[Any]] | None = None) -> None:
         """Once sealed, drop the entry kept as running from its placement and
         not taken yet: this lane's round runs the close, which can give it no
         turn before it releases the store (RFC §12.10.4). The lane then ends
-        with its round."""
+        with its round. With *placed_by*, only an entry one of those tasks
+        placed: the close's own work's, dropped as the close starts."""
         kept = self._placed_idle
         if not self._closed or kept is None:
+            return
+        if placed_by is not None and not kept.placed_under & placed_by:
             return
         self._placed_idle = None
         if kept.index is None:
@@ -1195,6 +1207,15 @@ class RoomLaneRegistry:
             for lane in self._lanes.values()
             if lane.task is not None and not lane.task.done()
         }
+
+    def drop_placed_by(self, spared: set[asyncio.Task[Any]]) -> None:
+        """Once sealed, drop the entry each lane *spared* keeps that the
+        close's own work placed (an ``AFTER_BROADCAST`` hook that sends,
+        then closes): the close spares the work, so its lane takes none of
+        it (RFC §12.10.4)."""
+        for lane in self._lanes.values():
+            if lane.task in spared:
+                lane.drop_kept(placed_by=spared)
 
     def cut(self, spared: set[asyncio.Task[Any]]) -> None:
         """Cut every round still under way but those *spared* (a lane whose

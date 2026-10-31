@@ -944,6 +944,7 @@ class RoomKit(
         # Then the queued deliveries: a drop cancels nothing of a cut cascade
         # again, so what the cut spared stays spared.
         self._lanes.seal()
+        self._lanes.drop_placed_by(spared)
         self._cancel_verification_timers()
         for run in set(self._background_runs) - spared:
             cut_once_started(run)

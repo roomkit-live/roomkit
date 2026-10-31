@@ -11,15 +11,26 @@ from typing import Any
 import pytest
 
 from roomkit import RoomKit
+from roomkit.channels.ai import AIChannel
 from roomkit.core.hooks import HookEngine, HookRegistration
 from roomkit.core.locks import InMemoryLockManager
+from roomkit.models.channel import ChannelBinding, ChannelOutput
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundMessage
-from roomkit.models.enums import HookExecution, HookTrigger
-from roomkit.models.event import RoomEvent, TextContent
+from roomkit.models.enums import (
+    ChannelCategory,
+    ChannelType,
+    EventType,
+    HookExecution,
+    HookTrigger,
+)
+from roomkit.models.event import EditContent, RoomEvent, TextContent
 from roomkit.models.hook import HookResult
 from roomkit.models.room import Room
+from roomkit.models.task import Task
+from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.store.memory import InMemoryStore
+from tests.test_event_ops import RecordingTransport
 from tests.test_framework import SimpleChannel
 
 
@@ -110,6 +121,143 @@ class TestTheOperationGoesOn:
             await engine.drain_observers()
         assert result.allowed
         assert any("Async hook failing failed" in r.getMessage() for r in caplog.records)
+
+
+class _Tasker(SimpleChannel):
+    """A transport whose reaction to each event files a task."""
+
+    async def on_event(
+        self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
+    ) -> ChannelOutput:
+        return ChannelOutput(tasks=[Task(id=f"t-{event.id}", room_id=event.room_id, title="t")])
+
+
+class _FailingAgent(SimpleChannel):
+    """An agent whose every turn fails."""
+
+    async def on_event(
+        self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
+    ) -> ChannelOutput:
+        raise ValueError("the model is down")
+
+
+def _said(text: str) -> InboundMessage:
+    return InboundMessage(channel_id="sms", sender_id="u", content=TextContent(body=text))
+
+
+def _bodies(channel: SimpleChannel) -> list[str]:
+    return [getattr(event.content, "body", "") for event in channel.delivered]
+
+
+async def _room_with(*channels: SimpleChannel) -> tuple[RoomKit, SimpleChannel]:
+    """A room of ``sms``, whose messages keep their type (an edit), and a
+    ``witness`` transport, with *channels*, an AI-typed one bound as an
+    agent."""
+    kit = RoomKit()
+    witness = SimpleChannel("witness")
+    await kit.create_room(room_id="r1")
+    for channel in (RecordingTransport("sms"), witness, *channels):
+        kit.register_channel(channel)
+        agent = channel.channel_type is ChannelType.AI
+        category = ChannelCategory.INTELLIGENCE if agent else ChannelCategory.TRANSPORT
+        await kit.attach_channel("r1", channel.channel_id, category=category)
+    return kit, witness
+
+
+class TestTheRoomGoesOn:
+    """An event's ASYNC hooks run once its delivery set has run: neither its
+    call nor the room's next delivery waits for them (RFC §9.3, §10.1 step
+    16, RMK-1020). They ran in the room's delivery lane, which held both."""
+
+    @pytest.mark.parametrize(
+        "trigger",
+        [
+            HookTrigger.AFTER_BROADCAST,
+            HookTrigger.ON_EVENT_UPDATED,
+            HookTrigger.ON_TASK_CREATED,
+            HookTrigger.ON_ERROR,
+        ],
+    )
+    async def test_neither_the_call_nor_the_next_delivery_waits_for_its_hooks(
+        self, trigger: HookTrigger
+    ) -> None:
+        channels = {
+            HookTrigger.ON_TASK_CREATED: [_Tasker("tasker")],
+            HookTrigger.ON_ERROR: [_FailingAgent("ai", ChannelType.AI)],
+        }.get(trigger, [])
+        kit, witness = await _room_with(*channels)
+        message = _said("One")
+        if trigger is HookTrigger.ON_EVENT_UPDATED:
+            said = await kit.process_inbound(message, room_id="r1")
+            assert said.event is not None
+            edit = EditContent(target_event_id=said.event.id, new_content=TextContent(body="1"))
+            message = InboundMessage(
+                channel_id="sms", sender_id="u", event_type=EventType.EDIT, content=edit
+            )
+        started, release = asyncio.Event(), asyncio.Event()
+
+        @kit.hook(trigger, execution=HookExecution.ASYNC, name="slow")
+        async def slow(event: RoomEvent, ctx: RoomContext) -> None:
+            started.set()
+            await release.wait()
+
+        try:
+            await asyncio.wait_for(kit.process_inbound(message, room_id="r1"), 1)
+            await asyncio.wait_for(started.wait(), 1)
+            await asyncio.wait_for(kit.process_inbound(_said("Two"), room_id="r1"), 1)
+            assert "Two" in _bodies(witness)
+        finally:
+            release.set()
+            await kit.close()
+
+    async def test_an_answer_does_not_wait_for_the_hooks_of_what_it_answers(self) -> None:
+        """A slow audit hook on a message no longer adds its time to the
+        agent's answer: the answer is delivered while the hook runs."""
+        agent = AIChannel("ai", provider=MockAIProvider(responses=["Answer."]))
+        kit, witness = await _room_with()
+        kit.register_channel(agent)
+        await kit.attach_channel("r1", "ai", category=ChannelCategory.INTELLIGENCE)
+        release = asyncio.Event()
+
+        @kit.hook(HookTrigger.AFTER_BROADCAST, execution=HookExecution.ASYNC, name="audit")
+        async def audit(event: RoomEvent, ctx: RoomContext) -> None:
+            if getattr(event.content, "body", None) == "Hi.":
+                await release.wait()
+
+        try:
+            await asyncio.wait_for(kit.process_inbound(_said("Hi."), room_id="r1"), 1)
+            assert _bodies(witness) == ["Hi.", "Answer."]
+        finally:
+            release.set()
+            await kit.close()
+
+    async def test_event_processed_comes_once_its_after_broadcast_hooks_end(self) -> None:
+        """``event_processed`` says the event finished its delivery set and
+        its AFTER_BROADCAST hooks (RFC §8.2): it comes after them, the call
+        before (RMK-1020)."""
+        kit, _ = await _room_with()
+        seen: list[str] = []
+        release, processed = asyncio.Event(), asyncio.Event()
+
+        @kit.hook(HookTrigger.AFTER_BROADCAST, execution=HookExecution.ASYNC, name="slow")
+        async def slow(event: RoomEvent, ctx: RoomContext) -> None:
+            await release.wait()
+            seen.append("hook ended")
+
+        @kit.on("event_processed")
+        async def on_processed(event: Any) -> None:
+            seen.append("event_processed")
+            processed.set()
+
+        try:
+            await asyncio.wait_for(kit.process_inbound(_said("One"), room_id="r1"), 1)
+            seen.append("call returned")
+            release.set()
+            await asyncio.wait_for(processed.wait(), 1)
+            assert seen == ["call returned", "hook ended", "event_processed"]
+        finally:
+            release.set()
+            await kit.close()
 
 
 class TestClose:

@@ -488,7 +488,8 @@ class HelpersMixin:
         parent_event_id: str | None = None,
         responds_to: str | None = None,
     ) -> None:
-        """Hand a turn-level failure to the ON_ERROR hooks.
+        """Hand a turn-level failure to the ON_ERROR hooks, started and not
+        waited for (RFC §9.3).
 
         RoomKit does not persist the error itself — it fires ON_ERROR with a
         synthetic error :class:`RoomEvent` so hosts can classify and surface it
@@ -510,9 +511,7 @@ class HelpersMixin:
             parent_event_id=parent_event_id,
             responds_to=responds_to,
         )
-        await self._hook_engine.run_async_hooks(
-            room_id, HookTrigger.ON_ERROR, error_event, context
-        )
+        self._hook_engine._start_async_hooks(room_id, HookTrigger.ON_ERROR, error_event, context)
 
     @staticmethod
     def _first_intelligence_error(broadcast_result: Any, context: RoomContext) -> Exception | None:
@@ -717,8 +716,8 @@ class HelpersMixin:
         metadata_updates: Mapping[str, Any] | None = None,
     ) -> None:
         """Persist tasks and observations, write the room metadata updates
-        the channels returned (RFC §10.1 step 15), fire ON_TASK_CREATED
-        hooks for new tasks."""
+        the channels returned (RFC §10.1 step 15), start the ON_TASK_CREATED
+        hooks of the new tasks (§9.3)."""
         persisted_tasks: list[Task] = []
         for task in tasks:
             try:
@@ -751,7 +750,7 @@ class HelpersMixin:
                 visibility=Visibility.INTERNAL,
                 metadata={"task_id": task.id, "task_title": task.title},
             )
-            await self._hook_engine.run_async_hooks(
+            self._hook_engine._start_async_hooks(
                 room_id, HookTrigger.ON_TASK_CREATED, task_event, context
             )
 

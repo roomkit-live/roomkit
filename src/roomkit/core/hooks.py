@@ -1456,6 +1456,60 @@ class HookEngine:
         )
         self._observe(hooks, room_id, trigger, event, context)
 
+    def _start_async_hooks(
+        self,
+        room_id: str,
+        trigger: HookTrigger,
+        event: RoomEvent | Any,
+        context: RoomContext,
+        *,
+        budget: ReentryBudget | None = None,
+        aftermath: bool = False,
+    ) -> None:
+        """Start the hooks :meth:`run_async_hooks` runs for *trigger* and
+        return at once: an ASYNC trigger's hooks run after the operation
+        that fired it and never hold it up (RFC §9.3). Held as observers
+        are (:meth:`_hold`, *aftermath* included), each body on *budget*
+        when given."""
+        self._hold(
+            self.run_async_hooks(room_id, trigger, event, context, budget=budget),
+            name=str(trigger),
+            aftermath=aftermath,
+        )
+
+    def _has_async_hooks(self, room_id: str, trigger: HookTrigger, event: RoomEvent) -> bool:
+        """Whether :meth:`run_async_hooks` finds hooks for *trigger* on *event*."""
+        engine = self._turn_engine(trigger) or self
+        return bool(engine._get_hooks(room_id, trigger, None, event=event))
+
+    def _hold(
+        self, work: Coroutine[Any, Any, None], *, name: str, aftermath: bool = False
+    ) -> None:
+        """Run *work*, hooks that observe an operation already over, as a
+        task of its own, and return at once.
+
+        Started in a context that holds no room lock: an observer of a
+        locked section's chain calls into the room as a new arrival, which
+        waits for the section, never as the lock's holder beside it (RFC
+        §9.5.1). Named in :func:`held_runs`, so a ``close()`` it runs spares
+        it rather than wait for itself, and under none of the runs that
+        fired it: they do not wait for it, so such a ``close()`` waits for
+        them, and cuts them, as for any other work. With *aftermath*, the
+        hooks of a delivery's aftermath (an ``AFTER_BROADCAST`` hook, a
+        change's mutation trigger), it runs under the runs that fired it,
+        the room's lane among them: it is their work, so its ``close()``
+        spares them as its own, and the lane drops the delivery it kept.
+        The close gives it the grace, then cuts it (RFC §12.10.4).
+        """
+        context = unlocked_context()
+        task = start_named(
+            work,
+            name=f"roomkit-observers-{name}",
+            context=context if aftermath else under_no_held_run(context),
+        )
+        self._observers.add(task)
+        task.add_done_callback(self._observers.discard)
+
     def _observe(
         self,
         hooks: list[HookRegistration],
@@ -1464,17 +1518,14 @@ class HookEngine:
         event: RoomEvent | Any,
         context: RoomContext,
     ) -> None:
-        """Start *hooks* as observers of *event* and return at once.
+        """Start *hooks* as observers of *event* and return at once (:meth:`_hold`).
 
         An ASYNC hook runs after the operation that fired it and cannot hold
         it up (RFC §9): a slow observer of BEFORE_TTS delays no synthesis,
         one of ON_TOOL_CALL no tool loop. A hook that must have run before the
         operation goes on is a SYNC one.
 
-        Started in a context that holds no room lock: an observer of a
-        locked section's chain calls into the room as a new arrival, which
-        waits for the section, never as the lock's holder beside it (RFC
-        §9.5.1). Fired from the room's work (a pass's section, an event's
+        Fired from the room's work (a pass's section, an event's
         admission work, a delivery set's work), each body is that cascade's
         work as an ``AFTER_BROADCAST`` body is (:func:`_run_body`): what it
         sends into the room draws one of the cascade's hook calls, and past
@@ -1486,10 +1537,6 @@ class HookEngine:
         the trigger fired, a turn, a tool call or a model's answer, even once
         that work is over, read here as the trigger fires: a hook that tells
         an agent again from its body ends at the depth limit (RMK-1004).
-        Named in :func:`held_runs`, so a ``close()`` it runs spares it rather
-        than wait for itself, and under none of the runs that fired it: they
-        do not wait for it, so such a ``close()`` waits for them, and cuts
-        them, as for any other work (RFC §12.10.4).
         """
         if not hooks:
             return
@@ -1498,13 +1545,7 @@ class HookEngine:
         work = self._run_async_hooks_list(
             hooks, room_id, trigger, event, context, budget=budget, floor=chain_floor()
         )
-        task = start_named(
-            work,
-            name=f"roomkit-observers-{trigger}",
-            context=under_no_held_run(unlocked_context()),
-        )
-        self._observers.add(task)
-        task.add_done_callback(self._observers.discard)
+        self._hold(work, name=str(trigger))
 
     async def drain_observers(self) -> None:
         """Wait for the observers still running, this engine's and its turn side's.

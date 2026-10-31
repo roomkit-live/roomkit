@@ -874,12 +874,14 @@ async def test_a_hook_outlasting_the_grace_is_cut(close_grace: float) -> None:
             steps.append("cut")
             raise
 
-    call = asyncio.ensure_future(kit.process_inbound(_message("hi"), room_id="r"))
+    # The call returns once its delivery set is done, its hook still
+    # running (RFC §9.3): the close cuts the hook, not the call.
+    result = await asyncio.wait_for(kit.process_inbound(_message("hi"), room_id="r"), 1)
     await started.wait()
     await kit.close()
 
     assert steps == ["cut"]
-    assert (await call).cancellation_reason == "kit_closed"
+    assert result.cancellation_reason is None
 
 
 class _NeverWrites(InMemoryStore):

@@ -1585,8 +1585,11 @@ class TestACallFromAnAsyncHook:
         await _room(kit)
         try:
             await asyncio.wait_for(kit.process_inbound(_message(), room_id="r1"), 5)
-            # Each call waits for the room it opens, so the last one answers first.
-            assert [a.reason for a in answers] == ["reentry_loop_cap"] + [None] * BUDGET
+            await asyncio.wait_for(_observed(kit), 5)
+            # No call waits for the hook of the room it opens (RFC §9.3), so
+            # the calls answer in no set order: one past the cap.
+            reasons = [a.reason for a in answers]
+            assert (reasons.count(None), reasons.count("reentry_loop_cap")) == (BUDGET, 1)
             assert len(await kit.store.list_rooms()) == 1 + BUDGET
         finally:
             await kit.close()
@@ -1758,7 +1761,7 @@ class TestACallFromAnAsyncHook:
 
         try:
             await asyncio.wait_for(kit.process_inbound(_message()), 5)
-            await asyncio.wait_for(_settled(kit), 5)
+            await asyncio.wait_for(_observed(kit), 5)
             later.over.set()
             sent = await asyncio.wait_for(later.sent, 5)
             assert [(e.chain_depth, e.blocked_by) for e in sent] == [(0, None)] * sends
