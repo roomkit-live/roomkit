@@ -894,9 +894,7 @@ class LaneExecutionMixin(HelpersMixin):
             if processed:
                 await self._emit_processed(event)
 
-        self._hook_engine._hold(
-            hooks_then_processed(), name=HookTrigger.AFTER_BROADCAST, aftermath=True
-        )
+        self._hook_engine._hold(hooks_then_processed(), name=HookTrigger.AFTER_BROADCAST)
 
     async def _emit_processed(self, event: RoomEvent) -> None:
         await self._emit_framework_event(
@@ -917,10 +915,9 @@ class LaneExecutionMixin(HelpersMixin):
         draws on the cascade's hook calls, kept apart from its passes, so a
         hook that posts after every event stops at the cap (§9.5.1), and is
         one deeper than the hook's event (§8.3); a task it starts calls as
-        work of its own. The delivery's aftermath, a ``close()`` it calls
-        spares the room's lane (RFC §12.10.4)."""
+        work of its own."""
         self._hook_engine._start_async_hooks(
-            room_id, trigger, payload, context, budget=cascade.budget, aftermath=True
+            room_id, trigger, payload, context, budget=cascade.budget
         )
 
     def _report_cut(

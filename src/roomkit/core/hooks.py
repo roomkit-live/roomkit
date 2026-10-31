@@ -1464,17 +1464,14 @@ class HookEngine:
         context: RoomContext,
         *,
         budget: ReentryBudget | None = None,
-        aftermath: bool = False,
     ) -> None:
         """Start the hooks :meth:`run_async_hooks` runs for *trigger* and
         return at once: an ASYNC trigger's hooks run after the operation
         that fired it and never hold it up (RFC §9.3). Held as observers
-        are (:meth:`_hold`, *aftermath* included), each body on *budget*
-        when given."""
+        are (:meth:`_hold`), each body on *budget* when given."""
         self._hold(
             self.run_async_hooks(room_id, trigger, event, context, budget=budget),
             name=str(trigger),
-            aftermath=aftermath,
         )
 
     def _has_async_hooks(self, room_id: str, trigger: HookTrigger, event: RoomEvent) -> bool:
@@ -1482,9 +1479,7 @@ class HookEngine:
         engine = self._turn_engine(trigger) or self
         return bool(engine._get_hooks(room_id, trigger, None, event=event))
 
-    def _hold(
-        self, work: Coroutine[Any, Any, None], *, name: str, aftermath: bool = False
-    ) -> None:
+    def _hold(self, work: Coroutine[Any, Any, None], *, name: str) -> None:
         """Run *work*, hooks that observe an operation already over, as a
         task of its own, and return at once.
 
@@ -1494,18 +1489,13 @@ class HookEngine:
         §9.5.1). Named in :func:`held_runs`, so a ``close()`` it runs spares
         it rather than wait for itself, and under none of the runs that
         fired it: they do not wait for it, so such a ``close()`` waits for
-        them, and cuts them, as for any other work. With *aftermath*, the
-        hooks of a delivery's aftermath (an ``AFTER_BROADCAST`` hook, a
-        change's mutation trigger), it runs under the runs that fired it,
-        the room's lane among them: it is their work, so its ``close()``
-        spares them as its own, and the lane drops the delivery it kept.
-        The close gives it the grace, then cuts it (RFC §12.10.4).
+        them, and cuts them, as for any other work; the close gives it the
+        grace, then cuts it (RFC §12.10.4).
         """
-        context = unlocked_context()
         task = start_named(
             work,
             name=f"roomkit-observers-{name}",
-            context=context if aftermath else under_no_held_run(context),
+            context=under_no_held_run(unlocked_context()),
         )
         self._observers.add(task)
         task.add_done_callback(self._observers.discard)

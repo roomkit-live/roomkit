@@ -650,6 +650,56 @@ async def test_a_close_from_the_lane_s_own_work_drops_what_it_kept_and_the_lane_
     assert not [r for r in caplog.records if "failed a round" in r.getMessage()]
 
 
+class _HeldSend(SimpleChannel):
+    """A transport whose send of ``Two`` holds until the kit's close cuts it."""
+
+    def __init__(self, channel_id: str) -> None:
+        super().__init__(channel_id)
+        self.sending = asyncio.Event()
+        self.steps: list[str] = []
+
+    async def deliver(
+        self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
+    ) -> ChannelOutput:
+        if event.content.body == "Two":
+            self.sending.set()
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                self.steps.append("cut")
+                raise
+        return await super().deliver(event, binding, context)
+
+
+async def test_a_close_from_a_hook_cuts_another_call_s_send_under_way(
+    close_grace: float,
+) -> None:
+    """One's AFTER_BROADCAST hook closes the kit while the room's lane sends
+    Two, another caller's message: the close spares the hook, not the lane,
+    so Two's send gets the grace, then is cut and reported, as any send
+    under way (RFC §12.10.4, RMK-1020)."""
+    kit = RoomKit()
+    held = _HeldSend("ws")
+    room_id = await _a_room(kit, held)
+    go = asyncio.Event()
+
+    @kit.hook(HookTrigger.AFTER_BROADCAST, execution=HookExecution.ASYNC, name="quit")
+    async def quit(event: RoomEvent, ctx: RoomContext) -> None:
+        if event.content.body == "One":
+            await go.wait()
+            await kit.close()
+
+    await asyncio.wait_for(kit.process_inbound(_said("One"), room_id=room_id), 1)
+    two = asyncio.ensure_future(kit.process_inbound(_said("Two"), room_id=room_id))
+    await asyncio.wait_for(held.sending.wait(), 1)
+    go.set()
+
+    result = await asyncio.wait_for(two, 1)
+    assert held.steps == ["cut"]
+    cut = result.delivery_results["ws"]
+    assert cut.error is not None and cut.error.code == "kit_closed"
+
+
 def _noting_commits(store: type[ConversationStore]) -> type[ConversationStore]:
     """*store*, its commit suspending, as a networked store's does, and
     noting each message it committed in ``steps``."""

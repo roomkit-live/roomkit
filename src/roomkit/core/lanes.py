@@ -810,8 +810,9 @@ class RoomDeliveryLane:
         """Once sealed, drop the entry kept as running from its placement and
         not taken yet: this lane's round runs the close, which can give it no
         turn before it releases the store (RFC §12.10.4). The lane then ends
-        with its round. With *placed_by*, only an entry one of those tasks
-        placed: the close's own work's, dropped as the close starts."""
+        with its round. With *placed_by*, only an entry that work placed:
+        the close's own, dropped as the close starts, whether or not the
+        lane runs the close."""
         kept = self._placed_idle
         if not self._closed or kept is None:
             return
@@ -1209,13 +1210,12 @@ class RoomLaneRegistry:
         }
 
     def drop_placed_by(self, spared: set[asyncio.Task[Any]]) -> None:
-        """Once sealed, drop the entry each lane *spared* keeps that the
-        close's own work placed (an ``AFTER_BROADCAST`` hook that sends,
-        then closes): the close spares the work, so its lane takes none of
-        it (RFC §12.10.4)."""
+        """Once sealed, drop the entry each lane keeps that the close's own
+        work, *spared*, placed (an ``AFTER_BROADCAST`` hook that sends, then
+        closes): what the closing work sent is never delivered, the lane
+        idle or not (RFC §12.10.4)."""
         for lane in self._lanes.values():
-            if lane.task in spared:
-                lane.drop_kept(placed_by=spared)
+            lane.drop_kept(placed_by=spared)
 
     def cut(self, spared: set[asyncio.Task[Any]]) -> None:
         """Cut every round still under way but those *spared* (a lane whose
