@@ -470,6 +470,7 @@ class TestWhatTheRoomEndsUpWith:
             ROOM, DIAL_IN, metadata={"sip.phoneNumber": NUMBER}
         )
 
+        await kit.hook_engine.drain_observers()
         assert seen == [ALICE.id]
 
     async def test_a_participant_the_framework_named_is_not_re_resolved(self) -> None:

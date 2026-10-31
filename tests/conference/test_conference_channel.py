@@ -454,6 +454,7 @@ class TestArrivalWithoutABot:
         backend.fail("join_as_bot")
         await backend.simulate_participant_joined(ROOM, "p-alice")
 
+        await kit.hook_engine.drain_observers()
         assert fired == ["participant_joined"]
         assert emitted == ["participant_joined"]
 
@@ -623,6 +624,7 @@ class TestMembershipHomedElsewhere:
         await backend.simulate_participant_joined(ROOM, "p-alice")
         await backend.simulate_participant_left(ROOM, "p-alice")
 
+        await kit.hook_engine.drain_observers()
         assert departures == ["left"]
 
 
@@ -779,6 +781,7 @@ class TestHooks:
         await backend.simulate_participant_joined(ROOM, "p-alice")
         await backend.simulate_track_published(ROOM, "p-alice")
 
+        await kit.hook_engine.drain_observers()
         assert "participant_joined" in fired
         assert "track_published" in fired
 
@@ -793,6 +796,7 @@ class TestHooks:
         await backend.simulate_participant_joined(ROOM, "p-alice")
         await backend.simulate_track_published(ROOM, "p-alice", TrackKind.SCREEN_SHARE)
 
+        await kit.hook_engine.drain_observers()
         assert fired == ["screen_share"]
 
 
@@ -1185,6 +1189,7 @@ class TestConnectionQualityRelay:
         await backend.simulate_connection_quality(ROOM, "p-alice", "poor")
         await _settle(channel)
 
+        await kit.hook_engine.drain_observers()
         assert seen == [("p-alice", "poor")]
 
     async def test_a_detached_room_relays_nothing(self) -> None:
@@ -1232,6 +1237,7 @@ class TestTrackMuteRelay:
         await backend.simulate_track_unmuted(track.id)
         await _settle(channel)
 
+        await kit.hook_engine.drain_observers()
         assert seen == [("muted", "p-alice", "video"), ("unmuted", "p-alice", "video")]
 
     async def test_a_moderation_mute_is_reported_like_any_other(self) -> None:
@@ -1248,6 +1254,7 @@ class TestTrackMuteRelay:
         await backend.mute_track(ROOM, track.id)
         await _settle(channel)
 
+        await kit.hook_engine.drain_observers()
         assert seen == [track.id]
 
     async def test_the_bots_own_track_mute_is_not_relayed(self) -> None:
@@ -1584,6 +1591,7 @@ class TestBotIdentityCollision:
             await backend.simulate_participant_joined(ROOM, "roomkit")
             await backend.simulate_participant_joined(ROOM, "p-alice")
 
+        await kit.hook_engine.drain_observers()
         participants = await kit.store.list_participants(ROOM)
         assert [p.id for p in participants] == ["p-alice"]
         assert fired == ["joined"]
