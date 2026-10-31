@@ -1,14 +1,16 @@
-"""The arguments BEFORE_TOOL_USE leaves are validated again, in one wording,
-on every door (RMK-482, RFC §21.1).
+"""The arguments BEFORE_TOOL_USE leaves are the call's, and are validated
+again, in one wording, on every door (RMK-482, RFC §9.3, §21.1).
 
-A hook may hand back new arguments or edit the event's own in place; either
-way the call is refused when they no longer fit the schema, before its
-handler runs, and the model reads that the arguments were rewritten: the
-model's own call was validated before the hook ran.
+A hook may hand back new arguments, edit the event's own in place, or
+answer MODIFY with an edited copy; either way the call runs with them, and
+is refused when they no longer fit the schema, before its handler runs, the
+model reading that the arguments were rewritten: the model's own call was
+validated before the hook ran.
 """
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any
 
 import pytest
@@ -20,18 +22,45 @@ SCHEMA = {"type": "object", "properties": {"city": {"type": "string"}}, "require
 REFUSAL = "Invalid rewritten arguments for 'lookup': missing required argument 'city'"
 
 
-def _edits(how: str) -> Any:
+def _edits(how: str, arguments: dict[str, Any]) -> Any:
+    """A BEFORE_TOOL_USE hook leaving the call *arguments*, *how*."""
+
     async def before(event: Any, ctx: Any) -> HookResult:
         if how == "in-place":
-            event.arguments.pop("city", None)
+            event.arguments.clear()
+            event.arguments.update(arguments)
             return HookResult.allow()
-        return HookResult(action="allow", metadata={"arguments": {}})
+        if how == "modified":
+            return HookResult.modify(replace(event, arguments=dict(arguments)))
+        return HookResult(action="allow", metadata={"arguments": dict(arguments)})
 
     return before
 
 
 @pytest.mark.parametrize("door", DOORS)
-@pytest.mark.parametrize("how", ["in-place", "returned"])
+@pytest.mark.parametrize("how", ["in-place", "returned", "modified"])
+async def test_the_call_runs_with_the_arguments_a_hook_left(door: str, how: str) -> None:
+    """RMK-1021 item 26: a MODIFY's arguments reached the next hook, never
+    the handler, which ran with the model's."""
+    served: list[dict[str, Any]] = []
+
+    async def lookup(name: str, arguments: dict[str, Any]) -> str:
+        served.append(dict(arguments))
+        return "sunny"
+
+    await run_door(
+        door,
+        lookup,
+        arguments={"city": "Paris"},
+        hooks=Hooks(before=_edits(how, {"city": "Lyon"})),
+        schema=SCHEMA,
+    )
+
+    assert served == [{"city": "Lyon"}]
+
+
+@pytest.mark.parametrize("door", DOORS)
+@pytest.mark.parametrize("how", ["in-place", "returned", "modified"])
 async def test_arguments_a_hook_broke_are_refused_as_rewritten(door: str, how: str) -> None:
     served: list[dict[str, Any]] = []
 
@@ -40,7 +69,11 @@ async def test_arguments_a_hook_broke_are_refused_as_rewritten(door: str, how: s
         return "sunny"
 
     seen = await run_door(
-        door, lookup, arguments={"city": "Paris"}, hooks=Hooks(before=_edits(how)), schema=SCHEMA
+        door,
+        lookup,
+        arguments={"city": "Paris"},
+        hooks=Hooks(before=_edits(how, {})),
+        schema=SCHEMA,
     )
 
     # A backend reads (text, is_error, refused); every other door the text.

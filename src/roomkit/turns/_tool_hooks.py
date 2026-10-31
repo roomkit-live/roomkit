@@ -43,27 +43,39 @@ Emit = Callable[..., Awaitable[None]]
 """Emits a framework event: ``(event_type, *, room_id, channel_id, data)``."""
 
 
-def before_tool_decision(name: str, hook_result: Any) -> BeforeToolDecision:
-    """What the BEFORE_TOOL_USE chain decided about a call of *name*.
+def before_tool_decision(event: ToolCallEvent, hook_result: Any) -> BeforeToolDecision:
+    """What the BEFORE_TOOL_USE chain decided about *event*.
 
-    Rewritten arguments that are not an object refuse the call. A hook that
-    failed closed refused it too (RFC §9.3): its error rides the decision for
-    the observers, never the model.
+    The call runs with the arguments the chain ended with: a MODIFY's
+    payload, or the event edited in place, each read by the next hook. A
+    rewrite under ``metadata["arguments"]``, which no later hook reads, has
+    the last word (RFC §9.3). Rewritten arguments that are not an object
+    refuse the call. A hook that failed closed refused it too: its error
+    rides the decision for the observers, never the model.
     """
     rewritten = hook_result.metadata.get("arguments")
     if "arguments" in hook_result.metadata and not isinstance(rewritten, dict):
         logger.error(
             "BEFORE_TOOL_USE hook returned non-object arguments for %s — denying tool call",
-            name,
+            event.name,
         )
         return BeforeToolDecision(allowed=False)
     blocked = not hook_result.allowed and not hook_result.failed_closed
     return BeforeToolDecision(
         allowed=hook_result.allowed,
-        arguments=rewritten if isinstance(rewritten, dict) else None,
+        arguments=rewritten if isinstance(rewritten, dict) else _modified(event, hook_result),
         detail=before_tool_use_detail(hook_result),
         reason=hook_result.reason if blocked else None,
     )
+
+
+def _modified(event: ToolCallEvent, hook_result: Any) -> dict[str, Any] | None:
+    """The arguments a MODIFY left the call with, ``None`` when the chain
+    ended on *event* itself, edited in place or not."""
+    ended = hook_result.event
+    if ended is event or not isinstance(ended, type(event)) or ended.arguments == event.arguments:
+        return None
+    return ended.arguments
 
 
 class ToolHooks:
@@ -151,9 +163,10 @@ class ToolHooks:
 
         The returned callback runs BEFORE_TOOL_USE sync hooks. If any hook
         blocks, the tool call is denied. A hook may also rewrite the call's
-        arguments by returning them under ``metadata["arguments"]`` — the
-        mirror of what ON_TOOL_CALL already does with ``metadata["result"]``
-        on the way out.
+        arguments: by a MODIFY, or the event edited in place, which the next
+        hook reads, or by returning them under ``metadata["arguments"]``, the
+        mirror of what ON_TOOL_CALL does with ``metadata["result"]`` on the
+        way out, which has the last word (:func:`before_tool_decision`).
         """
 
         async def _callback(event: ToolCallEvent) -> BeforeToolDecision:
@@ -404,7 +417,7 @@ class ToolHooks:
                 "reason": hook_result.reason,
             },
         )
-        return before_tool_decision(event.name, hook_result), context
+        return before_tool_decision(event, hook_result), context
 
     async def _run_before_tool_use(
         self, event: ToolCallEvent, room_id: str, *, carrying: RoomContext | None = None
