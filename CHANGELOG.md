@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`pause_room()`, `resume_room()` and `reopen_room()`** (RFC 5.1,
+  RMK-1021). The RFC names the three transitions and roomkit-rs has them;
+  a host could only close or archive a room. A pause fires
+  `ON_ROOM_PAUSED` and emits no `room_paused`, which reports the timer's;
+  a resume and a reopen report nothing and restart the inactivity timer.
+  A transition already done does nothing; one from a status it does not
+  leave from raises `TransitionRefusedError`, nothing written (a reopen of
+  a room that is not CLOSED among them).
+- **`ConversationStore.delete_participant(room_id, participant_id)`** (RFC
+  14.1, RMK-1021), in every store. **BREAKING** for a store written outside
+  RoomKit: the method is abstract.
+
 - **`roomkit.testing`: a transport that records what it is handed, and an
   agent that echoes** (RMK-1021). A test or an example saw a room work
   through a channel of its own; roomkit-rs's examples and tests use the
@@ -68,6 +80,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `close()`. It needs the `typesafe` and `llamacpp` extras.
 
 ### Changed
+
+- **BREAKING — no channel of the type `SYSTEM`, and no empty id**
+  (RFC 5, 6.2, 10.3; RMK-1021).
+  - `register_channel()` refuses a channel of the type `SYSTEM`
+    (`ValueError`): the type is the framework's own records', whose source
+    may make the changes reserved to the system. A SYSTEM edit or delete
+    now comes from a hook (an injected event), the one door left for it.
+  - A room's, a channel's, an event's, a participant's and an identity's
+    id is never empty: the models raise `ValidationError` for `""`, and
+    `create_room(room_id="")` raises instead of making up an id.
 
 - **A channel type is an open name** (RFC 6.2, RMK-986). An integrator's
   channel for a platform the enum does not list (Slack, Signal, Line) had to

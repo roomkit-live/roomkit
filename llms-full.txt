@@ -1026,7 +1026,7 @@ injected change is logged at warning level.
 | The target is not an event of the room, is `BLOCKED`, deleted, or itself an edit or a delete (an edited event may be edited again) | `target_event_not_found` |
 | A sender's change (`edit_source` `"sender"` or none, `DeleteType.SENDER`) of an event they did not author | `not_original_author`; `identity_required_for_edit` when either has no author |
 | `DeleteType.ADMIN` from anyone but an OWNER or AGENT, neither LEFT nor BANNED, on the channel they write on | `not_authorized`; `identity_required_for_edit` with no sender id |
-| A SYSTEM change (`DeleteType.SYSTEM`, `edit_source="system"`) from anything but a SYSTEM channel or a hook | `not_authorized` |
+| A SYSTEM change (`DeleteType.SYSTEM`, `edit_source="system"`) from anything but a hook (no channel is of the type `SYSTEM`) | `not_authorized` |
 | An edit or a delete a hook injects that is not a SYSTEM change | `not_authorized` |
 
 An event that travelled outbound (a channel's own output, an agent's response)
