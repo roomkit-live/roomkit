@@ -1193,6 +1193,12 @@ class ConversationStore(ABC):
         ...
 
     @abstractmethod
+    async def delete_participant(self, room_id: str, participant_id: str) -> None:
+        """Remove the room's participant *participant_id*; removing one the
+        room does not have changes nothing (RFC §14.1)."""
+        ...
+
+    @abstractmethod
     async def list_participants(self, room_id: str) -> list[Participant]:
         """List all participants in a room."""
         ...

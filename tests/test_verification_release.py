@@ -23,12 +23,9 @@ from roomkit.channels.ai import AIChannel
 from roomkit.core.mixins import verification as verification_mixin
 from roomkit.core.mixins.verification import HELD_KEY
 from roomkit.identity.mock import MockIdentityResolver
-from roomkit.models.enums import DeleteType, EventType
-from roomkit.models.event import DeleteContent
 from roomkit.models.identity import Identity
 from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.providers.sms.mock import MockSMSProvider
-from tests.test_edit_delete_authorization import _SystemTransport
 
 ALICE = "+15550000001"
 
@@ -141,19 +138,12 @@ async def test_a_held_message_deleted_before_the_release_is_not_answered() -> No
     """RFC §10.3: a deleted message is no longer said, held or not; its
     release replays nothing of it."""
     kit, ai, _ = _kit()
-    kit.register_channel(_SystemTransport("sys"))
     asked = await _text(kit, "My card number is 4417")
     room_id = asked.event.room_id
-    await kit.attach_channel(room_id, "sys")
     request, secret = await kit.request_verification(
         "id-alice", room_id=room_id, channel_id="sms", window_start=asked.event.created_at
     )
-    await kit.send_event(
-        room_id,
-        "sys",
-        DeleteContent(target_event_id=asked.event.id, delete_type=DeleteType.SYSTEM),
-        event_type=EventType.DELETE,
-    )
+    await kit.delete_event(room_id, asked.event.id)
 
     await kit.complete_verification(request.id, secret)
     await _settle()

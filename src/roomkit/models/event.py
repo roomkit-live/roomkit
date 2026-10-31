@@ -17,7 +17,7 @@ from pydantic import (
 )
 
 from roomkit._media_url import is_data_uri, is_link, is_safe_reference, lowercase_scheme
-from roomkit.models._keys import IdempotencyKey
+from roomkit.models._keys import Id, IdempotencyKey
 from roomkit.models._time import UtcDatetime
 from roomkit.models.enums import (
     ChannelType,
@@ -289,7 +289,7 @@ class ChannelData(BaseModel):
 class EventSource(BaseModel):
     """Origin information for an event."""
 
-    channel_id: str
+    channel_id: Id
     channel_type: ChannelType
     direction: EventDirection = EventDirection.INBOUND
     participant_id: str | None = None
@@ -305,8 +305,8 @@ class EventSource(BaseModel):
 class RoomEvent(BaseModel):
     """A single event in a room conversation."""
 
-    id: str = Field(default_factory=lambda: uuid4().hex)
-    room_id: str
+    id: Id = Field(default_factory=lambda: uuid4().hex)
+    room_id: Id
     type: EventType = EventType.MESSAGE
     source: EventSource
     content: EventContent

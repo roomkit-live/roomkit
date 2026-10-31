@@ -7,6 +7,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field, model_validator
 
+from roomkit.models._keys import Id
 from roomkit.models._time import UtcDatetime
 from roomkit.models.enums import AgentResponsePolicy, RoomStatus
 
@@ -31,7 +32,7 @@ class RoomTimers(BaseModel):
 class Room(BaseModel):
     """A conversation room."""
 
-    id: str
+    id: Id
     organization_id: str | None = None
     status: RoomStatus = RoomStatus.ACTIVE
     created_at: UtcDatetime = Field(default_factory=lambda: datetime.now(UTC))

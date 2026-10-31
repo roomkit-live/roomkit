@@ -822,6 +822,13 @@ class InMemoryStore(ConversationStore):
         self._index_participant(participant.identity_id, participant.room_id)
         return participant
 
+    async def delete_participant(self, room_id: str, participant_id: str) -> None:
+        removed = self._participants.get(room_id, {}).pop(participant_id, None)
+        if removed is None:
+            return
+        self._unindex_participant(removed.id, room_id)
+        self._unindex_participant(removed.identity_id, room_id)
+
     async def list_participants(self, room_id: str) -> list[Participant]:
         return list(self._participants.get(room_id, {}).values())
 

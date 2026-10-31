@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
+from typing import Any
 
 import pytest
 from pydantic import ValidationError
 
+from roomkit import RoomKit
 from roomkit.models import (
     Access,
     AudioContent,
@@ -142,6 +144,35 @@ class TestRoomEvent:
                 source=EventSource(channel_id="ch1", channel_type=ChannelType.SMS),
                 content=TextContent(body="msg"),
             )
+
+    @pytest.mark.parametrize(
+        "build",
+        [
+            lambda: RoomEvent(
+                room_id="",
+                source=EventSource(channel_id="c", channel_type=ChannelType.SMS),
+                content=TextContent(body="x"),
+            ),
+            lambda: EventSource(channel_id="", channel_type=ChannelType.SMS),
+            lambda: Room(id=""),
+            lambda: ChannelBinding(room_id="r", channel_id="", channel_type=ChannelType.SMS),
+            lambda: Participant(id="", room_id="r", channel_id="c"),
+        ],
+        ids=["event's room", "source's channel", "room", "binding's channel", "participant"],
+    )
+    def test_an_empty_id_is_refused(self, build: Any) -> None:
+        """An id is never empty, as roomkit-rs's are (RMK-1021 item 29); ``""``
+        was taken, and named nothing anyone could find again."""
+        with pytest.raises(ValidationError, match="at least 1 character"):
+            build()
+
+    async def test_a_room_created_with_an_empty_id_is_refused(self) -> None:
+        """``create_room(room_id="")`` made up an id instead."""
+        kit = RoomKit()
+        with pytest.raises(ValidationError):
+            await kit.create_room(room_id="")
+        assert await kit.store.list_rooms() == []
+        await kit.close()
 
     async def test_channel_data_keeps_the_keys_its_channel_writes(self, tmp_path: Path) -> None:
         """RFC §5.4: a channel's own data (an SMS's ``segments``) travels on

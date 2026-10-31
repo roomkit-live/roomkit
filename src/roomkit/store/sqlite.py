@@ -1920,6 +1920,14 @@ class SQLiteStore(ConversationStore):
         )
         return Participant.model_validate_json(row[0]) if row is not None else None
 
+    async def delete_participant(self, room_id: str, participant_id: str) -> None:
+        await self._run(self._x_delete_participant, room_id, participant_id)
+
+    def _x_delete_participant(self, room_id: str, participant_id: str) -> None:
+        self._db().execute(
+            "DELETE FROM participants WHERE room_id = ? AND id = ?", (room_id, participant_id)
+        )
+
     async def list_participants(self, room_id: str) -> list[Participant]:
         return await self._run(self._x_list_participants, room_id)
 

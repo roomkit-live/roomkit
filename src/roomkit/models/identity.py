@@ -6,6 +6,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from roomkit.models._keys import Id
 from roomkit.models.enums import IdentificationStatus
 from roomkit.models.hook import InjectedEvent
 
@@ -13,7 +14,7 @@ from roomkit.models.hook import InjectedEvent
 class Identity(BaseModel):
     """A resolved user identity."""
 
-    id: str
+    id: Id
     organization_id: str | None = None
     display_name: str | None = None
     email: str | None = None

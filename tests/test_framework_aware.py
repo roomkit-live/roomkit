@@ -32,7 +32,7 @@ from roomkit.models.event import RoomEvent
 class _Inert(Channel):
     """The least a channel can implement and still be registered."""
 
-    channel_type = ChannelType.SYSTEM
+    channel_type = ChannelType.WEBSOCKET
 
     async def handle_inbound(self, message: InboundMessage, context: RoomContext) -> RoomEvent:
         raise NotImplementedError

@@ -80,10 +80,6 @@ class _Transport(Channel):
         return ChannelOutput.empty()
 
 
-class _SystemTransport(_Transport):
-    channel_type = ChannelType.SYSTEM
-
-
 class _Parsing(_Transport):
     """A transport that records the history it parses each message with."""
 
@@ -127,11 +123,9 @@ class _Editable(_Transport):
 async def _setup() -> RoomKit:
     kit = RoomKit()
     kit.register_channel(_Transport("src"))
-    kit.register_channel(_SystemTransport("sys"))
     await kit.create_room(room_id="r1")
     # Author and non-author write on one channel: a group binding (RFC §10.4).
     await kit.attach_channel("r1", "src", group=True)
-    await kit.attach_channel("r1", "sys")
     return kit
 
 
@@ -223,16 +217,6 @@ class TestEditAuthorization:
         assert result.blocked is True
         assert result.reason == "not_authorized"
 
-    async def test_system_edit_source_allowed_from_system_channel(self) -> None:
-        kit = await _setup()
-        original = await _post(kit, "v1", sender_id="alice")
-
-        result = await _edit(
-            kit, original, sender_id="moderator", edit_source="system", channel_id="sys"
-        )
-
-        assert result.blocked is False
-
 
 class TestDeleteAuthorization:
     async def test_author_may_delete_own_message(self) -> None:
@@ -282,16 +266,6 @@ class TestDeleteAuthorization:
 
         assert result.blocked is True
         assert result.reason == "not_authorized"
-
-    async def test_system_delete_allowed_from_system_channel(self) -> None:
-        kit = await _setup()
-        original = await _post(kit, "v1", sender_id="alice")
-
-        result = await _delete(
-            kit, original, sender_id="janitor", delete_type=DeleteType.SYSTEM, channel_id="sys"
-        )
-
-        assert result.blocked is False
 
 
 def _hidden_changes(target_id: str) -> dict[str, tuple[EventType, EventContent]]:
@@ -519,21 +493,25 @@ class TestWhoMayChange:
         await kit.close()
 
     async def test_a_system_change_needs_no_author(self) -> None:
-        """A SYSTEM change claims the system's authority (rule 6): neither it
-        nor its target needs an author, as a sender's change does (rule 4)."""
+        """A SYSTEM change claims the system's authority (rule 6), a hook's,
+        since no channel is of the type SYSTEM: neither it nor its target
+        needs an author, as a sender's change does (rule 4)."""
         kit = await _setup()
-        notice = (
-            await kit.process_inbound(
-                InboundMessage(channel_id="sys", sender_id="", content=TextContent(body="notice"))
-            )
-        ).event
-        assert notice is not None and notice.source.participant_id is None
+        notice = await kit.send_event("r1", "src", TextContent(body="notice"))
+        assert notice.source.participant_id is None
 
-        result = await _delete(
-            kit, notice, sender_id="", delete_type=DeleteType.SYSTEM, channel_id="sys"
-        )
+        @kit.hook(HookTrigger.BEFORE_BROADCAST)
+        async def janitor(event: RoomEvent, ctx: RoomContext) -> HookResult:
+            if not _said(event, "go"):
+                return HookResult.allow()
+            source = EventSource(channel_id="janitor", channel_type=ChannelType.SYSTEM)
+            delete = DeleteContent(target_event_id=notice.id, delete_type=DeleteType.SYSTEM)
+            return HookResult.allow([InjectedEvent(event=_change("r1", source, delete))])
 
-        assert (result.blocked, result.reason) == (False, None)
+        await _post(kit, "go", sender_id="alice")
+
+        stored = await kit._store.get_event(notice.id)
+        assert stored is not None and stored.metadata.get("deleted") is True
         await kit.close()
 
 
@@ -929,7 +907,7 @@ class TestTheMutationTriggers:
         @kit.hook(HookTrigger.BEFORE_BROADCAST, name="redact")
         async def redact(event: RoomEvent, ctx: RoomContext) -> HookResult:
             if nested and event.type in (EventType.EDIT, EventType.DELETE):
-                await kit.send_event("r1", "sys", TextContent(body="nested"))
+                await kit.send_event("r1", "src", TextContent(body="nested"))
             return _redacted(event)
 
         @kit.hook(trigger, execution=HookExecution.ASYNC)
@@ -976,12 +954,14 @@ class TestTheTargetReadAgain:
         @kit.hook(HookTrigger.BEFORE_BROADCAST)
         async def moderator(event: RoomEvent, ctx: RoomContext) -> HookResult:
             if event.type == EventType.EDIT:
-                # Committed ahead of the edit, within its locked section.
+                # Committed ahead of the edit, within its locked section: its
+                # author deletes it.
                 await kit.send_event(
                     "r1",
-                    "sys",
-                    DeleteContent(target_event_id=original.id, delete_type=DeleteType.SYSTEM),
+                    "src",
+                    DeleteContent(target_event_id=original.id),
                     event_type=EventType.DELETE,
+                    participant_id="alice",
                 )
             return HookResult.allow()
 

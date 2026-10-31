@@ -486,3 +486,16 @@ async def test_a_declared_channel_s_events_are_its_own() -> None:
 
     assert [e.type for e in events] == [EventType.MESSAGE]
     assert events[0].source.channel_type is ChannelType.AI
+
+
+def test_no_channel_claims_the_type_reserved_to_the_framework() -> None:
+    """RFC §5.3, §6.2: ``SYSTEM`` is the framework's own records' type, whose
+    source may make the changes reserved to the system; a channel claiming
+    it is refused, as roomkit-rs refuses it (RMK-1021 item 28). It was
+    registered."""
+    kit = RoomKit()
+
+    with pytest.raises(ValueError, match="claims the reserved type system"):
+        kit.register_channel(SimpleChannel("sys", ChannelType.SYSTEM))
+
+    assert "sys" not in kit.channels

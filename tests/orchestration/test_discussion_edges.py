@@ -21,13 +21,12 @@ from roomkit.models.enums import (
     Access,
     ChannelCategory,
     ChannelType,
-    DeleteType,
     EventType,
     HookExecution,
     HookTrigger,
     ParticipantRole,
 )
-from roomkit.models.event import DeleteContent, EventSource, RoomEvent, TextContent
+from roomkit.models.event import EventSource, RoomEvent, TextContent
 from roomkit.models.hook import HookResult, InjectedEvent
 from roomkit.models.participant import Participant
 from roomkit.orchestration.strategies.discussion import (
@@ -39,7 +38,6 @@ from roomkit.orchestration.strategies.discussion import (
 from roomkit.providers.ai.base import AIResponse
 from roomkit.providers.ai.mock import MockAIProvider
 from tests.orchestration.test_strategy_discussion import _provider, _settle, _timeline
-from tests.test_edit_delete_authorization import _SystemTransport
 from tests.test_framework import SimpleChannel
 
 
@@ -279,8 +277,6 @@ async def test_a_message_deleted_while_queued_gives_no_turn() -> None:
     b = _provider("b here")
     kit = RoomKit()
     await _room(kit, {"a": _Held(ai_responses=[AIResponse(content="a")]), "b": b})
-    kit.register_channel(_SystemTransport("sys"))
-    await kit.attach_channel("r1", "sys")
     await _say(kit, "@a go")
     async with asyncio.timeout(5):
         while _queue(kit).speaking != "a":
@@ -288,12 +284,7 @@ async def test_a_message_deleted_while_queued_gives_no_turn() -> None:
     queued = (await _say(kit, "@b the code is 4417")).event
     assert _queue(kit).queue == ("b",)
 
-    await kit.send_event(
-        "r1",
-        "sys",
-        DeleteContent(target_event_id=queued.id, delete_type=DeleteType.SYSTEM),
-        event_type=EventType.DELETE,
-    )
+    await kit.delete_event("r1", queued.id)
     release.set()
     await _settle(kit)
 

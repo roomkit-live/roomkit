@@ -1,10 +1,10 @@
-"""An idempotency key as the models take it (RFC §13.4)."""
+"""An idempotency key and an id as the models take them (RFC §13.4, §5)."""
 
 from __future__ import annotations
 
 from typing import Annotated
 
-from pydantic import AfterValidator
+from pydantic import AfterValidator, Field
 
 
 def _no_blank_key(key: str | None) -> str | None:
@@ -17,3 +17,8 @@ def _no_blank_key(key: str | None) -> str | None:
 
 IdempotencyKey = Annotated[str | None, AfterValidator(_no_blank_key)]
 """An optional idempotency key, a blank one read as none."""
+
+
+Id = Annotated[str, Field(min_length=1)]
+"""A room's, a channel's, an event's, a participant's or an identity's id:
+never empty, as roomkit-rs's ids are (RMK-1021 item 29)."""

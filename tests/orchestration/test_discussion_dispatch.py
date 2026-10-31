@@ -19,9 +19,11 @@ from roomkit.channels.ai import AIChannel
 from roomkit.classifiers.base import ClassifierError
 from roomkit.classifiers.mock import MockClassifier
 from roomkit.core.locks import InMemoryLockManager
+from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundMessage
-from roomkit.models.enums import DeleteType, EventType, HookExecution, HookTrigger
+from roomkit.models.enums import ChannelType, DeleteType, EventType, HookExecution, HookTrigger
 from roomkit.models.event import DeleteContent, EventSource, RoomEvent, TextContent
+from roomkit.models.hook import HookResult, InjectedEvent
 from roomkit.orchestration.strategies.discussion import (
     ClassifierDispatchPolicy,
     Discussion,
@@ -50,7 +52,6 @@ from tests.orchestration.test_strategy_discussion import (
     _texts,
     _timeline,
 )
-from tests.test_edit_delete_authorization import _SystemTransport
 from tests.test_framework import SimpleChannel
 
 AGENTS = ("investigator", "dev", "sre")
@@ -466,18 +467,23 @@ async def test_the_recent_conversation_withholds_what_a_delete_removed() -> None
     policy = MockDispatchPolicy([[]])
     kit = RoomKit()
     await _room(kit, _team(), dispatch=policy, everyone=["sre"])
-    kit.register_channel(_SystemTransport("sys"))
-    await kit.attach_channel("r1", "sys")
     first = (await _say(kit, "@investigator the code is 4417")).event
     assert first is not None
     await _settle(kit)
-    await kit.send_event(
-        "r1",
-        "sys",
-        DeleteContent(target_event_id=first.id, delete_type=DeleteType.SYSTEM),
-        event_type=EventType.DELETE,
-    )
 
+    # A moderation hook deletes it as the system, with the message that asks
+    # for it: no channel is of the type SYSTEM (RFC §6.2).
+    @kit.hook(HookTrigger.BEFORE_BROADCAST, name="moderate")
+    async def moderate(event: RoomEvent, ctx: RoomContext) -> HookResult:
+        if getattr(event.content, "body", None) != "remove it":
+            return HookResult.allow()
+        source = EventSource(channel_id="moderator", channel_type=ChannelType.SYSTEM)
+        delete = DeleteContent(target_event_id=first.id, delete_type=DeleteType.SYSTEM)
+        removal = RoomEvent(room_id="r1", type=EventType.DELETE, source=source, content=delete)
+        return HookResult.allow([InjectedEvent(event=removal)])
+
+    await _say(kit, "remove it")
+    await _settle(kit)
     await _say(kit, "so?")
     await _settle(kit)
 
@@ -493,19 +499,12 @@ async def test_a_message_deleted_before_its_decision_is_not_decided() -> None:
     team = _team()
     kit = RoomKit()
     await _room(kit, team, dispatch=policy)
-    kit.register_channel(_SystemTransport("sys"))
-    await kit.attach_channel("r1", "sys")
     await _say(kit, "the error rate is climbing")
     await asyncio.wait_for(policy.deciding.wait(), 5)
     waiting = (await _say(kit, "the code is 4417")).event
     assert waiting is not None
 
-    await kit.send_event(
-        "r1",
-        "sys",
-        DeleteContent(target_event_id=waiting.id, delete_type=DeleteType.SYSTEM),
-        event_type=EventType.DELETE,
-    )
+    await kit.delete_event("r1", waiting.id)
     policy.release.set()
     await _settle(kit)
 

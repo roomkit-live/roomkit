@@ -1339,3 +1339,24 @@ async def test_a_blank_key_is_no_key(contract_store: ConversationStore, blank: s
         for room_id in rooms:
             await contract_store.delete_room(room_id)
         await kit.close()
+
+
+async def test_a_deleted_participant_is_gone_and_found_in_no_room(
+    contract_store: ConversationStore,
+) -> None:
+    """RFC §14.1 ``delete_participant``, as roomkit-rs's store has it
+    (RMK-1021 item 23): the room no longer holds the participant, and no
+    room is found by their id; deleting one the room does not have changes
+    nothing. The store had no such call."""
+    room = await contract_store.create_room(Room(id=uuid4().hex))
+    for pid in ("p-1", "p-2"):
+        await contract_store.add_participant(
+            Participant(id=pid, room_id=room.id, channel_id="sms", display_name=pid)
+        )
+
+    await contract_store.delete_participant(room.id, "p-1")
+    await contract_store.delete_participant(room.id, "p-missing")
+
+    assert [p.id for p in await contract_store.list_participants(room.id)] == ["p-2"]
+    assert await contract_store.get_participant(room.id, "p-1") is None
+    assert await contract_store.find_room_id_by_participant("sms", "p-1") is None

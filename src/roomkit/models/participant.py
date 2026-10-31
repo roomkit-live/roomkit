@@ -7,6 +7,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field, model_validator
 
+from roomkit.models._keys import Id
 from roomkit.models._time import UtcDatetime
 from roomkit.models.enums import (
     IdentificationStatus,
@@ -18,9 +19,9 @@ from roomkit.models.enums import (
 class Participant(BaseModel):
     """A participant in a room conversation."""
 
-    id: str
-    room_id: str
-    channel_id: str
+    id: Id
+    room_id: Id
+    channel_id: Id
     display_name: str | None = None
     role: ParticipantRole = ParticipantRole.MEMBER
     status: ParticipantStatus = ParticipantStatus.ACTIVE

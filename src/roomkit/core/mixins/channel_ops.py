@@ -194,7 +194,9 @@ class ChannelOpsMixin(HelpersMixin):
             ChannelAlreadyRegisteredError: a channel with this ID is
                 already registered.
             ValueError: a channel id a visibility could not name (a
-                keyword, a comma, surrounding whitespace; RFC §7.3), or a
+                keyword, a comma, surrounding whitespace; RFC §7.3), a
+                channel of the type ``SYSTEM``, reserved to the framework's
+                own records (RFC §5.3), or a
                 declaration of a channel that is not an
                 intelligence channel, or of one a turn hook registered on
                 the kit could fire (its turns run on another executor, RFC
@@ -207,6 +209,12 @@ class ChannelOpsMixin(HelpersMixin):
         # A visibility names channels by id, so an id it could not name is
         # refused (RFC §7.3).
         check_channel_id(channel.channel_id)
+        if channel.channel_type == ChannelType.SYSTEM:
+            # The framework's own records' type, which no channel claims: a
+            # SYSTEM source makes the changes reserved to the system (RFC §5.3).
+            raise ValueError(
+                f"channel {channel.channel_id} claims the reserved type {ChannelType.SYSTEM}"
+            )
         if channel.channel_id in self._channels:
             raise ChannelAlreadyRegisteredError(
                 f"Channel {channel.channel_id!r} is already registered. "

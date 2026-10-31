@@ -7,6 +7,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from roomkit.models._keys import Id
 from roomkit.models._time import UtcDatetime
 from roomkit.models.delivery import ProviderResult
 from roomkit.models.enums import (
@@ -143,8 +144,8 @@ class ChannelDeclaration(BaseModel):
 class ChannelBinding(BaseModel):
     """A channel's attachment to a room."""
 
-    channel_id: str
-    room_id: str
+    channel_id: Id
+    room_id: Id
     channel_type: ChannelType
     category: ChannelCategory = ChannelCategory.TRANSPORT
     direction: ChannelDirection = ChannelDirection.BIDIRECTIONAL

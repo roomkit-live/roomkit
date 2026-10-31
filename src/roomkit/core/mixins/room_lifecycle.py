@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 from uuid import uuid4
@@ -138,7 +139,7 @@ class RoomLifecycleMixin(HelpersMixin):
         """
         metadata = without_framework_keys(metadata or {}, room_id=room_id, writer="create_room")
         room = Room(
-            id=room_id or uuid4().hex,
+            id=uuid4().hex if room_id is None else room_id,
             organization_id=organization_id,
             metadata=metadata,
             timers=timers or RoomTimers(),
@@ -264,6 +265,115 @@ class RoomLifecycleMixin(HelpersMixin):
         )
         await self._emit_framework_event("room_closed", room_id=room_id, data={"room_id": room_id})
         return result
+
+    async def pause_room(self, room_id: str, *, organization_id: str | None = None) -> Room:
+        """Pause an ACTIVE room (RFC §5.1): it still accepts events, the first
+        one delivered resumes it, and its close timer counts from the pause.
+
+        Fires ``ON_ROOM_PAUSED``, its hooks not waited for, and emits no
+        ``room_paused``, which reports the inactivity timer's pause (§8.2).
+        The room's due timer transitions apply first. A room already PAUSED
+        is returned as it is: nothing is written or fired.
+
+        *organization_id* scopes the operation to one tenant (RFC §17.2); a
+        room belonging to another organization is reported as not found.
+
+        Raises:
+            TransitionRefusedError: the room is CLOSED or ARCHIVED; nothing
+                is written.
+        """
+        return await self._change_status(
+            room_id,
+            organization_id,
+            "pause",
+            RoomStatus.PAUSED,
+            leaves_from={RoomStatus.ACTIVE},
+            done_in=RoomStatus.PAUSED,
+            fields=lambda room, now: {"paused_at": now},
+            trigger=HookTrigger.ON_ROOM_PAUSED,
+        )
+
+    async def resume_room(self, room_id: str, *, organization_id: str | None = None) -> Room:
+        """Resume a PAUSED room (RFC §5.1), its inactivity timer counting
+        again from now. Fires no hook and emits no framework event, as the
+        RFC names none. A room already ACTIVE is returned as it is.
+
+        Raises:
+            TransitionRefusedError: the room is CLOSED or ARCHIVED; nothing
+                is written.
+        """
+        return await self._change_status(
+            room_id,
+            organization_id,
+            "resume",
+            RoomStatus.ACTIVE,
+            leaves_from={RoomStatus.PAUSED},
+            done_in=RoomStatus.ACTIVE,
+            fields=_active_again,
+        )
+
+    async def reopen_room(self, room_id: str, *, organization_id: str | None = None) -> Room:
+        """Reopen a CLOSED room (RFC §5.1): it accepts events again, its
+        inactivity timer counting from now. Fires no hook and emits no
+        framework event, as the RFC names none.
+
+        Raises:
+            TransitionRefusedError: the room is not CLOSED: an ACTIVE or a
+                PAUSED room was never closed, and an ARCHIVED one is never
+                left; nothing is written.
+        """
+        return await self._change_status(
+            room_id,
+            organization_id,
+            "reopen",
+            RoomStatus.ACTIVE,
+            leaves_from={RoomStatus.CLOSED},
+            done_in=None,
+            fields=lambda room, now: {**_active_again(room, now), "closed_at": None},
+        )
+
+    async def _change_status(
+        self,
+        room_id: str,
+        organization_id: str | None,
+        transition: str,
+        target: RoomStatus,
+        *,
+        leaves_from: set[RoomStatus],
+        done_in: RoomStatus | None,
+        fields: Callable[[Room, datetime], dict[str, Any]],
+        trigger: HookTrigger | None = None,
+    ) -> Room:
+        """Move *room_id* to *target* under its lock, from a status of
+        *leaves_from*, writing *fields* of the room and the instant; a room
+        in *done_in*, where the transition is done already, is left as it
+        is, any other status refuses *transition*, nothing written (RFC
+        §5.1). *trigger* fires once it is written, in the context the
+        change left."""
+        hooks: list[asyncio.Task[None]] = []
+        try:
+            async with self._lock_manager.locked(room_id):
+                room = await self.get_room(room_id, organization_id=organization_id)
+                room = await self._room_timers.apply_due(room, hooks=hooks)
+                if room.status is done_in:
+                    return room
+                if room.status not in leaves_from:
+                    raise TransitionRefusedError(room_id, room.status, transition)
+                now = datetime.now(UTC)
+                update = {"status": target, "updated_at": now, **fields(room, now)}
+                result = await self._store_refusing_room(room.model_copy(update=update))
+                if trigger is not None:
+                    await self._fire_lifecycle_hook(
+                        room_id,
+                        trigger,
+                        EventType.SYSTEM,
+                        code=f"room_{target}",
+                        message=f"Room {room_id} {target}",
+                        data={"room_id": room_id},
+                    )
+                return result
+        finally:
+            await self._room_timers.settle(room_id, hooks)
 
     async def archive_room(self, room_id: str, *, organization_id: str | None = None) -> Room:
         """Archive a room — the terminal storage state (RFC §5.1).
@@ -536,3 +646,9 @@ class RoomLifecycleMixin(HelpersMixin):
             )
 
             return participant
+
+
+def _active_again(room: Room, now: datetime) -> dict[str, Any]:
+    """An ACTIVE room's fields once it is so again: not paused, its
+    inactivity timer counting from *now* (RFC §5.1)."""
+    return {"paused_at": None, "timers": room.timers.model_copy(update={"last_activity_at": now})}

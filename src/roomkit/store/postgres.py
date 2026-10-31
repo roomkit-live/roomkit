@@ -1748,6 +1748,15 @@ class PostgresStore(ConversationStore):
                 )
         return participant
 
+    async def delete_participant(self, room_id: str, participant_id: str) -> None:
+        with self._query_span("delete_participant", "participants"):
+            async with self._acquire() as conn:
+                await conn.execute(
+                    "DELETE FROM participants WHERE room_id = $1 AND id = $2",
+                    room_id,
+                    participant_id,
+                )
+
     async def list_participants(self, room_id: str) -> list[Participant]:
         with self._query_span("list_participants", "participants"):
             async with self._acquire() as conn:

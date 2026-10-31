@@ -297,7 +297,7 @@ class TestReentrance:
     async def test_event_injected_from_the_check_does_not_deadlock(self) -> None:
         kit = RoomKit()
         await _room(kit)
-        kit.register_channel(SimpleChannel("sys", ChannelType.SYSTEM))
+        kit.register_channel(SimpleChannel("sys", ChannelType.WEBSOCKET))
         await kit.attach_channel("r1", "sys")
 
         async def scan_and_notify(event: RoomEvent, ctx: RoomContext) -> HookResult:
@@ -321,7 +321,7 @@ class TestReentrance:
         ``process_timeout`` passes and be lost."""
         kit = RoomKit(process_timeout=1.0)
         await _room(kit)
-        kit.register_channel(SimpleChannel("sys", ChannelType.SYSTEM))
+        kit.register_channel(SimpleChannel("sys", ChannelType.WEBSOCKET))
         await kit.attach_channel("r1", "sys")
 
         async def scan(event: RoomEvent, ctx: RoomContext) -> HookResult:
