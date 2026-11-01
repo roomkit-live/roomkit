@@ -63,6 +63,8 @@ HOOK = {
     "needs_lock",
     "reactions",
 }
+# A hook added for one room declares no filter and no timeout.
+ROOM_HOOK = HOOK - {"timeout_ms", "channel_types", "channel_ids", "directions"}
 REACTION = {
     "when",
     "repeat",
@@ -151,6 +153,8 @@ CALLS: dict[str, set[str]] = {
     "register_channel": {"channel"},
     "unregister_channel": {"channel_id"},
     "register_hook": {"hook"},
+    "add_room_hook": {"room_id", "hook"},
+    "remove_room_hook": {"room_id", "name"},
 }
 STEPS = {"await": {"await", "expect"}, "concurrent": {"concurrent"}, "wait_for": {"wait_for"}}
 STEPS |= {"open": {"open"}, "idle": {"idle"}}
@@ -213,8 +217,8 @@ def _model(model: Mapping[str, Any], path: str, found: list[str]) -> None:
             _members(call, MODEL_CALL, f"{path}.rounds[{index}].calls[{position}]", found)
 
 
-def _hook(hook: Mapping[str, Any], path: str, found: list[str]) -> None:
-    _members(hook, HOOK, path, found)
+def _hook(hook: Mapping[str, Any], path: str, found: list[str], members: set[str] = HOOK) -> None:
+    _members(hook, members, path, found)
     for index, reaction in enumerate(hook.get("reactions", [])):
         _reaction(reaction, f"{path}.reactions[{index}]", found)
 
@@ -260,6 +264,8 @@ def _call(call: Mapping[str, Any], extra: set[str], path: str, found: list[str])
         _channel(call.get("channel", {}), f"{path}.channel", found)
     if name == "register_hook":
         _hook(call.get("hook", {}), f"{path}.hook", found)
+    if name == "add_room_hook":
+        _hook(call.get("hook", {}), f"{path}.hook", found, ROOM_HOOK)
 
 
 def _outcome(outcome: Any, path: str, found: list[str]) -> None:

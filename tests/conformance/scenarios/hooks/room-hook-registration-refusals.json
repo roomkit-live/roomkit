@@ -1,0 +1,211 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "hooks/room-hook-registration-refusals",
+  "title": "A room hook's name is unique within its room, and its registration obeys §9.1's rules against the kit's hooks and its room's",
+  "rules": [
+    "§9.1"
+  ],
+  "notes": "`scan` is the kit's hook and a hook of each room: a name is unique within its scope, the kit's hooks or one room's, so both run, under one name. `offlock` would run after `audit`, a locked hook of room-1 with a lower priority; room-9's hooks are not room-1's, so there it registers. `early`, a kit hook, meets every room's hooks, room-1's `audit` among them.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "scan",
+        "trigger": "before_broadcast",
+        "priority": 5
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "add_room_hook",
+      "room_id": "room-1",
+      "hook": {
+        "name": "scan",
+        "trigger": "after_broadcast",
+        "execution": "async"
+      }
+    },
+    {
+      "call": "add_room_hook",
+      "room_id": "room-1",
+      "hook": {
+        "name": "scan",
+        "trigger": "before_broadcast"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "add_room_hook",
+      "room_id": "room-2",
+      "hook": {
+        "name": "scan",
+        "trigger": "after_broadcast",
+        "execution": "async"
+      }
+    },
+    {
+      "call": "add_room_hook",
+      "room_id": "room-1",
+      "hook": {
+        "name": "audit",
+        "trigger": "before_broadcast",
+        "priority": 0
+      }
+    },
+    {
+      "call": "add_room_hook",
+      "room_id": "room-1",
+      "hook": {
+        "name": "source_muted",
+        "trigger": "before_broadcast"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "add_room_hook",
+      "room_id": "room-1",
+      "hook": {
+        "name": "late",
+        "trigger": "after_broadcast",
+        "execution": "async",
+        "needs_lock": false
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "add_room_hook",
+      "room_id": "room-1",
+      "hook": {
+        "name": "closed",
+        "trigger": "after_broadcast",
+        "execution": "async",
+        "fail_closed": true
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "add_room_hook",
+      "room_id": "room-1",
+      "hook": {
+        "name": "offlock",
+        "trigger": "before_broadcast",
+        "priority": 1,
+        "needs_lock": false
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "add_room_hook",
+      "room_id": "room-9",
+      "hook": {
+        "name": "offlock",
+        "trigger": "before_broadcast",
+        "priority": 1,
+        "needs_lock": false
+      }
+    },
+    {
+      "call": "register_hook",
+      "hook": {
+        "name": "early",
+        "trigger": "before_broadcast",
+        "priority": 1,
+        "needs_lock": false
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "scan": [
+        {
+          "trigger": "before_broadcast",
+          "room_id": "room-1"
+        },
+        {
+          "trigger": "after_broadcast",
+          "room_id": "room-1"
+        }
+      ],
+      "audit": [
+        {
+          "trigger": "before_broadcast",
+          "room_id": "room-1"
+        }
+      ],
+      "source_muted": [],
+      "late": [],
+      "closed": [],
+      "offlock": [],
+      "early": []
+    }
+  }
+}

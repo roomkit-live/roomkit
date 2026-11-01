@@ -1,0 +1,80 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "hooks/a-fail-closed-room-hook-blocks",
+  "title": "A room hook that fails closed blocks its room's event when it raises, naming itself in the reason",
+  "rules": [
+    "§9.1",
+    "§9.3"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "add_room_hook",
+      "room_id": "room-1",
+      "hook": {
+        "name": "pii",
+        "trigger": "before_broadcast",
+        "fail_closed": true,
+        "reactions": [
+          {
+            "fail": "scanner down"
+          }
+        ]
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "hook_error:pii"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "status": "blocked",
+          "blocked_by": "pii"
+        }
+      ]
+    }
+  }
+}

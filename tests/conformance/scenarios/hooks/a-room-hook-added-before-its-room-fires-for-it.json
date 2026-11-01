@@ -1,0 +1,57 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "hooks/a-room-hook-added-before-its-room-fires-for-it",
+  "title": "A hook added for a room id no room holds yet fires for the room created under that id, and for no other",
+  "rules": [
+    "§9.1",
+    "§5.1"
+  ],
+  "notes": "The registration reads no room when no organization is named: the hook waits for its room.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "add_room_hook",
+      "room_id": "room-9",
+      "hook": {
+        "name": "welcome",
+        "trigger": "on_room_created",
+        "execution": "async"
+      }
+    },
+    {
+      "call": "create_room",
+      "room": {
+        "id": "room-8"
+      }
+    },
+    {
+      "call": "create_room",
+      "room": {
+        "id": "room-9"
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "welcome": [
+        {
+          "trigger": "on_room_created",
+          "room_id": "room-9"
+        }
+      ]
+    }
+  }
+}

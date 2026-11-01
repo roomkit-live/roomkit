@@ -1,0 +1,158 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "hooks/a-room-hook-runs-in-its-room-alone",
+  "title": "A hook added for a room runs for that room's events alone, SYNC and ASYNC, beside no other room's",
+  "rules": [
+    "§9.1",
+    "§9.2",
+    "§9.3"
+  ],
+  "notes": "A registration's scope is the kit or one room (§9.1): a room's hooks run for that room's events only.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "add_room_hook",
+      "room_id": "room-1",
+      "hook": {
+        "name": "guard",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "result": {
+              "action": "block",
+              "reason": "Not in this room"
+            },
+            "repeat": true
+          }
+        ]
+      }
+    },
+    {
+      "call": "add_room_hook",
+      "room_id": "room-2",
+      "hook": {
+        "name": "audit",
+        "trigger": "after_broadcast",
+        "execution": "async"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "event": {
+            "blocked_by": "guard"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "status": "blocked",
+          "blocked_by": "guard"
+        }
+      ],
+      "room-2": [
+        {
+          "status": "delivered"
+        }
+      ]
+    },
+    "hooks": {
+      "guard": [
+        {
+          "trigger": "before_broadcast",
+          "room_id": "room-1"
+        }
+      ],
+      "audit": [
+        {
+          "trigger": "after_broadcast",
+          "room_id": "room-2"
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": []
+      },
+      "room-2": {
+        "ws": [
+          {
+            "content": {
+              "type": "text",
+              "body": "Hello"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

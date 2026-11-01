@@ -1,0 +1,222 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-room-s-tool-hook-gates-that-room-s-calls",
+  "title": "A BEFORE_TOOL_USE or ON_TOOL_CALL hook added for a room runs on the calls of that room's turns alone",
+  "rules": [
+    "§9.1",
+    "§9.3"
+  ],
+  "notes": "One agent answers in both rooms, one turn after the other: its model's rounds are read in that order. The gate added for room-1 refuses room-1's call and never sees room-2's; the observer added for room-2 hears of room-2's call alone.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "call-1",
+                  "name": "lookup_order",
+                  "arguments": {
+                    "order": "1"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "It needs an approval."
+            },
+            {
+              "calls": [
+                {
+                  "id": "call-2",
+                  "name": "lookup_order",
+                  "arguments": {
+                    "order": "1"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Order 1 is ready."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup_order",
+            "description": "Find an order by its number",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "order": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns": "{\"order\": \"1\", \"status\": \"ready\"}"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "add_room_hook",
+      "room_id": "room-1",
+      "hook": {
+        "name": "approve",
+        "trigger": "before_tool_use",
+        "reactions": [
+          {
+            "result": {
+              "action": "block",
+              "reason": "Needs a manager's approval"
+            },
+            "repeat": true
+          }
+        ]
+      }
+    },
+    {
+      "call": "add_room_hook",
+      "room_id": "room-2",
+      "hook": {
+        "name": "audit",
+        "trigger": "on_tool_call",
+        "execution": "async"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Where is order 1?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Where is order 1?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "approve": [
+        {
+          "trigger": "before_tool_use",
+          "room_id": "room-1",
+          "tool_call": {
+            "name": "lookup_order",
+            "tool_call_id": "call-1",
+            "arguments": {
+              "order": "1"
+            }
+          }
+        }
+      ],
+      "audit": [
+        {
+          "trigger": "on_tool_call",
+          "room_id": "room-2",
+          "tool_call": {
+            "name": "lookup_order",
+            "tool_call_id": "call-2",
+            "arguments": {
+              "order": "1"
+            },
+            "result": "{\"order\": \"1\", \"status\": \"ready\"}",
+            "is_error": false,
+            "refused": false
+          }
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {
+          "tool_results": []
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "call-1",
+              "content": "{\"error\": \"Needs a manager's approval\"}"
+            }
+          ]
+        },
+        {
+          "tool_results": []
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "call-2",
+              "content": "{\"order\": \"1\", \"status\": \"ready\"}"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

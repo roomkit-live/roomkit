@@ -1,0 +1,150 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "hooks/a-removed-room-hook-runs-no-more",
+  "title": "A room hook removed by its name runs no more; a name the room does not hold removes nothing",
+  "rules": [
+    "§9.1"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "add_room_hook",
+      "room_id": "room-1",
+      "hook": {
+        "name": "guard",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "result": {
+              "action": "block",
+              "reason": "Not in this room"
+            },
+            "repeat": true
+          }
+        ]
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "First"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": true
+        }
+      }
+    },
+    {
+      "call": "remove_room_hook",
+      "room_id": "room-2",
+      "name": "guard",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "call": "remove_room_hook",
+      "room_id": "room-1",
+      "name": "guard",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "call": "remove_room_hook",
+      "room_id": "room-1",
+      "name": "guard",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Second"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "status": "blocked",
+          "blocked_by": "guard"
+        },
+        {
+          "status": "delivered"
+        }
+      ]
+    },
+    "hooks": {
+      "guard": [
+        {
+          "trigger": "before_broadcast",
+          "room_id": "room-1",
+          "event": {
+            "content": {
+              "type": "text",
+              "body": "First"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

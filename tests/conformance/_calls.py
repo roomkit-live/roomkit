@@ -325,6 +325,27 @@ def register_hook(kit: RoomKit, harness: Harness, hook: Mapping[str, Any]) -> No
     kit.hook(trigger, **kwargs)(hook_handler(hook, harness))
 
 
+async def _add_room_hook(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
+    hook = spec["hook"]
+    execution = read(lambda: HookExecution(hook.get("execution", "sync")))
+    trigger = read(lambda: HookTrigger(hook["trigger"]))
+    await kit.add_room_hook(
+        spec["room_id"],
+        trigger,
+        execution,
+        hook_handler(hook, harness),
+        priority=hook.get("priority", 0),
+        name=hook["name"],
+        fail_closed=hook.get("fail_closed", False),
+        needs_lock=hook.get("needs_lock", True),
+        **_org(spec),
+    )
+
+
+async def _remove_room_hook(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
+    return await kit.remove_room_hook(spec["room_id"], spec["name"], **_org(spec))
+
+
 CALLS: dict[str, Call] = {
     "process_inbound": _process_inbound,
     "send_event": _send_event,
@@ -345,6 +366,8 @@ CALLS: dict[str, Call] = {
     "register_channel": _register_channel,
     "unregister_channel": _unregister_channel,
     "register_hook": _register_hook,
+    "add_room_hook": _add_room_hook,
+    "remove_room_hook": _remove_room_hook,
 }
 
 

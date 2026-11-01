@@ -1,0 +1,97 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "hooks/room-hooks-join-the-kit-s-in-priority-order",
+  "title": "A room's hooks join the kit's in one chain by priority; at equal priority the kit's come first",
+  "rules": [
+    "§9.1",
+    "§9.3"
+  ],
+  "notes": "`kit-tie` is registered after `room-last` and shares its priority: it still runs first, the kit's hooks preceding the room's at equal priority whatever their registration order.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "kit-first",
+        "trigger": "before_broadcast",
+        "priority": 0
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "add_room_hook",
+      "room_id": "room-1",
+      "hook": {
+        "name": "room-last",
+        "trigger": "before_broadcast",
+        "priority": 1
+      }
+    },
+    {
+      "call": "add_room_hook",
+      "room_id": "room-1",
+      "hook": {
+        "name": "room-early",
+        "trigger": "before_broadcast",
+        "priority": -1
+      }
+    },
+    {
+      "call": "register_hook",
+      "hook": {
+        "name": "kit-tie",
+        "trigger": "before_broadcast",
+        "priority": 1
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    }
+  ],
+  "expect": {
+    "hook_order": [
+      "room-early",
+      "kit-first",
+      "kit-tie",
+      "room-last"
+    ]
+  }
+}
