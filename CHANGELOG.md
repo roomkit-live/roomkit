@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.111.0] — 2026-11-01
+
 ### Added
 
 - **`ThinkingDeltaMarker` is public, from `roomkit.models`** (RMK-1021). A
@@ -427,6 +429,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cut.
 
 ### Fixed
+
+- **Mistral Large 4 (`mistral-large-4-0`, `mistral-large-4`) at Mistral's
+  current price, $0.70 / $2.10 per million, cache reads $0.07** (verified
+  2026-11-01 on its model card and Mistral's pricing table). Mistral halved
+  it since 2026-10-21, when the catalog moved to the $1.36 / $4.18 / $0.14 the
+  card showed then: every cost a host computed for Large 4 was doubled.
 
 - **A store refuses a write naming what it lacks** (RFC 14.3, RMK-1021),
   as roomkit-rs's stores. `update_event()` of an event the store does not
@@ -19847,7 +19855,8 @@ See entries `0.7.0a1` through `0.7.0a18` below.
 - `STTProvider.transcribe()` returns `TranscriptionResult` (Phase 3.1)
 - Framework event names enriched with payloads (Phase 4)
 
-[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.110.0...HEAD
+[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.111.0...HEAD
+[0.111.0]: https://github.com/roomkit-live/roomkit/compare/v0.110.0...v0.111.0
 [0.110.0]: https://github.com/roomkit-live/roomkit/compare/v0.109.0...v0.110.0
 [0.109.0]: https://github.com/roomkit-live/roomkit/compare/v0.108.0...v0.109.0
 [0.108.0]: https://github.com/roomkit-live/roomkit/compare/v0.107.0...v0.108.0
