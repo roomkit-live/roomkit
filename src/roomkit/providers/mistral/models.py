@@ -37,14 +37,15 @@ from roomkit.providers.ai.base import ModelInfo, ModelPricing
 _CTX = 262_144
 _VERIFIED = date(2026, 8, 5)
 
-# Mistral Large 4's list price (model card, 2026-10-21): its launch price, half
-# of it, ended; the card no longer shows a sale price beside the list one. The
-# entry states what Mistral charges on ``verified``, not a forecast.
+# Mistral Large 4's price on its model card and Mistral's pricing table
+# (2026-11-01), with no sale price beside it: half the list price the card
+# showed on 2026-10-21. The entry states what Mistral charges on ``verified``,
+# not a forecast.
 _LARGE_4_PRICING = ModelPricing(
-    input_per_million=1.36,
-    output_per_million=4.18,
-    cache_read_per_million=0.14,
-    verified=date(2026, 10, 21),
+    input_per_million=0.70,
+    output_per_million=2.10,
+    cache_read_per_million=0.07,
+    verified=date(2026, 11, 1),
 )
 
 MODELS: list[ModelInfo] = [
