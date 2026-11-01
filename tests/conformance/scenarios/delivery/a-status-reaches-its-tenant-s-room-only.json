@@ -1,0 +1,107 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-status-reaches-its-tenant-s-room-only",
+  "title": "A delivery status acting for an organization is routed among that organization's rooms only, and a status naming another organization's room is dispatched nowhere",
+  "rules": [
+    "§10.4 A delivery status follows its message",
+    "§17.2"
+  ],
+  "notes": "Both organizations' rooms bind the shared number to alice. The webhook's status, acting for acme, reaches acme's room, never globex's; a status naming globex's room while acting for acme finds no room.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number",
+        "addresses": {
+          "normalizes": {}
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "acme-alice",
+        "bindings": [
+          {
+            "channel_id": "sms",
+            "metadata": {
+              "phone_number": "+15550000001"
+            }
+          }
+        ],
+        "organization_id": "acme"
+      },
+      {
+        "id": "globex-alice",
+        "bindings": [
+          {
+            "channel_id": "sms",
+            "metadata": {
+              "phone_number": "+15550000001"
+            }
+          }
+        ],
+        "organization_id": "globex"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "status",
+        "trigger": "on_delivery_status",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_webhook",
+      "channel_id": "sms",
+      "organization_id": "acme",
+      "meta": {
+        "provider": "telnyx",
+        "sender": "+15559999999",
+        "recipient": "+15550000001",
+        "body": "",
+        "external_id": "m-1",
+        "timestamp": null,
+        "raw": {},
+        "direction": "outbound",
+        "event_type": "message.delivered"
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_delivery_status",
+      "organization_id": "acme",
+      "status": {
+        "provider": "mock",
+        "message_id": "m-2",
+        "status": "sent",
+        "room_id": "globex-alice"
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "status": [
+        {
+          "trigger": "on_delivery_status",
+          "room_id": "acme-alice",
+          "delivery_status": {
+            "provider": "telnyx",
+            "message_id": "m-1",
+            "status": "delivered",
+            "channel_id": "sms",
+            "recipient": "+15550000001",
+            "sender": "+15559999999",
+            "error_code": null,
+            "error_message": null
+          }
+        }
+      ]
+    }
+  }
+}

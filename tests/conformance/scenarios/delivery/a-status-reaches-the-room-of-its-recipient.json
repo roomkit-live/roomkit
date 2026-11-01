@@ -1,0 +1,144 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-status-reaches-the-room-of-its-recipient",
+  "title": "A delivery status that names no room reaches the room whose binding of its channel names its recipient, as its correspondent or as its recipient, and every hook of the trigger runs, whatever its filter",
+  "rules": [
+    "§10.4 A delivery status follows its message",
+    "§9.2",
+    "§26.1"
+  ],
+  "notes": "Alice's binding names her as its correspondent, bob's as its recipient under the channel's recipient key. ON_DELIVERY_STATUS fires every hook registered on it in the room, its filters unread: a status is no event (the Python implementation's skip_event_filter).",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number",
+        "addresses": {
+          "normalizes": {}
+        }
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-alice",
+        "bindings": [
+          {
+            "channel_id": "sms",
+            "participant_id": "+15550000001"
+          }
+        ]
+      },
+      {
+        "id": "room-bob",
+        "bindings": [
+          {
+            "channel_id": "sms",
+            "metadata": {
+              "phone_number": "+15550000002"
+            }
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "status",
+        "trigger": "on_delivery_status",
+        "execution": "async"
+      },
+      {
+        "name": "filtered",
+        "trigger": "on_delivery_status",
+        "execution": "async",
+        "channel_ids": [
+          "ws"
+        ],
+        "directions": [
+          "inbound"
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_delivery_status",
+      "status": {
+        "provider": "mock",
+        "message_id": "m-bob",
+        "status": "delivered",
+        "channel_id": "sms",
+        "recipient": "+15550000002"
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_delivery_status",
+      "status": {
+        "provider": "mock",
+        "message_id": "m-alice",
+        "status": "delivered",
+        "channel_id": "sms",
+        "recipient": "+15550000001"
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "status": [
+        {
+          "trigger": "on_delivery_status",
+          "room_id": "room-bob",
+          "delivery_status": {
+            "provider": "mock",
+            "message_id": "m-bob",
+            "status": "delivered",
+            "channel_id": "sms",
+            "recipient": "+15550000002",
+            "room_id": null
+          }
+        },
+        {
+          "trigger": "on_delivery_status",
+          "room_id": "room-alice",
+          "delivery_status": {
+            "message_id": "m-alice",
+            "recipient": "+15550000001"
+          }
+        }
+      ],
+      "filtered": [
+        {
+          "trigger": "on_delivery_status",
+          "room_id": "room-bob",
+          "delivery_status": {
+            "message_id": "m-bob"
+          }
+        },
+        {
+          "trigger": "on_delivery_status",
+          "room_id": "room-alice",
+          "delivery_status": {
+            "message_id": "m-alice"
+          }
+        }
+      ]
+    },
+    "framework_events": {
+      "room-alice": [],
+      "room-bob": []
+    },
+    "timeline": {
+      "room-alice": [],
+      "room-bob": []
+    }
+  }
+}

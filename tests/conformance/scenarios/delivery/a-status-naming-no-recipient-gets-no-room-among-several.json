@@ -1,0 +1,65 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-status-naming-no-recipient-gets-no-room-among-several",
+  "title": "A delivery status naming no recipient, on a channel bound to several active rooms, is dispatched in none of them",
+  "rules": [
+    "§10.4 A delivery status follows its message"
+  ],
+  "notes": "Never the oldest of several rooms: on a number shared by many correspondents, it is another customer's.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number",
+        "addresses": {
+          "normalizes": {}
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-alice",
+        "bindings": [
+          {
+            "channel_id": "sms",
+            "participant_id": "+15550000001"
+          }
+        ]
+      },
+      {
+        "id": "room-bob",
+        "bindings": [
+          {
+            "channel_id": "sms",
+            "participant_id": "+15550000002"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "status",
+        "trigger": "on_delivery_status",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_delivery_status",
+      "status": {
+        "provider": "mock",
+        "message_id": "m",
+        "status": "delivered",
+        "channel_id": "sms"
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "status": []
+    }
+  }
+}

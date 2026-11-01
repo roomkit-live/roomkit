@@ -1,0 +1,79 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-status-is-handled-while-its-hooks-run",
+  "title": "A delivery status's call returns while its ASYNC hooks run: nothing waits for them",
+  "rules": [
+    "§9.2",
+    "§9.3"
+  ],
+  "notes": "The hook is held at a gate the scenario opens only once the call returned: a call that waited for its hooks would never return.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number",
+        "addresses": {
+          "normalizes": {}
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms",
+            "participant_id": "+15550000001"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "status",
+        "trigger": "on_delivery_status",
+        "execution": "async",
+        "reactions": [
+          {
+            "gate": "held"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_delivery_status",
+      "status": {
+        "provider": "mock",
+        "message_id": "m",
+        "status": "delivered",
+        "room_id": "room-1"
+      },
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "wait_for": "held"
+    },
+    {
+      "open": "held"
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "status": [
+        {
+          "trigger": "on_delivery_status",
+          "room_id": "room-1",
+          "delivery_status": {
+            "room_id": "room-1"
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,147 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-webhook-is-a-message-a-status-or-nothing",
+  "title": "A webhook received inbound is processed as a message keyed by its provider's id, one reporting an outbound message's status is a delivery status on its channel, and any other is acknowledged and ignored",
+  "rules": [
+    "§10.4 A delivery status follows its message",
+    "§13.4",
+    "§10.1"
+  ],
+  "notes": "The message the webhook carries is keyed by the provider's message id and carries the provider, the recipient and the timestamp in its metadata (the Python implementation's WebhookMeta.to_inbound). An outbound webhook of an event type that is no delivery status (message.queued) is neither.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number",
+        "addresses": {
+          "normalizes": {}
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-alice",
+        "bindings": [
+          {
+            "channel_id": "sms",
+            "participant_id": "+15550000001"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "status",
+        "trigger": "on_delivery_status",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_webhook",
+      "channel_id": "sms",
+      "meta": {
+        "provider": "twilio",
+        "sender": "+15550000001",
+        "recipient": "+15559999999",
+        "body": "Hello",
+        "external_id": "SM1",
+        "timestamp": null,
+        "raw": {},
+        "direction": "inbound"
+      },
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "process_webhook",
+      "channel_id": "sms",
+      "meta": {
+        "provider": "telnyx",
+        "sender": "+15559999999",
+        "recipient": "+15550000001",
+        "body": "",
+        "external_id": "m-1",
+        "timestamp": null,
+        "raw": {},
+        "direction": "outbound",
+        "event_type": "message.queued"
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_webhook",
+      "channel_id": "sms",
+      "meta": {
+        "provider": "telnyx",
+        "sender": "+15559999999",
+        "recipient": "+15550000001",
+        "body": "",
+        "external_id": "m-2",
+        "timestamp": null,
+        "raw": {
+          "data": {
+            "payload": {
+              "errors": [
+                {
+                  "code": 40001,
+                  "detail": "Not reachable"
+                }
+              ]
+            }
+          }
+        },
+        "direction": "outbound",
+        "event_type": "message.failed"
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-alice": [
+        {
+          "index": 0,
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "Hello"
+          },
+          "idempotency_key": "SM1",
+          "source": {
+            "channel_id": "sms",
+            "participant_id": "+15550000001",
+            "external_id": "SM1"
+          },
+          "metadata": {
+            "provider": "twilio",
+            "recipient": "+15559999999",
+            "timestamp": null
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "status": [
+        {
+          "trigger": "on_delivery_status",
+          "room_id": "room-alice",
+          "delivery_status": {
+            "provider": "telnyx",
+            "message_id": "m-2",
+            "status": "failed",
+            "channel_id": "sms",
+            "recipient": "+15550000001",
+            "error_code": "40001",
+            "error_message": "Not reachable"
+          }
+        }
+      ]
+    }
+  }
+}

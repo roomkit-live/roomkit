@@ -1,0 +1,57 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-status-is-not-given-another-correspondent-s-room",
+  "title": "The one active room bound to the channel, whose binding names another correspondent, is not given a delivery status for someone else",
+  "rules": [
+    "§10.4 A delivery status follows its message"
+  ],
+  "notes": "The one room of the number is alice's: carol's status is not hers.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number",
+        "addresses": {
+          "normalizes": {}
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-alice",
+        "bindings": [
+          {
+            "channel_id": "sms",
+            "participant_id": "+15550000001"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "status",
+        "trigger": "on_delivery_status",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_delivery_status",
+      "status": {
+        "provider": "mock",
+        "message_id": "m",
+        "status": "sent",
+        "channel_id": "sms",
+        "recipient": "+15550000003"
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "status": []
+    }
+  }
+}

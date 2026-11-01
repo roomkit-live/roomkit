@@ -1,0 +1,106 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-status-reaches-the-paused-room-of-its-recipient",
+  "title": "A delivery status reaches the PAUSED room of its recipient, and resumes nothing",
+  "rules": [
+    "§10.4 A delivery status follows its message",
+    "§5.1"
+  ],
+  "notes": "A status is no activity: its room stays PAUSED, with no framework event. The room's inactivity timer is 0 seconds: the attach's section applies it first, so the room is PAUSED before the channel is attached.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number",
+        "addresses": {
+          "normalizes": {}
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-carol",
+        "bindings": [
+          {
+            "channel_id": "sms",
+            "metadata": {
+              "phone_number": "+15550000003"
+            }
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "status",
+        "trigger": "on_delivery_status",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "create_room",
+      "room": {
+        "id": "room-alice",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "room-alice",
+      "channel_id": "sms",
+      "metadata": {
+        "phone_number": "+15550000001"
+      }
+    },
+    {
+      "call": "check_timers",
+      "room_id": "room-alice",
+      "expect": {
+        "result": {
+          "status": "paused"
+        }
+      }
+    },
+    {
+      "call": "process_delivery_status",
+      "status": {
+        "provider": "mock",
+        "message_id": "m",
+        "status": "delivered",
+        "channel_id": "sms",
+        "recipient": "+15550000001"
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "status": [
+        {
+          "trigger": "on_delivery_status",
+          "room_id": "room-alice",
+          "delivery_status": {
+            "recipient": "+15550000001"
+          }
+        }
+      ]
+    },
+    "rooms": {
+      "room-alice": {
+        "status": "paused"
+      }
+    },
+    "framework_events": {
+      "room-alice": [
+        "room_created",
+        "room_paused",
+        "room_channel_attached"
+      ]
+    }
+  }
+}

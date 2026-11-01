@@ -1,0 +1,100 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-status-naming-its-room-reaches-it",
+  "title": "A delivery status naming its room is dispatched in it, whatever its channel; one naming a room that does not exist, or naming neither a room nor a channel, is dispatched nowhere",
+  "rules": [
+    "§10.4 A delivery status follows its message"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number",
+        "addresses": {
+          "normalizes": {}
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms",
+            "participant_id": "+15550000001"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "sms",
+            "participant_id": "+15550000002"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "status",
+        "trigger": "on_delivery_status",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_delivery_status",
+      "status": {
+        "provider": "mock",
+        "message_id": "m-1",
+        "status": "delivered",
+        "room_id": "room-1",
+        "channel_id": "sms",
+        "recipient": "+15550000002"
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_delivery_status",
+      "status": {
+        "provider": "mock",
+        "message_id": "m-2",
+        "status": "delivered",
+        "room_id": "nowhere"
+      }
+    },
+    {
+      "call": "process_delivery_status",
+      "status": {
+        "provider": "mock",
+        "message_id": "m-3",
+        "status": "delivered"
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "status": [
+        {
+          "trigger": "on_delivery_status",
+          "room_id": "room-1",
+          "delivery_status": {
+            "message_id": "m-1",
+            "room_id": "room-1"
+          }
+        }
+      ]
+    },
+    "rooms": {
+      "nowhere": {
+        "$absent": true
+      }
+    }
+  }
+}
