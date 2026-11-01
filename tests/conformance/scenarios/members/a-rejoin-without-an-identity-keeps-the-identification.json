@@ -1,0 +1,125 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "members/a-rejoin-without-an-identity-keeps-the-identification",
+  "title": "A member who left and is added again without an identity keeps the identification and the identity their record had; added again with one, they are identified as it",
+  "rules": [
+    "§5.5"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "add_member",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "participant_id": "u1",
+      "identity_id": "id-u1"
+    },
+    {
+      "call": "add_member",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "participant_id": "u2"
+    },
+    {
+      "call": "remove_member",
+      "room_id": "room-1",
+      "participant_id": "u1"
+    },
+    {
+      "call": "remove_member",
+      "room_id": "room-1",
+      "participant_id": "u2"
+    },
+    {
+      "call": "add_member",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "participant_id": "u1",
+      "expect": {
+        "result": {
+          "id": "u1",
+          "status": "active",
+          "identification": "identified",
+          "identity_id": "id-u1"
+        }
+      }
+    },
+    {
+      "call": "add_member",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "participant_id": "u2",
+      "expect": {
+        "result": {
+          "id": "u2",
+          "status": "active",
+          "identification": "pending",
+          "identity_id": null
+        }
+      }
+    },
+    {
+      "call": "is_member",
+      "room_id": "room-1",
+      "identity_id": "id-u1",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "call": "remove_member",
+      "room_id": "room-1",
+      "participant_id": "u2"
+    },
+    {
+      "call": "add_member",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "participant_id": "u2",
+      "identity_id": "id-u2",
+      "expect": {
+        "result": {
+          "id": "u2",
+          "identification": "identified",
+          "identity_id": "id-u2"
+        }
+      }
+    }
+  ],
+  "notes": "Decided by the maintainer for stream E: the identity a record keeps, its identification follows.",
+  "expect": {
+    "participants": {
+      "room-1": {
+        "$unordered": [
+          {
+            "id": "u1",
+            "identification": "identified",
+            "identity_id": "id-u1"
+          },
+          {
+            "id": "u2",
+            "identification": "identified",
+            "identity_id": "id-u2"
+          }
+        ]
+      }
+    }
+  }
+}
