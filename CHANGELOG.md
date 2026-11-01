@@ -22,6 +22,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **BREAKING — a sender the identity step leaves pending gets a record of its
+  own** (RFC §11.2, RMK-1138). Its record took the id the channel gave: on a
+  channel whose senders choose it, a sender naming itself `alice-id` held
+  Alice's id, the identity resolved later on SMS completed that record, and
+  the impostor's next WebSocket message passed for her. The record is now
+  `pending-` and 16 hex digits of the SHA-256 of the channel and the address
+  (`pending-915e25f899c26f82` for `+15551234567` on `sms`), the event is
+  sent under it, and the identity gets its own record. The address still
+  names the record on its channel: routing finds the sender's room by it,
+  and once an advisor calls `resolve_participant(room_id, "pending-…",
+  identity_id)` the sender is not resolved again. A caller that looked a
+  pending participant up by its address takes its id from the event,
+  `event.source.participant_id`.
+
 - **An inbound commit no longer reads its room again for the author's
   record** (RMK-1032). A message's record of its author was made from the
   room, its participants and its register read again just before the

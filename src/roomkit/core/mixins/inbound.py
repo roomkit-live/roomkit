@@ -1183,7 +1183,7 @@ class InboundMixin(HelpersMixin):
         identity = await _by(
             deadline, self._routing_identity(channel, sender, organization_id), room_id=None
         )
-        own = known_as(sender, identity)
+        own = known_as(sender, identity, message.channel_id)
         for _ in range(_ROUTES):
             room_id, created = await self._find_or_open_room(
                 message,

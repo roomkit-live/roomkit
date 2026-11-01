@@ -764,12 +764,14 @@ class TestABindingNamingAnIdentity:
         self, store: ConversationStore
     ) -> None:
         """``resolve_participant`` writes the identity on the binding; the
-        participant record keeps the address, and the claim accepts it."""
+        participant record is the sender's own, which their address names on
+        the channel (RFC §11.2, RMK-1138), and the claim accepts it."""
         resolver = MockIdentityResolver(unknown_status=IdentificationStatus.PENDING)
         shop = _Shop(store, resolver=resolver)
         room = await shop.room_of(ALICE)
         await store.create_identity(Identity(id="id-alice"))
-        await shop.kit.resolve_participant(room, ALICE, "id-alice")
+        (pending,) = await store.list_participants(room)
+        await shop.kit.resolve_participant(room, pending.id, "id-alice")
         assert await shop.named_on(room) == "id-alice"
         calls = _count_routes(shop.kit)
 

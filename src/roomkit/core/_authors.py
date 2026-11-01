@@ -32,7 +32,7 @@ from roomkit.core._private_state import AUTHOR_REGISTER
 from roomkit.models.context import RoomContext
 from roomkit.models.enums import ChannelType, EventStatus
 from roomkit.models.event import RoomEvent
-from roomkit.models.participant import Participant
+from roomkit.models.participant import Participant, own_record_id
 from roomkit.models.room import Room
 from roomkit.store.base import ConversationStore
 
@@ -85,9 +85,20 @@ class People:
     def named_on(self, pid: str | None, channel: str) -> Participant | None:
         """The record *pid* names on *channel*, as :meth:`named` reads an
         event's sender: a ``post()``'s speaker is read before its event
-        exists (RFC §10.5)."""
+        exists (RFC §10.5). Past the records of that id and of that identity,
+        the sender's own record on the channel (:func:`own_record_id`, RFC
+        §11.2), which their address names there."""
         if not pid:
             return None
+        record = self._named_directly(pid, channel)
+        if record is not None:
+            return record
+        own = self._by_id.get(own_record_id(channel, pid))
+        return own if own is not None and reached(own, channel) else None
+
+    def _named_directly(self, pid: str, channel: str) -> Participant | None:
+        """The record of id *pid*, else of identity *pid*, reached through
+        *channel*."""
         record = self._by_id.get(pid)
         if record is not None and reached(record, channel):
             return record
@@ -102,20 +113,15 @@ class People:
     def names_another_on(self, pid: str | None, channel: str) -> bool:
         """Whether *pid* is a participant's the room reached through channels
         other than *channel* only, as :meth:`names_another` reads an event."""
-        return pid is not None and pid in self._by_id and self.named_on(pid, channel) is None
+        return (
+            pid is not None and pid in self._by_id and self._named_directly(pid, channel) is None
+        )
 
     def _standing_for(self, record: Participant) -> Participant:
         """The record standing for *record*'s person: its identity's first."""
         if record.identity_id is None:
             return record
         return next(iter(self._by_identity.get(record.identity_id, ())), record)
-
-
-def own_record_id(channel_id: str, sender_id: str) -> str:
-    """The id of the record a pending sender gets of their own when their id
-    is a participant's reached through other channels only (RFC §5.5): one per
-    sender and channel, so their next message finds it again."""
-    return f"pending-{digest(channel_id, [sender_id])}"
 
 
 def reached(record: Participant, channel_id: str) -> bool:

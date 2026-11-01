@@ -123,13 +123,14 @@ class InboundIdentityMixin(HelpersMixin):
             may be modified with participant_id stamped on the source.
         """
         resolver = self._identity_resolver
-        should_resolve = (
-            self.identity_enabled_for(channel.channel_type)
-            and not channel.sender_is_participant
-            and not _sender_already_identified(event, context)
-        )
-        if not should_resolve or resolver is None:
+        if (
+            resolver is None
+            or not self.identity_enabled_for(channel.channel_type)
+            or channel.sender_is_participant
+        ):
             return event, None, None
+        if _sender_already_identified(event, context):
+            return _as_the_record_named(event, context), None, None
 
         from roomkit.telemetry.base import SpanKind
         from roomkit.telemetry.context import get_current_span
@@ -241,7 +242,7 @@ class InboundIdentityMixin(HelpersMixin):
             )
 
         if pending_id_result is not None:
-            event = _as_own_sender(event, context)
+            event = _as_own_sender(event)
 
         if resolved_identity is not None:
             await self._announce_identity_resolved(event, room_id, resolved_identity, id_result)
@@ -368,15 +369,36 @@ class InboundIdentityMixin(HelpersMixin):
         return event, None, None
 
 
-def _as_own_sender(event: Any, context: RoomContext) -> Any:
-    """*event* sent under the record a pending sender gets of their own when
-    their id is a participant's reached through other channels only (RFC
-    §5.5), so the pending record is the event's sender, resolved as it."""
-    if not People(context.participants).names_another(event):
+def _as_own_sender(event: Any) -> Any:
+    """*event* sent under the record a pending sender gets of their own, one
+    per channel and sender (:func:`own_record_id`), so the pending record is
+    the event's sender, resolved as it, and their next message finds it.
+
+    Never the id the channel gave (RFC §11.2, RMK-1138): on a channel whose
+    senders choose it, that id may be an identity's or another
+    participant's, and a pending record under an identity's id would be
+    completed when the identity is resolved elsewhere, its impostor then
+    passing for an identified sender (RFC §11.6)."""
+    if not event.source.participant_id:
         return event
     own = own_record_id(event.source.channel_id, event.source.participant_id)
     return event.model_copy(
         update={"source": event.source.model_copy(update={"participant_id": own})}
+    )
+
+
+def _as_the_record_named(event: Any, context: RoomContext) -> Any:
+    """*event* sent under the sender's own record (:func:`own_record_id`)
+    when that is the record their address names on the channel, as a
+    pending sender's events are sent, so every reader finds the record an
+    advisor identified (RFC §11.2, §11.6); else as the channel named it."""
+    record = People(context.participants).named(event)
+    if record is None or record.id == event.source.participant_id:
+        return event
+    if record.id != own_record_id(event.source.channel_id, event.source.participant_id):
+        return event
+    return event.model_copy(
+        update={"source": event.source.model_copy(update={"participant_id": record.id})}
     )
 
 

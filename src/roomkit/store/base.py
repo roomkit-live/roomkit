@@ -25,7 +25,7 @@ from roomkit.models.channel import ChannelBinding
 from roomkit.models.enums import EventType, RoomStatus
 from roomkit.models.event import DeleteContent, EditContent, RoomEvent, ThreadSummary
 from roomkit.models.identity import Identity
-from roomkit.models.participant import Participant
+from roomkit.models.participant import Participant, own_record_id
 from roomkit.models.room import Room
 from roomkit.models.store_filter import EventFilter, RoomFilter
 from roomkit.models.task import Observation, Task
@@ -67,6 +67,16 @@ def sender_names(participant_id: str, identity_id: str | None) -> frozenset[str]
     """The names a routing lookup knows the sender by (RFC §10.4 step 1): the
     address, and the identity the caller resolved it to."""
     return frozenset({participant_id} if identity_id is None else {participant_id, identity_id})
+
+
+def participant_names(
+    channel_id: str, participant_id: str, identity_id: str | None
+) -> frozenset[str]:
+    """The ids a participant record of the sender may hold on *channel_id*
+    (RFC §10.4 step 1): the address, the identity the caller resolved it
+    to, and the sender's own record there (:func:`own_record_id`), the one
+    the identity step left them pending under (RFC §11.2)."""
+    return sender_names(participant_id, identity_id) | {own_record_id(channel_id, participant_id)}
 
 
 def reached_as(participant: Participant, channel_id: str, names: frozenset[str]) -> bool:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from datetime import UTC, datetime
 from typing import Any
 
@@ -49,3 +50,15 @@ class Participant(BaseModel):
         if channels != self.connected_via:
             self.connected_via = channels
         return self
+
+
+def own_record_id(channel_id: str, sender_id: str) -> str:
+    """The id of the record the identity step gives a sender it leaves
+    pending (RFC §11.2): ``pending-`` and 16 hexadecimal digits of the
+    SHA-256 of the channel id, U+001F and the sender id. One per sender and
+    channel, so their next message finds it again, and never the id their
+    channel gave, which may be an identity's or a participant's reached
+    through other channels (RFC §5.5). The sender's address names it on
+    that channel (``People``, routing's step 1, RFC §10.4)."""
+    digest = hashlib.sha256("\x1f".join([channel_id, sender_id]).encode()).hexdigest()
+    return f"pending-{digest[:16]}"

@@ -37,6 +37,7 @@ from roomkit.store.base import (
     names_by_recipient,
     participant_exists,
     participant_missing,
+    participant_names,
     reached_as,
     room_holds,
     room_taken,
@@ -406,7 +407,7 @@ class InMemoryStore(ConversationStore):
         room_filter: RoomFilter | None = None,
     ) -> str | None:
         room_filter = room_filter or RoomFilter()
-        names = sender_names(participant_id, identity_id)
+        names = participant_names(channel_id, participant_id, identity_id)
         best: tuple[float, str] | None = None
         for room_id in self._candidates(names):
             room = self._rooms.get(room_id)

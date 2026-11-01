@@ -41,6 +41,7 @@ from roomkit.store.base import (
     key_taken,
     participant_exists,
     participant_missing,
+    participant_names,
     room_holds,
     room_taken,
     sender_names,
@@ -1186,8 +1187,9 @@ class PostgresStore(ConversationStore):
     ) -> str | None:
         # Newest room first, id as tie-breaker, like the other stores. The
         # participant is reached through the channel whatever its status
-        # (RFC §5.5), and named by its id or its identity.
-        names = sorted(sender_names(participant_id, identity_id))
+        # (RFC §5.5), and named by its id, its identity or the sender's own
+        # record (RFC §11.2).
+        names = sorted(participant_names(channel_id, participant_id, identity_id))
         query = (
             "SELECT p.room_id FROM participants p JOIN rooms r ON r.id = p.room_id"
             " WHERE (p.id = ANY($1::text[]) OR p.identity_id = ANY($1::text[]))"

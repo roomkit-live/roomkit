@@ -587,12 +587,13 @@ class HelpersMixin:
     ) -> Participant:
         """Create a participant with pending identification status.
 
-        Idempotent: if the sender's id already names a participant on the
-        channel it arrived on, that record is returned without creating a
-        duplicate. An id naming a record reached through other channels only
-        names nobody here (RFC §5.5): a sender nobody identified does not adopt
-        it, and gets a record of its own (:func:`own_record_id`), the one the
-        identity step sends the event under and their next message finds.
+        The event comes under the sender's own record id
+        (:func:`own_record_id`), which the identity step gave it. Idempotent:
+        if that id already names a participant on the channel it arrived on,
+        that record is returned without creating a duplicate. An id naming a
+        record reached through other channels only names nobody here (RFC
+        §5.5): a sender nobody identified does not adopt it, and gets a record
+        of its own.
         """
         participant_id = event.source.participant_id or f"pending-{uuid4().hex[:8]}"
         channel_id = event.source.channel_id

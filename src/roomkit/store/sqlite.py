@@ -57,6 +57,7 @@ from roomkit.store.base import (
     link_target,
     participant_exists,
     participant_missing,
+    participant_names,
     room_holds,
     room_taken,
     sender_names,
@@ -1367,11 +1368,12 @@ class SQLiteStore(ConversationStore):
         identity_id: str | None,
         room_filter: RoomFilter | None,
     ) -> str | None:
-        # Named by its id or its identity, and reached through the channel
+        # Named by its id, its identity or the sender's own record (RFC
+        # §11.2), and reached through the channel
         # whatever its status (RFC §5.5, §10.4 step 1). Two branches, one
         # read through idx_participants_id and one through
         # idx_participants_identity: an OR of both reads every participant.
-        names = sorted(sender_names(participant_id, identity_id))
+        names = sorted(participant_names(channel_id, participant_id, identity_id))
         params: list[Any] = []
         branches: list[list[str]] = []
         for named in ("p.id", "json_extract(p.data, '$.identity_id')"):

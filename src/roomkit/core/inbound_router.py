@@ -12,6 +12,7 @@ from roomkit.models.channel import ChannelBinding
 from roomkit.models.delivery import SYSTEM_SENDER_ID
 from roomkit.models.enums import ChannelType, RoomStatus
 from roomkit.models.identity import Identity
+from roomkit.models.participant import own_record_id
 from roomkit.models.room import Room
 from roomkit.models.store_filter import EventFilter, RoomFilter
 from roomkit.store.base import ConversationStore
@@ -109,7 +110,7 @@ class DefaultInboundRoomRouter(InboundRoomRouter):
         # The organization's rooms only, every room when the call names none
         # (RFC §10.4, §17.2): another tenant's room is no candidate, so it
         # neither wins nor makes the organization's one room ambiguous.
-        own = known_as(participant_id, identity)
+        own = known_as(participant_id, identity, channel_id)
         # Step 1 (RFC §10.4): the sender's own room. Tried first because it
         # identifies the conversation, where a binding of the channel to some
         # room only identifies the pipe.
@@ -367,8 +368,10 @@ async def still_the_messages(
     return await step_three_admits(store, binding, sender or None, own, recipient)
 
 
-def known_as(sender: str | None, identity: Identity | None) -> frozenset[str]:
-    """The ids a room may know *sender* by: the address, and its identity.
+def known_as(sender: str | None, identity: Identity | None, channel_id: str) -> frozenset[str]:
+    """The ids a room may know *sender* by on *channel_id*: the address, its
+    identity, and the record of their own the identity step left them
+    pending under there (:func:`own_record_id`, RFC §11.2).
 
     Identity resolution names a participant and stamps an event with the
     identity's id, not the address (RFC §11), so the identity the store
@@ -377,7 +380,10 @@ def known_as(sender: str | None, identity: Identity | None) -> frozenset[str]:
     """
     if not sender:
         return frozenset()
-    return frozenset({sender} if identity is None else {sender, identity.id})
+    names = {sender, own_record_id(channel_id, sender)}
+    if identity is not None:
+        names.add(identity.id)
+    return frozenset(names)
 
 
 def recordable_sender(sender: str | None) -> bool:
