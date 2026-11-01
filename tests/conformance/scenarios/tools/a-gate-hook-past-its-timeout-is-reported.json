@@ -1,0 +1,162 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-gate-hook-past-its-timeout-is-reported",
+  "title": "A SYNC BEFORE_TOOL_USE hook past its timeout is reported as hook_timeout, in the agent's room and channel, and the call is refused",
+  "rules": [
+    "§9.1",
+    "§9.3",
+    "§8.2",
+    "§26.1"
+  ],
+  "notes": "BEFORE_TOOL_USE fails closed (§9.3): the timeout refuses the call with the fixed text. The timeout is reported as for any hook (§8.2, §9.1), as the turn's: its room and the agent's channel. The turn runs after the message's own processing may have ended, so the two framework events are not ordered.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "call-1",
+                  "name": "lookup_order",
+                  "arguments": {
+                    "order": "1"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "I could not look it up."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup_order",
+            "description": "Find an order by its number",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "order": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns": "{\"order\": \"1\", \"status\": \"ready\"}"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "approve",
+        "trigger": "before_tool_use",
+        "timeout_ms": 50,
+        "reactions": [
+          {
+            "gate": "never"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Where is order 1?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "open": "never"
+    }
+  ],
+  "expect": {
+    "framework_events": {
+      "room-1": [
+        {
+          "$unordered": [
+            {
+              "event": "event_processed",
+              "event_id": "room-1#0"
+            },
+            {
+              "event": "hook_timeout",
+              "room_id": "room-1",
+              "channel_id": "agent",
+              "hook_name": "approve",
+              "trigger": "before_tool_use",
+              "timeout": 0.05
+            }
+          ]
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {
+          "tool_results": []
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "call-1",
+              "content": "{\"error\": \"Tool 'lookup_order' denied by pre-execution hook.\"}"
+            }
+          ]
+        }
+      ]
+    },
+    "hooks": {
+      "approve": [
+        {
+          "trigger": "before_tool_use",
+          "room_id": "room-1",
+          "tool_call": {
+            "name": "lookup_order",
+            "tool_call_id": "call-1",
+            "arguments": {
+              "order": "1"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,197 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-tool-observer-past-its-timeout-is-reported",
+  "title": "An ASYNC BEFORE_TOOL_USE or ON_TOOL_CALL hook past its timeout is reported as hook_timeout, in the agent's room and channel, and the call is served",
+  "rules": [
+    "§9.1",
+    "§9.3",
+    "§8.2",
+    "§26.1"
+  ],
+  "notes": "An ASYNC hook observes and decides nothing (§9.3): the call runs and the model reads its result whatever its observers do. Each timeout is reported as for any hook (§8.2, §9.1), as the turn's: its room and the agent's channel. The observers run in the background of the turn, so the framework events are not ordered.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "call-1",
+                  "name": "lookup_order",
+                  "arguments": {
+                    "order": "1"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Order 1 is ready."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup_order",
+            "description": "Find an order by its number",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "order": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns": "{\"order\": \"1\", \"status\": \"ready\"}"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "watch",
+        "trigger": "before_tool_use",
+        "execution": "async",
+        "timeout_ms": 50,
+        "reactions": [
+          {
+            "gate": "never"
+          }
+        ]
+      },
+      {
+        "name": "audit",
+        "trigger": "on_tool_call",
+        "execution": "async",
+        "timeout_ms": 50,
+        "reactions": [
+          {
+            "gate": "never"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Where is order 1?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "open": "never"
+    }
+  ],
+  "expect": {
+    "framework_events": {
+      "room-1": [
+        {
+          "$unordered": [
+            {
+              "event": "event_processed",
+              "event_id": "room-1#0"
+            },
+            {
+              "event": "hook_timeout",
+              "room_id": "room-1",
+              "channel_id": "agent",
+              "hook_name": "watch",
+              "trigger": "before_tool_use",
+              "timeout": 0.05
+            },
+            {
+              "event": "hook_timeout",
+              "room_id": "room-1",
+              "channel_id": "agent",
+              "hook_name": "audit",
+              "trigger": "on_tool_call",
+              "timeout": 0.05
+            }
+          ]
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {
+          "tool_results": []
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "call-1",
+              "content": "{\"order\": \"1\", \"status\": \"ready\"}"
+            }
+          ]
+        }
+      ]
+    },
+    "hooks": {
+      "watch": [
+        {
+          "trigger": "before_tool_use",
+          "room_id": "room-1",
+          "tool_call": {
+            "name": "lookup_order",
+            "tool_call_id": "call-1",
+            "arguments": {
+              "order": "1"
+            }
+          }
+        }
+      ],
+      "audit": [
+        {
+          "trigger": "on_tool_call",
+          "room_id": "room-1",
+          "tool_call": {
+            "name": "lookup_order",
+            "tool_call_id": "call-1",
+            "arguments": {
+              "order": "1"
+            },
+            "result": "{\"order\": \"1\", \"status\": \"ready\"}",
+            "is_error": false
+          }
+        }
+      ]
+    }
+  }
+}
