@@ -13,10 +13,11 @@ from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from roomkit.channels.base import Channel
+from roomkit.core.exceptions import ProviderDeliveryError
 from roomkit.core.inbound_router import InboundRoomRouter
 from roomkit.models.channel import ChannelBinding, ChannelCapabilities, ChannelOutput
 from roomkit.models.context import RoomContext
-from roomkit.models.delivery import InboundMessage
+from roomkit.models.delivery import InboundMessage, ProviderResult
 from roomkit.models.enums import ChannelCategory, ChannelDirection, ChannelType, EventDirection
 from roomkit.models.event import EventSource, RoomEvent
 from roomkit.models.hook import HookResult, InjectedEvent
@@ -116,6 +117,15 @@ async def perform(harness: Harness, reaction: Mapping[str, Any], scope: Mapping[
         await harness.run_action(action, scope)
     if (message := reaction.get("fail")) is not None:
         raise ScriptedFailureError(message)
+    if (refusal := reaction.get("refuse")) is not None:
+        raise ProviderDeliveryError(
+            ProviderResult(
+                success=False,
+                provider_message_id=refusal.get("provider_message_id"),
+                error=refusal.get("error"),
+                metadata={key: refusal[key] for key in ("code", "retryable") if key in refusal},
+            )
+        )
 
 
 def _now() -> str:

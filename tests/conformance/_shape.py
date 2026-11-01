@@ -82,7 +82,9 @@ REACTION = {
     "result",
     "stop_after",
     "parsed",
+    "refuse",
 }
+REFUSE = {"error", "code", "retryable", "provider_message_id"}
 WHEN = {"room_id", "text", "type", "source_channel_id", "chain_depth"}
 OUTPUT = {"tasks", "observations", "metadata_updates"}
 RESULT = {"action", "event", "reason", "injected_events", "tasks", "observations", "metadata"}
@@ -240,6 +242,7 @@ def _reaction(reaction: Mapping[str, Any], path: str, found: list[str]) -> None:
     _members(reaction, REACTION, path, found)
     _members(reaction.get("when", {}), WHEN, f"{path}.when", found)
     _members(reaction.get("output", {}), OUTPUT, f"{path}.output", found)
+    _members(reaction.get("refuse", {}), REFUSE, f"{path}.refuse", found)
     if "result" in reaction:
         _members(reaction["result"], RESULT, f"{path}.result", found)
         for index, item in enumerate(reaction["result"].get("injected_events", [])):

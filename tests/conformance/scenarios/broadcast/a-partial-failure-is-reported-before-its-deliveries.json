@@ -1,0 +1,92 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "broadcast/a-partial-failure-is-reported-before-its-deliveries",
+  "title": "A delivery set with a failure reports broadcast_partial_failure first, then each delivery that succeeded, then each that failed",
+  "rules": [
+    "§10.2",
+    "§8.2",
+    "§26.1"
+  ],
+  "notes": "The RFC orders none of a delivery set's framework events; roomkit emits the partial failure first, then the deliveries that succeeded, then those that failed, and event_processed once the set's AFTER_BROADCAST hooks ended. A handler of the kit's framework events observes that order.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "deliver": [
+          {
+            "fail": "socket closed"
+          }
+        ]
+      },
+      {
+        "id": "email",
+        "type": "email",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "email"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "framework_events": {
+      "room-1": [
+        {
+          "event": "broadcast_partial_failure",
+          "event_id": "room-1#0",
+          "failed": 1,
+          "total": 2
+        },
+        {
+          "event": "delivery_succeeded",
+          "channel_id": "email"
+        },
+        {
+          "event": "delivery_failed",
+          "channel_id": "ws",
+          "error": {
+            "$contains": "socket closed"
+          }
+        },
+        {
+          "event": "event_processed",
+          "event_id": "room-1#0"
+        }
+      ]
+    }
+  }
+}
