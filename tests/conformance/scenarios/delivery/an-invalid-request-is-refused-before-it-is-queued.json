@@ -1,0 +1,78 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/an-invalid-request-is-refused-before-it-is-queued",
+  "title": "With a delivery backend, a request its form refuses is reported blocked at once, AFTER_DELIVER observing the refusal, and nothing is queued or executed",
+  "rules": [
+    "§22.1",
+    "§22.2",
+    "§22.3"
+  ],
+  "setup": {
+    "kit": {
+      "delivery_backend": {}
+    },
+    "channels": [
+      {
+        "id": "human",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "human"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "observe",
+        "trigger": "after_deliver",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "deliver",
+      "room_id": "room-1",
+      "content": "bad",
+      "idempotency_key": "  ",
+      "expect": {
+        "result": {
+          "status": "blocked",
+          "reason": "empty_idempotency_key",
+          "delivery_item_id": {
+            "$present": true
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": []
+    },
+    "hooks": {
+      "observe": [
+        {
+          "event": {
+            "status": "blocked",
+            "metadata": {
+              "delivery_outcome": {
+                "reason": "empty_idempotency_key"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

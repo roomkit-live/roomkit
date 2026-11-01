@@ -1,0 +1,125 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-queued-delivery-is-executed-by-the-worker",
+  "title": "With a delivery backend, deliver() reports the request queued, its item named, and the backend's worker executes it: published, its turn asked, AFTER_DELIVER observing the outcome",
+  "rules": [
+    "§22.1",
+    "§22.2",
+    "§22.3"
+  ],
+  "notes": "Enqueue acceptance is not transmission: the queued outcome names no event. The worker runs the item's strategy, the delivery hooks around it.",
+  "setup": {
+    "kit": {
+      "delivery_backend": {}
+    },
+    "channels": [
+      {
+        "id": "human",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "category": "intelligence"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "human"
+          },
+          {
+            "channel_id": "a",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "observe",
+        "trigger": "after_deliver",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "deliver",
+      "room_id": "room-1",
+      "content": "done",
+      "addressed_to": [
+        "a"
+      ],
+      "idempotency_key": "k",
+      "expect": {
+        "result": {
+          "status": "queued",
+          "delivery_item_id": {
+            "$present": true
+          },
+          "event_id": null,
+          "reason": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "done"
+          },
+          "addressed_to": [
+            "a"
+          ],
+          "idempotency_key": "roomkit:publication:k",
+          "source": {
+            "channel_id": "human",
+            "participant_id": "system"
+          }
+        }
+      ]
+    },
+    "turns": {
+      "room-1": {
+        "a": [
+          {
+            "content": {
+              "type": "text",
+              "body": "done"
+            }
+          }
+        ]
+      }
+    },
+    "hooks": {
+      "observe": [
+        {
+          "trigger": "after_deliver",
+          "event": {
+            "status": "delivered",
+            "addressed_to": [
+              "a"
+            ],
+            "idempotency_key": "k",
+            "metadata": {
+              "delivery_outcome": {
+                "status": "sent",
+                "event_id": "room-1#0"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

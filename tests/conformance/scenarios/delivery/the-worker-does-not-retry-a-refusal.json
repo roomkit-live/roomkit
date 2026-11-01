@@ -1,0 +1,101 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/the-worker-does-not-retry-a-refusal",
+  "title": "The worker does not attempt again an item whose outcome no retry may change: a target it published for but could not reach is no retryable failure",
+  "rules": [
+    "§22.2",
+    "§22.1"
+  ],
+  "notes": "The event is published, its address naming a target the room lacks: the outcome is unavailable with an error that is not retryable, so the item is dead-lettered, executed once.",
+  "setup": {
+    "kit": {
+      "delivery_backend": {
+        "retry_delay_ms": 10
+      }
+    },
+    "channels": [
+      {
+        "id": "human",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "category": "intelligence"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "human"
+          },
+          {
+            "channel_id": "a",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "observe",
+        "trigger": "after_deliver",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "deliver",
+      "room_id": "room-1",
+      "content": "done",
+      "addressed_to": [
+        "absent"
+      ],
+      "expect": {
+        "result": {
+          "status": "queued"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "done"
+          },
+          "addressed_to": [
+            "absent"
+          ]
+        }
+      ]
+    },
+    "hooks": {
+      "observe": [
+        {
+          "event": {
+            "status": "failed",
+            "metadata": {
+              "delivery_outcome": {
+                "status": "unavailable",
+                "reason": "addressed_targets_unavailable",
+                "error": {
+                  "retryable": false
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

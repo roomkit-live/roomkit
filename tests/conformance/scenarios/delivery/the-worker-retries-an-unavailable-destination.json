@@ -1,0 +1,110 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/the-worker-retries-an-unavailable-destination",
+  "title": "The worker gives back an item its destination could not take, a retryable unavailable, and attempts it again after its retry delay: once the room has a transport, it is published",
+  "rules": [
+    "§22.2",
+    "§22.1",
+    "§13.2"
+  ],
+  "notes": "The first attempt finds no transport; its AFTER_DELIVER observer is held at a gate while the scenario attaches one, before the retry's delay passes. How many attempts it takes is left out: the item is published once.",
+  "setup": {
+    "kit": {
+      "delivery_backend": {
+        "retry_delay_ms": 200,
+        "max_retry_delay_ms": 1000
+      }
+    },
+    "channels": [
+      {
+        "id": "human",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "category": "intelligence"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "a",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "observe",
+        "trigger": "after_deliver",
+        "execution": "async",
+        "reactions": [
+          {
+            "gate": "first"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "deliver",
+      "room_id": "room-1",
+      "content": "done",
+      "addressed_to": [
+        "a"
+      ],
+      "expect": {
+        "result": {
+          "status": "queued"
+        }
+      }
+    },
+    {
+      "wait_for": "first"
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "room-1",
+      "channel_id": "human"
+    },
+    {
+      "open": "first"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "done"
+          },
+          "source": {
+            "channel_id": "human"
+          }
+        }
+      ]
+    },
+    "turns": {
+      "room-1": {
+        "a": [
+          {
+            "content": {
+              "type": "text",
+              "body": "done"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,98 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-voice-transport-carries-a-delivery-first",
+  "title": "A delivery naming no channel is carried by the room's voice transport first, else its first other transport; an intelligence channel bound as a transport is none",
+  "rules": [
+    "§22.1",
+    "§22.2"
+  ],
+  "notes": "Voice is a channel of type voice, realtime_voice or realtime_audio_video. An agent attached with the transport category is still an intelligence channel: an instruction carried by it would re-enter the channel it is for.",
+  "setup": {
+    "channels": [
+      {
+        "id": "human",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "phone",
+        "type": "voice",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "category": "intelligence"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "human"
+          },
+          {
+            "channel_id": "phone"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "a",
+            "category": "transport"
+          },
+          {
+            "channel_id": "human"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "deliver",
+      "room_id": "room-1",
+      "content": "one",
+      "expect": {
+        "result": {
+          "status": "sent",
+          "event_id": "room-1#0"
+        }
+      }
+    },
+    {
+      "call": "deliver",
+      "room_id": "room-2",
+      "content": "two",
+      "expect": {
+        "result": {
+          "status": "sent",
+          "event_id": "room-2#0"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "source": {
+            "channel_id": "phone",
+            "participant_id": "system"
+          }
+        }
+      ],
+      "room-2": [
+        {
+          "source": {
+            "channel_id": "human",
+            "participant_id": "system"
+          }
+        }
+      ]
+    }
+  }
+}

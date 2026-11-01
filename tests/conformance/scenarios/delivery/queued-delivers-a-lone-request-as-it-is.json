@@ -1,0 +1,96 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/queued-delivers-a-lone-request-as-it-is",
+  "title": "Queued delivers a request no other request waits beside as it is, its content unjoined, and reports it sent at its publication, the turn going on; with no transport it is unavailable",
+  "rules": [
+    "§22.2",
+    "§22.1"
+  ],
+  "notes": "The strategy waits for idle only on a voice channel or one hosting a realtime model; on any other channel it delivers with no buffer.",
+  "setup": {
+    "channels": [
+      {
+        "id": "human",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "category": "intelligence"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "human"
+          },
+          {
+            "channel_id": "a",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "empty"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "deliver",
+      "room_id": "room-1",
+      "content": "done",
+      "strategy": "queued",
+      "addressed_to": [
+        "a"
+      ],
+      "expect": {
+        "result": {
+          "status": "sent",
+          "event_id": "room-1#0",
+          "turn_complete": false
+        }
+      }
+    },
+    {
+      "call": "deliver",
+      "room_id": "empty",
+      "content": "done",
+      "strategy": "queued",
+      "expect": {
+        "result": {
+          "status": "unavailable",
+          "reason": "no_transport"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "done"
+          }
+        }
+      ],
+      "empty": []
+    },
+    "turns": {
+      "room-1": {
+        "a": [
+          {
+            "content": {
+              "type": "text",
+              "body": "done"
+            }
+          }
+        ]
+      }
+    }
+  }
+}
