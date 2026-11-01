@@ -170,6 +170,18 @@ CALLS: dict[str, set[str]] = {
     "unmute_output": {"room_id", "channel_id"},
     "process_delivery_status": {"status"},
     "process_webhook": {"meta", "channel_id"},
+    "deliver": {
+        "room_id",
+        "content",
+        "channel_id",
+        "strategy",
+        "metadata",
+        "addressed_to",
+        "idempotency_key",
+        "session_id",
+        "chain_depth",
+        "instruction",
+    },
 }
 CALLS |= STORE_ARGUMENTS | READ_MARKER_ARGUMENTS | TASK_ARGUMENTS
 STEPS = {"await": {"await", "expect"}, "concurrent": {"concurrent"}, "wait_for": {"wait_for"}}

@@ -28,7 +28,7 @@ from roomkit.core.exceptions import (
     TaskNotFoundError,
     TransitionRefusedError,
 )
-from roomkit.models.delivery import DeliveryStatus, InboundMessage, InboundResult
+from roomkit.models.delivery import DeliveryOutcome, DeliveryStatus, InboundMessage, InboundResult
 from roomkit.models.enums import (
     Access,
     ChannelCategory,
@@ -371,6 +371,23 @@ async def _process_webhook(kit: RoomKit, harness: Harness, spec: Mapping[str, An
     return await kit.process_webhook(meta, spec["channel_id"], **_org(spec))
 
 
+_DELIVER_ARGS = (
+    "channel_id",
+    "strategy",
+    "metadata",
+    "addressed_to",
+    "idempotency_key",
+    "session_id",
+    "chain_depth",
+    "instruction",
+)
+
+
+async def _deliver(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
+    kwargs = {key: spec[key] for key in _DELIVER_ARGS if key in spec}
+    return await kit.deliver(spec["room_id"], spec["content"], **kwargs, **_org(spec))
+
+
 CALLS: dict[str, Call] = {
     "process_inbound": _process_inbound,
     "send_event": _send_event,
@@ -397,6 +414,7 @@ CALLS: dict[str, Call] = {
     "unmute_output": _unmute_output,
     "process_delivery_status": _process_delivery_status,
     "process_webhook": _process_webhook,
+    "deliver": _deliver,
 }
 
 
@@ -406,4 +424,6 @@ def result_event_id(result: Any) -> str | None:
         return None if result.event is None else result.event.id
     if isinstance(result, RoomEvent):
         return result.id
+    if isinstance(result, DeliveryOutcome):
+        return result.event_id
     return None
