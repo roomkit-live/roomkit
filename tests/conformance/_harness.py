@@ -15,7 +15,7 @@ from typing import Any
 
 from pydantic_core import to_jsonable_python
 
-from roomkit import RoomKit
+from roomkit import RoomKit, current_turn_host
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import DeliveryStatus
 from roomkit.models.event import RoomEvent
@@ -42,7 +42,7 @@ from tests.conformance._calls import (
 from tests.conformance._compare import Check, compare
 from tests.conformance._identity import kit_options, register_identity_hook
 from tests.conformance._normalize import Observed, is_lifecycle_record
-from tests.conformance._script import Gates, ScriptedRouter
+from tests.conformance._script import GATE_BOUND_S, Gates, ScriptedRouter
 from tests.conformance._store import STORE_CALLS
 from tests.conformance._tasks import TASK_CALLS
 
@@ -95,6 +95,7 @@ class Harness:
         self._recording = False
         self._labels: dict[str, str | None] = {}
         self._background: dict[str, asyncio.Task[dict[str, Any]]] = {}
+        self._after_turn: list[asyncio.Task[None]] = []
         self._checks: list[Check] = []
         self._step_outcomes: list[dict[str, Any]] = []
         self._problems: list[str] = []
@@ -286,6 +287,28 @@ class Harness:
                 (f"action {label or action['call']}", action.get("expect"), outcome)
             )
 
+    def leave_after_turn(self, actions: list[Mapping[str, Any]], scope: Mapping[str, str]) -> None:
+        """Start the work a turn leaves for after it: a task in the turn's
+        context, which makes *actions* in order once the turn ended."""
+        host = current_turn_host()
+        if host is None:
+            self._problems.append("an after_turn reaction outside a turn: no turn's host")
+            return
+        self._after_turn.append(asyncio.ensure_future(self._after(host, actions, scope)))
+
+    async def _after(
+        self, host: Any, actions: list[Mapping[str, Any]], scope: Mapping[str, str]
+    ) -> None:
+        try:
+            async with asyncio.timeout(GATE_BOUND_S):
+                while host.open:
+                    await asyncio.sleep(0.001)
+        except TimeoutError:
+            self._problems.append(f"a turn did not end within {GATE_BOUND_S} s for its after_turn")
+            return
+        for action in actions:
+            await self.run_action(action, scope)
+
     async def invoke(self, spec: Mapping[str, Any], scope: Mapping[str, str]) -> dict[str, Any]:
         """Makes one call; returns its outcome, its error named, never raising."""
         resolved = await self.resolve(dict(spec), scope)
@@ -340,6 +363,7 @@ class Harness:
             if not task.done()
         ]
         tasks.extend(task for task in self._background.values() if not task.done())
+        tasks.extend(task for task in self._after_turn if not task.done())
         if tasks:
             busy = True
             await asyncio.wait(tasks, timeout=CALL_BOUND_S)

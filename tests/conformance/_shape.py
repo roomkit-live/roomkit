@@ -97,6 +97,7 @@ REACTION = {
     "stop_after",
     "parsed",
     "refuse",
+    "after_turn",
 }
 REFUSE = {"error", "code", "retryable", "provider_message_id"}
 WHEN = {"room_id", "text", "type", "source_channel_id", "chain_depth"}
@@ -295,8 +296,9 @@ def _reaction(reaction: Mapping[str, Any], path: str, found: list[str]) -> None:
         _members(reaction["result"], RESULT, f"{path}.result", found)
         for index, item in enumerate(reaction["result"].get("injected_events", [])):
             _members(item, INJECTED, f"{path}.result.injected_events[{index}]", found)
-    for index, action in enumerate(reaction.get("do", [])):
-        _call(action, {"as", "expect"}, f"{path}.do[{index}]", found)
+    for member in ("do", "after_turn"):
+        for index, action in enumerate(reaction.get(member, [])):
+            _call(action, {"as", "expect"}, f"{path}.{member}[{index}]", found)
 
 
 def _step(step: Mapping[str, Any], path: str, found: list[str]) -> None:

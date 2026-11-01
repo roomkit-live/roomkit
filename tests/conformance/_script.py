@@ -110,11 +110,14 @@ def message_subject(message: InboundMessage, room_id: str) -> dict[str, Any]:
 
 
 async def perform(harness: Harness, reaction: Mapping[str, Any], scope: Mapping[str, str]) -> None:
-    """Hold at the reaction's gate, run its actions, then raise its failure."""
+    """Hold at the reaction's gate, run its actions, leave those for after
+    the turn to work it began, then raise its failure."""
     if (gate := reaction.get("gate")) is not None:
         await harness.gates.hold(gate)
     for action in reaction.get("do", []):
         await harness.run_action(action, scope)
+    if (later := reaction.get("after_turn")) is not None:
+        harness.leave_after_turn(later, scope)
     if (message := reaction.get("fail")) is not None:
         raise ScriptedFailureError(message)
     if (refusal := reaction.get("refuse")) is not None:
