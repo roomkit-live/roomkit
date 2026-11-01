@@ -1,0 +1,154 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "identity/a-sender-the-room-identified-is-not-asked-about",
+  "title": "A sender the room identified on the event's channel is not resolved again and keeps the channel's id; a pending one is still resolved and refusable, and so is the same id on a channel it was never reached through",
+  "rules": [
+    "§10.1 step 5",
+    "§11.6",
+    "§5.5"
+  ],
+  "setup": {
+    "kit": {
+      "identity_resolver": {
+        "answers": []
+      }
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ],
+        "participants": [
+          {
+            "id": "+15551234567",
+            "channel_id": "sms",
+            "identification": "identified",
+            "identity_id": "alice-id"
+          },
+          {
+            "id": "+15559999999",
+            "channel_id": "sms",
+            "identification": "pending"
+          }
+        ]
+      }
+    ],
+    "identity_hooks": [
+      {
+        "name": "refuse",
+        "trigger": "on_identity_unknown",
+        "reactions": [
+          {
+            "repeat": true,
+            "result": {
+              "status": "rejected",
+              "reason": "unknown sender"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "known"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "source": {
+              "participant_id": "+15551234567"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15559999999",
+        "content": {
+          "type": "text",
+          "body": "pending"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "unknown sender",
+          "event": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "elsewhere"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "unknown sender",
+          "event": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "resolver": [
+      {
+        "room_id": "room-1",
+        "channel_id": "sms",
+        "sender_id": "+15559999999"
+      },
+      {
+        "room_id": "room-1",
+        "channel_id": "ws",
+        "sender_id": "+15551234567"
+      }
+    ],
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "content": {
+            "body": "known"
+          }
+        }
+      ]
+    }
+  }
+}

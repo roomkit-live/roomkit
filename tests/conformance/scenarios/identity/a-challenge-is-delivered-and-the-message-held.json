@@ -1,0 +1,229 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "identity/a-challenge-is-delivered-and-the-message-held",
+  "title": "An identity hook's challenge is committed and delivered as an injected event of its own, each time, and the message is blocked identity_challenge_sent, never stored",
+  "rules": [
+    "§10.1 step 5",
+    "§11.2",
+    "§11.3",
+    "§9.4",
+    "§8.1"
+  ],
+  "setup": {
+    "kit": {
+      "identity_resolver": {
+        "answers": [
+          {
+            "when": {
+              "text": "a1"
+            },
+            "repeat": true,
+            "result": {
+              "status": "ambiguous",
+              "candidates": [
+                {
+                  "id": "alice-id",
+                  "display_name": "Alice"
+                },
+                {
+                  "id": "bob-id",
+                  "display_name": "Bob"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "identity_hooks": [
+      {
+        "name": "ambiguous",
+        "trigger": "on_identity_ambiguous",
+        "reactions": [
+          {
+            "repeat": true,
+            "result": {
+              "status": "challenge_sent",
+              "message": "Identify yourself",
+              "inject": {
+                "event": {
+                  "content": {
+                    "type": "text",
+                    "body": "Who are you?"
+                  }
+                },
+                "target_channel_ids": [
+                  "sms"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      {
+        "name": "unknown",
+        "trigger": "on_identity_unknown",
+        "reactions": [
+          {
+            "repeat": true,
+            "result": {
+              "status": "challenge_sent",
+              "message": "Identify yourself",
+              "inject": {
+                "event": {
+                  "content": {
+                    "type": "text",
+                    "body": "Who are you?"
+                  }
+                },
+                "target_channel_ids": [
+                  "sms"
+                ]
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "u1"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "identity_challenge_sent",
+          "event": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "u2"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "identity_challenge_sent",
+          "event": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "a1"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "identity_challenge_sent",
+          "event": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "content": {
+            "body": "Who are you?"
+          },
+          "source": {
+            "channel_id": "system"
+          }
+        },
+        {
+          "index": 1,
+          "content": {
+            "body": "Who are you?"
+          },
+          "source": {
+            "channel_id": "system"
+          }
+        },
+        {
+          "index": 2,
+          "content": {
+            "body": "Who are you?"
+          },
+          "source": {
+            "channel_id": "system"
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "sms": [
+          {
+            "content": {
+              "body": "Who are you?"
+            }
+          },
+          {
+            "content": {
+              "body": "Who are you?"
+            }
+          },
+          {
+            "content": {
+              "body": "Who are you?"
+            }
+          }
+        ],
+        "ws": []
+      }
+    },
+    "participants": {
+      "room-1": []
+    }
+  }
+}

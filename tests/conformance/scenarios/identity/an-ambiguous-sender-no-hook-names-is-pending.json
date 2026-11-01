@@ -1,0 +1,171 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "identity/an-ambiguous-sender-no-hook-names-is-pending",
+  "title": "An ambiguous sender no identity hook names is processed and joins pending, with the resolver's candidates",
+  "rules": [
+    "§10.1 step 5",
+    "§11.2",
+    "§5.5",
+    "§5.1"
+  ],
+  "setup": {
+    "kit": {
+      "identity_resolver": {
+        "answers": [
+          {
+            "repeat": true,
+            "result": {
+              "status": "ambiguous",
+              "candidates": [
+                {
+                  "id": "alice-id",
+                  "display_name": "Alice"
+                },
+                {
+                  "id": "bob-id",
+                  "display_name": "Bob"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "identity_hooks": [
+      {
+        "name": "abstains",
+        "trigger": "on_identity_ambiguous"
+      },
+      {
+        "name": "pends",
+        "trigger": "on_identity_ambiguous",
+        "reactions": [
+          {
+            "result": {
+              "status": "pending",
+              "display_name": "Maybe Alice"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "source": {
+              "participant_id": "+15551234567"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "notes": "The second hook answers PENDING, which ON_IDENTITY_AMBIGUOUS does not act on: read as null, the sender joins pending with the resolver's candidates.",
+  "expect": {
+    "hooks": {
+      "abstains": [
+        {
+          "trigger": "on_identity_ambiguous"
+        }
+      ],
+      "pends": [
+        {
+          "trigger": "on_identity_ambiguous"
+        }
+      ]
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "content": {
+            "body": "Hello"
+          }
+        }
+      ]
+    },
+    "participants": {
+      "room-1": [
+        {
+          "id": "+15551234567",
+          "channel_id": "sms",
+          "connected_via": [
+            "sms"
+          ],
+          "identification": "pending",
+          "identity_id": null,
+          "candidates": [
+            "alice-id",
+            "bob-id"
+          ],
+          "display_name": null
+        }
+      ]
+    },
+    "lifecycle": {
+      "room-1": [
+        {
+          "type": "channel_attached"
+        },
+        {
+          "type": "channel_attached"
+        },
+        {
+          "type": "participant_joined",
+          "content": {
+            "type": "system",
+            "code": "participant_joined_pending",
+            "body": "Participant +15551234567 joined with pending identification",
+            "data": {
+              "participant_id": "+15551234567",
+              "status": "pending"
+            }
+          }
+        }
+      ]
+    },
+    "framework_events": {
+      "room-1": [
+        "delivery_succeeded",
+        "event_processed"
+      ]
+    }
+  }
+}

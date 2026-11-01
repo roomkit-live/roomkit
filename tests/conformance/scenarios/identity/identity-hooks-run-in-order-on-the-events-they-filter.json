@@ -1,0 +1,202 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "identity/identity-hooks-run-in-order-on-the-events-they-filter",
+  "title": "Identity hooks run in registration order on the events their filters admit: one that raises is passed, one that answers null too, and the first answer decides",
+  "rules": [
+    "§10.1 step 5",
+    "§11.2"
+  ],
+  "setup": {
+    "kit": {
+      "identity_resolver": {
+        "answers": [
+          {
+            "repeat": true,
+            "result": {
+              "status": "ambiguous",
+              "candidates": [
+                {
+                  "id": "alice-id",
+                  "display_name": "Alice"
+                },
+                {
+                  "id": "bob-id",
+                  "display_name": "Bob"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "identity_hooks": [
+      {
+        "name": "by-type",
+        "trigger": "on_identity_ambiguous",
+        "channel_types": [
+          "email"
+        ],
+        "reactions": [
+          {
+            "result": {
+              "status": "rejected",
+              "reason": "Should not be called"
+            }
+          }
+        ]
+      },
+      {
+        "name": "by-id",
+        "trigger": "on_identity_ambiguous",
+        "channel_ids": [
+          "other"
+        ],
+        "reactions": [
+          {
+            "result": {
+              "status": "rejected",
+              "reason": "Should not be called"
+            }
+          }
+        ]
+      },
+      {
+        "name": "by-direction",
+        "trigger": "on_identity_ambiguous",
+        "directions": [
+          "outbound"
+        ],
+        "reactions": [
+          {
+            "result": {
+              "status": "rejected",
+              "reason": "Should not be called"
+            }
+          }
+        ]
+      },
+      {
+        "name": "other-trigger",
+        "trigger": "on_identity_unknown",
+        "reactions": [
+          {
+            "result": {
+              "status": "rejected",
+              "reason": "Should not be called"
+            }
+          }
+        ]
+      },
+      {
+        "name": "raises",
+        "trigger": "on_identity_ambiguous",
+        "reactions": [
+          {
+            "fail": "boom"
+          }
+        ]
+      },
+      {
+        "name": "abstains",
+        "trigger": "on_identity_ambiguous"
+      },
+      {
+        "name": "decides",
+        "trigger": "on_identity_ambiguous",
+        "channel_types": [
+          "sms"
+        ],
+        "channel_ids": [
+          "sms"
+        ],
+        "directions": [
+          "inbound"
+        ],
+        "reactions": [
+          {
+            "result": {
+              "status": "identified",
+              "identity": {
+                "id": "alice-id",
+                "display_name": "Alice"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "name": "late",
+        "trigger": "on_identity_ambiguous",
+        "reactions": [
+          {
+            "result": {
+              "status": "rejected",
+              "reason": "Should not be called"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "source": {
+              "participant_id": "alice-id"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "by-type": [],
+      "by-id": [],
+      "by-direction": [],
+      "other-trigger": [],
+      "late": []
+    },
+    "hook_order": [
+      "raises",
+      "abstains",
+      "decides"
+    ]
+  }
+}

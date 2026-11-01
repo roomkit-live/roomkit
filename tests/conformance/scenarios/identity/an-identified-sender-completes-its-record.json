@@ -1,0 +1,109 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "identity/an-identified-sender-completes-its-record",
+  "title": "An identified sender the room holds pending is identified in place, and the channel it came through is recorded, with no record of a join",
+  "rules": [
+    "§10.1 step 5",
+    "§11.2",
+    "§5.5"
+  ],
+  "setup": {
+    "kit": {
+      "identity_resolver": {
+        "answers": [
+          {
+            "repeat": true,
+            "result": {
+              "status": "identified",
+              "identity": {
+                "id": "alice-id",
+                "display_name": "Alice"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ],
+        "participants": [
+          {
+            "id": "alice-id",
+            "channel_id": "sms",
+            "identification": "pending"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice@example.com",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "source": {
+              "participant_id": "alice-id"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "participants": {
+      "room-1": [
+        {
+          "id": "alice-id",
+          "channel_id": "sms",
+          "connected_via": [
+            "sms",
+            "ws"
+          ],
+          "display_name": "Alice",
+          "identification": "identified",
+          "identity_id": "alice-id"
+        }
+      ]
+    },
+    "lifecycle": {
+      "room-1": [
+        {
+          "type": "channel_attached"
+        },
+        {
+          "type": "channel_attached"
+        }
+      ]
+    }
+  }
+}

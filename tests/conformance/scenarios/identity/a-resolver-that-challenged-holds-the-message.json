@@ -1,0 +1,127 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "identity/a-resolver-that-challenged-holds-the-message",
+  "title": "A resolver that answers CHALLENGE_SENT has put the question itself: the message is blocked, its reason the resolver's message or identity_challenge_sent, no identity hook asked, nothing stored",
+  "rules": [
+    "§10.1 step 5",
+    "§11.2"
+  ],
+  "setup": {
+    "kit": {
+      "identity_resolver": {
+        "answers": [
+          {
+            "when": {
+              "text": "first"
+            },
+            "repeat": true,
+            "result": {
+              "status": "challenge_sent",
+              "challenge_type": "sms_code",
+              "message": "code sent by sms"
+            }
+          },
+          {
+            "when": {
+              "text": "second"
+            },
+            "repeat": true,
+            "result": {
+              "status": "challenge_sent",
+              "challenge_type": "sms_code"
+            }
+          }
+        ]
+      }
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "identity_hooks": [
+      {
+        "name": "unknown",
+        "trigger": "on_identity_unknown"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "first"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "code sent by sms",
+          "event": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "second"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "identity_challenge_sent",
+          "event": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "unknown": []
+    },
+    "timeline": {
+      "room-1": []
+    },
+    "participants": {
+      "room-1": []
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": [],
+        "sms": []
+      }
+    },
+    "framework_events": {
+      "room-1": []
+    }
+  }
+}

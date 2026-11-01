@@ -1,0 +1,227 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "identity/an-identified-sender-joins-the-room",
+  "title": "A sender the resolver identifies is stamped with its identity and joins the room identified, once, its resolution announced and its next events named after it",
+  "rules": [
+    "§10.1 step 5",
+    "§11.1",
+    "§11.2",
+    "§5.5",
+    "§5.1",
+    "§8.2",
+    "§10.1 step 12"
+  ],
+  "setup": {
+    "kit": {
+      "identity_resolver": {
+        "answers": [
+          {
+            "repeat": true,
+            "result": {
+              "status": "identified",
+              "identity": {
+                "id": "alice-id",
+                "display_name": "Alice"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "source": {
+              "participant_id": "alice-id"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Again"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "source": {
+              "participant_id": "alice-id"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "resolver": [
+      {
+        "room_id": "room-1",
+        "channel_id": "sms",
+        "sender_id": "+15551234567"
+      },
+      {
+        "room_id": "room-1",
+        "channel_id": "sms",
+        "sender_id": "+15551234567"
+      }
+    ],
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "content": {
+            "body": "Hello"
+          },
+          "source": {
+            "channel_id": "sms",
+            "participant_id": "alice-id"
+          }
+        },
+        {
+          "index": 1,
+          "content": {
+            "body": "Again"
+          },
+          "source": {
+            "channel_id": "sms",
+            "participant_id": "alice-id"
+          },
+          "metadata": {
+            "author": {
+              "name": "Alice",
+              "rank": 1
+            }
+          }
+        }
+      ]
+    },
+    "participants": {
+      "room-1": [
+        {
+          "id": "alice-id",
+          "room_id": "room-1",
+          "channel_id": "sms",
+          "connected_via": [
+            "sms"
+          ],
+          "display_name": "Alice",
+          "identification": "identified",
+          "identity_id": "alice-id",
+          "status": "active",
+          "role": "member",
+          "candidates": null
+        }
+      ]
+    },
+    "lifecycle": {
+      "room-1": [
+        {
+          "type": "channel_attached"
+        },
+        {
+          "type": "channel_attached"
+        },
+        {
+          "type": "participant_joined",
+          "content": {
+            "type": "system",
+            "code": "participant_joined_identified",
+            "body": "Participant alice-id joined as identified",
+            "data": {
+              "participant_id": "alice-id",
+              "status": "identified"
+            }
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "content": {
+              "body": "Hello"
+            }
+          },
+          {
+            "content": {
+              "body": "Again"
+            }
+          }
+        ],
+        "sms": []
+      }
+    },
+    "framework_events": {
+      "room-1": [
+        {
+          "event": "identity_resolved",
+          "channel_id": "sms",
+          "event_id": "room-1#0",
+          "identity_id": "alice-id",
+          "display_name": "Alice",
+          "status": "identified"
+        },
+        "delivery_succeeded",
+        "event_processed",
+        {
+          "event": "identity_resolved",
+          "channel_id": "sms",
+          "event_id": "room-1#1",
+          "identity_id": "alice-id",
+          "display_name": "Alice",
+          "status": "identified"
+        },
+        "delivery_succeeded",
+        "event_processed"
+      ]
+    }
+  },
+  "notes": "The first message's author record is not asserted while RMK-1139 settles whether it reads the participant record step 5 has just written."
+}

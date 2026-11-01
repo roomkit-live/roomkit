@@ -1,0 +1,249 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "identity/a-rejection-blocks-the-message",
+  "title": "An identity hook's rejection blocks the message with its reason, or with the trigger's when it gives none, storing nothing",
+  "rules": [
+    "§10.1 step 5",
+    "§11.2",
+    "§11.3"
+  ],
+  "setup": {
+    "kit": {
+      "identity_resolver": {
+        "answers": [
+          {
+            "when": {
+              "text": "a1"
+            },
+            "repeat": true,
+            "result": {
+              "status": "ambiguous",
+              "candidates": [
+                {
+                  "id": "alice-id",
+                  "display_name": "Alice"
+                },
+                {
+                  "id": "bob-id",
+                  "display_name": "Bob"
+                }
+              ]
+            }
+          },
+          {
+            "when": {
+              "text": "a2"
+            },
+            "repeat": true,
+            "result": {
+              "status": "ambiguous",
+              "candidates": [
+                {
+                  "id": "alice-id",
+                  "display_name": "Alice"
+                },
+                {
+                  "id": "bob-id",
+                  "display_name": "Bob"
+                }
+              ]
+            }
+          },
+          {
+            "when": {
+              "text": "u1"
+            },
+            "repeat": true,
+            "result": {
+              "status": "unknown"
+            }
+          },
+          {
+            "when": {
+              "text": "u2"
+            },
+            "repeat": true,
+            "result": {
+              "status": "unknown"
+            }
+          }
+        ]
+      }
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "identity_hooks": [
+      {
+        "name": "ambiguous",
+        "trigger": "on_identity_ambiguous",
+        "reactions": [
+          {
+            "when": {
+              "text": "a1"
+            },
+            "result": {
+              "status": "rejected",
+              "reason": "Not allowed"
+            }
+          },
+          {
+            "when": {
+              "text": "a2"
+            },
+            "result": {
+              "status": "rejected"
+            }
+          }
+        ]
+      },
+      {
+        "name": "unknown",
+        "trigger": "on_identity_unknown",
+        "reactions": [
+          {
+            "when": {
+              "text": "u1"
+            },
+            "result": {
+              "status": "rejected",
+              "reason": "Unknown sender rejected"
+            }
+          },
+          {
+            "when": {
+              "text": "u2"
+            },
+            "result": {
+              "status": "rejected"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "a1"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "Not allowed",
+          "event": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "a2"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "identity_rejected",
+          "event": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "u1"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "Unknown sender rejected",
+          "event": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "u2"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "unknown_sender",
+          "event": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": []
+    },
+    "participants": {
+      "room-1": []
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": []
+      }
+    },
+    "lifecycle": {
+      "room-1": [
+        {
+          "type": "channel_attached"
+        },
+        {
+          "type": "channel_attached"
+        }
+      ]
+    },
+    "framework_events": {
+      "room-1": []
+    }
+  }
+}

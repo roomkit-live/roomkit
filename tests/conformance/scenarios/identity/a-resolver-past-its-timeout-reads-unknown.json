@@ -1,0 +1,110 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "identity/a-resolver-past-its-timeout-reads-unknown",
+  "title": "A resolver past the identity timeout is read as UNKNOWN: identity_timeout is emitted, ON_IDENTITY_UNKNOWN runs, and the message is processed",
+  "rules": [
+    "§10.1 step 5",
+    "§11.5",
+    "§8.2"
+  ],
+  "setup": {
+    "kit": {
+      "identity_resolver": {
+        "answers": [
+          {
+            "gate": "never",
+            "result": {
+              "status": "identified",
+              "identity": {
+                "id": "alice-id",
+                "display_name": "Alice"
+              }
+            }
+          }
+        ]
+      },
+      "identity_timeout_ms": 50
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "identity_hooks": [
+      {
+        "name": "unknown",
+        "trigger": "on_identity_unknown"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "source": {
+              "participant_id": "+15551234567"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "unknown": [
+        {
+          "trigger": "on_identity_unknown",
+          "identity_result": {
+            "status": "unknown",
+            "address": "+15551234567",
+            "channel_type": "sms"
+          }
+        }
+      ]
+    },
+    "participants": {
+      "room-1": []
+    },
+    "framework_events": {
+      "room-1": [
+        {
+          "event": "identity_timeout",
+          "channel_id": "sms",
+          "timeout": 0.05
+        },
+        "delivery_succeeded",
+        "event_processed"
+      ]
+    }
+  }
+}

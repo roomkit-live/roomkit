@@ -1,0 +1,152 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "identity/an-unknown-sender-nobody-objects-to-is-processed",
+  "title": "An unknown sender no identity hook answers for is processed as the channel named it, joins no roster, and the hooks registered on ON_IDENTITY_UNKNOWN observe; an identified one fires neither identity trigger",
+  "rules": [
+    "§10.1 step 5",
+    "§11.2",
+    "§11.6"
+  ],
+  "setup": {
+    "kit": {
+      "identity_resolver": {
+        "answers": [
+          {
+            "when": {
+              "sender_id": "+15551234567"
+            },
+            "repeat": true,
+            "result": {
+              "status": "identified",
+              "identity": {
+                "id": "alice-id",
+                "display_name": "Alice"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "unknown",
+        "trigger": "on_identity_unknown",
+        "execution": "async"
+      },
+      {
+        "name": "ambiguous",
+        "trigger": "on_identity_ambiguous",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15559999999",
+        "content": {
+          "type": "text",
+          "body": "Who am I?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "source": {
+              "participant_id": "+15559999999"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "I am Alice"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "source": {
+              "participant_id": "alice-id"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "unknown": [
+        {
+          "trigger": "on_identity_unknown",
+          "room_id": "room-1",
+          "event": {
+            "content": {
+              "body": "Who am I?"
+            }
+          }
+        }
+      ],
+      "ambiguous": []
+    },
+    "participants": {
+      "room-1": [
+        {
+          "id": "alice-id",
+          "identification": "identified"
+        }
+      ]
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "source": {
+            "participant_id": "+15559999999"
+          }
+        },
+        {
+          "index": 1,
+          "source": {
+            "participant_id": "alice-id"
+          }
+        }
+      ]
+    }
+  }
+}

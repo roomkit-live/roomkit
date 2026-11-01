@@ -1,0 +1,110 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "identity/a-channel-that-names-its-senders-is-not-asked-about",
+  "title": "A channel that names its own senders is never resolved, whoever sends; the same sender on a channel that carries addresses is",
+  "rules": [
+    "§10.1 step 5",
+    "§11.6"
+  ],
+  "setup": {
+    "kit": {
+      "identity_resolver": {
+        "answers": []
+      }
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "named",
+        "type": "websocket",
+        "sender_is_participant": true
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "named"
+          }
+        ]
+      }
+    ],
+    "identity_hooks": [
+      {
+        "name": "refuse",
+        "trigger": "on_identity_unknown",
+        "reactions": [
+          {
+            "repeat": true,
+            "result": {
+              "status": "rejected",
+              "reason": "unknown sender"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "named",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "named"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "source": {
+              "participant_id": "+15551234567"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "addressed"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "unknown sender",
+          "event": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "resolver": [
+      {
+        "room_id": "room-1",
+        "channel_id": "sms",
+        "sender_id": "+15551234567"
+      }
+    ],
+    "participants": {
+      "room-1": []
+    }
+  }
+}

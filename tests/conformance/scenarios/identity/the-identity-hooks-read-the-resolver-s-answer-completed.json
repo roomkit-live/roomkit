@@ -1,0 +1,131 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "identity/the-identity-hooks-read-the-resolver-s-answer-completed",
+  "title": "The identity hooks read the resolver's answer with the sender's address and its channel's type filled in where the resolver left them unset, and kept where it set them",
+  "rules": [
+    "§10.1 step 5",
+    "§11.1",
+    "§11.2"
+  ],
+  "setup": {
+    "kit": {
+      "identity_resolver": {
+        "answers": [
+          {
+            "when": {
+              "text": "bare"
+            },
+            "repeat": true,
+            "result": {
+              "status": "ambiguous",
+              "candidates": [
+                {
+                  "id": "alice-id",
+                  "display_name": "Alice"
+                },
+                {
+                  "id": "bob-id",
+                  "display_name": "Bob"
+                }
+              ]
+            }
+          },
+          {
+            "when": {
+              "text": "set"
+            },
+            "repeat": true,
+            "result": {
+              "status": "ambiguous",
+              "candidates": [
+                {
+                  "id": "alice-id",
+                  "display_name": "Alice"
+                },
+                {
+                  "id": "bob-id",
+                  "display_name": "Bob"
+                }
+              ],
+              "address": "custom-address",
+              "channel_type": "custom"
+            }
+          }
+        ]
+      }
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "identity_hooks": [
+      {
+        "name": "reads",
+        "trigger": "on_identity_ambiguous"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+14185551234",
+        "content": {
+          "type": "text",
+          "body": "bare"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+14185551234",
+        "content": {
+          "type": "text",
+          "body": "set"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "reads": [
+        {
+          "identity_result": {
+            "address": "+14185551234",
+            "channel_type": "sms"
+          }
+        },
+        {
+          "identity_result": {
+            "address": "custom-address",
+            "channel_type": "custom"
+          }
+        }
+      ]
+    }
+  }
+}

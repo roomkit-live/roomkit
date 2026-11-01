@@ -1,0 +1,174 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "identity/an-ambiguous-sender-s-hook-names-it",
+  "title": "An identity hook on ON_IDENTITY_AMBIGUOUS that resolves the sender names it: the event is stamped, the sender joins identified, and the hooks registered on the trigger observe",
+  "rules": [
+    "§10.1 step 5",
+    "§11.2",
+    "§11.3",
+    "§8.2"
+  ],
+  "setup": {
+    "kit": {
+      "identity_resolver": {
+        "answers": [
+          {
+            "repeat": true,
+            "result": {
+              "status": "ambiguous",
+              "candidates": [
+                {
+                  "id": "alice-id",
+                  "display_name": "Alice"
+                },
+                {
+                  "id": "bob-id",
+                  "display_name": "Bob"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "watch",
+        "trigger": "on_identity_ambiguous",
+        "execution": "async"
+      }
+    ],
+    "identity_hooks": [
+      {
+        "name": "pick",
+        "trigger": "on_identity_ambiguous",
+        "reactions": [
+          {
+            "result": {
+              "status": "identified",
+              "identity": {
+                "id": "alice-id",
+                "display_name": "Alice"
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "source": {
+              "participant_id": "alice-id"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "pick": [
+        {
+          "trigger": "on_identity_ambiguous",
+          "room_id": "room-1",
+          "event": {
+            "content": {
+              "body": "Hello"
+            },
+            "source": {
+              "participant_id": "+15551234567"
+            }
+          },
+          "identity_result": {
+            "status": "ambiguous",
+            "candidates": [
+              {
+                "id": "alice-id"
+              },
+              {
+                "id": "bob-id"
+              }
+            ],
+            "address": "+15551234567",
+            "channel_type": "sms",
+            "identity": null
+          }
+        }
+      ],
+      "watch": [
+        {
+          "trigger": "on_identity_ambiguous",
+          "room_id": "room-1",
+          "event": {
+            "content": {
+              "body": "Hello"
+            },
+            "source": {
+              "participant_id": "+15551234567"
+            }
+          }
+        }
+      ]
+    },
+    "participants": {
+      "room-1": [
+        {
+          "id": "alice-id",
+          "identification": "identified",
+          "identity_id": "alice-id",
+          "display_name": "Alice"
+        }
+      ]
+    },
+    "framework_events": {
+      "room-1": [
+        {
+          "event": "identity_resolved",
+          "event_id": "room-1#0",
+          "identity_id": "alice-id",
+          "status": "ambiguous"
+        },
+        "delivery_succeeded",
+        "event_processed"
+      ]
+    }
+  }
+}

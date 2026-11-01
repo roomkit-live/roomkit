@@ -1,0 +1,266 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "identity/an-unknown-sender-s-hook-names-or-pends-it",
+  "title": "An identity hook on ON_IDENTITY_UNKNOWN names the sender, who joins identified, or pends it, its own candidates carried, else the resolver's",
+  "rules": [
+    "§10.1 step 5",
+    "§11.2",
+    "§11.3",
+    "§5.5"
+  ],
+  "setup": {
+    "kit": {
+      "identity_resolver": {
+        "answers": [
+          {
+            "when": {
+              "sender_id": "+15550000001"
+            },
+            "repeat": true,
+            "result": {
+              "status": "unknown"
+            }
+          },
+          {
+            "when": {
+              "sender_id": "+15550000002"
+            },
+            "repeat": true,
+            "result": {
+              "status": "unknown"
+            }
+          },
+          {
+            "when": {
+              "sender_id": "+15550000003"
+            },
+            "repeat": true,
+            "result": {
+              "status": "unknown",
+              "candidates": [
+                {
+                  "id": "bob-id",
+                  "display_name": "Bob"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "identity_hooks": [
+      {
+        "name": "unknown",
+        "trigger": "on_identity_unknown",
+        "reactions": [
+          {
+            "when": {
+              "text": "name"
+            },
+            "result": {
+              "status": "identified",
+              "identity": {
+                "id": "found-id",
+                "display_name": "Found User"
+              }
+            }
+          },
+          {
+            "when": {
+              "text": "pend"
+            },
+            "result": {
+              "status": "pending",
+              "candidates": [
+                {
+                  "id": "alice-id",
+                  "display_name": "Alice"
+                },
+                {
+                  "id": "bob-id",
+                  "display_name": "Bob"
+                }
+              ]
+            }
+          },
+          {
+            "when": {
+              "text": "pend-bare"
+            },
+            "result": {
+              "status": "pending",
+              "display_name": "Maybe Bob"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "name"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "source": {
+              "participant_id": "found-id"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000002",
+        "content": {
+          "type": "text",
+          "body": "pend"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "source": {
+              "participant_id": "+15550000002"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000003",
+        "content": {
+          "type": "text",
+          "body": "pend-bare"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "source": {
+              "participant_id": "+15550000003"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "participants": {
+      "room-1": {
+        "$unordered": [
+          {
+            "id": "found-id",
+            "identification": "identified",
+            "identity_id": "found-id",
+            "display_name": "Found User"
+          },
+          {
+            "id": "+15550000002",
+            "identification": "pending",
+            "candidates": [
+              "alice-id",
+              "bob-id"
+            ]
+          },
+          {
+            "id": "+15550000003",
+            "identification": "pending",
+            "candidates": [
+              "bob-id"
+            ],
+            "display_name": null
+          }
+        ]
+      }
+    },
+    "lifecycle": {
+      "room-1": [
+        {
+          "type": "channel_attached"
+        },
+        {
+          "type": "channel_attached"
+        },
+        {
+          "type": "participant_joined",
+          "content": {
+            "type": "system",
+            "code": "participant_joined_identified",
+            "body": "Participant found-id joined as identified",
+            "data": {
+              "participant_id": "found-id",
+              "status": "identified"
+            }
+          }
+        },
+        {
+          "type": "participant_joined",
+          "content": {
+            "type": "system",
+            "code": "participant_joined_pending",
+            "body": "Participant +15550000002 joined with pending identification",
+            "data": {
+              "participant_id": "+15550000002",
+              "status": "pending"
+            }
+          }
+        },
+        {
+          "type": "participant_joined",
+          "content": {
+            "type": "system",
+            "code": "participant_joined_pending",
+            "body": "Participant +15550000003 joined with pending identification",
+            "data": {
+              "participant_id": "+15550000003",
+              "status": "pending"
+            }
+          }
+        }
+      ]
+    }
+  }
+}
