@@ -1,14 +1,14 @@
 {
   "$schema": "../../scenario.schema.json",
   "id": "observations/feedback-is-an-observation-the-hooks-observe",
-  "title": "submit_feedback stores the rating, clamped to 0..1, as an observation of the room, fires ON_FEEDBACK with it and emits feedback; list_observations reads the room's observations; another organization's room is not found, nothing stored",
+  "title": "submit_feedback stores the rating, clamped to 0..1, as an observation of the room, its channel empty when it names none, fires ON_FEEDBACK with it and emits feedback; list_observations reads the room's observations; another organization's room is not found, nothing stored",
   "rules": [
     "§15.9",
     "§9.2",
     "§8.2",
     "§17.2"
   ],
-  "notes": "Python: tests/test_hook_observers.py (ON_FEEDBACK observes submit_feedback), tests/test_room_org_scoping.py (submit_feedback and list_observations for another organization), tests/test_framework_queries.py (list_observations). A feedback naming no channel is left out: its observation's channel_id is empty, which roomkit-rs's ids refuse (a question to the maintainer).",
+  "notes": "Python: tests/test_hook_observers.py (ON_FEEDBACK observes submit_feedback), tests/test_room_org_scoping.py (submit_feedback and list_observations for another organization), tests/test_framework_queries.py (list_observations). The rated event's id names no stored event: it is normalized as any such id, and asserted present.",
   "setup": {
     "channels": [
       {
@@ -65,6 +65,15 @@
     {
       "call": "submit_feedback",
       "room_id": "room-1",
+      "rating": 0.1,
+      "comment": "Lost",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "submit_feedback",
+      "room_id": "room-1",
       "rating": 0.5,
       "channel_id": "sms",
       "organization_id": "globex",
@@ -93,6 +102,13 @@
             "content": "[overall] 0.42",
             "category": "feedback:overall",
             "confidence": 0.42
+          },
+          {
+            "room_id": "room-1",
+            "channel_id": "",
+            "content": "[overall] 0.10: Lost",
+            "category": "feedback:overall",
+            "confidence": 0.1
           }
         ]
       }
@@ -137,6 +153,19 @@
             "comment": "",
             "event_id": null
           }
+        },
+        {
+          "channel_id": "",
+          "content": "[overall] 0.10: Lost",
+          "category": "feedback:overall",
+          "confidence": 0.1,
+          "metadata": {
+            "type": "feedback",
+            "dimension": "overall",
+            "rating": 0.1,
+            "comment": "Lost",
+            "event_id": null
+          }
         }
       ]
     },
@@ -157,6 +186,14 @@
           "observation": {
             "content": "[overall] 0.42"
           }
+        },
+        {
+          "trigger": "on_feedback",
+          "room_id": "room-1",
+          "observation": {
+            "channel_id": "",
+            "content": "[overall] 0.10: Lost"
+          }
         }
       ]
     },
@@ -172,13 +209,28 @@
           "rating": 1.0
         },
         {
-          "event": "feedback",
-          "channel_id": "sms",
-          "event_id": {
-            "$absent": true
-          },
-          "dimension": "overall",
-          "rating": 0.42
+          "$unordered": [
+            {
+              "event": "feedback",
+              "channel_id": "sms",
+              "event_id": {
+                "$absent": true
+              },
+              "dimension": "overall",
+              "rating": 0.42
+            },
+            {
+              "event": "feedback",
+              "channel_id": {
+                "$absent": true
+              },
+              "event_id": {
+                "$absent": true
+              },
+              "dimension": "overall",
+              "rating": 0.1
+            }
+          ]
         }
       ]
     }
