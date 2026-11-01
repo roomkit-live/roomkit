@@ -58,6 +58,28 @@ def _turn_calls_the_kit(scenario: dict[str, Any]) -> bool:
     return False
 
 
+# An ASYNC hook on a trigger a turn fires may time out once its turn is over:
+# its hook_timeout is then work after the turn, which crosses Redis as such and
+# reaches a kit the runner, having seen it idle, is closing already.
+_AFTER_ITS_TURN = (
+    "an ASYNC hook of a turn's trigger times out after its turn: its hook_timeout "
+    "crosses Redis as work after the turn, which the runner's idle wait cannot see"
+)
+_TURN_TRIGGERS = {"before_tool_use", "on_tool_call"}
+
+
+def _times_out_after_its_turn(scenario: dict[str, Any]) -> bool:
+    """Whether the scenario expects the hook_timeout of an ASYNC hook on a
+    trigger a turn fires."""
+    observers = {
+        hook["name"]
+        for hook in scenario.get("setup", {}).get("hooks", [])
+        if hook.get("execution") == "async" and hook["trigger"] in _TURN_TRIGGERS
+    }
+    expected = json.dumps(scenario.get("expect", {}).get("framework_events", {}))
+    return any(f'"hook_name": "{name}"' in expected for name in observers)
+
+
 # The store's scenarios run on each store this implementation ships that
 # needs no server: the in-memory store, the kit's default, and SQLiteStore.
 _STORES = ("memory", "sqlite")
@@ -70,6 +92,8 @@ def _cases() -> list[Any]:
         marks = []
         if _turn_calls_the_kit(_load(path)):
             marks.append(pytest.mark.in_process(_IN_PROCESS))
+        if _times_out_after_its_turn(_load(path)):
+            marks.append(pytest.mark.in_process(_AFTER_ITS_TURN))
         if scenario_id in KNOWN_FAILURES:
             marks.append(
                 pytest.mark.xfail(
