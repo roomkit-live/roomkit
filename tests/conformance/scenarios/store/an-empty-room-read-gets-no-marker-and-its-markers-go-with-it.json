@@ -1,0 +1,92 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "store/an-empty-room-read-gets-no-marker-and-its-markers-go-with-it",
+  "title": "Marking an empty room read writes no marker, so its first event arrives unread, and a room's markers go with the room",
+  "rules": [
+    "§14.1"
+  ],
+  "notes": "Python: tests/test_store_room_contract.py::test_marking_an_empty_room_read_leaves_its_first_event_unread; tests/test_store_memory.py::TestDeleteRoomCleanup::test_full_cleanup_on_delete (its markers).",
+  "steps": [
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-1"
+      }
+    },
+    {
+      "call": "store.mark_all_read",
+      "room_id": "room-1",
+      "channel_id": "sms"
+    },
+    {
+      "call": "store.list_read_markers",
+      "room_id": "room-1",
+      "expect": {
+        "result": {
+          "sms": {
+            "$absent": true
+          }
+        }
+      }
+    },
+    {
+      "call": "store.add_event",
+      "event": {
+        "room_id": "room-1",
+        "index": 0,
+        "content": {
+          "type": "text",
+          "body": "0"
+        }
+      }
+    },
+    {
+      "call": "store.get_unread_count",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "expect": {
+        "result": 1
+      }
+    },
+    {
+      "call": "store.mark_all_read",
+      "room_id": "room-1",
+      "channel_id": "sms"
+    },
+    {
+      "call": "store.list_read_markers",
+      "room_id": "room-1",
+      "expect": {
+        "result": {
+          "sms": 0
+        }
+      }
+    },
+    {
+      "call": "store.delete_room",
+      "room_id": "room-1",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "call": "store.list_read_markers",
+      "room_id": "room-1",
+      "expect": {
+        "result": {
+          "sms": {
+            "$absent": true
+          }
+        }
+      }
+    },
+    {
+      "call": "store.get_unread_count",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "expect": {
+        "result": 0
+      }
+    }
+  ]
+}

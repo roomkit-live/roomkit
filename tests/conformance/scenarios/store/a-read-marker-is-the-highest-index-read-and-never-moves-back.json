@@ -1,0 +1,236 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "store/a-read-marker-is-the-highest-index-read-and-never-moves-back",
+  "title": "A channel's read marker is the highest index it read, never moved back, unmoved by a delete; an event of another room or of none marks nothing; the unread are the events above it, every one without it",
+  "rules": [
+    "§14.1"
+  ],
+  "notes": "Python: tests/test_store_room_contract.py::test_the_marker_is_the_read_events_index_whatever_was_deleted_or_written_first, test_the_marker_never_moves_back, test_an_event_of_another_room_marks_nothing; tests/test_store_memory.py::TestReadTracking::test_unread_count_initial, test_mark_read, test_mark_all_read, test_list_read_markers. Written 1, 0, 2, 3: write order is not index order.",
+  "steps": [
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-1"
+      }
+    },
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-2"
+      }
+    },
+    {
+      "call": "store.add_event",
+      "event": {
+        "room_id": "room-1",
+        "index": 1,
+        "content": {
+          "type": "text",
+          "body": "1"
+        }
+      },
+      "as": "one"
+    },
+    {
+      "call": "store.add_event",
+      "event": {
+        "room_id": "room-1",
+        "index": 0,
+        "content": {
+          "type": "text",
+          "body": "0"
+        }
+      },
+      "as": "zero"
+    },
+    {
+      "call": "store.add_event",
+      "event": {
+        "room_id": "room-1",
+        "index": 2,
+        "content": {
+          "type": "text",
+          "body": "2"
+        }
+      },
+      "as": "two"
+    },
+    {
+      "call": "store.add_event",
+      "event": {
+        "room_id": "room-1",
+        "index": 3,
+        "content": {
+          "type": "text",
+          "body": "3"
+        }
+      },
+      "as": "three"
+    },
+    {
+      "call": "store.add_event",
+      "event": {
+        "room_id": "room-2",
+        "index": 0,
+        "content": {
+          "type": "text",
+          "body": "0"
+        }
+      },
+      "as": "elsewhere"
+    },
+    {
+      "call": "store.get_unread_count",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "expect": {
+        "result": 4
+      }
+    },
+    {
+      "call": "store.list_read_markers",
+      "room_id": "room-1",
+      "expect": {
+        "result": {
+          "sms": {
+            "$absent": true
+          }
+        }
+      }
+    },
+    {
+      "call": "store.mark_read",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "event_id": "$two"
+    },
+    {
+      "call": "store.list_read_markers",
+      "room_id": "room-1",
+      "expect": {
+        "result": {
+          "sms": 2
+        }
+      }
+    },
+    {
+      "call": "store.get_unread_count",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "expect": {
+        "result": 1
+      }
+    },
+    {
+      "call": "store.mark_read",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "event_id": "$zero"
+    },
+    {
+      "call": "store.list_read_markers",
+      "room_id": "room-1",
+      "expect": {
+        "result": {
+          "sms": 2
+        }
+      }
+    },
+    {
+      "call": "store.delete_event",
+      "room_id": "room-1",
+      "event_id": "$zero"
+    },
+    {
+      "call": "store.list_read_markers",
+      "room_id": "room-1",
+      "expect": {
+        "result": {
+          "sms": 2
+        }
+      }
+    },
+    {
+      "call": "store.get_unread_count",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "expect": {
+        "result": 1
+      }
+    },
+    {
+      "call": "store.mark_all_read",
+      "room_id": "room-1",
+      "channel_id": "sms"
+    },
+    {
+      "call": "store.get_unread_count",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "expect": {
+        "result": 0
+      }
+    },
+    {
+      "call": "store.mark_read",
+      "room_id": "room-1",
+      "channel_id": "email",
+      "event_id": "$one"
+    },
+    {
+      "call": "store.mark_read",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "event_id": "$elsewhere"
+    },
+    {
+      "call": "store.mark_read",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "event_id": "no-such-event"
+    },
+    {
+      "call": "store.list_read_markers",
+      "room_id": "room-1",
+      "expect": {
+        "result": {
+          "sms": 3,
+          "email": 1,
+          "ws": {
+            "$absent": true
+          }
+        }
+      }
+    },
+    {
+      "call": "store.get_unread_count",
+      "room_id": "room-1",
+      "channel_id": "email",
+      "expect": {
+        "result": 2
+      }
+    },
+    {
+      "call": "store.get_unread_count",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "expect": {
+        "result": 3
+      }
+    },
+    {
+      "call": "store.list_read_markers",
+      "room_id": "room-2",
+      "expect": {
+        "result": {
+          "ws": {
+            "$absent": true
+          },
+          "sms": {
+            "$absent": true
+          }
+        }
+      }
+    }
+  ]
+}

@@ -18,6 +18,7 @@ from roomkit.core.exceptions import (
     ChangeRefusedError,
     ChannelNotFoundError,
     ChannelNotRegisteredError,
+    EventNotFoundError,
     ParticipantNotFoundError,
     ProcessTimeoutError,
     ReentrantCallError,
@@ -63,6 +64,7 @@ _ERRORS: tuple[tuple[type[Exception], str], ...] = (
     (ParticipantNotFoundError, "participant_not_found"),
     (ReentrantCallError, "reentrant"),
     (ReentryLoopCapError, "reentry_loop_cap"),
+    (EventNotFoundError, "event_not_found"),
     (ValueError, "invalid_argument"),
 )
 
