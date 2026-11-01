@@ -55,6 +55,8 @@ class Observed:
     steps: list[Any] = field(default_factory=list)
     actions: dict[str, list[Any]] = field(default_factory=dict)
     models: dict[str, list[Any]] = field(default_factory=dict)
+    participants: dict[str, list[Any]] = field(default_factory=dict)
+    resolver: list[dict[str, Any]] = field(default_factory=list)
 
 
 class Normalizer:
@@ -106,10 +108,15 @@ class Normalizer:
 
     def _object(self, value: dict[str, Any]) -> dict[str, Any]:
         indexes = self._indexes_of(value)
+        # A participant's or an identity's id is the scenario's own (§5.5,
+        # §5.6), never an event's: kept as written.
+        own_id = "identification" in value or "channel_addresses" in value
         result: dict[str, Any] = {}
         for key, item in value.items():
             if key in indexes and isinstance(item, int) and not isinstance(item, bool):
                 result[self._key(key)] = indexes[key](item)
+            elif own_id and key == "id":
+                result[key] = item
             else:
                 result[self._key(key)] = self.value(item, key)
         return result
@@ -184,6 +191,7 @@ def _instants(observed: Observed) -> list[datetime]:
             observed.bindings,
             observed.observations,
             observed.tasks,
+            observed.participants,
         ]
     )
     return found

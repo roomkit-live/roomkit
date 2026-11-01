@@ -40,6 +40,7 @@ from tests.conformance._calls import (
     result_event_id,
 )
 from tests.conformance._compare import Check, compare
+from tests.conformance._identity import kit_options, register_identity_hook
 from tests.conformance._normalize import Observed, is_lifecycle_record
 from tests.conformance._script import Gates, ScriptedRouter
 from tests.conformance._store import STORE_CALLS
@@ -66,6 +67,9 @@ LEVEL_0_EVENTS = (
     "hook_timeout",
     "session_started",
     "process_timeout",
+    # Identity resolution's (Level 1, §8.2).
+    "identity_resolved",
+    "identity_timeout",
 )
 
 # The framework events of the Level 2 features a scenario exercises: the
@@ -106,6 +110,7 @@ class Harness:
             kwargs["store"] = store
         if "router" in kit_setup:
             kwargs["inbound_router"] = ScriptedRouter(kit_setup["router"]["room_id"])
+        kwargs |= kit_options(kit_setup, self)
         self.kit = RoomKit(**kwargs)
 
     # -- recording --------------------------------------------------------
@@ -150,6 +155,33 @@ class Harness:
             call["status_entry"] = payload.model_dump(mode="json")
         if isinstance(payload, Observation):
             call["observation"] = payload.model_dump(mode="json")
+        self.observed.hooks.setdefault(name, []).append(call)
+        self.observed.hook_order.append(name)
+
+    def record_resolver(self, room_id: str, message: Any) -> None:
+        """One call of the scripted resolver (§11.1)."""
+        if not self._recording:
+            return
+        call = {
+            "room_id": room_id,
+            "channel_id": message.channel_id,
+            "sender_id": message.sender_id,
+        }
+        self.observed.resolver.append(call)
+
+    def record_identity_hook(
+        self, name: str, trigger: str, room_id: str, event: RoomEvent, id_result: Any
+    ) -> None:
+        """One call of a scripted identity hook (§11.2): its event and the
+        IdentityResult it is handed."""
+        if not self._recording:
+            return
+        call = {
+            "trigger": trigger,
+            "room_id": room_id,
+            "event": event.model_dump(mode="json"),
+            "identity_result": id_result.model_dump(mode="json"),
+        }
         self.observed.hooks.setdefault(name, []).append(call)
         self.observed.hook_order.append(name)
 
@@ -206,6 +238,8 @@ class Harness:
                 await self.kit.archive_room(room["id"])
         for hook in setup.get("hooks", []):
             register_hook(self.kit, self, hook)
+        for hook in setup.get("identity_hooks", []):
+            register_identity_hook(self.kit, self, hook)
         await self.idle()
 
     async def _step(self, step: Mapping[str, Any], path: str) -> None:
@@ -371,6 +405,9 @@ class Harness:
             ]
             self.observed.tasks[room.id] = [
                 t.model_dump(mode="json") for t in await store.list_tasks(room.id)
+            ]
+            self.observed.participants[room.id] = [
+                p.model_dump(mode="json") for p in await store.list_participants(room.id)
             ]
         self.observed.steps = self._step_outcomes
         self.observed.models = {

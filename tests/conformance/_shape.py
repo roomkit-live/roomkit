@@ -16,8 +16,20 @@ from tests.conformance._store import READ_MARKER_ARGUMENTS, STORE_ARGUMENTS
 from tests.conformance._tasks import TASK_ARGUMENTS
 
 TOP = {"$schema", "id", "title", "rules", "reentrancy", "notes", "setup", "steps", "expect"}
-SETUP = {"kit", "channels", "rooms", "hooks"}
-KIT = {"max_chain_depth", "process_timeout_ms", "router"}
+SETUP = {"kit", "channels", "rooms", "hooks", "identity_hooks"}
+KIT = {
+    "max_chain_depth",
+    "process_timeout_ms",
+    "router",
+    "identity_resolver",
+    "identity_channel_types",
+    "identity_timeout_ms",
+}
+RESOLVER = {"answers"}
+RESOLVER_ANSWER = {"when", "repeat", "gate", "fail", "result"}
+RESOLVER_WHEN = {"sender_id", "channel_id", "room_id", "text"}
+IDENTITY_HOOK = {"name", "trigger", "channel_types", "channel_ids", "directions", "reactions"}
+IDENTITY_REACTION = {"when", "repeat", "gate", "fail", "result"}
 CHANNEL = {
     "id",
     "type",
@@ -37,6 +49,7 @@ CHANNEL = {
     "addresses",
     "streams_in",
     "recent_events_window",
+    "sender_is_participant",
 }
 ADDRESSES = {"normalizes", "conversation_key"}
 MODEL = {"rounds"}
@@ -108,6 +121,8 @@ EXPECT = {
     "lifecycle",
     "models",
     "streamed",
+    "participants",
+    "resolver",
 }
 NEW_ROOM = {"id", "organization_id", "metadata", "timers"}
 
@@ -195,6 +210,7 @@ def unknown_members(scenario: Mapping[str, Any]) -> list[str]:
     setup = scenario.get("setup", {})
     _members(setup, SETUP, "setup", found)
     _members(setup.get("kit", {}), KIT, "setup.kit", found)
+    _identity(setup, found)
     for position, channel in enumerate(setup.get("channels", [])):
         _channel(channel, f"setup.channels[{position}]", found)
     for position, room in enumerate(setup.get("rooms", [])):
@@ -213,6 +229,23 @@ def unknown_members(scenario: Mapping[str, Any]) -> list[str]:
         for index, outcome in enumerate(listed):
             _outcome(outcome, f"expect.actions.{label}[{index}]", found)
     return found
+
+
+def _identity(setup: Mapping[str, Any], found: list[str]) -> None:
+    """The members of the scripted resolver and the identity hooks (§11)."""
+    resolver = setup.get("kit", {}).get("identity_resolver")
+    if resolver is not None:
+        _members(resolver, RESOLVER, "setup.kit.identity_resolver", found)
+        for index, answer in enumerate(resolver.get("answers", [])):
+            path = f"setup.kit.identity_resolver.answers[{index}]"
+            _members(answer, RESOLVER_ANSWER, path, found)
+            _members(answer.get("when", {}), RESOLVER_WHEN, f"{path}.when", found)
+    for position, hook in enumerate(setup.get("identity_hooks", [])):
+        path = f"setup.identity_hooks[{position}]"
+        _members(hook, IDENTITY_HOOK, path, found)
+        for index, reaction in enumerate(hook.get("reactions", [])):
+            _members(reaction, IDENTITY_REACTION, f"{path}.reactions[{index}]", found)
+            _members(reaction.get("when", {}), WHEN, f"{path}.reactions[{index}].when", found)
 
 
 def _members(value: Any, known: set[str], path: str, found: list[str]) -> None:

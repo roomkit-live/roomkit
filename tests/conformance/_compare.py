@@ -95,12 +95,14 @@ class _Comparison:
                     self._check(expected, actual, f"{kind}.{alias}.{channel_id}")
 
     def models(self) -> None:
+        if "resolver" in self.expect:
+            self._check(self.expect["resolver"], self.observed.resolver, "resolver")
         for channel_id, expected in self.expect.get("models", {}).items():
             actual = self.observed.models.get(channel_id, [])
             self._check(expected, actual, f"models.{channel_id}")
 
     def side_effects(self) -> None:
-        for kind in ("observations", "tasks"):
+        for kind in ("observations", "tasks", "participants"):
             recorded = getattr(self.observed, kind)
             for alias, expected in self.expect.get(kind, {}).items():
                 self._check(expected, recorded.get(self._room(alias), []), f"{kind}.{alias}")

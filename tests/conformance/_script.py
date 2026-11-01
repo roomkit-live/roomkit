@@ -197,6 +197,9 @@ class ScriptedChannel(Channel):
         self._deliver_stream = Reactions(spec.get("deliver_stream"))
         self._addresses = spec.get("addresses")
         self._recent_events_window = int(spec.get("recent_events_window", 0))
+        if "sender_is_participant" in spec:
+            # Declared on the class by a real channel; per scenario here.
+            self.sender_is_participant = bool(spec["sender_is_participant"])
 
     def capabilities(self) -> ChannelCapabilities:
         return self._capabilities
