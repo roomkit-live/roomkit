@@ -23,6 +23,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rest of its source stands, its direction included. Scenario
   `inbound/a-parse-naming-another-channel-is-sourced-from-its-own`.
 
+- **A parsed event is stored in the room its message was routed to, and
+  answers nothing** (RFC §10.1 step 4, RMK-1123). A channel whose
+  `handle_inbound()` named another room had the message stored in that
+  room's timeline and delivered to its channels; one that set
+  `responds_to` had it stored as the response to that event. The event now
+  takes the routed room, with a warning, and answers nothing: only the
+  runtime writes the instruction a response answers. Scenarios
+  `inbound/a-parse-naming-another-room-is-stored-in-the-routed-one` and
+  `inbound/a-parse-writing-responds-to-answers-nothing`.
+
 - **BREAKING — `update_task()` of a task the store lacks raises `TaskNotFoundError`**
   (RFC 14.3, RMK-1113). The three stores answered it three ways:
   `InMemoryStore` kept the task where `get_task()` found it and no room's

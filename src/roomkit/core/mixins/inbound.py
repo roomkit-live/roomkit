@@ -674,7 +674,8 @@ class InboundMixin(HelpersMixin):
         # The event its channel built is refused as the message is (RFC §5.3).
         refuse_too_deep(event.content)
 
-        event = _at_least_as_deep(_apply_message_fields(event, message))
+        event = _apply_message_fields(event, message)
+        event = _at_least_as_deep(_in_its_room(event, room_id))
         event = with_pipeline_id(event)
 
         # Identity resolution pipeline (RFC §11)
@@ -1602,6 +1603,24 @@ def _from_its_channel(event: RoomEvent, message: InboundMessage) -> RoomEvent:
     )
     received = event.source.model_copy(update={"channel_id": message.channel_id})
     return event.model_copy(update={"source": received})
+
+
+def _in_its_room(event: RoomEvent, room_id: str) -> RoomEvent:
+    """*event* in the room its message was routed to, answering nothing
+    (RFC §10.1 step 4): a parse neither moves a message to another room,
+    whose timeline and channels would take it, nor makes it the response
+    to an instruction, which only the runtime writes (§10.1.1)."""
+    if event.room_id == room_id and event.responds_to is None:
+        return event
+    if event.room_id != room_id:
+        logger.warning(
+            "A message routed to room %s was parsed into room %s: it is stored in %s",
+            room_id,
+            event.room_id,
+            room_id,
+            extra={"room_id": room_id},
+        )
+    return event.model_copy(update={"room_id": room_id, "responds_to": None})
 
 
 _RUNTIME_KEYS = (RUNTIME_RECORD, HELD_KEY, FINGERPRINT)
