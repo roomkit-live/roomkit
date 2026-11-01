@@ -4,7 +4,8 @@ room's observations, made on the Python core (roomkit-specs
 
 A call ``status.<operation>`` is the operation of the kit's status bus
 (RFC §19.8); ``status.post`` is the bus's ``post_async``, which returns once
-the bus's subscribers ran. A call ``host.<verb>`` is a verb of the turn's
+the bus's subscribers ran. ``delegate`` returns the task, which ``task.wait`` names by its
+label to wait for its result (RFC §23.3). A call ``host.<verb>`` is a verb of the turn's
 host (RFC §10.6.5), made by an action of a scripted intelligence channel's
 turn: ``current_turn_host()`` there, which a call made anywhere else lacks.
 """
@@ -44,6 +45,20 @@ TASK_ARGUMENTS: dict[str, set[str]] = {
     },
     "list_observations": {"room_id"},
     "list_tasks": {"room_id", "status"},
+    "delegate": {
+        "room_id",
+        "agent_id",
+        "task",
+        "wait",
+        "context",
+        "share_channels",
+        "notify",
+        "post_status",
+        "brief",
+        "conversation",
+        "hand_back",
+    },
+    "task.wait": {"task_id"},
     "host.send_event": {
         "room_id",
         "channel_id",
@@ -100,6 +115,22 @@ async def _list_tasks(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -
     return await kit.list_tasks(spec["room_id"], **_named(spec, names))
 
 
+async def _delegate(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
+    names = TASK_ARGUMENTS["delegate"] - {"room_id", "agent_id", "task"} | {"organization_id"}
+    task = await kit.delegate(
+        spec["room_id"], spec["agent_id"], spec["task"], **_named(spec, names)
+    )
+    harness.tasks[task.id] = task
+    return task
+
+
+async def _task_wait(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
+    task = harness.tasks.get(spec["task_id"])
+    if task is None:
+        raise UnreadableError(f"no task {spec['task_id']!r} was delegated")
+    return await task.wait()
+
+
 def _host() -> Any:
     host = current_turn_host()
     if host is None:
@@ -141,6 +172,8 @@ TASK_CALLS: dict[str, Call] = {
     "submit_feedback": _submit_feedback,
     "list_observations": _list_observations,
     "list_tasks": _list_tasks,
+    "delegate": _delegate,
+    "task.wait": _task_wait,
     "host.send_event": _host_send_event,
     "host.post_status": _host_post_status,
     "host.update_room_metadata": _host_update_room_metadata,

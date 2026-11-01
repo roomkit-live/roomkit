@@ -41,6 +41,7 @@ from roomkit.models.enums import (
 from roomkit.models.event import EventContent, EventSource, RoomEvent
 from roomkit.models.room import Room, RoomTimers
 from roomkit.providers.sms import WebhookMeta
+from roomkit.tasks import DelegatedTask
 from tests.conformance._agent import scripted_agent
 from tests.conformance._script import (
     ScriptedChannel,
@@ -125,6 +126,19 @@ def dump(value: Any) -> Any:
             "error": None if value.error is None else str(value.error),
             "response_metadata": value.response_metadata,
             "delivery_results": {k: dump(v) for k, v in (value.delivery_results or {}).items()},
+        }
+    if isinstance(value, DelegatedTask):
+        return {
+            "id": value.id,
+            "child_room_id": value.child_room_id,
+            "parent_room_id": value.parent_room_id,
+            "agent_id": value.agent_id,
+            "task": value.task,
+            "brief": value.brief,
+            "description": value.description,
+            "hand_back": value.hand_back,
+            "status": str(value.status),
+            "result": dump(value.result),
         }
     if hasattr(value, "model_dump"):
         return value.model_dump(mode="json")
@@ -426,4 +440,6 @@ def result_event_id(result: Any) -> str | None:
         return result.id
     if isinstance(result, DeliveryOutcome):
         return result.event_id
+    if isinstance(result, DelegatedTask):
+        return result.id
     return None

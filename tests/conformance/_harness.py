@@ -25,6 +25,7 @@ from roomkit.models.task import Observation
 from roomkit.models.tool_call import ToolCallEvent
 from roomkit.orchestration.status_bus import StatusEntry
 from roomkit.store.base import ConversationStore
+from roomkit.tasks import DelegatedTask
 from tests.conformance._agent import ScriptedModel, tool_call_record
 from tests.conformance._calls import (
     CALLS,
@@ -97,6 +98,7 @@ class Harness:
         self._labels: dict[str, str | None] = {}
         self._background: dict[str, asyncio.Task[dict[str, Any]]] = {}
         self._after_turn: list[asyncio.Task[None]] = []
+        self.tasks: dict[str, DelegatedTask] = {}
         self._checks: list[Check] = []
         self._step_outcomes: list[dict[str, Any]] = []
         self._problems: list[str] = []
