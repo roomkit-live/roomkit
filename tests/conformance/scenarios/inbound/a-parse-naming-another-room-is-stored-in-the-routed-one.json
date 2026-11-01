@@ -1,0 +1,103 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "inbound/a-parse-naming-another-room-is-stored-in-the-routed-one",
+  "title": "An event whose parse names another room is stored in the room the message was routed to",
+  "rules": [
+    "§10.1 step 4",
+    "§10.1 step 1"
+  ],
+  "notes": "A parse cannot move a message: the room is the router's, or the caller's (step 1), and the event is stored in that room's timeline and delivered to its channels, never to the room the parse named.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "parse": [
+          {
+            "parsed": {
+              "room_id": "room-2"
+            }
+          }
+        ]
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "room-1"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "room_id": "room-1",
+          "content": {
+            "type": "text",
+            "body": "Hello"
+          }
+        }
+      ],
+      "room-2": []
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "id": "room-1#0"
+          }
+        ]
+      },
+      "room-2": {
+        "ws": []
+      }
+    }
+  }
+}

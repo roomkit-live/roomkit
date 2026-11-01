@@ -1,0 +1,95 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "inbound/a-parse-writing-responds-to-answers-nothing",
+  "title": "An event whose parse writes responds_to is stored as answering nothing",
+  "rules": [
+    "§10.1 step 4",
+    "§5.2",
+    "§10.1.1"
+  ],
+  "notes": "responds_to names the instruction a response answers (§10.1.1), which only the runtime writes, on the response it produces: no message a channel parsed is one, whoever wrote the key.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "parse": [
+          {
+            "when": {
+              "text": "Again"
+            },
+            "parsed": {
+              "responds_to": "room-1#0"
+            }
+          }
+        ]
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Again"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Hello"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Again"
+          },
+          "responds_to": {
+            "$absent": true
+          }
+        }
+      ]
+    }
+  }
+}

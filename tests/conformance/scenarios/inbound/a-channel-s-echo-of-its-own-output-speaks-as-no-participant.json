@@ -1,0 +1,102 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "inbound/a-channel-s-echo-of-its-own-output-speaks-as-no-participant",
+  "title": "An event whose parse says it travelled outbound keeps that direction, and is its channel's, not the participant's it names",
+  "rules": [
+    "§10.1 step 4",
+    "§10.3 Validation rule 3",
+    "§10.3 Validation rule 4"
+  ],
+  "notes": "A channel that reads its own output back off its wire (an echo) parses it OUTBOUND. The direction stands: the event is the channel's own, whatever participant it names, so a sender's delete it carries holds no authorship of that participant's messages.",
+  "setup": {
+    "channels": [
+      {
+        "id": "wa",
+        "type": "whatsapp",
+        "category": "transport",
+        "parse": [
+          {
+            "when": {
+              "type": "delete"
+            },
+            "parsed": {
+              "source": {
+                "direction": "outbound"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "wa"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "wa",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Mine"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "wa",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "delete",
+          "target_event_id": "room-1#0",
+          "delete_type": "sender"
+        },
+        "event_type": "delete"
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "not_original_author",
+          "event": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Mine"
+          },
+          "metadata": {
+            "deleted": {
+              "$absent": true
+            }
+          }
+        }
+      ]
+    }
+  }
+}
