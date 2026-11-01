@@ -13,13 +13,17 @@ import re
 from collections.abc import Mapping
 from typing import Any
 
+from pydantic_core import to_jsonable_python
+
 from roomkit import RoomKit
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import DeliveryStatus
 from roomkit.models.event import RoomEvent
 from roomkit.models.framework_event import FrameworkEvent
 from roomkit.models.store_filter import EventFilter
+from roomkit.models.task import Observation
 from roomkit.models.tool_call import ToolCallEvent
+from roomkit.orchestration.status_bus import StatusEntry
 from roomkit.store.base import ConversationStore
 from tests.conformance._agent import ScriptedModel, tool_call_record
 from tests.conformance._calls import (
@@ -39,6 +43,7 @@ from tests.conformance._compare import Check, compare
 from tests.conformance._normalize import Observed, is_lifecycle_record
 from tests.conformance._script import Gates, ScriptedRouter
 from tests.conformance._store import STORE_CALLS
+from tests.conformance._tasks import TASK_CALLS
 
 # The framework events of the §26.1 table, and Processing timeout's (§8.2).
 LEVEL_0_EVENTS = (
@@ -62,6 +67,10 @@ LEVEL_0_EVENTS = (
     "session_started",
     "process_timeout",
 )
+
+# The framework events of the Level 2 features a scenario exercises: the
+# status bus's (§19.8) and a feedback's (§15.9).
+LEVEL_2_EVENTS = ("status_posted", "feedback")
 
 # A call that has not returned by then fails the scenario instead of hanging
 # it; so does a kit that does not go idle.
@@ -137,6 +146,10 @@ class Harness:
             call["tool_call"] = tool_call_record(payload)
         if isinstance(payload, DeliveryStatus):
             call["delivery_status"] = payload.model_dump(mode="json")
+        if isinstance(payload, StatusEntry):
+            call["status_entry"] = payload.model_dump(mode="json")
+        if isinstance(payload, Observation):
+            call["observation"] = payload.model_dump(mode="json")
         self.observed.hooks.setdefault(name, []).append(call)
         self.observed.hook_order.append(name)
 
@@ -146,8 +159,10 @@ class Harness:
         if not self._recording:
             return
         # The members the RFC's Data column names, flat; `data` kept whole
-        # too, for the rows that name `data.x` (§8.2).
-        flat: dict[str, Any] = {"event": event.type, **event.data, "data": event.data}
+        # too, for the rows that name `data.x` (§8.2). Read in the serialized
+        # form: a status_posted's data is its entry's dump, its status an enum.
+        data = to_jsonable_python(event.data, fallback=str)
+        flat: dict[str, Any] = {"event": event.type, **data, "data": data}
         for key in ("room_id", "channel_id", "event_id"):
             value = getattr(event, key)
             if value is not None:
@@ -173,7 +188,7 @@ class Harness:
 
     async def _setup(self) -> None:
         setup = self.scenario.get("setup", {})
-        for event_type in LEVEL_0_EVENTS:
+        for event_type in LEVEL_0_EVENTS + LEVEL_2_EVENTS:
             self.kit.on(event_type)(self._on_framework_event)
         for channel in setup.get("channels", []):
             register_channel(self.kit, self, channel)
@@ -240,10 +255,9 @@ class Harness:
     async def invoke(self, spec: Mapping[str, Any], scope: Mapping[str, str]) -> dict[str, Any]:
         """Makes one call; returns its outcome, its error named, never raising."""
         resolved = await self.resolve(dict(spec), scope)
+        call = (CALLS | STORE_CALLS | TASK_CALLS)[spec["call"]]
         try:
-            result = await asyncio.wait_for(
-                (CALLS | STORE_CALLS)[spec["call"]](self.kit, self, resolved), CALL_BOUND_S
-            )
+            result = await asyncio.wait_for(call(self.kit, self, resolved), CALL_BOUND_S)
         except TimeoutError:
             self._problems.append(f"{spec['call']} did not return within {CALL_BOUND_S} s")
             return {"result": None, "error": {"name": "<hung>"}}
