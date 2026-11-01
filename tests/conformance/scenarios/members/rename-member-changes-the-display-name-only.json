@@ -1,0 +1,135 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "members/rename-member-changes-the-display-name-only",
+  "title": "rename_member changes a member's display name in place, with the record of the change and ON_PARTICIPANT_UPDATED; a rename to the name held writes nothing, and one of a participant the room does not have is refused",
+  "rules": [
+    "§5.5",
+    "§5.1"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "updated",
+        "trigger": "on_participant_updated",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "add_member",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "participant_id": "u1",
+      "identity_id": "id-u1",
+      "display_name": "Alice"
+    },
+    {
+      "call": "rename_member",
+      "room_id": "room-1",
+      "participant_id": "u1",
+      "display_name": "Alicia",
+      "expect": {
+        "result": {
+          "id": "u1",
+          "identity_id": "id-u1",
+          "display_name": "Alicia",
+          "status": "active"
+        }
+      }
+    },
+    {
+      "call": "rename_member",
+      "room_id": "room-1",
+      "participant_id": "u1",
+      "display_name": "Alicia",
+      "expect": {
+        "result": {
+          "id": "u1",
+          "display_name": "Alicia"
+        }
+      }
+    },
+    {
+      "call": "rename_member",
+      "room_id": "room-1",
+      "participant_id": "ghost",
+      "display_name": "Nobody",
+      "expect": {
+        "error": "participant_not_found"
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "participants": {
+      "room-1": [
+        {
+          "id": "u1",
+          "identity_id": "id-u1",
+          "display_name": "Alicia"
+        }
+      ]
+    },
+    "hooks": {
+      "updated": [
+        {
+          "trigger": "on_participant_updated",
+          "room_id": "room-1",
+          "event": {
+            "type": "participant_updated",
+            "content": {
+              "type": "system",
+              "code": "participant_updated",
+              "body": "Participant renamed",
+              "data": {
+                "participant_id": "u1",
+                "display_name": "Alicia"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "lifecycle": {
+      "room-1": [
+        {
+          "type": "channel_attached"
+        },
+        {
+          "type": "participant_joined"
+        },
+        {
+          "type": "participant_updated",
+          "content": {
+            "type": "system",
+            "code": "participant_updated",
+            "body": "Participant u1 is now displayed as 'Alicia'",
+            "data": {
+              "participant_id": "u1",
+              "display_name": "Alicia"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

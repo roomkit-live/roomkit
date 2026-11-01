@@ -1,0 +1,229 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "members/add-member-joins-once-and-records-a-new-channel",
+  "title": "add_member joins a member active, identified when it names an identity, with the record of its join and ON_PARTICIPANT_JOINED; adding an active member again joins nothing, and records a channel newly reached only",
+  "rules": [
+    "§5.5",
+    "§5.1"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "joined",
+        "trigger": "on_participant_joined",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "add_member",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "participant_id": "u1",
+      "identity_id": "id-u1",
+      "display_name": "Alice",
+      "expect": {
+        "result": {
+          "id": "u1",
+          "channel_id": "sms",
+          "connected_via": [
+            "sms"
+          ],
+          "status": "active",
+          "role": "member",
+          "identification": "identified",
+          "identity_id": "id-u1",
+          "display_name": "Alice"
+        }
+      }
+    },
+    {
+      "call": "add_member",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "participant_id": "u1",
+      "identity_id": "id-u1",
+      "display_name": "Someone else",
+      "expect": {
+        "result": {
+          "id": "u1",
+          "connected_via": [
+            "sms"
+          ],
+          "display_name": "Alice"
+        }
+      }
+    },
+    {
+      "call": "add_member",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "participant_id": "u1",
+      "expect": {
+        "result": {
+          "id": "u1",
+          "channel_id": "sms",
+          "connected_via": [
+            "sms",
+            "ws"
+          ],
+          "status": "active"
+        }
+      }
+    },
+    {
+      "call": "add_member",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "participant_id": "u2",
+      "role": "observer",
+      "expect": {
+        "result": {
+          "id": "u2",
+          "role": "observer",
+          "identification": "pending",
+          "identity_id": null
+        }
+      }
+    },
+    {
+      "call": "is_member",
+      "room_id": "room-1",
+      "identity_id": "id-u1",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "call": "is_member",
+      "room_id": "room-1",
+      "identity_id": "nobody",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "participants": {
+      "room-1": {
+        "$unordered": [
+          {
+            "id": "u1",
+            "channel_id": "sms",
+            "connected_via": [
+              "sms",
+              "ws"
+            ],
+            "status": "active",
+            "identity_id": "id-u1"
+          },
+          {
+            "id": "u2",
+            "channel_id": "ws",
+            "status": "active",
+            "role": "observer"
+          }
+        ]
+      }
+    },
+    "hooks": {
+      "joined": {
+        "$unordered": [
+          {
+            "trigger": "on_participant_joined",
+            "room_id": "room-1",
+            "event": {
+              "type": "participant_joined",
+              "content": {
+                "type": "system",
+                "code": "participant_joined",
+                "body": "Participant joined",
+                "data": {
+                  "participant_id": "u1",
+                  "identity_id": "id-u1"
+                }
+              }
+            }
+          },
+          {
+            "trigger": "on_participant_joined",
+            "room_id": "room-1",
+            "event": {
+              "type": "participant_joined",
+              "content": {
+                "data": {
+                  "participant_id": "u2",
+                  "identity_id": null
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    "lifecycle": {
+      "room-1": [
+        {
+          "type": "channel_attached"
+        },
+        {
+          "type": "channel_attached"
+        },
+        {
+          "type": "participant_joined",
+          "content": {
+            "type": "system",
+            "code": "participant_joined",
+            "body": "Participant u1 joined",
+            "data": {
+              "participant_id": "u1",
+              "identity_id": "id-u1"
+            }
+          }
+        },
+        {
+          "type": "participant_joined",
+          "content": {
+            "type": "system",
+            "code": "participant_joined",
+            "body": "Participant u2 joined",
+            "data": {
+              "participant_id": "u2",
+              "identity_id": null
+            }
+          }
+        }
+      ]
+    },
+    "framework_events": {
+      "room-1": []
+    }
+  }
+}

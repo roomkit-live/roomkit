@@ -1,0 +1,247 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "members/remove-member-leaves-or-bans-and-a-join-reactivates",
+  "title": "remove_member keeps the record, left or banned, with the record of the leave and ON_PARTICIPANT_LEFT, and refuses a participant the room does not have; a join through another channel reactivates the record, that channel its primary, the one it replaces kept",
+  "rules": [
+    "§5.5",
+    "§5.1"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "joined",
+        "trigger": "on_participant_joined",
+        "execution": "async"
+      },
+      {
+        "name": "left",
+        "trigger": "on_participant_left",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "add_member",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "participant_id": "u1",
+      "identity_id": "id-u1"
+    },
+    {
+      "call": "remove_member",
+      "room_id": "room-1",
+      "participant_id": "u1",
+      "expect": {
+        "result": {
+          "id": "u1",
+          "status": "left",
+          "identity_id": "id-u1"
+        }
+      }
+    },
+    {
+      "call": "is_member",
+      "room_id": "room-1",
+      "identity_id": "id-u1",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "call": "add_member",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "participant_id": "u1",
+      "identity_id": "id-u1",
+      "expect": {
+        "result": {
+          "id": "u1",
+          "status": "active",
+          "channel_id": "ws",
+          "connected_via": [
+            "ws",
+            "sms"
+          ]
+        }
+      }
+    },
+    {
+      "call": "is_member",
+      "room_id": "room-1",
+      "identity_id": "id-u1",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "call": "remove_member",
+      "room_id": "room-1",
+      "participant_id": "u1",
+      "status": "banned",
+      "expect": {
+        "result": {
+          "id": "u1",
+          "status": "banned"
+        }
+      }
+    },
+    {
+      "call": "is_member",
+      "room_id": "room-1",
+      "identity_id": "id-u1",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "call": "remove_member",
+      "room_id": "room-1",
+      "participant_id": "ghost",
+      "expect": {
+        "error": "participant_not_found"
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "participants": {
+      "room-1": [
+        {
+          "id": "u1",
+          "status": "banned",
+          "channel_id": "ws",
+          "connected_via": [
+            "ws",
+            "sms"
+          ]
+        }
+      ]
+    },
+    "hooks": {
+      "joined": [
+        {
+          "trigger": "on_participant_joined",
+          "event": {
+            "content": {
+              "data": {
+                "participant_id": "u1"
+              }
+            }
+          }
+        },
+        {
+          "trigger": "on_participant_joined",
+          "event": {
+            "content": {
+              "data": {
+                "participant_id": "u1"
+              }
+            }
+          }
+        }
+      ],
+      "left": [
+        {
+          "trigger": "on_participant_left",
+          "room_id": "room-1",
+          "event": {
+            "type": "participant_left",
+            "content": {
+              "type": "system",
+              "code": "participant_left",
+              "body": "Participant left",
+              "data": {
+                "participant_id": "u1",
+                "status": "left"
+              }
+            }
+          }
+        },
+        {
+          "trigger": "on_participant_left",
+          "room_id": "room-1",
+          "event": {
+            "type": "participant_left",
+            "content": {
+              "data": {
+                "participant_id": "u1",
+                "status": "banned"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "lifecycle": {
+      "room-1": [
+        {
+          "type": "channel_attached"
+        },
+        {
+          "type": "channel_attached"
+        },
+        {
+          "type": "participant_joined",
+          "content": {
+            "code": "participant_joined"
+          }
+        },
+        {
+          "type": "participant_left",
+          "content": {
+            "type": "system",
+            "code": "participant_left",
+            "body": "Participant u1 left",
+            "data": {
+              "participant_id": "u1",
+              "status": "left"
+            }
+          }
+        },
+        {
+          "type": "participant_joined",
+          "content": {
+            "code": "participant_joined",
+            "body": "Participant u1 joined"
+          }
+        },
+        {
+          "type": "participant_left",
+          "content": {
+            "code": "participant_left",
+            "data": {
+              "participant_id": "u1",
+              "status": "banned"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

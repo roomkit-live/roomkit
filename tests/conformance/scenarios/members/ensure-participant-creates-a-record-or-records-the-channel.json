@@ -1,0 +1,140 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "members/ensure-participant-creates-a-record-or-records-the-channel",
+  "title": "ensure_participant creates a record reached through the channel it names, and on a record the room has records the channel only, once, never re-homing it, with no record and no hook",
+  "rules": [
+    "§5.5"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "joined",
+        "trigger": "on_participant_joined",
+        "execution": "async"
+      },
+      {
+        "name": "updated",
+        "trigger": "on_participant_updated",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "ensure_participant",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "participant_id": "u1",
+      "display_name": "Una",
+      "expect": {
+        "result": {
+          "id": "u1",
+          "room_id": "room-1",
+          "channel_id": "sms",
+          "connected_via": [
+            "sms"
+          ],
+          "display_name": "Una",
+          "status": "active",
+          "role": "member",
+          "identification": "pending",
+          "identity_id": null
+        }
+      }
+    },
+    {
+      "call": "ensure_participant",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "participant_id": "u1",
+      "display_name": "Someone else",
+      "expect": {
+        "result": {
+          "id": "u1",
+          "channel_id": "sms",
+          "connected_via": [
+            "sms",
+            "ws"
+          ],
+          "display_name": "Una"
+        }
+      }
+    },
+    {
+      "call": "ensure_participant",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "participant_id": "u1",
+      "expect": {
+        "result": {
+          "id": "u1",
+          "channel_id": "sms",
+          "connected_via": [
+            "sms",
+            "ws"
+          ]
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "notes": "A get-or-create the host makes is a deliberate reach (§5.5): the channel it names is recorded on the record the room has, whose primary channel and name stay as they are. Recording a channel is bookkeeping: no PARTICIPANT_UPDATED record, no ON_PARTICIPANT_UPDATED, and creating the record writes no join either.",
+  "expect": {
+    "participants": {
+      "room-1": [
+        {
+          "id": "u1",
+          "channel_id": "sms",
+          "connected_via": [
+            "sms",
+            "ws"
+          ],
+          "display_name": "Una",
+          "status": "active"
+        }
+      ]
+    },
+    "hooks": {
+      "joined": [],
+      "updated": []
+    },
+    "lifecycle": {
+      "room-1": [
+        {
+          "type": "channel_attached"
+        },
+        {
+          "type": "channel_attached"
+        }
+      ]
+    },
+    "framework_events": {
+      "room-1": []
+    }
+  }
+}

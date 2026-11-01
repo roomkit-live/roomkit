@@ -1,0 +1,213 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "members/resolve-participant-identifies-a-pending-record",
+  "title": "resolve_participant identifies a pending record as a stored identity, names it on the binding of its channel, records it and fires ON_PARTICIPANT_IDENTIFIED",
+  "rules": [
+    "§5.5",
+    "§5.1",
+    "Appendix B.3"
+  ],
+  "setup": {
+    "identities": [
+      {
+        "id": "id1",
+        "display_name": "Alice"
+      },
+      {
+        "id": "id2"
+      }
+    ],
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ],
+        "participants": [
+          {
+            "id": "p1",
+            "channel_id": "sms",
+            "identification": "pending",
+            "candidates": [
+              "id1",
+              "id2"
+            ]
+          },
+          {
+            "id": "p2",
+            "channel_id": "ws",
+            "identification": "pending",
+            "display_name": "Bob"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "identified",
+        "trigger": "on_participant_identified",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "resolve_participant",
+      "room_id": "room-1",
+      "participant_id": "p1",
+      "identity_id": "id1",
+      "resolved_by": "advisor1",
+      "expect": {
+        "result": {
+          "id": "p1",
+          "identification": "identified",
+          "identity_id": "id1",
+          "resolved_by": "advisor1",
+          "resolved_at": {
+            "$present": true
+          },
+          "candidates": null,
+          "display_name": "Alice"
+        }
+      }
+    },
+    {
+      "call": "resolve_participant",
+      "room_id": "room-1",
+      "participant_id": "p2",
+      "identity_id": "id2",
+      "expect": {
+        "result": {
+          "id": "p2",
+          "identification": "identified",
+          "identity_id": "id2",
+          "resolved_by": "manual",
+          "display_name": "Bob"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "notes": "An identity with no display name keeps the participant's. The binding of the participant's primary channel names the identity from then on.",
+  "expect": {
+    "participants": {
+      "room-1": {
+        "$unordered": [
+          {
+            "id": "p1",
+            "identification": "identified",
+            "identity_id": "id1",
+            "display_name": "Alice",
+            "candidates": null
+          },
+          {
+            "id": "p2",
+            "identification": "identified",
+            "identity_id": "id2",
+            "display_name": "Bob"
+          }
+        ]
+      }
+    },
+    "bindings": {
+      "room-1": {
+        "sms": {
+          "participant_id": "id1"
+        },
+        "ws": {
+          "participant_id": "id2"
+        }
+      }
+    },
+    "hooks": {
+      "identified": [
+        {
+          "trigger": "on_participant_identified",
+          "room_id": "room-1",
+          "event": {
+            "type": "participant_identified",
+            "content": {
+              "type": "system",
+              "code": "participant_identified",
+              "body": "Participant identified",
+              "data": {
+                "participant_id": "p1",
+                "identity_id": "id1"
+              }
+            }
+          }
+        },
+        {
+          "trigger": "on_participant_identified",
+          "room_id": "room-1",
+          "event": {
+            "type": "participant_identified",
+            "content": {
+              "type": "system",
+              "code": "participant_identified",
+              "data": {
+                "participant_id": "p2",
+                "identity_id": "id2"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "lifecycle": {
+      "room-1": [
+        {
+          "type": "channel_attached"
+        },
+        {
+          "type": "channel_attached"
+        },
+        {
+          "type": "participant_identified",
+          "content": {
+            "type": "system",
+            "code": "participant_identified",
+            "body": "Participant p1 identified as Alice",
+            "data": {
+              "participant_id": "p1",
+              "identity_id": "id1",
+              "resolved_by": "advisor1"
+            }
+          }
+        },
+        {
+          "type": "participant_identified",
+          "content": {
+            "type": "system",
+            "code": "participant_identified",
+            "data": {
+              "participant_id": "p2",
+              "identity_id": "id2",
+              "resolved_by": "manual"
+            }
+          }
+        }
+      ]
+    },
+    "framework_events": {
+      "room-1": []
+    }
+  }
+}

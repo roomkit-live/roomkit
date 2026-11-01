@@ -1,0 +1,132 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "members/a-member-call-acts-for-its-organization",
+  "title": "A member call naming an organization reads the room for it: another organization's room is not found and nothing is written; add_member writes the member's address in the channel's form",
+  "rules": [
+    "§17.2",
+    "§5.5",
+    "§5.7"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "addresses": {
+          "normalizes": {
+            "+1 (555) 123-4567": "+15551234567"
+          }
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "organization_id": "org-a",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "joined",
+        "trigger": "on_participant_joined",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "add_member",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "participant_id": "u1",
+      "organization_id": "org-b",
+      "expect": {
+        "error": "room_not_found"
+      }
+    },
+    {
+      "call": "ensure_participant",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "participant_id": "u2",
+      "organization_id": "org-b",
+      "expect": {
+        "error": "room_not_found"
+      }
+    },
+    {
+      "call": "is_member",
+      "room_id": "room-1",
+      "identity_id": "id-u1",
+      "organization_id": "org-b",
+      "expect": {
+        "error": "room_not_found"
+      }
+    },
+    {
+      "call": "add_member",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "participant_id": "+1 (555) 123-4567",
+      "organization_id": "org-a",
+      "expect": {
+        "result": {
+          "id": "+15551234567",
+          "channel_id": "sms"
+        }
+      }
+    },
+    {
+      "call": "remove_member",
+      "room_id": "room-1",
+      "participant_id": "+15551234567",
+      "organization_id": "org-b",
+      "expect": {
+        "error": "room_not_found"
+      }
+    },
+    {
+      "call": "rename_member",
+      "room_id": "room-1",
+      "participant_id": "+15551234567",
+      "display_name": "X",
+      "organization_id": "org-b",
+      "expect": {
+        "error": "room_not_found"
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "participants": {
+      "room-1": [
+        {
+          "id": "+15551234567",
+          "status": "active",
+          "display_name": null
+        }
+      ]
+    },
+    "hooks": {
+      "joined": [
+        {
+          "trigger": "on_participant_joined",
+          "event": {
+            "content": {
+              "data": {
+                "participant_id": "+15551234567"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

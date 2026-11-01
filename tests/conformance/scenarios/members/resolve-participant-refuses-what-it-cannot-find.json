@@ -1,0 +1,125 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "members/resolve-participant-refuses-what-it-cannot-find",
+  "title": "resolve_participant refuses a participant the room does not have, an identity the store does not hold or another organization's, and a room of another organization, writing nothing",
+  "rules": [
+    "§5.5",
+    "§17.2"
+  ],
+  "setup": {
+    "identities": [
+      {
+        "id": "id1",
+        "display_name": "Alice",
+        "organization_id": "org-a"
+      },
+      {
+        "id": "id-b",
+        "display_name": "Bea",
+        "organization_id": "org-b"
+      }
+    ],
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "organization_id": "org-a",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ],
+        "participants": [
+          {
+            "id": "p1",
+            "channel_id": "sms",
+            "identification": "pending"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "identified",
+        "trigger": "on_participant_identified",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "resolve_participant",
+      "room_id": "room-1",
+      "participant_id": "nope",
+      "identity_id": "id1",
+      "expect": {
+        "error": "participant_not_found"
+      }
+    },
+    {
+      "call": "resolve_participant",
+      "room_id": "room-1",
+      "participant_id": "p1",
+      "identity_id": "no-such-id",
+      "expect": {
+        "error": "identity_not_found"
+      }
+    },
+    {
+      "call": "resolve_participant",
+      "room_id": "room-1",
+      "participant_id": "p1",
+      "identity_id": "id-b",
+      "organization_id": "org-a",
+      "expect": {
+        "error": "identity_not_found"
+      }
+    },
+    {
+      "call": "resolve_participant",
+      "room_id": "room-1",
+      "participant_id": "p1",
+      "identity_id": "id-b",
+      "organization_id": "org-b",
+      "expect": {
+        "error": "room_not_found"
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "participants": {
+      "room-1": [
+        {
+          "id": "p1",
+          "identification": "pending",
+          "identity_id": null
+        }
+      ]
+    },
+    "bindings": {
+      "room-1": {
+        "sms": {
+          "participant_id": null
+        }
+      }
+    },
+    "hooks": {
+      "identified": []
+    },
+    "lifecycle": {
+      "room-1": [
+        {
+          "type": "channel_attached"
+        }
+      ]
+    }
+  }
+}

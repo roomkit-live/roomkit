@@ -1,0 +1,132 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "members/a-resolved-pending-sender-keeps-their-room",
+  "title": "A pending sender an advisor resolves keeps their room: their next message is routed to it, the binding naming the identity now, and is not resolved again",
+  "rules": [
+    "§5.5",
+    "§10.4",
+    "§11.6",
+    "Appendix B.3"
+  ],
+  "setup": {
+    "kit": {
+      "identity_resolver": {
+        "answers": [
+          {
+            "repeat": true,
+            "result": {
+              "status": "pending"
+            }
+          }
+        ]
+      }
+    },
+    "identities": [
+      {
+        "id": "id-alice",
+        "display_name": "Alice"
+      }
+    ],
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r1",
+            "source": {
+              "participant_id": "pending-915e25f899c26f82"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "resolve_participant",
+      "room_id": "$r1",
+      "participant_id": "pending-915e25f899c26f82",
+      "identity_id": "id-alice",
+      "expect": {
+        "result": {
+          "identification": "identified",
+          "identity_id": "id-alice",
+          "display_name": "Alice"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "again"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r1",
+            "source": {
+              "participant_id": "pending-915e25f899c26f82"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "notes": "The pending record is own_record_id(sms, +15551234567). Once resolved, the binding of sms names the identity, and the record the address names on sms (§5.5, §11.2) is the sender's: routing's step 1 and its check under the lock find the room by it (§10.4), and the room identified the sender, so no resolver is asked (§11.6 case 2).",
+  "expect": {
+    "resolver": [
+      {
+        "sender_id": "+15551234567"
+      }
+    ],
+    "bindings": {
+      "$r1": {
+        "sms": {
+          "participant_id": "id-alice"
+        }
+      }
+    },
+    "timeline": {
+      "$r1": [
+        {
+          "index": 0,
+          "content": {
+            "body": "hi"
+          }
+        },
+        {
+          "index": 1,
+          "content": {
+            "body": "again"
+          },
+          "metadata": {
+            "author": {
+              "name": "Alice"
+            }
+          }
+        }
+      ]
+    }
+  }
+}
