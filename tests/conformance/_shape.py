@@ -16,7 +16,7 @@ from tests.conformance._store import READ_MARKER_ARGUMENTS, STORE_ARGUMENTS
 
 TOP = {"$schema", "id", "title", "rules", "reentrancy", "notes", "setup", "steps", "expect"}
 SETUP = {"kit", "channels", "rooms", "hooks"}
-KIT = {"max_chain_depth", "process_timeout_ms"}
+KIT = {"max_chain_depth", "process_timeout_ms", "router"}
 CHANNEL = {
     "id",
     "type",

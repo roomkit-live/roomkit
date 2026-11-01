@@ -36,7 +36,7 @@ from tests.conformance._calls import (
 )
 from tests.conformance._compare import Check, compare
 from tests.conformance._normalize import Observed, is_lifecycle_record
-from tests.conformance._script import Gates
+from tests.conformance._script import Gates, ScriptedRouter
 from tests.conformance._store import STORE_CALLS
 
 # The framework events of the §26.1 table, and Processing timeout's (§8.2).
@@ -94,6 +94,8 @@ class Harness:
             kwargs["process_timeout"] = kit_setup["process_timeout_ms"] / 1000
         if store is not None:
             kwargs["store"] = store
+        if "router" in kit_setup:
+            kwargs["inbound_router"] = ScriptedRouter(kit_setup["router"]["room_id"])
         self.kit = RoomKit(**kwargs)
 
     # -- recording --------------------------------------------------------

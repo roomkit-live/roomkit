@@ -13,12 +13,14 @@ from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from roomkit.channels.base import Channel
+from roomkit.core.inbound_router import InboundRoomRouter
 from roomkit.models.channel import ChannelBinding, ChannelCapabilities, ChannelOutput
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundMessage
 from roomkit.models.enums import ChannelCategory, ChannelDirection, ChannelType, EventDirection
 from roomkit.models.event import EventSource, RoomEvent
 from roomkit.models.hook import HookResult, InjectedEvent
+from roomkit.models.identity import Identity
 from roomkit.models.participant import Participant
 from roomkit.models.task import Observation, Task
 from roomkit.models.tool_call import ToolCallEvent
@@ -334,6 +336,25 @@ class ScriptedChannel(Channel):
             ],
             metadata_updates=output.get("metadata_updates", {}),
         )
+
+
+class ScriptedRouter(InboundRoomRouter):
+    """A router answering every routed message with one room."""
+
+    def __init__(self, room_id: str) -> None:
+        self._room_id = room_id
+
+    async def route(
+        self,
+        channel_id: str,
+        channel_type: ChannelType,
+        participant_id: str | None = None,
+        channel_data: dict[str, Any] | None = None,
+        *,
+        organization_id: str | None = None,
+        identity: Identity | None = None,
+    ) -> str | None:
+        return self._room_id
 
 
 HookHandler = Callable[[Any, RoomContext], Awaitable[HookResult | None]]
