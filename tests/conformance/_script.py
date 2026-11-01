@@ -184,6 +184,7 @@ class ScriptedChannel(Channel):
         self._streams_in = spec.get("streams_in")
         self._deliver_stream = Reactions(spec.get("deliver_stream"))
         self._addresses = spec.get("addresses")
+        self._recent_events_window = int(spec.get("recent_events_window", 0))
 
     def capabilities(self) -> ChannelCapabilities:
         return self._capabilities
@@ -191,6 +192,10 @@ class ScriptedChannel(Channel):
     @property
     def recipient_key(self) -> str | None:
         return self._recipient_key
+
+    @property
+    def recent_events_window(self) -> int:
+        return self._recent_events_window
 
     # What the scenario's ``addresses`` says the channel's own address
     # methods answer; the defaults without it.
@@ -256,6 +261,7 @@ class ScriptedChannel(Channel):
         self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
     ) -> ChannelOutput:
         self._harness.record("deliveries", event.room_id, self.channel_id, event)
+        self._harness.record_context(event.room_id, self.channel_id, "deliver", context)
         return await self._react(self._deliver, event, respond=False)
 
     @property
@@ -296,6 +302,7 @@ class ScriptedChannel(Channel):
     ) -> ChannelOutput:
         if self.category is ChannelCategory.INTELLIGENCE:
             self._harness.record("turns", event.room_id, self.channel_id, event)
+            self._harness.record_context(event.room_id, self.channel_id, "on_event", context)
         return await self._react(self._on_event, event, respond=True)
 
     async def _react(

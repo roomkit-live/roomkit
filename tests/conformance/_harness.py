@@ -14,6 +14,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from roomkit import RoomKit
+from roomkit.models.context import RoomContext
 from roomkit.models.event import RoomEvent
 from roomkit.models.framework_event import FrameworkEvent
 from roomkit.models.store_filter import EventFilter
@@ -102,6 +103,18 @@ class Harness:
             return
         per_room = getattr(self.observed, kind).setdefault(room_id, {})
         per_room.setdefault(channel_id, []).append(event.model_dump(mode="json"))
+
+    def record_context(
+        self, room_id: str, channel_id: str, call: str, context: RoomContext
+    ) -> None:
+        """The context a scripted channel's ``deliver`` or ``on_event`` was
+        handed: the ids of its events, lifecycle records left out."""
+        if not self._recording:
+            return
+        events = [event.model_dump(mode="json") for event in context.recent_events]
+        recent = [event["id"] for event in events if not is_lifecycle_record(event)]
+        per_room = self.observed.contexts.setdefault(room_id, {})
+        per_room.setdefault(channel_id, []).append({"call": call, "recent_events": recent})
 
     def record_streamed(self, room_id: str, channel_id: str, item: dict[str, Any]) -> None:
         """One item a streaming channel's ``deliver_stream`` read, as the

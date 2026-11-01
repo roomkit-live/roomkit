@@ -1,0 +1,139 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "broadcast/a-delivery-s-context-holds-its-event",
+  "title": "A delivery's context holds the room's latest events as read before the commit, then the event delivered",
+  "rules": [
+    "§10.1 step 3",
+    "§10.2",
+    "§6.1"
+  ],
+  "notes": "The room is read for a context of the largest window its channels declare, 3 here, before the event is committed; the delivery set's context is that window with the committed event as its newest, so a reader declaring 3 is handed 4 events. The first deliveries' windows may hold the attaches' lifecycle records, which the expectation leaves out and does not count.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "reader",
+        "type": "websocket",
+        "category": "transport",
+        "recent_events_window": 3
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "reader"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "m0"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "m1"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "m2"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "m3"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "m4"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "contexts": {
+      "room-1": {
+        "reader": [
+          {
+            "call": "deliver",
+            "recent_events": "$any"
+          },
+          {
+            "call": "deliver",
+            "recent_events": "$any"
+          },
+          {
+            "call": "deliver",
+            "recent_events": "$any"
+          },
+          {
+            "call": "deliver",
+            "recent_events": [
+              "room-1#0",
+              "room-1#1",
+              "room-1#2",
+              "room-1#3"
+            ]
+          },
+          {
+            "call": "deliver",
+            "recent_events": [
+              "room-1#1",
+              "room-1#2",
+              "room-1#3",
+              "room-1#4"
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

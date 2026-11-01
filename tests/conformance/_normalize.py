@@ -47,6 +47,7 @@ class Observed:
     hooks: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     hook_order: list[str] = field(default_factory=list)
     deliveries: dict[str, dict[str, list[Any]]] = field(default_factory=dict)
+    contexts: dict[str, dict[str, list[Any]]] = field(default_factory=dict)
     streamed: dict[str, dict[str, list[Any]]] = field(default_factory=dict)
     turns: dict[str, dict[str, list[Any]]] = field(default_factory=dict)
     observations: dict[str, list[Any]] = field(default_factory=dict)

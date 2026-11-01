@@ -35,6 +35,7 @@ CHANNEL = {
     "max_tool_rounds",
     "addresses",
     "streams_in",
+    "recent_events_window",
 }
 ADDRESSES = {"normalizes", "conversation_key"}
 MODEL = {"rounds"}
@@ -96,6 +97,7 @@ EXPECT = {
     "hooks",
     "hook_order",
     "deliveries",
+    "contexts",
     "turns",
     "observations",
     "tasks",
