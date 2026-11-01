@@ -1,0 +1,105 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "rooms/a-metadata-update-merges-the-caller-s-keys",
+  "title": "update_room_metadata merges its keys into the room's, a key only the framework writes dropped, and returns the room as stored; another organization's room, or a room the store lacks, is not found, nothing written",
+  "rules": [
+    "§5.1 The implementation's metadata keys",
+    "§17.2"
+  ],
+  "notes": "Python: tests/test_framework.py (update_room_metadata merges, and drops the framework's keys), tests/test_room_org_scoping.py (update_room_metadata of another organization's room). A key of the room's private state (author_register) is the framework's too (§14.1).",
+  "setup": {
+    "rooms": [
+      {
+        "id": "room-1",
+        "organization_id": "acme",
+        "metadata": {
+          "crm": "c_1",
+          "stage": "new"
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "update_room_metadata",
+      "room_id": "room-1",
+      "metadata": {
+        "stage": "billing",
+        "roomkit:forged": true,
+        "author_register": {
+          "forged": 1
+        }
+      },
+      "expect": {
+        "result": {
+          "id": "room-1",
+          "metadata": {
+            "crm": "c_1",
+            "stage": "billing",
+            "roomkit:forged": {
+              "$absent": true
+            },
+            "author_register": {
+              "$absent": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "update_room_metadata",
+      "room_id": "room-1",
+      "metadata": {
+        "owner": "ana"
+      },
+      "organization_id": "acme",
+      "expect": {
+        "result": {
+          "metadata": {
+            "crm": "c_1",
+            "stage": "billing",
+            "owner": "ana"
+          }
+        }
+      }
+    },
+    {
+      "call": "update_room_metadata",
+      "room_id": "room-1",
+      "metadata": {
+        "leaked": true
+      },
+      "organization_id": "globex",
+      "expect": {
+        "error": "room_not_found"
+      }
+    },
+    {
+      "call": "update_room_metadata",
+      "room_id": "no-such-room",
+      "metadata": {
+        "x": 1
+      },
+      "expect": {
+        "error": "room_not_found"
+      }
+    }
+  ],
+  "expect": {
+    "rooms": {
+      "room-1": {
+        "metadata": {
+          "crm": "c_1",
+          "stage": "billing",
+          "owner": "ana",
+          "leaked": {
+            "$absent": true
+          },
+          "roomkit:forged": {
+            "$absent": true
+          }
+        }
+      }
+    }
+  }
+}

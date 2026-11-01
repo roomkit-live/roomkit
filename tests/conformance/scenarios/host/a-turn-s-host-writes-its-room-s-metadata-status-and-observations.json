@@ -1,0 +1,154 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "host/a-turn-s-host-writes-its-room-s-metadata-status-and-observations",
+  "title": "A turn's host updates its room's metadata, posts a status naming its room and stores an observation of its room, each run on the room's owner as the kit's own call",
+  "rules": [
+    "§10.6.5",
+    "§19.8",
+    "§5.11"
+  ],
+  "notes": "Python: tests/test_turns_host.py::test_room_metadata_status_and_observations_are_written_on_the_owner, test_a_status_post_names_its_turn_s_room. A host's status names its turn's room when its metadata names none.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "go"
+            },
+            "do": [
+              {
+                "call": "host.update_room_metadata",
+                "room_id": "$room",
+                "metadata": {
+                  "stage": "billing"
+                },
+                "as": "metadata"
+              },
+              {
+                "call": "host.post_status",
+                "agent_id": "ai",
+                "action": "lookup",
+                "status": "info",
+                "detail": "looked",
+                "as": "status"
+              },
+              {
+                "call": "host.add_observation",
+                "observation": {
+                  "room_id": "$room",
+                  "channel_id": "ai",
+                  "content": "noted"
+                },
+                "as": "observation"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "organization_id": "acme",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "heard",
+        "trigger": "on_status_posted",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "actions": {
+      "metadata": [
+        {
+          "result": {
+            "id": "room-1",
+            "metadata": {
+              "stage": "billing"
+            }
+          }
+        }
+      ],
+      "status": [
+        {
+          "result": null
+        }
+      ],
+      "observation": [
+        {
+          "result": null
+        }
+      ]
+    },
+    "rooms": {
+      "room-1": {
+        "metadata": {
+          "stage": "billing"
+        }
+      }
+    },
+    "observations": {
+      "room-1": [
+        {
+          "room_id": "room-1",
+          "channel_id": "ai",
+          "content": "noted"
+        }
+      ]
+    },
+    "hooks": {
+      "heard": [
+        {
+          "trigger": "on_status_posted",
+          "room_id": "room-1",
+          "status_entry": {
+            "agent_id": "ai",
+            "action": "lookup",
+            "status": "info",
+            "detail": "looked",
+            "metadata": {
+              "room_id": "room-1"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

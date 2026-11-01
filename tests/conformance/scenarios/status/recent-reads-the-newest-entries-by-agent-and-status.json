@@ -1,0 +1,105 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "status/recent-reads-the-newest-entries-by-agent-and-status",
+  "title": "The bus's recent entries are the newest n, ten by default, in the order they were posted, kept to an agent and a status when the call names them",
+  "rules": [
+    "§19.8"
+  ],
+  "notes": "Python: tests/orchestration/test_status_bus.py::test_backend_publish_and_recent, test_backend_recent_filters, test_bus_post_accepts_string_status.",
+  "steps": [
+    {
+      "call": "status.post",
+      "agent_id": "a1",
+      "action": "search",
+      "status": "ok"
+    },
+    {
+      "call": "status.post",
+      "agent_id": "a2",
+      "action": "write",
+      "status": "failed"
+    },
+    {
+      "call": "status.post",
+      "agent_id": "a1",
+      "action": "read",
+      "status": "completed"
+    },
+    {
+      "call": "status.post",
+      "agent_id": "a1",
+      "action": "close",
+      "status": "ok"
+    },
+    {
+      "call": "status.recent",
+      "n": 2,
+      "expect": {
+        "result": [
+          {
+            "agent_id": "a1",
+            "action": "read"
+          },
+          {
+            "agent_id": "a1",
+            "action": "close"
+          }
+        ]
+      }
+    },
+    {
+      "call": "status.recent",
+      "agent_id": "a1",
+      "status": "ok",
+      "expect": {
+        "result": [
+          {
+            "action": "search"
+          },
+          {
+            "action": "close"
+          }
+        ]
+      }
+    },
+    {
+      "call": "status.recent",
+      "status": "failed",
+      "expect": {
+        "result": [
+          {
+            "agent_id": "a2",
+            "action": "write",
+            "status": "failed"
+          }
+        ]
+      }
+    },
+    {
+      "call": "status.recent",
+      "expect": {
+        "result": [
+          {
+            "action": "search"
+          },
+          {
+            "action": "write"
+          },
+          {
+            "action": "read"
+          },
+          {
+            "action": "close"
+          }
+        ]
+      }
+    },
+    {
+      "call": "status.recent",
+      "agent_id": "nobody",
+      "expect": {
+        "result": []
+      }
+    }
+  ]
+}

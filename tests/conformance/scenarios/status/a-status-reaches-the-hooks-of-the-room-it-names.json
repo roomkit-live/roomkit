@@ -1,0 +1,174 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "status/a-status-reaches-the-hooks-of-the-room-it-names",
+  "title": "A status posted on the kit's bus is the status_posted framework event, and fires ON_STATUS_POSTED in the room its metadata names, the kit's hooks and the room's; a status naming no room, or a room the store lacks, fires none",
+  "rules": [
+    "§19.8",
+    "§8.2",
+    "§9.2"
+  ],
+  "notes": "Python: tests/test_status_posted_without_context_manager.py::test_a_status_posted_after_room_activity_reaches_the_rooms_hooks, tests/test_framework_status_bus.py::test_framework_event_on_post_async. status.post is the bus's post_async: it returns once the bus's subscribers ran. The framework event names no room (its row's data are the entry's members), so it is among the events of no room.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      },
+      {
+        "id": "room-2"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "heard",
+        "trigger": "on_status_posted",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "add_room_hook",
+      "room_id": "room-1",
+      "hook": {
+        "name": "own",
+        "trigger": "on_status_posted",
+        "execution": "async"
+      }
+    },
+    {
+      "call": "add_room_hook",
+      "room_id": "room-2",
+      "hook": {
+        "name": "other",
+        "trigger": "on_status_posted",
+        "execution": "async"
+      }
+    },
+    {
+      "call": "status.post",
+      "agent_id": "agent-1",
+      "action": "working",
+      "status": "pending",
+      "detail": "Looking it up",
+      "metadata": {
+        "room_id": "room-1"
+      },
+      "expect": {
+        "result": {
+          "agent_id": "agent-1",
+          "action": "working",
+          "status": "pending",
+          "detail": "Looking it up",
+          "metadata": {
+            "room_id": "room-1"
+          },
+          "ts": {
+            "$present": true
+          }
+        }
+      }
+    },
+    {
+      "call": "status.post",
+      "agent_id": "agent-2",
+      "action": "idle",
+      "status": "info",
+      "expect": {
+        "result": {
+          "agent_id": "agent-2",
+          "status": "info",
+          "detail": "",
+          "metadata": {}
+        }
+      }
+    },
+    {
+      "call": "status.post",
+      "agent_id": "agent-3",
+      "action": "lost",
+      "status": "failed",
+      "metadata": {
+        "room_id": "no-such-room"
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "heard": [
+        {
+          "trigger": "on_status_posted",
+          "room_id": "room-1",
+          "event": null,
+          "status_entry": {
+            "agent_id": "agent-1",
+            "action": "working",
+            "status": "pending",
+            "detail": "Looking it up",
+            "metadata": {
+              "room_id": "room-1"
+            }
+          }
+        }
+      ],
+      "own": [
+        {
+          "trigger": "on_status_posted",
+          "room_id": "room-1",
+          "status_entry": {
+            "agent_id": "agent-1"
+          }
+        }
+      ],
+      "other": []
+    },
+    "framework_events": {
+      "*": [
+        {
+          "event": "status_posted",
+          "agent_id": "agent-1",
+          "action": "working",
+          "status": "pending",
+          "detail": "Looking it up",
+          "metadata": {
+            "room_id": "room-1"
+          },
+          "ts": {
+            "$present": true
+          }
+        },
+        {
+          "event": "status_posted",
+          "agent_id": "agent-2",
+          "action": "idle",
+          "status": "info",
+          "detail": "",
+          "metadata": {}
+        },
+        {
+          "event": "status_posted",
+          "agent_id": "agent-3",
+          "action": "lost",
+          "status": "failed",
+          "metadata": {
+            "room_id": "no-such-room"
+          }
+        }
+      ]
+    }
+  }
+}

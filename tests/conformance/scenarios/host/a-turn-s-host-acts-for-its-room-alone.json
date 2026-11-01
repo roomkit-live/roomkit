@@ -1,0 +1,200 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "host/a-turn-s-host-acts-for-its-room-alone",
+  "title": "A turn's host refuses a verb for another room or another organization, a status naming another room, and a status only the framework posts: a task's, or a worker run's entry; nothing is written",
+  "rules": [
+    "§10.6.5",
+    "§19.8",
+    "§17.2"
+  ],
+  "notes": "Python: tests/test_turns_host.py::test_a_host_acts_only_for_its_turns_room_and_organization, test_a_status_post_names_its_turn_s_room, test_a_turn_s_host_posts_no_worker_run_entry, test_a_turn_s_host_posts_no_task_status. Each refusal is the owner's ValueError.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "go"
+            },
+            "do": [
+              {
+                "call": "host.send_event",
+                "room_id": "room-2",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "elsewhere"
+                },
+                "as": "send",
+                "expect": {
+                  "error": "invalid_argument"
+                }
+              },
+              {
+                "call": "host.update_room_metadata",
+                "room_id": "room-2",
+                "metadata": {
+                  "x": 1
+                },
+                "as": "metadata",
+                "expect": {
+                  "error": "invalid_argument"
+                }
+              },
+              {
+                "call": "host.update_room_metadata",
+                "room_id": "room-1",
+                "metadata": {
+                  "x": 1
+                },
+                "organization_id": "globex",
+                "as": "organization",
+                "expect": {
+                  "error": "invalid_argument"
+                }
+              },
+              {
+                "call": "host.add_observation",
+                "observation": {
+                  "room_id": "room-2",
+                  "channel_id": "ai",
+                  "content": "noted"
+                },
+                "as": "observation",
+                "expect": {
+                  "error": "invalid_argument"
+                }
+              },
+              {
+                "call": "host.post_status",
+                "agent_id": "ai",
+                "action": "spoof",
+                "status": "info",
+                "metadata": {
+                  "room_id": "room-2"
+                },
+                "as": "spoof",
+                "expect": {
+                  "error": "invalid_argument"
+                }
+              },
+              {
+                "call": "host.post_status",
+                "agent_id": "ai",
+                "action": "task",
+                "status": "pending",
+                "metadata": {
+                  "task_id": "someone-else-s"
+                },
+                "as": "task",
+                "expect": {
+                  "error": "invalid_argument"
+                }
+              },
+              {
+                "call": "host.post_status",
+                "agent_id": "ai",
+                "action": "iteration",
+                "status": "failed",
+                "metadata": {
+                  "task_id": "t1",
+                  "task_run": true
+                },
+                "as": "run",
+                "expect": {
+                  "error": "invalid_argument"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "organization_id": "acme",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "organization_id": "acme",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "heard",
+        "trigger": "on_status_posted",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "status.recent",
+      "agent_id": "ai",
+      "expect": {
+        "result": []
+      }
+    }
+  ],
+  "expect": {
+    "rooms": {
+      "room-1": {
+        "metadata": {
+          "x": {
+            "$absent": true
+          }
+        }
+      },
+      "room-2": {
+        "metadata": {}
+      }
+    },
+    "observations": {
+      "room-1": [],
+      "room-2": []
+    },
+    "timeline": {
+      "room-2": []
+    },
+    "hooks": {
+      "heard": []
+    }
+  }
+}
