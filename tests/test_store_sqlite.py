@@ -451,6 +451,48 @@ class TestPersistence:
         assert junk is None
         assert emptied is not None and emptied.metadata == {}
 
+    async def test_a_v12_file_ties_its_search_rows_to_their_events(self, tmp_path) -> None:
+        """RMK-1031: a v12 file's search rows were written by `event_id`, their
+        rowids their own. The migration gives each its event row's rowid, so
+        an edit replaces the old text; a row naming no event is dropped."""
+        path = tmp_path / "v12.db"
+        store = SQLiteStore(path)
+        await store.create_room(Room(id="r1"))
+        event = await store.commit_event("r1", make_event(room_id="r1", body="old wording"))
+        await store.close()
+        conn = sqlite3.connect(path)
+        conn.executescript(
+            f"""DELETE FROM events_fts;
+            INSERT INTO events_fts(rowid, text, event_id, room_id)
+                VALUES (900, 'old wording', '{event.id}', 'r1'), (901, 'orphan', 'gone', 'r1');
+            PRAGMA user_version=12;"""
+        )
+        conn.close()
+
+        store = SQLiteStore(path)
+        try:
+            found = [e.id for e in await store.search_events("wording")]
+            updated = event.model_copy(deep=True)
+            updated.content.body = "new phrasing"
+            await store.update_event(updated)
+            stale = await store.search_events("wording")
+            fresh = [e.id for e in await store.search_events("phrasing")]
+        finally:
+            await store.close()
+        conn = sqlite3.connect(path)
+        try:
+            version = conn.execute("PRAGMA user_version").fetchone()[0]
+            rows = conn.execute("SELECT event_id FROM events_fts").fetchall()
+        finally:
+            conn.close()
+        assert (found, stale, fresh, version, rows) == (
+            [event.id],
+            [],
+            [event.id],
+            _SCHEMA_VERSION,
+            [(event.id,)],
+        )
+
     async def test_two_connections_allocate_one_monotonic_sequence(self, tmp_path) -> None:
         path = tmp_path / "shared.db"
         first = SQLiteStore(path)
@@ -586,6 +628,49 @@ class TestFullTextSearch:
 
         assert await store.search_events("wording") == []
         assert [e.id for e in await store.search_events("phrasing")] == [event.id]
+
+
+class TestSearchIndexPlans:
+    async def test_the_search_rows_are_written_by_rowid(
+        self, store: SQLiteStore, tmp_path
+    ) -> None:
+        """RMK-1031: every commit rewrites its event's search row, and the
+        event's deletion and its room's remove them. Reached by `event_id` or
+        `room_id`, which FTS5 does not index, each write scanned the whole
+        index, a cost that grew with every event the file holds (12 ms a
+        commit at 60k rows). They go by the event row's rowid."""
+        await store.create_room(Room(id="r1"))
+        statements: list[str] = []
+        await store._run(lambda: store._db().set_trace_callback(statements.append))
+
+        event = await store.commit_event("r1", make_event(room_id="r1", body="old wording"))
+        updated = event.model_copy(deep=True)
+        updated.content.body = "new phrasing"
+        await store.update_event(updated)
+        gone = await store.commit_event("r1", make_event(room_id="r1", body="ephemeral thing"))
+        await store.delete_event("r1", gone.id)
+        await store.delete_room("r1")
+
+        await store._run(lambda: store._db().set_trace_callback(None))
+        conn = sqlite3.connect(tmp_path / "test.db")
+        try:
+            plans = [
+                row[3]
+                for statement in statements
+                # FTS5's own statements are traced as comments.
+                if "events_fts" in statement and not statement.startswith("--")
+                for row in conn.execute(f"EXPLAIN QUERY PLAN {statement}")
+            ]
+        finally:
+            conn.close()
+        # A full scan of the virtual table reads `INDEX n:` with no
+        # constraint; a rowid lookup reads `INDEX n:=`.
+        scans = [
+            plan
+            for plan in plans
+            if re.fullmatch(r"SCAN events_fts VIRTUAL TABLE INDEX \d+:", plan)
+        ]
+        assert plans and scans == [], plans
 
 
 class TestRoutingPlans:

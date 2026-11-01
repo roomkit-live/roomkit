@@ -64,7 +64,7 @@ from roomkit.store.base import (
     without_address,
 )
 
-_SCHEMA_VERSION = 12
+_SCHEMA_VERSION = 13
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS rooms(
@@ -642,6 +642,35 @@ def _migrate_v11_to_v12(conn: sqlite3.Connection) -> None:
         raise
 
 
+def _migrate_v12_to_v13(conn: sqlite3.Connection) -> None:
+    """A search row takes its event row's rowid (RMK-1031): FTS5 indexes no
+    other column, so a row found by `event_id` was found by scanning the
+    whole index on every commit. A row naming no stored event is dropped."""
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        if int(conn.execute("PRAGMA user_version").fetchone()[0]) >= 13:
+            conn.execute("COMMIT")
+            return
+        conn.execute(
+            """CREATE TEMP TABLE fts_by_event AS
+               SELECT e.rowid AS event_rowid, f.text, f.event_id, f.room_id
+               FROM events_fts f JOIN events e ON e.id = f.event_id
+               GROUP BY e.rowid"""
+        )
+        conn.execute("DELETE FROM events_fts")
+        conn.execute(
+            """INSERT INTO events_fts(rowid, text, event_id, room_id)
+               SELECT event_rowid, text, event_id, room_id FROM fts_by_event"""
+        )
+        conn.execute("DROP TABLE fts_by_event")
+        conn.execute("PRAGMA user_version=13")
+        conn.execute("COMMIT")
+    except BaseException:
+        if conn.in_transaction:
+            conn.execute("ROLLBACK")
+        raise
+
+
 _MIGRATIONS = {
     1: _migrate_v1_to_v2,
     2: _migrate_v2_to_v3,
@@ -654,6 +683,7 @@ _MIGRATIONS = {
     9: _migrate_v9_to_v10,
     10: _migrate_v10_to_v11,
     11: _migrate_v11_to_v12,
+    12: _migrate_v12_to_v13,
 }
 """Each step takes a file from its version to the next."""
 
@@ -871,13 +901,19 @@ class SQLiteStore(ConversationStore):
                 "INSERT OR IGNORE INTO idempotency(room_id, channel_id, key) VALUES(?, ?, ?)",
                 (event.room_id, event.source.channel_id, event.idempotency_key),
             )
-        conn.execute("DELETE FROM events_fts WHERE event_id = ?", (event.id,))
+        # The event's search row shares its row's rowid, the one key FTS5
+        # indexes: by `event_id` each rewrite scanned the whole index.
+        conn.execute(
+            "DELETE FROM events_fts WHERE rowid = (SELECT rowid FROM events WHERE id = ?)",
+            (event.id,),
+        )
         # A soft-deleted event's text is withheld (RFC §10.3): no search finds it.
         text = "" if is_deleted(event) else _fts_text(event)
         if text:
             conn.execute(
-                "INSERT INTO events_fts(text, event_id, room_id) VALUES(?, ?, ?)",
-                (text, event.id, event.room_id),
+                "INSERT INTO events_fts(rowid, text, event_id, room_id)"
+                " VALUES((SELECT rowid FROM events WHERE id = ?), ?, ?, ?)",
+                (event.id, text, event.id, event.room_id),
             )
         self._observe_event_index(conn, event.room_id, event.index)
 
@@ -1127,6 +1163,12 @@ class SQLiteStore(ConversationStore):
         with _write_transaction(conn):
             cur = conn.execute("DELETE FROM rooms WHERE id = ?", (room_id,))
             existed = cur.rowcount > 0
+            # By the rows' rowids, before the events they share them with.
+            conn.execute(
+                "DELETE FROM events_fts"
+                " WHERE rowid IN (SELECT rowid FROM events WHERE room_id = ?)",
+                (room_id,),
+            )
             for table in (
                 "events",
                 "bindings",
@@ -1137,7 +1179,6 @@ class SQLiteStore(ConversationStore):
                 "idempotency",
                 "voice_deliveries",
                 "event_sequences",
-                "events_fts",
                 "private_state",
             ):
                 conn.execute(f"DELETE FROM {table} WHERE room_id = ?", (room_id,))  # nosec B608  # fragments are internal, values parameterised
@@ -1496,8 +1537,12 @@ class SQLiteStore(ConversationStore):
                     "DELETE FROM idempotency WHERE room_id = ? AND channel_id = ? AND key = ?",
                     (room_id, channel_id, key),
                 )
+            conn.execute(
+                "DELETE FROM events_fts WHERE rowid IN"
+                f" (SELECT rowid FROM events WHERE id IN ({marks}))",  # nosec B608  # fragments are internal, values parameterised
+                deleted,
+            )
             conn.execute(f"DELETE FROM events WHERE id IN ({marks})", deleted)  # nosec B608  # fragments are internal, values parameterised
-            conn.execute(f"DELETE FROM events_fts WHERE event_id IN ({marks})", deleted)  # nosec B608  # fragments are internal, values parameterised
         return removed
 
     async def list_events(
