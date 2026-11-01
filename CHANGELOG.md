@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`AIChannel(tool_call_intents_required=True)` lists a call's intent as
+  required** (RFC §6.4, RMK-1067). A model that leaves optional properties
+  out wrote no intent with its calls, whatever `tool_call_intents` asked.
+  With both on, every schema the model is shown lists `_roomkit_intent` in
+  its `required`; a call that still comes without one runs, with no intent.
+  roomkit-rs has it as `AiChannelOptions::tool_call_intents_required`.
+
 - **`ThreadSummary` is public, from `roomkit` and `roomkit.models`**
   (RMK-1113). `ConversationStore.get_thread_summaries()` returns it, and a
   caller could name it only through an internal module.

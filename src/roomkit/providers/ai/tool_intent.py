@@ -2,7 +2,8 @@
 the person what the call does (RFC §6.4).
 
 An agent with ``tool_call_intents`` on shows the model each of its tools'
-schemas with one optional property more, :data:`INTENT_PROPERTY`. The tool
+schemas with one property more, :data:`INTENT_PROPERTY`, optional unless
+``tool_call_intents_required`` lists it as required. The tool
 loop takes that property out of a call's arguments before anything reads
 them, and carries its value, normalized, as the call's ``intent``: the tool
 never receives it, and a closed schema never refuses it. A tool whose own
@@ -62,30 +63,37 @@ def normalized_intent(value: Any) -> str | None:
     return text[:INTENT_MAX_CHARS].rstrip() or None
 
 
-def presented_tools(tools: list[AITool]) -> list[AITool]:
+def presented_tools(tools: list[AITool], *, required: bool = False) -> list[AITool]:
     """*tools* as an agent with intents shows them to its model: each schema
-    with the reserved property, one that cannot take it as it is."""
-    return [_presented(tool) for tool in tools]
+    with the reserved property, listed in its ``required`` when *required*;
+    one that cannot take it as it is. Required or not, a call that carries no
+    intent runs: the requirement asks the model, it refuses no call."""
+    return [_presented(tool, required) for tool in tools]
 
 
-def _presented(tool: AITool) -> AITool:
+def _presented(tool: AITool, required: bool) -> AITool:
     parameters = tool.parameters
-    if not _takes_intent(parameters):
+    if not _takes_intent(parameters, required):
         _log_unpresented(tool.name)
         return tool
     properties = {**parameters.get("properties", {}), INTENT_PROPERTY: _INTENT_SCHEMA}
     shown = {**parameters, "type": "object", "properties": properties}
+    if required:
+        fields = list(parameters.get("required", []))
+        shown["required"] = fields if INTENT_PROPERTY in fields else [*fields, INTENT_PROPERTY]
     return tool.model_copy(update={"parameters": shown})
 
 
-def _takes_intent(parameters: dict[str, Any]) -> bool:
+def _takes_intent(parameters: dict[str, Any], required: bool) -> bool:
     """Whether a tool's schema can take the reserved property: an object
-    schema that does not declare it already."""
+    schema that does not declare it already, whose ``required``, when the
+    property is to join it, is a list."""
     properties = parameters.get("properties", {})
     return (
         parameters.get("type", "object") == "object"
         and isinstance(properties, dict)
         and INTENT_PROPERTY not in properties
+        and (not required or isinstance(parameters.get("required", []), list))
     )
 
 

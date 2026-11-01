@@ -99,6 +99,7 @@ async def _turn(
     *responses: AIResponse,
     tools: list[AITool] = (SHELL, SHELL_CLOSED),  # type: ignore[assignment]
     intents: bool = True,
+    required: bool = False,
     deny: bool = False,
     failing: bool = False,
 ) -> _Seen:
@@ -123,6 +124,7 @@ async def _turn(
             tools=list(tools),
             tool_handler=handler,
             tool_call_intents=intents,
+            tool_call_intents_required=required,
         )
     )
     await kit.create_room(room_id="r1")
@@ -190,6 +192,41 @@ async def test_a_call_s_intent_rides_apart_from_its_arguments(
     assert [p["intent"] for p in seen.payloads(EphemeralEventType.TOOL_CALL_START)] == [INTENT]
     assert [p["intent"] for p in seen.payloads(EphemeralEventType.TOOL_CALL_END)] == [INTENT]
     assert [(c.arguments, c.intent) for _, c in seen.rows] == [(COMMAND, INTENT)] * 2
+
+
+async def test_a_required_intent_is_asked_and_a_call_without_one_still_runs(
+    streaming: bool,
+) -> None:
+    """RMK-1067: with ``tool_call_intents_required``, every schema the model
+    is shown lists the reserved property in ``required``; the requirement
+    asks the model, it refuses no call: one without an intent runs and
+    carries none, as roomkit-rs's."""
+    seen = await _turn(
+        streaming,
+        _calling(("c1", "shell", _with(INTENT))),
+        _calling(("c2", "shell", COMMAND)),
+        required=True,
+    )
+
+    for request in seen.provider.calls:
+        assert {
+            t.name: t.parameters["required"]
+            for t in request.tools
+            if t.name in {"shell", "shell_closed"}
+        } == {
+            "shell": ["command", "_roomkit_intent"],
+            "shell_closed": ["command", "_roomkit_intent"],
+        }
+    assert SHELL.parameters["required"] == ["command"]
+    assert seen.received == [("shell", COMMAND), ("shell", COMMAND)]
+    assert [e.intent for e in seen.before] == [INTENT, None]
+
+
+async def test_a_requirement_without_intents_changes_no_schema(streaming: bool) -> None:
+    """Off, ``tool_call_intents_required`` shows the tools as they are."""
+    seen = await _turn(streaming, _calling(("c1", "shell", COMMAND)), intents=False, required=True)
+
+    assert seen.shown("shell") == _COMMAND_SCHEMA
 
 
 def _replayed_calls(context: Any) -> list[dict[str, Any]]:
