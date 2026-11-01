@@ -1,0 +1,146 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-tool-hook-filtered-to-another-agent-leaves-its-calls",
+  "title": "A BEFORE_TOOL_USE or ON_TOOL_CALL hook filtered to another agent neither refuses nor withholds this agent's calls",
+  "rules": [
+    "§9.1",
+    "§9.3"
+  ],
+  "notes": "On a trigger a turn fires, `channel_ids` reads the turn's agent (§9.1): a gate that blocks and a fail-closed hook that withholds, both filtered to `billing`, never run on `agent`'s call, which is served.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "call-1",
+                  "name": "lookup_order",
+                  "arguments": {
+                    "order": "1"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Order 1 is ready."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup_order",
+            "description": "Find an order by its number",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "order": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns": "{\"order\": \"1\", \"status\": \"ready\"}"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "gate",
+        "trigger": "before_tool_use",
+        "channel_ids": [
+          "billing"
+        ],
+        "reactions": [
+          {
+            "result": {
+              "action": "block",
+              "reason": "Billing only"
+            },
+            "repeat": true
+          }
+        ]
+      },
+      {
+        "name": "redact",
+        "trigger": "on_tool_call",
+        "channel_ids": [
+          "billing"
+        ],
+        "fail_closed": true,
+        "reactions": [
+          {
+            "result": {
+              "action": "block",
+              "reason": "Billing only"
+            },
+            "repeat": true
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Where is order 1?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "gate": [],
+      "redact": []
+    },
+    "models": {
+      "agent": [
+        {
+          "tool_results": []
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "call-1",
+              "content": "{\"order\": \"1\", \"status\": \"ready\"}"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

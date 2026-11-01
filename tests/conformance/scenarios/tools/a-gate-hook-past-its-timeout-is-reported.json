@@ -1,14 +1,14 @@
 {
   "$schema": "../../scenario.schema.json",
   "id": "tools/a-gate-hook-past-its-timeout-is-reported",
-  "title": "A SYNC BEFORE_TOOL_USE hook past its timeout is reported as hook_timeout, in the agent's room and channel, and the call is refused",
+  "title": "A SYNC BEFORE_TOOL_USE hook past its timeout is reported as hook_timeout, in the agent's room, and the call is refused",
   "rules": [
     "§9.1",
     "§9.3",
     "§8.2",
     "§26.1"
   ],
-  "notes": "BEFORE_TOOL_USE fails closed (§9.3): the timeout refuses the call with the fixed text. The timeout is reported as for any hook (§8.2, §9.1), as the turn's: its room and the agent's channel. The turn runs after the message's own processing may have ended, so the two framework events are not ordered.",
+  "notes": "BEFORE_TOOL_USE fails closed (§9.3): the timeout refuses the call with the fixed text. The timeout is reported as for any hook (§8.2, §9.1), in the turn's room. The turn runs after the message's own processing may have ended, so the two framework events are not ordered.",
   "setup": {
     "channels": [
       {
@@ -119,7 +119,6 @@
             {
               "event": "hook_timeout",
               "room_id": "room-1",
-              "channel_id": "agent",
               "hook_name": "approve",
               "trigger": "before_tool_use",
               "timeout": 0.05

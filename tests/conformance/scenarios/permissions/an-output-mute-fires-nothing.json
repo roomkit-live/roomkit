@@ -5,10 +5,9 @@
   "rules": [
     "§5.7",
     "§7.2",
-    "§7.2 A binding change that changes nothing",
     "§17.2"
   ],
-  "notes": "output_muted mutes a channel's speech output (§5.7): events still arrive. It is no mute of §7.2, which blocks the channel's responses: neither ON_CHANNEL_MUTED nor ON_CHANNEL_UNMUTED fires, and no lifecycle record is written. A change that changes nothing writes nothing; a channel the room does not bind, or a room of another organization, refuses the call.",
+  "notes": "output_muted mutes a channel's speech output (§5.7): events still arrive. It is no mute of §7.2, which blocks the channel's responses: neither ON_CHANNEL_MUTED nor ON_CHANNEL_UNMUTED fires, and no lifecycle record is written. A channel the room does not bind, or a room of another organization, refuses the call.",
   "setup": {
     "channels": [
       {

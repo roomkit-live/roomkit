@@ -1,0 +1,142 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "hooks/each-observer-runs-apart",
+  "title": "The ASYNC hooks of a trigger run apart: one past its timeout, or one that raises, keeps no other from running, and the event stands",
+  "rules": [
+    "§9.3",
+    "§9.1",
+    "§8.2",
+    "§26.1"
+  ],
+  "notes": "Every hook of an ASYNC trigger runs, concurrently (§9.2, §9.3): `slow` is held until its timeout, `broken` raises, and `audit` is called all the same. A raising observer is logged; only the timeout is a framework event (§8.2).",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "slow",
+        "trigger": "after_broadcast",
+        "execution": "async",
+        "timeout_ms": 50,
+        "reactions": [
+          {
+            "gate": "never"
+          }
+        ]
+      },
+      {
+        "name": "broken",
+        "trigger": "after_broadcast",
+        "execution": "async",
+        "reactions": [
+          {
+            "fail": "the audit store is down"
+          }
+        ]
+      },
+      {
+        "name": "audit",
+        "trigger": "after_broadcast",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "open": "never"
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "status": "delivered"
+        }
+      ]
+    },
+    "hooks": {
+      "slow": [
+        {
+          "trigger": "after_broadcast",
+          "room_id": "room-1"
+        }
+      ],
+      "broken": [
+        {
+          "trigger": "after_broadcast",
+          "room_id": "room-1"
+        }
+      ],
+      "audit": [
+        {
+          "trigger": "after_broadcast",
+          "room_id": "room-1"
+        }
+      ]
+    },
+    "framework_events": {
+      "room-1": [
+        {
+          "$unordered": [
+            {
+              "event": "delivery_succeeded",
+              "channel_id": "ws"
+            },
+            {
+              "event": "event_processed"
+            },
+            {
+              "event": "hook_timeout",
+              "hook_name": "slow",
+              "trigger": "after_broadcast",
+              "timeout": 0.05
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

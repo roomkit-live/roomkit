@@ -1,7 +1,7 @@
 {
   "$schema": "../../scenario.schema.json",
   "id": "hooks/a-removed-room-hook-runs-no-more",
-  "title": "A room hook removed by its name runs no more; a name the room does not hold removes nothing",
+  "title": "A room hook removed by its name runs no more, and the kit's hook of that name stays; a name the room does not hold removes nothing",
   "rules": [
     "§9.1"
   ],
@@ -40,6 +40,13 @@
             "channel_id": "ws"
           }
         ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "guard",
+        "trigger": "after_broadcast",
+        "execution": "async"
       }
     ]
   },
@@ -118,6 +125,9 @@
           "blocked": false
         }
       }
+    },
+    {
+      "idle": true
     }
   ],
   "expect": {
@@ -143,8 +153,19 @@
               "body": "First"
             }
           }
+        },
+        {
+          "trigger": "after_broadcast",
+          "room_id": "room-1",
+          "event": {
+            "content": {
+              "type": "text",
+              "body": "Second"
+            }
+          }
         }
       ]
     }
-  }
+  },
+  "notes": "`guard` is a hook of the kit and of room-1 (§9.1, a name is unique within its scope): the room's blocks, the kit's observes what is delivered. Removing the room's leaves the kit's."
 }

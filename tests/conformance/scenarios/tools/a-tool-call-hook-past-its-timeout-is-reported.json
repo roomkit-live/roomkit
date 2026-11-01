@@ -1,14 +1,14 @@
 {
   "$schema": "../../scenario.schema.json",
   "id": "tools/a-tool-call-hook-past-its-timeout-is-reported",
-  "title": "A SYNC ON_TOOL_CALL hook past its timeout is reported as hook_timeout, in the agent's room and channel, and the served result stands",
+  "title": "A SYNC ON_TOOL_CALL hook past its timeout is reported as hook_timeout, in the agent's room, and the served result stands",
   "rules": [
     "§9.1",
     "§9.3",
     "§8.2",
     "§26.1"
   ],
-  "notes": "ON_TOOL_CALL fails open by default (§9.3): a hook past its timeout is skipped, and the model reads the result the tool served. The timeout is reported as for any hook (§8.2, §9.1), as the turn's: its room and the agent's channel. The turn runs after the message's own processing may have ended, so the two framework events are not ordered.",
+  "notes": "ON_TOOL_CALL fails open by default (§9.3): a hook past its timeout is skipped, and the model reads the result the tool served. The timeout is reported as for any hook (§8.2, §9.1), in the turn's room. The turn runs after the message's own processing may have ended, so the two framework events are not ordered.",
   "setup": {
     "channels": [
       {
@@ -119,7 +119,6 @@
             {
               "event": "hook_timeout",
               "room_id": "room-1",
-              "channel_id": "agent",
               "hook_name": "redact",
               "trigger": "on_tool_call",
               "timeout": 0.05

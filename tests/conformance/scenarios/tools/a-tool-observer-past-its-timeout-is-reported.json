@@ -1,14 +1,14 @@
 {
   "$schema": "../../scenario.schema.json",
   "id": "tools/a-tool-observer-past-its-timeout-is-reported",
-  "title": "An ASYNC BEFORE_TOOL_USE or ON_TOOL_CALL hook past its timeout is reported as hook_timeout, in the agent's room and channel, and the call is served",
+  "title": "An ASYNC BEFORE_TOOL_USE or ON_TOOL_CALL hook past its timeout is reported as hook_timeout, in the agent's room, and the call is served",
   "rules": [
     "§9.1",
     "§9.3",
     "§8.2",
     "§26.1"
   ],
-  "notes": "An ASYNC hook observes and decides nothing (§9.3): the call runs and the model reads its result whatever its observers do. Each timeout is reported as for any hook (§8.2, §9.1), as the turn's: its room and the agent's channel. The observers run in the background of the turn, so the framework events are not ordered.",
+  "notes": "An ASYNC hook observes and decides nothing (§9.3): the call runs and the model reads its result whatever its observers do. Each timeout is reported as for any hook (§8.2, §9.1), in the turn's room. The observers run in the background of the turn, so the framework events are not ordered.",
   "setup": {
     "channels": [
       {
@@ -131,7 +131,6 @@
             {
               "event": "hook_timeout",
               "room_id": "room-1",
-              "channel_id": "agent",
               "hook_name": "watch",
               "trigger": "before_tool_use",
               "timeout": 0.05
@@ -139,7 +138,6 @@
             {
               "event": "hook_timeout",
               "room_id": "room-1",
-              "channel_id": "agent",
               "hook_name": "audit",
               "trigger": "on_tool_call",
               "timeout": 0.05
