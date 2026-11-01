@@ -1,7 +1,7 @@
 {
   "$schema": "../../scenario.schema.json",
   "id": "members/resolve-participant-refuses-what-it-cannot-find",
-  "title": "resolve_participant refuses a participant the room does not have, an identity the store does not hold or another organization's, and a room of another organization, writing nothing",
+  "title": "resolve_participant refuses a participant the room does not have, first, an identity the store does not hold or another organization's, and a room of another organization, writing nothing",
   "rules": [
     "§5.5",
     "§17.2"
@@ -52,6 +52,15 @@
     ]
   },
   "steps": [
+    {
+      "call": "resolve_participant",
+      "room_id": "room-1",
+      "participant_id": "nope",
+      "identity_id": "no-such-id",
+      "expect": {
+        "error": "participant_not_found"
+      }
+    },
     {
       "call": "resolve_participant",
       "room_id": "room-1",

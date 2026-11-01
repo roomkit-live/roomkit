@@ -1,0 +1,121 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "identity/a-member-the-host-left-pending-keeps-their-record",
+  "title": "A sender the room holds a pending record of, under the id their channel gives and reached through that channel, is left pending on that record: no record of their own is created",
+  "rules": [
+    "§10.1 step 5",
+    "§11.2",
+    "§5.5"
+  ],
+  "setup": {
+    "kit": {
+      "identity_resolver": {
+        "answers": [
+          {
+            "repeat": true,
+            "result": {
+              "status": "pending"
+            }
+          }
+        ]
+      }
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "add_member",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "participant_id": "+15551234567",
+      "display_name": "Bob"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "source": {
+              "participant_id": "+15551234567"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "notes": "The host's add_member made the record, PENDING without an identity. The identity step creates no record under the id the channel gave; it finds this one, the room's record of that id on the channel, and the event is sent under it, signed with its name.",
+  "expect": {
+    "participants": {
+      "room-1": [
+        {
+          "id": "+15551234567",
+          "identification": "pending",
+          "display_name": "Bob"
+        }
+      ]
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "content": {
+            "body": "hi"
+          },
+          "metadata": {
+            "author": {
+              "name": "Bob"
+            }
+          }
+        }
+      ]
+    },
+    "lifecycle": {
+      "room-1": [
+        {
+          "type": "channel_attached"
+        },
+        {
+          "type": "channel_attached"
+        },
+        {
+          "type": "participant_joined",
+          "content": {
+            "code": "participant_joined"
+          }
+        }
+      ]
+    }
+  }
+}

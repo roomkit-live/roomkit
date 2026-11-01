@@ -49,6 +49,16 @@
               "status": "rejected",
               "message": "not allowed"
             }
+          },
+          {
+            "when": {
+              "sender_id": "+15550000005"
+            },
+            "repeat": true,
+            "result": {
+              "status": "rejected",
+              "message": ""
+            }
           }
         ]
       }
@@ -197,10 +207,29 @@
       }
     },
     {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000005",
+        "content": {
+          "type": "text",
+          "body": "held empty"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "identity_rejected",
+          "event": null
+        }
+      }
+    },
+    {
       "idle": true
     }
   ],
-  "notes": "The identity hooks still read the resolver's REJECTED, with its message. A rejection is the resolver's refusal: no answer from a hook leaves it standing, so the message is held as a hook's rejection holds it, before anything is stored.",
+  "notes": "The identity hooks still read the resolver's REJECTED, with its message. A rejection is the resolver's refusal: no answer from a hook leaves it standing, so the message is held as a hook's rejection holds it, before anything is stored. An empty message is no message: the reason is identity_rejected.",
   "expect": {
     "hooks": {
       "unknown": [
@@ -232,6 +261,13 @@
           "identity_result": {
             "status": "rejected",
             "address": "+15550000004"
+          }
+        },
+        {
+          "trigger": "on_identity_unknown",
+          "identity_result": {
+            "status": "rejected",
+            "address": "+15550000005"
           }
         }
       ],
@@ -266,6 +302,14 @@
             "event": {
               "content": {
                 "body": "pend"
+              }
+            }
+          },
+          {
+            "trigger": "on_identity_unknown",
+            "event": {
+              "content": {
+                "body": "held empty"
               }
             }
           }
