@@ -1,0 +1,329 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "identity/a-resolver-s-rejection-holds-the-message-no-hook-answers",
+  "title": "A resolver's rejection goes to the identity hooks of ON_IDENTITY_UNKNOWN, which still name or pend the sender; when none answers, the message is held with the resolver's message, else identity_rejected, storing nothing",
+  "rules": [
+    "§10.1 step 5",
+    "§11.2",
+    "§11.3"
+  ],
+  "setup": {
+    "kit": {
+      "identity_resolver": {
+        "answers": [
+          {
+            "when": {
+              "sender_id": "+15550000001"
+            },
+            "repeat": true,
+            "result": {
+              "status": "rejected",
+              "message": "not allowed"
+            }
+          },
+          {
+            "when": {
+              "sender_id": "+15550000002"
+            },
+            "repeat": true,
+            "result": {
+              "status": "rejected"
+            }
+          },
+          {
+            "when": {
+              "sender_id": "+15550000003"
+            },
+            "repeat": true,
+            "result": {
+              "status": "rejected",
+              "message": "not allowed"
+            }
+          },
+          {
+            "when": {
+              "sender_id": "+15550000004"
+            },
+            "repeat": true,
+            "result": {
+              "status": "rejected",
+              "message": "not allowed"
+            }
+          }
+        ]
+      }
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "observes",
+        "trigger": "on_identity_unknown",
+        "execution": "async"
+      }
+    ],
+    "identity_hooks": [
+      {
+        "name": "unknown",
+        "trigger": "on_identity_unknown",
+        "reactions": [
+          {
+            "when": {
+              "text": "name"
+            },
+            "result": {
+              "status": "identified",
+              "identity": {
+                "id": "found-id",
+                "display_name": "Found User"
+              }
+            }
+          },
+          {
+            "when": {
+              "text": "pend"
+            },
+            "result": {
+              "status": "pending",
+              "candidates": [
+                {
+                  "id": "bob-id",
+                  "display_name": "Bob"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "held"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "not allowed",
+          "event": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000002",
+        "content": {
+          "type": "text",
+          "body": "held bare"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "identity_rejected",
+          "event": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000003",
+        "content": {
+          "type": "text",
+          "body": "name"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "source": {
+              "participant_id": "found-id"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000004",
+        "content": {
+          "type": "text",
+          "body": "pend"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "notes": "The identity hooks still read the resolver's REJECTED, with its message. A rejection is the resolver's refusal: no answer from a hook leaves it standing, so the message is held as a hook's rejection holds it, before anything is stored.",
+  "expect": {
+    "hooks": {
+      "unknown": [
+        {
+          "trigger": "on_identity_unknown",
+          "identity_result": {
+            "status": "rejected",
+            "message": "not allowed",
+            "address": "+15550000001"
+          }
+        },
+        {
+          "trigger": "on_identity_unknown",
+          "identity_result": {
+            "status": "rejected",
+            "message": null,
+            "address": "+15550000002"
+          }
+        },
+        {
+          "trigger": "on_identity_unknown",
+          "identity_result": {
+            "status": "rejected",
+            "address": "+15550000003"
+          }
+        },
+        {
+          "trigger": "on_identity_unknown",
+          "identity_result": {
+            "status": "rejected",
+            "address": "+15550000004"
+          }
+        }
+      ],
+      "observes": {
+        "$unordered": [
+          {
+            "trigger": "on_identity_unknown",
+            "event": {
+              "content": {
+                "body": "held"
+              }
+            }
+          },
+          {
+            "trigger": "on_identity_unknown",
+            "event": {
+              "content": {
+                "body": "held bare"
+              }
+            }
+          },
+          {
+            "trigger": "on_identity_unknown",
+            "event": {
+              "content": {
+                "body": "name"
+              }
+            }
+          },
+          {
+            "trigger": "on_identity_unknown",
+            "event": {
+              "content": {
+                "body": "pend"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "content": {
+            "body": "name"
+          },
+          "source": {
+            "participant_id": "found-id"
+          }
+        },
+        {
+          "index": 1,
+          "content": {
+            "body": "pend"
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "content": {
+              "body": "name"
+            }
+          },
+          {
+            "content": {
+              "body": "pend"
+            }
+          }
+        ]
+      }
+    },
+    "participants": {
+      "room-1": {
+        "$unordered": [
+          {
+            "id": "found-id",
+            "identification": "identified",
+            "identity_id": "found-id",
+            "display_name": "Found User"
+          },
+          {
+            "identification": "pending",
+            "candidates": [
+              "bob-id"
+            ]
+          }
+        ]
+      }
+    }
+  }
+}
