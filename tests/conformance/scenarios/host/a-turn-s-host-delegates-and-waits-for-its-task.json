@@ -1,0 +1,211 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "host/a-turn-s-host-delegates-and-waits-for-its-task",
+  "title": "A turn's host delegates a task in the background and names it by its id, waits for its result, and reads its room's tasks; a task the room's hosts did not delegate reads as none, a delegation from another room is refused, and a result handed back continues the turn's chain",
+  "rules": [
+    "§10.6.5",
+    "§23.3",
+    "§23.4"
+  ],
+  "notes": "Python: tests/test_turns_host.py::test_delegate_answers_a_task_id_that_wait_task_waits, test_wait_task_answers_none_for_a_task_it_does_not_know, the delegate case of test_a_host_acts_only_for_its_turns_room_and_organization; core/_turn_host.py _delegate, _wait_task, _room_tasks; tasks/status.py room_tasks. The hand-back of a task the turn's host delegated is at the depth of the turn's response (test_a_delegation_through_the_host_keeps_its_turns_chain_depth).",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "Look it up."
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Found it."
+                }
+              }
+            ],
+            "repeat": true
+          }
+        ]
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "go"
+            },
+            "do": [
+              {
+                "call": "host.delegate",
+                "room_id": "room-1",
+                "agent_id": "worker",
+                "task": "Look it up.",
+                "as": "d",
+                "expect": {
+                  "result": {
+                    "$present": true
+                  }
+                }
+              },
+              {
+                "call": "host.wait_task",
+                "task_id": "$d",
+                "as": "waited",
+                "expect": {
+                  "result": {
+                    "result": {
+                      "status": "completed",
+                      "output": "Found it.",
+                      "agent_id": "worker",
+                      "parent_room_id": "room-1",
+                      "child_room_id": "$r1"
+                    },
+                    "exception": null
+                  }
+                }
+              },
+              {
+                "call": "host.wait_task",
+                "task_id": "task-nobody-delegated",
+                "as": "unknown",
+                "expect": {
+                  "result": null
+                }
+              },
+              {
+                "call": "host.room_tasks",
+                "as": "lines",
+                "expect": {
+                  "result": [
+                    {
+                      "task_id": {
+                        "$present": true
+                      },
+                      "agent": "worker",
+                      "task": "Look it up.",
+                      "status": "completed",
+                      "result": "Found it."
+                    }
+                  ]
+                }
+              },
+              {
+                "call": "host.delegate",
+                "room_id": "room-2",
+                "agent_id": "worker",
+                "task": "Look it up.",
+                "as": "elsewhere",
+                "expect": {
+                  "error": "invalid_argument"
+                }
+              },
+              {
+                "call": "host.delegate",
+                "room_id": "room-1",
+                "agent_id": "worker",
+                "task": "Look it up.",
+                "notify": "ai",
+                "as": "relayed",
+                "expect": {
+                  "result": {
+                    "$present": true
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "rooms": {
+      "$r1": {
+        "metadata": {
+          "parent_room_id": "room-1",
+          "task_status": "completed",
+          "task_result": "Found it."
+        }
+      },
+      "$r2": {
+        "metadata": {
+          "parent_room_id": "room-1",
+          "task_status": "completed"
+        }
+      },
+      "$r3": null
+    },
+    "timeline": {
+      "room-2": []
+    },
+    "turns": {
+      "room-1": {
+        "ai": [
+          {
+            "content": {
+              "type": "text",
+              "body": "go"
+            }
+          },
+          {
+            "type": "instruction",
+            "chain_depth": 1,
+            "metadata": {
+              "agent_id": "worker",
+              "task_status": "completed"
+            }
+          }
+        ]
+      }
+    }
+  }
+}
