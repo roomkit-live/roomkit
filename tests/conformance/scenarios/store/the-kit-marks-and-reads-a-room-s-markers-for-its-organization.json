@@ -6,7 +6,7 @@
     "§14.1",
     "§17.2"
   ],
-  "notes": "Python: tests/test_room_org_scoping.py::TestRoomOrgScoping::test_query_and_read_tracking_operations_share_the_room_scope (its read markers); tests/test_participant_membership.py::TestReadMarkerAggregation::test_list_read_markers_empty, test_list_read_markers_per_channel. Without an organization the kit reads the store as it is, a room it lacks holding no marker.",
+  "notes": "Python: tests/test_room_org_scoping.py::TestScopedMutations::test_query_and_read_tracking_operations_share_the_room_scope (its read markers); tests/test_participant_membership.py::TestReadMarkerAggregation::test_list_read_markers_empty, test_list_read_markers_per_channel. Without an organization the kit reads the store as it is, a room it lacks holding no marker.",
   "steps": [
     {
       "call": "store.create_room",

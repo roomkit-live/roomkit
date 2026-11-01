@@ -7,7 +7,7 @@
     "§14.3",
     "§8.1"
   ],
-  "notes": "Python: tests/test_store_memory.py::TestCursorPagination::test_auto_index_does_not_reuse_deleted_latest_index, TestDeleteEvent::test_commit_after_deleting_latest_keeps_index_monotonic, TestEventOperations::test_event_count. add_event writes the event as it is, its index the caller's; add_event_auto_index gives it the room's next index; neither moves event_count nor latest_index, which only a commit moves (§10.1 step 12).",
+  "notes": "Python: tests/test_store_memory.py::TestCursorPagination::test_auto_index_does_not_reuse_deleted_latest_index, TestDeleteEvent::test_commit_after_deleting_latest_keeps_index_monotonic. add_event writes the event as it is, its index the caller's; add_event_auto_index gives it the room's next index; neither moves event_count nor latest_index, which only a commit moves (§10.1 step 12).",
   "steps": [
     {
       "call": "store.create_room",
