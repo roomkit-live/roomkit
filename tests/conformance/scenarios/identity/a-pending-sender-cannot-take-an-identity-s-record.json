@@ -1,0 +1,259 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "identity/a-pending-sender-cannot-take-an-identity-s-record",
+  "title": "A sender left pending gets a record of its own, named for its channel and its address, whatever id its channel gave: an identity resolved later on another channel gets its own record, and the pending sender is resolved again and never passes for it",
+  "rules": [
+    "§10.1 step 5",
+    "§11.2",
+    "§11.6",
+    "§5.5"
+  ],
+  "setup": {
+    "kit": {
+      "identity_resolver": {
+        "answers": [
+          {
+            "when": {
+              "sender_id": "alice-id"
+            },
+            "repeat": true,
+            "result": {
+              "status": "ambiguous",
+              "candidates": [
+                {
+                  "id": "alice-id",
+                  "display_name": "Alice"
+                }
+              ]
+            }
+          },
+          {
+            "when": {
+              "sender_id": "+15551234567"
+            },
+            "repeat": true,
+            "result": {
+              "status": "identified",
+              "identity": {
+                "id": "alice-id",
+                "display_name": "Alice"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice-id",
+        "content": {
+          "type": "text",
+          "body": "squat"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "source": {
+              "participant_id": "pending-143a1e4cb409990c"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "real alice"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "source": {
+              "participant_id": "alice-id"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice-id",
+        "content": {
+          "type": "text",
+          "body": "spoof"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "source": {
+              "participant_id": "pending-143a1e4cb409990c"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "notes": "A WebSocket sender chooses its sender_id; this one chose Alice's identity id. Its pending record is own_record_id(ws, alice-id), `pending-` and the first 16 hexadecimal digits of the SHA-256 of `ws`, U+001F and `alice-id`, so the identity resolved on SMS creates its own record rather than completing the pending one, and the third message, from no record identified on ws, is resolved again (RFC §11.6) and carries no author of Alice's.",
+  "expect": {
+    "resolver": [
+      {
+        "sender_id": "alice-id"
+      },
+      {
+        "sender_id": "+15551234567"
+      },
+      {
+        "sender_id": "alice-id"
+      }
+    ],
+    "participants": {
+      "room-1": {
+        "$unordered": [
+          {
+            "id": "pending-143a1e4cb409990c",
+            "channel_id": "ws",
+            "connected_via": [
+              "ws"
+            ],
+            "identification": "pending",
+            "identity_id": null,
+            "candidates": [
+              "alice-id"
+            ],
+            "display_name": null
+          },
+          {
+            "id": "alice-id",
+            "channel_id": "sms",
+            "connected_via": [
+              "sms"
+            ],
+            "identification": "identified",
+            "identity_id": "alice-id",
+            "display_name": "Alice"
+          }
+        ]
+      }
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "content": {
+            "body": "squat"
+          },
+          "source": {
+            "channel_id": "ws",
+            "participant_id": "pending-143a1e4cb409990c"
+          }
+        },
+        {
+          "index": 1,
+          "content": {
+            "body": "real alice"
+          },
+          "source": {
+            "channel_id": "sms",
+            "participant_id": "alice-id"
+          },
+          "metadata": {
+            "author": {
+              "name": "Alice"
+            }
+          }
+        },
+        {
+          "index": 2,
+          "content": {
+            "body": "spoof"
+          },
+          "source": {
+            "channel_id": "ws",
+            "participant_id": "pending-143a1e4cb409990c"
+          },
+          "metadata": {
+            "author": {
+              "$absent": true
+            }
+          }
+        }
+      ]
+    },
+    "lifecycle": {
+      "room-1": [
+        {
+          "type": "channel_attached"
+        },
+        {
+          "type": "channel_attached"
+        },
+        {
+          "type": "participant_joined",
+          "content": {
+            "type": "system",
+            "code": "participant_joined_pending",
+            "body": "Participant pending-143a1e4cb409990c joined with pending identification",
+            "data": {
+              "participant_id": "pending-143a1e4cb409990c",
+              "status": "pending"
+            }
+          }
+        },
+        {
+          "type": "participant_joined",
+          "content": {
+            "type": "system",
+            "code": "participant_joined_identified",
+            "body": "Participant alice-id joined as identified",
+            "data": {
+              "participant_id": "alice-id",
+              "status": "identified"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

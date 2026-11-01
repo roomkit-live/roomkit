@@ -70,7 +70,7 @@
           "blocked": false,
           "event": {
             "source": {
-              "participant_id": "+15551234567"
+              "participant_id": "pending-915e25f899c26f82"
             }
           }
         }
@@ -117,7 +117,7 @@
     "participants": {
       "room-1": [
         {
-          "id": "+15551234567",
+          "id": "pending-915e25f899c26f82",
           "identification": "pending"
         }
       ]

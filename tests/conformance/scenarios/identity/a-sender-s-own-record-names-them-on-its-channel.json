@@ -1,0 +1,117 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "identity/a-sender-s-own-record-names-them-on-its-channel",
+  "title": "A sender's own record names them on its channel once identified: their next message is routed to its room, not resolved again, and sent under the record, signed with its name",
+  "rules": [
+    "§10.1 step 5",
+    "§11.6",
+    "§10.4",
+    "§5.5"
+  ],
+  "setup": {
+    "kit": {
+      "identity_resolver": {
+        "answers": []
+      }
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ],
+        "participants": [
+          {
+            "id": "pending-915e25f899c26f82",
+            "channel_id": "sms",
+            "identification": "identified",
+            "identity_id": "alice-id",
+            "display_name": "Alice"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "back again"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "room-1",
+            "source": {
+              "participant_id": "pending-915e25f899c26f82"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "notes": "pending-915e25f899c26f82 is own_record_id(sms, +15551234567), the record the identity step left this sender pending under, which an advisor then identified (resolve_participant). Two rooms bind the number, so only the sender's own record routes the message to room-1 (§10.4 step 1); the room identified the sender there, so no resolver is asked (§11.6 case 2).",
+  "expect": {
+    "resolver": [],
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "content": {
+            "body": "back again"
+          },
+          "source": {
+            "channel_id": "sms",
+            "participant_id": "pending-915e25f899c26f82"
+          },
+          "metadata": {
+            "author": {
+              "name": "Alice"
+            }
+          }
+        }
+      ],
+      "room-2": []
+    },
+    "participants": {
+      "room-1": [
+        {
+          "id": "pending-915e25f899c26f82",
+          "identification": "identified",
+          "connected_via": [
+            "sms"
+          ]
+        }
+      ]
+    }
+  }
+}

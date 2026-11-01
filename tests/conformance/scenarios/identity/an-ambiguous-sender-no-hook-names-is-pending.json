@@ -1,7 +1,7 @@
 {
   "$schema": "../../scenario.schema.json",
   "id": "identity/an-ambiguous-sender-no-hook-names-is-pending",
-  "title": "An ambiguous sender no identity hook names is processed and joins pending, with the resolver's candidates",
+  "title": "An ambiguous sender no identity hook names is processed and joins pending, under a record of its own named for its channel and its address, with the resolver's candidates",
   "rules": [
     "§10.1 step 5",
     "§11.2",
@@ -90,14 +90,14 @@
           "blocked": false,
           "event": {
             "source": {
-              "participant_id": "+15551234567"
+              "participant_id": "pending-915e25f899c26f82"
             }
           }
         }
       }
     }
   ],
-  "notes": "The second hook answers PENDING, which ON_IDENTITY_AMBIGUOUS does not act on: read as null, the sender joins pending with the resolver's candidates.",
+  "notes": "The second hook answers PENDING, which ON_IDENTITY_AMBIGUOUS does not act on: read as null, the sender joins pending with the resolver's candidates. The pending record's id is own_record_id(channel, sender): `pending-` and the first 16 hexadecimal digits of the SHA-256 of the channel id, U+001F and the sender id, never the id the channel gave, which may be an identity's.",
   "expect": {
     "hooks": {
       "abstains": [
@@ -124,7 +124,7 @@
     "participants": {
       "room-1": [
         {
-          "id": "+15551234567",
+          "id": "pending-915e25f899c26f82",
           "channel_id": "sms",
           "connected_via": [
             "sms"
@@ -152,9 +152,9 @@
           "content": {
             "type": "system",
             "code": "participant_joined_pending",
-            "body": "Participant +15551234567 joined with pending identification",
+            "body": "Participant pending-915e25f899c26f82 joined with pending identification",
             "data": {
-              "participant_id": "+15551234567",
+              "participant_id": "pending-915e25f899c26f82",
               "status": "pending"
             }
           }

@@ -158,7 +158,7 @@
           "blocked": false,
           "event": {
             "source": {
-              "participant_id": "+15550000002"
+              "participant_id": "pending-700b109cf5a4012d"
             }
           }
         }
@@ -180,7 +180,7 @@
           "blocked": false,
           "event": {
             "source": {
-              "participant_id": "+15550000003"
+              "participant_id": "pending-a5d258e210bd94cc"
             }
           }
         }
@@ -198,7 +198,7 @@
             "display_name": "Found User"
           },
           {
-            "id": "+15550000002",
+            "id": "pending-700b109cf5a4012d",
             "identification": "pending",
             "candidates": [
               "alice-id",
@@ -206,7 +206,7 @@
             ]
           },
           {
-            "id": "+15550000003",
+            "id": "pending-a5d258e210bd94cc",
             "identification": "pending",
             "candidates": [
               "bob-id"
@@ -241,9 +241,9 @@
           "content": {
             "type": "system",
             "code": "participant_joined_pending",
-            "body": "Participant +15550000002 joined with pending identification",
+            "body": "Participant pending-700b109cf5a4012d joined with pending identification",
             "data": {
-              "participant_id": "+15550000002",
+              "participant_id": "pending-700b109cf5a4012d",
               "status": "pending"
             }
           }
@@ -253,9 +253,9 @@
           "content": {
             "type": "system",
             "code": "participant_joined_pending",
-            "body": "Participant +15550000003 joined with pending identification",
+            "body": "Participant pending-a5d258e210bd94cc joined with pending identification",
             "data": {
-              "participant_id": "+15550000003",
+              "participant_id": "pending-a5d258e210bd94cc",
               "status": "pending"
             }
           }
