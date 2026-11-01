@@ -4,9 +4,9 @@
   "title": "An event whose parse names another room is stored in the room the message was routed to",
   "rules": [
     "§10.1 step 4",
-    "§10.1 step 1"
+    "§10.1 step 2"
   ],
-  "notes": "A parse cannot move a message: the room is the router's, or the caller's (step 1), and the event is stored in that room's timeline and delivered to its channels, never to the room the parse named.",
+  "notes": "A parse cannot move a message: the room is the router's, or the caller's (step 2), and the event is stored in that room's timeline and delivered to its channels, never to the room the parse named.",
   "setup": {
     "channels": [
       {
