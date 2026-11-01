@@ -1,0 +1,251 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "host/work-a-turn-began-acts-for-its-room-and-organization-after-it",
+  "title": "After its turn ended, work the turn began writes its room in the room's own organization, named or not, and is refused another room or another organization, nothing written there",
+  "rules": [
+    "§10.6.5",
+    "§17.2"
+  ],
+  "notes": "Python: tests/test_turns_between.py::test_the_write_verbs_between_turns_keep_their_refusals, core/_turn_host.py call_between_turns, which reads the room and runs the verb in its organization (_organization). Each refusal is the owner's ValueError.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "go"
+            },
+            "after_turn": [
+              {
+                "call": "host.update_room_metadata",
+                "room_id": "room-1",
+                "metadata": {
+                  "later": true
+                },
+                "organization_id": "acme",
+                "as": "metadata",
+                "expect": {
+                  "result": {
+                    "id": "room-1",
+                    "metadata": {
+                      "later": true
+                    }
+                  }
+                }
+              },
+              {
+                "call": "host.send_event",
+                "room_id": "room-1",
+                "channel_id": "ai",
+                "content": {
+                  "type": "text",
+                  "body": "Later."
+                },
+                "organization_id": "acme",
+                "as": "sent",
+                "expect": {
+                  "result": {
+                    "room_id": "room-1",
+                    "content": {
+                      "type": "text",
+                      "body": "Later."
+                    }
+                  }
+                }
+              },
+              {
+                "call": "host.add_observation",
+                "observation": {
+                  "room_id": "room-1",
+                  "channel_id": "ai",
+                  "content": "seen"
+                },
+                "as": "observed",
+                "expect": {
+                  "result": null
+                }
+              },
+              {
+                "call": "host.update_room_metadata",
+                "room_id": "room-1",
+                "metadata": {
+                  "elsewhere": true
+                },
+                "organization_id": "globex",
+                "as": "organization",
+                "expect": {
+                  "error": "invalid_argument"
+                }
+              },
+              {
+                "call": "host.send_event",
+                "room_id": "room-1",
+                "channel_id": "ai",
+                "content": {
+                  "type": "text",
+                  "body": "Elsewhere."
+                },
+                "organization_id": "globex",
+                "as": "send_organization",
+                "expect": {
+                  "error": "invalid_argument"
+                }
+              },
+              {
+                "call": "host.send_event",
+                "room_id": "room-2",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "Elsewhere."
+                },
+                "as": "send_room",
+                "expect": {
+                  "error": "invalid_argument"
+                }
+              },
+              {
+                "call": "host.update_room_metadata",
+                "room_id": "room-2",
+                "metadata": {
+                  "elsewhere": true
+                },
+                "as": "metadata_room",
+                "expect": {
+                  "error": "invalid_argument"
+                }
+              },
+              {
+                "call": "host.add_observation",
+                "observation": {
+                  "room_id": "room-2",
+                  "channel_id": "ai",
+                  "content": "elsewhere"
+                },
+                "as": "observation_room",
+                "expect": {
+                  "error": "invalid_argument"
+                }
+              },
+              {
+                "call": "host.post_status",
+                "agent_id": "ai",
+                "action": "spoof",
+                "status": "info",
+                "metadata": {
+                  "room_id": "room-2"
+                },
+                "as": "status_room",
+                "expect": {
+                  "error": "invalid_argument"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "organization_id": "acme",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "organization_id": "acme",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "heard",
+        "trigger": "on_status_posted",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "rooms": {
+      "room-1": {
+        "metadata": {
+          "later": true,
+          "elsewhere": {
+            "$absent": true
+          }
+        }
+      },
+      "room-2": {
+        "metadata": {}
+      }
+    },
+    "observations": {
+      "room-1": [
+        {
+          "channel_id": "ai",
+          "content": "seen"
+        }
+      ],
+      "room-2": []
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "go"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "ai"
+          },
+          "content": {
+            "type": "text",
+            "body": "Later."
+          }
+        }
+      ],
+      "room-2": []
+    },
+    "hooks": {
+      "heard": []
+    }
+  }
+}
