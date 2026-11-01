@@ -809,6 +809,30 @@ class TestResolvedIdentityParticipant:
         alice_participants = [p for p in participants if p.id == "alice-id"]
         assert len(alice_participants) == 1
 
+    async def test_the_first_message_is_named_after_the_identity(self) -> None:
+        """The record the identity step writes under the lock is the one the
+        commit names the event's author from (RFC §10.1 step 12), the first
+        message included (RMK-1139)."""
+
+        class DirectIdentifiedResolver(IdentityResolver):
+            async def resolve(
+                self, message: InboundMessage, context: RoomContext
+            ) -> IdentityResult:
+                return IdentityResult(
+                    status=IdentificationStatus.IDENTIFIED,
+                    identity=Identity(id="alice-id", display_name="Alice"),
+                )
+
+        kit = RoomKit(identity_resolver=DirectIdentifiedResolver())
+        await _setup_room(kit)
+
+        result = await kit.process_inbound(_msg())
+
+        assert result.event is not None
+        stored = await kit.store.get_event(result.event.id)
+        assert stored is not None
+        assert stored.metadata["author"]["name"] == "Alice"
+
     async def test_resolved_emits_system_event(self) -> None:
         """Resolving identity emits participant_joined_identified system event."""
         alice = Identity(id="alice-id", display_name="Alice")

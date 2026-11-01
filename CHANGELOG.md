@@ -39,6 +39,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The first message of a sender the identity step identifies is named
+  after them** (RFC §10.1 step 12, RMK-1139). Since the commit names an
+  event's author from the context its lock read, the participant record the
+  identity step writes under that lock was missing from it: the message
+  that made Alice join carried no `metadata.author`, her next ones did.
+
 - **`MCPToolProvider.from_url()` bounds its connection at 60 s, as
   `from_command()`** (RFC §21.2, RMK-1108). A server that took the connection
   and never answered held `async with provider:` for ever: only a server

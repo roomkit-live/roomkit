@@ -71,6 +71,7 @@ if TYPE_CHECKING:
     from roomkit.core.hooks import HookEngine, SyncPipelineResult
     from roomkit.core.lanes import DeliveryCascade
     from roomkit.models.channel import ChannelBinding
+    from roomkit.models.participant import Participant
     from roomkit.models.room import Room
     from roomkit.store.base import ConversationStore
 
@@ -565,11 +566,15 @@ class InboundLockedMixin(HelpersMixin):
                 room_id, status=context.room.status, operation="inbound", event=event
             )
 
-        # Persist deferred participant creation inside the lock (Fix #1)
+        # Persist deferred participant creation inside the lock (Fix #1). The
+        # context then holds the record as written: the commit names the
+        # event's author from it (RFC §10.1 step 12, RMK-1139).
         if resolved_identity is not None:
-            await self._ensure_identified_participant(room_id, event, resolved_identity)
+            joined = await self._ensure_identified_participant(room_id, event, resolved_identity)
+            context = with_participant(context, joined)
         elif pending_id_result is not None:
-            await self._create_pending_participant(room_id, event, pending_id_result)
+            joined = await self._create_pending_participant(room_id, event, pending_id_result)
+            context = with_participant(context, joined)
 
         # Idempotency check (inside lock to prevent TOCTOU race). A duplicate
         # replays the first delivery's answer rather than reprocessing (RFC
@@ -981,6 +986,14 @@ class InboundLockedMixin(HelpersMixin):
         )
         queued.add(blocked.injected_events, blocked_event)
         return blocked_event
+
+
+def with_participant(context: RoomContext, participant: Participant) -> RoomContext:
+    """*context* holding *participant* as the store now does, in place of its
+    record of the same id: the record the identity step wrote under the lock,
+    which the commit reads the event's author from (RFC §10.1 step 12)."""
+    kept = [held for held in context.participants if held.id != participant.id]
+    return context.model_copy(update={"participants": [*kept, participant]})
 
 
 def committed_in(context: RoomContext, committed: RoomEvent) -> RoomContext:
