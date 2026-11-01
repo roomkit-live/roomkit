@@ -1,0 +1,151 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/a-delegation-is-refused-before-anything-is-made",
+  "title": "A delegation from a room that is not found, or another organization's, to an agent that is not registered, or with a hand-back it cannot keep, is refused before anything is created, announced or run",
+  "rules": [
+    "§23.3",
+    "§23.3 step 8",
+    "§17.2"
+  ],
+  "notes": "Python: tests/tasks/test_integration.py::test_invalid_room_raises, test_invalid_agent_raises; core/mixins/delegation.py delegate, _check_hand_back. A hand_back of post needs a background task and an intelligence channel attached to the room as the notified one.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "category": "intelligence"
+      },
+      {
+        "id": "main",
+        "type": "ai",
+        "category": "intelligence"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "organization_id": "acme",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "main"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "delegated",
+        "trigger": "on_task_delegated",
+        "execution": "async"
+      },
+      {
+        "name": "completed",
+        "trigger": "on_task_completed",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "nowhere",
+      "agent_id": "worker",
+      "task": "Look it up.",
+      "expect": {
+        "error": "room_not_found"
+      }
+    },
+    {
+      "call": "delegate",
+      "room_id": "room-1",
+      "agent_id": "worker",
+      "task": "Look it up.",
+      "organization_id": "globex",
+      "expect": {
+        "error": "room_not_found"
+      }
+    },
+    {
+      "call": "delegate",
+      "room_id": "room-1",
+      "agent_id": "ghost",
+      "task": "Look it up.",
+      "expect": {
+        "error": "channel_not_registered"
+      }
+    },
+    {
+      "call": "delegate",
+      "room_id": "room-1",
+      "agent_id": "worker",
+      "task": "Look it up.",
+      "hand_back": "shout",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "delegate",
+      "room_id": "room-1",
+      "agent_id": "worker",
+      "task": "Look it up.",
+      "hand_back": "post",
+      "notify": "main",
+      "wait": true,
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "delegate",
+      "room_id": "room-1",
+      "agent_id": "worker",
+      "task": "Look it up.",
+      "hand_back": "post",
+      "notify": "sms",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "delegate",
+      "room_id": "room-1",
+      "agent_id": "worker",
+      "task": "Look it up.",
+      "hand_back": "post",
+      "notify": "worker",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "status.recent",
+      "expect": {
+        "result": []
+      }
+    }
+  ],
+  "expect": {
+    "rooms": {
+      "$r1": null
+    },
+    "timeline": {
+      "room-1": []
+    },
+    "hooks": {
+      "delegated": [],
+      "completed": []
+    }
+  }
+}

@@ -1,0 +1,301 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/an-inline-delegation-runs-its-agent-in-a-child-room",
+  "title": "An inline delegation creates a child room in the parent's organization, its agent attached, tells it the task as a system message only intelligence reads, keeps its answer as the room's trace, and ends the task with that answer: the parent's hooks, the status bus and the child room say how it ended",
+  "rules": [
+    "§23.3 step 1",
+    "§23.3 step 2",
+    "§23.3 step 4",
+    "§23.3 step 5",
+    "§23.3 step 6",
+    "§23.3 step 7",
+    "§23.5",
+    "§19.8",
+    "§17.2"
+  ],
+  "notes": "Python: tests/tasks/test_integration.py::test_full_delegate_flow, test_child_metadata_envelope_copied_to_child_room; tests/tasks/test_delegation_organization.py; tests/tasks/test_child_room_trace.py. core/mixins/delegation.py _open_child_room, _announce_task, _complete_inline; tasks/status.py post_task_pending, post_task_ended; tasks/_child_status.py record_task_end. The parent room's _child_metadata envelope is copied onto the child room and stamped again; the delegation's keys are written last.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "Summarize the call."
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Summary."
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "organization_id": "acme",
+        "metadata": {
+          "_child_metadata": {
+            "tenant": "t-7"
+          }
+        },
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "delegated",
+        "trigger": "on_task_delegated",
+        "execution": "async"
+      },
+      {
+        "name": "completed",
+        "trigger": "on_task_completed",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "room-1",
+      "agent_id": "worker",
+      "task": "Summarize the call.",
+      "wait": true,
+      "context": {
+        "ticket": "T-1"
+      },
+      "expect": {
+        "result": {
+          "id": {
+            "$present": true
+          },
+          "child_room_id": "$r1",
+          "parent_room_id": "room-1",
+          "agent_id": "worker",
+          "task": "Summarize the call.",
+          "description": "Summarize the call.",
+          "hand_back": "relay",
+          "status": "completed",
+          "result": {
+            "task_id": {
+              "$present": true
+            },
+            "child_room_id": "$r1",
+            "parent_room_id": "room-1",
+            "agent_id": "worker",
+            "status": "completed",
+            "output": "Summary.",
+            "error": null,
+            "metadata": {
+              "ticket": "T-1"
+            }
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "status.recent",
+      "agent_id": "worker",
+      "expect": {
+        "result": [
+          {
+            "agent_id": "worker",
+            "action": "task",
+            "status": "pending",
+            "detail": "Summarize the call.",
+            "metadata": {
+              "room_id": "room-1",
+              "task_id": {
+                "$present": true
+              },
+              "child_room_id": "$r1"
+            }
+          },
+          {
+            "agent_id": "worker",
+            "action": "task",
+            "status": "completed",
+            "detail": "Summary.",
+            "metadata": {
+              "room_id": "room-1",
+              "task_id": {
+                "$present": true
+              },
+              "child_room_id": "$r1",
+              "task_status": "completed",
+              "duration_ms": {
+                "$present": true
+              }
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "expect": {
+    "rooms": {
+      "$r1": {
+        "organization_id": "acme",
+        "metadata": {
+          "tenant": "t-7",
+          "_child_metadata": {
+            "tenant": "t-7"
+          },
+          "parent_room_id": "room-1",
+          "task_id": {
+            "$present": true
+          },
+          "task_agent_id": "worker",
+          "task_input": "Summarize the call.",
+          "task_context": {
+            "ticket": "T-1"
+          },
+          "task_status": "completed",
+          "task_result": "Summary."
+        }
+      }
+    },
+    "bindings": {
+      "$r1": {
+        "worker": {
+          "category": "intelligence"
+        },
+        "sms": null
+      }
+    },
+    "timeline": {
+      "room-1": [],
+      "$r1": [
+        {
+          "index": 0,
+          "type": "message",
+          "source": {
+            "channel_id": "system",
+            "channel_type": "system"
+          },
+          "visibility": "intelligence",
+          "status": "delivered",
+          "chain_depth": 0,
+          "content": {
+            "type": "text",
+            "body": "Summarize the call."
+          }
+        },
+        {
+          "index": 1,
+          "type": "message",
+          "source": {
+            "channel_id": "worker"
+          },
+          "status": "delivered",
+          "chain_depth": 1,
+          "content": {
+            "type": "text",
+            "body": "Summary."
+          }
+        }
+      ]
+    },
+    "turns": {
+      "$r1": {
+        "worker": [
+          {
+            "source": {
+              "channel_id": "system"
+            },
+            "content": {
+              "type": "text",
+              "body": "Summarize the call."
+            }
+          }
+        ]
+      }
+    },
+    "hooks": {
+      "delegated": [
+        {
+          "trigger": "on_task_delegated",
+          "room_id": "room-1",
+          "event": {
+            "type": "task_delegated",
+            "room_id": "room-1",
+            "visibility": "internal",
+            "status": "delivered",
+            "source": {
+              "channel_id": "worker",
+              "channel_type": "ai"
+            },
+            "content": {
+              "type": "text",
+              "body": "[Task delegated to worker] Summarize the call."
+            },
+            "metadata": {
+              "task_id": {
+                "$present": true
+              },
+              "child_room_id": "$r1",
+              "parent_room_id": "room-1",
+              "agent_id": "worker",
+              "task_input": "Summarize the call."
+            }
+          }
+        }
+      ],
+      "completed": [
+        {
+          "trigger": "on_task_completed",
+          "room_id": "room-1",
+          "event": {
+            "type": "task_completed",
+            "room_id": "room-1",
+            "visibility": "internal",
+            "status": "delivered",
+            "source": {
+              "channel_id": "worker",
+              "channel_type": "ai"
+            },
+            "content": {
+              "type": "text",
+              "body": "Summary."
+            },
+            "metadata": {
+              "task_id": {
+                "$present": true
+              },
+              "child_room_id": "$r1",
+              "parent_room_id": "room-1",
+              "agent_id": "worker",
+              "task_status": "completed",
+              "duration_ms": {
+                "$present": true
+              },
+              "error": {
+                "$absent": true
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

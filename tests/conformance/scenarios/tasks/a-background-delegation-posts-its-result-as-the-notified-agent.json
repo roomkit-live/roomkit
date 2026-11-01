@@ -1,0 +1,127 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/a-background-delegation-posts-its-result-as-the-notified-agent",
+  "title": "A background delegation whose hand-back is post publishes its result, once it ended, as the notified agent's message, naming the task, without a turn of that agent: the room's transport is delivered it",
+  "rules": [
+    "§23.3 step 8"
+  ],
+  "notes": "Python: tests/tasks/test_delegation_brief_and_hand_back.py; tasks/posting.py posted_text, post_result, send_posted.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "Look it up."
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Found it."
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "main",
+        "type": "ai",
+        "category": "intelligence"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "main"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "room-1",
+      "agent_id": "worker",
+      "task": "Look it up.",
+      "notify": "main",
+      "hand_back": "post",
+      "as": "t"
+    },
+    {
+      "call": "task.wait",
+      "task_id": "$t",
+      "expect": {
+        "result": {
+          "status": "completed",
+          "output": "Found it."
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "type": "message",
+          "source": {
+            "channel_id": "main"
+          },
+          "chain_depth": 0,
+          "addressed_to": [],
+          "content": {
+            "type": "text",
+            "body": "Result of the task “Look it up.”:\n\nFound it."
+          },
+          "metadata": {
+            "task_id": {
+              "$present": true
+            },
+            "agent_id": "worker",
+            "task_status": "completed",
+            "task": "Look it up."
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "sms": [
+          {
+            "source": {
+              "channel_id": "main"
+            },
+            "content": {
+              "type": "text",
+              "body": "Result of the task “Look it up.”:\n\nFound it."
+            }
+          }
+        ]
+      }
+    },
+    "turns": {
+      "room-1": {
+        "main": []
+      }
+    }
+  }
+}

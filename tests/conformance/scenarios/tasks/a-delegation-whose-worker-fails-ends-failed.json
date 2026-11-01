@@ -1,0 +1,151 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/a-delegation-whose-worker-fails-ends-failed",
+  "title": "A delegation whose worker raises ends failed, with no output and no error text: the delivery set keeps the raise, the turn answering nothing; the parent's ON_TASK_COMPLETED, the status bus and the child room say it failed",
+  "rules": [
+    "§23.3 step 6",
+    "§23.3 step 7",
+    "§23.5",
+    "§19.8"
+  ],
+  "notes": "Python: tests/tasks/test_delegation_ends_failed.py; core/mixins/_child_execution.py _buffered_outcome, a target that raised is not responded and carries no error to the task; tasks/models.py finished_task_fields (no response: failed); tasks/status.py post_task_ended (detail failed).",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "Look it up."
+            },
+            "fail": "The worker broke."
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "delegated",
+        "trigger": "on_task_delegated",
+        "execution": "async"
+      },
+      {
+        "name": "completed",
+        "trigger": "on_task_completed",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "room-1",
+      "agent_id": "worker",
+      "task": "Look it up.",
+      "wait": true,
+      "expect": {
+        "result": {
+          "status": "failed",
+          "result": {
+            "status": "failed",
+            "output": null,
+            "error": null
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "status.recent",
+      "agent_id": "worker",
+      "expect": {
+        "result": [
+          {
+            "agent_id": "worker",
+            "action": "task",
+            "status": "pending",
+            "detail": "Look it up."
+          },
+          {
+            "agent_id": "worker",
+            "action": "task",
+            "status": "failed",
+            "detail": "failed",
+            "metadata": {
+              "task_status": "failed"
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "expect": {
+    "rooms": {
+      "$r1": {
+        "metadata": {
+          "task_status": "failed",
+          "task_result": null
+        }
+      }
+    },
+    "timeline": {
+      "$r1": [
+        {
+          "source": {
+            "channel_id": "system"
+          },
+          "content": {
+            "type": "text",
+            "body": "Look it up."
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "delegated": [
+        {
+          "trigger": "on_task_delegated",
+          "room_id": "room-1"
+        }
+      ],
+      "completed": [
+        {
+          "trigger": "on_task_completed",
+          "room_id": "room-1",
+          "event": {
+            "type": "task_completed",
+            "content": {
+              "type": "text",
+              "body": ""
+            },
+            "metadata": {
+              "task_status": "failed",
+              "error": {
+                "$absent": true
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}
