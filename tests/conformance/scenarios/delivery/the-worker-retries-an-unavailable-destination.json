@@ -7,7 +7,7 @@
     "§22.1",
     "§13.2"
   ],
-  "notes": "The first attempt finds no transport; its AFTER_DELIVER observer is held at a gate while the scenario attaches one, before the retry's delay passes. How many attempts it takes is left out: the item is published once.",
+  "notes": "The first attempt finds no transport and is given back to retry. Its retry is held at a BEFORE_DELIVER gate while the scenario attaches a transport, so the worker cannot attempt it again meanwhile: the retry publishes the item, once.",
   "setup": {
     "kit": {
       "delivery_backend": {
@@ -40,12 +40,19 @@
     ],
     "hooks": [
       {
-        "name": "observe",
-        "trigger": "after_deliver",
-        "execution": "async",
+        "name": "hold",
+        "trigger": "before_deliver",
         "reactions": [
           {
-            "gate": "first"
+            "result": {
+              "action": "allow"
+            }
+          },
+          {
+            "gate": "retry",
+            "result": {
+              "action": "allow"
+            }
           }
         ]
       }
@@ -66,7 +73,7 @@
       }
     },
     {
-      "wait_for": "first"
+      "wait_for": "retry"
     },
     {
       "call": "attach_channel",
@@ -74,7 +81,7 @@
       "channel_id": "human"
     },
     {
-      "open": "first"
+      "open": "retry"
     },
     {
       "idle": true

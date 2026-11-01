@@ -1,0 +1,103 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-delivery-queued-from-a-turn-carries-the-turn-s-depth",
+  "title": "A delivery an agent queues while its turn runs is published by the worker at the depth of the turn's answer",
+  "rules": [
+    "§8.3",
+    "§22.2"
+  ],
+  "notes": "The agent answers a message at depth 0, so its turn's answers are at depth 1. During its turn it delivers through the backend: the item carries the turn's depth to the worker, which publishes it once the turn is over, outside it. Addressed to no one, the publication asks no turn.",
+  "setup": {
+    "kit": {
+      "delivery_backend": {}
+    },
+    "channels": [
+      {
+        "id": "human",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "Hi"
+            },
+            "do": [
+              {
+                "call": "deliver",
+                "room_id": "$room",
+                "content": "Found it.",
+                "channel_id": "human",
+                "addressed_to": [],
+                "expect": {
+                  "result": {
+                    "status": "queued"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "human"
+          },
+          {
+            "channel_id": "a",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "human",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Hi"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Hi"
+          },
+          "chain_depth": 0
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Found it."
+          },
+          "source": {
+            "channel_id": "human",
+            "participant_id": "system"
+          },
+          "chain_depth": 1
+        }
+      ]
+    }
+  }
+}
