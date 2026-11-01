@@ -28,7 +28,7 @@ from roomkit.core.exceptions import (
     TaskNotFoundError,
     TransitionRefusedError,
 )
-from roomkit.models.delivery import InboundMessage, InboundResult
+from roomkit.models.delivery import DeliveryStatus, InboundMessage, InboundResult
 from roomkit.models.enums import (
     Access,
     ChannelCategory,
@@ -40,6 +40,7 @@ from roomkit.models.enums import (
 )
 from roomkit.models.event import EventContent, EventSource, RoomEvent
 from roomkit.models.room import Room, RoomTimers
+from roomkit.providers.sms import WebhookMeta
 from tests.conformance._agent import scripted_agent
 from tests.conformance._script import (
     ScriptedChannel,
@@ -360,6 +361,16 @@ async def _unmute_output(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]
     return await kit.unmute_output(spec["room_id"], spec["channel_id"], **_org(spec))
 
 
+async def _process_delivery_status(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
+    status = read(lambda: DeliveryStatus.model_validate(spec["status"]))
+    return await kit.process_delivery_status(status, **_org(spec))
+
+
+async def _process_webhook(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
+    meta = read(lambda: WebhookMeta(**spec["meta"]))
+    return await kit.process_webhook(meta, spec["channel_id"], **_org(spec))
+
+
 CALLS: dict[str, Call] = {
     "process_inbound": _process_inbound,
     "send_event": _send_event,
@@ -384,6 +395,8 @@ CALLS: dict[str, Call] = {
     "remove_room_hook": _remove_room_hook,
     "mute_output": _mute_output,
     "unmute_output": _unmute_output,
+    "process_delivery_status": _process_delivery_status,
+    "process_webhook": _process_webhook,
 }
 
 

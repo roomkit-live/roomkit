@@ -15,6 +15,7 @@ from typing import Any
 
 from roomkit import RoomKit
 from roomkit.models.context import RoomContext
+from roomkit.models.delivery import DeliveryStatus
 from roomkit.models.event import RoomEvent
 from roomkit.models.framework_event import FrameworkEvent
 from roomkit.models.store_filter import EventFilter
@@ -134,6 +135,8 @@ class Harness:
         call: dict[str, Any] = {"trigger": trigger, "room_id": room_id, "event": event}
         if isinstance(payload, ToolCallEvent):
             call["tool_call"] = tool_call_record(payload)
+        if isinstance(payload, DeliveryStatus):
+            call["delivery_status"] = payload.model_dump(mode="json")
         self.observed.hooks.setdefault(name, []).append(call)
         self.observed.hook_order.append(name)
 
