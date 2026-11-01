@@ -1,7 +1,7 @@
 {
   "$schema": "../../scenario.schema.json",
   "id": "identity/an-identified-sender-joins-the-room",
-  "title": "A sender the resolver identifies is stamped with its identity and joins the room identified, once, its resolution announced and its next events named after it",
+  "title": "A sender the resolver identifies is stamped with its identity and joins the room identified, once, its resolution announced and its events named after it",
   "rules": [
     "§10.1 step 5",
     "§11.1",
@@ -121,6 +121,12 @@
           "source": {
             "channel_id": "sms",
             "participant_id": "alice-id"
+          },
+          "metadata": {
+            "author": {
+              "name": "Alice",
+              "rank": 1
+            }
           }
         },
         {
@@ -222,6 +228,5 @@
         "event_processed"
       ]
     }
-  },
-  "notes": "The first message's author record is not asserted while RMK-1139 settles whether it reads the participant record step 5 has just written."
+  }
 }
