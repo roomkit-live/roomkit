@@ -341,7 +341,9 @@ class Harness:
                 self._problems.append(f"{spec['call']} raised an unmapped error: {unmapped}")
                 return {"result": None, "error": {"name": "<unmapped>"}}
         if "as" in spec:
-            self._labels[spec["as"]] = result_event_id(result)
+            # A delegation through the turn's host answers its task's id.
+            named = result if spec["call"] == "host.delegate" else result_event_id(result)
+            self._labels[spec["as"]] = named
         return {"result": dump(result), "error": None}
 
     async def idle(self) -> None:
