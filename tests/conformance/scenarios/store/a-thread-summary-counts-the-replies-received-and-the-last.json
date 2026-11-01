@@ -1,0 +1,126 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "store/a-thread-summary-counts-the-replies-received-and-the-last",
+  "title": "A thread's summary counts the replies its root received and names the last one's instant; a root with none has no summary",
+  "rules": [
+    "§14.1"
+  ],
+  "notes": "Python: tests/test_threading.py::TestStoreThreadQueries::test_thread_summaries_counts_and_last_reply, test_thread_summaries_absent_for_root_without_replies. A reply the room refused is not counted: a default timeline read of the thread does not serve it (ConversationStore.get_thread_summaries).",
+  "steps": [
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-1"
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "root"
+        }
+      },
+      "as": "root"
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "standalone"
+        }
+      },
+      "as": "standalone"
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "reply 1"
+        },
+        "parent_event_id": "$root",
+        "created_at": "2026-01-01T12:00:01Z"
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "reply 2"
+        },
+        "parent_event_id": "$root",
+        "created_at": "2026-01-01T12:00:02Z"
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "refused reply"
+        },
+        "parent_event_id": "$root",
+        "status": "blocked",
+        "created_at": "2026-01-01T12:00:03Z"
+      },
+      "activity": false
+    },
+    {
+      "call": "store.get_thread_summaries",
+      "room_id": "room-1",
+      "root_event_ids": [
+        "$root",
+        "$standalone"
+      ],
+      "expect": {
+        "result": {
+          "room-1#0": {
+            "root_event_id": "room-1#0",
+            "reply_count": 2,
+            "last_reply_at": "@2"
+          },
+          "room-1#1": {
+            "$absent": true
+          }
+        }
+      }
+    },
+    {
+      "call": "store.get_thread_summaries",
+      "room_id": "room-1",
+      "root_event_ids": [
+        "$standalone"
+      ],
+      "expect": {
+        "result": {
+          "room-1#0": {
+            "$absent": true
+          },
+          "room-1#1": {
+            "$absent": true
+          }
+        }
+      }
+    },
+    {
+      "call": "store.get_thread_summaries",
+      "room_id": "room-1",
+      "root_event_ids": [],
+      "expect": {
+        "result": {
+          "room-1#0": {
+            "$absent": true
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,110 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "store/a-room-by-channel-is-the-oldest-bound-of-the-status-asked",
+  "title": "The room a channel finds is the oldest room binding it, of the status asked, the room id breaking a tie",
+  "rules": [
+    "§14.1"
+  ],
+  "notes": "The oldest, as find_room_ids_by_channel orders rooms, cut at one: the Python implementation's stores answer so.",
+  "steps": [
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-closed",
+        "created_at": "2026-01-01T00:00:00Z",
+        "status": "closed"
+      }
+    },
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-old",
+        "created_at": "2026-01-01T00:00:01Z"
+      }
+    },
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-new",
+        "created_at": "2026-01-01T00:00:02Z"
+      }
+    },
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-tie",
+        "created_at": "2026-01-01T00:00:01Z"
+      }
+    },
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "room-new",
+        "channel_id": "sms",
+        "channel_type": "sms"
+      }
+    },
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "room-tie",
+        "channel_id": "sms",
+        "channel_type": "sms"
+      }
+    },
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "room-old",
+        "channel_id": "sms",
+        "channel_type": "sms"
+      }
+    },
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "room-closed",
+        "channel_id": "sms",
+        "channel_type": "sms"
+      }
+    },
+    {
+      "call": "store.find_room_id_by_channel",
+      "channel_id": "sms",
+      "expect": {
+        "result": "room-closed"
+      }
+    },
+    {
+      "call": "store.find_room_id_by_channel",
+      "channel_id": "sms",
+      "status": "active",
+      "expect": {
+        "result": "room-old"
+      }
+    },
+    {
+      "call": "store.find_room_id_by_channel",
+      "channel_id": "sms",
+      "status": "closed",
+      "expect": {
+        "result": "room-closed"
+      }
+    },
+    {
+      "call": "store.find_room_id_by_channel",
+      "channel_id": "sms",
+      "status": "archived",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "store.find_room_id_by_channel",
+      "channel_id": "email",
+      "expect": {
+        "result": null
+      }
+    }
+  ]
+}

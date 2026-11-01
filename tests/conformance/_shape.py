@@ -12,6 +12,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+from tests.conformance._store import STORE_ARGUMENTS
+
 TOP = {"$schema", "id", "title", "rules", "reentrancy", "notes", "setup", "steps", "expect"}
 SETUP = {"kit", "channels", "rooms", "hooks"}
 KIT = {"max_chain_depth", "process_timeout_ms"}
@@ -156,6 +158,7 @@ CALLS: dict[str, set[str]] = {
     "add_room_hook": {"room_id", "hook"},
     "remove_room_hook": {"room_id", "name"},
 }
+CALLS |= STORE_ARGUMENTS
 STEPS = {"await": {"await", "expect"}, "concurrent": {"concurrent"}, "wait_for": {"wait_for"}}
 STEPS |= {"open": {"open"}, "idle": {"idle"}}
 

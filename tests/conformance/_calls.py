@@ -125,6 +125,8 @@ def dump(value: Any) -> Any:
         return value.model_dump(mode="json")
     if isinstance(value, list):
         return [dump(item) for item in value]
+    if isinstance(value, dict):
+        return {key: dump(item) for key, item in value.items()}
     return value
 
 

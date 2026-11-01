@@ -18,6 +18,7 @@ from roomkit.models.event import RoomEvent
 from roomkit.models.framework_event import FrameworkEvent
 from roomkit.models.store_filter import EventFilter
 from roomkit.models.tool_call import ToolCallEvent
+from roomkit.store.base import ConversationStore
 from tests.conformance._agent import ScriptedModel, tool_call_record
 from tests.conformance._calls import (
     CALLS,
@@ -35,6 +36,7 @@ from tests.conformance._calls import (
 from tests.conformance._compare import Check, compare
 from tests.conformance._normalize import Observed, is_lifecycle_record
 from tests.conformance._script import Gates
+from tests.conformance._store import STORE_CALLS
 
 # The framework events of the §26.1 table, and Processing timeout's (§8.2).
 LEVEL_0_EVENTS = (
@@ -69,7 +71,9 @@ _CREATED_ROOM = re.compile(r"^\$r(\d+)$")
 class Harness:
     """One run of one scenario."""
 
-    def __init__(self, scenario: Mapping[str, Any]) -> None:
+    def __init__(
+        self, scenario: Mapping[str, Any], store: ConversationStore | None = None
+    ) -> None:
         self.scenario = scenario
         self.gates = Gates()
         self.observed = Observed(literal_rooms=_literal_rooms(scenario))
@@ -87,6 +91,8 @@ class Harness:
             kwargs["max_chain_depth"] = kit_setup["max_chain_depth"]
         if "process_timeout_ms" in kit_setup:
             kwargs["process_timeout"] = kit_setup["process_timeout_ms"] / 1000
+        if store is not None:
+            kwargs["store"] = store
         self.kit = RoomKit(**kwargs)
 
     # -- recording --------------------------------------------------------
@@ -218,7 +224,7 @@ class Harness:
         resolved = await self._resolve(dict(spec), scope)
         try:
             result = await asyncio.wait_for(
-                CALLS[spec["call"]](self.kit, self, resolved), CALL_BOUND_S
+                (CALLS | STORE_CALLS)[spec["call"]](self.kit, self, resolved), CALL_BOUND_S
             )
         except TimeoutError:
             self._problems.append(f"{spec['call']} did not return within {CALL_BOUND_S} s")

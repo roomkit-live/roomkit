@@ -1,0 +1,51 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "store/a-room-exists-from-its-creation-to-its-deletion",
+  "title": "A room exists from its creation to its deletion, as get_room finds it",
+  "rules": [
+    "§14.1"
+  ],
+  "steps": [
+    {
+      "call": "store.room_exists",
+      "room_id": "room-1",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-1"
+      }
+    },
+    {
+      "call": "store.room_exists",
+      "room_id": "room-1",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "call": "store.room_exists",
+      "room_id": "room-2",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "call": "store.delete_room",
+      "room_id": "room-1",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "call": "store.room_exists",
+      "room_id": "room-1",
+      "expect": {
+        "result": false
+      }
+    }
+  ]
+}

@@ -18,6 +18,7 @@ from typing import Any
 
 import pytest
 
+from roomkit.store.sqlite import SQLiteStore
 from tests.conformance._harness import Harness
 from tests.conformance._shape import unknown_members
 
@@ -57,6 +58,11 @@ def _turn_calls_the_kit(scenario: dict[str, Any]) -> bool:
     return False
 
 
+# The store's scenarios run on each store this implementation ships that
+# needs no server: the in-memory store, the kit's default, and SQLiteStore.
+_STORES = ("memory", "sqlite")
+
+
 def _cases() -> list[Any]:
     cases = []
     for path in _scenarios():
@@ -70,7 +76,9 @@ def _cases() -> list[Any]:
                     reason=KNOWN_FAILURES[scenario_id], strict=True, raises=AssertionError
                 )
             )
-        cases.append(pytest.param(path, id=scenario_id, marks=marks))
+        for store in _STORES if scenario_id.startswith("store/") else ("memory",):
+            name = scenario_id if store == "memory" else f"{scenario_id}[{store}]"
+            cases.append(pytest.param(path, store, id=name, marks=marks))
     return cases
 
 
@@ -93,13 +101,14 @@ def test_the_copy_is_the_one_synced_from_its_specs_commit() -> None:
     )
 
 
-@pytest.mark.parametrize("path", _cases())
-async def test_scenario(path: Path) -> None:
+@pytest.mark.parametrize(("path", "store"), _cases())
+async def test_scenario(path: Path, store: str, tmp_path: Path) -> None:
     scenario = _load(path)
     assert scenario["id"] == path.relative_to(SCENARIOS).with_suffix("").as_posix()
     # A member the runner does not know fails the scenario, a known failure's
     # too: pytest.fail is not the AssertionError its xfail expects.
     if unknown := unknown_members(scenario):
         pytest.fail("members the runner does not know:\n" + "\n".join(unknown))
-    problems = await Harness(scenario).run()
+    on = SQLiteStore(tmp_path / "store.db") if store == "sqlite" else None
+    problems = await Harness(scenario, on).run()
     assert not problems, "\n".join(problems)

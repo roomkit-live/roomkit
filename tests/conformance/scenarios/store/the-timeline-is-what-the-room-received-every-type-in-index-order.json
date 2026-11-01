@@ -1,0 +1,179 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "store/the-timeline-is-what-the-room-received-every-type-in-index-order",
+  "title": "The timeline holds every event type the room received, in index order, a refused row only on request, and pages as a timeline read",
+  "rules": [
+    "§14.1"
+  ],
+  "notes": "Python: tests/test_store_activity.py::TestConvenienceMethods::test_get_timeline_returns_all, test_get_timeline_with_filter. get_timeline is list_events with its own defaults: the oldest 50, no visibility of its own.",
+  "steps": [
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-1"
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "hi"
+        },
+        "correlation_id": "resp-1"
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "event": {
+        "type": "tool_call_start",
+        "content": {
+          "type": "tool_call",
+          "tool_name": "t",
+          "tool_id": "c1"
+        },
+        "correlation_id": "resp-1"
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "event": {
+        "type": "tool_call_end",
+        "content": {
+          "type": "tool_call",
+          "tool_name": "t",
+          "tool_id": "c1",
+          "result": "ok",
+          "status": "completed"
+        },
+        "correlation_id": "resp-1"
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "done"
+        },
+        "correlation_id": "resp-2"
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "refused"
+        },
+        "status": "blocked",
+        "correlation_id": "resp-2"
+      },
+      "activity": false
+    },
+    {
+      "call": "store.get_timeline",
+      "room_id": "room-1",
+      "expect": {
+        "result": [
+          {
+            "id": "room-1#0",
+            "type": "message",
+            "content": {
+              "body": "hi"
+            }
+          },
+          {
+            "id": "room-1#1",
+            "type": "tool_call_start"
+          },
+          {
+            "id": "room-1#2",
+            "type": "tool_call_end"
+          },
+          {
+            "id": "room-1#3",
+            "type": "message",
+            "content": {
+              "body": "done"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "call": "store.get_timeline",
+      "room_id": "room-1",
+      "event_filter": {
+        "correlation_id": "resp-2"
+      },
+      "expect": {
+        "result": [
+          {
+            "id": "room-1#3"
+          }
+        ]
+      }
+    },
+    {
+      "call": "store.get_timeline",
+      "room_id": "room-1",
+      "event_filter": {
+        "correlation_id": "resp-2",
+        "include_blocked": true
+      },
+      "expect": {
+        "result": [
+          {
+            "id": "room-1#3"
+          },
+          {
+            "id": "room-1#4",
+            "status": "blocked"
+          }
+        ]
+      }
+    },
+    {
+      "call": "store.get_timeline",
+      "room_id": "room-1",
+      "limit": 2,
+      "newest_first": true,
+      "expect": {
+        "result": [
+          {
+            "id": "room-1#2"
+          },
+          {
+            "id": "room-1#3"
+          }
+        ]
+      }
+    },
+    {
+      "call": "store.get_timeline",
+      "room_id": "room-1",
+      "limit": 1,
+      "after_index": 1,
+      "expect": {
+        "result": [
+          {
+            "id": "room-1#2"
+          }
+        ]
+      }
+    },
+    {
+      "call": "store.get_timeline",
+      "room_id": "room-2",
+      "expect": {
+        "result": []
+      }
+    }
+  ]
+}

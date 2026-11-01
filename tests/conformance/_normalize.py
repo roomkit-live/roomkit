@@ -5,9 +5,9 @@ the run created is named ``$r1``, ``$r2``... in the order of its
 ``room_created``; an index is read without the lifecycle records (§5.1, which
 an implementation MAY write) at or below it, an event's ``index`` and a room's
 ``event_count``, ``latest_index`` and ``delivered_index`` alike; an event of a
-timeline is named ``<room>#<index>``; any other event id is ``$e1``,
-``$e2``... by first appearance; a timestamp is ``@1``, ``@2``... by its order
-among the run's instants.
+timeline is named ``<room>#<index>``, as a value or as an object's key; any
+other event id is ``$e1``, ``$e2``... by first appearance; a timestamp is
+``@1``, ``@2``... by its order among the run's instants.
 """
 
 from __future__ import annotations
@@ -108,10 +108,14 @@ class Normalizer:
         result: dict[str, Any] = {}
         for key, item in value.items():
             if key in indexes and isinstance(item, int) and not isinstance(item, bool):
-                result[key] = indexes[key](item)
+                result[self._key(key)] = indexes[key](item)
             else:
-                result[key] = self.value(item, key)
+                result[self._key(key)] = self.value(item, key)
         return result
+
+    def _key(self, key: str) -> str:
+        """An object's key, an event of a timeline's id named as its event."""
+        return self._events.get(key, key)
 
     def _indexes_of(self, value: dict[str, Any]) -> dict[str, Any]:
         """How the members of *value* that hold an index of its room are read."""

@@ -1,0 +1,86 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "store/the-latest-room-reads-a-binding-of-the-channel-type-and-a-record-of-any",
+  "title": "The latest room of a participant is found by a binding naming them on the channel type asked, or by their participant record on any",
+  "rules": [
+    "§14.1"
+  ],
+  "notes": "Python: tests/test_store_memory.py::TestFindLatestRoomIndex::test_finds_via_binding_participant, test_channel_type_filter_applies_to_binding_matches, test_participant_row_match_ignores_channel_type, test_unknown_participant_is_a_fast_none.",
+  "steps": [
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-1",
+        "created_at": "2026-01-01T00:00:01Z"
+      }
+    },
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "room-1",
+        "channel_id": "ch-1",
+        "channel_type": "sms",
+        "participant_id": "alice"
+      }
+    },
+    {
+      "call": "store.find_latest_room",
+      "participant_id": "alice",
+      "channel_type": "sms",
+      "expect": {
+        "result": {
+          "id": "room-1"
+        }
+      }
+    },
+    {
+      "call": "store.find_latest_room",
+      "participant_id": "alice",
+      "expect": {
+        "result": {
+          "id": "room-1"
+        }
+      }
+    },
+    {
+      "call": "store.find_latest_room",
+      "participant_id": "alice",
+      "channel_type": "email",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-2",
+        "created_at": "2026-01-01T00:00:02Z"
+      }
+    },
+    {
+      "call": "store.add_participant",
+      "participant": {
+        "id": "bob",
+        "room_id": "room-2",
+        "channel_id": "ch-any"
+      }
+    },
+    {
+      "call": "store.find_latest_room",
+      "participant_id": "bob",
+      "channel_type": "email",
+      "expect": {
+        "result": {
+          "id": "room-2"
+        }
+      }
+    },
+    {
+      "call": "store.find_latest_room",
+      "participant_id": "mallory",
+      "expect": {
+        "result": null
+      }
+    }
+  ]
+}

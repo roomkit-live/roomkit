@@ -1,0 +1,129 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "store/the-latest-room-follows-the-bindings-and-rooms-the-store-holds",
+  "title": "The latest room follows a binding's new correspondent, forgets a removed binding but not a participant record, and forgets a deleted room",
+  "rules": [
+    "§14.1"
+  ],
+  "notes": "Python: tests/test_store_memory.py::TestFindLatestRoomIndex::test_update_binding_reassigning_participant_matches_new_pid, test_removed_binding_no_longer_matches, test_removed_binding_keeps_participant_row_match, test_deleted_room_no_longer_matches.",
+  "steps": [
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-1"
+      }
+    },
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "room-1",
+        "channel_id": "ch-1",
+        "channel_type": "sms",
+        "participant_id": "alice"
+      }
+    },
+    {
+      "call": "store.find_latest_room",
+      "participant_id": "alice",
+      "expect": {
+        "result": {
+          "id": "room-1"
+        }
+      }
+    },
+    {
+      "call": "store.update_binding",
+      "binding": {
+        "room_id": "room-1",
+        "channel_id": "ch-1",
+        "channel_type": "sms",
+        "participant_id": "bob"
+      }
+    },
+    {
+      "call": "store.find_latest_room",
+      "participant_id": "bob",
+      "expect": {
+        "result": {
+          "id": "room-1"
+        }
+      }
+    },
+    {
+      "call": "store.find_latest_room",
+      "participant_id": "alice",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "store.add_participant",
+      "participant": {
+        "id": "bob",
+        "room_id": "room-1",
+        "channel_id": "ch-any"
+      }
+    },
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-2"
+      }
+    },
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "room-2",
+        "channel_id": "ch-2",
+        "channel_type": "sms",
+        "participant_id": "carol"
+      }
+    },
+    {
+      "call": "store.remove_binding",
+      "room_id": "room-1",
+      "channel_id": "ch-1",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "call": "store.remove_binding",
+      "room_id": "room-2",
+      "channel_id": "ch-2",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "call": "store.find_latest_room",
+      "participant_id": "bob",
+      "expect": {
+        "result": {
+          "id": "room-1"
+        }
+      }
+    },
+    {
+      "call": "store.find_latest_room",
+      "participant_id": "carol",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "store.delete_room",
+      "room_id": "room-1",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "call": "store.find_latest_room",
+      "participant_id": "bob",
+      "expect": {
+        "result": null
+      }
+    }
+  ]
+}

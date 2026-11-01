@@ -1,0 +1,73 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "store/a-binding-exists-as-get-binding-finds-it",
+  "title": "A binding exists while the room binds its channel, as get_binding finds it",
+  "rules": [
+    "§14.1"
+  ],
+  "notes": "Python: tests/test_store_binding_contract.py::test_binding_exists_answers_as_get_binding_does.",
+  "steps": [
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-1"
+      }
+    },
+    {
+      "call": "store.binding_exists",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "room-1",
+        "channel_id": "sms",
+        "channel_type": "sms"
+      }
+    },
+    {
+      "call": "store.binding_exists",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "call": "store.binding_exists",
+      "room_id": "room-1",
+      "channel_id": "email",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "call": "store.binding_exists",
+      "room_id": "room-2",
+      "channel_id": "sms",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "call": "store.remove_binding",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "call": "store.binding_exists",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "expect": {
+        "result": false
+      }
+    }
+  ]
+}
