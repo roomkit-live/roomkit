@@ -21,6 +21,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`ThreadSummary` is public, from `roomkit` and `roomkit.models`**
+  (RMK-1113). `ConversationStore.get_thread_summaries()` returns it, and a
+  caller could name it only through an internal module.
+
 - **`ThinkingDeltaMarker` is public, from `roomkit.models`** (RMK-1021). A
   streaming channel's `deliver_stream` reads one per chunk of the model's
   reasoning, besides the text and the response's rows, and could name it

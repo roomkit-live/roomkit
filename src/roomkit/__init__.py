@@ -214,6 +214,7 @@ from roomkit.models.event import (
     EventSource,
     RoomEvent,
     TextContent,
+    ThreadSummary,
     ToolCallContent,
     refuse_too_deep,
 )
@@ -800,6 +801,7 @@ __all__ = [
     "response_transcript",
     "TextContent",
     "ThinkingEvent",
+    "ThreadSummary",
     "Tool",
     "ToolCallCallback",
     "ToolCallObserver",

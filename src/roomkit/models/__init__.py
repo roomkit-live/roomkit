@@ -56,6 +56,7 @@ from roomkit.models.event import (
     SystemContent,
     TemplateContent,
     TextContent,
+    ThreadSummary,
     ToolCallContent,
     VideoContent,
 )
@@ -147,6 +148,7 @@ __all__ = [
     "TaskStatus",
     "TemplateContent",
     "ThinkingEvent",
+    "ThreadSummary",
     "Visibility",
     "TextContent",
     "ToolCallCallback",
