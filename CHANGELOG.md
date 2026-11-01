@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A SQLite commit no longer scans the whole search index** (RMK-1031).
+  Each commit, edit and delete reached an event's row in `events_fts` by
+  `event_id`, which FTS5 does not index: the cost grew with every event the
+  file held, 12 ms a commit at 60,000 events. A search row now takes its
+  event row's rowid. The schema moves to version 13; opening a version 12
+  file renumbers its search rows once, dropping any that names no stored
+  event. A file at version 13 is refused by roomkit 0.111.0 and earlier.
+
 ## [0.111.0] — 2026-11-01
 
 ### Added
