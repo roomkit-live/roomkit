@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **`update_task()` of a task the store lacks raises `TaskNotFoundError`**
+- **BREAKING — `update_task()` of a task the store lacks raises `TaskNotFoundError`**
   (RFC 14.3, RMK-1113). The three stores answered it three ways:
   `InMemoryStore` kept the task where `get_task()` found it and no room's
   `list_tasks()` did, `SQLiteStore` created it, and `PostgresStore` wrote
