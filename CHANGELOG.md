@@ -65,6 +65,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A member added again without an identity keeps their identification**
+  (RFC §5.5). `add_member()` after `remove_member()` of an IDENTIFIED member
+  made them PENDING while their record kept its `identity_id`, so
+  `is_member()` answered `True` for a sender the inbound pipeline resolved
+  again. The re-join now keeps the identification and the identity the
+  record had; one naming an identity identifies them as it.
+
 - **A resolver's `REJECTED` holds the message when no identity hook answers**
   (RFC §11.2, RMK-1151). `IdentityResult(status=REJECTED, message="not
   allowed")` went to the `ON_IDENTITY_UNKNOWN` identity hooks and, none

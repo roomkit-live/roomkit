@@ -73,7 +73,8 @@ class MembershipMixin(HelpersMixin):
         re-join preserves ``joined_at``.
 
         When ``identity_id`` is given the participant is marked ``IDENTIFIED``
-        (the caller already knows who they are).
+        (the caller already knows who they are). A re-join without one keeps
+        the identification and the identity the record had.
 
         Re-adding an inactive record through a channel other than its primary
         moves the primary to the channel being joined through — that is what
@@ -116,6 +117,8 @@ class MembershipMixin(HelpersMixin):
                 # This deliberate join re-homes the participant, so the new
                 # primary leads the ordered list while every old channel stays.
                 reached = list(dict.fromkeys([channel_id, *reached]))
+                # A re-join without an identity keeps the identification
+                # the record had, which follows the identity it keeps.
                 participant = existing.model_copy(
                     update={
                         "status": ParticipantStatus.ACTIVE,
@@ -123,7 +126,9 @@ class MembershipMixin(HelpersMixin):
                         "connected_via": reached,
                         "role": role,
                         "identity_id": identity_id or existing.identity_id,
-                        "identification": identification,
+                        "identification": (
+                            identification if identity_id else existing.identification
+                        ),
                         "display_name": display_name or existing.display_name,
                     }
                 )
