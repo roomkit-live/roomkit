@@ -1,0 +1,241 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-quoted-primitive-runs-as-its-declared-type",
+  "title": "A call's primitive argument written as a quoted literal runs as the type its property declares: the gate reads it before the schema check, and the tool, the hooks and the end row get the value",
+  "rules": [
+    "§21.1",
+    "§9.3",
+    "§6.4"
+  ],
+  "notes": "Python's repair_tool_arguments (roomkit tools/validation.py) runs before validate_tool_arguments: a string spelling the literal of an integer, number or boolean property is read as that literal. The start row keeps the model's arguments, the end row and the hooks the ones the call ran with.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "call-1",
+                  "name": "set_quantity",
+                  "arguments": {
+                    "line": "A",
+                    "count": "5",
+                    "gift": "True"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "set_quantity",
+            "description": "Set an order line's quantity",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "line": {
+                  "type": "string"
+                },
+                "count": {
+                  "type": "integer"
+                },
+                "gift": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "line",
+                "count"
+              ]
+            },
+            "returns": "set"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "gate",
+        "trigger": "before_tool_use"
+      },
+      {
+        "name": "audit",
+        "trigger": "on_tool_call",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Make line A five, as a gift."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "type": "message",
+          "source": {
+            "channel_id": "ws"
+          },
+          "content": {
+            "type": "text",
+            "body": "Make line A five, as a gift."
+          }
+        },
+        {
+          "index": 1,
+          "type": "tool_call_start",
+          "source": {
+            "channel_id": "agent",
+            "direction": "outbound"
+          },
+          "chain_depth": 1,
+          "content": {
+            "type": "tool_call",
+            "tool_name": "set_quantity",
+            "tool_id": "call-1",
+            "arguments": {
+              "line": "A",
+              "count": "5",
+              "gift": "True"
+            },
+            "status": "pending",
+            "result": null
+          }
+        },
+        {
+          "index": 2,
+          "type": "tool_call_end",
+          "source": {
+            "channel_id": "agent",
+            "direction": "outbound"
+          },
+          "chain_depth": 1,
+          "content": {
+            "type": "tool_call",
+            "tool_name": "set_quantity",
+            "tool_id": "call-1",
+            "arguments": {
+              "line": "A",
+              "count": 5,
+              "gift": true
+            },
+            "status": "completed",
+            "outcome": "served",
+            "result": "set"
+          }
+        },
+        {
+          "index": 3,
+          "type": "message",
+          "source": {
+            "channel_id": "agent",
+            "direction": "outbound"
+          },
+          "content": {
+            "type": "text",
+            "body": "Done."
+          },
+          "chain_depth": 1
+        }
+      ]
+    },
+    "hooks": {
+      "gate": [
+        {
+          "trigger": "before_tool_use",
+          "room_id": "room-1",
+          "tool_call": {
+            "name": "set_quantity",
+            "tool_call_id": "call-1",
+            "arguments": {
+              "line": "A",
+              "count": 5,
+              "gift": true
+            }
+          }
+        }
+      ],
+      "audit": [
+        {
+          "trigger": "on_tool_call",
+          "room_id": "room-1",
+          "tool_call": {
+            "name": "set_quantity",
+            "tool_call_id": "call-1",
+            "arguments": {
+              "line": "A",
+              "count": 5,
+              "gift": true
+            },
+            "result": "set",
+            "is_error": false,
+            "refused": false
+          }
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {
+          "tool_results": []
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "call-1",
+              "content": "set",
+              "is_error": false
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

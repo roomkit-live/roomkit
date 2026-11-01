@@ -1,0 +1,212 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/rewritten-arguments-are-not-repaired",
+  "title": "Arguments a BEFORE_TOOL_USE hook rewrote are checked against the schema unrepaired: a hoisted shape out of a hook is refused, naming the hook's arguments as rewritten",
+  "rules": [
+    "§21.1",
+    "§9.3",
+    "§6.4"
+  ],
+  "notes": "Python repairs the model's own call only (repair_tool_arguments before the hooks, rewritten_arguments_error after them): a hook is the integrator's code, and repairing it would hide its bug.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "call-1",
+                  "name": "boards",
+                  "arguments": {
+                    "action": "list_columns",
+                    "params": {
+                      "board_id": "board-1"
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "text": "I could not."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "boards",
+            "description": "Board operations",
+            "parameters": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "action": {
+                  "type": "string"
+                },
+                "params": {
+                  "type": "object"
+                }
+              },
+              "required": [
+                "action"
+              ]
+            },
+            "returns": "{\"columns\": [\"todo\", \"done\"]}"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "flatten",
+        "trigger": "before_tool_use",
+        "reactions": [
+          {
+            "result": {
+              "action": "modify",
+              "event": {
+                "arguments": {
+                  "action": "list_columns",
+                  "board_id": "board-1"
+                }
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "List the columns of board 1."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "type": "message",
+          "source": {
+            "channel_id": "ws"
+          },
+          "content": {
+            "type": "text",
+            "body": "List the columns of board 1."
+          }
+        },
+        {
+          "index": 1,
+          "type": "tool_call_start",
+          "source": {
+            "channel_id": "agent",
+            "direction": "outbound"
+          },
+          "chain_depth": 1,
+          "content": {
+            "type": "tool_call",
+            "tool_name": "boards",
+            "tool_id": "call-1",
+            "arguments": {
+              "action": "list_columns",
+              "params": {
+                "board_id": "board-1"
+              }
+            },
+            "status": "pending",
+            "result": null
+          }
+        },
+        {
+          "index": 2,
+          "type": "tool_call_end",
+          "source": {
+            "channel_id": "agent",
+            "direction": "outbound"
+          },
+          "chain_depth": 1,
+          "content": {
+            "type": "tool_call",
+            "tool_name": "boards",
+            "tool_id": "call-1",
+            "arguments": {
+              "action": "list_columns",
+              "board_id": "board-1"
+            },
+            "status": "failed",
+            "outcome": "refused",
+            "result": "{\"error\": \"Invalid rewritten arguments for 'boards': unknown argument 'board_id' (this tool accepts: action, params)\"}"
+          }
+        },
+        {
+          "index": 3,
+          "type": "message",
+          "source": {
+            "channel_id": "agent",
+            "direction": "outbound"
+          },
+          "content": {
+            "type": "text",
+            "body": "I could not."
+          },
+          "chain_depth": 1
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {
+          "tool_results": []
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "call-1",
+              "content": "{\"error\": \"Invalid rewritten arguments for 'boards': unknown argument 'board_id' (this tool accepts: action, params)\"}",
+              "is_error": true
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

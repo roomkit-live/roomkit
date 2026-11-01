@@ -1,0 +1,213 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-result-says-whether-its-call-failed",
+  "title": "Each tool result the model reads says whether its call failed: false for a served call, true for one that raised or was refused, in its turn and when a later turn replays it",
+  "rules": [
+    "§6.4",
+    "§9.3",
+    "§6.7"
+  ],
+  "notes": "Python's ToolOutcome.as_part writes is_error for every outcome but served; a replayed round's result is an error when its end row's status is failed (_tool_history.py). A refusal is no answer and is not replayed (kept_in_tool_memory).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "call-1",
+                  "name": "lookup_order",
+                  "arguments": {
+                    "order": "42"
+                  }
+                },
+                {
+                  "id": "call-2",
+                  "name": "cancel_order",
+                  "arguments": {
+                    "order": "42"
+                  }
+                },
+                {
+                  "id": "call-3",
+                  "name": "refund_order",
+                  "arguments": {
+                    "order": "42"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Order 42 shipped; I could not cancel or refund it."
+            },
+            {
+              "text": "Still shipped."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup_order",
+            "description": "Find an order by its number",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "order": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "order"
+              ]
+            },
+            "returns": "{\"order\": \"42\", \"status\": \"shipped\"}"
+          },
+          {
+            "name": "cancel_order",
+            "description": "Cancel an order",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "order": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "order"
+              ]
+            },
+            "raises": {
+              "kind": "RuntimeError",
+              "message": "the order book is closed"
+            }
+          },
+          {
+            "name": "refund_order",
+            "description": "Refund an order",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "order": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "order"
+              ]
+            },
+            "refuses": "Refunds need a manager."
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": []
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Where is order 42? Cancel and refund it."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "And now?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "tool_results": []
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "call-1",
+              "content": "{\"order\": \"42\", \"status\": \"shipped\"}",
+              "is_error": false
+            },
+            {
+              "tool_call_id": "call-2",
+              "content": "{\"error\": \"Tool 'cancel_order' failed (RuntimeError)\"}",
+              "is_error": true
+            },
+            {
+              "tool_call_id": "call-3",
+              "content": "Refunds need a manager.",
+              "is_error": true
+            }
+          ]
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "call-1",
+              "content": "{\"order\": \"42\", \"status\": \"shipped\"}",
+              "is_error": false
+            },
+            {
+              "tool_call_id": "call-2",
+              "content": "{\"error\": \"Tool 'cancel_order' failed (RuntimeError)\"}",
+              "is_error": true
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

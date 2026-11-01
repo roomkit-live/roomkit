@@ -1,0 +1,187 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-stream-without-its-done-event-completes-the-round",
+  "title": "A generation whose stream ends without its done event is read whole: its calls run and the next round answers, as a round that ended stop",
+  "rules": [
+    "§6.4",
+    "§6.7",
+    "Appendix A.9"
+  ],
+  "notes": "Python's stream round reads the provider's events to the stream's end; a done event only adds its finish reason and usage (_ai_stream_round.py). The loop's end reason stays completed.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "call-1",
+                  "name": "lookup_order",
+                  "arguments": {
+                    "order": "42"
+                  }
+                }
+              ],
+              "done": false
+            },
+            {
+              "text": "Order 42 shipped.",
+              "done": false
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup_order",
+            "description": "Find an order by its number",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "order": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "order"
+              ]
+            },
+            "returns": "{\"order\": \"42\", \"status\": \"shipped\"}"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": []
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Where is order 42?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "type": "message",
+          "source": {
+            "channel_id": "ws"
+          },
+          "content": {
+            "type": "text",
+            "body": "Where is order 42?"
+          }
+        },
+        {
+          "index": 1,
+          "type": "tool_call_start",
+          "source": {
+            "channel_id": "agent",
+            "direction": "outbound"
+          },
+          "chain_depth": 1,
+          "content": {
+            "type": "tool_call",
+            "tool_name": "lookup_order",
+            "tool_id": "call-1",
+            "arguments": {
+              "order": "42"
+            },
+            "status": "pending",
+            "result": null
+          }
+        },
+        {
+          "index": 2,
+          "type": "tool_call_end",
+          "source": {
+            "channel_id": "agent",
+            "direction": "outbound"
+          },
+          "chain_depth": 1,
+          "content": {
+            "type": "tool_call",
+            "tool_name": "lookup_order",
+            "tool_id": "call-1",
+            "arguments": {
+              "order": "42"
+            },
+            "status": "completed",
+            "outcome": "served",
+            "result": "{\"order\": \"42\", \"status\": \"shipped\"}"
+          }
+        },
+        {
+          "index": 3,
+          "type": "message",
+          "source": {
+            "channel_id": "agent",
+            "direction": "outbound"
+          },
+          "content": {
+            "type": "text",
+            "body": "Order 42 shipped."
+          },
+          "chain_depth": 1,
+          "metadata": {
+            "loop_end_reason": "completed"
+          }
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {
+          "tool_results": []
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "call-1",
+              "content": "{\"order\": \"42\", \"status\": \"shipped\"}"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
