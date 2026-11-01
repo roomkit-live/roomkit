@@ -181,7 +181,9 @@ class ScriptedChannel(Channel):
         self._on_event = Reactions(spec.get("on_event"))
         self._deliver = Reactions(spec.get("deliver"))
         self._streams = bool(spec.get("streams", False))
+        self._streams_in = spec.get("streams_in")
         self._deliver_stream = Reactions(spec.get("deliver_stream"))
+        self._addresses = spec.get("addresses")
 
     def capabilities(self) -> ChannelCapabilities:
         return self._capabilities
@@ -189,6 +191,42 @@ class ScriptedChannel(Channel):
     @property
     def recipient_key(self) -> str | None:
         return self._recipient_key
+
+    # What the scenario's ``addresses`` says the channel's own address
+    # methods answer; the defaults without it.
+
+    def normalize_address(self, address: str) -> str:
+        if self._addresses is None:
+            return super().normalize_address(address)
+        return self._addresses.get("normalizes", {}).get(address, address)
+
+    def conversation_address(self, message: InboundMessage) -> str:
+        key = (self._addresses or {}).get("conversation_key")
+        chat = message.metadata.get(key) if key is not None else None
+        if isinstance(chat, str) and chat.strip():
+            return chat
+        return super().conversation_address(message)
+
+    def reply_metadata(self, message: InboundMessage) -> dict[str, str]:
+        if self._addresses is None or self._recipient_key is None:
+            return super().reply_metadata(message)
+        return {self._recipient_key: self.conversation_address(message)}
+
+    def recipient_metadata(self, address: str) -> dict[str, str]:
+        if self._addresses is None or self._recipient_key is None:
+            return super().recipient_metadata(address)
+        return {self._recipient_key: address}
+
+    def recipient_address(self, binding: ChannelBinding) -> str | None:
+        if self._addresses is None or self._recipient_key is None:
+            return super().recipient_address(binding)
+        held = binding.metadata.get(self._recipient_key)
+        return self.normalize_address(held) if isinstance(held, str) and held.strip() else None
+
+    def supports_streaming_delivery_for(self, room_id: str) -> bool:
+        if self._streams_in is None:
+            return super().supports_streaming_delivery_for(room_id)
+        return self._streams and room_id in self._streams_in
 
     async def handle_inbound(self, message: InboundMessage, context: RoomContext) -> RoomEvent:
         room_id = context.room.id

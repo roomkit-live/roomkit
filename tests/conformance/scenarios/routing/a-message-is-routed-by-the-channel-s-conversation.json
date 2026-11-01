@@ -1,0 +1,142 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/a-message-is-routed-by-the-channel-s-conversation",
+  "title": "A message is routed and recorded by the conversation the channel's own conversation_address names, its author staying the sender",
+  "rules": [
+    "§10.4",
+    "§5.7",
+    "§10.1 step 2"
+  ],
+  "notes": "A chat channel names a message's conversation by the chat it was posted in (conversation_address), and replies there (reply_metadata). Two members of one chat reach the chat's room; a member of another chat gets a room of its own. The binding names the chat, as its correspondent and its recipient; each event names its author.",
+  "setup": {
+    "channels": [
+      {
+        "id": "chat",
+        "type": "telegram",
+        "category": "transport",
+        "recipient_key": "telegram_chat_id",
+        "addresses": {
+          "conversation_key": "chat_id"
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "chat",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Hi all"
+        },
+        "metadata": {
+          "chat_id": "group-7"
+        }
+      },
+      "expect": {
+        "result": {
+          "event": {
+            "room_id": "$r1"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "chat",
+        "sender_id": "bob",
+        "content": {
+          "type": "text",
+          "body": "Hi Alice"
+        },
+        "metadata": {
+          "chat_id": "group-7"
+        }
+      },
+      "expect": {
+        "result": {
+          "event": {
+            "room_id": "$r1"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "chat",
+        "sender_id": "carol",
+        "content": {
+          "type": "text",
+          "body": "Elsewhere"
+        },
+        "metadata": {
+          "chat_id": "group-8"
+        }
+      },
+      "expect": {
+        "result": {
+          "event": {
+            "room_id": "$r2"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "$r1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Hi all"
+          },
+          "source": {
+            "participant_id": "alice"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Hi Alice"
+          },
+          "source": {
+            "participant_id": "bob"
+          }
+        }
+      ],
+      "$r2": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Elsewhere"
+          },
+          "source": {
+            "participant_id": "carol"
+          }
+        }
+      ]
+    },
+    "bindings": {
+      "$r1": {
+        "chat": {
+          "participant_id": "group-7",
+          "metadata": {
+            "telegram_chat_id": "group-7"
+          }
+        }
+      },
+      "$r2": {
+        "chat": {
+          "participant_id": "group-8",
+          "metadata": {
+            "telegram_chat_id": "group-8"
+          }
+        }
+      }
+    }
+  }
+}

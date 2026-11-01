@@ -1,0 +1,87 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/a-routed-sender-is-recorded-where-the-channel-replies",
+  "title": "A routed sender's binding gets the recipient the channel's reply_metadata names, and none from a channel whose reply_metadata names none",
+  "rules": [
+    "§10.1 step 2",
+    "§5.7"
+  ],
+  "notes": "Recording a sender writes the channel's reply_metadata where the binding holds no value, whatever the channel's recipient key: a channel that keeps the default reply_metadata, which names nothing, records the sender as the binding's correspondent and no recipient.",
+  "setup": {
+    "channels": [
+      {
+        "id": "plain",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number"
+      },
+      {
+        "id": "replying",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number",
+        "addresses": {}
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "plain",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "event": {
+            "room_id": "$r1"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "replying",
+        "sender_id": "+15559876543",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "event": {
+            "room_id": "$r2"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "$r1": {
+        "plain": {
+          "participant_id": "+15551234567",
+          "metadata": {
+            "phone_number": {
+              "$absent": true
+            }
+          }
+        }
+      },
+      "$r2": {
+        "replying": {
+          "participant_id": "+15559876543",
+          "metadata": {
+            "phone_number": "+15559876543"
+          }
+        }
+      }
+    }
+  }
+}

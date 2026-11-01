@@ -73,6 +73,10 @@
             "type": "text",
             "body": "Still here"
           },
+          "source": {
+            "channel_id": "sms",
+            "channel_type": "sms"
+          },
           "status": "blocked",
           "blocked_by": "source_unbound"
         }

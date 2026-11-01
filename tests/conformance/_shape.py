@@ -33,7 +33,10 @@ CHANNEL = {
     "tools",
     "tool_policy",
     "max_tool_rounds",
+    "addresses",
+    "streams_in",
 }
+ADDRESSES = {"normalizes", "conversation_key"}
 MODEL = {"rounds"}
 MODEL_ROUND = {"text", "deltas", "calls", "finish_reason", "usage", "fails"}
 MODEL_CALL = {"id", "name", "arguments", "cut"}
@@ -213,6 +216,8 @@ def _channel(channel: Mapping[str, Any], path: str, found: list[str]) -> None:
             _members(tool["raises"], RAISES, f"{path}.tools[{index}].raises", found)
     if "tool_policy" in channel:
         _members(channel["tool_policy"], POLICY, f"{path}.tool_policy", found)
+    if "addresses" in channel:
+        _members(channel["addresses"], ADDRESSES, f"{path}.addresses", found)
 
 
 def _model(model: Mapping[str, Any], path: str, found: list[str]) -> None:

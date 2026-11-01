@@ -1,0 +1,81 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "rooms/an-attach-names-its-correspondent-in-the-channel-s-form",
+  "title": "An attach writes the correspondent and the recipient the host gives in the channel's form, and a recipient alone names its correspondent",
+  "rules": [
+    "§5.7",
+    "§7.2",
+    "§10.4"
+  ],
+  "notes": "The host's addresses are written as the channel writes an inbound sender (normalize_address), the recipient under the channel's key as recipient_metadata writes it, and a binding that names no one but delivers to an address is that person's conversation. Translates roomkit tests/test_transport_recipient.py::test_a_host_address_is_written_in_e164, its attaches.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number",
+        "addresses": {
+          "normalizes": {
+            "555-000-0001": "+15550000001",
+            "555.000.0002": "+15550000002"
+          }
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1"
+      },
+      {
+        "id": "r2"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "attach_channel",
+      "room_id": "r1",
+      "channel_id": "sms",
+      "participant_id": "555-000-0001",
+      "expect": {
+        "result": {
+          "participant_id": "+15550000001"
+        }
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "r2",
+      "channel_id": "sms",
+      "metadata": {
+        "phone_number": "555.000.0002"
+      },
+      "expect": {
+        "result": {
+          "participant_id": "+15550000002",
+          "metadata": {
+            "phone_number": "+15550000002"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "r1": {
+        "sms": {
+          "participant_id": "+15550000001"
+        }
+      },
+      "r2": {
+        "sms": {
+          "participant_id": "+15550000002",
+          "metadata": {
+            "phone_number": "+15550000002"
+          }
+        }
+      }
+    }
+  }
+}
