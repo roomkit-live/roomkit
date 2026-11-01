@@ -1538,6 +1538,7 @@ def _apply_message_fields(event: RoomEvent, message: InboundMessage) -> RoomEven
     (each builds its own RoomEvent and would otherwise have to remember to
     copy each one). A field the channel resolved itself keeps its value.
     """
+    event = _from_its_channel(event, message)
     if message.event_type == EventType.INSTRUCTION:
         event = _as_instruction(event, message)
     elif event.type == EventType.INSTRUCTION:
@@ -1581,6 +1582,26 @@ def _apply_message_fields(event: RoomEvent, message: InboundMessage) -> RoomEven
     if message.response_visibility is not None and event.response_visibility is None:
         event = event.model_copy(update={"response_visibility": message.response_visibility})
     return _without_runtime_keys(event)
+
+
+def _from_its_channel(event: RoomEvent, message: InboundMessage) -> RoomEvent:
+    """*event* sourced from the channel that received *message* (RFC §10.1
+    step 4): a parse cannot pass the message off as another channel's,
+    whose binding, permissions and delivery set it would take. What else
+    the parse wrote of its source stands: an SMS with media is an MMS, and
+    a channel's echo of its own output travelled outbound (RFC §10.3 rule
+    3)."""
+    if event.source.channel_id == message.channel_id:
+        return event
+    logger.warning(
+        "Channel %s parsed a message sourced from %s: it is sourced from %s",
+        message.channel_id,
+        event.source.channel_id,
+        message.channel_id,
+        extra={"channel_id": message.channel_id},
+    )
+    received = event.source.model_copy(update={"channel_id": message.channel_id})
+    return event.model_copy(update={"source": received})
 
 
 _RUNTIME_KEYS = (RUNTIME_RECORD, HELD_KEY, FINGERPRINT)

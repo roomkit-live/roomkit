@@ -1,0 +1,81 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "inbound/a-parse-naming-another-channel-is-sourced-from-its-own",
+  "title": "An event whose parse names another channel as its source is sourced from the channel that received it",
+  "rules": [
+    "§10.1 step 4",
+    "§5.2"
+  ],
+  "notes": "A parse cannot pass a message off as another channel's: its source is the channel that received it, and it is delivered to the room's other channels, not back to its own. What else the parse wrote of its source stands (its type, the direction of a channel's echo of its own output, §10.3 rule 3).",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "parse": [
+          {
+            "parsed": {
+              "source": {
+                "channel_id": "ws"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "source": {
+            "channel_id": "sms"
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "id": "room-1#0"
+          }
+        ],
+        "sms": []
+      }
+    }
+  }
+}

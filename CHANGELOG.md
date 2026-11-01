@@ -15,6 +15,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A parsed event is sourced from the channel that received it** (RFC
+  §10.1 step 4, RMK-1123). A channel whose `handle_inbound()` named another
+  channel as the event's source had the message stored as that channel's,
+  read under its binding and delivered back to the channel it came in on.
+  The event is now sourced from the receiving channel, with a warning; the
+  rest of its source stands, its direction included. Scenario
+  `inbound/a-parse-naming-another-channel-is-sourced-from-its-own`.
+
 - **BREAKING — `update_task()` of a task the store lacks raises `TaskNotFoundError`**
   (RFC 14.3, RMK-1113). The three stores answered it three ways:
   `InMemoryStore` kept the task where `get_task()` found it and no room's
