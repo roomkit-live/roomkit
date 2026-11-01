@@ -77,6 +77,7 @@ REACTION = {
     "output",
     "result",
     "stop_after",
+    "parsed",
 }
 WHEN = {"room_id", "text", "type", "source_channel_id", "chain_depth"}
 OUTPUT = {"tasks", "observations", "metadata_updates"}

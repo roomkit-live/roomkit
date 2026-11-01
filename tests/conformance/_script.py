@@ -154,6 +154,14 @@ def complete_observation(
     )
 
 
+def parsed_event(event: RoomEvent, patch: Mapping[str, Any]) -> RoomEvent:
+    """*event* with a parse reaction's ``parsed`` patch: its members replace
+    the event's, those of its ``source`` the event's source's."""
+    data = event.model_dump(mode="json")
+    patched = {**data, **patch, "source": {**data["source"], **patch.get("source", {})}}
+    return RoomEvent.model_validate(patched)
+
+
 SYSTEM_SOURCE = {"channel_id": "system", "channel_type": "system", "direction": "inbound"}
 
 
@@ -184,10 +192,9 @@ class ScriptedChannel(Channel):
 
     async def handle_inbound(self, message: InboundMessage, context: RoomContext) -> RoomEvent:
         room_id = context.room.id
-        reaction = self._parse.pick(message_subject(message, room_id))
-        if reaction is not None:
-            await perform(self._harness, reaction, {"room": room_id})
-        return RoomEvent(
+        reaction = self._parse.pick(message_subject(message, room_id)) or {}
+        await perform(self._harness, reaction, {"room": room_id})
+        event = RoomEvent(
             room_id=room_id,
             type=message.event_type,
             source=EventSource(
@@ -203,6 +210,9 @@ class ScriptedChannel(Channel):
             idempotency_key=message.idempotency_key,
             metadata=message.metadata,
         )
+        if (patch := reaction.get("parsed")) is None:
+            return event
+        return parsed_event(event, await self._harness.resolve(patch, {"room": room_id}))
 
     async def deliver(
         self, event: RoomEvent, binding: ChannelBinding, context: RoomContext

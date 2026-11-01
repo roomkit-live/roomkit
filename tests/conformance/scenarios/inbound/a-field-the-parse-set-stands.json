@@ -1,0 +1,192 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "inbound/a-field-the-parse-set-stands",
+  "title": "A field the channel's parse set stands; the message's fills only the ones it left unset",
+  "rules": [
+    "§10.1 step 4",
+    "§5.2"
+  ],
+  "notes": "A channel reads what it can off its own wire: an SMS with media is an MMS, a provider's message key, its thread, its timestamp. The pipeline applies the caller's fields to the event the parse returned only where the parse left them at their default: no type set apart from an instruction's, a visibility of all, no address, no thread, no key, depth 0, no response scope. The parse's instant is the run's earliest, so it reads @1.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "parse": [
+          {
+            "when": {
+              "text": "Read off the wire"
+            },
+            "parsed": {
+              "type": "reaction",
+              "source": {
+                "channel_type": "mms"
+              },
+              "visibility": "ws",
+              "addressed_to": [
+                "front-desk"
+              ],
+              "parent_event_id": "room-1#1",
+              "idempotency_key": "wire-1",
+              "chain_depth": 2,
+              "response_visibility": "ws",
+              "created_at": "2020-01-01T00:00:00Z"
+            }
+          }
+        ]
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "First"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Second"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Filled"
+        },
+        "visibility": "transport",
+        "addressed_to": [
+          "concierge"
+        ],
+        "parent_event_id": "room-1#0",
+        "idempotency_key": "caller-1",
+        "chain_depth": 1,
+        "response_visibility": "transport"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Read off the wire"
+        },
+        "visibility": "transport",
+        "addressed_to": [
+          "concierge"
+        ],
+        "parent_event_id": "room-1#0",
+        "idempotency_key": "caller-2",
+        "chain_depth": 1,
+        "response_visibility": "transport"
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "id": "room-1#3"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "First"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Second"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Filled"
+          },
+          "type": "message",
+          "source": {
+            "channel_id": "sms",
+            "channel_type": "sms",
+            "direction": "inbound"
+          },
+          "visibility": "transport",
+          "addressed_to": [
+            "concierge"
+          ],
+          "parent_event_id": "room-1#0",
+          "idempotency_key": "caller-1",
+          "chain_depth": 1,
+          "response_visibility": "transport"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Read off the wire"
+          },
+          "type": "reaction",
+          "source": {
+            "channel_id": "sms",
+            "channel_type": "mms",
+            "direction": "inbound"
+          },
+          "visibility": "ws",
+          "addressed_to": [
+            "front-desk"
+          ],
+          "parent_event_id": "room-1#1",
+          "idempotency_key": "wire-1",
+          "chain_depth": 2,
+          "response_visibility": "ws",
+          "created_at": "@1"
+        }
+      ]
+    }
+  }
+}

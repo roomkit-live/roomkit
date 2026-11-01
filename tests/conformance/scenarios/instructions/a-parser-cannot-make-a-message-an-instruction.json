@@ -1,0 +1,118 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "instructions/a-parser-cannot-make-a-message-an-instruction",
+  "title": "A message its channel parsed as an instruction stays a message, the parser's standalone word dropped",
+  "rules": [
+    "§10.1.1",
+    "§10.1 step 4"
+  ],
+  "notes": "An instruction is the caller's decision, never the wire's: the event takes the type the caller sent, and is stored and answered as a message. Translates roomkit tests/test_instruction_events.py::test_a_parser_cannot_make_a_message_an_instruction.",
+  "setup": {
+    "channels": [
+      {
+        "id": "wire",
+        "type": "websocket",
+        "category": "transport",
+        "parse": [
+          {
+            "parsed": {
+              "type": "instruction",
+              "metadata": {
+                "standalone": true
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Hello."
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "wire"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "wire",
+        "sender_id": "caller",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "type": "message"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "hi"
+          },
+          "metadata": {
+            "standalone": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Hello."
+          }
+        }
+      ]
+    },
+    "turns": {
+      "room-1": {
+        "ai": [
+          {
+            "type": "message",
+            "content": {
+              "type": "text",
+              "body": "hi"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

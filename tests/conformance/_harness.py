@@ -221,7 +221,7 @@ class Harness:
 
     async def invoke(self, spec: Mapping[str, Any], scope: Mapping[str, str]) -> dict[str, Any]:
         """Makes one call; returns its outcome, its error named, never raising."""
-        resolved = await self._resolve(dict(spec), scope)
+        resolved = await self.resolve(dict(spec), scope)
         try:
             result = await asyncio.wait_for(
                 (CALLS | STORE_CALLS)[spec["call"]](self.kit, self, resolved), CALL_BOUND_S
@@ -281,11 +281,11 @@ class Harness:
 
     # -- references -------------------------------------------------------
 
-    async def _resolve(self, value: Any, scope: Mapping[str, str]) -> Any:
+    async def resolve(self, value: Any, scope: Mapping[str, str]) -> Any:
         if isinstance(value, dict):
-            return {key: await self._resolve(item, scope) for key, item in value.items()}
+            return {key: await self.resolve(item, scope) for key, item in value.items()}
         if isinstance(value, list):
-            return [await self._resolve(item, scope) for item in value]
+            return [await self.resolve(item, scope) for item in value]
         if isinstance(value, str):
             return await self._reference(value, scope)
         return value

@@ -1,0 +1,127 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "instructions/standalone-is-the-typed-field-s-word-alone",
+  "title": "An instruction carries standalone only when the typed field asks for it; a metadata key of that name is dropped",
+  "rules": [
+    "§10.1.1 rule 4",
+    "§10.1.1 rule 7",
+    "§10.5"
+  ],
+  "notes": "The caller's metadata rides the instruction, but standalone is the typed field's word: an instruction that does not stand alone carries no such key, whatever the caller's metadata held, on a message and on a direct injection alike. Translates roomkit tests/test_instruction_events.py::test_an_instruction_without_standalone_reads_the_room and tests/test_instruction_fingerprint.py, whose instruction carries no standalone key.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "app",
+        "event_type": "instruction",
+        "addressed_to": [
+          "ai"
+        ],
+        "content": {
+          "type": "text",
+          "body": "Greet the caller."
+        },
+        "metadata": {
+          "task_id": "t-7",
+          "standalone": true
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "app",
+        "event_type": "instruction",
+        "addressed_to": [
+          "ai"
+        ],
+        "content": {
+          "type": "text",
+          "body": "Summarize."
+        },
+        "standalone": true
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "event_type": "instruction",
+      "addressed_to": [
+        "ai"
+      ],
+      "content": {
+        "type": "text",
+        "body": "Wrap up."
+      },
+      "metadata": {
+        "standalone": true
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": []
+    },
+    "turns": {
+      "room-1": {
+        "ai": [
+          {
+            "type": "instruction",
+            "metadata": {
+              "task_id": "t-7",
+              "standalone": {
+                "$absent": true
+              }
+            }
+          },
+          {
+            "type": "instruction",
+            "metadata": {
+              "standalone": true
+            }
+          },
+          {
+            "type": "instruction",
+            "metadata": {
+              "standalone": {
+                "$absent": true
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}
