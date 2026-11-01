@@ -2484,9 +2484,17 @@ async with MCPToolProvider.from_command("uvx", ["mcp-server-sqlite", "--db", "da
     ai = AIChannel("ai", provider=provider, tools=mcp.get_tools(), tool_handler=mcp.as_tool_handler())
 ```
 
-Entering a provider that starts its server waits `connect_timeout` seconds at
-most (`from_command(..., connect_timeout=60.0)`): the start, the handshake and
-the listing. Past it the server is stopped and entering raises `TimeoutError`.
+Entering a provider waits `connect_timeout` seconds at most
+(`from_command(..., connect_timeout=60.0)`, `from_url(..., connect_timeout=60.0)`):
+the handshake and the listing, and the start of a server it starts. Past it the
+server is stopped, or the connection closed and its session deleted, and
+entering raises `TimeoutError`.
+
+`from_url` refuses at construction (`ValueError`) what its transport cannot
+send as given: a URL that is not HTTP(S), names no host, or carries credentials
+or a fragment (pass a credential as a header, `Authorization`), a header the
+transport writes itself (`Accept`, `Content-Type`, `Host`, `mcp-*`...), more
+than 32 headers, and a value over 8192 bytes or holding a line break.
 
 Beside the model's tools, a host reads what an MCP App needs from the same
 connection: `mcp.tool_meta()` (each discovered tool's `_meta`, `ui.resourceUri`

@@ -184,7 +184,7 @@ class TestConstruction:
         with pytest.raises(ValueError, match="needs a url"):
             MCPToolProvider(transport="sse")
 
-    @pytest.mark.parametrize("option", [{"env": {"A": "1"}}, {"connect_timeout": 5.0}])
+    @pytest.mark.parametrize("option", [{"env": {"A": "1"}}, {"cwd": "/tmp"}])
     def test_stdio_options_are_refused_on_http(self, option: dict[str, Any]) -> None:
         with pytest.raises(ValueError, match="for stdio"):
             MCPToolProvider("http://localhost/mcp", **option)
@@ -196,6 +196,88 @@ class TestConstruction:
     def test_unknown_transport_is_refused_at_construction(self) -> None:
         with pytest.raises(ValueError, match="Unsupported transport"):
             MCPToolProvider("http://localhost/mcp", transport="grpc")
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "ftp://mcp.example/mcp",
+            "mcp.example/mcp",
+            "http:///mcp",
+            "https://user:secret@mcp.example/mcp",
+            "https://user@mcp.example/mcp",
+            "https://mcp.example/mcp#tools",
+            "https://mcp.example:99999/mcp",
+        ],
+    )
+    def test_an_endpoint_that_cannot_be_reached_as_given_is_refused(self, url: str) -> None:
+        """RMK-1068: refused at construction, as roomkit-rs's from_url: no
+        credentials in a URL every log and proxy sees, no fragment no request
+        carries, an HTTP(S) URL naming a host."""
+        with pytest.raises(ValueError, match="endpoint"):
+            MCPToolProvider.from_url(url)
+
+    @pytest.mark.parametrize(
+        ("headers", "refusal"),
+        [
+            ({"Accept": "text/plain"}, "reserved for the transport"),
+            ({"Content-Type": "text/plain"}, "reserved for the transport"),
+            ({"Host": "elsewhere"}, "reserved for the transport"),
+            ({"Mcp-Session-Id": "forged"}, "reserved for the transport"),
+            ({"mcp-protocol-version": "2024-11-05"}, "reserved for the transport"),
+            ({"Proxy-Authorization": "Basic x"}, "reserved for the transport"),
+            ({"X Bad": "1"}, "invalid MCP header name"),
+            ({"X-Line": "a\r\nInjected: 1"}, "invalid value"),
+            ({"X-Big": "a" * 8193}, "exceeds 8192 bytes"),
+            ({f"X-{n}": "1" for n in range(33)}, "more than 32"),
+        ],
+        ids=[
+            "accept",
+            "content-type",
+            "host",
+            "mcp-session-id",
+            "mcp-protocol-version",
+            "proxy-authorization",
+            "invalid name",
+            "header injection",
+            "too long",
+            "too many",
+        ],
+    )
+    def test_a_header_that_cannot_be_sent_as_given_is_refused(
+        self, headers: dict[str, str], refusal: str
+    ) -> None:
+        """RMK-1068: refused at construction, as roomkit-rs's from_url."""
+        with pytest.raises(ValueError, match=refusal):
+            MCPToolProvider.from_url("https://mcp.example/mcp", headers=headers)
+
+    def test_the_headers_a_server_takes_are_kept(self) -> None:
+        headers = {"Authorization": "Bearer t", **{f"X-{n}": "v" * 8192 for n in range(31)}}
+        provider = MCPToolProvider.from_url("https://mcp.example:8443/mcp?k=v", headers=headers)
+        assert provider._headers == headers
+
+
+async def test_an_http_server_that_never_answers_is_left_at_the_connect_bound() -> None:
+    """RMK-1108: entering waits for the handshake and the listing within
+    ``connect_timeout``, as a started server's, then closes the connection
+    and raises; a server that took the connection and never answered held
+    its host for ever."""
+    held: list[asyncio.StreamWriter] = []
+
+    async def accept(_reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        held.append(writer)  # reads nothing, answers nothing
+
+    server = await asyncio.start_server(accept, "127.0.0.1", 0)
+    port = server.sockets[0].getsockname()[1]
+    provider = MCPToolProvider.from_url(f"http://127.0.0.1:{port}/mcp", connect_timeout=0.05)
+    try:
+        with pytest.raises(TimeoutError, match="within 0.05 s"):
+            await provider.__aenter__()
+        assert (provider._stack, len(held)) == (None, 1)
+    finally:
+        for writer in held:
+            writer.close()
+        server.close()
+        await server.wait_closed()
 
 
 _HTTP_SERVER = textwrap.dedent(

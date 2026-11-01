@@ -6,10 +6,12 @@ import asyncio
 import copy
 import json
 import logging
+import re
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import AsyncExitStack
 from types import TracebackType
 from typing import Any
+from urllib.parse import urlsplit
 
 from pydantic import BaseModel
 
@@ -112,10 +114,33 @@ _DEFAULT_CALL_TIMEOUT = 30.0
 :meth:`~MCPToolProvider.read_resource` and the tool handler, so they cannot
 drift apart."""
 
-# The seconds a server RoomKit starts may take to connect by default: its
-# start, the handshake and the listing, a first start that fetches its
-# package included (roomkit-rs's McpCommand default).
+# The seconds connecting to a server may take by default: the handshake and
+# the listing, and for a server RoomKit starts its start, a first start that
+# fetches its package included (roomkit-rs's default too).
 _CONNECT_TIMEOUT = 60.0
+
+# Headers the HTTP transports write themselves: HTTP's framing and MCP's
+# negotiation (its session, its protocol version), which a caller's value
+# would contradict (roomkit-rs's McpHttp refuses the same).
+_TRANSPORT_HEADERS = frozenset(
+    {
+        "accept",
+        "content-type",
+        "content-length",
+        "host",
+        "connection",
+        "transfer-encoding",
+        "last-event-id",
+        "upgrade",
+        "te",
+        "trailer",
+        "proxy-authorization",
+    }
+)
+_HEADER_NAME = re.compile(r"[!#$%&'*+\-.^_`|~0-9A-Za-z]+")
+_HEADER_VALUE = re.compile(r"[\t\x20-\x7e]*")
+_MAX_HEADERS = 32
+_MAX_HEADER_VALUE_BYTES = 8192
 
 
 # Upper bound for publishing a structured result on the tool-call context
@@ -165,6 +190,48 @@ def _check_label(label: str | None) -> None:
             f"MCP server label {label!r} cannot name its server in an alias: use "
             "letters, digits and '_ . -', 64 at most, no '__' and no final '_'"
         )
+
+
+def _check_endpoint(url: str) -> None:
+    """Refuse an endpoint *url* the HTTP transports cannot reach as given:
+    one that is not HTTP(S) or names no host, or carries credentials (sent
+    on to every log and proxy the URL reaches: pass them as a header) or a
+    fragment, which no request carries."""
+    try:
+        parts = urlsplit(url)
+        _port = parts.port
+    except ValueError:
+        raise ValueError("invalid MCP endpoint URL") from None
+    if (
+        parts.scheme not in ("http", "https")
+        or not parts.hostname
+        or parts.username is not None
+        or parts.password is not None
+        or "#" in url
+    ):
+        raise ValueError("use an HTTP(S) MCP endpoint without URL credentials or a fragment")
+
+
+def _check_headers(headers: Mapping[str, str]) -> None:
+    """Refuse *headers* the HTTP transports cannot send as given: an invalid
+    name or value, a value over 8192 bytes, more than 32 headers, or one the
+    transport writes itself (:data:`_TRANSPORT_HEADERS`, ``mcp-*``)."""
+    names: set[str] = set()
+    for name, value in headers.items():
+        if not isinstance(name, str) or not _HEADER_NAME.fullmatch(name):
+            raise ValueError(f"invalid MCP header name {name!r}")
+        lowered = name.lower()
+        if lowered.startswith("mcp-") or lowered in _TRANSPORT_HEADERS:
+            raise ValueError(f"MCP header {name!r} is reserved for the transport")
+        if not isinstance(value, str):
+            raise ValueError(f"invalid value for MCP header {name!r}")
+        if len(value.encode()) > _MAX_HEADER_VALUE_BYTES:
+            raise ValueError(f"MCP header {name!r} exceeds {_MAX_HEADER_VALUE_BYTES} bytes")
+        if not _HEADER_VALUE.fullmatch(value):
+            raise ValueError(f"invalid value for MCP header {name!r}")
+        names.add(lowered)
+    if len(names) > _MAX_HEADERS:
+        raise ValueError(f"more than {_MAX_HEADERS} MCP headers")
 
 
 class MCPToolProvider:
@@ -223,11 +290,10 @@ class MCPToolProvider:
         else:
             if not url:
                 raise ValueError(f"the {transport} transport needs a url")
-            stdio_only = command or args or env is not None or cwd is not None
-            if stdio_only or connect_timeout is not None:
-                raise ValueError(
-                    f"command, args, env, cwd and connect_timeout are for stdio, not {transport}"
-                )
+            if command or args or env is not None or cwd is not None:
+                raise ValueError(f"command, args, env and cwd are for stdio, not {transport}")
+            _check_endpoint(url)
+            _check_headers(headers or {})
         self._url = url
         self._transport = transport
         self._tool_filter = tool_filter
@@ -236,12 +302,9 @@ class MCPToolProvider:
         self._args = list(args)
         self._env = env
         self._cwd = cwd
-        # Only a server RoomKit starts has a connect bound, as in roomkit-rs.
-        self._connect_timeout = (
-            (_CONNECT_TIMEOUT if connect_timeout is None else connect_timeout)
-            if transport == "stdio"
-            else None
-        )
+        # Every connection is bounded (RFC §21.2): a server that accepts it
+        # and never answers would hold its host for ever.
+        self._connect_timeout = _CONNECT_TIMEOUT if connect_timeout is None else connect_timeout
         self._discover = discover
         self._label = label
         self._session: Any = None
@@ -265,16 +328,20 @@ class MCPToolProvider:
         headers: dict[str, str] | None = None,
         discover: bool = True,
         label: str | None = None,
+        connect_timeout: float = _CONNECT_TIMEOUT,
     ) -> MCPToolProvider:
         """Create an MCPToolProvider for the given URL.
 
         The provider is not connected until used as an async context manager.
 
         Args:
-            url: MCP server URL.
+            url: MCP server URL: HTTP(S), naming a host, with no credentials
+                (pass them as a header) and no fragment.
             transport: ``"streamable_http"`` (default) or ``"sse"``.
             tool_filter: Optional predicate to include only matching tool names.
-            headers: Optional HTTP headers sent with every request.
+            headers: Optional HTTP headers sent with every request: 32 at
+                most, each value 8192 bytes at most, none the transport writes
+                itself (``Accept``, ``Content-Type``, ``Host``, ``mcp-*``...).
             discover: List the server's tools on entry (the default). ``False``
                 connects without listing, for a host that only reads
                 resources: :meth:`get_tools` and :meth:`tool_meta` are then
@@ -285,12 +352,16 @@ class MCPToolProvider:
                 would make an alias read another server). The tool handler then serves
                 only the aliases naming this server. ``None`` (the default)
                 serves an alias whatever server it names.
+            connect_timeout: The seconds entering may take: the handshake and
+                the listing of the tools. Past it the connection is closed,
+                its session deleted, and entering raises :class:`TimeoutError`.
 
         Returns:
             An MCPToolProvider instance (not yet connected).
 
         Raises:
-            ValueError: *label* cannot name the server in an alias.
+            ValueError: *label* cannot name the server in an alias, or *url*
+                or *headers* cannot be sent as given.
         """
         return cls(
             url,
@@ -299,6 +370,7 @@ class MCPToolProvider:
             headers=headers,
             discover=discover,
             label=label,
+            connect_timeout=connect_timeout,
         )
 
     @classmethod

@@ -23,7 +23,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with one agent answer makes 16 store calls instead of 19, 404 to 434
   messages/s through `SQLiteStore` over 50 rooms.
 
+- **BREAKING — `MCPToolProvider.from_url()` refuses at construction what its
+  transport cannot send as given** (RFC §21.2, RMK-1068). A URL's credentials
+  went out as Basic authentication and into the log line of every
+  connection; a header the transport writes itself (a forged
+  `Mcp-Session-Id`, a second `Content-Type`) contradicted it, and a value
+  holding a line break reached the wire. It now raises `ValueError` for a URL
+  that is not HTTP(S), names no host, or carries credentials or a fragment,
+  and for a header named `Accept`, `Content-Type`, `Content-Length`, `Host`,
+  `Connection`, `Transfer-Encoding`, `Last-Event-ID`, `Upgrade`, `TE`,
+  `Trailer`, `Proxy-Authorization` or `mcp-*`, an invalid name, more than 32
+  headers, or a value over 8192 bytes or outside visible ASCII, as
+  roomkit-rs does. Migrate: pass a credential as a header,
+  `headers={"Authorization": "Bearer ..."}`, not in the URL.
+
 ### Fixed
+
+- **`MCPToolProvider.from_url()` bounds its connection at 60 s, as
+  `from_command()`** (RFC §21.2, RMK-1108). A server that took the connection
+  and never answered held `async with provider:` for ever: only a server
+  RoomKit starts was bounded. Entering now waits `connect_timeout` seconds at
+  most (`from_url(..., connect_timeout=60.0)`) for the handshake and the
+  listing, then closes the connection, deletes its session and raises
+  `TimeoutError`; a slower server takes a larger `connect_timeout`.
 
 - **A parsed event is sourced from the channel that received it** (RFC
   §10.1 step 4, RMK-1123). A channel whose `handle_inbound()` named another

@@ -5521,7 +5521,7 @@
     "call_tool_result": ["async def", "name", "arguments", "*", "timeout=30.0"],
     "connected": ["property"],
     "from_command": ["classmethod", "command", "args=()", "*", "env=None", "cwd=None", "tool_filter=None", "discover=True", "label=None", "connect_timeout=60.0"],
-    "from_url": ["classmethod", "url", "*", "transport='streamable_http'", "tool_filter=None", "headers=None", "discover=True", "label=None"],
+    "from_url": ["classmethod", "url", "*", "transport='streamable_http'", "tool_filter=None", "headers=None", "discover=True", "label=None", "connect_timeout=60.0"],
     "get_tools": ["def"],
     "get_tools_as_dicts": ["def"],
     "instructions": ["property"],
