@@ -306,6 +306,14 @@ class Harness:
             async with asyncio.timeout(GATE_BOUND_S):
                 while host.open:
                     await asyncio.sleep(0.001)
+                # The owner reads the turn's frames on its own: across a
+                # backend, a call could overtake them. Work after the turn
+                # is made once the kit's own work for it is over.
+                quiet = 0
+                while quiet < 3:
+                    busy = await self._drain_once(after_turn=False)
+                    await asyncio.sleep(0)
+                    quiet = 0 if busy else quiet + 1
         except TimeoutError:
             self._problems.append(f"a turn did not end within {GATE_BOUND_S} s for its after_turn")
             return
@@ -350,7 +358,7 @@ class Harness:
         except TimeoutError:
             self._problems.append(f"the kit did not go idle within {CALL_BOUND_S} s")
 
-    async def _drain_once(self) -> bool:
+    async def _drain_once(self, *, after_turn: bool = True) -> bool:
         busy = False
         for lane in list(self.kit._lanes._lanes.values()):
             if lane._indexed or lane._unindexed or lane._busy:
@@ -366,7 +374,8 @@ class Harness:
             if not task.done()
         ]
         tasks.extend(task for task in self._background.values() if not task.done())
-        tasks.extend(task for task in self._after_turn if not task.done())
+        if after_turn:
+            tasks.extend(task for task in self._after_turn if not task.done())
         if tasks:
             busy = True
             await asyncio.wait(tasks, timeout=CALL_BOUND_S)
