@@ -34,7 +34,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and once an advisor calls `resolve_participant(room_id, "pending-…",
   identity_id)` the sender is not resolved again. A caller that looked a
   pending participant up by its address takes its id from the event,
-  `event.source.participant_id`.
+  `event.source.participant_id`. A pending record a member the host added
+  keeps its id. Records an earlier release left pending under an id their
+  channel gave keep it: a room's participant whose id is an identity's
+  (`store.get_identity(participant.id)`) may be such a squat, PENDING, or
+  IDENTIFIED once that identity was resolved on another channel, the
+  squatting channel then still in its `connected_via`.
 
 - **An inbound commit no longer reads its room again for the author's
   record** (RMK-1032). A message's record of its author was made from the

@@ -6,10 +6,11 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
-from roomkit.core._authors import People, own_record_id
+from roomkit.core._authors import People
 from roomkit.core.mixins.helpers import HelpersMixin
 from roomkit.models.enums import HookTrigger, IdentificationStatus
 from roomkit.models.identity import Identity, IdentityResult
+from roomkit.models.participant import own_record_id
 
 if TYPE_CHECKING:
     from roomkit.channels.base import Channel
@@ -242,7 +243,7 @@ class InboundIdentityMixin(HelpersMixin):
             )
 
         if pending_id_result is not None:
-            event = _as_own_sender(event)
+            event = _as_own_sender(event, context)
 
         if resolved_identity is not None:
             await self._announce_identity_resolved(event, room_id, resolved_identity, id_result)
@@ -369,17 +370,24 @@ class InboundIdentityMixin(HelpersMixin):
         return event, None, None
 
 
-def _as_own_sender(event: Any) -> Any:
+def _as_own_sender(event: Any, context: RoomContext) -> Any:
     """*event* sent under the record a pending sender gets of their own, one
     per channel and sender (:func:`own_record_id`), so the pending record is
-    the event's sender, resolved as it, and their next message finds it.
+    the event's sender, resolved as it, and their next message finds it;
+    left under the room's record of the id the channel gave when one was
+    reached through the channel (a member the host added).
 
-    Never the id the channel gave (RFC §11.2, RMK-1138): on a channel whose
-    senders choose it, that id may be an identity's or another
-    participant's, and a pending record under an identity's id would be
-    completed when the identity is resolved elsewhere, its impostor then
-    passing for an identified sender (RFC §11.6)."""
-    if not event.source.participant_id:
+    The pipeline never creates a record under the id the channel gave (RFC
+    §11.2, RMK-1138): on a channel whose senders choose it, that id may be
+    an identity's or another participant's, and a pending record under an
+    identity's id would be completed when the identity is resolved
+    elsewhere, its impostor then passing for an identified sender (RFC
+    §11.6)."""
+    sender = event.source.participant_id
+    if not sender:
+        return event
+    record = People(context.participants).named(event)
+    if record is not None and record.id == sender:
         return event
     own = own_record_id(event.source.channel_id, event.source.participant_id)
     return event.model_copy(
