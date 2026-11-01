@@ -1,0 +1,103 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "chain/a-parsed-depth-is-at-least-its-turn-s",
+  "title": "A message a turn sends is at least as deep as the turn's answer, whatever depth its channel's parse set",
+  "rules": [
+    "§8.3",
+    "§10.1 step 4"
+  ],
+  "notes": "The agent answers a message at depth 1, so its turn's answers are at depth 2; during its turn it sends a message whose channel parses a depth of 1. The message takes the turn's depth, 2: the parse's depth stands over the caller's, and the turn's depth over both.",
+  "setup": {
+    "channels": [
+      {
+        "id": "web",
+        "type": "webhook",
+        "category": "transport",
+        "parse": [
+          {
+            "when": {
+              "text": "from the turn"
+            },
+            "parsed": {
+              "chain_depth": 1
+            }
+          }
+        ]
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "Hi"
+            },
+            "do": [
+              {
+                "call": "process_inbound",
+                "room_id": "$room",
+                "message": {
+                  "channel_id": "web",
+                  "sender_id": "bot",
+                  "content": {
+                    "type": "text",
+                    "body": "from the turn"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "web"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "web",
+        "sender_id": "alice",
+        "chain_depth": 1,
+        "content": {
+          "type": "text",
+          "body": "Hi"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Hi"
+          },
+          "chain_depth": 1
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "from the turn"
+          },
+          "chain_depth": 2
+        }
+      ]
+    }
+  }
+}

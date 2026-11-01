@@ -1,0 +1,78 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "instructions/an-instruction-whose-parse-sets-a-key-is-refused",
+  "title": "An instruction whose parse gave it an idempotency key is refused instruction_not_idempotent, as the caller's key would be",
+  "rules": [
+    "§10.1.1 rule 2",
+    "§10.1 step 4"
+  ],
+  "notes": "A parse's key stands (§10.1 step 4), and an instruction, never stored, takes none: it is refused, nothing stored and no turn run.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "parse": [
+          {
+            "parsed": {
+              "idempotency_key": "wire-7"
+            }
+          }
+        ]
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "app",
+        "event_type": "instruction",
+        "addressed_to": [
+          "ai"
+        ],
+        "content": {
+          "type": "text",
+          "body": "Greet the caller."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "instruction_not_idempotent"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": []
+    },
+    "turns": {
+      "room-1": {
+        "ai": []
+      }
+    }
+  }
+}

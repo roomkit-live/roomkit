@@ -1,0 +1,70 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/the-framework-s-own-message-is-no-other-sender",
+  "title": "A message the framework wrote on the channel is no other sender's: the room still admits a routed sender",
+  "rules": [
+    "§10.4",
+    "§10.1 step 2"
+  ],
+  "notes": "room-1 binds sms naming no one, and holds a message on sms from the framework's own sender, system. A routed message from Alice is admitted there by step 3: the room heard no one else.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "system",
+        "content": {
+          "type": "text",
+          "body": "Your appointment is tomorrow"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Thanks"
+        }
+      },
+      "expect": {
+        "result": {
+          "event": {
+            "room_id": "room-1"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "room-1": {
+        "sms": {
+          "participant_id": "+15551234567"
+        }
+      }
+    }
+  }
+}

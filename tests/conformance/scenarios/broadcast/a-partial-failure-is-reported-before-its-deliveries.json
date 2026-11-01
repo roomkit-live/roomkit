@@ -1,13 +1,13 @@
 {
   "$schema": "../../scenario.schema.json",
   "id": "broadcast/a-partial-failure-is-reported-before-its-deliveries",
-  "title": "A delivery set with a failure reports broadcast_partial_failure first, then each delivery that succeeded, then each that failed",
+  "title": "A delivery set with a failure reports broadcast_partial_failure first, then each delivery that succeeded, then each that failed, its total the deliveries alone",
   "rules": [
     "§10.2",
     "§8.2",
     "§26.1"
   ],
-  "notes": "The RFC orders none of a delivery set's framework events; roomkit emits the partial failure first, then the deliveries that succeeded, then those that failed, and event_processed once the set's AFTER_BROADCAST hooks ended. A handler of the kit's framework events observes that order.",
+  "notes": "The RFC orders none of a delivery set's framework events; roomkit emits the partial failure first, then the deliveries that succeeded, then those that failed, and event_processed once the set's AFTER_BROADCAST hooks ended. A handler of the kit's framework events observes that order. Its total counts the deliveries that succeeded or failed: the agent's turn is none.",
   "setup": {
     "channels": [
       {
@@ -29,6 +29,11 @@
         "id": "email",
         "type": "email",
         "category": "transport"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence"
       }
     ],
     "rooms": [
@@ -43,6 +48,9 @@
           },
           {
             "channel_id": "email"
+          },
+          {
+            "channel_id": "ai"
           }
         ]
       }
