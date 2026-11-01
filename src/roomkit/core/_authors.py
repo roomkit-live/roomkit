@@ -391,7 +391,12 @@ async def stored_register(store: ConversationStore, room: Room) -> dict[str, Any
     return register.data if register is not None else None
 
 
-async def with_author(store: ConversationStore, room_id: str, event: RoomEvent) -> RoomEvent:
+async def with_author(
+    store: ConversationStore,
+    room_id: str,
+    event: RoomEvent,
+    snapshot: RoomContext | None = None,
+) -> RoomEvent:
     """*event* carrying the record of its author (:data:`AUTHOR`), the room's
     register extended first when the source or its name is new, or rebuilt
     from the timeline when the room holds none (RFC §10.1 step 12).
@@ -406,18 +411,22 @@ async def with_author(store: ConversationStore, room_id: str, event: RoomEvent) 
 
     A register the room's metadata holds (:func:`_held_register`) is written
     to the store, merged into the one it holds, and the store removes it from
-    the metadata: its digests are the same, so every rank holds."""
+    the metadata: its digests are the same, so every rank holds.
+
+    *snapshot* is the room's context read under the lock the commit runs
+    within, after the hooks that ran there (RFC §10.1 steps 6 and 9a): the
+    record is made from its room, participants and register, which are not
+    read again."""
     if AUTHOR in event.metadata:
         metadata = {k: v for k, v in event.metadata.items() if k != AUTHOR}
         event = event.model_copy(update={"metadata": metadata})
     named = event.source.participant_id or event.metadata.get("sender_name")
     if not named or event.status == EventStatus.BLOCKED:
         return event
-    room = await store.get_room(room_id)
-    if room is None:
+    read = await _room_and_register(store, room_id, snapshot)
+    if read is None:
         return event
-    context = RoomContext(room=room, participants=await store.list_participants(room_id))
-    register, moved = await _held_register(store, room)
+    context, register, moved = read
     if register is None:
         register = await _rebuilt(store, room_id, context)
     record = author_record(event, context, register)
@@ -426,6 +435,25 @@ async def with_author(store: ConversationStore, room_id: str, event: RoomEvent) 
     if record is None:
         return event
     return event.model_copy(update={"metadata": {**event.metadata, AUTHOR: record}})
+
+
+async def _room_and_register(
+    store: ConversationStore, room_id: str, snapshot: RoomContext | None
+) -> tuple[RoomContext, AuthorRegister | None, bool] | None:
+    """The room's context, its register and whether its metadata holds one to
+    move (:func:`_held_register`), from *snapshot* when the lock read it, else
+    from the store; ``None`` for a room the store lacks. A snapshot's register
+    is copied: the record extends it, and the context is its readers' too."""
+    if snapshot is None:
+        room = await store.get_room(room_id)
+        if room is None:
+            return None
+        context = RoomContext(room=room, participants=await store.list_participants(room_id))
+        register, moved = await _held_register(store, room)
+        return context, register, moved
+    held = AuthorRegister.stored(snapshot.author_register)
+    moved = AUTHOR_REGISTER in snapshot.room.metadata and _keeps_apart(store)
+    return snapshot, None if held is None else held.copy(), moved
 
 
 async def _rebuilt(store: ConversationStore, room_id: str, context: RoomContext) -> AuthorRegister:

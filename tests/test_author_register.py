@@ -10,6 +10,7 @@ import copy
 import json
 import logging
 import re
+from contextvars import ContextVar
 from datetime import UTC, datetime
 from typing import Any
 
@@ -127,6 +128,71 @@ class TestARecordFixesTheName:
             (None, None),
         ]
         await kit.close()
+
+
+class TestTheRecordIsMadeFromWhatTheLockRead:
+    """RMK-1032: an inbound commit makes its author's record from the room's
+    context read under the lock, after the hooks that ran there (RFC §10.1
+    steps 6 and 9a), and reads neither the room, its participants nor its
+    register again."""
+
+    async def test_the_commit_reads_neither_the_room_nor_its_people_again(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        kit, _provider = await _kit(["a1"])
+        committing: ContextVar[bool] = ContextVar("committing", default=False)
+        reads: list[str] = []
+        for name in ("get_room", "list_participants", "get_private_state"):
+            noted = _noted(getattr(kit.store, name), committing, reads)
+            monkeypatch.setattr(kit.store, name, noted)
+        run_commit = kit._run_commit
+
+        async def committed(*args: Any, **kwargs: Any) -> Any:
+            token = committing.set(True)
+            try:
+                return await run_commit(*args, **kwargs)
+            finally:
+                committing.reset(token)
+
+        monkeypatch.setattr(kit, "_run_commit", committed)
+        await _say(kit, "u-alice", "Alice", "hold the refund")
+
+        said = await _said(kit)
+        assert (reads, said.metadata[AUTHOR]["name"]) == ([], "Alice")
+        await kit.close()
+
+    async def test_a_name_a_locked_hook_gave_is_the_one_recorded(self) -> None:
+        kit, _provider = await _kit(["a1"])
+        mal = Participant(id="p-mal", room_id="r1", channel_id="sms1", display_name="Mal")
+        await kit.store.add_participant(mal)
+
+        @kit.hook(HookTrigger.BEFORE_BROADCAST)
+        async def rename(event: RoomEvent, ctx: RoomContext) -> HookResult:
+            await kit.store.update_participant(mal.model_copy(update={"display_name": "Malcolm"}))
+            return HookResult.allow()
+
+        await _say(kit, "p-mal", None, "hello")
+
+        said = await _said(kit)
+        assert said.metadata[AUTHOR]["name"] == "Malcolm"
+        await kit.close()
+
+
+async def _said(kit: RoomKit) -> RoomEvent:
+    """The one event the room's SMS channel stored."""
+    (said,) = [e for e in await kit.store.list_events("r1") if e.source.channel_id == "sms1"]
+    return said
+
+
+def _noted(read: Any, committing: ContextVar[bool], reads: list[str]) -> Any:
+    """*read*, noting its name in *reads* when called inside a commit."""
+
+    async def call(*args: Any, **kwargs: Any) -> Any:
+        if committing.get():
+            reads.append(read.__name__)
+        return await read(*args, **kwargs)
+
+    return call
 
 
 class TestRanksHoldAcrossNames:

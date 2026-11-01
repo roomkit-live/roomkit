@@ -899,8 +899,10 @@ class InboundLockedMixin(HelpersMixin):
             return plan
 
         event = event.model_copy(update={"status": EventStatus.DELIVERED})
+        # The author's record is made from the context the lock read, after
+        # the hooks that ran there (step 9a): nothing else writes it since.
         committed = await self._commit_to_lane(
-            room_id, event, cascade, plan_factory, target=target
+            room_id, event, cascade, plan_factory, target=target, snapshot=context
         )
         # A persistence-policy-excluded event is delivered but not persisted;
         # it keeps its provisional identity (RFC §14.3 — no index consumed).

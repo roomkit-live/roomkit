@@ -423,6 +423,7 @@ class HelpersMixin:
         *,
         target: RoomEvent | None = None,
         activity: bool,
+        snapshot: RoomContext | None = None,
     ) -> RoomEvent:
         """Commit *event* (RFC §10.1 step 12) carrying the record of its author.
 
@@ -432,9 +433,10 @@ class HelpersMixin:
         not take it still commits every other event. *activity* is whether
         the commit is the room's activity (RFC §5.1), an event the pipeline
         stores DELIVERED; it is passed only when it is not, the store's
-        default.
+        default. *snapshot* is the room's context the lock read, which the
+        author's record is made from (:func:`~roomkit.core._authors.with_author`).
         """
-        authored = await self._with_author(room_id, event)
+        authored = await self._with_author(room_id, event, snapshot)
         change: dict[str, Any] = {} if target is None else {"target": target}
         if not activity:
             change["activity"] = False
@@ -448,10 +450,12 @@ class HelpersMixin:
         if target is not None:
             await self._store.write_change_target(room_id, target)
 
-    async def _with_author(self, room_id: str, event: RoomEvent) -> RoomEvent:
+    async def _with_author(
+        self, room_id: str, event: RoomEvent, snapshot: RoomContext | None = None
+    ) -> RoomEvent:
         """*event* carrying the record of its author, under the room lock,
         before the commit (:func:`~roomkit.core._authors.with_author`)."""
-        return await with_author(self._store, room_id, event)
+        return await with_author(self._store, room_id, event, snapshot)
 
     async def _note_committed_index(self, room_id: str, index: int) -> None:
         """Account a committed index that carries NO delivery set.

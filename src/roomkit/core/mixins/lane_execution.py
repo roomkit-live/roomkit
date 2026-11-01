@@ -281,6 +281,7 @@ class LaneExecutionMixin(HelpersMixin):
         *,
         policy_aware: bool = True,
         target: RoomEvent | None = None,
+        snapshot: RoomContext | None = None,
     ) -> RoomEvent | None:
         """Commit an event and enqueue its delivery plan in one gate.
 
@@ -292,7 +293,9 @@ class LaneExecutionMixin(HelpersMixin):
         cursor (RFC §14.3 — an unstored event consumes no index).
 
         *target* is what an edit or a delete writes on its target, committed
-        in the event's own transaction (RFC §10.3, §14.3).
+        in the event's own transaction (RFC §10.3, §14.3). *snapshot* is the
+        room's context the lock read, which the author's record is made from
+        (:meth:`_commit`).
 
         Runs under the room lock (planning reads binding state consistent
         with the committed timeline, RFC §10.1 step 12).
@@ -318,7 +321,7 @@ class LaneExecutionMixin(HelpersMixin):
             if plan_factory is not None:
                 if event.type != EventType.INSTRUCTION:
                     # Delivered unstored, still a turn its readers name.
-                    event = await self._with_author(room_id, event)
+                    event = await self._with_author(room_id, event, snapshot)
                 plan = plan_factory(event)
                 if plan is not None:
                     room = await self._store.get_room(room_id)
@@ -326,7 +329,9 @@ class LaneExecutionMixin(HelpersMixin):
                     cascade.retain()
                     self._enqueue_exec(room_id, plan, cascade, index=None, after_index=anchor)
             return None
-        committed = await self._commit(room_id, event, target=target, activity=True)
+        committed = await self._commit(
+            room_id, event, target=target, activity=True, snapshot=snapshot
+        )
         plan = plan_factory(committed) if plan_factory is not None else None
         if plan is not None and plan.mutation_hook is not None:
             plan.mutation_context = with_counters(plan.context, committed)

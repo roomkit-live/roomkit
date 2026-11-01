@@ -13,6 +13,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (RMK-1113). `ConversationStore.get_thread_summaries()` returns it, and a
   caller could name it only through an internal module.
 
+### Changed
+
+- **An inbound commit no longer reads its room again for the author's
+  record** (RMK-1032). A message's record of its author was made from the
+  room, its participants and its register read again just before the
+  commit, though the pipeline had read them under the same room lock, after
+  the hooks that ran there. It is now made from that context: one message
+  with one agent answer makes 16 store calls instead of 19, 404 to 434
+  messages/s through `SQLiteStore` over 50 rooms.
+
 ### Fixed
 
 - **A parsed event is sourced from the channel that received it** (RFC
