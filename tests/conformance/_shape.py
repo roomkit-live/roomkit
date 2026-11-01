@@ -24,6 +24,13 @@ KIT = {
     "identity_resolver",
     "identity_channel_types",
     "identity_timeout_ms",
+    "delivery_backend",
+}
+DELIVERY_BACKEND = {
+    "retry_delay_ms",
+    "max_retry_delay_ms",
+    "max_queue_size",
+    "max_dead_letter_size",
 }
 RESOLVER = {"answers"}
 RESOLVER_ANSWER = {"when", "repeat", "gate", "fail", "result"}
@@ -211,6 +218,9 @@ def unknown_members(scenario: Mapping[str, Any]) -> list[str]:
     setup = scenario.get("setup", {})
     _members(setup, SETUP, "setup", found)
     _members(setup.get("kit", {}), KIT, "setup.kit", found)
+    if "delivery_backend" in setup.get("kit", {}):
+        backend = setup["kit"]["delivery_backend"]
+        _members(backend, DELIVERY_BACKEND, "setup.kit.delivery_backend", found)
     _identity(setup, found)
     for position, channel in enumerate(setup.get("channels", [])):
         _channel(channel, f"setup.channels[{position}]", found)

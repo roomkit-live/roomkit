@@ -40,6 +40,7 @@ from tests.conformance._calls import (
     result_event_id,
 )
 from tests.conformance._compare import Check, compare
+from tests.conformance._delivery import backend_busy, delivery_options, start_backend
 from tests.conformance._identity import kit_options, register_identity_hook
 from tests.conformance._normalize import Observed, is_lifecycle_record
 from tests.conformance._script import GATE_BOUND_S, Gates, ScriptedRouter
@@ -112,6 +113,7 @@ class Harness:
         if "router" in kit_setup:
             kwargs["inbound_router"] = ScriptedRouter(kit_setup["router"]["room_id"])
         kwargs |= kit_options(kit_setup, self)
+        kwargs |= delivery_options(kit_setup)
         self.kit = RoomKit(**kwargs)
 
     # -- recording --------------------------------------------------------
@@ -241,6 +243,7 @@ class Harness:
             register_hook(self.kit, self, hook)
         for hook in setup.get("identity_hooks", []):
             register_identity_hook(self.kit, self, hook)
+        await start_backend(self.kit)
         await self.idle()
 
     async def _step(self, step: Mapping[str, Any], path: str) -> None:
@@ -367,6 +370,9 @@ class Harness:
         if tasks:
             busy = True
             await asyncio.wait(tasks, timeout=CALL_BOUND_S)
+        if await backend_busy(self.kit):
+            busy = True
+            await asyncio.sleep(0.005)
         return busy
 
     # -- references -------------------------------------------------------
