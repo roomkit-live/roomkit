@@ -1,0 +1,98 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/the-kit-lists-a-room-s-tasks-by-status",
+  "title": "list_tasks reads the room's tasks, of the status it names, for the organization it names: another organization's room is not found",
+  "rules": [
+    "§5.10",
+    "§14.1",
+    "§17.2"
+  ],
+  "notes": "Python: core/framework.py list_tasks over the store's list_tasks; tests/test_room_org_scoping.py (list_tasks of another organization's room), tests/test_kit_close.py (list_tasks reads during a close). A task's id is normalized as any id of no timeline.",
+  "setup": {
+    "rooms": [
+      {
+        "id": "room-1",
+        "organization_id": "acme"
+      },
+      {
+        "id": "room-2",
+        "organization_id": "acme"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "store.add_task",
+      "task": {
+        "id": "t1",
+        "room_id": "room-1",
+        "title": "Follow up"
+      }
+    },
+    {
+      "call": "store.add_task",
+      "task": {
+        "id": "t2",
+        "room_id": "room-1",
+        "title": "Call back",
+        "status": "completed"
+      }
+    },
+    {
+      "call": "store.add_task",
+      "task": {
+        "id": "t3",
+        "room_id": "room-2",
+        "title": "Elsewhere"
+      }
+    },
+    {
+      "call": "list_tasks",
+      "room_id": "room-1",
+      "expect": {
+        "result": {
+          "$unordered": [
+            {
+              "title": "Follow up",
+              "status": "pending"
+            },
+            {
+              "title": "Call back",
+              "status": "completed"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "list_tasks",
+      "room_id": "room-1",
+      "status": "completed",
+      "expect": {
+        "result": [
+          {
+            "title": "Call back",
+            "room_id": "room-1"
+          }
+        ]
+      }
+    },
+    {
+      "call": "list_tasks",
+      "room_id": "room-1",
+      "status": "failed",
+      "organization_id": "acme",
+      "expect": {
+        "result": []
+      }
+    },
+    {
+      "call": "list_tasks",
+      "room_id": "room-1",
+      "organization_id": "globex",
+      "expect": {
+        "error": "room_not_found"
+      }
+    }
+  ]
+}
