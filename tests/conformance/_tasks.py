@@ -62,6 +62,7 @@ TASK_ARGUMENTS: dict[str, set[str]] = {
     },
     "task.wait": {"task_id"},
     "cancel_task": {"task_id"},
+    "start_task": {"room_id", "agent_id", "task", "hand_back"},
     "host.send_event": {
         "room_id",
         "channel_id",
@@ -152,6 +153,13 @@ async def _cancel_task(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) 
     return await kit.cancel_task(spec["task_id"], **_named(spec, {"organization_id"}))
 
 
+async def _start_task(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
+    options = _named(spec, {"hand_back", "organization_id"})
+    task = await kit.start_task(spec["room_id"], spec["agent_id"], spec["task"], **options)
+    harness.tasks[task.id] = task
+    return task
+
+
 def _host() -> Any:
     host = current_turn_host()
     if host is None:
@@ -217,6 +225,7 @@ TASK_CALLS: dict[str, Call] = {
     "delegate": _delegate,
     "task.wait": _task_wait,
     "cancel_task": _cancel_task,
+    "start_task": _start_task,
     "host.send_event": _host_send_event,
     "host.delegate": _host_delegate,
     "host.wait_task": _host_wait_task,
