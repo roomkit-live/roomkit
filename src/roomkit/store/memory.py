@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import Any
 
 from roomkit.channels.addressing import written_recipient
-from roomkit.core.exceptions import RoomNotFoundError
+from roomkit.core.exceptions import RoomNotFoundError, TaskNotFoundError
 from roomkit.models.channel import ChannelBinding
 from roomkit.models.enums import RoomStatus, VerificationStatus
 from roomkit.models.event import DeleteContent, EditContent, RoomEvent, ThreadSummary
@@ -999,6 +999,8 @@ class InMemoryStore(ConversationStore):
         return [t.model_copy(deep=True) for t in tasks]
 
     async def update_task(self, task: Task) -> Task:
+        if task.id not in self._tasks:
+            raise TaskNotFoundError(task.id)
         self._tasks[task.id] = task
         return task
 

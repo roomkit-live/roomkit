@@ -15,6 +15,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`update_task()` of a task the store lacks raises `TaskNotFoundError`**
+  (RFC 14.3, RMK-1113). The three stores answered it three ways:
+  `InMemoryStore` kept the task where `get_task()` found it and no room's
+  `list_tasks()` did, `SQLiteStore` created it, and `PostgresStore` wrote
+  nothing and returned it. Each now refuses it, nothing written, as an
+  update of a room, an event or a participant the store lacks already is;
+  `add_task()` creates a task.
+
 - **A SQLite commit no longer scans the whole search index** (RMK-1031).
   Each commit, edit and delete reached an event's row in `events_fts` by
   `event_id`, which FTS5 does not index: the cost grew with every event the

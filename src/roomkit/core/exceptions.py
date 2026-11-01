@@ -98,6 +98,14 @@ class EventNotFoundError(RoomKitError):
     """
 
 
+class TaskNotFoundError(RoomKitError):
+    """A task a write names is not stored (RFC §14.3).
+
+    Raised by a store's ``update_task`` of a task it does not hold, nothing
+    written: an update is no creation, which ``add_task`` makes.
+    """
+
+
 class IdempotencyKeyTakenError(RoomKitError):
     """An event was stored under a key its source channel holds in the room
     for another event (RFC §13.4, §14.3).

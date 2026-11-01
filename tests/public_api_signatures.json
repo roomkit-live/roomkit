@@ -2276,6 +2276,7 @@
     "__init__": ["def", "reason", "narration"],
     "message_for": ["staticmethod", "reason"]
   },
+  "roomkit.TaskNotFoundError": {},
   "roomkit.TaskTurnFailedError": {
     "__init__": ["def", "error", "reason", "narration"]
   },

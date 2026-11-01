@@ -291,6 +291,7 @@
     "TURN_NOTES_HEADER",
     "TURN_TRIGGERS",
     "TaskCutShortError",
+    "TaskNotFoundError",
     "TaskTurnFailedError",
     "TeamsChannel",
     "TelegramChannel",

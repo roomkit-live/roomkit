@@ -1330,7 +1330,12 @@ class ConversationStore(ABC):
 
     @abstractmethod
     async def update_task(self, task: Task) -> Task:
-        """Update a task."""
+        """Rewrite a stored task whole, keyed by its id (RFC §14.1).
+
+        A task the store does not hold is refused with
+        :class:`~roomkit.core.exceptions.TaskNotFoundError`, nothing written
+        (RFC §14.3): an update is no creation, which :meth:`add_task` makes.
+        """
         ...
 
     # Observation operations

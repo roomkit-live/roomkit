@@ -21,12 +21,14 @@ from roomkit.core.exceptions import (
     ParticipantNotFoundError,
     RoomAlreadyExistsError,
     RoomNotFoundError,
+    TaskNotFoundError,
 )
 from roomkit.models.channel import ChannelBinding
 from roomkit.models.enums import ChannelType, RoomStatus
 from roomkit.models.participant import Participant
 from roomkit.models.room import Room
 from roomkit.models.store_filter import EventFilter
+from roomkit.models.task import Task
 from roomkit.store.base import ConversationStore
 from roomkit.store.memory import InMemoryStore
 from roomkit.store.sqlite import SQLiteStore
@@ -133,26 +135,30 @@ async def test_a_room_s_private_state_is_kept_apart_from_its_metadata(
         ("update_event", EventNotFoundError),
         ("add_participant", RoomNotFoundError),
         ("update_participant", ParticipantNotFoundError),
+        ("update_task", TaskNotFoundError),
     ],
 )
 async def test_a_write_naming_what_the_store_lacks_is_refused(
     contract_store: ConversationStore, write: str, refusal: type[Exception]
 ) -> None:
-    """RFC §14.3: a room or an event the store does not hold is not updated,
-    and no participant joins a room it does not hold or is rewritten where
-    the room has none; nothing is written. The memory store kept such an
+    """RFC §14.3: a room, an event or a task the store does not hold is not
+    updated, and no participant joins a room it does not hold or is rewritten
+    where the room has none; nothing is written. The memory store kept such an
     event, which no timeline read finds, and the memory and SQLite stores a
-    participant of no room, or created the one an update named."""
+    participant of no room, or created the one an update named; an updated task
+    the stores lacked was created, the memory store's listed in no room."""
     room = await contract_store.create_room(Room(id=uuid4().hex))
     missing = uuid4().hex
     event = make_event(room_id=room.id, index=7)
     participant = Participant(id=uuid4().hex, room_id=missing, channel_id="sms")
     absent = Participant(id=uuid4().hex, room_id=room.id, channel_id="sms")
+    task = Task(id=uuid4().hex, room_id=room.id, title="Never added")
     writes: dict[str, Callable[[], Awaitable[object]]] = {
         "update_room": lambda: contract_store.update_room(Room(id=missing)),
         "update_event": lambda: contract_store.update_event(event),
         "add_participant": lambda: contract_store.add_participant(participant),
         "update_participant": lambda: contract_store.update_participant(absent),
+        "update_task": lambda: contract_store.update_task(task),
     }
     try:
         with pytest.raises(refusal):
@@ -162,6 +168,8 @@ async def test_a_write_naming_what_the_store_lacks_is_refused(
         assert await contract_store.get_event(event.id) is None
         assert await contract_store.get_participant(missing, participant.id) is None
         assert await contract_store.get_participant(room.id, absent.id) is None
+        assert await contract_store.get_task(task.id) is None
+        assert await contract_store.list_tasks(room.id) == []
     finally:
         await contract_store.delete_room(room.id)
 

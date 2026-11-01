@@ -36,7 +36,7 @@ from pathlib import Path
 from typing import Any
 
 from roomkit.core._changes import is_deleted
-from roomkit.core.exceptions import RoomNotFoundError
+from roomkit.core.exceptions import RoomNotFoundError, TaskNotFoundError
 from roomkit.models.channel import ChannelBinding
 from roomkit.models.enums import EventStatus, RoomStatus, VerificationStatus
 from roomkit.models.event import RoomEvent, ThreadSummary
@@ -2311,7 +2311,14 @@ class SQLiteStore(ConversationStore):
         return await self._run(self._x_put_task, task)
 
     async def update_task(self, task: Task) -> Task:
-        return await self._run(self._x_put_task, task)
+        return await self._run(self._x_update_task, task)
+
+    def _x_update_task(self, task: Task) -> Task:
+        conn = self._db()
+        with _write_transaction(conn):
+            if conn.execute("SELECT 1 FROM tasks WHERE id = ?", (task.id,)).fetchone() is None:
+                raise TaskNotFoundError(task.id)
+            return self._x_put_task(task)
 
     def _x_put_task(self, task: Task) -> Task:
         self._db().execute(

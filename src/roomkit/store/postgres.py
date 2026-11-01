@@ -19,6 +19,7 @@ from roomkit.core.exceptions import (
     IdempotencyKeyTakenError,
     IdentityNotFoundError,
     RoomNotFoundError,
+    TaskNotFoundError,
 )
 from roomkit.models.channel import ChannelBinding
 from roomkit.models.enums import EventStatus, RoomStatus, VerificationStatus
@@ -2101,7 +2102,7 @@ class PostgresStore(ConversationStore):
 
     async def update_task(self, task: Task) -> Task:
         async with self._acquire() as conn:
-            await conn.execute(
+            updated = await conn.execute(
                 "UPDATE tasks SET title=$2, description=$3, assigned_to=$4,"
                 " status=$5, metadata=$6 WHERE id=$1",
                 task.id,
@@ -2111,6 +2112,8 @@ class PostgresStore(ConversationStore):
                 task.status.value if hasattr(task.status, "value") else task.status,
                 task.metadata,
             )
+        if updated == "UPDATE 0":
+            raise TaskNotFoundError(task.id)
         return task
 
     # ── Observation operations ───────────────────────────────────
