@@ -46,6 +46,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A resolver's `REJECTED` holds the message when no identity hook answers**
+  (RFC §11.2, RMK-1151). `IdentityResult(status=REJECTED, message="not
+  allowed")` went to the `ON_IDENTITY_UNKNOWN` identity hooks and, none
+  answering, the message was stored and delivered as an unknown sender's.
+  It is now refused, `InboundResult(blocked=True, reason="not allowed")`
+  (`"identity_rejected"` with no message), nothing of it stored; a hook's
+  `resolved()`, `pending()`, `challenge()` or `reject()` still decides.
+
 - **The first message of a sender the identity step identifies is named
   after them** (RFC §10.1 step 12, RMK-1139). Since the commit names an
   event's author from the context its lock read, the participant record the

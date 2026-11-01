@@ -806,7 +806,7 @@ IDENTIFIED      → No hook, participant_id stamped on event
 AMBIGUOUS       → ON_IDENTITY_AMBIGUOUS hook
 PENDING         → ON_IDENTITY_AMBIGUOUS hook
 UNKNOWN         → ON_IDENTITY_UNKNOWN hook
-REJECTED        → ON_IDENTITY_UNKNOWN hook
+REJECTED        → ON_IDENTITY_UNKNOWN hook; held when no hook answers
 
 # Hook can return:
 IdentityHookResult.resolved(identity)  # Identity found

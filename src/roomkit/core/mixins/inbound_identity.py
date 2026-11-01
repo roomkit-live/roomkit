@@ -317,6 +317,11 @@ class InboundIdentityMixin(HelpersMixin):
         an unknown sender in particular — that is the case those answers exist
         for — so dropping them here left the sender's message processed as if
         no hook had spoken.
+
+        A resolver's REJECTED is a refusal: the hooks may still name or pend
+        the sender, and when none does the message is held, with the
+        resolver's message, else ``identity_rejected`` (RFC §11.2). An
+        UNKNOWN no hook answers for is processed.
         """
         hook_result = await self._run_identity_hooks(
             room_id, HookTrigger.ON_IDENTITY_UNKNOWN, event, context, id_result
@@ -358,6 +363,8 @@ class InboundIdentityMixin(HelpersMixin):
                     }
                 ),
             )
+        if id_result.status == IdentificationStatus.REJECTED:
+            raise _IdentityBlockedError(id_result.message or "identity_rejected")
         return event, None, None
 
 

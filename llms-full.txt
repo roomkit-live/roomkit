@@ -6488,7 +6488,7 @@ Inbound message arrives with sender_id
      AMBIGUOUS       -> ON_IDENTITY_AMBIGUOUS hook fires
      PENDING         -> ON_IDENTITY_AMBIGUOUS hook fires
      UNKNOWN         -> ON_IDENTITY_UNKNOWN hook fires
-     REJECTED        -> ON_IDENTITY_UNKNOWN hook fires
+     REJECTED        -> ON_IDENTITY_UNKNOWN hook fires; held when no hook answers
 ```
 
 ### Identity Hooks

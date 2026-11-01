@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from roomkit.core.framework import RoomKit
 from roomkit.identity.base import IdentityResolver
 from roomkit.models.context import RoomContext
@@ -119,13 +121,14 @@ class TestIdentityAmbiguousHook:
 
 class TestIdentityUnknownHook:
     async def test_unknown_hook_fires(self) -> None:
-        """ON_IDENTITY_UNKNOWN fires when resolver returns REJECTED."""
-        fired: list[RoomEvent] = []
+        """ON_IDENTITY_UNKNOWN fires when resolver returns REJECTED, and the
+        message no identity hook answers for is held (RFC §11.2, RMK-1151)."""
+        fired = asyncio.Event()
 
         kit = RoomKit(identity_resolver=UnknownResolver())
 
         async def on_unknown(event: RoomEvent, ctx: RoomContext) -> None:
-            fired.append(event)
+            fired.set()
 
         from roomkit.core.hooks import HookRegistration
 
@@ -148,8 +151,12 @@ class TestIdentityUnknownHook:
             sender_id="stranger",
             content=TextContent(body="hello"),
         )
-        await kit.process_inbound(msg)
-        assert len(fired) == 1
+        try:
+            result = await kit.process_inbound(msg)
+            assert (result.blocked, result.reason) == (True, "Unknown sender")
+            await asyncio.wait_for(fired.wait(), timeout=1)
+        finally:
+            await kit.close()
 
     async def test_identified_does_not_fire_unknown(self) -> None:
         """ON_IDENTITY_UNKNOWN does NOT fire when resolver succeeds."""
