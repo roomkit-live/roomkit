@@ -5,9 +5,10 @@ room's observations, made on the Python core (roomkit-specs
 A call ``status.<operation>`` is the operation of the kit's status bus
 (RFC §19.8); ``status.post`` is the bus's ``post_async``, which returns once
 the bus's subscribers ran. ``delegate`` returns the task, which ``task.wait`` names by its
-label to wait for its result (RFC §23.3). A call ``host.<verb>`` is a verb of the turn's
-host (RFC §10.6.5), made by an action of a scripted intelligence channel's
-turn: ``current_turn_host()`` there, which a call made anywhere else lacks.
+label to wait for its result (RFC §23.3), and ``cancel_task`` to cancel it. A call
+``host.<verb>`` is a verb of the turn's host (RFC §10.6.5), made by an action of a
+scripted intelligence channel's turn: ``current_turn_host()`` there, which a call
+made anywhere else lacks.
 """
 
 from __future__ import annotations
@@ -60,6 +61,7 @@ TASK_ARGUMENTS: dict[str, set[str]] = {
         "hand_back",
     },
     "task.wait": {"task_id"},
+    "cancel_task": {"task_id"},
     "host.send_event": {
         "room_id",
         "channel_id",
@@ -146,6 +148,10 @@ async def _task_wait(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) ->
     return await task.wait()
 
 
+async def _cancel_task(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
+    return await kit.cancel_task(spec["task_id"], **_named(spec, {"organization_id"}))
+
+
 def _host() -> Any:
     host = current_turn_host()
     if host is None:
@@ -210,6 +216,7 @@ TASK_CALLS: dict[str, Call] = {
     "list_tasks": _list_tasks,
     "delegate": _delegate,
     "task.wait": _task_wait,
+    "cancel_task": _cancel_task,
     "host.send_event": _host_send_event,
     "host.delegate": _host_delegate,
     "host.wait_task": _host_wait_task,
