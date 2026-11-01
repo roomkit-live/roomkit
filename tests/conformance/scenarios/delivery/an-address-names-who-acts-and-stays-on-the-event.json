@@ -1,0 +1,151 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/an-address-names-who-acts-and-stays-on-the-event",
+  "title": "deliver()'s address passes unchanged into the published event: it names the agents that act, [] solicits none, and an absent target is reported unavailable though the event was published",
+  "rules": [
+    "§22.1",
+    "§19.3"
+  ],
+  "notes": "Addressing changes neither visibility nor who receives the event: the observer transport is delivered each one as published.",
+  "setup": {
+    "channels": [
+      {
+        "id": "human",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "observer",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "category": "intelligence"
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "category": "intelligence"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "human"
+          },
+          {
+            "channel_id": "observer"
+          },
+          {
+            "channel_id": "a",
+            "category": "intelligence"
+          },
+          {
+            "channel_id": "b",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "deliver",
+      "room_id": "room-1",
+      "content": "one",
+      "addressed_to": [
+        "a"
+      ],
+      "expect": {
+        "result": {
+          "status": "sent",
+          "event_id": "room-1#0"
+        }
+      }
+    },
+    {
+      "call": "deliver",
+      "room_id": "room-1",
+      "content": "two",
+      "addressed_to": [],
+      "expect": {
+        "result": {
+          "status": "sent",
+          "event_id": "room-1#1"
+        }
+      }
+    },
+    {
+      "call": "deliver",
+      "room_id": "room-1",
+      "content": "three",
+      "addressed_to": [
+        "a",
+        "absent"
+      ],
+      "expect": {
+        "result": {
+          "status": "unavailable",
+          "reason": "addressed_targets_unavailable",
+          "event_id": "room-1#2",
+          "unavailable_targets": [
+            "absent"
+          ],
+          "error": {
+            "code": "addressed_targets_unavailable",
+            "retryable": false
+          },
+          "turn_complete": true
+        }
+      }
+    }
+  ],
+  "expect": {
+    "turns": {
+      "room-1": {
+        "a": [
+          {
+            "content": {
+              "type": "text",
+              "body": "one"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "three"
+            }
+          }
+        ],
+        "b": []
+      }
+    },
+    "deliveries": {
+      "room-1": {
+        "observer": [
+          {
+            "addressed_to": [
+              "a"
+            ],
+            "visibility": "all"
+          },
+          {
+            "addressed_to": [],
+            "visibility": "all"
+          },
+          {
+            "addressed_to": [
+              "a",
+              "absent"
+            ],
+            "visibility": "all"
+          }
+        ]
+      }
+    }
+  }
+}

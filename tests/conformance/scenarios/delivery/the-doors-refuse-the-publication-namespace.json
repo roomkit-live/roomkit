@@ -1,0 +1,105 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/the-doors-refuse-the-publication-namespace",
+  "title": "send_event, post and commit_event refuse a key in the framework's publication namespace, which keys deliver()'s publications alone",
+  "rules": [
+    "§22.1",
+    "§5.2",
+    "§10.5"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "human",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "category": "intelligence"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "human"
+          },
+          {
+            "channel_id": "a",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "human",
+      "content": {
+        "type": "text",
+        "body": "x"
+      },
+      "idempotency_key": "roomkit:publication:k",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "post",
+      "room_id": "room-1",
+      "content": {
+        "type": "text",
+        "body": "x"
+      },
+      "idempotency_key": "roomkit:publication:k",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "commit_event",
+      "room_id": "room-1",
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "a copied message"
+        },
+        "source": {
+          "channel_id": "human",
+          "channel_type": "websocket"
+        },
+        "idempotency_key": "roomkit:publication:k"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "deliver",
+      "room_id": "room-1",
+      "content": "done",
+      "idempotency_key": "k",
+      "expect": {
+        "result": {
+          "status": "sent",
+          "event_id": "room-1#0",
+          "duplicate": false
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "idempotency_key": "roomkit:publication:k"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,139 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/an-instruction-is-delivered-as-the-application-s-direction",
+  "title": "An instruction delivery opens the addressed agent's turn with an INSTRUCTION nothing stores; an unaddressed one is refused, and the delivery hooks see and gate an instruction",
+  "rules": [
+    "§22.1",
+    "§10.1.1",
+    "§22.3"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "human",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "category": "intelligence"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "human"
+          },
+          {
+            "channel_id": "a",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "quiet_hours",
+        "trigger": "before_deliver",
+        "reactions": [
+          {
+            "when": {
+              "text": "Nudge."
+            },
+            "result": {
+              "action": "block",
+              "reason": "quiet hours"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "deliver",
+      "room_id": "room-1",
+      "content": "Tell the caller their order shipped.",
+      "addressed_to": [
+        "a"
+      ],
+      "instruction": true,
+      "expect": {
+        "result": {
+          "status": "sent"
+        }
+      }
+    },
+    {
+      "call": "deliver",
+      "room_id": "room-1",
+      "content": "Say hello.",
+      "instruction": true,
+      "expect": {
+        "result": {
+          "status": "blocked",
+          "reason": "instruction_unaddressed"
+        }
+      }
+    },
+    {
+      "call": "deliver",
+      "room_id": "room-1",
+      "content": "Nudge.",
+      "addressed_to": [
+        "a"
+      ],
+      "instruction": true,
+      "expect": {
+        "result": {
+          "status": "blocked",
+          "reason": "quiet hours"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": []
+    },
+    "turns": {
+      "room-1": {
+        "a": [
+          {
+            "type": "instruction",
+            "content": {
+              "type": "text",
+              "body": "Tell the caller their order shipped."
+            }
+          }
+        ]
+      }
+    },
+    "hooks": {
+      "quiet_hours": [
+        {
+          "event": {
+            "type": "instruction"
+          }
+        },
+        {
+          "event": {
+            "type": "instruction"
+          }
+        },
+        {
+          "event": {
+            "type": "instruction",
+            "content": {
+              "type": "text",
+              "body": "Nudge."
+            }
+          }
+        }
+      ]
+    }
+  }
+}

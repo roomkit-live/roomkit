@@ -1,0 +1,90 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-publication-key-is-scoped-to-its-room",
+  "title": "A publication's key names one publication in its room only: the same key in another room publishes there",
+  "rules": [
+    "§22.1",
+    "§13.4"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "human",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "human"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "human"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "deliver",
+      "room_id": "r1",
+      "content": "done",
+      "idempotency_key": "key",
+      "expect": {
+        "result": {
+          "status": "sent",
+          "event_id": "r1#0"
+        }
+      }
+    },
+    {
+      "call": "deliver",
+      "room_id": "r1",
+      "content": "done",
+      "idempotency_key": "key",
+      "expect": {
+        "result": {
+          "status": "sent",
+          "event_id": "r1#0",
+          "duplicate": true
+        }
+      }
+    },
+    {
+      "call": "deliver",
+      "room_id": "r2",
+      "content": "done",
+      "idempotency_key": "key",
+      "expect": {
+        "result": {
+          "status": "sent",
+          "event_id": "r2#0",
+          "duplicate": false
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "idempotency_key": "roomkit:publication:key"
+        }
+      ],
+      "r2": [
+        {
+          "idempotency_key": "roomkit:publication:key"
+        }
+      ]
+    }
+  }
+}

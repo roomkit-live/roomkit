@@ -1,0 +1,87 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-source-detached-before-the-commit-refuses-the-delivery",
+  "title": "A delivery whose transport is detached before its commit writes nothing into the room: it is refused as its source's, its record stored",
+  "rules": [
+    "§22.1",
+    "§7.5 rule 7",
+    "§10.1 step 6"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "human",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "category": "intelligence"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "human"
+          },
+          {
+            "channel_id": "a",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "detach_source",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "do": [
+              {
+                "call": "store.remove_binding",
+                "room_id": "$room",
+                "channel_id": "human"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "deliver",
+      "room_id": "room-1",
+      "content": "external result",
+      "addressed_to": [
+        "a"
+      ],
+      "expect": {
+        "result": {
+          "status": "blocked",
+          "reason": "source_unbound",
+          "event_id": "room-1#0"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "status": "blocked",
+          "blocked_by": "source_unbound"
+        }
+      ]
+    },
+    "turns": {
+      "room-1": {
+        "a": []
+      }
+    }
+  }
+}

@@ -1,0 +1,81 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-muted-agent-still-acts",
+  "title": "A muted agent addressed by a delivery still acts on it: muting silences what it says, not what it does",
+  "rules": [
+    "§22.1",
+    "§7.2"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "human",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "category": "intelligence"
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "category": "intelligence"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "human"
+          },
+          {
+            "channel_id": "a",
+            "category": "intelligence"
+          },
+          {
+            "channel_id": "b",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "mute",
+      "room_id": "room-1",
+      "channel_id": "a"
+    },
+    {
+      "call": "deliver",
+      "room_id": "room-1",
+      "content": "done",
+      "addressed_to": [
+        "a"
+      ],
+      "expect": {
+        "result": {
+          "status": "sent"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "turns": {
+      "room-1": {
+        "a": [
+          {
+            "content": {
+              "type": "text",
+              "body": "done"
+            }
+          }
+        ],
+        "b": []
+      }
+    }
+  }
+}

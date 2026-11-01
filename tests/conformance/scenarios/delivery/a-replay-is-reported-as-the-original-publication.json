@@ -1,0 +1,134 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-replay-is-reported-as-the-original-publication",
+  "title": "AFTER_DELIVER describes a replay as the original publication: its content, its address and its event, with no error",
+  "rules": [
+    "§22.3",
+    "§22.1"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "human",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "category": "intelligence"
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "category": "intelligence"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "human"
+          },
+          {
+            "channel_id": "a",
+            "category": "intelligence"
+          },
+          {
+            "channel_id": "b",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "observe",
+        "trigger": "after_deliver",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "deliver",
+      "room_id": "room-1",
+      "content": "original",
+      "addressed_to": [
+        "a"
+      ],
+      "idempotency_key": "k"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "deliver",
+      "room_id": "room-1",
+      "content": "changed",
+      "addressed_to": [
+        "b"
+      ],
+      "idempotency_key": "k",
+      "expect": {
+        "result": {
+          "status": "sent",
+          "event_id": "room-1#0",
+          "duplicate": true
+        }
+      }
+    }
+  ],
+  "expect": {
+    "turns": {
+      "room-1": {
+        "a": [
+          {
+            "content": {
+              "type": "text",
+              "body": "original"
+            }
+          }
+        ],
+        "b": []
+      }
+    },
+    "hooks": {
+      "observe": [
+        {
+          "trigger": "after_deliver",
+          "event": {
+            "content": {
+              "type": "text",
+              "body": "original"
+            }
+          }
+        },
+        {
+          "trigger": "after_deliver",
+          "room_id": "room-1",
+          "event": {
+            "status": "delivered",
+            "content": {
+              "type": "text",
+              "body": "original"
+            },
+            "addressed_to": [
+              "a"
+            ],
+            "idempotency_key": "k",
+            "metadata": {
+              "delivery_outcome": {
+                "status": "sent",
+                "event_id": "room-1#0",
+                "duplicate": true
+              },
+              "error": null
+            }
+          }
+        }
+      ]
+    }
+  }
+}

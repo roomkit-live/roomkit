@@ -1,0 +1,106 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-room-lock-held-past-process-timeout-refuses-the-publication",
+  "title": "A keyed publication waits for the room lock no longer than process_timeout: past it, the delivery is refused as a process timeout and nothing is published",
+  "rules": [
+    "§22.1",
+    "§13.6",
+    "§13.5"
+  ],
+  "notes": "A message held at a gate in a hook under the room lock keeps the lock past the delivery's process_timeout; held past its own, it is refused too, so the room stores nothing.",
+  "setup": {
+    "kit": {
+      "process_timeout_ms": 100
+    },
+    "channels": [
+      {
+        "id": "human",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "category": "intelligence"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "human"
+          },
+          {
+            "channel_id": "a",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "holder",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "hold"
+            },
+            "gate": "held"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "human",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hold"
+        }
+      },
+      "background": true,
+      "as": "holding"
+    },
+    {
+      "wait_for": "held"
+    },
+    {
+      "call": "deliver",
+      "room_id": "room-1",
+      "content": "done",
+      "addressed_to": [
+        "a"
+      ],
+      "idempotency_key": "k",
+      "expect": {
+        "result": {
+          "status": "blocked",
+          "reason": "process_timeout"
+        }
+      }
+    },
+    {
+      "open": "held"
+    },
+    {
+      "await": "holding"
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": []
+    },
+    "turns": {
+      "room-1": {
+        "a": []
+      }
+    }
+  }
+}

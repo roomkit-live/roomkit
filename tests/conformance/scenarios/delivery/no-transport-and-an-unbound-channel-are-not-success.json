@@ -1,0 +1,60 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/no-transport-and-an-unbound-channel-are-not-success",
+  "title": "A room with no transport, and a channel the room does not bind, are reported unavailable, nothing written",
+  "rules": [
+    "§22.1"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "not-bound",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "deliver",
+      "room_id": "room-1",
+      "content": "done",
+      "expect": {
+        "result": {
+          "status": "unavailable",
+          "reason": "no_transport",
+          "unavailable_targets": [],
+          "error": {
+            "code": "no_transport",
+            "message": "no_transport"
+          }
+        }
+      }
+    },
+    {
+      "call": "deliver",
+      "room_id": "room-1",
+      "content": "done",
+      "channel_id": "not-bound",
+      "expect": {
+        "result": {
+          "status": "unavailable",
+          "reason": "channel_unavailable",
+          "unavailable_targets": [
+            "not-bound"
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": []
+    }
+  }
+}

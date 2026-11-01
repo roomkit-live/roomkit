@@ -1,0 +1,116 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-before-broadcast-refusal-is-reported-to-the-caller-and-after-deliver",
+  "title": "A BEFORE_BROADCAST block of the published message reports the delivery blocked, its record stored BLOCKED, and AFTER_DELIVER observes the refusal with the published event's content and the application's key",
+  "rules": [
+    "§22.3",
+    "§22.1",
+    "§10.1 step 9"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "human",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "category": "intelligence"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "human"
+          },
+          {
+            "channel_id": "a",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "refuse",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "result": {
+              "action": "block",
+              "reason": "external_events_disabled"
+            }
+          }
+        ]
+      },
+      {
+        "name": "observe",
+        "trigger": "after_deliver",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "deliver",
+      "room_id": "room-1",
+      "content": "done",
+      "addressed_to": [
+        "a"
+      ],
+      "idempotency_key": "k",
+      "expect": {
+        "result": {
+          "status": "blocked",
+          "reason": "external_events_disabled",
+          "event_id": "room-1#0"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "status": "blocked",
+          "blocked_by": "refuse"
+        }
+      ]
+    },
+    "turns": {
+      "room-1": {
+        "a": []
+      }
+    },
+    "hooks": {
+      "observe": [
+        {
+          "trigger": "after_deliver",
+          "room_id": "room-1",
+          "event": {
+            "status": "blocked",
+            "addressed_to": [
+              "a"
+            ],
+            "idempotency_key": "k",
+            "content": {
+              "type": "text",
+              "body": "done"
+            },
+            "metadata": {
+              "delivery_outcome": {
+                "status": "blocked",
+                "event_id": "room-1#0"
+              },
+              "error": "external_events_disabled"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

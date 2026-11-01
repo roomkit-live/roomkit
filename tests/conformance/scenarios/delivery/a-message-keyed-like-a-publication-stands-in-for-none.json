@@ -1,0 +1,141 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-message-keyed-like-a-publication-stands-in-for-none",
+  "title": "A sender's message keyed like a coming publication neither blocks it nor is taken for it, and a key in the framework's namespace is dropped from the message",
+  "rules": [
+    "§22.1",
+    "§13.4",
+    "§5.2"
+  ],
+  "notes": "On a channel whose client chooses the key, a sender could otherwise key a message as a publication that would then never be published.",
+  "setup": {
+    "channels": [
+      {
+        "id": "human",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "web",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "category": "intelligence"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "human"
+          },
+          {
+            "channel_id": "web"
+          },
+          {
+            "channel_id": "a",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "web",
+        "sender_id": "mallory",
+        "content": {
+          "type": "text",
+          "body": "spoof"
+        },
+        "idempotency_key": "roomkit:publication:k"
+      },
+      "expect": {
+        "result": {
+          "event": {
+            "idempotency_key": null
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "web",
+        "sender_id": "mallory",
+        "content": {
+          "type": "text",
+          "body": "spoof again"
+        },
+        "idempotency_key": "k"
+      },
+      "expect": {
+        "result": {
+          "event": {
+            "idempotency_key": "k"
+          }
+        }
+      }
+    },
+    {
+      "call": "deliver",
+      "room_id": "room-1",
+      "content": "done",
+      "idempotency_key": "k",
+      "expect": {
+        "result": {
+          "status": "sent",
+          "event_id": "room-1#2",
+          "duplicate": false
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "idempotency_key": null
+        },
+        {
+          "idempotency_key": "k"
+        },
+        {
+          "idempotency_key": "roomkit:publication:k"
+        }
+      ]
+    },
+    "turns": {
+      "room-1": {
+        "a": [
+          {
+            "content": {
+              "type": "text",
+              "body": "spoof"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "spoof again"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "done"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,121 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/an-invalid-request-is-refused-before-anything-is-written",
+  "title": "A blank key, or a session named with no channel, is refused blocked before anything is written, and AFTER_DELIVER observes the refusal",
+  "rules": [
+    "§22.1",
+    "§22.3",
+    "§13.4"
+  ],
+  "notes": "A blank key, empty or whitespace only, names no publication: the request asking for idempotency with one is refused, not delivered unkeyed.",
+  "setup": {
+    "channels": [
+      {
+        "id": "human",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "human"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "observe",
+        "trigger": "after_deliver",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "deliver",
+      "room_id": "room-1",
+      "content": "bad",
+      "idempotency_key": "",
+      "expect": {
+        "result": {
+          "status": "blocked",
+          "reason": "empty_idempotency_key"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "deliver",
+      "room_id": "room-1",
+      "content": "bad",
+      "idempotency_key": "   ",
+      "expect": {
+        "result": {
+          "status": "blocked",
+          "reason": "empty_idempotency_key"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "deliver",
+      "room_id": "room-1",
+      "content": "bad",
+      "session_id": "s",
+      "expect": {
+        "result": {
+          "status": "blocked",
+          "reason": "invalid_session_target"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": []
+    },
+    "hooks": {
+      "observe": [
+        {
+          "event": {
+            "status": "blocked",
+            "metadata": {
+              "delivery_outcome": {
+                "status": "blocked",
+                "reason": "empty_idempotency_key"
+              },
+              "error": "empty_idempotency_key"
+            }
+          }
+        },
+        {
+          "event": {
+            "metadata": {
+              "delivery_outcome": {
+                "reason": "empty_idempotency_key"
+              }
+            }
+          }
+        },
+        {
+          "event": {
+            "metadata": {
+              "delivery_outcome": {
+                "reason": "invalid_session_target"
+              },
+              "session_id": "s"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

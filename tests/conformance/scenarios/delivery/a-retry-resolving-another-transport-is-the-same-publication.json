@@ -1,0 +1,118 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-retry-resolving-another-transport-is-the-same-publication",
+  "title": "A keyed retry that would resolve another transport, or none, is still its publication: it is looked up within the room before a transport is resolved",
+  "rules": [
+    "§22.1",
+    "§13.4"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "human",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "web",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "category": "intelligence"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "human"
+          },
+          {
+            "channel_id": "a",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "deliver",
+      "room_id": "room-1",
+      "content": "done",
+      "idempotency_key": "k",
+      "expect": {
+        "result": {
+          "status": "sent",
+          "event_id": "room-1#0"
+        }
+      }
+    },
+    {
+      "call": "detach_channel",
+      "room_id": "room-1",
+      "channel_id": "human"
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "room-1",
+      "channel_id": "web"
+    },
+    {
+      "call": "deliver",
+      "room_id": "room-1",
+      "content": "done",
+      "idempotency_key": "k",
+      "expect": {
+        "result": {
+          "status": "sent",
+          "event_id": "room-1#0",
+          "duplicate": true
+        }
+      }
+    },
+    {
+      "call": "detach_channel",
+      "room_id": "room-1",
+      "channel_id": "web"
+    },
+    {
+      "call": "deliver",
+      "room_id": "room-1",
+      "content": "done",
+      "idempotency_key": "k",
+      "expect": {
+        "result": {
+          "status": "sent",
+          "event_id": "room-1#0",
+          "duplicate": true
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "idempotency_key": "roomkit:publication:k"
+        }
+      ]
+    },
+    "turns": {
+      "room-1": {
+        "a": [
+          {
+            "content": {
+              "type": "text",
+              "body": "done"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

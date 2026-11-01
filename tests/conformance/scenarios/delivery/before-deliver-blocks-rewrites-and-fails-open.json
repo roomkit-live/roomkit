@@ -1,0 +1,124 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/before-deliver-blocks-rewrites-and-fails-open",
+  "title": "BEFORE_DELIVER decides: a block stops the delivery, a modify rewrites what goes out, and a hook that raises lets it through",
+  "rules": [
+    "§22.3",
+    "§9.3",
+    "§9.4"
+  ],
+  "notes": "BEFORE_DELIVER is SYNC and fails open (§9.3): a broken moderation hook does not swallow the caller's message.",
+  "setup": {
+    "channels": [
+      {
+        "id": "human",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "human"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "moderation",
+        "trigger": "before_deliver",
+        "reactions": [
+          {
+            "when": {
+              "text": "buy now"
+            },
+            "result": {
+              "action": "block",
+              "reason": "policy: no proactive nudges"
+            }
+          },
+          {
+            "when": {
+              "text": "your card 4111111111111111 was charged"
+            },
+            "result": {
+              "action": "modify",
+              "event": {
+                "content": {
+                  "type": "text",
+                  "body": "your card [redacted] was charged"
+                }
+              }
+            }
+          }
+        ]
+      },
+      {
+        "name": "broken",
+        "trigger": "before_deliver",
+        "reactions": [
+          {
+            "when": {
+              "text": "still goes out"
+            },
+            "fail": "moderation service down"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "deliver",
+      "room_id": "room-1",
+      "content": "buy now",
+      "expect": {
+        "result": {
+          "status": "blocked",
+          "reason": "policy: no proactive nudges"
+        }
+      }
+    },
+    {
+      "call": "deliver",
+      "room_id": "room-1",
+      "content": "your card 4111111111111111 was charged",
+      "expect": {
+        "result": {
+          "status": "sent"
+        }
+      }
+    },
+    {
+      "call": "deliver",
+      "room_id": "room-1",
+      "content": "still goes out",
+      "expect": {
+        "result": {
+          "status": "sent"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "your card [redacted] was charged"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "still goes out"
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,99 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/concurrent-replays-on-two-transports-publish-once",
+  "title": "Two deliveries keyed alike, made together on two transports, publish once",
+  "rules": [
+    "§22.1",
+    "§13.4",
+    "§13.5"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "human",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "web",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "category": "intelligence"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "human"
+          },
+          {
+            "channel_id": "web"
+          },
+          {
+            "channel_id": "a",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "concurrent": [
+        {
+          "call": "deliver",
+          "room_id": "room-1",
+          "content": "done",
+          "channel_id": "human",
+          "idempotency_key": "k",
+          "expect": {
+            "result": {
+              "status": "sent",
+              "event_id": "room-1#0"
+            }
+          }
+        },
+        {
+          "call": "deliver",
+          "room_id": "room-1",
+          "content": "done",
+          "channel_id": "web",
+          "idempotency_key": "k",
+          "expect": {
+            "result": {
+              "status": "sent",
+              "event_id": "room-1#0"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "idempotency_key": "roomkit:publication:k"
+        }
+      ]
+    },
+    "turns": {
+      "room-1": {
+        "a": [
+          {
+            "content": {
+              "type": "text",
+              "body": "done"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,101 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/an-agent-that-cannot-read-is-unavailable",
+  "title": "An addressed agent whose binding cannot read is reported unavailable, and no other agent is asked in its place",
+  "rules": [
+    "§22.1",
+    "§19.3",
+    "§7.5"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "human",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "category": "intelligence"
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "category": "intelligence"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "human"
+          },
+          {
+            "channel_id": "a",
+            "category": "intelligence"
+          },
+          {
+            "channel_id": "b",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "set_access",
+      "room_id": "room-1",
+      "channel_id": "a",
+      "access": "none"
+    },
+    {
+      "call": "deliver",
+      "room_id": "room-1",
+      "content": "done",
+      "addressed_to": [
+        "a"
+      ],
+      "expect": {
+        "result": {
+          "status": "unavailable",
+          "unavailable_targets": [
+            "a"
+          ]
+        }
+      }
+    },
+    {
+      "call": "set_access",
+      "room_id": "room-1",
+      "channel_id": "a",
+      "access": "write_only"
+    },
+    {
+      "call": "deliver",
+      "room_id": "room-1",
+      "content": "again",
+      "addressed_to": [
+        "a"
+      ],
+      "expect": {
+        "result": {
+          "status": "unavailable",
+          "unavailable_targets": [
+            "a"
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "turns": {
+      "room-1": {
+        "a": [],
+        "b": []
+      }
+    }
+  }
+}

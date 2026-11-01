@@ -1,0 +1,92 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/an-intelligence-channel-named-is-carried-by-the-room-s-transport",
+  "title": "A delivery naming an intelligence channel as its channel is carried by the room's transport, never by the agent it is for; a session named on a channel with no realtime model is refused",
+  "rules": [
+    "§22.1"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "human",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "category": "intelligence"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "human"
+          },
+          {
+            "channel_id": "a",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "deliver",
+      "room_id": "room-1",
+      "content": "done",
+      "channel_id": "a",
+      "expect": {
+        "result": {
+          "status": "sent",
+          "event_id": "room-1#0"
+        }
+      }
+    },
+    {
+      "call": "deliver",
+      "room_id": "room-1",
+      "content": "done",
+      "channel_id": "human",
+      "session_id": "s",
+      "expect": {
+        "result": {
+          "status": "blocked",
+          "reason": "session_requires_realtime"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "source": {
+            "channel_id": "human",
+            "participant_id": "system",
+            "direction": "inbound"
+          },
+          "content": {
+            "type": "text",
+            "body": "done"
+          }
+        }
+      ]
+    },
+    "turns": {
+      "room-1": {
+        "a": [
+          {
+            "content": {
+              "type": "text",
+              "body": "done"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

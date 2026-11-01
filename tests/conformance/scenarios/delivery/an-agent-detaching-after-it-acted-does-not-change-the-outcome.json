@@ -1,0 +1,79 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/an-agent-detaching-after-it-acted-does-not-change-the-outcome",
+  "title": "An addressed agent that detaches itself once it acted leaves the delivery sent, no target unavailable",
+  "rules": [
+    "§22.1",
+    "§19.3"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "human",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "do": [
+              {
+                "call": "detach_channel",
+                "room_id": "$room",
+                "channel_id": "a"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "human"
+          },
+          {
+            "channel_id": "a",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "deliver",
+      "room_id": "room-1",
+      "content": "external result",
+      "addressed_to": [
+        "a"
+      ],
+      "expect": {
+        "result": {
+          "status": "sent",
+          "unavailable_targets": [],
+          "error": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "turns": {
+      "room-1": {
+        "a": [
+          {
+            "content": {
+              "type": "text",
+              "body": "external result"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

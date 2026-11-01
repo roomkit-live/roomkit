@@ -1,0 +1,147 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-before-deliver-refusal-is-reported-to-the-caller-and-after-deliver",
+  "title": "A BEFORE_DELIVER block refuses the delivery before anything is written, and AFTER_DELIVER observes the refusal with the delivery's content and targeting",
+  "rules": [
+    "§22.3",
+    "§22.1",
+    "§9.2"
+  ],
+  "notes": "The delivery hooks' payload is an event the framework writes (its source system, visibility internal): BEFORE_DELIVER's PENDING, AFTER_DELIVER's in the outcome's status, its metadata holding the outcome as serialized, the error and the strategy. The key given is the application's.",
+  "setup": {
+    "channels": [
+      {
+        "id": "human",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "category": "intelligence"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "human"
+          },
+          {
+            "channel_id": "a",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "refuse",
+        "trigger": "before_deliver",
+        "reactions": [
+          {
+            "result": {
+              "action": "block",
+              "reason": "external_events_disabled"
+            }
+          }
+        ]
+      },
+      {
+        "name": "observe",
+        "trigger": "after_deliver",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "deliver",
+      "room_id": "room-1",
+      "content": "done",
+      "addressed_to": [
+        "a"
+      ],
+      "idempotency_key": "k",
+      "expect": {
+        "result": {
+          "status": "blocked",
+          "reason": "external_events_disabled",
+          "event_id": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": []
+    },
+    "turns": {
+      "room-1": {
+        "a": []
+      }
+    },
+    "hooks": {
+      "refuse": [
+        {
+          "trigger": "before_deliver",
+          "room_id": "room-1",
+          "event": {
+            "type": "message",
+            "status": "pending",
+            "visibility": "internal",
+            "content": {
+              "type": "text",
+              "body": "done"
+            },
+            "addressed_to": [
+              "a"
+            ],
+            "idempotency_key": "k",
+            "source": {
+              "channel_id": "system",
+              "channel_type": "system"
+            },
+            "metadata": {
+              "channel_id": null,
+              "strategy": "immediate",
+              "session_id": null,
+              "delivery_item_id": {
+                "$present": true
+              }
+            }
+          }
+        }
+      ],
+      "observe": [
+        {
+          "trigger": "after_deliver",
+          "room_id": "room-1",
+          "event": {
+            "status": "blocked",
+            "addressed_to": [
+              "a"
+            ],
+            "idempotency_key": "k",
+            "content": {
+              "type": "text",
+              "body": "done"
+            },
+            "metadata": {
+              "delivery_outcome": {
+                "status": "blocked",
+                "reason": "external_events_disabled",
+                "delivery_item_id": {
+                  "$present": true
+                }
+              },
+              "error": "external_events_disabled",
+              "strategy": "immediate"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

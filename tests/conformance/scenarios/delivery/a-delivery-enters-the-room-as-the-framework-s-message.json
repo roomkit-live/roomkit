@@ -1,0 +1,118 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-delivery-enters-the-room-as-the-framework-s-message",
+  "title": "deliver() publishes its content into the room as a message the framework's own sender writes on the room's transport, and reports it sent once the turn it asked for is over",
+  "rules": [
+    "§22.1",
+    "§22.2",
+    "§10.4"
+  ],
+  "notes": "With no channel named, the room's first transport carries it; the transport, its source, is not delivered to (§7.5), any other is. The agent is handed the message, and the outcome names the committed event.",
+  "setup": {
+    "channels": [
+      {
+        "id": "human",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "observer",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "category": "intelligence"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "human"
+          },
+          {
+            "channel_id": "observer"
+          },
+          {
+            "channel_id": "a",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "deliver",
+      "room_id": "room-1",
+      "content": "external result",
+      "expect": {
+        "result": {
+          "status": "sent",
+          "reason": null,
+          "event_id": "room-1#0",
+          "duplicate": false,
+          "unavailable_targets": [],
+          "session_ids": [],
+          "session_outcomes": {},
+          "error": null,
+          "turn_complete": true,
+          "delivery_item_id": {
+            "$present": true
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "external result"
+          },
+          "source": {
+            "channel_id": "human",
+            "participant_id": "system",
+            "direction": "inbound"
+          },
+          "addressed_to": null,
+          "visibility": "all",
+          "idempotency_key": null,
+          "status": "delivered"
+        }
+      ]
+    },
+    "turns": {
+      "room-1": {
+        "a": [
+          {
+            "content": {
+              "type": "text",
+              "body": "external result"
+            }
+          }
+        ]
+      }
+    },
+    "deliveries": {
+      "room-1": {
+        "human": [],
+        "observer": [
+          {
+            "content": {
+              "type": "text",
+              "body": "external result"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

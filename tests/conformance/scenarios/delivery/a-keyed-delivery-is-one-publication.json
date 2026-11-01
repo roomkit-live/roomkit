@@ -1,0 +1,146 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-keyed-delivery-is-one-publication",
+  "title": "A keyed delivery names one publication in its room: a replay returns the original event as a duplicate, whatever its new content or address, and asks no turn",
+  "rules": [
+    "§22.1",
+    "§13.4"
+  ],
+  "notes": "The publication is stored under its key in the framework's namespace, roomkit:publication:<key> (§5.2). A replay's turn is not its own: turn_complete is false.",
+  "setup": {
+    "channels": [
+      {
+        "id": "human",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "category": "intelligence"
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "category": "intelligence"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "human"
+          },
+          {
+            "channel_id": "a",
+            "category": "intelligence"
+          },
+          {
+            "channel_id": "b",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "deliver",
+      "room_id": "room-1",
+      "content": "done",
+      "addressed_to": [
+        "a"
+      ],
+      "idempotency_key": "external:1",
+      "expect": {
+        "result": {
+          "status": "sent",
+          "event_id": "room-1#0",
+          "duplicate": false,
+          "turn_complete": true
+        }
+      }
+    },
+    {
+      "call": "deliver",
+      "room_id": "room-1",
+      "content": "changed",
+      "addressed_to": [
+        "b"
+      ],
+      "idempotency_key": "external:1",
+      "expect": {
+        "result": {
+          "status": "sent",
+          "event_id": "room-1#0",
+          "duplicate": true,
+          "reason": "duplicate_publication",
+          "turn_complete": false
+        }
+      }
+    },
+    {
+      "call": "deliver",
+      "room_id": "room-1",
+      "content": "next",
+      "addressed_to": [
+        "b"
+      ],
+      "idempotency_key": "external:2",
+      "expect": {
+        "result": {
+          "status": "sent",
+          "event_id": "room-1#1",
+          "duplicate": false
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "done"
+          },
+          "addressed_to": [
+            "a"
+          ],
+          "idempotency_key": "roomkit:publication:external:1"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "next"
+          },
+          "addressed_to": [
+            "b"
+          ],
+          "idempotency_key": "roomkit:publication:external:2"
+        }
+      ]
+    },
+    "turns": {
+      "room-1": {
+        "a": [
+          {
+            "content": {
+              "type": "text",
+              "body": "done"
+            }
+          }
+        ],
+        "b": [
+          {
+            "content": {
+              "type": "text",
+              "body": "next"
+            }
+          }
+        ]
+      }
+    }
+  }
+}
