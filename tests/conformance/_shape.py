@@ -12,11 +12,12 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+from tests.conformance._members import MEMBER_ARGUMENTS
 from tests.conformance._store import READ_MARKER_ARGUMENTS, STORE_ARGUMENTS
 from tests.conformance._tasks import TASK_ARGUMENTS
 
 TOP = {"$schema", "id", "title", "rules", "reentrancy", "notes", "setup", "steps", "expect"}
-SETUP = {"kit", "channels", "rooms", "hooks", "identity_hooks"}
+SETUP = {"kit", "channels", "rooms", "hooks", "identity_hooks", "identities"}
 KIT = {
     "max_chain_depth",
     "process_timeout_ms",
@@ -206,7 +207,7 @@ CALLS: dict[str, set[str]] = {
         "instruction",
     },
 }
-CALLS |= STORE_ARGUMENTS | READ_MARKER_ARGUMENTS | TASK_ARGUMENTS
+CALLS |= STORE_ARGUMENTS | READ_MARKER_ARGUMENTS | TASK_ARGUMENTS | MEMBER_ARGUMENTS
 STEPS = {"await": {"await", "expect"}, "concurrent": {"concurrent"}, "wait_for": {"wait_for"}}
 STEPS |= {"open": {"open"}, "idle": {"idle"}}
 

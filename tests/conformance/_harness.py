@@ -43,6 +43,7 @@ from tests.conformance._calls import (
 from tests.conformance._compare import Check, compare
 from tests.conformance._delivery import backend_busy, delivery_options, start_backend
 from tests.conformance._identity import kit_options, register_identity_hook
+from tests.conformance._members import MEMBER_CALLS, store_identities
 from tests.conformance._normalize import Observed, is_lifecycle_record
 from tests.conformance._script import GATE_BOUND_S, Gates, ScriptedRouter
 from tests.conformance._store import STORE_CALLS
@@ -229,6 +230,7 @@ class Harness:
             self.kit.on(event_type)(self._on_framework_event)
         for channel in setup.get("channels", []):
             register_channel(self.kit, self, channel)
+        await store_identities(self.kit, setup.get("identities", []))
         for room in setup.get("rooms", []):
             await create_room(self.kit, room)
             for binding in room.get("bindings", []):
@@ -325,7 +327,7 @@ class Harness:
     async def invoke(self, spec: Mapping[str, Any], scope: Mapping[str, str]) -> dict[str, Any]:
         """Makes one call; returns its outcome, its error named, never raising."""
         resolved = await self.resolve(dict(spec), scope)
-        call = (CALLS | STORE_CALLS | TASK_CALLS)[spec["call"]]
+        call = (CALLS | STORE_CALLS | TASK_CALLS | MEMBER_CALLS)[spec["call"]]
         try:
             result = await asyncio.wait_for(call(self.kit, self, resolved), CALL_BOUND_S)
         except TimeoutError:
