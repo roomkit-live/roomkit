@@ -1,0 +1,78 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "inbound/an-agent-s-provider-refusal-keeps-its-retryability",
+  "title": "An agent whose turn fails with its provider's explicit refusal reports the refusal's code and retryability, whatever carried the turn",
+  "rules": [
+    "§5.13",
+    "§10.2",
+    "§10.6.8"
+  ],
+  "notes": "The agent's turn raises the provider's refusal, code E42, not retryable: the trigger's delivery result for the agent is failed with that code, its words and retryable false, the message id it named not kept, as roomkit reads it across its turn backend.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "refuse": {
+              "error": "rejected",
+              "code": "E42",
+              "retryable": false,
+              "provider_message_id": "pm-3"
+            }
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "delivery_results": {
+            "ai": {
+              "status": "failed",
+              "error": {
+                "code": "E42",
+                "message": "rejected",
+                "retryable": false
+              },
+              "provider_message_id": null
+            }
+          }
+        }
+      }
+    }
+  ]
+}

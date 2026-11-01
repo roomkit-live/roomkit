@@ -1,0 +1,759 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/a-room-that-heard-another-sender-long-ago-is-not-the-sender-s",
+  "title": "Under the lock, a room that heard another sender on the channel, however long ago, is no longer a routed sender's: the message gets a room of its own",
+  "rules": [
+    "§10.1 step 2",
+    "§10.4"
+  ],
+  "notes": "The router answers room-1 for every message. Bob wrote on sms into room-1 by name, which records no one, then 55 messages came on ws. Alice's routed message finds the binding naming no one, but the room heard Bob on sms: the check under the lock reads the channel's whole history, as the router's step 3 does, so room-1 is not hers. Routed again to room-1, the second answer is not hers either, and she gets a new room.",
+  "setup": {
+    "kit": {
+      "router": {
+        "room_id": "room-1"
+      }
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15559876543",
+        "content": {
+          "type": "text",
+          "body": "Hi, Bob here"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "agent-desk",
+        "content": {
+          "type": "text",
+          "body": "note 0"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "agent-desk",
+        "content": {
+          "type": "text",
+          "body": "note 1"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "agent-desk",
+        "content": {
+          "type": "text",
+          "body": "note 2"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "agent-desk",
+        "content": {
+          "type": "text",
+          "body": "note 3"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "agent-desk",
+        "content": {
+          "type": "text",
+          "body": "note 4"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "agent-desk",
+        "content": {
+          "type": "text",
+          "body": "note 5"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "agent-desk",
+        "content": {
+          "type": "text",
+          "body": "note 6"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "agent-desk",
+        "content": {
+          "type": "text",
+          "body": "note 7"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "agent-desk",
+        "content": {
+          "type": "text",
+          "body": "note 8"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "agent-desk",
+        "content": {
+          "type": "text",
+          "body": "note 9"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "agent-desk",
+        "content": {
+          "type": "text",
+          "body": "note 10"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "agent-desk",
+        "content": {
+          "type": "text",
+          "body": "note 11"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "agent-desk",
+        "content": {
+          "type": "text",
+          "body": "note 12"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "agent-desk",
+        "content": {
+          "type": "text",
+          "body": "note 13"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "agent-desk",
+        "content": {
+          "type": "text",
+          "body": "note 14"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "agent-desk",
+        "content": {
+          "type": "text",
+          "body": "note 15"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "agent-desk",
+        "content": {
+          "type": "text",
+          "body": "note 16"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "agent-desk",
+        "content": {
+          "type": "text",
+          "body": "note 17"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "agent-desk",
+        "content": {
+          "type": "text",
+          "body": "note 18"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "agent-desk",
+        "content": {
+          "type": "text",
+          "body": "note 19"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "agent-desk",
+        "content": {
+          "type": "text",
+          "body": "note 20"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "agent-desk",
+        "content": {
+          "type": "text",
+          "body": "note 21"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "agent-desk",
+        "content": {
+          "type": "text",
+          "body": "note 22"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "agent-desk",
+        "content": {
+          "type": "text",
+          "body": "note 23"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "agent-desk",
+        "content": {
+          "type": "text",
+          "body": "note 24"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "agent-desk",
+        "content": {
+          "type": "text",
+          "body": "note 25"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "agent-desk",
+        "content": {
+          "type": "text",
+          "body": "note 26"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "agent-desk",
+        "content": {
+          "type": "text",
+          "body": "note 27"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "agent-desk",
+        "content": {
+          "type": "text",
+          "body": "note 28"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "agent-desk",
+        "content": {
+          "type": "text",
+          "body": "note 29"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "agent-desk",
+        "content": {
+          "type": "text",
+          "body": "note 30"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "agent-desk",
+        "content": {
+          "type": "text",
+          "body": "note 31"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "agent-desk",
+        "content": {
+          "type": "text",
+          "body": "note 32"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "agent-desk",
+        "content": {
+          "type": "text",
+          "body": "note 33"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "agent-desk",
+        "content": {
+          "type": "text",
+          "body": "note 34"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "agent-desk",
+        "content": {
+          "type": "text",
+          "body": "note 35"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "agent-desk",
+        "content": {
+          "type": "text",
+          "body": "note 36"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "agent-desk",
+        "content": {
+          "type": "text",
+          "body": "note 37"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "agent-desk",
+        "content": {
+          "type": "text",
+          "body": "note 38"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "agent-desk",
+        "content": {
+          "type": "text",
+          "body": "note 39"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "agent-desk",
+        "content": {
+          "type": "text",
+          "body": "note 40"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "agent-desk",
+        "content": {
+          "type": "text",
+          "body": "note 41"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "agent-desk",
+        "content": {
+          "type": "text",
+          "body": "note 42"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "agent-desk",
+        "content": {
+          "type": "text",
+          "body": "note 43"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "agent-desk",
+        "content": {
+          "type": "text",
+          "body": "note 44"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "agent-desk",
+        "content": {
+          "type": "text",
+          "body": "note 45"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "agent-desk",
+        "content": {
+          "type": "text",
+          "body": "note 46"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "agent-desk",
+        "content": {
+          "type": "text",
+          "body": "note 47"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "agent-desk",
+        "content": {
+          "type": "text",
+          "body": "note 48"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "agent-desk",
+        "content": {
+          "type": "text",
+          "body": "note 49"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "agent-desk",
+        "content": {
+          "type": "text",
+          "body": "note 50"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "agent-desk",
+        "content": {
+          "type": "text",
+          "body": "note 51"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "agent-desk",
+        "content": {
+          "type": "text",
+          "body": "note 52"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "agent-desk",
+        "content": {
+          "type": "text",
+          "body": "note 53"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "agent-desk",
+        "content": {
+          "type": "text",
+          "body": "note 54"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Hello, Alice here"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r1"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "room-1": {
+        "sms": {
+          "participant_id": null
+        }
+      },
+      "$r1": {
+        "sms": {
+          "participant_id": "+15551234567"
+        }
+      }
+    },
+    "timeline": {
+      "$r1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Hello, Alice here"
+          }
+        }
+      ]
+    }
+  }
+}
