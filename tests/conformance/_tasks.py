@@ -43,6 +43,7 @@ TASK_ARGUMENTS: dict[str, set[str]] = {
         "metadata",
     },
     "list_observations": {"room_id"},
+    "list_tasks": {"room_id", "status"},
     "host.send_event": {
         "room_id",
         "channel_id",
@@ -94,6 +95,11 @@ async def _list_observations(kit: RoomKit, harness: Harness, spec: Mapping[str, 
     return await kit.list_observations(spec["room_id"], **_named(spec, {"organization_id"}))
 
 
+async def _list_tasks(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
+    names = {"status", "organization_id"}
+    return await kit.list_tasks(spec["room_id"], **_named(spec, names))
+
+
 def _host() -> Any:
     host = current_turn_host()
     if host is None:
@@ -134,6 +140,7 @@ TASK_CALLS: dict[str, Call] = {
     "update_room_metadata": _update_room_metadata,
     "submit_feedback": _submit_feedback,
     "list_observations": _list_observations,
+    "list_tasks": _list_tasks,
     "host.send_event": _host_send_event,
     "host.post_status": _host_post_status,
     "host.update_room_metadata": _host_update_room_metadata,
