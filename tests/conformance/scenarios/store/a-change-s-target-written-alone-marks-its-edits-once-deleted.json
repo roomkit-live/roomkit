@@ -1,0 +1,180 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "store/a-change-s-target-written-alone-marks-its-edits-once-deleted",
+  "title": "A change's target is written alone, no row of the change, the room's counters unmoved; once it is deleted its edits are marked deleted with it; a target the room lacks is not found, nothing written",
+  "rules": [
+    "§14.1",
+    "§10.3"
+  ],
+  "notes": "Python: tests/test_store_binding_contract.py::test_a_change_s_target_is_written_alone_with_its_edits_marked. The write the persistence policy makes of a change it keeps out of the timeline (write_change_target).",
+  "steps": [
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-1"
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "v1"
+        }
+      },
+      "as": "target"
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "event": {
+        "type": "edit",
+        "content": {
+          "type": "edit",
+          "target_event_id": "$target",
+          "new_content": {
+            "type": "text",
+            "body": "v2"
+          }
+        }
+      },
+      "target": {
+        "id": "$target",
+        "index": 0,
+        "content": {
+          "type": "text",
+          "body": "v2"
+        },
+        "metadata": {
+          "edited": true
+        }
+      },
+      "as": "edit"
+    },
+    {
+      "call": "store.write_change_target",
+      "room_id": "room-1",
+      "target": {
+        "id": "$target",
+        "index": 0,
+        "content": {
+          "type": "text",
+          "body": "v2"
+        },
+        "metadata": {}
+      }
+    },
+    {
+      "call": "store.get_event",
+      "event_id": "$edit",
+      "expect": {
+        "result": {
+          "metadata": {
+            "deleted": {
+              "$absent": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "store.write_change_target",
+      "room_id": "room-1",
+      "target": {
+        "id": "$target",
+        "index": 0,
+        "content": {
+          "type": "text",
+          "body": "v2"
+        },
+        "metadata": {
+          "edited": true,
+          "deleted": true
+        }
+      }
+    },
+    {
+      "call": "store.get_event",
+      "event_id": "$target",
+      "expect": {
+        "result": {
+          "content": {
+            "body": "v2"
+          },
+          "metadata": {
+            "edited": true,
+            "deleted": true
+          }
+        }
+      }
+    },
+    {
+      "call": "store.get_event",
+      "event_id": "$edit",
+      "expect": {
+        "result": {
+          "metadata": {
+            "deleted": true
+          }
+        }
+      }
+    },
+    {
+      "call": "store.write_change_target",
+      "room_id": "room-1",
+      "target": {
+        "content": {
+          "type": "text",
+          "body": "nowhere"
+        }
+      },
+      "expect": {
+        "error": "event_not_found"
+      }
+    },
+    {
+      "call": "store.write_change_target",
+      "room_id": "room-2",
+      "target": {
+        "id": "$target",
+        "index": 0,
+        "content": {
+          "type": "text",
+          "body": "elsewhere"
+        }
+      },
+      "expect": {
+        "error": "event_not_found"
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "id": "room-1#0",
+          "content": {
+            "body": "v2"
+          },
+          "metadata": {
+            "deleted": true
+          }
+        },
+        {
+          "id": "room-1#1",
+          "type": "edit",
+          "metadata": {
+            "deleted": true
+          }
+        }
+      ]
+    },
+    "rooms": {
+      "room-1": {
+        "event_count": 2,
+        "latest_index": 1
+      }
+    }
+  }
+}

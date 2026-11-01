@@ -1,0 +1,138 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "store/a-task-is-read-by-its-id-and-rewritten-whole",
+  "title": "A task is read back by its id, whatever its room, none for an id the store lacks, and an update rewrites it whole, its room's list reading it so",
+  "rules": [
+    "§14.1"
+  ],
+  "notes": "Python: tests/test_store_memory.py::TestTaskOperations::test_add_and_get, test_get_nonexistent, test_update_task, test_list_tasks_by_room, test_list_tasks_by_status. A task's id is normalized as any id of no timeline ($e1, $e2... by first appearance).",
+  "steps": [
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-1"
+      }
+    },
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-2"
+      }
+    },
+    {
+      "call": "store.add_task",
+      "task": {
+        "id": "t1",
+        "room_id": "room-1",
+        "title": "Follow up"
+      }
+    },
+    {
+      "call": "store.add_task",
+      "task": {
+        "id": "t2",
+        "room_id": "room-1",
+        "title": "Call back"
+      }
+    },
+    {
+      "call": "store.add_task",
+      "task": {
+        "id": "t3",
+        "room_id": "room-2",
+        "title": "Elsewhere"
+      }
+    },
+    {
+      "call": "store.get_task",
+      "task_id": "t1",
+      "expect": {
+        "result": {
+          "id": "$e1",
+          "room_id": "room-1",
+          "title": "Follow up",
+          "status": "pending"
+        }
+      }
+    },
+    {
+      "call": "store.get_task",
+      "task_id": "t3",
+      "expect": {
+        "result": {
+          "room_id": "room-2"
+        }
+      }
+    },
+    {
+      "call": "store.get_task",
+      "task_id": "nope",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "store.update_task",
+      "task": {
+        "id": "t1",
+        "room_id": "room-1",
+        "title": "Follow up",
+        "status": "completed"
+      },
+      "expect": {
+        "result": {
+          "status": "completed"
+        }
+      }
+    },
+    {
+      "call": "store.get_task",
+      "task_id": "t1",
+      "expect": {
+        "result": {
+          "status": "completed"
+        }
+      }
+    },
+    {
+      "call": "store.list_tasks",
+      "room_id": "room-1",
+      "status": "completed",
+      "expect": {
+        "result": [
+          {
+            "id": "$e1"
+          }
+        ]
+      }
+    },
+    {
+      "call": "store.list_tasks",
+      "room_id": "room-1",
+      "status": "pending",
+      "expect": {
+        "result": [
+          {
+            "id": "$e2"
+          }
+        ]
+      }
+    },
+    {
+      "call": "store.list_tasks",
+      "room_id": "room-1",
+      "expect": {
+        "result": {
+          "$unordered": [
+            {
+              "id": "$e1"
+            },
+            {
+              "id": "$e2"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

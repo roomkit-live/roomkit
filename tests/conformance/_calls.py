@@ -25,6 +25,7 @@ from roomkit.core.exceptions import (
     ReentryLoopCapError,
     RoomClosedError,
     RoomNotFoundError,
+    TaskNotFoundError,
     TransitionRefusedError,
 )
 from roomkit.models.delivery import InboundMessage, InboundResult
@@ -65,6 +66,7 @@ _ERRORS: tuple[tuple[type[Exception], str], ...] = (
     (ReentrantCallError, "reentrant"),
     (ReentryLoopCapError, "reentry_loop_cap"),
     (EventNotFoundError, "event_not_found"),
+    (TaskNotFoundError, "task_not_found"),
     (ValueError, "invalid_argument"),
 )
 

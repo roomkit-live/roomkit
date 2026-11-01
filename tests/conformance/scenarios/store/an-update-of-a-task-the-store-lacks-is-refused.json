@@ -1,0 +1,43 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "store/an-update-of-a-task-the-store-lacks-is-refused",
+  "title": "An update of a task the store does not hold is refused, nothing written: an update is no creation",
+  "rules": [
+    "§14.1",
+    "§14.3"
+  ],
+  "notes": "Python: tests/test_store_room_contract.py::test_a_write_naming_what_the_store_lacks_is_refused[update_task] (RMK-1113, decided by the maintainer on 2026-11-01). Before, InMemoryStore kept the task where get_task found it and list_tasks did not, SQLiteStore created it, and PostgresStore wrote nothing.",
+  "steps": [
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-1"
+      }
+    },
+    {
+      "call": "store.update_task",
+      "task": {
+        "id": "t9",
+        "room_id": "room-1",
+        "title": "Never added"
+      },
+      "expect": {
+        "error": "task_not_found"
+      }
+    },
+    {
+      "call": "store.get_task",
+      "task_id": "t9",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "store.list_tasks",
+      "room_id": "room-1",
+      "expect": {
+        "result": []
+      }
+    }
+  ]
+}

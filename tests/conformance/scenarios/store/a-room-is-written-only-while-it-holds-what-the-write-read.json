@@ -1,0 +1,137 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "store/a-room-is-written-only-while-it-holds-what-the-write-read",
+  "title": "A room is written if it still holds the status, the pause and the last activity the write was computed from; a commit that resumed it meanwhile refuses the write, nothing written",
+  "rules": [
+    "§14.1",
+    "§5.1"
+  ],
+  "notes": "Python: tests/test_store_binding_contract.py::test_a_room_is_written_if_it_still_holds_what_the_write_was_computed_from. update_room_if is the compare-and-set a timer transition writes through; the room it writes keeps the counters the store holds, as update_room does.",
+  "steps": [
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-1",
+        "status": "paused",
+        "paused_at": "2026-01-01T12:00:00Z"
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      }
+    },
+    {
+      "call": "store.update_room_if",
+      "room": {
+        "id": "room-1",
+        "status": "closed",
+        "closed_at": "2026-01-01T12:00:00Z"
+      },
+      "status": "paused",
+      "paused_at": "2026-01-01T12:00:00Z",
+      "last_activity_at": null,
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "store.get_room",
+      "room_id": "room-1",
+      "expect": {
+        "result": {
+          "status": "active",
+          "paused_at": null,
+          "event_count": 1
+        }
+      }
+    },
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-2",
+        "timers": {
+          "last_activity_at": "2026-01-01T11:00:00Z"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-2",
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "kept"
+        }
+      },
+      "activity": false
+    },
+    {
+      "call": "store.update_room_if",
+      "room": {
+        "id": "room-2",
+        "status": "closed",
+        "closed_at": "2026-01-01T12:00:00Z",
+        "timers": {
+          "last_activity_at": "2026-01-01T11:00:00Z"
+        }
+      },
+      "status": "active",
+      "paused_at": null,
+      "last_activity_at": "2026-01-01T11:30:00Z",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "store.update_room_if",
+      "room": {
+        "id": "room-2",
+        "status": "closed",
+        "closed_at": "2026-01-01T12:00:00Z",
+        "timers": {
+          "last_activity_at": "2026-01-01T11:00:00Z"
+        }
+      },
+      "status": "active",
+      "paused_at": null,
+      "last_activity_at": "2026-01-01T11:00:00Z",
+      "expect": {
+        "result": {
+          "status": "closed",
+          "event_count": 1
+        }
+      }
+    },
+    {
+      "call": "store.update_room_if",
+      "room": {
+        "id": "room-3"
+      },
+      "status": "active",
+      "paused_at": null,
+      "last_activity_at": null,
+      "expect": {
+        "result": null
+      }
+    }
+  ],
+  "expect": {
+    "rooms": {
+      "room-1": {
+        "status": "active",
+        "event_count": 1
+      },
+      "room-2": {
+        "status": "closed",
+        "event_count": 1,
+        "latest_index": 0
+      }
+    }
+  }
+}

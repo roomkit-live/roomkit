@@ -1,0 +1,225 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "store/a-delivery-record-alone-writes-an-event-s-results",
+  "title": "An event is committed with the delivery results it brings; then the record of its delivery set alone writes them, on the event as stored, and every rewrite of the row keeps them",
+  "rules": [
+    "§14.1",
+    "§14.3",
+    "§10.3"
+  ],
+  "notes": "Python: tests/test_store_binding_contract.py::test_only_a_delivery_record_writes_the_results. The record replaces the map and writes nothing else: an edit committed since stands. A record naming another room leaves the event alone. update_event, a change's target and a target written alone each carry stale results, which the store does not write.",
+  "steps": [
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-1"
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "original"
+        },
+        "delivery_results": {
+          "sms": {
+            "status": "delivered"
+          },
+          "web": {
+            "status": "delivered"
+          }
+        }
+      },
+      "as": "target"
+    },
+    {
+      "call": "store.get_event",
+      "event_id": "$target",
+      "expect": {
+        "result": {
+          "delivery_results": {
+            "sms": {
+              "status": "delivered"
+            },
+            "web": {
+              "status": "delivered"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "event": {
+        "type": "edit",
+        "content": {
+          "type": "edit",
+          "target_event_id": "$target",
+          "new_content": {
+            "type": "text",
+            "body": "corrected"
+          }
+        }
+      },
+      "target": {
+        "id": "$target",
+        "index": 0,
+        "content": {
+          "type": "text",
+          "body": "corrected"
+        },
+        "metadata": {
+          "edited": true
+        }
+      }
+    },
+    {
+      "call": "store.record_delivery_results",
+      "room_id": "room-1",
+      "event_id": "$target",
+      "results": {
+        "sms": {
+          "status": "failed",
+          "error": "provider down"
+        }
+      }
+    },
+    {
+      "call": "store.record_delivery_results",
+      "room_id": "room-2",
+      "event_id": "$target",
+      "results": {
+        "x": {
+          "status": "delivered"
+        }
+      }
+    },
+    {
+      "call": "store.get_event",
+      "event_id": "$target",
+      "expect": {
+        "result": {
+          "content": {
+            "body": "corrected"
+          },
+          "metadata": {
+            "edited": true
+          },
+          "delivery_results": {
+            "sms": {
+              "status": "failed",
+              "error": "provider down"
+            },
+            "web": {
+              "$absent": true
+            },
+            "x": {
+              "$absent": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "store.update_event",
+      "event": {
+        "id": "$target",
+        "room_id": "room-1",
+        "index": 0,
+        "content": {
+          "type": "text",
+          "body": "corrected"
+        },
+        "metadata": {
+          "edited": true,
+          "pinned": true
+        },
+        "delivery_results": {
+          "web": {
+            "status": "delivered"
+          }
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "event": {
+        "type": "edit",
+        "content": {
+          "type": "edit",
+          "target_event_id": "$target",
+          "new_content": {
+            "type": "text",
+            "body": "corrected twice"
+          }
+        }
+      },
+      "target": {
+        "id": "$target",
+        "index": 0,
+        "content": {
+          "type": "text",
+          "body": "corrected twice"
+        },
+        "metadata": {
+          "edited": true
+        },
+        "delivery_results": {
+          "web": {
+            "status": "delivered"
+          }
+        }
+      }
+    },
+    {
+      "call": "store.write_change_target",
+      "room_id": "room-1",
+      "target": {
+        "id": "$target",
+        "index": 0,
+        "content": {
+          "type": "text",
+          "body": "corrected twice"
+        },
+        "metadata": {
+          "deleted": true
+        },
+        "delivery_results": {
+          "web": {
+            "status": "delivered"
+          }
+        }
+      }
+    },
+    {
+      "call": "store.get_event",
+      "event_id": "$target",
+      "expect": {
+        "result": {
+          "content": {
+            "body": "corrected twice"
+          },
+          "metadata": {
+            "deleted": true,
+            "edited": {
+              "$absent": true
+            }
+          },
+          "delivery_results": {
+            "sms": {
+              "status": "failed",
+              "error": "provider down"
+            },
+            "web": {
+              "$absent": true
+            }
+          }
+        }
+      }
+    }
+  ]
+}
