@@ -157,6 +157,8 @@ CALLS: dict[str, set[str]] = {
     "register_hook": {"hook"},
     "add_room_hook": {"room_id", "hook"},
     "remove_room_hook": {"room_id", "name"},
+    "mute_output": {"room_id", "channel_id"},
+    "unmute_output": {"room_id", "channel_id"},
 }
 CALLS |= STORE_ARGUMENTS | READ_MARKER_ARGUMENTS
 STEPS = {"await": {"await", "expect"}, "concurrent": {"concurrent"}, "wait_for": {"wait_for"}}

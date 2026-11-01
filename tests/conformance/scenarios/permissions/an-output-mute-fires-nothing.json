@@ -1,0 +1,171 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "permissions/an-output-mute-fires-nothing",
+  "title": "An output mute sets the binding's output_muted and nothing else: no trigger, no record, and the channel still receives events",
+  "rules": [
+    "§5.7",
+    "§7.2",
+    "§7.2 A binding change that changes nothing",
+    "§17.2"
+  ],
+  "notes": "output_muted mutes a channel's speech output (§5.7): events still arrive. It is no mute of §7.2, which blocks the channel's responses: neither ON_CHANNEL_MUTED nor ON_CHANNEL_UNMUTED fires, and no lifecycle record is written. A change that changes nothing writes nothing; a channel the room does not bind, or a room of another organization, refuses the call.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "email",
+        "type": "email",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "muted",
+        "trigger": "on_channel_muted",
+        "execution": "async"
+      },
+      {
+        "name": "unmuted",
+        "trigger": "on_channel_unmuted",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "mute_output",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "expect": {
+        "result": {
+          "channel_id": "ws",
+          "output_muted": true,
+          "muted": false
+        }
+      }
+    },
+    {
+      "call": "mute_output",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "expect": {
+        "result": {
+          "output_muted": true
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "call": "unmute_output",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "expect": {
+        "result": {
+          "output_muted": false,
+          "muted": false
+        }
+      }
+    },
+    {
+      "call": "unmute_output",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "expect": {
+        "result": {
+          "output_muted": false
+        }
+      }
+    },
+    {
+      "call": "mute_output",
+      "room_id": "room-1",
+      "channel_id": "email",
+      "expect": {
+        "error": "channel_not_bound"
+      }
+    },
+    {
+      "call": "mute_output",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "organization_id": "acme",
+      "expect": {
+        "error": "room_not_found"
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "room-1": {
+        "ws": {
+          "output_muted": false,
+          "muted": false
+        }
+      }
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "content": {
+              "type": "text",
+              "body": "Hello"
+            }
+          }
+        ]
+      }
+    },
+    "hooks": {
+      "muted": [],
+      "unmuted": []
+    },
+    "lifecycle": {
+      "room-1": [
+        {
+          "type": "channel_attached"
+        },
+        {
+          "type": "channel_attached"
+        }
+      ]
+    }
+  }
+}

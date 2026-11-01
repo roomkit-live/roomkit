@@ -350,6 +350,14 @@ async def _remove_room_hook(kit: RoomKit, harness: Harness, spec: Mapping[str, A
     return await kit.remove_room_hook(spec["room_id"], spec["name"], **_org(spec))
 
 
+async def _mute_output(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
+    return await kit.mute_output(spec["room_id"], spec["channel_id"], **_org(spec))
+
+
+async def _unmute_output(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
+    return await kit.unmute_output(spec["room_id"], spec["channel_id"], **_org(spec))
+
+
 CALLS: dict[str, Call] = {
     "process_inbound": _process_inbound,
     "send_event": _send_event,
@@ -372,6 +380,8 @@ CALLS: dict[str, Call] = {
     "register_hook": _register_hook,
     "add_room_hook": _add_room_hook,
     "remove_room_hook": _remove_room_hook,
+    "mute_output": _mute_output,
+    "unmute_output": _unmute_output,
 }
 
 
