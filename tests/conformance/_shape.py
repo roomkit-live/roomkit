@@ -61,7 +61,7 @@ CHANNEL = {
 }
 ADDRESSES = {"normalizes", "conversation_key"}
 MODEL = {"rounds"}
-MODEL_ROUND = {"text", "deltas", "calls", "finish_reason", "usage", "fails"}
+MODEL_ROUND = {"text", "deltas", "calls", "finish_reason", "usage", "fails", "done"}
 MODEL_CALL = {"id", "name", "arguments", "cut"}
 TOOL = {
     "name",

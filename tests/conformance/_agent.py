@@ -18,7 +18,12 @@ from roomkit.channels.ai import AIChannel
 from roomkit.core.exceptions import ToolFailedError, ToolRefusedError, UnservedToolCallError
 from roomkit.models.tool_call import ToolCallEvent
 from roomkit.providers.ai import AIContext, AIProvider, AIResponse, AITool, AIToolCall
-from roomkit.providers.ai.base import StreamEvent, StreamTextDelta, response_stream_events
+from roomkit.providers.ai.base import (
+    StreamDone,
+    StreamEvent,
+    StreamTextDelta,
+    response_stream_events,
+)
 from roomkit.tools.policy import ToolPolicy
 
 
@@ -57,8 +62,11 @@ class ScriptedModel(AIProvider):
             yield StreamTextDelta(text=delta)
         if (message := round_.get("fails")) is not None:
             raise ModelFailedError(message)
-        # The calls and the end as generate()'s whole response gives them.
+        # The calls and the end as generate()'s whole response gives them; a
+        # round that ends without its done event stops after its calls.
         for event in response_stream_events(_response(round_).model_copy(update={"content": ""})):
+            if isinstance(event, StreamDone) and round_.get("done") is False:
+                return
             yield event
 
     def _next_round(self, context: AIContext) -> Mapping[str, Any]:
@@ -96,14 +104,21 @@ def _response(round_: Mapping[str, Any]) -> AIResponse:
 
 
 def tool_results(context: AIContext) -> list[dict[str, Any]]:
-    """The tool results a request carries, in order, as the model reads them."""
+    """The tool results a request carries, in order, as the model reads them,
+    and whether it reads each call as failed."""
     found: list[dict[str, Any]] = []
     for message in context.messages:
         if isinstance(message.content, str):
             continue
         for part in message.content:
             if getattr(part, "type", None) == "tool_result":
-                found.append({"tool_call_id": part.tool_call_id, "content": part.result})
+                found.append(
+                    {
+                        "tool_call_id": part.tool_call_id,
+                        "content": part.result,
+                        "is_error": part.is_error,
+                    }
+                )
     return found
 
 
