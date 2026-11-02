@@ -13,6 +13,9 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock
 
+import pytest
+from pydantic import ValidationError
+
 from roomkit.channels._ai_cuts import CUT_NOTE
 from roomkit.channels._speaker import SPEAKER_ATTRIBUTION_NOTE
 from roomkit.channels._turn_notes import turn_notes
@@ -197,6 +200,50 @@ async def test_the_identity_is_measured_in_the_rooms_language(streaming: bool) -
     )
 
     assert "Always respond in French" in (provider.calls[0].system_prompt or "")
+
+
+async def test_a_binding_s_max_tokens_is_measured_as_the_turn_reads_it() -> None:
+    """A room's ``max_tokens: "100"`` is the turn's 100 (RFC §6.4, Appendix
+    A.9): a budget-aware memory reserves 100 and the model is asked, as with
+    any other memory (RMK-1255)."""
+    provider = MockAIProvider(responses=["ok"])
+    measured = _Measured()
+    agent = Agent(
+        "agent",
+        provider=provider,
+        memory=BudgetAwareMemory(measured, max_context_tokens=8_000),
+    )
+
+    await respond(
+        agent,
+        make_event(body="hello", channel_id="member", room_id="r1"),
+        _binding(max_tokens="100"),
+        RoomContext(room=Room(id="r1")),
+    )
+
+    assert [footprint.reply_tokens for footprint in measured.footprints if footprint] == [100]
+    assert [call.max_tokens for call in provider.calls] == [100]
+
+
+async def test_a_refused_max_tokens_fails_the_turn_as_with_any_memory() -> None:
+    """A budget-aware memory reserves nothing for a ``max_tokens`` the turn
+    refuses: the turn fails with pydantic's error naming it, as with any
+    other memory, its model not asked."""
+    provider = MockAIProvider(responses=["ok"])
+    agent = Agent(
+        "agent",
+        provider=provider,
+        memory=BudgetAwareMemory(SlidingWindowMemory(), max_context_tokens=8_000),
+    )
+
+    with pytest.raises(ValidationError, match="max_tokens"):
+        await respond(
+            agent,
+            make_event(body="hello", channel_id="member", room_id="r1"),
+            _binding(max_tokens="many"),
+            RoomContext(room=Room(id="r1")),
+        )
+    assert provider.calls == []
 
 
 async def test_outside_a_turn_there_is_no_footprint() -> None:

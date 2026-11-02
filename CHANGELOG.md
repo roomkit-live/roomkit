@@ -121,6 +121,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   RMK-1233). `_always_process` written as a `str` solicited every agent
   whose id it contains, a `dict` its keys, and `None` failed the broadcast
   with a `TypeError`; only a list names agents now, as roomkit-rs reads it.
+
+- **A binding's max tokens in text runs a budget-aware memory's turn**
+  (RFC §6.4, Appendix A.9, RMK-1255). A room binding an agent with
+  `metadata={"max_tokens": "100"}` and a `BudgetAwareMemory` failed its turn
+  with `TypeError: unsupported operand type(s) for -: 'int' and 'str'`, its
+  model never asked: the turn's measure took the text raw. The measure now
+  reads the value as the turn does, 100, and the memory reserves it; a value
+  the turn refuses fails it with pydantic's `ValidationError`, as with any
+  other memory. roomkit-rs read 100 already.
+
 - **An MCP tool's result the model sees an image of is bounded** (RFC §21.2,
   RMK-1249). `MCPToolProvider.as_tool_handler()` handed such a result's parts
   to the model whole: a server answering 30 screenshots of 1 MB put 40 MB of

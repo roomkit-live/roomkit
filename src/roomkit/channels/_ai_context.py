@@ -6,6 +6,8 @@ import logging
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
+from pydantic import ValidationError
+
 from roomkit._media import content_text, media_label, text_form
 from roomkit.channels._ai_cuts import CUT_NOTE, cut_answers, cut_mark, cut_records
 from roomkit.channels._ai_policy import policy_check
@@ -929,7 +931,7 @@ class AIContextMixin(_AIChannelContract):
         context: RoomContext,
         system_prompt: str | None,
         own_notes: list[str],
-        max_tokens: int | None,
+        max_tokens: object,
         *,
         rounds: list[ToolRound],
     ) -> None:
@@ -957,7 +959,7 @@ class AIContextMixin(_AIChannelContract):
                 estimate_message_tokens(r.calls) + estimate_message_tokens(r.results)
                 for r in rounds
             ),
-            reply_tokens=max_tokens or 0,
+            reply_tokens=_reply_tokens(max_tokens),
         )
 
     def _stamp_toolset(self, loop_ctx: _ToolLoopContext, tools: list[AITool]) -> None:
@@ -1161,6 +1163,19 @@ def _without_former_vision(binding: ChannelBinding) -> ChannelBinding:
     metadata = {k: v for k, v in binding.metadata.items() if k != _FORMER_VISION_BASE}
     metadata["system_prompt"] = binding.metadata[_FORMER_VISION_BASE] or None
     return binding.model_copy(update={"metadata": metadata})
+
+
+def _reply_tokens(max_tokens: object) -> int:
+    """The reply budget a turn's resolved *max_tokens* reserves, read as
+    AIContext reads it (RFC §6.4, Appendix A.9): ``"100"`` is 100. 0 for no
+    budget, and for a value the context refuses, which then fails the turn
+    when its context is built, every refused setting named."""
+    if max_tokens is None:
+        return 0
+    try:
+        return AIContext.model_validate({"max_tokens": max_tokens}).max_tokens or 0
+    except ValidationError:
+        return 0
 
 
 def _rounds_before(event: RoomEvent) -> int | None:
