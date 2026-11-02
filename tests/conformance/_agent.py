@@ -14,6 +14,7 @@ import dataclasses
 from collections.abc import AsyncIterator, Callable, Mapping
 from typing import TYPE_CHECKING, Any
 
+from roomkit import Agent
 from roomkit.channels.ai import AIChannel
 from roomkit.core.exceptions import ToolFailedError, ToolRefusedError, UnservedToolCallError
 from roomkit.models.tool_call import ToolCallEvent
@@ -343,7 +344,12 @@ def scripted_agent(
         kwargs["memory"] = scripted_memory(memory, spec.get("max_context_events", 50), summarizer)
     if "human_input" in spec:
         kwargs["human_input_handler"] = _human_input(spec["human_input"])
-    channel = AIChannel(
+    # An identity makes the scripted agent an Agent (README, "Scripted agents").
+    build: Callable[..., AIChannel] = AIChannel
+    if "agent" in spec:
+        build = Agent
+        kwargs.update(spec["agent"])
+    channel = build(
         spec["id"],
         provider=model,
         tools=[

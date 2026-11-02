@@ -84,8 +84,10 @@ CHANNEL = {
     "recent_events_window",
     "sender_is_participant",
     "memory",
+    "agent",
 }
 ADDRESSES = {"normalizes", "conversation_key"}
+AGENT = {"name", "role", "description", "purpose", "scope", "language", "identity_in_prompt"}
 MODEL = {"rounds", "vision"}
 MODEL_ROUND = {
     "text",
@@ -384,6 +386,8 @@ def _channel(channel: Mapping[str, Any], path: str, found: list[str]) -> None:
         _members(channel["tool_policy"], POLICY, f"{path}.tool_policy", found)
     if "addresses" in channel:
         _members(channel["addresses"], ADDRESSES, f"{path}.addresses", found)
+    if "agent" in channel:
+        _members(channel["agent"], AGENT, f"{path}.agent", found)
     if "memory" in channel:
         _memory(channel["memory"], f"{path}.memory", found)
     if "human_input" in channel:
