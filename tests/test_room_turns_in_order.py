@@ -380,25 +380,56 @@ class _Steering(AILikeChannel):
         return True
 
 
+class _SteeringAgent(Agent):
+    """An agent whose class, not its options, says it steers its room turns."""
+
+    @property
+    def steers_room_turns(self) -> bool:
+        return True
+
+
+class _Contradicting(_Steering):
+    """A channel that says it steers its room turns and does not serialize
+    them, which no channel can do (RFC §6.4)."""
+
+    @property
+    def serializes_room_turns(self) -> bool:
+        return False
+
+
 async def test_a_channel_that_steers_its_room_turns_says_it_serializes_them() -> None:
     """What a host reads of a registered channel and what its owner knows of
-    it (RFC §6.4, §10.6.2): a hand-written channel or a declaration that
-    steers its room turns takes them one at a time."""
+    it (RFC §6.4, §10.6.2): a hand-written channel, an agent or a declaration
+    that steers its room turns takes them one at a time."""
     kit = RoomKit()
     kit.register_channel(_Steering("agent"))
+    kit.register_channel(_SteeringAgent("coder", provider=MockAIProvider()))
     kit.register_channel(ChannelDeclaration(channel_id="ana", steers_room_turns=True))
     try:
         read = [
             (channel.serializes_room_turns, channel.steers_room_turns)
-            for channel in (kit.get_channel("agent"), kit.get_channel("ana"))
+            for channel in map(kit.get_channel, ["agent", "coder", "ana"])
             if channel is not None
         ]
         declared = _Steering("agent").declaration()
 
-        assert read == [(True, True), (True, True)]
+        assert read == [(True, True), (True, True), (True, True)]
         assert (declared.serializes_room_turns, declared.steers_room_turns) == (True, True)
     finally:
         await kit.close()
+
+
+async def test_a_channel_that_steers_its_room_turns_without_serializing_them_is_refused() -> None:
+    kit = RoomKit()
+
+    with pytest.raises(ValueError) as refused:
+        kit.register_channel(_Contradicting("agent"))
+
+    assert str(refused.value) == (
+        "Channel 'agent' steers its room turns but does not serialize them"
+    )
+    assert kit.get_channel("agent") is None
+    await kit.close()
 
 
 @pytest.mark.parametrize("channel_class", [_Buffered, _Steering], ids=["serializes", "steers"])

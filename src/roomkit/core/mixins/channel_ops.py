@@ -109,6 +109,16 @@ def _refuse_host_as_intelligence(channel: Channel, category: ChannelCategory | N
         )
 
 
+def _refuse_unserialized_steering(channel: Channel) -> None:
+    """A channel that steers its room turns serializes them (RFC §6.4): one
+    that says it steers them but not that it serializes them would be
+    neither, its steering silently dead."""
+    if channel.steers_room_turns and not channel.serializes_room_turns:
+        raise ValueError(
+            f"Channel {channel.channel_id!r} steers its room turns but does not serialize them"
+        )
+
+
 @runtime_checkable
 class ChannelOpsHost(Protocol):
     """Contract: capabilities a host class must provide for ChannelOpsMixin.
@@ -195,6 +205,8 @@ class ChannelOpsMixin(HelpersMixin):
                 already registered.
             ValueError: a channel id a visibility could not name (a
                 keyword, a comma, surrounding whitespace; RFC §7.3), a
+                channel that steers its room turns but does not serialize
+                them (RFC §6.4), a
                 channel of the type ``SYSTEM``, reserved to the framework's
                 own records (RFC §5.3), or a
                 declaration of a channel that is not an
@@ -209,6 +221,7 @@ class ChannelOpsMixin(HelpersMixin):
         # A visibility names channels by id, so an id it could not name is
         # refused (RFC §7.3).
         check_channel_id(channel.channel_id)
+        _refuse_unserialized_steering(channel)
         if channel.channel_type == ChannelType.SYSTEM:
             # The framework's own records' type, which no channel claims: a
             # SYSTEM source makes the changes reserved to the system (RFC §5.3).

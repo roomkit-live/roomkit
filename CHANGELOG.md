@@ -32,8 +32,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `steers_room_turns`, `Channel` has the property, and any channel that
   steers its room turns takes them one at a time: its
   `serializes_room_turns` defaults to it, and the kit holding a channel by a
-  declaration that steers them serializes them (RMK-1253). Runnable:
-  `examples/agent_steered_turn.py`.
+  declaration that steers them serializes them; `register_channel` refuses a
+  channel that says it steers them but does not serialize them, with
+  `ValueError` (RMK-1253). Runnable: `examples/agent_steered_turn.py`.
 
 - **`AIChannel(tool_call_intents_required=True)` lists a call's intent as
   required** (RFC §6.4, RMK-1067). A model that leaves optional properties

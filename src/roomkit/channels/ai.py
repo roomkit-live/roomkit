@@ -828,8 +828,9 @@ class AIChannel(
     @property
     def serializes_room_turns(self) -> bool:
         """Whether its turns in a room run one after the other
-        (``serialize_room_turns``, or ``steer_room_turns``)."""
-        return self._serialize_room_turns
+        (``serialize_room_turns``, or whether it steers them, a subclass's
+        ``steers_room_turns`` included)."""
+        return self._serialize_room_turns or self.steers_room_turns
 
     @property
     def steers_room_turns(self) -> bool:
