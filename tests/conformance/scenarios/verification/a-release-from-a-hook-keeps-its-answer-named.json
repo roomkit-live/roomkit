@@ -1,0 +1,193 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "verification/a-release-from-a-hook-keeps-its-answer-named",
+  "title": "A verification completed under the room's lock, from a SYNC hook, releases the held message, whose answer waits in the lane named by its key: a cancel there stops it",
+  "rules": [
+    "§11.7.6",
+    "§10.1 Explicit delivery cancellation",
+    "§9.5.1"
+  ],
+  "notes": "Python: src/roomkit/core/_delivery_keys.py (hold, unhold), src/roomkit/core/mixins/verification.py (_name_held, _unhold_released, _record_held_cancellation, _answer_released); tests/test_verification_release_cancel.py::test_a_release_from_a_hook_keeps_its_answer_named (RMK-1182).",
+  "setup": {
+    "kit": {
+      "identity_resolver": {
+        "answers": [
+          {
+            "when": {
+              "sender_id": "+15551234567"
+            },
+            "repeat": true,
+            "result": {
+              "status": "identified",
+              "identity": {
+                "id": "alice-id"
+              }
+            }
+          }
+        ]
+      },
+      "verification_policy": {}
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "on_event": [
+          {
+            "when": {
+              "text": "Wire 500 to Bob"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "answer to Wire 500 to Bob"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "console",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "Verified by phone"
+            },
+            "do": [
+              {
+                "call": "complete_verification",
+                "request_id": "$req",
+                "secret": "$req.secret"
+              },
+              {
+                "call": "cancel_delivery",
+                "key": "task-42",
+                "reason": "user_stopped",
+                "as": "cancelled"
+              }
+            ],
+            "result": {
+              "action": "block",
+              "reason": "console note"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Wire 500 to Bob"
+        },
+        "delivery_key": "task-42"
+      }
+    },
+    {
+      "call": "request_verification",
+      "identity_id": "alice-id",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "as": "req",
+      "window_start": "2000-01-01T00:00:00Z"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "advisor",
+        "content": {
+          "type": "text",
+          "body": "Verified by phone"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "console note"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "cancel_delivery",
+      "key": "task-42",
+      "expect": {
+        "result": 0
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "Wire 500 to Bob"
+          },
+          "visibility": "all",
+          "metadata": {
+            "roomkit:verification_held": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "content": {
+            "body": "Verified by phone"
+          },
+          "status": "blocked"
+        }
+      ]
+    },
+    "turns": {
+      "room-1": {
+        "ai": []
+      }
+    },
+    "actions": {
+      "cancelled": [
+        {
+          "result": 1
+        }
+      ]
+    }
+  }
+}

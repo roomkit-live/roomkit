@@ -1,0 +1,131 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "verification/a-held-message-a-hook-blocked-is-named-no-more",
+  "title": "A message held then blocked by a hook is released by nothing: its key names it no longer than its call",
+  "rules": [
+    "§11.7.6",
+    "§10.1 Explicit delivery cancellation"
+  ],
+  "notes": "Python: src/roomkit/core/_delivery_keys.py (hold, unhold), src/roomkit/core/mixins/verification.py (_name_held, _unhold_released, _record_held_cancellation, _answer_released); tests/test_verification_release_cancel.py::test_a_held_message_nothing_will_release_is_not_named[blocking] (RMK-1182).",
+  "setup": {
+    "kit": {
+      "identity_resolver": {
+        "answers": [
+          {
+            "when": {
+              "sender_id": "+15551234567"
+            },
+            "repeat": true,
+            "result": {
+              "status": "identified",
+              "identity": {
+                "id": "alice-id"
+              }
+            }
+          }
+        ]
+      },
+      "verification_policy": {}
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "on_event": [
+          {
+            "when": {
+              "text": "Wire 500 to Bob"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "answer to Wire 500 to Bob"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "refuse",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "repeat": true,
+            "result": {
+              "action": "block",
+              "reason": "not now"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Wire 500 to Bob"
+        },
+        "delivery_key": "task-42"
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "not now"
+        }
+      }
+    },
+    {
+      "call": "cancel_delivery",
+      "key": "task-42",
+      "expect": {
+        "result": 0
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "Wire 500 to Bob"
+          },
+          "status": "blocked"
+        }
+      ]
+    }
+  }
+}

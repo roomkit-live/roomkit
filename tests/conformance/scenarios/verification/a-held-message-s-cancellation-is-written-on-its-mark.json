@@ -1,0 +1,120 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "verification/a-held-message-s-cancellation-is-written-on-its-mark",
+  "title": "A held message cancelled once its delivery set ran keeps its cancellation on its hold mark, which a release in any process reads",
+  "rules": [
+    "§11.7.6",
+    "§10.1 Explicit delivery cancellation"
+  ],
+  "notes": "Python: src/roomkit/core/_delivery_keys.py (hold, unhold), src/roomkit/core/mixins/verification.py (_name_held, _unhold_released, _record_held_cancellation, _answer_released); tests/test_verification_release_cancel.py::test_a_release_in_another_process_reads_the_cancellation[memory-True] (RMK-1182): the mark the release of another process reads; roomkit-rs tests/verification_release.rs translates the two processes.",
+  "setup": {
+    "kit": {
+      "identity_resolver": {
+        "answers": [
+          {
+            "when": {
+              "sender_id": "+15551234567"
+            },
+            "repeat": true,
+            "result": {
+              "status": "identified",
+              "identity": {
+                "id": "alice-id"
+              }
+            }
+          }
+        ]
+      },
+      "verification_policy": {}
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "on_event": [
+          {
+            "when": {
+              "text": "Wire 500 to Bob"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "answer to Wire 500 to Bob"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Wire 500 to Bob"
+        },
+        "delivery_key": "task-42"
+      }
+    },
+    {
+      "call": "cancel_delivery",
+      "key": "task-42",
+      "reason": "user_stopped",
+      "expect": {
+        "result": 1
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "Wire 500 to Bob"
+          },
+          "visibility": "transport",
+          "metadata": {
+            "roomkit:verification_held": {
+              "identity_id": "alice-id",
+              "cancelled": "user_stopped"
+            }
+          }
+        }
+      ]
+    }
+  }
+}
