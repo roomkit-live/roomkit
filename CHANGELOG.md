@@ -90,10 +90,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **An MCP tool's result the model sees an image of is bounded** (RFC §21.2,
   RMK-1249). `MCPToolProvider.as_tool_handler()` handed such a result's parts
-  to the model whole: a server answering 30 screenshots of 1 MB put 30 MB of
+  to the model whole: a server answering 30 screenshots of 1 MB put 40 MB of
   base64 in the model's request, and a text of any length rode beside them.
   Its texts now hold within 100,000 characters in all, the text past the
-  bound cut with the note a large result gets and the texts after it left
+  bound cut with a note saying how long it was and the texts after it left
   out, and at most four of its images within 5 MiB of data URL in all reach
   the model; each image past either reads `[image content (image/png) not
   shown to the model]`, a note that counts as a text. roomkit-rs holds the

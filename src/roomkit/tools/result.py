@@ -151,6 +151,15 @@ def bounded_result(text: str, limit: int, name: str) -> str:
     if len(text) <= limit:
         return text
     logger.warning("Tool result for %s truncated from %d to %d chars", name, len(text), limit)
+    return cut_result(text, limit)
+
+
+def cut_result(text: str, limit: int) -> str:
+    """*text* cut as :func:`bounded_result` cuts it, logging nothing: for a
+    caller that bounds several texts of one result and logs the cut once.
+    The MCP bridge's result the model sees an image of is one (RFC §21.2)."""
+    if len(text) <= limit:
+        return text
     notice = f"\n... [truncated: the result was {len(text)} characters]"
     if limit <= len(notice):
         return text[:limit]

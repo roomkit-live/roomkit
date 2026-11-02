@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 from unittest.mock import AsyncMock
 
@@ -295,9 +296,9 @@ _PNG_NOTE = "[image content (image/png) not shown to the model]"
 
 
 async def test_an_image_s_result_keeps_its_texts_within_the_bound() -> None:
-    """A result the model sees an image of holds its texts within the
-    100,000 characters a text result is cut to: the text past the bound cut
-    with a note, the texts after it left out, the image kept."""
+    """A result the model sees an image of holds its texts within 100,000
+    characters in all: the text past the bound cut with a note, the texts
+    after it left out, the image kept."""
     parts = await _parts(
         [
             MockTextContent("x" * 150_000),
@@ -333,17 +334,22 @@ async def test_a_result_s_images_are_bounded_in_number_and_size(
     assert _shown(await _parts(content)) == shown
 
 
-async def test_a_held_back_image_s_note_counts_within_the_texts_bound() -> None:
+async def test_a_held_back_image_s_note_counts_within_the_texts_bound(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     """The note of an image held back counts as a text: a result whose text
-    fills the bound shows its first four images and no note past it."""
-    content: list[Any] = [MockTextContent("x" * 100_000)]
+    fills the bound shows its first four images and no note past it, an
+    empty text still fitting, and the part left out is logged once."""
+    content: list[Any] = [MockTextContent("x" * 100_000), MockTextContent("")]
     content += [MockImageContent(_TINY_PNG, "image/png") for _ in range(5)]
 
-    parts = await _parts(content)
+    with caplog.at_level(logging.WARNING, logger="roomkit.tools.mcp"):
+        parts = await _parts(content)
 
-    images = sum(isinstance(p, AIImagePart) for p in parts)
-    texts = sum(len(p.text) for p in parts if isinstance(p, AITextPart))
-    assert (images, texts) == (4, 100_000)
+    assert _shown(parts) == ["x" * 100_000, ""] + ["image"] * 4
+    assert [r.getMessage() for r in caplog.records] == [
+        "MCP tool search's result is cut to 100000 characters"
+    ]
 
 
 async def test_call_tool_keeps_its_string_contract_for_an_image() -> None:

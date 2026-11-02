@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 
 from roomkit.providers.ai.base import AIImagePart, AITextPart
 from roomkit.providers.utils import parse_data_uri
 from roomkit.tools.compose import ToolResult
-from roomkit.tools.result import bounded_result
+from roomkit.tools.result import cut_result
+
+logger = logging.getLogger("roomkit.tools.mcp")
 
 # The raster formats every vision vendor accepts. Anything else (an SVG, a
 # TIFF) would fail the whole request at the vendor, so it reaches the model as
@@ -73,16 +76,21 @@ def _note(kind: str, mime: str) -> AITextPart:
     return AITextPart(text=f"[{kind} content ({mime}) not shown to the model]")
 
 
-def _bounded_parts(parts: list[AITextPart | AIImagePart], name: str) -> ToolResult:
-    """*parts* within the bounds of a result the model sees an image of.
+def _bounded_parts(
+    parts: list[AITextPart | AIImagePart], name: str
+) -> list[AITextPart | AIImagePart]:
+    """*parts* within the bounds of a result the model sees an image of, as
+    roomkit-rs bounds them.
 
     An image past the count or the bytes reads as its note, which counts as
     a text. Each text is kept whole while it fits; the one past the bound is
-    cut with a note saying how long it was, and the texts after it are left
-    out. The images that fit stay in place.
+    cut, with a note saying how long it was when the note fits, and the
+    texts after it are left out. The images that fit stay in place. A cut
+    or a part left out is logged once, naming the tool.
     """
     left = _RESULT_TEXT_LIMIT
     images = image_bytes = 0
+    cut = False
     kept: list[AITextPart | AIImagePart] = []
     for part in parts:
         if isinstance(part, AIImagePart):
@@ -93,11 +101,16 @@ def _bounded_parts(parts: list[AITextPart | AIImagePart], name: str) -> ToolResu
                 kept.append(part)
                 continue
             part = _note("image", part.mime_type or "image/png")
-        if left == 0:
+        if len(part.text) <= left:
+            left -= len(part.text)
+            kept.append(part)
             continue
-        text = bounded_result(part.text, left, name)
-        left = left - len(text) if text == part.text else 0
-        kept.append(AITextPart(text=text))
+        cut = True
+        if left > 0:
+            kept.append(AITextPart(text=cut_result(part.text, left)))
+            left = 0
+    if cut:
+        logger.warning("MCP tool %s's result is cut to %d characters", name, _RESULT_TEXT_LIMIT)
     return kept
 
 

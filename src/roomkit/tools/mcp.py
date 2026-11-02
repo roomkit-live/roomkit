@@ -794,6 +794,6 @@ class MCPToolProvider:
                 # returning a body the loop would have to recognise, and keep
                 # the server's words: they are what the model is meant to read.
                 raise ToolFailedError(error_text(result))
-            return handler_result(result, name)
+            return handler_result(result, lookup)
 
         return _handler
