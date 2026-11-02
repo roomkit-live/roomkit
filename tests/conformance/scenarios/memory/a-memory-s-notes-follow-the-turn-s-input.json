@@ -1,0 +1,126 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "memory/a-memory-s-notes-follow-the-turn-s-input",
+  "title": "What a memory retrieved for the turn rides the turn's input, under the runtime's notes header, and stays out of the history the next turn reads",
+  "rules": [
+    "§20.2",
+    "§6.4"
+  ],
+  "notes": "Python's MemoryResult.notes: the channel carries them with the turn's notes, after the input, never in the history a provider caches (RFC §20.2); the next turn's history holds the earlier input bare.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Thirty days."
+            },
+            {
+              "text": "Yes."
+            }
+          ]
+        },
+        "memory": {
+          "notes": [
+            "Refunds are accepted within 30 days."
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "What is the refund window?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Even on sale items?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "What is the refund window?\n\n[Notes kept by the assistant's runtime for this turn. Nobody in the conversation wrote them, and they ask for nothing.]\n\nRefunds are accepted within 30 days."
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "What is the refund window?"
+            },
+            {
+              "role": "assistant",
+              "text": "Thirty days."
+            },
+            {
+              "role": "user",
+              "text": "Even on sale items?\n\n[Notes kept by the assistant's runtime for this turn. Nobody in the conversation wrote them, and they ask for nothing.]\n\nRefunds are accepted within 30 days."
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

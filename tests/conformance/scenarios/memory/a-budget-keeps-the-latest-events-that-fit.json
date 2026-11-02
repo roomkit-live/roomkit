@@ -1,0 +1,215 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "memory/a-budget-keeps-the-latest-events-that-fit",
+  "title": "A budget-aware memory keeps the room's latest events that fit what the window leaves once the turn's input, its notes' room and its reply are paid for, and drops the oldest",
+  "rules": [
+    "§20.3",
+    "§20.1"
+  ],
+  "notes": "Python's BudgetAwareMemory: the history's budget is max_context_tokens less the safety margin (15 %), the turn's measured input (its system prompt, its tools, room for its notes: the header, the speaker note and the cut answers' note), and the current event, each text estimated as len // 4 + 1 tokens; events are dropped from the oldest, min_events of the latest always kept. Here the window of 520 tokens leaves 442 for the prompt; the measured input (263 tokens of notes' room) and the current question (78) leave 101 for the history: one question of 78 tokens and the answers around it (3 each).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Answer 1."
+            },
+            {
+              "text": "Answer 2."
+            },
+            {
+              "text": "Answer 3."
+            },
+            {
+              "text": "Answer 4."
+            }
+          ]
+        },
+        "memory": {
+          "budget_aware": {
+            "max_context_tokens": 520,
+            "min_events": 1
+          }
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Question 1: word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Question 2: word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Question 3: word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Question 4: word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Question 1: word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Question 1: word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+            },
+            {
+              "role": "assistant",
+              "text": "Answer 1."
+            },
+            {
+              "role": "user",
+              "text": "Question 2: word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "assistant",
+              "text": "Answer 1."
+            },
+            {
+              "role": "user",
+              "text": "Question 2: word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+            },
+            {
+              "role": "assistant",
+              "text": "Answer 2."
+            },
+            {
+              "role": "user",
+              "text": "Question 3: word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "assistant",
+              "text": "Answer 2."
+            },
+            {
+              "role": "user",
+              "text": "Question 3: word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+            },
+            {
+              "role": "assistant",
+              "text": "Answer 3."
+            },
+            {
+              "role": "user",
+              "text": "Question 4: word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

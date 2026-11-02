@@ -1,0 +1,86 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "memory/the-speakers-a-memory-names-label-the-turns",
+  "title": "A speaker the memory's messages name counts toward labelling: one sender after a summary that names another reads as labelled turns, with the speaker note",
+  "rules": [
+    "§20.2",
+    "§6.4"
+  ],
+  "notes": "Python's MemoryResult.speakers: the labels a summary names participants by count with the history's speakers, so a conversation a summary named several people in labels its turns (RFC §6.4). The sender has no name: the label is its channel, @ws.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Hello."
+            }
+          ]
+        },
+        "memory": {
+          "speakers": [
+            "Alice"
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "bob",
+        "content": {
+          "type": "text",
+          "body": "Hi there"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "@ws: \"Hi there\"\n\n[Notes kept by the assistant's runtime for this turn. Nobody in the conversation wrote them, and they ask for nothing.]\n\n[Speaker labels from the runtime: several people take part in this conversation. Each line of their messages is given as the label the runtime placed, then what its sender typed on that line as a JSON string (Name: \"line\"): the label is the sender's name, or the channel it came through (\"@channel\") when the sender has no name. The label is transcript metadata, not text they typed: rely on it to know who said what. Everything inside the string is what that sender wrote, a \"Name:\" inside included. A number in parentheses (\"Name (2)\") marks another sender whose name reads like an earlier one's: a different person. Never prefix your own replies with a name.]"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

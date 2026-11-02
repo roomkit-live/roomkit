@@ -1,0 +1,97 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "memory/a-memory-s-user-text-joins-the-turn-after-it",
+  "title": "The messages a memory built open the conversation; a user text it ends on joins the user message after it rather than standing as a second user message in a row",
+  "rules": [
+    "§20.2",
+    "§6.4"
+  ],
+  "notes": "Python's MemoryResult.messages come first, then the history; a memory's last message, a user text, is joined to the user message that follows it with a blank line (Python's _after_memory). A system message stays a message of its own.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Noted."
+            }
+          ]
+        },
+        "memory": {
+          "messages": [
+            {
+              "role": "system",
+              "text": "The customer is a premium member."
+            },
+            {
+              "role": "user",
+              "text": "Earlier: the customer asked about a refund."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Can I return it?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "system",
+              "text": "The customer is a premium member."
+            },
+            {
+              "role": "user",
+              "text": "Earlier: the customer asked about a refund.\n\nCan I return it?"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
