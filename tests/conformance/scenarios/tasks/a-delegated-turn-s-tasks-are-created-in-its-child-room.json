@@ -1,0 +1,114 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/a-delegated-turn-s-tasks-are-created-in-its-child-room",
+  "title": "The tasks a delegated agent's turn files are stored in the task's child room, and ON_TASK_CREATED fires there for each, its payload naming the task, as for a room's own turn",
+  "rules": [
+    "§23.3 step 6",
+    "§9.2",
+    "§10.1 step 15"
+  ],
+  "notes": "Python: core/mixins/_child_execution.py _broadcast_and_collect, which persists the broadcast's side effects; core/mixins/helpers.py _persist_side_effects: ON_TASK_CREATED's payload is a task_created event of the room, internal, carrying the trigger's source and content, its metadata the task's id and title.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "Look it up."
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Found it."
+                }
+              }
+            ],
+            "output": {
+              "tasks": [
+                {
+                  "title": "Call the customer back"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "created",
+        "trigger": "on_task_created",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "room-1",
+      "agent_id": "worker",
+      "task": "Look it up.",
+      "wait": true,
+      "expect": {
+        "result": {
+          "status": "completed",
+          "result": {
+            "output": "Found it."
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "tasks": {
+      "$r1": [
+        {
+          "room_id": "$r1",
+          "title": "Call the customer back"
+        }
+      ],
+      "room-1": []
+    },
+    "hooks": {
+      "created": [
+        {
+          "trigger": "on_task_created",
+          "room_id": "$r1",
+          "event": {
+            "type": "task_created",
+            "room_id": "$r1",
+            "visibility": "internal",
+            "metadata": {
+              "task_id": {
+                "$present": true
+              },
+              "task_title": "Call the customer back"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,176 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "host/a-task-cut-short-hands-its-failure-to-wait-task",
+  "title": "A task whose worker's turn ended before its answer fails, its error naming how the turn ended, its output the worker's last narration; the turn's host that waits for it reads the failure itself beside the result, a TaskCutShortError",
+  "rules": [
+    "§23.3 step 6",
+    "§10.6.5",
+    "§10.6.8"
+  ],
+  "notes": "Python: tests/tasks/test_worker_cut_short.py; tests/test_turns_host.py::test_wait_task_answers_a_failed_task_with_its_exception; tasks/models.py finished_task_fields and _as_raised; core/_turn_host.py _wait_task, which answers {result, exception}, the exception as its error record. DelegatedTaskResult.exception is never serialized: only wait_task carries it. An error's kind is written as each implementation's codec writes it (roomkit qualifies it with its module): the scenario reads the class's name in it.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Order 1.",
+              "calls": [
+                {
+                  "id": "call-1",
+                  "name": "lookup_order",
+                  "arguments": {
+                    "order": "1"
+                  }
+                }
+              ],
+              "finish_reason": "tool_calls"
+            },
+            {
+              "text": "Order 2.",
+              "calls": [
+                {
+                  "id": "call-2",
+                  "name": "lookup_order",
+                  "arguments": {
+                    "order": "2"
+                  }
+                }
+              ],
+              "finish_reason": "tool_calls"
+            },
+            {
+              "text": "Order 3.",
+              "calls": [
+                {
+                  "id": "call-3",
+                  "name": "lookup_order",
+                  "arguments": {
+                    "order": "3"
+                  }
+                }
+              ],
+              "finish_reason": "tool_calls"
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup_order",
+            "description": "Find an order by its number",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "order": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "order"
+              ]
+            },
+            "returns": "{\"order\": \"42\", \"status\": \"shipped\"}"
+          }
+        ],
+        "max_tool_rounds": 2
+      },
+      {
+        "id": "boss",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "go"
+            },
+            "do": [
+              {
+                "call": "host.delegate",
+                "room_id": "room-1",
+                "agent_id": "worker",
+                "task": "Check orders 1 to 3.",
+                "as": "d",
+                "expect": {
+                  "result": {
+                    "$present": true
+                  }
+                }
+              },
+              {
+                "call": "host.wait_task",
+                "task_id": "$d",
+                "as": "waited",
+                "expect": {
+                  "result": {
+                    "result": {
+                      "status": "failed",
+                      "error": "The worker's turn ended max_rounds before its answer",
+                      "output": "Order 3.",
+                      "metadata": {
+                        "loop_end_reason": "max_rounds"
+                      }
+                    },
+                    "exception": {
+                      "kind": {
+                        "$contains": "TaskCutShortError"
+                      },
+                      "message": "The worker's turn ended max_rounds before its answer"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "boss"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "rooms": {
+      "$r1": {
+        "metadata": {
+          "parent_room_id": "room-1",
+          "task_status": "failed",
+          "task_result": null
+        }
+      }
+    }
+  }
+}
