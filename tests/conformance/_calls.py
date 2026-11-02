@@ -313,7 +313,7 @@ def register_channel(kit: RoomKit, harness: Harness, channel: Mapping[str, Any])
         kit.register_channel(HostChannel(channel["id"]))
         return
     if "model" in channel:
-        agent, model = read(lambda: scripted_agent(channel))
+        agent, model = read(lambda: scripted_agent(channel, harness.gates))
         harness.models[channel["id"]] = model
         kit.register_channel(agent)
         return

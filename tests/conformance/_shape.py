@@ -55,6 +55,8 @@ CHANNEL = {
     "tool_policy",
     "max_tool_rounds",
     "max_context_events",
+    "serialize_room_turns",
+    "steer_room_turns",
     "addresses",
     "streams_in",
     "recent_events_window",
@@ -62,7 +64,7 @@ CHANNEL = {
 }
 ADDRESSES = {"normalizes", "conversation_key"}
 MODEL = {"rounds"}
-MODEL_ROUND = {"text", "deltas", "calls", "finish_reason", "usage", "fails", "done"}
+MODEL_ROUND = {"text", "deltas", "calls", "finish_reason", "usage", "fails", "done", "gate"}
 MODEL_CALL = {"id", "name", "arguments", "cut"}
 TOOL = {
     "name",
@@ -74,6 +76,7 @@ TOOL = {
     "refuses",
     "hangs",
     "declines",
+    "gate",
 }
 RAISES = {"kind", "message"}
 POLICY = {"allow", "deny"}

@@ -12,7 +12,7 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 from collections.abc import AsyncIterator, Mapping
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from roomkit.channels.ai import AIChannel
 from roomkit.core.exceptions import ToolFailedError, ToolRefusedError, UnservedToolCallError
@@ -25,6 +25,9 @@ from roomkit.providers.ai.base import (
     response_stream_events,
 )
 from roomkit.tools.policy import ToolPolicy
+
+if TYPE_CHECKING:
+    from tests.conformance._script import Gates
 
 
 class ModelPastItsScriptError(Exception):
@@ -39,8 +42,9 @@ class ScriptedModel(AIProvider):
     """A provider answering each generation with the next round of a script,
     and keeping what each request carried."""
 
-    def __init__(self, rounds: list[Mapping[str, Any]]) -> None:
+    def __init__(self, rounds: list[Mapping[str, Any]], gates: Gates) -> None:
         self._rounds = list(rounds)
+        self._gates = gates
         self.requests: list[dict[str, Any]] = []
 
     @property
@@ -48,7 +52,14 @@ class ScriptedModel(AIProvider):
         return "scripted"
 
     async def generate(self, context: AIContext) -> AIResponse:
-        return _response(self._next_round(context))
+        round_ = self._next_round(context)
+        await self._hold(round_)
+        return _response(round_)
+
+    async def _hold(self, round_: Mapping[str, Any]) -> None:
+        """Hold the round at its ``gate``, before it writes anything."""
+        if (gate := round_.get("gate")) is not None:
+            await self._gates.hold(gate)
 
     async def generate_structured_stream(self, context: AIContext) -> AsyncIterator[StreamEvent]:
         """The round's text as its deltas, then its calls and its end; a round
@@ -56,6 +67,7 @@ class ScriptedModel(AIProvider):
         between two deltas, so each reaches the reader apart: deltas yielded
         without waiting may cross as one (RFC §10.6.4)."""
         round_ = self._next_round(context)
+        await self._hold(round_)
         for position, delta in enumerate(_deltas(round_)):
             if position:
                 await asyncio.sleep(0)
@@ -148,11 +160,13 @@ def _error_of_kind(kind: str) -> type[Exception]:
     return _KINDS[kind]
 
 
-def _tool_handler(tools: list[Mapping[str, Any]]) -> Any:
+def _tool_handler(tools: list[Mapping[str, Any]], gates: Gates) -> Any:
     by_name = {tool["name"]: tool for tool in tools}
 
     async def handler(name: str, arguments: dict[str, Any]) -> str:
         tool = by_name[name]
+        if (gate := tool.get("gate")) is not None:
+            await gates.hold(gate)
         if "returns" in tool:
             return str(tool["returns"])
         if "raises" in tool:
@@ -169,9 +183,10 @@ def _tool_handler(tools: list[Mapping[str, Any]]) -> Any:
     return handler
 
 
-def scripted_agent(spec: Mapping[str, Any]) -> tuple[AIChannel, ScriptedModel]:
-    """The AI channel of a scripted agent, and its model."""
-    model = ScriptedModel(spec["model"]["rounds"])
+def scripted_agent(spec: Mapping[str, Any], gates: Gates) -> tuple[AIChannel, ScriptedModel]:
+    """The AI channel of a scripted agent, and its model; a round or a tool
+    with a ``gate`` holds at it."""
+    model = ScriptedModel(spec["model"]["rounds"], gates)
     tools = spec.get("tools", [])
     kwargs: dict[str, Any] = {}
     if "tool_policy" in spec:
@@ -183,6 +198,9 @@ def scripted_agent(spec: Mapping[str, Any]) -> tuple[AIChannel, ScriptedModel]:
         kwargs["max_tool_rounds"] = spec["max_tool_rounds"]
     if "max_context_events" in spec:
         kwargs["max_context_events"] = spec["max_context_events"]
+    for flag in ("serialize_room_turns", "steer_room_turns"):
+        if flag in spec:
+            kwargs[flag] = bool(spec[flag])
     channel = AIChannel(
         spec["id"],
         provider=model,
@@ -194,7 +212,7 @@ def scripted_agent(spec: Mapping[str, Any]) -> tuple[AIChannel, ScriptedModel]:
             )
             for tool in tools
         ],
-        tool_handler=_tool_handler(tools),
+        tool_handler=_tool_handler(tools, gates),
         **kwargs,
     )
     return channel, model
