@@ -56,6 +56,8 @@ CHANNEL = {
     "deliver",
     "streams",
     "deliver_stream",
+    "on_room_attached",
+    "on_room_detached",
     "model",
     "tools",
     "tool_policy",
@@ -191,6 +193,7 @@ EXPECT = {
     "lifecycle",
     "models",
     "streamed",
+    "room_callbacks",
     "participants",
     "resolver",
     "media_resolver",
@@ -341,7 +344,14 @@ def _members(value: Any, known: set[str], path: str, found: list[str]) -> None:
 
 def _channel(channel: Mapping[str, Any], path: str, found: list[str]) -> None:
     _members(channel, CHANNEL, path, found)
-    for kind in ("parse", "on_event", "deliver", "deliver_stream"):
+    for kind in (
+        "parse",
+        "on_event",
+        "deliver",
+        "deliver_stream",
+        "on_room_attached",
+        "on_room_detached",
+    ):
         for index, reaction in enumerate(channel.get(kind, [])):
             _reaction(reaction, f"{path}.{kind}[{index}]", found)
     if "model" in channel:

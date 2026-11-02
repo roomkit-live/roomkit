@@ -16,6 +16,7 @@ from typing import Any
 from pydantic_core import to_jsonable_python
 
 from roomkit import RoomKit, current_turn_host
+from roomkit.models.channel import ChannelBinding
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import DeliveryHandle, DeliveryStatus
 from roomkit.models.event import RoomEvent
@@ -182,6 +183,20 @@ class Harness:
             return
         per_room = self.observed.streamed.setdefault(room_id, {})
         per_room.setdefault(channel_id, []).append(item)
+
+    def record_room_callback(
+        self, room_id: str, channel_id: str, call: str, binding: ChannelBinding | None
+    ) -> None:
+        """One room callback a scripted channel was called with (§6.1), also
+        named in the hooks' order as ``<channel_id>.<call>``."""
+        if not self._recording:
+            return
+        item: dict[str, Any] = {"call": call}
+        if binding is not None:
+            item["binding"] = binding.model_dump(mode="json")
+        per_room = self.observed.room_callbacks.setdefault(room_id, {})
+        per_room.setdefault(channel_id, []).append(item)
+        self.observed.hook_order.append(f"{channel_id}.{call}")
 
     def record_hook(self, name: str, trigger: str, room_id: str, payload: Any) -> None:
         if not self._recording:

@@ -206,6 +206,8 @@ class ScriptedChannel(Channel):
         self._streams = bool(spec.get("streams", False))
         self._streams_in = spec.get("streams_in")
         self._deliver_stream = Reactions(spec.get("deliver_stream"))
+        self._on_room_attached = Reactions(spec.get("on_room_attached"))
+        self._on_room_detached = Reactions(spec.get("on_room_detached"))
         self._addresses = spec.get("addresses")
         self._recent_events_window = int(spec.get("recent_events_window", 0))
         if "sender_is_participant" in spec:
@@ -322,6 +324,20 @@ class ScriptedChannel(Channel):
         if (message := reaction.get("fail")) is not None:
             raise ScriptedFailureError(message)
         return self._side_effects(reaction.get("output", {}), room_id)
+
+    async def on_room_attached(self, room_id: str, binding: ChannelBinding) -> None:
+        self._harness.record_room_callback(room_id, self.channel_id, "on_room_attached", binding)
+        await self._room_callback(self._on_room_attached, room_id)
+
+    async def on_room_detached(self, room_id: str) -> None:
+        self._harness.record_room_callback(room_id, self.channel_id, "on_room_detached", None)
+        await self._room_callback(self._on_room_detached, room_id)
+
+    async def _room_callback(self, reactions: Reactions, room_id: str) -> None:
+        """A room callback's reaction: its gate, its actions, its failure."""
+        reaction = reactions.pick({"room_id": room_id})
+        if reaction is not None:
+            await perform(self._harness, reaction, {"room": room_id})
 
     async def on_event(
         self, event: RoomEvent, binding: ChannelBinding, context: RoomContext

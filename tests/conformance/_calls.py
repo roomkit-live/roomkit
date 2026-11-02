@@ -48,6 +48,7 @@ from roomkit.tasks import DelegatedTask
 from tests.conformance._agent import scripted_agent
 from tests.conformance._script import (
     ScriptedChannel,
+    ScriptedFailureError,
     complete_event,
     complete_participant,
     hook_handler,
@@ -121,6 +122,8 @@ def error_of(error: Exception) -> dict[str, Any]:
         return {"name": "channel_not_bound"}
     if isinstance(error, RefusedArgumentError):
         return {"name": "invalid_argument"}
+    if isinstance(error, ScriptedFailureError):
+        return {"name": "channel_failed"}
     for cls, name in _ERRORS:
         if isinstance(error, cls):
             reason = getattr(error, "reason", None)
