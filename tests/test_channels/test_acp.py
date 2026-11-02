@@ -1114,11 +1114,20 @@ class TestACPChannel:
         assert (tool_end.content.error or "").count(shot) <= 1
         await channel.close()
 
-    async def test_skips_own_and_tool_activity_events(self, tmp_path: Any) -> None:
+    async def test_skips_own_tool_activity_and_change_events(self, tmp_path: Any) -> None:
         channel, _, _ = _channel(tmp_path, emit_updates=False)
         context = RoomContext(room=Room(id="room-1"))
         own = make_event(channel_id="acp-agent", body="own")
         assert (await channel.on_event(own, _binding(), context)).responded is False
+
+        # An edit or a delete, as transcoded for the channel, is no message a
+        # turn may answer (RFC §10.3, RMK-1226).
+        for kind, body in (
+            (EventType.EDIT, "Correction: Why?"),
+            (EventType.DELETE, "[Message deleted]"),
+        ):
+            change = make_event(body=body).model_copy(update={"type": kind})
+            assert (await channel.on_event(change, _binding(), context)).responded is False
 
         tool_event = RoomEvent(
             room_id="room-1",
