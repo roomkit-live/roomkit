@@ -151,7 +151,7 @@ class Harness:
         kwargs |= kit_options(kit_setup, self)
         kwargs |= delivery_options(kit_setup)
         kwargs |= verification_options(kit_setup)
-        kwargs |= media_options(kit_setup)
+        kwargs |= media_options(kit_setup, self)
         self.kit = RoomKit(**kwargs)
 
     # -- recording --------------------------------------------------------
@@ -218,6 +218,12 @@ class Harness:
             "sender_id": message.sender_id,
         }
         self.observed.resolver.append(call)
+
+    def record_media_resolver(self, url: str, room_id: str) -> None:
+        """One call of the kit's media resolver (§6.4)."""
+        if not self._recording:
+            return
+        self.observed.media_resolver.append({"url": url, "room_id": room_id})
 
     def record_identity_hook(
         self, name: str, trigger: str, room_id: str, event: RoomEvent, id_result: Any

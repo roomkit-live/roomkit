@@ -89,7 +89,7 @@ MODEL_ROUND = {
     "gate",
     "refuses",
 }
-REFUSES = {"status", "message"}
+REFUSES = {"status", "message", "context_overflow"}
 MODEL_CALL = {"id", "name", "arguments", "cut"}
 TOOL = {
     "name",
@@ -190,6 +190,7 @@ EXPECT = {
     "streamed",
     "participants",
     "resolver",
+    "media_resolver",
 }
 NEW_ROOM = {"id", "organization_id", "metadata", "timers"}
 
