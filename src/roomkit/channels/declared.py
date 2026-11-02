@@ -197,8 +197,9 @@ def register_strategy_agents(kit: RoomKit, agents: Iterable[Channel | str]) -> N
     Raises:
         ChannelNotRegisteredError: an id names no channel of the kit.
         ValueError: an id names no intelligence channel, or an agent is given
-            live under an id the kit holds by its declaration alone: that
-            object would never run.
+            live under an id the kit holds by its declaration alone (that
+            object would never run) or under a channel that is not an
+            intelligence channel.
     """
     agents = list(agents)
     for agent in agents:
@@ -210,6 +211,10 @@ def register_strategy_agents(kit: RoomKit, agents: Iterable[Channel | str]) -> N
                 f"Channel {agent.channel_id!r} is registered by its declaration alone: "
                 f"give the strategy its id, {agent.channel_id!r}, not an agent object"
             )
+        elif held is not None and held.category is not ChannelCategory.INTELLIGENCE:
+            # The kit keeps the channel it holds under the id: a transport
+            # would take the agent's turns.
+            raise ValueError(f"Channel {agent.channel_id!r} is not an intelligence channel")
         elif isinstance(agent, DeclaredChannel) and held is None:
             # Refused before any is registered: a turn hook on the kit that
             # would never fire for it (RFC §10.6.6).

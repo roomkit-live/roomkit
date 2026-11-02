@@ -88,6 +88,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A strategy's live agent under a transport's id is refused** (RMK-1233).
+  `install_strategy` and `create_room(orchestration=...)` kept the channel the
+  kit held under a live agent's id and attached it as an intelligence channel,
+  so a transport registered under that id took the agent's turns; they raise
+  `ValueError("Channel 'ana' is not an intelligence channel")`, as for an
+  agent named by its id, and attach nothing.
 - **A call streamed before a refusal leaves the author's images sent**
   (RFC §6.4, RMK-1220). A turn's first request carrying an author image
   whose provider streamed a tool call, then failed with a 400 not retried,

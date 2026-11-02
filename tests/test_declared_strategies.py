@@ -251,6 +251,17 @@ async def test_an_id_naming_a_transport_is_no_agent() -> None:
     await kit.close()
 
 
+async def test_a_live_agent_under_a_transport_s_id_is_no_agent() -> None:
+    kit = RoomKit()
+    kit.register_channel(SimpleChannel("ana"))
+    live = Agent("ana", provider=MockAIProvider(responses=["x"]))
+
+    with pytest.raises(ValueError, match="not an intelligence channel"):
+        await kit.create_room(room_id="r", orchestration=Swarm(agents=[live]))
+    assert await kit.list_bindings("r") == []
+    await kit.close()
+
+
 async def test_a_live_agent_given_under_a_declared_id_is_told_to_pass_the_id() -> None:
     kit = RoomKit()
     kit.register_channel(ChannelDeclaration(channel_id="ana"))
