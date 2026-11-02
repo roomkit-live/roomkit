@@ -124,7 +124,11 @@
                       "kind": {
                         "$contains": "TaskCutShortError"
                       },
-                      "message": "The worker's turn ended max_rounds before its answer"
+                      "message": "The worker's turn ended max_rounds before its answer",
+                      "attributes": {
+                        "reason": "max_rounds",
+                        "narration": "Order 3."
+                      }
                     }
                   }
                 }
