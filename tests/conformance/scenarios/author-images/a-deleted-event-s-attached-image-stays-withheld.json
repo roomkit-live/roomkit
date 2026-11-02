@@ -1,14 +1,19 @@
 {
   "$schema": "../../scenario.schema.json",
   "id": "author-images/a-deleted-event-s-attached-image-stays-withheld",
-  "title": "A deleted event's content is withheld from a later turn's history, the image the application keeps beside it included",
+  "title": "A deleted event's content is withheld from a later turn's history, the image the application keeps beside it included: the kit's media resolver is not asked for it",
   "rules": [
     "§6.4",
     "§10.3"
   ],
-  "notes": "Python's with_attached_media returns a deleted event as it is, its content withheld (tests/test_attached_media.py::test_a_deleted_message_s_media_stays_withheld); the event is marked deleted by a direct update, which opens no turn.",
+  "notes": "Python's with_attached_media returns a deleted event as it is, its content withheld (tests/test_attached_media.py::test_a_deleted_message_s_media_stays_withheld, host.asked == []); the event is marked deleted by a direct update, which opens no turn.",
   "setup": {
     "kit": {
+      "media_resolver": {
+        "media": {
+          "app-media://lamp": "AQIDBA=="
+        }
+      },
       "attached_media": {
         "key": "files"
       }
@@ -63,7 +68,7 @@
         "files": [
           {
             "type": "media",
-            "url": "https://cdn.example.com/lamp.png",
+            "url": "app-media://lamp",
             "mime_type": "image/png",
             "filename": "lamp.png"
           }
@@ -82,7 +87,7 @@
         "files": [
           {
             "type": "media",
-            "url": "https://cdn.example.com/lamp.png",
+            "url": "app-media://lamp",
             "mime_type": "image/png",
             "filename": "lamp.png"
           }
@@ -104,6 +109,12 @@
     }
   ],
   "expect": {
+    "media_resolver": [
+      {
+        "url": "app-media://lamp",
+        "room_id": "room-1"
+      }
+    ],
     "models": {
       "agent": [
         {
@@ -116,7 +127,7 @@
                   "text": "here is my lamp"
                 },
                 {
-                  "image": "https://cdn.example.com/lamp.png",
+                  "image": "data:image/png;base64,AQIDBA==",
                   "mime_type": "image/png"
                 }
               ]
