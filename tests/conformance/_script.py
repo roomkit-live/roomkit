@@ -320,7 +320,7 @@ class ScriptedChannel(Channel):
             raise
         if (message := reaction.get("fail")) is not None:
             raise ScriptedFailureError(message)
-        return ChannelOutput.empty()
+        return self._side_effects(reaction.get("output", {}), room_id)
 
     async def on_event(
         self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
@@ -349,12 +349,20 @@ class ScriptedChannel(Channel):
             )
             for template in reaction.get("respond", [])
         ]
+        return self._side_effects(output, event.room_id).model_copy(
+            update={
+                "responded": respond and "respond" in reaction,
+                "response_events": responses if respond else [],
+            }
+        )
+
+    def _side_effects(self, output: Mapping[str, Any], room_id: str) -> ChannelOutput:
+        """The output a reaction's ``output`` gives: its tasks, observations
+        and room metadata updates, completed for *room_id*."""
         return ChannelOutput(
-            responded=respond and "respond" in reaction,
-            response_events=responses if respond else [],
-            tasks=[complete_task(t, event.room_id) for t in output.get("tasks", [])],
+            tasks=[complete_task(t, room_id) for t in output.get("tasks", [])],
             observations=[
-                complete_observation(o, event.room_id, self.channel_id)
+                complete_observation(o, room_id, self.channel_id)
                 for o in output.get("observations", [])
             ],
             metadata_updates=output.get("metadata_updates", {}),
