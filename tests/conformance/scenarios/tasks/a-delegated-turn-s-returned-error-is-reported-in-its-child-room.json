@@ -1,0 +1,141 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/a-delegated-turn-s-returned-error-is-reported-in-its-child-room",
+  "title": "A delegated agent whose output carries an error it met keeps its answer in the child room's trace, ON_ERROR fires once there as for a turn that raised, and the task fails with that error, marked reported",
+  "rules": [
+    "§10.2 step 3c",
+    "§23.3 step 6",
+    "§9.3"
+  ],
+  "notes": "Python: core/event_router.py react_for (an output's error surfaces as a raised one's, its output going on); core/mixins/_child_execution.py _broadcast_and_collect (_report_intelligence_errors, category generation), _buffered_outcome (a responded output's rows kept, its error the turn's failure, handed on as it is: no end named, no narration), _collect_answer (mark_reported); tasks/models.py finished_task_fields (error_reported).",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "helper",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "Look it up."
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Partial."
+                }
+              }
+            ],
+            "output": {
+              "error": "The provider stopped."
+            }
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "parent",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "errors",
+        "trigger": "on_error",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "parent",
+      "agent_id": "helper",
+      "task": "Look it up.",
+      "wait": true,
+      "expect": {
+        "result": {
+          "status": "failed",
+          "result": {
+            "status": "failed",
+            "output": null,
+            "error": "The provider stopped.",
+            "metadata": {
+              "error_reported": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "errors": [
+        {
+          "trigger": "on_error",
+          "room_id": "$r1",
+          "event": {
+            "chain_depth": 1,
+            "responds_to": "$r1#0",
+            "source": {
+              "channel_id": "helper",
+              "direction": "inbound"
+            },
+            "content": {
+              "type": "text",
+              "body": "The provider stopped."
+            },
+            "metadata": {
+              "error": "The provider stopped.",
+              "error_category": "generation"
+            },
+            "type": "message",
+            "correlation_id": {
+              "$absent": true
+            }
+          }
+        }
+      ]
+    },
+    "timeline": {
+      "parent": [],
+      "$r1": [
+        {
+          "index": 0,
+          "source": {
+            "channel_id": "system"
+          },
+          "content": {
+            "type": "text",
+            "body": "Look it up."
+          }
+        },
+        {
+          "index": 1,
+          "source": {
+            "channel_id": "helper"
+          },
+          "chain_depth": 1,
+          "content": {
+            "type": "text",
+            "body": "Partial."
+          }
+        }
+      ]
+    }
+  }
+}

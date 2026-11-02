@@ -1,0 +1,103 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/a-delegation-not-posted-leaves-the-status-bus-alone",
+  "title": "A delegation with post_status false posts nothing of its task on the status bus, neither its pending entry nor its end, so no status_posted is emitted and no ON_STATUS_POSTED fires; the task runs and ends as any other",
+  "rules": [
+    "§23.3",
+    "§19.8"
+  ],
+  "notes": "Python: core/mixins/delegation.py delegate(post_status=False): _announce_task posts no pending entry (post_task_pending), _complete_inline no end (post_task_ended), for a caller that posts its tasks itself (an orchestration strategy's worker run), so none shows twice. ON_TASK_DELEGATED and ON_TASK_COMPLETED still fire.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "Look it up."
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Found it."
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "posted",
+        "trigger": "on_status_posted",
+        "execution": "async"
+      },
+      {
+        "name": "completed",
+        "trigger": "on_task_completed",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "room-1",
+      "agent_id": "worker",
+      "task": "Look it up.",
+      "wait": true,
+      "post_status": false,
+      "expect": {
+        "result": {
+          "status": "completed",
+          "result": {
+            "status": "completed",
+            "output": "Found it."
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "status.recent",
+      "expect": {
+        "result": []
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "posted": [],
+      "completed": [
+        {
+          "trigger": "on_task_completed",
+          "room_id": "room-1"
+        }
+      ]
+    },
+    "framework_events": {
+      "*": []
+    }
+  }
+}

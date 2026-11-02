@@ -6,9 +6,10 @@
     "§23.3 step 5",
     "§23.3 step 6",
     "§12.2 step 13s",
-    "§9.3"
+    "§9.3",
+    "§10.1 step 14"
   ],
-  "notes": "Python: core/mixins/_child_execution.py _deliver_answer, _responder_failures, _stream_failed_by: worker and helper both answer the task by a stream, and the room's reader reads every stream the cascade starts (lane_execution.py _finish_cascade); tests/tasks/test_worker_cut_short.py::test_a_streaming_helper_s_failure_is_never_a_buffered_worker_s, test_another_agent_s_failed_turn_leaves_the_task_its_agent_s[transport-inline]. helper writes its text, then fails, on each of its turns: on the task, on worker's answer, and on worker's answer to its own text. Each failure's ON_ERROR payload carries its stream's correlation_id, one that wrote nothing too (_fire_stream_error_hook).",
+  "notes": "Python: core/mixins/_child_execution.py _deliver_answer, _responder_failures, _stream_failed_by: worker and helper both answer the task by a stream, and the room's reader reads every stream the cascade starts (lane_execution.py _finish_cascade); tests/tasks/test_worker_cut_short.py::test_a_streaming_helper_s_failure_is_never_a_buffered_worker_s, test_another_agent_s_failed_turn_leaves_the_task_its_agent_s[transport-inline]. helper writes its text, then fails, on each of its turns: on the task, on worker's answer, and on worker's answer to its own text. Each failure's ON_ERROR payload carries its stream's correlation_id, one that wrote nothing too (_fire_stream_error_hook). worker's and helper's turns on the task are read one after the other, the first ready first, wherever it runs (§10.1 step 14): the two rows answering the task come in either order, so the scenario names neither row's index, nor what refers to it (what Thanks. and helper's second failure answer); Thanks. is the room's fourth row either way.",
   "setup": {
     "channels": [
       {
@@ -106,63 +107,25 @@
   ],
   "expect": {
     "timeline": {
-      "$r1": [
-        {
-          "index": 0,
-          "source": {
-            "channel_id": "system"
-          },
-          "chain_depth": 0,
-          "content": {
-            "type": "text",
-            "body": "Find it."
-          }
-        },
-        {
-          "index": 1,
-          "source": {
-            "channel_id": "worker"
-          },
-          "chain_depth": 1,
-          "responds_to": "$r1#0",
-          "content": {
-            "type": "text",
-            "body": "Found it."
-          }
-        },
-        {
-          "index": 2,
-          "source": {
-            "channel_id": "helper"
-          },
-          "chain_depth": 1,
-          "responds_to": "$r1#0",
-          "content": {
-            "type": "text",
-            "body": "Helping."
-          }
-        },
-        {
-          "index": 3,
-          "source": {
-            "channel_id": "worker"
-          },
-          "chain_depth": 2,
-          "responds_to": "$r1#2",
-          "content": {
-            "type": "text",
-            "body": "Thanks."
-          }
-        }
-      ]
-    },
-    "deliveries": {
       "$r1": {
-        "email": [
+        "$unordered": [
+          {
+            "index": 0,
+            "source": {
+              "channel_id": "system"
+            },
+            "chain_depth": 0,
+            "content": {
+              "type": "text",
+              "body": "Find it."
+            }
+          },
           {
             "source": {
               "channel_id": "worker"
             },
+            "chain_depth": 1,
+            "responds_to": "$r1#0",
             "content": {
               "type": "text",
               "body": "Found it."
@@ -172,21 +135,60 @@
             "source": {
               "channel_id": "helper"
             },
+            "chain_depth": 1,
+            "responds_to": "$r1#0",
             "content": {
               "type": "text",
               "body": "Helping."
             }
           },
           {
+            "index": 3,
             "source": {
               "channel_id": "worker"
             },
+            "chain_depth": 2,
             "content": {
               "type": "text",
               "body": "Thanks."
             }
           }
         ]
+      }
+    },
+    "deliveries": {
+      "$r1": {
+        "email": {
+          "$unordered": [
+            {
+              "source": {
+                "channel_id": "worker"
+              },
+              "content": {
+                "type": "text",
+                "body": "Found it."
+              }
+            },
+            {
+              "source": {
+                "channel_id": "helper"
+              },
+              "content": {
+                "type": "text",
+                "body": "Helping."
+              }
+            },
+            {
+              "source": {
+                "channel_id": "worker"
+              },
+              "content": {
+                "type": "text",
+                "body": "Thanks."
+              }
+            }
+          ]
+        }
       }
     },
     "hooks": {
@@ -217,7 +219,7 @@
           "room_id": "$r1",
           "event": {
             "chain_depth": 2,
-            "responds_to": "$r1#1",
+            "responds_to": "$any",
             "source": {
               "channel_id": "helper"
             },

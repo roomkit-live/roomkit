@@ -1,14 +1,14 @@
 {
   "$schema": "../../scenario.schema.json",
   "id": "tasks/a-delegated-turn-s-failure-is-reported-in-its-child-room",
-  "title": "A delegated turn that fails fires ON_ERROR once in its child room, as a room's turn does, its payload a message from the agent carrying a stream's correlation id, one deeper than the task it answers, whether a transport is shared into the room or not: a stream that fails as streaming, a turn that raises as generation; the task fails, with the stream's error and without the raise's, and a shared transport is told the text the room kept",
+  "title": "A delegated turn that fails fires ON_ERROR once in its child room, as a room's turn does, its payload a message from the agent carrying a stream's correlation id, one deeper than the task it answers, whether a transport is shared into the room or not: a stream that fails as streaming, a turn that raises as generation; the task fails, with the stream's error and without the raise's, a shared transport is told the text the room kept, and a failure the turn reported is marked so on the task's result",
   "rules": [
     "§23.3 step 5",
     "§23.3 step 6",
     "§12.2 step 13s",
     "§9.3"
   ],
-  "notes": "Python: tests/test_turn_end_doors.py::test_a_delegated_turn_s_failure_is_reported_in_the_turn_s_scope[trace], [shared]; tests/tasks/test_delegation_ends_failed.py; core/mixins/_child_execution.py _broadcast_and_collect (_report_intelligence_errors), _persist_child_stream (_report_turn_failure) on the trace, _deliver_answer (the room's reader) with a shared transport. worker's and helper's rooms share email, writer's shares nothing. A failure before the turn's record names an end is handed on as it is (_turn_failure): no narration, no loop_end_reason; a turn that raised is not responded and carries no error to the task. ON_ERROR's payload is a RoomEvent of type message, its source inbound (the model's defaults), carrying the stream's correlation_id (_fire_stream_error_hook), none for a turn that raised (_report_intelligence_errors).",
+  "notes": "Python: tests/test_turn_end_doors.py::test_a_delegated_turn_s_failure_is_reported_in_the_turn_s_scope[trace], [shared]; tests/tasks/test_delegation_ends_failed.py; core/mixins/_child_execution.py _broadcast_and_collect (_report_intelligence_errors), _persist_child_stream (_report_turn_failure) on the trace, _deliver_answer (the room's reader) with a shared transport. worker's and helper's rooms share email, writer's shares nothing. A failure before the turn's record names an end is handed on as it is (_turn_failure): no narration, no loop_end_reason; a turn that raised is not responded and carries no error to the task. ON_ERROR's payload is a RoomEvent of type message, its source inbound (the model's defaults), carrying the stream's correlation_id (_fire_stream_error_hook), none for a turn that raised (_report_intelligence_errors). tasks/models.py finished_task_fields: a failure its turn reported in the child room (mark_reported) is marked error_reported in the result's metadata, so whoever reads the task does not report it again; a raise the delivery set keeps hands the task no failure, so nothing to mark.",
   "setup": {
     "channels": [
       {
@@ -89,7 +89,10 @@
           "result": {
             "status": "failed",
             "output": null,
-            "error": "upstream 400"
+            "error": "upstream 400",
+            "metadata": {
+              "error_reported": true
+            }
           }
         }
       },
@@ -109,7 +112,10 @@
           "result": {
             "status": "failed",
             "output": null,
-            "error": "upstream 400"
+            "error": "upstream 400",
+            "metadata": {
+              "error_reported": true
+            }
           }
         }
       }
@@ -126,7 +132,12 @@
           "result": {
             "status": "failed",
             "output": null,
-            "error": null
+            "error": null,
+            "metadata": {
+              "error_reported": {
+                "$absent": true
+              }
+            }
           }
         }
       },

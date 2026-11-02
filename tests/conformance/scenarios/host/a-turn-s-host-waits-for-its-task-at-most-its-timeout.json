@@ -1,0 +1,159 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "host/a-turn-s-host-waits-for-its-task-at-most-its-timeout",
+  "title": "A turn's host that waits for its task at most a timeout reads null once the timeout passes first, the task running on, which ends as any other",
+  "rules": [
+    "§10.6.5",
+    "§23.3"
+  ],
+  "notes": "Python: turns/host.py TurnHost.wait_task(task_id, timeout): None when the timeout passes first; core/_turn_host.py _wait_task. The worker holds at a gate the scenario opens only once the turn that waited has answered, so the wait's timeout passes first whatever the machine's speed.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "Look it up."
+            },
+            "gate": "work",
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Found it."
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "go"
+            },
+            "do": [
+              {
+                "call": "host.delegate",
+                "room_id": "room-1",
+                "agent_id": "worker",
+                "task": "Look it up.",
+                "as": "d",
+                "expect": {
+                  "result": {
+                    "$present": true
+                  }
+                }
+              },
+              {
+                "call": "host.wait_task",
+                "task_id": "$d",
+                "timeout_ms": 50,
+                "as": "timed",
+                "expect": {
+                  "result": null
+                }
+              }
+            ],
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Asked."
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "answered",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "source_channel_id": "ai"
+            },
+            "gate": "answered"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "background": true,
+      "as": "go",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      }
+    },
+    {
+      "wait_for": "answered"
+    },
+    {
+      "open": "work"
+    },
+    {
+      "open": "answered"
+    },
+    {
+      "await": "go"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "actions": {
+      "timed": [
+        {
+          "result": null
+        }
+      ]
+    },
+    "rooms": {
+      "$r1": {
+        "metadata": {
+          "parent_room_id": "room-1",
+          "task_status": "completed",
+          "task_result": "Found it."
+        }
+      }
+    }
+  }
+}

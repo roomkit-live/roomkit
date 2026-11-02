@@ -1,0 +1,134 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/a-delegated-turn-s-trace-is-stored-as-its-responses",
+  "title": "A delegated agent's buffered answers are kept in the child room's trace as the pipeline writes a response: its responder's, one deeper than the description it answers and answering it, under no idempotency key, a key in the framework's publication namespace included; an instruction among them is dropped",
+  "rules": [
+    "§23.3 step 5",
+    "§8.5",
+    "§22.1"
+  ],
+  "notes": "Python: core/event_router.py _answering, which writes a buffered output's response events back as the pipeline commits them (_as_response: the responder's source, the trigger's room, one deeper, responds_to the trigger unless named, a fresh id, no idempotency key; a typed INSTRUCTION dropped), so that a delegated turn reads them so (core/mixins/_child_execution.py _persist_response_events, which also drops a key under roomkit:publication:, core/_publication_keys.py without_reserved_key).",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "Look it up."
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Looking."
+                },
+                "idempotency_key": "roomkit:publication:k1",
+                "chain_depth": 5
+              },
+              {
+                "type": "instruction",
+                "content": {
+                  "type": "text",
+                  "body": "Answer in French."
+                }
+              },
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Found it."
+                },
+                "idempotency_key": "mine-1"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "room-1",
+      "agent_id": "worker",
+      "task": "Look it up.",
+      "wait": true,
+      "expect": {
+        "result": {
+          "status": "completed",
+          "result": {
+            "output": "Found it."
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [],
+      "$r1": [
+        {
+          "index": 0,
+          "type": "message",
+          "source": {
+            "channel_id": "system"
+          },
+          "content": {
+            "type": "text",
+            "body": "Look it up."
+          }
+        },
+        {
+          "index": 1,
+          "type": "message",
+          "source": {
+            "channel_id": "worker",
+            "direction": "outbound"
+          },
+          "chain_depth": 1,
+          "responds_to": "$r1#0",
+          "content": {
+            "type": "text",
+            "body": "Looking."
+          },
+          "idempotency_key": null
+        },
+        {
+          "index": 2,
+          "type": "message",
+          "source": {
+            "channel_id": "worker",
+            "direction": "outbound"
+          },
+          "chain_depth": 1,
+          "responds_to": "$r1#0",
+          "content": {
+            "type": "text",
+            "body": "Found it."
+          },
+          "idempotency_key": null
+        }
+      ]
+    }
+  }
+}

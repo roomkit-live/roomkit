@@ -1,7 +1,7 @@
 {
   "$schema": "../../scenario.schema.json",
   "id": "tasks/a-delegated-turn-s-tasks-are-created-in-its-child-room",
-  "title": "The tasks a delegated agent's turn files are stored in the task's child room, and ON_TASK_CREATED fires there for each, its payload naming the task, as for a room's own turn",
+  "title": "The tasks a delegated agent's turn files are stored in the task's child room, and ON_TASK_CREATED fires there for each, its payload naming the task and carrying the source and content of the task's description, the event the turn answered, as for a room's own turn",
   "rules": [
     "§23.3 step 6",
     "§9.2",
@@ -105,6 +105,14 @@
                 "$present": true
               },
               "task_title": "Call the customer back"
+            },
+            "source": {
+              "channel_id": "system",
+              "channel_type": "system"
+            },
+            "content": {
+              "type": "text",
+              "body": "Look it up."
             }
           }
         }
