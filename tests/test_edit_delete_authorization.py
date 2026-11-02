@@ -1035,6 +1035,24 @@ def _last_prompt(provider: MockAIProvider) -> str:
     return " ".join(str(m.content) for m in provider.calls[-1].messages)
 
 
+class TestNoTurnOnAChange:
+    """RFC §10.3 (RMK-1226): an edit or a delete is no message a turn may
+    answer; the agent answers the next message, as roomkit-rs's does."""
+
+    @pytest.mark.parametrize("change", ["edit", "delete"])
+    async def test_an_edit_or_a_delete_opens_no_agent_turn(self, change: str) -> None:
+        kit, provider = await _agent_room()
+        oops = await _post(kit, "Oops", sender_id="alice")
+        if change == "edit":
+            await _edit(kit, oops, sender_id="alice", edit_source="sender")
+        else:
+            await _delete(kit, oops, sender_id="alice", delete_type=DeleteType.SENDER)
+        await _post(kit, "hello", sender_id="alice")
+
+        assert len(provider.calls) == 2
+        await kit.close()
+
+
 class TestNoReplayOfAWithdrawnMessage:
     """RFC §10.3: a regeneration re-runs the agents on a message still said,
     never on a deleted one nor on an edit or a delete row, which only step

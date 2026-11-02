@@ -60,6 +60,7 @@ from roomkit.channels._turn_budget import turn_budget
 from roomkit.channels._turn_config import ConfigProvider
 from roomkit.channels.base import Channel
 from roomkit.core._authors import People
+from roomkit.core._changes import concerns_change
 from roomkit.memory.base import MemoryProvider
 from roomkit.memory.sliding_window import SlidingWindowMemory
 from roomkit.models.channel import (
@@ -608,6 +609,9 @@ class AIChannel(
     ) -> ChannelOutput:
         """React to an event: the channel answers, as its speak policy decides.
 
+        An edit or a delete opens no turn: it is no message a turn may answer
+        (RFC §10.3), and the next message is answered in the room it left.
+
         A strategy that takes the agent's turns in a room (a loop, a
         supervisor's delegation passes) runs on the room's owner and asks each
         generation as a strategy turn, which the channel answers past its
@@ -615,6 +619,11 @@ class AIChannel(
         """
         if in_strategy_turn():
             return await self._respond(event, binding, context)
+        if concerns_change(event):
+            # An edit or a delete is no message a turn may answer (RFC
+            # §10.3): step 8a applied it, and the next message is answered
+            # in the room it left.
+            return ChannelOutput.empty()
         room_id = context.room.id if context.room else event.room_id
         decision = await self._speak_decision(event, context, self._thought_of(room_id))
         if decision is None or decision.mode != "silent":
