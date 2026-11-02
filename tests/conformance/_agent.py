@@ -87,7 +87,14 @@ class ScriptedModel(AIProvider):
 
     def _next_round(self, context: AIContext) -> Mapping[str, Any]:
         self.requests.append(
-            {"messages": messages(context), "tool_results": tool_results(context)}
+            {
+                "messages": messages(context),
+                "tool_results": tool_results(context),
+                "system_prompt": context.system_prompt,
+                "tools": {
+                    tool.name: position for position, tool in enumerate(context.tools or [])
+                },
+            }
         )
         position = len(self.requests) - 1
         if position >= len(self._rounds):

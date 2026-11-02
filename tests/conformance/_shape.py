@@ -156,6 +156,7 @@ EXPECT = {
     "rooms",
     "bindings",
     "framework_events",
+    "ai_events",
     "hooks",
     "hook_order",
     "deliveries",

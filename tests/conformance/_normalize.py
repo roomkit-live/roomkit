@@ -44,6 +44,7 @@ class Observed:
     rooms: dict[str, Any] = field(default_factory=dict)
     bindings: dict[str, dict[str, Any]] = field(default_factory=dict)
     framework_events: list[dict[str, Any]] = field(default_factory=list)
+    ai_events: list[dict[str, Any]] = field(default_factory=list)
     hooks: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     hook_order: list[str] = field(default_factory=list)
     deliveries: dict[str, dict[str, list[Any]]] = field(default_factory=dict)

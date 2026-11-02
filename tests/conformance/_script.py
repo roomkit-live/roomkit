@@ -25,8 +25,9 @@ from roomkit.models.identity import Identity
 from roomkit.models.participant import Participant
 from roomkit.models.pending_input import PendingInputEvent
 from roomkit.models.task import Observation, Task
-from roomkit.models.tool_call import ToolCallEvent
+from roomkit.models.tool_call import AIGenerationEvent, ToolCallEvent, ToolRoundEvent
 from tests.conformance._agent import patched_tool_call
+from tests.conformance._ai_hooks import patched_generation, patched_tool_round
 
 if TYPE_CHECKING:
     from tests.conformance._harness import Harness
@@ -409,6 +410,11 @@ def hook_result(spec: Mapping[str, Any] | None, payload: Any, room_id: str) -> H
         data["event"] = RoomEvent.model_validate(patched)
     if data.get("action") == "modify" and "event" in data and isinstance(payload, ToolCallEvent):
         data["event"] = patched_tool_call(payload, data["event"])
+    if data.get("action") == "modify" and "event" in data:
+        if isinstance(payload, AIGenerationEvent):
+            data["event"] = patched_generation(payload, data["event"])
+        elif isinstance(payload, ToolRoundEvent):
+            data["event"] = patched_tool_round(payload, data["event"])
     data["injected_events"] = [
         InjectedEvent(
             event=complete_event(item["event"], room_id, SYSTEM_SOURCE),

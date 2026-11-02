@@ -76,6 +76,12 @@ class _Comparison:
         for alias, events in self.expect.get("framework_events", {}).items():
             actual = grouped.get(alias, [])
             self.found.extend(framework_mismatches(events, actual, f"framework_events.{alias}"))
+        ai_grouped: dict[str, list[Any]] = {}
+        for event in self.normalizer.value(self.observed.ai_events):
+            ai_grouped.setdefault(event.get("room_id", "*"), []).append(event)
+        for alias, events in self.expect.get("ai_events", {}).items():
+            actual = ai_grouped.get(alias, [])
+            self.found.extend(framework_mismatches(events, actual, f"ai_events.{alias}"))
 
     def hooks(self) -> None:
         for name, expected in self.expect.get("hooks", {}).items():

@@ -23,11 +23,17 @@ from roomkit.models.framework_event import FrameworkEvent
 from roomkit.models.pending_input import PendingInputEvent
 from roomkit.models.store_filter import EventFilter
 from roomkit.models.task import Observation
-from roomkit.models.tool_call import ToolCallEvent
+from roomkit.models.tool_call import (
+    AIGenerationEvent,
+    AIResponseEvent,
+    ToolCallEvent,
+    ToolRoundEvent,
+)
 from roomkit.orchestration.status_bus import StatusEntry
 from roomkit.store.base import ConversationStore
 from roomkit.tasks import DelegatedTask
 from tests.conformance._agent import ScriptedModel, tool_call_record
+from tests.conformance._ai_hooks import generation_record, response_record, tool_round_record
 from tests.conformance._calls import (
     CALLS,
     UnmappedError,
@@ -89,6 +95,10 @@ LEVEL_2_EVENTS = ("status_posted", "feedback")
 
 # The framework event of a human-input request's decision (§8.2, §9.3).
 INPUT_EVENTS = ("user_input_required",)
+
+# The framework events of an AI channel's turn (§8.2, Level 1), which
+# ``expect.ai_events`` compares apart from ``framework_events``.
+AI_EVENTS = ("before_ai_generation", "ai_response")
 
 # A call that has not returned by then fails the scenario instead of hanging
 # it; so does a kit that does not go idle.
@@ -177,6 +187,12 @@ class Harness:
         if isinstance(payload, PendingInputEvent):
             self.saw_request(payload.pending_id)
             call["request"] = request_record(payload)
+        if isinstance(payload, AIGenerationEvent):
+            call["generation"] = generation_record(payload)
+        if isinstance(payload, ToolRoundEvent):
+            call["tool_round"] = tool_round_record(payload)
+        if isinstance(payload, AIResponseEvent):
+            call["response"] = response_record(payload)
         self.observed.hooks.setdefault(name, []).append(call)
         self.observed.hook_order.append(name)
 
@@ -228,7 +244,10 @@ class Harness:
             value = getattr(event, key)
             if value is not None:
                 flat[key] = value
-        self.observed.framework_events.append(flat)
+        if event.type in AI_EVENTS:
+            self.observed.ai_events.append(flat)
+        else:
+            self.observed.framework_events.append(flat)
 
     # -- the run ----------------------------------------------------------
 
@@ -249,7 +268,8 @@ class Harness:
 
     async def _setup(self) -> None:
         setup = self.scenario.get("setup", {})
-        for event_type in LEVEL_0_EVENTS + LEVEL_2_EVENTS + INPUT_EVENTS + VERIFICATION_EVENTS:
+        recorded = LEVEL_0_EVENTS + LEVEL_2_EVENTS + INPUT_EVENTS + VERIFICATION_EVENTS + AI_EVENTS
+        for event_type in recorded:
             self.kit.on(event_type)(self._on_framework_event)
         for channel in setup.get("channels", []):
             register_channel(self.kit, self, channel)
