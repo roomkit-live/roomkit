@@ -1,0 +1,251 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/a-shared-room-s-failed-streams-are-each-their-agent-s",
+  "title": "In a delegated room a transport is shared into, where several agents stream, another agent's streams that fail, the turns it takes on the room's answers among them, are each its own turn's failure, reported in the child room: the task completes with its agent's last answer",
+  "rules": [
+    "§23.3 step 5",
+    "§23.3 step 6",
+    "§12.2 step 13s",
+    "§9.3"
+  ],
+  "notes": "Python: core/mixins/_child_execution.py _deliver_answer, _responder_failures, _stream_failed_by: worker and helper both answer the task by a stream, and the room's reader reads every stream the cascade starts (lane_execution.py _finish_cascade); tests/tasks/test_worker_cut_short.py::test_a_streaming_helper_s_failure_is_never_a_buffered_worker_s, test_another_agent_s_failed_turn_leaves_the_task_its_agent_s[transport-inline]. helper writes its text, then fails, on each of its turns: on the task, on worker's answer, and on worker's answer to its own text.",
+  "setup": {
+    "channels": [
+      {
+        "id": "email",
+        "type": "email",
+        "category": "transport"
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "Found ",
+                "it."
+              ]
+            },
+            {
+              "deltas": [
+                "Thanks."
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "id": "helper",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "Helping."
+              ],
+              "fails": "The helper broke."
+            },
+            {
+              "fails": "The helper broke again."
+            },
+            {
+              "fails": "The helper broke a third time."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "parent",
+        "bindings": [
+          {
+            "channel_id": "email"
+          },
+          {
+            "channel_id": "helper",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "errors",
+        "trigger": "on_error",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "parent",
+      "agent_id": "worker",
+      "task": "Find it.",
+      "share_channels": [
+        "helper",
+        "email"
+      ],
+      "wait": true,
+      "expect": {
+        "result": {
+          "status": "completed",
+          "result": {
+            "status": "completed",
+            "output": "Thanks.",
+            "error": null
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "$r1": [
+        {
+          "index": 0,
+          "source": {
+            "channel_id": "system"
+          },
+          "chain_depth": 0,
+          "content": {
+            "type": "text",
+            "body": "Find it."
+          }
+        },
+        {
+          "index": 1,
+          "source": {
+            "channel_id": "worker"
+          },
+          "chain_depth": 1,
+          "responds_to": "$r1#0",
+          "content": {
+            "type": "text",
+            "body": "Found it."
+          }
+        },
+        {
+          "index": 2,
+          "source": {
+            "channel_id": "helper"
+          },
+          "chain_depth": 1,
+          "responds_to": "$r1#0",
+          "content": {
+            "type": "text",
+            "body": "Helping."
+          }
+        },
+        {
+          "index": 3,
+          "source": {
+            "channel_id": "worker"
+          },
+          "chain_depth": 2,
+          "responds_to": "$r1#2",
+          "content": {
+            "type": "text",
+            "body": "Thanks."
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "$r1": {
+        "email": [
+          {
+            "source": {
+              "channel_id": "worker"
+            },
+            "content": {
+              "type": "text",
+              "body": "Found it."
+            }
+          },
+          {
+            "source": {
+              "channel_id": "helper"
+            },
+            "content": {
+              "type": "text",
+              "body": "Helping."
+            }
+          },
+          {
+            "source": {
+              "channel_id": "worker"
+            },
+            "content": {
+              "type": "text",
+              "body": "Thanks."
+            }
+          }
+        ]
+      }
+    },
+    "hooks": {
+      "errors": [
+        {
+          "trigger": "on_error",
+          "room_id": "$r1",
+          "event": {
+            "chain_depth": 1,
+            "responds_to": "$r1#0",
+            "source": {
+              "channel_id": "helper"
+            },
+            "content": {
+              "type": "text",
+              "body": "The helper broke."
+            },
+            "metadata": {
+              "error_category": "streaming"
+            }
+          }
+        },
+        {
+          "trigger": "on_error",
+          "room_id": "$r1",
+          "event": {
+            "chain_depth": 2,
+            "responds_to": "$r1#1",
+            "source": {
+              "channel_id": "helper"
+            },
+            "content": {
+              "type": "text",
+              "body": "The helper broke again."
+            },
+            "metadata": {
+              "error_category": "streaming"
+            }
+          }
+        },
+        {
+          "trigger": "on_error",
+          "room_id": "$r1",
+          "event": {
+            "chain_depth": 3,
+            "responds_to": "$r1#3",
+            "source": {
+              "channel_id": "helper"
+            },
+            "content": {
+              "type": "text",
+              "body": "The helper broke a third time."
+            },
+            "metadata": {
+              "error_category": "streaming"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,186 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/a-shared-room-reads-the-stream-of-an-answer-s-answer",
+  "title": "In a delegated room a transport is shared into, an agent's streamed turn on another agent's answer is read by the room's reader as the task's own turns are: its rows are stored, told to the transport, and the task's output is the last answer the room kept of its agent",
+  "rules": [
+    "§23.3 step 5",
+    "§23.3 step 6",
+    "§12.2 step 13s"
+  ],
+  "notes": "Python: core/mixins/_child_execution.py _deliver_answer, which reads every stream its cascade starts (lane_execution.py _finish_cascade), the chained turns' too; tests/tasks/test_worker_cut_short.py::test_the_answer_and_its_end_are_read_off_one_responder[transport-streams]. helper is shared into the child room with email; it answers the task buffered, worker streams. helper's answer chains to worker, whose second turn streams too.",
+  "setup": {
+    "channels": [
+      {
+        "id": "email",
+        "type": "email",
+        "category": "transport"
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "Found ",
+                "it."
+              ]
+            },
+            {
+              "deltas": [
+                "Thanks, ",
+                "helper."
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "id": "helper",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "Find it."
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Helper here."
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "parent",
+        "bindings": [
+          {
+            "channel_id": "email"
+          },
+          {
+            "channel_id": "helper",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "parent",
+      "agent_id": "worker",
+      "task": "Find it.",
+      "share_channels": [
+        "helper",
+        "email"
+      ],
+      "wait": true,
+      "expect": {
+        "result": {
+          "status": "completed",
+          "result": {
+            "status": "completed",
+            "output": "Thanks, helper.",
+            "error": null
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "$r1": [
+        {
+          "index": 0,
+          "source": {
+            "channel_id": "system"
+          },
+          "chain_depth": 0,
+          "content": {
+            "type": "text",
+            "body": "Find it."
+          }
+        },
+        {
+          "index": 1,
+          "source": {
+            "channel_id": "helper"
+          },
+          "chain_depth": 1,
+          "responds_to": "$r1#0",
+          "content": {
+            "type": "text",
+            "body": "Helper here."
+          }
+        },
+        {
+          "index": 2,
+          "source": {
+            "channel_id": "worker"
+          },
+          "chain_depth": 1,
+          "responds_to": "$r1#0",
+          "content": {
+            "type": "text",
+            "body": "Found it."
+          }
+        },
+        {
+          "index": 3,
+          "source": {
+            "channel_id": "worker"
+          },
+          "chain_depth": 2,
+          "responds_to": "$r1#1",
+          "content": {
+            "type": "text",
+            "body": "Thanks, helper."
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "$r1": {
+        "email": [
+          {
+            "source": {
+              "channel_id": "helper"
+            },
+            "content": {
+              "type": "text",
+              "body": "Helper here."
+            }
+          },
+          {
+            "source": {
+              "channel_id": "worker"
+            },
+            "content": {
+              "type": "text",
+              "body": "Found it."
+            }
+          },
+          {
+            "source": {
+              "channel_id": "worker"
+            },
+            "content": {
+              "type": "text",
+              "body": "Thanks, helper."
+            }
+          }
+        ]
+      }
+    }
+  }
+}
