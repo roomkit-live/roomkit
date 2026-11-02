@@ -1,0 +1,166 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "author-images/the-bound-is-the-channel-s-to-change",
+  "title": "An agent's max_author_images sets how many of the newest author images a turn sends",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python's AIChannel(max_author_images=1).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "vision": true,
+          "rounds": [
+            {
+              "text": "Seen 0."
+            },
+            {
+              "text": "Seen 1."
+            },
+            {
+              "text": "Seen 2."
+            }
+          ]
+        },
+        "max_author_images": 1
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "media",
+          "url": "https://cdn.example.com/p0.png",
+          "mime_type": "image/png",
+          "filename": "p0.png"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "media",
+          "url": "https://cdn.example.com/p1.png",
+          "mime_type": "image/png",
+          "filename": "p1.png"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {},
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "[Earlier image not shown: “p0.png”]",
+              "parts": [
+                {
+                  "text": "[Earlier image not shown: “p0.png”]"
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "text": "Seen 0."
+            },
+            {
+              "role": "user",
+              "text": "",
+              "parts": [
+                {
+                  "image": "https://cdn.example.com/p1.png",
+                  "mime_type": "image/png"
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "text": "Seen 1."
+            },
+            {
+              "role": "user",
+              "text": "?",
+              "parts": {
+                "$absent": true
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

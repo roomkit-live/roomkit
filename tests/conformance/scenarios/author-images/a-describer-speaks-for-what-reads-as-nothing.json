@@ -1,0 +1,260 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "author-images/a-describer-speaks-for-what-reads-as-nothing",
+  "title": "The host's describer stands for an event whose content reads as nothing in the turn's transcript, history and input alike: a captionless media that is no image on a model that does not see, an empty text; an image on that model reads as not shown, the describer not asked",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python's AIChannel(describe_empty_event=...) and _transcript_content: the describer is asked only where the extraction is empty, before the media label.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Seen 0."
+            },
+            {
+              "text": "Seen 1."
+            },
+            {
+              "text": "Seen 2."
+            },
+            {
+              "text": "Seen 3."
+            }
+          ]
+        },
+        "describe_empty_event": {
+          "says": "[a file the user sent]"
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "media",
+          "url": "https://cdn.example.com/contract.pdf",
+          "mime_type": "application/pdf",
+          "filename": "contract.pdf"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "media",
+          "url": "https://cdn.example.com/a.png",
+          "mime_type": "image/png"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": ""
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "what was that?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "[a file the user sent]",
+              "parts": {
+                "$absent": true
+              }
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "[a file the user sent]",
+              "parts": {
+                "$absent": true
+              }
+            },
+            {
+              "role": "assistant",
+              "text": "Seen 0."
+            },
+            {
+              "role": "user",
+              "text": "[Image not shown, this model does not see images: “image/png”]",
+              "parts": {
+                "$absent": true
+              }
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "[a file the user sent]",
+              "parts": {
+                "$absent": true
+              }
+            },
+            {
+              "role": "assistant",
+              "text": "Seen 0."
+            },
+            {
+              "role": "user",
+              "text": "[Image not shown, this model does not see images: “image/png”]",
+              "parts": {
+                "$absent": true
+              }
+            },
+            {
+              "role": "assistant",
+              "text": "Seen 1."
+            },
+            {
+              "role": "user",
+              "text": "[a file the user sent]",
+              "parts": {
+                "$absent": true
+              }
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "[a file the user sent]",
+              "parts": {
+                "$absent": true
+              }
+            },
+            {
+              "role": "assistant",
+              "text": "Seen 0."
+            },
+            {
+              "role": "user",
+              "text": "[Image not shown, this model does not see images: “image/png”]",
+              "parts": {
+                "$absent": true
+              }
+            },
+            {
+              "role": "assistant",
+              "text": "Seen 1."
+            },
+            {
+              "role": "user",
+              "text": "[a file the user sent]",
+              "parts": {
+                "$absent": true
+              }
+            },
+            {
+              "role": "assistant",
+              "text": "Seen 2."
+            },
+            {
+              "role": "user",
+              "text": "what was that?",
+              "parts": {
+                "$absent": true
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

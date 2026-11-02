@@ -1,0 +1,164 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "author-images/an-image-that-does-not-resolve-reads-as-unavailable",
+  "title": "An image a model that sees cannot be sent, a reference no resolver gives or a data URI with no data, reads as an image unavailable, never a failed turn",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python's _decide and _inline: a reference with no media resolver, and a data URI whose data is empty or past 5 MiB, take the mention [Image unavailable: “<name>”].",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "vision": true,
+          "rounds": [
+            {
+              "text": "Seen 0."
+            },
+            {
+              "text": "Seen 1."
+            },
+            {
+              "text": "Seen 2."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "media",
+          "url": "app-media://photo-1",
+          "mime_type": "image/png",
+          "filename": "lamp.png"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "media",
+          "url": "data:image/jpeg;base64,",
+          "mime_type": "image/jpeg",
+          "filename": "lamp.jpg"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {},
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "[Image unavailable: “lamp.png”]",
+              "parts": [
+                {
+                  "text": "[Image unavailable: “lamp.png”]"
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "text": "Seen 0."
+            },
+            {
+              "role": "user",
+              "text": "[Image unavailable: “lamp.jpg”]",
+              "parts": [
+                {
+                  "text": "[Image unavailable: “lamp.jpg”]"
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "text": "Seen 1."
+            },
+            {
+              "role": "user",
+              "text": "?",
+              "parts": {
+                "$absent": true
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

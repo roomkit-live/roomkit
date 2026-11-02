@@ -1,0 +1,360 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "author-images/a-model-that-does-not-see-reads-a-mention",
+  "title": "A model that does not see reads each image an author sent as a mention that it does not see it, named by its caption, else its file name, else its type; a media that is no image reads as its label; the words around them stay",
+  "rules": [
+    "§6.4",
+    "§6.6"
+  ],
+  "notes": "Python's channels/_author_images.py unseen_images and _ai_context.py _extract_text: an AI channel declares text, rich content and media whatever its model sees, so the kit hands it the event untranscoded and the channel reads each media itself, the turn's input as its history. The name is quoted within 120 characters.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Seen 0."
+            },
+            {
+              "text": "Seen 1."
+            },
+            {
+              "text": "Seen 2."
+            },
+            {
+              "text": "Seen 3."
+            },
+            {
+              "text": "Seen 4."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "media",
+          "url": "data:image/png;base64,AQIDBA==",
+          "mime_type": "image/png",
+          "caption": "my lamp"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "composite",
+          "parts": [
+            {
+              "type": "text",
+              "body": "compare with mine"
+            },
+            {
+              "type": "media",
+              "url": "https://cdn.example.com/lamp.png",
+              "mime_type": "image/png",
+              "filename": "lamp.png"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "composite",
+          "parts": [
+            {
+              "type": "text",
+              "body": "sign this"
+            },
+            {
+              "type": "media",
+              "url": "https://cdn.example.com/contract.pdf",
+              "mime_type": "application/pdf",
+              "filename": "contract.pdf"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "media",
+          "url": "https://cdn.example.com/contract.pdf",
+          "mime_type": "application/pdf",
+          "filename": "contract.pdf"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "what was that?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "[Image not shown, this model does not see images: “my lamp”]",
+              "parts": {
+                "$absent": true
+              }
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "[Image not shown, this model does not see images: “my lamp”]",
+              "parts": {
+                "$absent": true
+              }
+            },
+            {
+              "role": "assistant",
+              "text": "Seen 0."
+            },
+            {
+              "role": "user",
+              "text": "compare with mine\n[Image not shown, this model does not see images: “lamp.png”]",
+              "parts": {
+                "$absent": true
+              }
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "[Image not shown, this model does not see images: “my lamp”]",
+              "parts": {
+                "$absent": true
+              }
+            },
+            {
+              "role": "assistant",
+              "text": "Seen 0."
+            },
+            {
+              "role": "user",
+              "text": "compare with mine\n[Image not shown, this model does not see images: “lamp.png”]",
+              "parts": {
+                "$absent": true
+              }
+            },
+            {
+              "role": "assistant",
+              "text": "Seen 1."
+            },
+            {
+              "role": "user",
+              "text": "sign this\n[Media: contract.pdf]",
+              "parts": {
+                "$absent": true
+              }
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "[Image not shown, this model does not see images: “my lamp”]",
+              "parts": {
+                "$absent": true
+              }
+            },
+            {
+              "role": "assistant",
+              "text": "Seen 0."
+            },
+            {
+              "role": "user",
+              "text": "compare with mine\n[Image not shown, this model does not see images: “lamp.png”]",
+              "parts": {
+                "$absent": true
+              }
+            },
+            {
+              "role": "assistant",
+              "text": "Seen 1."
+            },
+            {
+              "role": "user",
+              "text": "sign this\n[Media: contract.pdf]",
+              "parts": {
+                "$absent": true
+              }
+            },
+            {
+              "role": "assistant",
+              "text": "Seen 2."
+            },
+            {
+              "role": "user",
+              "text": "[Media: contract.pdf]",
+              "parts": {
+                "$absent": true
+              }
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "[Image not shown, this model does not see images: “my lamp”]",
+              "parts": {
+                "$absent": true
+              }
+            },
+            {
+              "role": "assistant",
+              "text": "Seen 0."
+            },
+            {
+              "role": "user",
+              "text": "compare with mine\n[Image not shown, this model does not see images: “lamp.png”]",
+              "parts": {
+                "$absent": true
+              }
+            },
+            {
+              "role": "assistant",
+              "text": "Seen 1."
+            },
+            {
+              "role": "user",
+              "text": "sign this\n[Media: contract.pdf]",
+              "parts": {
+                "$absent": true
+              }
+            },
+            {
+              "role": "assistant",
+              "text": "Seen 2."
+            },
+            {
+              "role": "user",
+              "text": "[Media: contract.pdf]",
+              "parts": {
+                "$absent": true
+              }
+            },
+            {
+              "role": "assistant",
+              "text": "Seen 3."
+            },
+            {
+              "role": "user",
+              "text": "what was that?",
+              "parts": {
+                "$absent": true
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

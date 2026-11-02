@@ -1,0 +1,288 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "author-images/only-the-newest-four-images-go",
+  "title": "A turn sends the newest four author images as images, its history and its input counted together; an older one reads as an earlier image not shown",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python's DEFAULT_MAX_AUTHOR_IMAGES = 4 and _decide, which walks the events newest first.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "vision": true,
+          "rounds": [
+            {
+              "text": "Seen 0."
+            },
+            {
+              "text": "Seen 1."
+            },
+            {
+              "text": "Seen 2."
+            },
+            {
+              "text": "Seen 3."
+            },
+            {
+              "text": "Seen 4."
+            },
+            {
+              "text": "Seen 5."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "media",
+          "url": "https://cdn.example.com/p0.png",
+          "mime_type": "image/png",
+          "filename": "p0.png"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "media",
+          "url": "https://cdn.example.com/p1.png",
+          "mime_type": "image/png",
+          "filename": "p1.png"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "media",
+          "url": "https://cdn.example.com/p2.png",
+          "mime_type": "image/png",
+          "filename": "p2.png"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "media",
+          "url": "https://cdn.example.com/p3.png",
+          "mime_type": "image/png",
+          "filename": "p3.png"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "media",
+          "url": "https://cdn.example.com/p4.png",
+          "mime_type": "image/png",
+          "filename": "p4.png"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {},
+        {},
+        {},
+        {},
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "[Earlier image not shown: “p0.png”]",
+              "parts": [
+                {
+                  "text": "[Earlier image not shown: “p0.png”]"
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "text": "Seen 0."
+            },
+            {
+              "role": "user",
+              "text": "",
+              "parts": [
+                {
+                  "image": "https://cdn.example.com/p1.png",
+                  "mime_type": "image/png"
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "text": "Seen 1."
+            },
+            {
+              "role": "user",
+              "text": "",
+              "parts": [
+                {
+                  "image": "https://cdn.example.com/p2.png",
+                  "mime_type": "image/png"
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "text": "Seen 2."
+            },
+            {
+              "role": "user",
+              "text": "",
+              "parts": [
+                {
+                  "image": "https://cdn.example.com/p3.png",
+                  "mime_type": "image/png"
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "text": "Seen 3."
+            },
+            {
+              "role": "user",
+              "text": "",
+              "parts": [
+                {
+                  "image": "https://cdn.example.com/p4.png",
+                  "mime_type": "image/png"
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "text": "Seen 4."
+            },
+            {
+              "role": "user",
+              "text": "?",
+              "parts": {
+                "$absent": true
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

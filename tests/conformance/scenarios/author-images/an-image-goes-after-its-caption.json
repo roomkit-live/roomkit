@@ -1,0 +1,317 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "author-images/an-image-goes-after-its-caption",
+  "title": "A model that sees reads an author's image as its caption then the image, a data URI or a link as it is, its type folded, in the turn's input and in its history alike; a media that is no image reads as its label",
+  "rules": [
+    "§6.4",
+    "§6.6"
+  ],
+  "notes": "Python's AuthorImages.parts: a media sent as an image is its caption (when it has one), then its image part; one that is no image of a type every vision provider takes (png, jpeg, gif, webp) reads as its label. image/jpg is sent as image/jpeg.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "vision": true,
+          "rounds": [
+            {
+              "text": "Seen 0."
+            },
+            {
+              "text": "Seen 1."
+            },
+            {
+              "text": "Seen 2."
+            },
+            {
+              "text": "Seen 3."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "media",
+          "url": "data:image/png;base64,AQIDBA==",
+          "mime_type": "image/png",
+          "caption": "my lamp"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "composite",
+          "parts": [
+            {
+              "type": "text",
+              "body": "compare with mine"
+            },
+            {
+              "type": "media",
+              "url": "https://cdn.example.com/lamp.jpg",
+              "mime_type": "image/jpg",
+              "filename": "lamp.jpg"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "media",
+          "url": "https://cdn.example.com/contract.pdf",
+          "mime_type": "application/pdf",
+          "filename": "contract.pdf"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "and these?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "my lamp",
+              "parts": [
+                {
+                  "text": "my lamp"
+                },
+                {
+                  "image": "data:image/png;base64,AQIDBA==",
+                  "mime_type": "image/png"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "my lamp",
+              "parts": [
+                {
+                  "text": "my lamp"
+                },
+                {
+                  "image": "data:image/png;base64,AQIDBA==",
+                  "mime_type": "image/png"
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "text": "Seen 0."
+            },
+            {
+              "role": "user",
+              "text": "compare with mine",
+              "parts": [
+                {
+                  "text": "compare with mine"
+                },
+                {
+                  "image": "https://cdn.example.com/lamp.jpg",
+                  "mime_type": "image/jpeg"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "my lamp",
+              "parts": [
+                {
+                  "text": "my lamp"
+                },
+                {
+                  "image": "data:image/png;base64,AQIDBA==",
+                  "mime_type": "image/png"
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "text": "Seen 0."
+            },
+            {
+              "role": "user",
+              "text": "compare with mine",
+              "parts": [
+                {
+                  "text": "compare with mine"
+                },
+                {
+                  "image": "https://cdn.example.com/lamp.jpg",
+                  "mime_type": "image/jpeg"
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "text": "Seen 1."
+            },
+            {
+              "role": "user",
+              "text": "[Media: contract.pdf]",
+              "parts": [
+                {
+                  "text": "[Media: contract.pdf]"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "my lamp",
+              "parts": [
+                {
+                  "text": "my lamp"
+                },
+                {
+                  "image": "data:image/png;base64,AQIDBA==",
+                  "mime_type": "image/png"
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "text": "Seen 0."
+            },
+            {
+              "role": "user",
+              "text": "compare with mine",
+              "parts": [
+                {
+                  "text": "compare with mine"
+                },
+                {
+                  "image": "https://cdn.example.com/lamp.jpg",
+                  "mime_type": "image/jpeg"
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "text": "Seen 1."
+            },
+            {
+              "role": "user",
+              "text": "[Media: contract.pdf]",
+              "parts": [
+                {
+                  "text": "[Media: contract.pdf]"
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "text": "Seen 2."
+            },
+            {
+              "role": "user",
+              "text": "and these?",
+              "parts": {
+                "$absent": true
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
