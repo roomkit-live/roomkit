@@ -60,6 +60,8 @@ TASK_ARGUMENTS: dict[str, set[str]] = {
         "brief",
         "conversation",
         "hand_back",
+        "require_structured_result",
+        "max_result_retries",
     },
     "task.wait": {"task_id"},
     "cancel_task": {"task_id"},
