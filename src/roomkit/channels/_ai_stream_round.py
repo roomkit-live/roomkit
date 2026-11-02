@@ -51,6 +51,9 @@ class _StreamRoundState:
     finish_reason: str | None = None
     refusal: str | None = None  # the provider's reason, when it refused
     cancelled: bool = False
+    # Whether the provider handed any event, a call the loop serves
+    # included: its answer began, so it took the request (RFC §6.4).
+    received: bool = False
 
     @property
     def text(self) -> str:
@@ -233,6 +236,8 @@ class _StreamRound:
                     state.cancelled = True
                     await self.close()
                     return
+                if not isinstance(event, _StreamRetryBoundary):
+                    state.received = True
                 if isinstance(event, _StreamRetryBoundary):
                     if self.room_id:
                         await self._composition.close()

@@ -46,7 +46,9 @@ from roomkit.providers.ai.base import (
     AITool,
     AIToolCall,
     ProviderError,
+    StreamEvent,
     StreamTextDelta,
+    StreamToolCall,
 )
 from roomkit.providers.ai.image_parts import image_part_base64
 from roomkit.providers.ai.mock import MockAIProvider
@@ -434,7 +436,11 @@ class _Scripted(MockAIProvider):
 
 
 class _BreaksMidStream(_Scripted):
-    """Streams a word of its first answer, then fails: the request was taken."""
+    """Streams the start of its first answer, then fails: the request was taken."""
+
+    def __init__(self, steps: list[AIResponse | Exception], *, first: StreamEvent) -> None:
+        super().__init__(steps, streaming=True)
+        self._first = first
 
     async def _scripted_events(self, context: AIContext) -> Any:
         if len(self.calls) > 0:
@@ -442,7 +448,7 @@ class _BreaksMidStream(_Scripted):
                 yield event
             return
         self.calls.append(context)
-        yield StreamTextDelta(text="Let me look")
+        yield self._first
         raise ProviderError("400 overloaded mid-answer", retryable=False, status_code=400)
 
 
@@ -511,8 +517,18 @@ class TestRefusal:
 
         assert _images(context) == [_PNG]
 
-    async def test_a_stream_under_way_refuses_nothing(self) -> None:
-        context = await _turns(_BreaksMidStream([_OK], streaming=True))
+    @pytest.mark.parametrize(
+        "first",
+        [
+            StreamTextDelta(text="Let me look"),
+            # RMK-1220: a call the loop serves reaches no reader, yet the
+            # provider began its answer.
+            StreamToolCall(id="c0", name="lookup", arguments={}),
+        ],
+        ids=["text", "tool-call"],
+    )
+    async def test_a_stream_under_way_refuses_nothing(self, first: StreamEvent) -> None:
+        context = await _turns(_BreaksMidStream([_OK], first=first), tool=True)
 
         assert _images(context) == [_PNG]
 

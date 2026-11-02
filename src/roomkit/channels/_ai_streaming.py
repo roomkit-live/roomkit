@@ -585,18 +585,16 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
         itself. Either way the stream's consumer logs it, once: the loop
         raises and logs nothing.
         """
-        streamed = False
         try:
             async with aclosing(
                 round_.stream(self._generate_stream_with_retry(context))
             ) as deltas:
                 async for delta in deltas:
-                    streamed = True
                     yield delta
         except Exception as exc:
             # A provider fails whatever it raises (RMK-1199); only its own
-            # error can say it refused the content.
-            first = index == 0 and not streamed
+            # error can say it refused the content, before it handed anything.
+            first = index == 0 and not round_.state.received
             if first and isinstance(exc, ProviderError) and refuses_content(exc):
                 self._forget_sent_images(turn, context)
             if not interrupts_turn(exc, after_round=turn.saw_tool_call):
