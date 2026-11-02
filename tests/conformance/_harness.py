@@ -56,6 +56,7 @@ from tests.conformance._delivery import (
 )
 from tests.conformance._identity import kit_options, register_identity_hook
 from tests.conformance._inputs import INPUT_CALLS, request_record
+from tests.conformance._media import media_options
 from tests.conformance._members import MEMBER_CALLS, store_identities
 from tests.conformance._normalize import Observed, is_lifecycle_record
 from tests.conformance._script import GATE_BOUND_S, Gates, ScriptedRouter
@@ -150,6 +151,7 @@ class Harness:
         kwargs |= kit_options(kit_setup, self)
         kwargs |= delivery_options(kit_setup)
         kwargs |= verification_options(kit_setup)
+        kwargs |= media_options(kit_setup)
         self.kit = RoomKit(**kwargs)
 
     # -- recording --------------------------------------------------------

@@ -13,6 +13,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from tests.conformance._inputs import INPUT_ARGUMENTS
+from tests.conformance._media import ATTACHED_MEDIA, MEDIA_RESOLVER
 from tests.conformance._members import MEMBER_ARGUMENTS
 from tests.conformance._store import READ_MARKER_ARGUMENTS, STORE_ARGUMENTS
 from tests.conformance._tasks import TASK_ARGUMENTS
@@ -29,6 +30,8 @@ KIT = {
     "identity_timeout_ms",
     "delivery_backend",
     "verification_policy",
+    "media_resolver",
+    "attached_media",
 }
 DELIVERY_BACKEND = {
     "retry_delay_ms",
@@ -75,7 +78,18 @@ CHANNEL = {
 }
 ADDRESSES = {"normalizes", "conversation_key"}
 MODEL = {"rounds", "vision"}
-MODEL_ROUND = {"text", "deltas", "calls", "finish_reason", "usage", "fails", "done", "gate"}
+MODEL_ROUND = {
+    "text",
+    "deltas",
+    "calls",
+    "finish_reason",
+    "usage",
+    "fails",
+    "done",
+    "gate",
+    "refuses",
+}
+REFUSES = {"status", "message"}
 MODEL_CALL = {"id", "name", "arguments", "cut"}
 TOOL = {
     "name",
@@ -272,6 +286,10 @@ def unknown_members(scenario: Mapping[str, Any]) -> list[str]:
     if "delivery_backend" in setup.get("kit", {}):
         backend = setup["kit"]["delivery_backend"]
         _members(backend, DELIVERY_BACKEND, "setup.kit.delivery_backend", found)
+    readers = {"media_resolver": MEDIA_RESOLVER, "attached_media": ATTACHED_MEDIA}
+    for reader, members in readers.items():
+        if reader in setup.get("kit", {}):
+            _members(setup["kit"][reader], members, f"setup.kit.{reader}", found)
     _identity(setup, found)
     for position, channel in enumerate(setup.get("channels", [])):
         _channel(channel, f"setup.channels[{position}]", found)
@@ -369,6 +387,8 @@ def _model(model: Mapping[str, Any], path: str, found: list[str]) -> None:
     _members(model, MODEL, path, found)
     for index, round_ in enumerate(model.get("rounds", [])):
         _members(round_, MODEL_ROUND, f"{path}.rounds[{index}]", found)
+        if "refuses" in round_:
+            _members(round_["refuses"], REFUSES, f"{path}.rounds[{index}].refuses", found)
         for position, call in enumerate(round_.get("calls", [])):
             _members(call, MODEL_CALL, f"{path}.rounds[{index}].calls[{position}]", found)
 

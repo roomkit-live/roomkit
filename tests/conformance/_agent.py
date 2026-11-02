@@ -19,6 +19,7 @@ from roomkit.core.exceptions import ToolFailedError, ToolRefusedError, UnservedT
 from roomkit.models.tool_call import ToolCallEvent
 from roomkit.providers.ai import AIContext, AIProvider, AIResponse, AITool, AIToolCall
 from roomkit.providers.ai.base import (
+    ProviderError,
     StreamDone,
     StreamEvent,
     StreamTextDelta,
@@ -65,6 +66,7 @@ class ScriptedModel(AIProvider):
     async def generate(self, context: AIContext) -> AIResponse:
         round_ = self._next_round(context)
         await self._hold(round_)
+        _refuse(round_)
         return _response(round_)
 
     async def _hold(self, round_: Mapping[str, Any]) -> None:
@@ -85,6 +87,7 @@ class ScriptedModel(AIProvider):
             yield StreamTextDelta(text=delta)
         if (message := round_.get("fails")) is not None:
             raise ModelFailedError(message)
+        _refuse(round_)
         # The calls and the end as generate()'s whole response gives them; a
         # round that ends without its done event stops after its calls.
         for event in response_stream_events(_response(round_).model_copy(update={"content": ""})):
@@ -107,6 +110,13 @@ class ScriptedModel(AIProvider):
         if position >= len(self._rounds):
             raise ModelPastItsScriptError(f"generation {position + 1} is past the script")
         return self._rounds[position]
+
+
+def _refuse(round_: Mapping[str, Any]) -> None:
+    """Raise the provider's refusal a round's ``refuses`` names: an error not
+    retried, with its HTTP status (RFC §6.4)."""
+    if (refusal := round_.get("refuses")) is not None:
+        raise ProviderError(refusal["message"], retryable=False, status_code=refusal["status"])
 
 
 def _deltas(round_: Mapping[str, Any]) -> list[str]:
