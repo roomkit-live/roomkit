@@ -1,0 +1,209 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/a-failed-task-s-exception-keeps-its-attributes",
+  "title": "A task whose worker's provider refused keeps the refusal's attributes on its exception, its text led by the provider and its status; an agent's delivery its provider's error failed before its turn is not retryable",
+  "rules": [
+    "§23.3 step 6",
+    "§6.4",
+    "§10.6.8",
+    "§5.13"
+  ],
+  "notes": "Python: tests/test_provider_error_names_provider.py (str(ProviderError) leads with its provider and status), turns/_error_codec.py error_record (attributes: the error's JSON attributes, a ProviderError's retryable, provider, status_code and context_overflow), core/mixins/lane_execution.py _delivery_error (retryable as the raised error's retryable, true when it has none). The worker's provider mock refuses with status 503: the task fails with the provider's text, and its exception, read by the turn's host through wait_task, carries the refusal's attributes. The clerk's budget-aware memory finds the message alone past its window and raises a ProviderError, not retryable, before the turn: the message's delivery to the clerk fails with code ProviderError, not retryable. A scripted model's refusal fails the turn's stream instead, which the result's error reports, its delivery result not kept.",
+  "setup": {
+    "channels": [
+      {
+        "id": "email",
+        "type": "email",
+        "category": "transport"
+      },
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "refuses": {
+                "status": 503,
+                "message": "upstream unavailable",
+                "provider": "mock"
+              }
+            },
+            {
+              "refuses": {
+                "status": 503,
+                "message": "upstream unavailable",
+                "provider": "mock"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "id": "clerk",
+        "type": "ai",
+        "category": "intelligence",
+        "model": {
+          "rounds": [
+            {
+              "text": "never"
+            }
+          ]
+        },
+        "memory": {
+          "budget_aware": {
+            "max_context_tokens": 5,
+            "min_events": 1
+          }
+        }
+      },
+      {
+        "id": "boss",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "go"
+            },
+            "do": [
+              {
+                "call": "host.delegate",
+                "room_id": "parent",
+                "agent_id": "worker",
+                "task": "Find it.",
+                "as": "d1",
+                "expect": {
+                  "result": {
+                    "$present": true
+                  }
+                }
+              },
+              {
+                "call": "host.wait_task",
+                "task_id": "$d1",
+                "as": "d1_waited",
+                "expect": {
+                  "result": {
+                    "result": {
+                      "status": "failed",
+                      "error": "mock (503): upstream unavailable"
+                    },
+                    "exception": {
+                      "kind": {
+                        "$contains": "ProviderError"
+                      },
+                      "message": "mock (503): upstream unavailable",
+                      "attributes": {
+                        "retryable": false,
+                        "provider": "mock",
+                        "status_code": 503,
+                        "context_overflow": null
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "parent",
+        "bindings": [
+          {
+            "channel_id": "email"
+          },
+          {
+            "channel_id": "boss"
+          }
+        ]
+      },
+      {
+        "id": "desk",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "clerk"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "parent",
+      "agent_id": "worker",
+      "task": "Find it.",
+      "wait": true,
+      "expect": {
+        "result": {
+          "status": "failed",
+          "result": {
+            "status": "failed",
+            "error": "mock (503): upstream unavailable"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "parent",
+      "message": {
+        "channel_id": "email",
+        "sender_id": "alice@example.com",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "desk",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Please read this long message about my order, which is late."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "delivery_results": {
+            "clerk": {
+              "status": "failed",
+              "error": {
+                "code": "ProviderError",
+                "message": {
+                  "$contains": "exceeds the model's context window"
+                },
+                "retryable": false
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ]
+}
