@@ -1,12 +1,12 @@
 {
   "$schema": "../../scenario.schema.json",
   "id": "verification/the-handle-s-cancel-reaches-a-held-message-while-its-delivery-set-runs",
-  "title": "A held message with no key whose call is cancelled while its delivery set runs is released with no answer: the cancellation is written on its mark",
+  "title": "A held message whose call is cancelled by its key while its delivery set runs is released with no answer: the cancellation is written on its mark",
   "rules": [
     "§11.7.6",
     "§10.1 Explicit delivery cancellation"
   ],
-  "notes": "Python: src/roomkit/core/_delivery_keys.py (hold, unhold), src/roomkit/core/mixins/verification.py (_name_held, _unhold_released, _record_held_cancellation, _answer_released); tests/test_verification_release_cancel.py::test_the_handle_reaches_a_held_message_while_its_delivery_set_runs[while its delivery set runs] (RMK-1182), the handle's cancel made by the call's caller leaving it, here a cancel by the key the call gave; its [once it ran] case is verification/a-held-message-is-answered-once-verified's.",
+  "notes": "Python: src/roomkit/core/_delivery_keys.py (hold, unhold), src/roomkit/core/mixins/verification.py (_name_held, _unhold_released, _record_held_cancellation, _answer_released); tests/test_verification_release_cancel.py::test_the_handle_reaches_a_held_message_while_its_delivery_set_runs[while its delivery set runs] (RMK-1182): there the handle's cancel, here a cancel by the key the call gave. The handle's own cancel, with no key, and its [once it ran] case, a cancel that reaches nothing: roomkit-rs tests/verification_release.rs::the_handle_reaches_a_held_message_while_its_delivery_set_runs, ::the_handle_does_not_reach_a_held_message_once_its_delivery_set_ran.",
   "setup": {
     "kit": {
       "identity_resolver": {

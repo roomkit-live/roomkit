@@ -121,6 +121,31 @@
           "event": null
         }
       }
+    },
+    {
+      "call": "store.get_timeline",
+      "room_id": "room-1",
+      "expect": {
+        "result": [
+          {
+            "content": {
+              "body": "What's my balance?"
+            },
+            "visibility": "all"
+          },
+          {
+            "content": {
+              "body": "answer"
+            },
+            "responds_to": "room-1#0"
+          }
+        ]
+      },
+      "event_filter": {
+        "event_types": [
+          "message"
+        ]
+      }
     }
   ],
   "expect": {

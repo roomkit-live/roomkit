@@ -1,0 +1,169 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "verification/a-rerun-whose-room-is-deleted-in-the-lane-is-refused",
+  "title": "A held message released from a turn in its room is answered in the room's lane after that turn's delivery: its room deleted meanwhile, the answer is refused before any agent runs, room_refused_event naming no status",
+  "rules": [
+    "§11.7.6",
+    "§5.1",
+    "§13.6",
+    "§10.1 step 18"
+  ],
+  "notes": "Python: src/roomkit/core/mixins/lane_execution.py (_refuse_closed_rerun, _refuses_writes: a room gone refuses), src/roomkit/core/mixins/regenerate.py (_rerun_agents_on); review of RMK-1173/RMK-1182, finding 3 (RMK-1195).",
+  "setup": {
+    "kit": {
+      "identity_resolver": {
+        "answers": [
+          {
+            "when": {
+              "sender_id": "+15551234567"
+            },
+            "repeat": true,
+            "result": {
+              "status": "identified",
+              "identity": {
+                "id": "alice-id"
+              }
+            }
+          }
+        ]
+      },
+      "verification_policy": {}
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "on_event": [
+          {
+            "when": {
+              "text": "Wire 500 to Bob"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "answer to Wire 500 to Bob"
+                }
+              }
+            ]
+          },
+          {
+            "when": {
+              "text": "Verified by phone"
+            },
+            "do": [
+              {
+                "call": "complete_verification",
+                "request_id": "$req",
+                "secret": "$req.secret",
+                "as": "verified"
+              },
+              {
+                "call": "store.delete_room",
+                "room_id": "room-1"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Wire 500 to Bob"
+        }
+      }
+    },
+    {
+      "call": "request_verification",
+      "identity_id": "alice-id",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "as": "req",
+      "window_start": "2000-01-01T00:00:00Z"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "advisor",
+        "content": {
+          "type": "text",
+          "body": "Verified by phone"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "turns": {
+      "room-1": {
+        "ai": [
+          {
+            "content": {
+              "body": "Verified by phone"
+            }
+          }
+        ]
+      }
+    },
+    "framework_events": {
+      "room-1": [
+        "identity_resolved",
+        {
+          "event": "delivery_succeeded",
+          "channel_id": "ws"
+        },
+        "event_processed",
+        "verification_requested",
+        "verification_completed",
+        {
+          "$unordered": [
+            {
+              "event": "room_refused_event",
+              "status": null,
+              "operation": "regenerate",
+              "event_type": "message"
+            },
+            {
+              "event": "delivery_succeeded",
+              "channel_id": "sms"
+            },
+            "event_processed"
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,191 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "verification/an-adopted-held-message-is-named-until-its-release",
+  "title": "A message a SYNC hook sends into its room, held for verification, stays named by its key past its call: a cancel then is counted, and its release restores it with no agent answering",
+  "rules": [
+    "§11.7.6",
+    "§10.1 Explicit delivery cancellation",
+    "§9.5.1 Reentrance"
+  ],
+  "notes": "Python: src/roomkit/core/mixins/inbound.py (_prepare_event_inner: the adopted call is located and named as any call), src/roomkit/core/mixins/verification.py (_name_held); review of RMK-1173/RMK-1182, finding 1a (RMK-1195).",
+  "setup": {
+    "kit": {
+      "identity_resolver": {
+        "answers": [
+          {
+            "when": {
+              "sender_id": "+15551234567"
+            },
+            "repeat": true,
+            "result": {
+              "status": "identified",
+              "identity": {
+                "id": "alice-id"
+              }
+            }
+          }
+        ]
+      },
+      "verification_policy": {}
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "on_event": [
+          {
+            "when": {
+              "text": "Wire 500 to Bob"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "answer to Wire 500 to Bob"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "console",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "Forwarding Alice's request"
+            },
+            "do": [
+              {
+                "call": "process_inbound",
+                "room_id": "$room",
+                "message": {
+                  "channel_id": "sms",
+                  "sender_id": "+15551234567",
+                  "content": {
+                    "type": "text",
+                    "body": "Wire 500 to Bob"
+                  },
+                  "delivery_key": "task-42"
+                }
+              }
+            ],
+            "result": {
+              "action": "block",
+              "reason": "console note"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "advisor",
+        "content": {
+          "type": "text",
+          "body": "Forwarding Alice's request"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "console note"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "cancel_delivery",
+      "key": "task-42",
+      "reason": "user_stopped",
+      "expect": {
+        "result": 1
+      }
+    },
+    {
+      "call": "request_verification",
+      "identity_id": "alice-id",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "as": "req",
+      "window_start": "2000-01-01T00:00:00Z"
+    },
+    {
+      "call": "complete_verification",
+      "request_id": "$req",
+      "secret": "$req.secret"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "cancel_delivery",
+      "key": "task-42",
+      "expect": {
+        "result": 0
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "Wire 500 to Bob"
+          },
+          "visibility": "all",
+          "metadata": {
+            "roomkit:verification_held": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "content": {
+            "body": "Forwarding Alice's request"
+          },
+          "status": "blocked"
+        }
+      ]
+    },
+    "turns": {
+      "room-1": {
+        "ai": []
+      }
+    }
+  }
+}
