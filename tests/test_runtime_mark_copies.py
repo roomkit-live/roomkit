@@ -242,6 +242,21 @@ def test_prose_with_a_mark_s_words_is_kept(prose: str) -> None:
     assert without_mark_copies(prose) == prose
 
 
+@pytest.mark.parametrize(
+    ("copy", "after"),
+    [
+        ("x context compacted - earlier conversation summary.", "."),
+        ("x conversation summary - earlier messages compacted.", "."),
+        (f"x {INSTRUCTION_MARKER[1:-1]}.!?", "!?"),
+    ],
+    ids=["compaction", "memory summary", "instruction"],
+)
+def test_a_whole_copy_keeps_the_punctuation_after_it(copy: str, after: str) -> None:
+    """A whole copy takes the mark's own punctuation with it, never the
+    sentence's that follows (RMK-1231)."""
+    assert without_mark_copies(copy) == f"x {COPIED_MARK}{after}"
+
+
 def test_a_copy_of_the_notes_header_keeps_its_own_mark() -> None:
     assert without_mark_copies(f"a {TURN_NOTES_HEADER} b") == f"a {COPIED_HEADER_MARK} b"
 
