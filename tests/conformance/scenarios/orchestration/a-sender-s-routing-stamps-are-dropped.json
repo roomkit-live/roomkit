@@ -7,7 +7,7 @@
     "§19.3",
     "§9.5.1"
   ],
-  "notes": "Only a hook writes _routed_to and _always_process. A sender's _routed_to would otherwise pick the agent that answers it, and its _always_process add an agent to its address. A router that leaves the message alone leaves no stamp of the sender's; one off the lock (§9.5.1) keeps its own.",
+  "notes": "Only a hook writes _routed_to and _always_process. A sender's _routed_to would otherwise pick the agent that answers it, and its _always_process add an agent to its address. A router that leaves the message alone leaves no stamp of the sender's; one off the lock (§9.5.1) keeps its own. An off-lock hook that leaves the message alone hands on no stamp of the sender's either: the stamps are dropped before the off-lock check too.",
   "setup": {
     "channels": [
       {
@@ -142,6 +142,40 @@
           ]
         }
       }
+    },
+    {
+      "call": "remove_room_hook",
+      "room_id": "r1",
+      "name": "router",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "call": "add_room_hook",
+      "room_id": "r1",
+      "hook": {
+        "name": "router",
+        "trigger": "before_broadcast",
+        "priority": -100,
+        "needs_lock": false,
+        "router": {}
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550001111",
+        "content": {
+          "type": "text",
+          "body": "five"
+        },
+        "metadata": {
+          "_routed_to": "b"
+        }
+      }
     }
   ],
   "expect": {
@@ -156,6 +190,9 @@
           },
           {
             "id": "r1#2"
+          },
+          {
+            "id": "r1#4"
           }
         ],
         "b": [
@@ -167,6 +204,9 @@
           },
           {
             "id": "r1#3"
+          },
+          {
+            "id": "r1#4"
           }
         ]
       }
@@ -201,6 +241,16 @@
           "metadata": {
             "_routed_to": "b",
             "_always_process": []
+          }
+        },
+        {
+          "metadata": {
+            "_routed_to": {
+              "$absent": true
+            },
+            "_always_process": {
+              "$absent": true
+            }
           }
         }
       ]
