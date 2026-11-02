@@ -105,6 +105,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   so a transport registered under that id took the agent's turns; they raise
   `ValueError("Channel 'ana' is not an intelligence channel")`, as for an
   agent named by its id, and attach nothing.
+
+- **A binding's system prompt that is no text fails the turn with a
+  validation error** (RFC §6.4, Appendix A.9, RMK-1237). A room binding an
+  agent with `metadata={"system_prompt": 5}` failed its turn with an
+  accidental `TypeError` (`unsupported operand type(s) for +`), and one with
+  `0`, `False`, `[]` or `{}` lifted the channel's prompt unseen. The prompt
+  is now read as `AIContext` reads a text, as the turn's temperature and max
+  tokens are: any other value fails the turn with pydantic's
+  `ValidationError`, every setting it refuses named.
+
 - **A call streamed before a refusal leaves the author's images sent**
   (RFC §6.4, RMK-1220). A turn's first request carrying an author image
   whose provider streamed a tool call, then failed with a 400 not retried,

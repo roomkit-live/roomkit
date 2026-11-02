@@ -12,6 +12,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+from pydantic import ValidationError
 
 from roomkit.channels._turn_config import AIChannelTurnConfig
 from roomkit.channels.ai import AIChannel
@@ -275,6 +276,25 @@ class TestANullDefers:
         ai_ctx = await ch._build_context(make_event(), binding, _ctx(binding))
 
         assert ai_ctx.tools == []
+
+
+class TestABindingPromptThatIsNoText:
+    """A binding's system prompt is read as AIContext reads a text (RFC §6.4,
+    Appendix A.9, RMK-1237): any other value fails the turn with pydantic's
+    validation error, every setting it refuses named, before the turn reads
+    the prompt as a text, where 5 raised a TypeError and 0 lifted the
+    channel's prompt unseen."""
+
+    @pytest.mark.parametrize("prompt", [5, 0, False, [], {"a": 1}])
+    async def test_a_prompt_that_is_no_text_fails_the_turn(self, prompt: Any) -> None:
+        ch = _channel(system_prompt="The channel's prompt.")
+        binding = _binding(metadata={"system_prompt": prompt, "temperature": "hot"})
+
+        with pytest.raises(ValidationError) as raised:
+            await ch._build_context(make_event(), binding, _ctx(binding))
+
+        refused = [error["loc"] for error in raised.value.errors()]
+        assert refused == [("system_prompt",), ("temperature",)]
 
 
 async def _off_turn(binding, context):

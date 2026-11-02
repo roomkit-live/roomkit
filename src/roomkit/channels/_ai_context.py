@@ -977,6 +977,11 @@ class AIContextMixin(_AIChannelContract):
         settings = {key: self._turn_value(key, binding, turn) for key in _TURN_SETTINGS}
         if self._thinking_turned_off(binding, turn):
             settings["thinking_budget"] = None
+        prompt = settings["system_prompt"]
+        if prompt is not None and not isinstance(prompt, str):
+            # Read as AIContext reads it, before the turn reads it as a text:
+            # a value it refuses fails the turn, every refused setting named.
+            settings["system_prompt"] = AIContext(**settings).system_prompt
         return settings
 
     def _thinking_turned_off(
