@@ -281,6 +281,7 @@ def scripted_agent(
                 parameters=dict(tool.get("parameters", {})),
             )
             for tool in tools
+            if tool.get("declared", True)
         ]
         + _kit_tools(spec.get("kit_tools", []), kit),
         tool_handler=_tool_handler(tools, gates),

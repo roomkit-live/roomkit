@@ -14,10 +14,10 @@ from collections.abc import Mapping
 from typing import Any
 
 from roomkit.models.tool_call import AIGenerationEvent, AIResponseEvent, ToolRoundEvent
-from roomkit.providers.ai import AIMessage
+from roomkit.providers.ai import AIMessage, AITool
 from tests.conformance._agent import messages
 
-_GENERATION_PATCH = frozenset({"system_prompt", "messages", "tools"})
+_GENERATION_PATCH = frozenset({"system_prompt", "messages", "tools", "define"})
 _TOOL_ROUND_PATCH = frozenset({"withdrawn", "messages"})
 
 
@@ -42,7 +42,9 @@ def generation_record(payload: AIGenerationEvent) -> dict[str, Any]:
 def patched_generation(payload: AIGenerationEvent, patch: Mapping[str, Any]) -> AIGenerationEvent:
     """A replacement event (``HookResult.modify``): its context's
     ``system_prompt`` and ``messages`` (each ``{role, text}``) are the patch's,
-    and its ``tools`` those of the context the patch names, in their order."""
+    its ``tools`` those of the context the patch names, in their order, and
+    each tool ``define`` gives in place of the tool of its name, or after
+    them."""
     _refuse_unknown(patch, _GENERATION_PATCH)
     context = payload.ai_context
     update: dict[str, Any] = {}
@@ -56,7 +58,27 @@ def patched_generation(payload: AIGenerationEvent, patch: Mapping[str, Any]) -> 
     if "tools" in patch:
         kept = set(patch["tools"])
         update["tools"] = [tool for tool in context.tools or [] if tool.name in kept]
+    if "define" in patch:
+        update["tools"] = _defined(update.get("tools", context.tools or []), patch["define"])
     return dataclasses.replace(payload, ai_context=context.model_copy(update=update))
+
+
+def _defined(tools: list[AITool], definitions: list[Mapping[str, Any]]) -> list[AITool]:
+    """*tools* with each of *definitions* in place of the tool of its name,
+    or after them."""
+    tools = list(tools)
+    for definition in definitions:
+        tool = AITool(
+            name=definition["name"],
+            description=definition.get("description", ""),
+            parameters=dict(definition.get("parameters", {})),
+        )
+        at = next((i for i, t in enumerate(tools) if t.name == tool.name), None)
+        if at is None:
+            tools.append(tool)
+        else:
+            tools[at] = tool
+    return tools
 
 
 def tool_round_record(payload: ToolRoundEvent) -> dict[str, Any]:

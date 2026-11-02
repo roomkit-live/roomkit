@@ -88,6 +88,7 @@ TOOL = {
     "hangs",
     "declines",
     "gate",
+    "declared",
 }
 RAISES = {"kind", "message"}
 HUMAN_INPUT = {"tool_names", "timeout_ms", "tools"}
