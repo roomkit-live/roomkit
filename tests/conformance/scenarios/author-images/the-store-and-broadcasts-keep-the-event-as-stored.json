@@ -1,0 +1,163 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "author-images/the-store-and-broadcasts-keep-the-event-as-stored",
+  "title": "An image the application keeps beside an event's content reaches the model as the kit's media resolver gives it, while the store and every transport the event is broadcast to keep the event as it was stored",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python's with_attached_media reads the event for the model alone (tests/test_attached_media.py::test_the_store_and_broadcasts_keep_the_event_as_stored).",
+  "setup": {
+    "kit": {
+      "media_resolver": {
+        "media": {
+          "app-media://photo-1": "AQIDBA=="
+        }
+      },
+      "attached_media": {
+        "key": "files"
+      }
+    },
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "watcher",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "vision": true,
+          "rounds": [
+            {
+              "text": "Seen 0."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "watcher"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "compare with mine"
+      },
+      "metadata": {
+        "files": [
+          {
+            "type": "media",
+            "url": "app-media://photo-1",
+            "mime_type": "image/png",
+            "filename": "lamp.png"
+          }
+        ]
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "compare with mine"
+          },
+          "metadata": {
+            "files": [
+              {
+                "type": "media",
+                "url": "app-media://photo-1",
+                "mime_type": "image/png",
+                "filename": "lamp.png"
+              }
+            ]
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Seen 0."
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "watcher": [
+          {
+            "content": {
+              "type": "text",
+              "body": "compare with mine"
+            },
+            "metadata": {
+              "files": [
+                {
+                  "type": "media",
+                  "url": "app-media://photo-1",
+                  "mime_type": "image/png",
+                  "filename": "lamp.png"
+                }
+              ]
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "Seen 0."
+            }
+          }
+        ]
+      }
+    },
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "compare with mine",
+              "parts": [
+                {
+                  "text": "compare with mine"
+                },
+                {
+                  "image": "data:image/png;base64,AQIDBA==",
+                  "mime_type": "image/png"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

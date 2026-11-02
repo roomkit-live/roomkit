@@ -1,0 +1,154 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "author-images/a-reference-resolves-for-the-room-of-its-turn",
+  "title": "The kit's media resolver is asked for a reference afresh on every turn that sends it, with the room of that turn",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python's _resolved: resolver(media, room_id), the room the host authorizes the reference for; nothing of its answer is kept from one turn to the next (tests/test_attached_media.py::test_an_attached_image_reaches_the_model_with_its_words, host.asked).",
+  "setup": {
+    "kit": {
+      "media_resolver": {
+        "media": {
+          "app-media://photo-1": "AQIDBA=="
+        }
+      }
+    },
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "vision": true,
+          "rounds": [
+            {
+              "text": "Seen 0."
+            },
+            {
+              "text": "Seen 1."
+            },
+            {
+              "text": "Seen 2."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "media",
+          "url": "app-media://photo-1",
+          "mime_type": "image/png",
+          "filename": "lamp.png"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "and now?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "media",
+          "url": "app-media://photo-1",
+          "mime_type": "image/png",
+          "filename": "lamp.png"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "media_resolver": [
+      {
+        "url": "app-media://photo-1",
+        "room_id": "room-1"
+      },
+      {
+        "url": "app-media://photo-1",
+        "room_id": "room-1"
+      },
+      {
+        "url": "app-media://photo-1",
+        "room_id": "room-2"
+      }
+    ]
+  }
+}
