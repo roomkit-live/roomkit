@@ -220,6 +220,8 @@ def scripted_agent(
         kwargs["max_context_events"] = spec["max_context_events"]
     if "tool_timeout_ms" in spec:
         kwargs["tool_timeout_seconds"] = _seconds(spec["tool_timeout_ms"])
+    if "turn_budget_tokens" in spec:
+        kwargs["turn_budget_tokens"] = spec["turn_budget_tokens"]
     if "tool_timeouts_ms" in spec:
         kwargs["tool_timeouts"] = {
             name: _seconds(bound) for name, bound in spec["tool_timeouts_ms"].items()

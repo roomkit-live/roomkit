@@ -60,6 +60,7 @@ CHANNEL = {
     "max_context_events",
     "tool_timeout_ms",
     "tool_timeouts_ms",
+    "turn_budget_tokens",
     "serialize_room_turns",
     "steer_room_turns",
     "human_input",
