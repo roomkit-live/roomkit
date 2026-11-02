@@ -227,8 +227,8 @@ async def test_a_binding_s_max_tokens_is_measured_as_the_turn_reads_it() -> None
 
 async def test_a_refused_max_tokens_fails_the_turn_as_with_any_memory() -> None:
     """A budget-aware memory reserves nothing for a ``max_tokens`` the turn
-    refuses: the turn fails with pydantic's error naming it, as with any
-    other memory, its model not asked."""
+    refuses: the turn fails with pydantic's error naming every setting it
+    refuses, as with any other memory, its model not asked."""
     provider = MockAIProvider(responses=["ok"])
     agent = Agent(
         "agent",
@@ -236,13 +236,17 @@ async def test_a_refused_max_tokens_fails_the_turn_as_with_any_memory() -> None:
         memory=BudgetAwareMemory(SlidingWindowMemory(), max_context_tokens=8_000),
     )
 
-    with pytest.raises(ValidationError, match="max_tokens"):
+    with pytest.raises(ValidationError, match="2 validation errors") as refused:
         await respond(
             agent,
             make_event(body="hello", channel_id="member", room_id="r1"),
-            _binding(max_tokens="many"),
+            _binding(temperature="hot", max_tokens="many"),
             RoomContext(room=Room(id="r1")),
         )
+    assert [error["loc"] for error in refused.value.errors()] == [
+        ("temperature",),
+        ("max_tokens",),
+    ]
     assert provider.calls == []
 
 
