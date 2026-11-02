@@ -1,0 +1,197 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/rules-are-tried-lowest-priority-first",
+  "title": "A router tries its rules in ascending priority, each rule's conditions all holding: the message's intent, the source's channel type",
+  "rules": [
+    "§19.4 step 2",
+    "§19.4 step 3"
+  ],
+  "notes": "billing (priority 0) wins over low (priority 10) on a billing intent, and over web (priority 5) on a payment from a websocket; a websocket message of another intent goes to web; an SMS of another intent matches no rule.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "billing",
+        "type": "ai",
+        "category": "intelligence"
+      },
+      {
+        "id": "low",
+        "type": "ai",
+        "category": "intelligence"
+      },
+      {
+        "id": "web",
+        "type": "ai",
+        "category": "intelligence"
+      },
+      {
+        "id": "general",
+        "type": "ai",
+        "category": "intelligence"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "billing"
+          },
+          {
+            "channel_id": "low"
+          },
+          {
+            "channel_id": "web"
+          },
+          {
+            "channel_id": "general"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "add_room_hook",
+      "room_id": "r1",
+      "hook": {
+        "name": "router",
+        "trigger": "before_broadcast",
+        "priority": -100,
+        "router": {
+          "rules": [
+            {
+              "agent_id": "low",
+              "priority": 10,
+              "conditions": {
+                "intents": [
+                  "billing"
+                ]
+              }
+            },
+            {
+              "agent_id": "billing",
+              "conditions": {
+                "intents": [
+                  "billing",
+                  "payment"
+                ]
+              }
+            },
+            {
+              "agent_id": "web",
+              "priority": 5,
+              "conditions": {
+                "channel_types": [
+                  "websocket"
+                ]
+              }
+            }
+          ],
+          "default_agent_id": "general"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550001111",
+        "content": {
+          "type": "text",
+          "body": "my bill"
+        },
+        "metadata": {
+          "intent": "billing"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550001111",
+        "content": {
+          "type": "text",
+          "body": "help"
+        },
+        "metadata": {
+          "intent": "support"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "+15550001111",
+        "content": {
+          "type": "text",
+          "body": "help"
+        },
+        "metadata": {
+          "intent": "support"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "+15550001111",
+        "content": {
+          "type": "text",
+          "body": "pay"
+        },
+        "metadata": {
+          "intent": "payment"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "turns": {
+      "r1": {
+        "billing": [
+          {
+            "id": "r1#0"
+          },
+          {
+            "id": "r1#3"
+          }
+        ],
+        "low": [],
+        "web": [
+          {
+            "id": "r1#2"
+          }
+        ],
+        "general": [
+          {
+            "id": "r1#1"
+          }
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,131 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/an-addressed-message-is-left-to-its-address",
+  "title": "A router leaves an addressed message to its address, over the agent the conversation state holds, and routes the next unaddressed one to that agent",
+  "rules": [
+    "§19.4 step 0",
+    "§19.4 step 1",
+    "§19.2"
+  ],
+  "notes": "The room's conversation state names a as its active agent: a keeps the conversation (sticky affinity), except for a message addressed to another agent, which the router does not stamp.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "category": "intelligence"
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "category": "intelligence"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "metadata": {
+          "_conversation_state": {
+            "active_agent_id": "a"
+          }
+        },
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "a"
+          },
+          {
+            "channel_id": "b"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "add_room_hook",
+      "room_id": "r1",
+      "hook": {
+        "name": "router",
+        "trigger": "before_broadcast",
+        "priority": -100,
+        "router": {
+          "default_agent_id": "b"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550001111",
+        "content": {
+          "type": "text",
+          "body": "for b"
+        },
+        "addressed_to": [
+          "b"
+        ]
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550001111",
+        "content": {
+          "type": "text",
+          "body": "for whoever"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "turns": {
+      "r1": {
+        "a": [
+          {
+            "id": "r1#1"
+          }
+        ],
+        "b": [
+          {
+            "id": "r1#0"
+          }
+        ]
+      }
+    },
+    "timeline": {
+      "r1": [
+        {
+          "addressed_to": [
+            "b"
+          ],
+          "metadata": {
+            "_routed_to": {
+              "$absent": true
+            },
+            "_always_process": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "metadata": {
+            "_routed_to": "a",
+            "_always_process": []
+          }
+        }
+      ]
+    }
+  }
+}

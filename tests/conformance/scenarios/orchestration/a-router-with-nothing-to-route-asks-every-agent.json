@@ -1,0 +1,119 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-router-with-nothing-to-route-asks-every-agent",
+  "title": "A router with no rule and no default stamps nothing on a message, which asks every agent, and still keeps an agent's answer from the other agents",
+  "rules": [
+    "§19.4",
+    "§19.3"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "from a"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "category": "intelligence"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "a"
+          },
+          {
+            "channel_id": "b"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "add_room_hook",
+      "room_id": "r1",
+      "hook": {
+        "name": "router",
+        "trigger": "before_broadcast",
+        "priority": -100,
+        "router": {}
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550001111",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "turns": {
+      "r1": {
+        "a": [
+          {
+            "id": "r1#0"
+          }
+        ],
+        "b": [
+          {
+            "id": "r1#0"
+          }
+        ]
+      }
+    },
+    "timeline": {
+      "r1": [
+        {
+          "metadata": {
+            "_routed_to": {
+              "$absent": true
+            },
+            "_always_process": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "source": {
+            "channel_id": "a"
+          },
+          "metadata": {
+            "_routed_to": "_none_",
+            "_always_process": []
+          }
+        }
+      ]
+    }
+  }
+}

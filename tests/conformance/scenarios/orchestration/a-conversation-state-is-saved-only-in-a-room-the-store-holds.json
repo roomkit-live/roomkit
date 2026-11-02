@@ -1,0 +1,31 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-conversation-state-is-saved-only-in-a-room-the-store-holds",
+  "title": "Saving a conversation state for a room the store lacks fails, and creates no room",
+  "rules": [
+    "§19.2"
+  ],
+  "setup": {},
+  "steps": [
+    {
+      "call": "save_conversation_state",
+      "room_id": "missing",
+      "transitions": [
+        {
+          "to_phase": "handling"
+        }
+      ],
+      "expect": {
+        "error": "room_not_found"
+      }
+    },
+    {
+      "call": "store.room_exists",
+      "room_id": "missing",
+      "expect": {
+        "result": false
+      }
+    }
+  ],
+  "expect": {}
+}

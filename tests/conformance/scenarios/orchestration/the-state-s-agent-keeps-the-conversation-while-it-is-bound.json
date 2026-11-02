@@ -1,0 +1,123 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/the-state-s-agent-keeps-the-conversation-while-it-is-bound",
+  "title": "The agent the conversation state holds keeps the conversation while the room binds it, then the router falls back to its default",
+  "rules": [
+    "§19.4 step 1",
+    "§19.4 step 3",
+    "§19.2"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "category": "intelligence"
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "category": "intelligence"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "metadata": {
+          "_conversation_state": {
+            "active_agent_id": "b"
+          }
+        },
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "a"
+          },
+          {
+            "channel_id": "b"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "add_room_hook",
+      "room_id": "r1",
+      "hook": {
+        "name": "router",
+        "trigger": "before_broadcast",
+        "priority": -100,
+        "router": {
+          "default_agent_id": "a"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550001111",
+        "content": {
+          "type": "text",
+          "body": "first"
+        }
+      }
+    },
+    {
+      "call": "detach_channel",
+      "room_id": "r1",
+      "channel_id": "b"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550001111",
+        "content": {
+          "type": "text",
+          "body": "second"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "turns": {
+      "r1": {
+        "a": [
+          {
+            "id": "r1#1"
+          }
+        ],
+        "b": [
+          {
+            "id": "r1#0"
+          }
+        ]
+      }
+    },
+    "timeline": {
+      "r1": [
+        {
+          "metadata": {
+            "_routed_to": "b"
+          }
+        },
+        {
+          "metadata": {
+            "_routed_to": "a"
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,145 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-kit-s-router-tries-rules-of-one-priority-in-their-order",
+  "title": "A router registered on the kit routes every room's messages, its rules of one priority tried in the order they were given",
+  "rules": [
+    "§19.4 step 2",
+    "§19.4 step 3",
+    "§9.1"
+  ],
+  "notes": "Both rules hold for an SMS of a billing intent, at the same priority: the first given, zeta, wins over alpha, which an order by id would pick. An SMS of another intent matches alpha's rule alone.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "zeta",
+        "type": "ai",
+        "category": "intelligence"
+      },
+      {
+        "id": "alpha",
+        "type": "ai",
+        "category": "intelligence"
+      },
+      {
+        "id": "general",
+        "type": "ai",
+        "category": "intelligence"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "zeta"
+          },
+          {
+            "channel_id": "alpha"
+          },
+          {
+            "channel_id": "general"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "router",
+        "trigger": "before_broadcast",
+        "priority": -100,
+        "router": {
+          "rules": [
+            {
+              "agent_id": "zeta",
+              "conditions": {
+                "intents": [
+                  "billing"
+                ]
+              }
+            },
+            {
+              "agent_id": "alpha",
+              "conditions": {
+                "channel_types": [
+                  "sms"
+                ]
+              }
+            }
+          ],
+          "default_agent_id": "general"
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550001111",
+        "content": {
+          "type": "text",
+          "body": "my bill"
+        },
+        "metadata": {
+          "intent": "billing"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550001111",
+        "content": {
+          "type": "text",
+          "body": "help"
+        },
+        "metadata": {
+          "intent": "support"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "turns": {
+      "r1": {
+        "zeta": [
+          {
+            "id": "r1#0"
+          }
+        ],
+        "alpha": [
+          {
+            "id": "r1#1"
+          }
+        ],
+        "general": []
+      }
+    },
+    "timeline": {
+      "r1": [
+        {
+          "metadata": {
+            "_routed_to": "zeta"
+          }
+        },
+        {
+          "metadata": {
+            "_routed_to": "alpha"
+          }
+        }
+      ]
+    }
+  }
+}

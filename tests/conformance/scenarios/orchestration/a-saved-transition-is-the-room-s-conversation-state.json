@@ -1,0 +1,113 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-saved-transition-is-the-room-s-conversation-state",
+  "title": "Saved phase transitions are the room's conversation state under _conversation_state, beside the room's other metadata, and the next save starts from it",
+  "rules": [
+    "§19.2"
+  ],
+  "notes": "Each transition records where the state was and where it goes; an agent change counts a handoff. The second save reads the state the first one stored.",
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1",
+        "metadata": {
+          "custom_key": "custom_value"
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "save_conversation_state",
+      "room_id": "r1",
+      "transitions": [
+        {
+          "to_phase": "handling",
+          "to_agent": "agent-a",
+          "reason": "qualified",
+          "metadata": {
+            "summary": "user wants help"
+          }
+        },
+        {
+          "to_phase": "review",
+          "to_agent": "agent-b",
+          "reason": "code complete"
+        }
+      ],
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "save_conversation_state",
+      "room_id": "r1",
+      "transitions": [
+        {
+          "to_phase": "coding",
+          "to_agent": "agent-a",
+          "reason": "fixes needed"
+        }
+      ],
+      "expect": {
+        "result": null
+      }
+    }
+  ],
+  "expect": {
+    "rooms": {
+      "r1": {
+        "metadata": {
+          "custom_key": "custom_value",
+          "_conversation_state": {
+            "phase": "coding",
+            "active_agent_id": "agent-a",
+            "previous_agent_id": "agent-b",
+            "handoff_count": 3,
+            "phase_started_at": {
+              "$present": true
+            },
+            "context": {},
+            "phase_history": [
+              {
+                "from_phase": "intake",
+                "to_phase": "handling",
+                "from_agent": null,
+                "to_agent": "agent-a",
+                "reason": "qualified",
+                "metadata": {
+                  "summary": "user wants help"
+                },
+                "timestamp": {
+                  "$present": true
+                }
+              },
+              {
+                "from_phase": "handling",
+                "to_phase": "review",
+                "from_agent": "agent-a",
+                "to_agent": "agent-b",
+                "reason": "code complete",
+                "metadata": {},
+                "timestamp": {
+                  "$present": true
+                }
+              },
+              {
+                "from_phase": "review",
+                "to_phase": "coding",
+                "from_agent": "agent-b",
+                "to_agent": "agent-a",
+                "reason": "fixes needed",
+                "metadata": {},
+                "timestamp": {
+                  "$present": true
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}

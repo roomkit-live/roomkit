@@ -1,0 +1,141 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-supervisor-watches-an-addressed-message",
+  "title": "A router's supervisor is asked about a message addressed to another agent, and is not stamped on one addressed to itself",
+  "rules": [
+    "§19.4 step 0",
+    "§19.4 step 4"
+  ],
+  "notes": "On an addressed message the router writes no _routed_to: the address decides, and the supervisor is added on top of it.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "category": "intelligence"
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "category": "intelligence"
+      },
+      {
+        "id": "sup",
+        "type": "ai",
+        "category": "intelligence"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "a"
+          },
+          {
+            "channel_id": "b"
+          },
+          {
+            "channel_id": "sup"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "add_room_hook",
+      "room_id": "r1",
+      "hook": {
+        "name": "router",
+        "trigger": "before_broadcast",
+        "priority": -100,
+        "router": {
+          "supervisor_id": "sup"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550001111",
+        "content": {
+          "type": "text",
+          "body": "for b"
+        },
+        "addressed_to": [
+          "b"
+        ]
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550001111",
+        "content": {
+          "type": "text",
+          "body": "for sup"
+        },
+        "addressed_to": [
+          "sup"
+        ]
+      }
+    }
+  ],
+  "expect": {
+    "turns": {
+      "r1": {
+        "a": [],
+        "b": [
+          {
+            "id": "r1#0"
+          }
+        ],
+        "sup": [
+          {
+            "id": "r1#0"
+          },
+          {
+            "id": "r1#1"
+          }
+        ]
+      }
+    },
+    "timeline": {
+      "r1": [
+        {
+          "metadata": {
+            "_routed_to": {
+              "$absent": true
+            },
+            "_always_process": [
+              "sup"
+            ]
+          }
+        },
+        {
+          "metadata": {
+            "_routed_to": {
+              "$absent": true
+            },
+            "_always_process": {
+              "$absent": true
+            }
+          }
+        }
+      ]
+    }
+  }
+}

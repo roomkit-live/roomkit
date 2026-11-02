@@ -1,0 +1,146 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-rule-routes-by-the-room-s-phase",
+  "title": "A rule routes by the phase of the room's conversation state, and a saved transition to another phase routes the next message by that one",
+  "rules": [
+    "§19.4 step 2",
+    "§19.4 step 3",
+    "§19.2"
+  ],
+  "notes": "The transition names no agent, so the state holds none and the rules decide: no rule matches the intake phase, and the default agent is asked.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "handler",
+        "type": "ai",
+        "category": "intelligence"
+      },
+      {
+        "id": "triage",
+        "type": "ai",
+        "category": "intelligence"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "metadata": {
+          "_conversation_state": {
+            "phase": "handling"
+          }
+        },
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "handler"
+          },
+          {
+            "channel_id": "triage"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "add_room_hook",
+      "room_id": "r1",
+      "hook": {
+        "name": "router",
+        "trigger": "before_broadcast",
+        "priority": -100,
+        "router": {
+          "rules": [
+            {
+              "agent_id": "handler",
+              "conditions": {
+                "phases": [
+                  "handling"
+                ]
+              }
+            }
+          ],
+          "default_agent_id": "triage"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550001111",
+        "content": {
+          "type": "text",
+          "body": "first"
+        }
+      }
+    },
+    {
+      "call": "save_conversation_state",
+      "room_id": "r1",
+      "transitions": [
+        {
+          "to_phase": "intake"
+        }
+      ],
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550001111",
+        "content": {
+          "type": "text",
+          "body": "second"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "turns": {
+      "r1": {
+        "handler": [
+          {
+            "id": "r1#0"
+          }
+        ],
+        "triage": [
+          {
+            "id": "r1#1"
+          }
+        ]
+      }
+    },
+    "rooms": {
+      "r1": {
+        "metadata": {
+          "_conversation_state": {
+            "phase": "intake",
+            "active_agent_id": null,
+            "handoff_count": 0,
+            "phase_history": [
+              {
+                "from_phase": "handling",
+                "to_phase": "intake",
+                "from_agent": null,
+                "to_agent": null
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}

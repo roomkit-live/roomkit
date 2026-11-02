@@ -1,0 +1,133 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-router-asks-its-default-agent-alone",
+  "title": "A router with a default agent asks that agent alone, its stamp kept on the message with the message's own metadata, and the agent's answer asks no agent",
+  "rules": [
+    "§19.4",
+    "§19.3"
+  ],
+  "notes": "Without the router, AGENT_CHAIN (§19.3.1) would ask a and b, then each about the other's answer. The router stamps _routed_to on the message and _none_ on an agent's answer: no agent answers an agent.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "from a"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "from b"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "a"
+          },
+          {
+            "channel_id": "b"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "add_room_hook",
+      "room_id": "r1",
+      "hook": {
+        "name": "router",
+        "trigger": "before_broadcast",
+        "priority": -100,
+        "router": {
+          "default_agent_id": "a"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550001111",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        },
+        "metadata": {
+          "custom": "value"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "turns": {
+      "r1": {
+        "a": [
+          {
+            "id": "r1#0"
+          }
+        ],
+        "b": []
+      }
+    },
+    "timeline": {
+      "r1": [
+        {
+          "metadata": {
+            "custom": "value",
+            "_routed_to": "a",
+            "_always_process": []
+          }
+        },
+        {
+          "source": {
+            "channel_id": "a"
+          },
+          "content": {
+            "body": "from a"
+          },
+          "metadata": {
+            "_routed_to": "_none_",
+            "_always_process": []
+          }
+        }
+      ]
+    }
+  }
+}

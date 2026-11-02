@@ -1,0 +1,134 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-supervisor-is-asked-beside-the-routed-agent",
+  "title": "A router's supervisor is asked about every message beside the agent it routes to, and about that agent's answer, which asks no other agent",
+  "rules": [
+    "§19.4"
+  ],
+  "notes": "_always_process is a list on the stored event, the supervisor alone in it.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "from a"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "category": "intelligence"
+      },
+      {
+        "id": "sup",
+        "type": "ai",
+        "category": "intelligence"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "a"
+          },
+          {
+            "channel_id": "b"
+          },
+          {
+            "channel_id": "sup"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "add_room_hook",
+      "room_id": "r1",
+      "hook": {
+        "name": "router",
+        "trigger": "before_broadcast",
+        "priority": -100,
+        "router": {
+          "default_agent_id": "a",
+          "supervisor_id": "sup"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550001111",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "turns": {
+      "r1": {
+        "a": [
+          {
+            "id": "r1#0"
+          }
+        ],
+        "b": [],
+        "sup": [
+          {
+            "id": "r1#0"
+          },
+          {
+            "id": "r1#1"
+          }
+        ]
+      }
+    },
+    "timeline": {
+      "r1": [
+        {
+          "metadata": {
+            "_routed_to": "a",
+            "_always_process": [
+              "sup"
+            ]
+          }
+        },
+        {
+          "source": {
+            "channel_id": "a"
+          },
+          "metadata": {
+            "_routed_to": "_none_",
+            "_always_process": [
+              "sup"
+            ]
+          }
+        }
+      ]
+    }
+  }
+}
