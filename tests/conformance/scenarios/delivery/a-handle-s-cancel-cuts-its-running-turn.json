@@ -1,0 +1,215 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-handle-s-cancel-cuts-its-running-turn",
+  "title": "A deferred call's handle cancels its running turn: the call returns its reason once the turn is over, a second cancel keeps the first reason, the message stays delivered and the room's next turn runs",
+  "rules": [
+    "§10.1 Explicit delivery cancellation",
+    "§10.1 step 18"
+  ],
+  "notes": "Python: src/roomkit/models/delivery.py (DeliveryHandle.cancel), src/roomkit/core/lanes.py (cancel_and_wait); tests/test_delivery_cancellation.py::test_caller_cancellation_drains_tool_and_preserves_other_room, ::test_queued_turn_in_same_room_survives_cancelled_cascade, ::test_deferred_cancel_is_terminal_and_releases_all_waiters (RMK-1194).",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "on_event": [
+          {
+            "when": {
+              "text": "task A"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "answer to task A"
+                }
+              }
+            ],
+            "gate": "a-runs"
+          },
+          {
+            "when": {
+              "text": "task B"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "answer to task B"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "task A"
+        }
+      },
+      "defer_delivery": true,
+      "as": "a",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "content": {
+              "body": "task A"
+            }
+          },
+          "cancellation_reason": null
+        }
+      }
+    },
+    {
+      "wait_for": "a-runs"
+    },
+    {
+      "call": "delivery.cancel",
+      "of": "a",
+      "reason": "stopped",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "content": {
+              "body": "task A"
+            }
+          },
+          "cancellation_reason": "stopped"
+        }
+      }
+    },
+    {
+      "call": "delivery.cancel",
+      "of": "a",
+      "reason": "again",
+      "expect": {
+        "result": {
+          "cancellation_reason": "stopped"
+        }
+      }
+    },
+    {
+      "call": "delivery.wait",
+      "of": "a",
+      "expect": {
+        "result": {
+          "cancellation_reason": "stopped"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "task B"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "cancellation_reason": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "task A"
+          },
+          "index": 0
+        },
+        {
+          "content": {
+            "body": "task B"
+          },
+          "index": 1
+        },
+        {
+          "content": {
+            "body": "answer to task B"
+          },
+          "index": 2
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "content": {
+              "body": "task A"
+            }
+          },
+          {
+            "content": {
+              "body": "task B"
+            }
+          },
+          {
+            "content": {
+              "body": "answer to task B"
+            }
+          }
+        ]
+      }
+    },
+    "turns": {
+      "room-1": {
+        "ai": [
+          {
+            "content": {
+              "body": "task A"
+            }
+          },
+          {
+            "content": {
+              "body": "task B"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

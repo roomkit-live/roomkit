@@ -1,0 +1,202 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "verification/a-release-from-a-hook-that-allows-its-event-is-answered-first",
+  "title": "A SYNC hook that completes a verification and allows its event has the released message answered first: its answer is placed in the room's lane at the release, ahead of the hook's event's delivery",
+  "rules": [
+    "§11.7.6",
+    "§5.1",
+    "§13.6",
+    "§9.5.1 Reentrance"
+  ],
+  "notes": "Python: src/roomkit/core/mixins/verification.py (_answer_released), src/roomkit/core/mixins/regenerate.py (_enqueue_regeneration: after the room's latest index); light review of RMK-1195, finding A.",
+  "setup": {
+    "kit": {
+      "identity_resolver": {
+        "answers": [
+          {
+            "when": {
+              "sender_id": "+15551234567"
+            },
+            "repeat": true,
+            "result": {
+              "status": "identified",
+              "identity": {
+                "id": "alice-id"
+              }
+            }
+          }
+        ]
+      },
+      "verification_policy": {}
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "on_event": [
+          {
+            "when": {
+              "text": "Wire 500 to Bob"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "answer to Wire 500 to Bob"
+                }
+              }
+            ]
+          },
+          {
+            "when": {
+              "text": "Verified by phone"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "answer to Verified by phone"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "console",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "Verified by phone"
+            },
+            "do": [
+              {
+                "call": "complete_verification",
+                "request_id": "$req",
+                "secret": "$req.secret"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Wire 500 to Bob"
+        }
+      }
+    },
+    {
+      "call": "request_verification",
+      "identity_id": "alice-id",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "as": "req",
+      "window_start": "2000-01-01T00:00:00Z"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "advisor",
+        "content": {
+          "type": "text",
+          "body": "Verified by phone"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "Wire 500 to Bob"
+          },
+          "visibility": "all",
+          "metadata": {
+            "roomkit:verification_held": {
+              "$absent": true
+            }
+          },
+          "index": 0
+        },
+        {
+          "content": {
+            "body": "Verified by phone"
+          },
+          "index": 1
+        },
+        {
+          "content": {
+            "body": "answer to Wire 500 to Bob"
+          },
+          "index": 2
+        },
+        {
+          "content": {
+            "body": "answer to Verified by phone"
+          },
+          "index": 3
+        }
+      ]
+    },
+    "turns": {
+      "room-1": {
+        "ai": [
+          {
+            "content": {
+              "body": "Wire 500 to Bob"
+            }
+          },
+          {
+            "content": {
+              "body": "Verified by phone"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,176 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-handle-s-cancel-under-the-room-lock-is-refused",
+  "title": "A deferred call's handle cancelled from a SYNC hook, under the room's lock, is refused before it cancels anything: the call's turn runs on and answers",
+  "rules": [
+    "§10.1 Explicit delivery cancellation",
+    "§10.1 step 18",
+    "§13.5"
+  ],
+  "notes": "Python: src/roomkit/models/delivery.py (DeliveryHandle.cancel), src/roomkit/core/lanes.py (cancel_and_wait: waiter_would_deadlock); tests/test_delivery_cancellation.py::test_cancel_under_room_lock_is_rejected_without_cancelling_turn (RMK-1194).",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "on_event": [
+          {
+            "when": {
+              "text": "task A"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "answer to task A"
+                }
+              }
+            ],
+            "gate": "a-runs"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "console",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "stop task A"
+            },
+            "do": [
+              {
+                "call": "delivery.cancel",
+                "of": "a",
+                "reason": "stopped",
+                "as": "refused"
+              }
+            ],
+            "result": {
+              "action": "block",
+              "reason": "console note"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "task A"
+        }
+      },
+      "defer_delivery": true,
+      "as": "a"
+    },
+    {
+      "wait_for": "a-runs"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "advisor",
+        "content": {
+          "type": "text",
+          "body": "stop task A"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "console note"
+        }
+      }
+    },
+    {
+      "open": "a-runs"
+    },
+    {
+      "call": "delivery.wait",
+      "of": "a",
+      "expect": {
+        "result": {
+          "cancellation_reason": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "task A"
+          },
+          "index": 0
+        },
+        {
+          "content": {
+            "body": "stop task A"
+          },
+          "status": "blocked",
+          "index": 1
+        },
+        {
+          "content": {
+            "body": "answer to task A"
+          },
+          "index": 2
+        }
+      ]
+    },
+    "turns": {
+      "room-1": {
+        "ai": [
+          {
+            "content": {
+              "body": "task A"
+            }
+          }
+        ]
+      }
+    },
+    "actions": {
+      "refused": [
+        {
+          "error": "waits_for_itself"
+        }
+      ]
+    }
+  }
+}

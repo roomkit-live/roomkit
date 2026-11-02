@@ -1,0 +1,186 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-scoped-cancel-reaches-an-adopted-call-before-its-commit",
+  "title": "A message a SYNC hook sends into its room is its room's organization's from its room's read: a cancel scoped to it before the message is committed is counted, and none of its turns starts",
+  "rules": [
+    "§10.1 Explicit delivery cancellation",
+    "§17.2",
+    "§9.5.1 Reentrance"
+  ],
+  "notes": "Python: src/roomkit/core/mixins/inbound.py (_prepare_event_inner: named.locate once the room is read, the adopted call's too), src/roomkit/core/_delivery_keys.py; review of RMK-1173/RMK-1182, finding 1b (RMK-1195); light review of RMK-1195, finding B.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "on_event": [
+          {
+            "when": {
+              "text": "task B"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "answer to task B"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ],
+        "organization_id": "tenant-1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "forward",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "lead"
+            },
+            "do": [
+              {
+                "call": "process_inbound",
+                "room_id": "$room",
+                "message": {
+                  "channel_id": "sms",
+                  "sender_id": "+15551234567",
+                  "content": {
+                    "type": "text",
+                    "body": "task B"
+                  },
+                  "delivery_key": "b"
+                }
+              }
+            ],
+            "result": {
+              "action": "block",
+              "reason": "console note"
+            }
+          }
+        ]
+      },
+      {
+        "name": "hold",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "task B"
+            },
+            "gate": "b-decides"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "advisor",
+        "content": {
+          "type": "text",
+          "body": "lead"
+        }
+      },
+      "background": true,
+      "as": "lead"
+    },
+    {
+      "wait_for": "b-decides"
+    },
+    {
+      "call": "cancel_delivery",
+      "key": "b",
+      "reason": "stopped",
+      "organization_id": "tenant-2",
+      "expect": {
+        "result": 0
+      }
+    },
+    {
+      "call": "cancel_delivery",
+      "key": "b",
+      "reason": "stopped",
+      "organization_id": "tenant-1",
+      "expect": {
+        "result": 1
+      }
+    },
+    {
+      "open": "b-decides"
+    },
+    {
+      "await": "lead",
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "console note"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "cancel_delivery",
+      "key": "b",
+      "expect": {
+        "result": 0
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "task B"
+          },
+          "index": 0
+        },
+        {
+          "content": {
+            "body": "lead"
+          },
+          "status": "blocked",
+          "index": 1
+        }
+      ]
+    },
+    "turns": {
+      "room-1": {
+        "ai": []
+      }
+    }
+  }
+}
