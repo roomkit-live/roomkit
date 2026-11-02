@@ -136,7 +136,7 @@ def dump(value: Any) -> Any:
             "blocked": value.blocked,
             "reason": value.reason,
             "error": None if value.error is None else str(value.error),
-            "response_metadata": value.response_metadata,
+            "response_metadata": dump(dict(value.response_metadata)),
             "delivery_results": {k: dump(v) for k, v in (value.delivery_results or {}).items()},
             "cancellation_reason": value.cancellation_reason,
         }
