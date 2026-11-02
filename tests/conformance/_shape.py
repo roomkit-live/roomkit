@@ -92,7 +92,7 @@ MODEL_ROUND = {
     "refuses",
     "failure_after_calls",
 }
-REFUSES = {"status", "message", "context_overflow"}
+REFUSES = {"status", "message", "context_overflow", "provider"}
 MODEL_CALL = {"id", "name", "arguments", "cut"}
 TOOL = {
     "name",

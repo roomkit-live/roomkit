@@ -137,13 +137,14 @@ class ScriptedModel(AIProvider):
 
 def _refuse(round_: Mapping[str, Any]) -> None:
     """Raise the provider's refusal a round's ``refuses`` names: an error not
-    retried, with its HTTP status (RFC §6.4)."""
+    retried, with its HTTP status and its provider (RFC §6.4)."""
     if (refusal := round_.get("refuses")) is not None:
         raise ProviderError(
             refusal["message"],
             retryable=False,
             status_code=refusal["status"],
             context_overflow=refusal.get("context_overflow"),
+            provider=refusal.get("provider", ""),
         )
 
 
