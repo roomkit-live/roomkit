@@ -1,0 +1,185 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-compaction-keeps-the-input-a-generation-hook-rewrote",
+  "title": "The input a BEFORE_AI_GENERATION hook rewrote is the one a compaction keeps whole, the history before it summarized",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python sets the turn's input from the context the hook left (_fire_before_generation_hook: loop_ctx.turn_input = turn_input(messages)). The hook leaves two messages where the conversation had three: the input it left is at index 1, not 2.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "a1"
+            },
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup_order",
+                  "arguments": {
+                    "order": "1"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "c2",
+                  "name": "lookup_order",
+                  "arguments": {
+                    "order": "2"
+                  }
+                }
+              ]
+            },
+            {
+              "refuses": {
+                "status": 400,
+                "message": "the request was refused",
+                "context_overflow": true
+              }
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup_order",
+            "description": "Find an order by its number",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "order": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "order"
+              ]
+            },
+            "returns": "shipped"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "rewrite",
+        "trigger": "before_ai_generation",
+        "reactions": [
+          {
+            "result": {
+              "action": "allow"
+            }
+          },
+          {
+            "result": {
+              "action": "modify",
+              "event": {
+                "messages": [
+                  {
+                    "role": "user",
+                    "text": "q1"
+                  },
+                  {
+                    "role": "user",
+                    "text": "q2 [ok]"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "q1"
+      },
+      "metadata": {}
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "q2"
+      },
+      "metadata": {}
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {},
+        {},
+        {},
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "[Context compacted — earlier conversation summary]\n[user]: “q1”\n\nq2 [ok]"
+            },
+            {
+              "role": "assistant",
+              "text": ""
+            },
+            {
+              "role": "tool",
+              "text": ""
+            },
+            {
+              "role": "assistant",
+              "text": ""
+            },
+            {
+              "role": "tool",
+              "text": ""
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

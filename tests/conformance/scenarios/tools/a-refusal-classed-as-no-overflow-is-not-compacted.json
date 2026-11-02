@@ -1,0 +1,170 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-refusal-classed-as-no-overflow-is-not-compacted",
+  "title": "A refusal its provider classed as no context overflow is not compacted, even worded as one: the call is not replayed and the turn fails",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python's _is_context_overflow believes a structural classification in both directions: context_overflow False beats the prose 'maximum context length'.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "a1"
+            },
+            {
+              "text": "a2"
+            },
+            {
+              "refuses": {
+                "status": 400,
+                "message": "maximum context length exceeded",
+                "context_overflow": false
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "q1"
+      },
+      "metadata": {}
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "q2"
+      },
+      "metadata": {}
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "q3"
+      },
+      "metadata": {}
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {},
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "q1"
+            },
+            {
+              "role": "assistant",
+              "text": "a1"
+            },
+            {
+              "role": "user",
+              "text": "q2"
+            },
+            {
+              "role": "assistant",
+              "text": "a2"
+            },
+            {
+              "role": "user",
+              "text": "q3"
+            }
+          ]
+        }
+      ]
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "q1"
+          }
+        },
+        {
+          "index": 1,
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "a1"
+          }
+        },
+        {
+          "index": 2,
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "q2"
+          }
+        },
+        {
+          "index": 3,
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "a2"
+          }
+        },
+        {
+          "index": 4,
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "q3"
+          }
+        }
+      ]
+    }
+  }
+}

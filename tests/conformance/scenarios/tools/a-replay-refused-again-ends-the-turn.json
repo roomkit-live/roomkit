@@ -1,0 +1,216 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-replay-refused-again-ends-the-turn",
+  "title": "A context compacted once is not compacted again in the same call: a replay refused again ends the turn after its round of calls, which stays in the room",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python's _generate_stream_with_retry compacts once per call; the second overflow raises. When the input is the last message but one of the older half, summary and cut fall at the half, and a summary followed by an assistant message is a user message of its own.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "a1"
+            },
+            {
+              "text": "a2"
+            },
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup_order",
+                  "arguments": {
+                    "order": "1"
+                  }
+                }
+              ]
+            },
+            {
+              "refuses": {
+                "status": 400,
+                "message": "the request was refused",
+                "context_overflow": true
+              }
+            },
+            {
+              "refuses": {
+                "status": 400,
+                "message": "the request was refused",
+                "context_overflow": true
+              }
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup_order",
+            "description": "Find an order by its number",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "order": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "order"
+              ]
+            },
+            "returns": "shipped"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "q1"
+      },
+      "metadata": {}
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "q2"
+      },
+      "metadata": {}
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "q3"
+      },
+      "metadata": {}
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {},
+        {},
+        {},
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "[Context compacted — earlier conversation summary]\n[user]: “q1”\n[assistant]: “a1”\n[user]: “q2”"
+            },
+            {
+              "role": "assistant",
+              "text": "a2"
+            },
+            {
+              "role": "user",
+              "text": "q3"
+            },
+            {
+              "role": "assistant",
+              "text": ""
+            },
+            {
+              "role": "tool",
+              "text": ""
+            }
+          ]
+        }
+      ]
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "q1"
+          }
+        },
+        {
+          "index": 1,
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "a1"
+          }
+        },
+        {
+          "index": 2,
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "q2"
+          }
+        },
+        {
+          "index": 3,
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "a2"
+          }
+        },
+        {
+          "index": 4,
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "q3"
+          }
+        },
+        {
+          "index": 5,
+          "type": "tool_call_start"
+        },
+        {
+          "index": 6,
+          "type": "tool_call_end"
+        }
+      ]
+    }
+  }
+}

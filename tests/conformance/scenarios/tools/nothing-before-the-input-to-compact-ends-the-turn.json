@@ -1,0 +1,142 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/nothing-before-the-input-to-compact-ends-the-turn",
+  "title": "When nothing precedes the turn's input and its rounds have no long result to store, the compaction has nothing to shorten: the call is not replayed and the turn fails",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python's _compact_context refuses ('nothing left to compact before the turn's input') rather than cut the input.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup_order",
+                  "arguments": {
+                    "order": "1"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "c2",
+                  "name": "lookup_order",
+                  "arguments": {
+                    "order": "2"
+                  }
+                }
+              ]
+            },
+            {
+              "refuses": {
+                "status": 400,
+                "message": "the request was refused",
+                "context_overflow": true
+              }
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup_order",
+            "description": "Find an order by its number",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "order": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "order"
+              ]
+            },
+            "returns": "shipped"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "q1"
+      },
+      "metadata": {}
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {},
+        {}
+      ]
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "q1"
+          }
+        },
+        {
+          "index": 1,
+          "type": "tool_call_start"
+        },
+        {
+          "index": 2,
+          "type": "tool_call_end"
+        },
+        {
+          "index": 3,
+          "type": "tool_call_start"
+        },
+        {
+          "index": 4,
+          "type": "tool_call_end"
+        }
+      ]
+    }
+  }
+}

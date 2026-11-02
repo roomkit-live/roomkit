@@ -1,0 +1,173 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-round-that-spoke-before-its-overflow-is-not-replayed",
+  "title": "A request refused as a context too long once its stream handed the room text is not compacted nor replayed: the turn fails",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python's _generate_stream_with_retry never re-enters a stream that has yielded: a replay would hand the room the text twice. The turn fails before any round of calls: it reports no response (ON_AI_RESPONSE fires for the two turns before it only).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "a1"
+            },
+            {
+              "text": "a2"
+            },
+            {
+              "text": "Let me",
+              "refuses": {
+                "status": 400,
+                "message": "the request was refused",
+                "context_overflow": true
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "report",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "q1"
+      },
+      "metadata": {}
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "q2"
+      },
+      "metadata": {}
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "q3"
+      },
+      "metadata": {}
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {},
+        {}
+      ]
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "q1"
+          }
+        },
+        {
+          "index": 1,
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "a1"
+          }
+        },
+        {
+          "index": 2,
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "q2"
+          }
+        },
+        {
+          "index": 3,
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "a2"
+          }
+        },
+        {
+          "index": 4,
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "q3"
+          }
+        },
+        {
+          "index": 5,
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "Let me"
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "report": [
+        {
+          "trigger": "on_ai_response"
+        },
+        {
+          "trigger": "on_ai_response"
+        }
+      ]
+    }
+  }
+}

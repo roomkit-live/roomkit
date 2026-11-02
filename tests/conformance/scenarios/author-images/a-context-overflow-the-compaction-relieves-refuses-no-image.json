@@ -1,0 +1,200 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "author-images/a-context-overflow-the-compaction-relieves-refuses-no-image",
+  "title": "When a turn's first request, carrying an author image, is refused as a context too long for the model and its compacted replay answers, the image is not refused: the room's later turns send it",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python marks the images refused only when the error ends the turn's first request; a compaction whose replay succeeds raises nothing.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "vision": true,
+          "rounds": [
+            {
+              "text": "a1"
+            },
+            {
+              "text": "a2"
+            },
+            {
+              "refuses": {
+                "status": 400,
+                "message": "the request was refused",
+                "context_overflow": true
+              }
+            },
+            {
+              "text": "Seen."
+            },
+            {
+              "text": "ok"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "q1"
+      },
+      "metadata": {}
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "q2"
+      },
+      "metadata": {}
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "composite",
+        "parts": [
+          {
+            "type": "text",
+            "body": "my lamp"
+          },
+          {
+            "type": "media",
+            "url": "data:image/png;base64,AQIDBA==",
+            "mime_type": "image/png",
+            "filename": "lamp.png"
+          }
+        ]
+      },
+      "metadata": {}
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "and now?"
+      },
+      "metadata": {}
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {},
+        {},
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "[Context compacted — earlier conversation summary]\n[user]: “q1”\n[assistant]: “a1”\n\nq2"
+            },
+            {
+              "role": "assistant",
+              "text": "a2"
+            },
+            {
+              "role": "user",
+              "text": "my lamp",
+              "parts": [
+                {
+                  "text": "my lamp"
+                },
+                {
+                  "image": "data:image/png;base64,AQIDBA==",
+                  "mime_type": "image/png"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "q1"
+            },
+            {
+              "role": "assistant",
+              "text": "a1"
+            },
+            {
+              "role": "user",
+              "text": "q2"
+            },
+            {
+              "role": "assistant",
+              "text": "a2"
+            },
+            {
+              "role": "user",
+              "text": "my lamp",
+              "parts": [
+                {
+                  "text": "my lamp"
+                },
+                {
+                  "image": "data:image/png;base64,AQIDBA==",
+                  "mime_type": "image/png"
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "text": "Seen."
+            },
+            {
+              "role": "user",
+              "text": "and now?"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

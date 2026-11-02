@@ -1,0 +1,173 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-context-overflow-is-read-from-the-provider-s-words",
+  "title": "A refusal nobody classed is read as a context too long for the model from its words, and the channel compacts and replays the call",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python's _is_context_overflow: with ProviderError.context_overflow None, is_context_overflow_message reads the message ('prompt is too long').",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "a1"
+            },
+            {
+              "text": "a2"
+            },
+            {
+              "refuses": {
+                "status": 400,
+                "message": "prompt is too long: 210000 tokens > 200000 maximum"
+              }
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "q1"
+      },
+      "metadata": {}
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "q2"
+      },
+      "metadata": {}
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "q3"
+      },
+      "metadata": {}
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {},
+        {},
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "[Context compacted — earlier conversation summary]\n[user]: “q1”\n[assistant]: “a1”\n\nq2"
+            },
+            {
+              "role": "assistant",
+              "text": "a2"
+            },
+            {
+              "role": "user",
+              "text": "q3"
+            }
+          ]
+        }
+      ]
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "q1"
+          }
+        },
+        {
+          "index": 1,
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "a1"
+          }
+        },
+        {
+          "index": 2,
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "q2"
+          }
+        },
+        {
+          "index": 3,
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "a2"
+          }
+        },
+        {
+          "index": 4,
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "q3"
+          }
+        },
+        {
+          "index": 5,
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "Done."
+          }
+        }
+      ]
+    }
+  }
+}

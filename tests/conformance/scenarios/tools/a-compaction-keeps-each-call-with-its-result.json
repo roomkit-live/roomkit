@@ -1,0 +1,135 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-compaction-keeps-each-call-with-its-result",
+  "title": "A compaction whose half falls on a tool's result moves past it: the call and its result are summarized together, never parted",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python's compaction_cut moves the half past the tool messages there (_past_results): an earlier turn's round replayed in the history is summarized whole.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup_order",
+                  "arguments": {
+                    "order": "1"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "a1"
+            },
+            {
+              "refuses": {
+                "status": 400,
+                "message": "the request was refused",
+                "context_overflow": true
+              }
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup_order",
+            "description": "Find an order by its number",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "order": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "order"
+              ]
+            },
+            "returns": "shipped"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "q1"
+      },
+      "metadata": {}
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "q2"
+      },
+      "metadata": {}
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {},
+        {},
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "[Context compacted — earlier conversation summary]\n[user]: “q1”\n[assistant]: “[tool_call]”\n[tool]: “[tool_result]”"
+            },
+            {
+              "role": "assistant",
+              "text": "a1"
+            },
+            {
+              "role": "user",
+              "text": "q2"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
