@@ -42,6 +42,7 @@ from roomkit.models.enums import (
 )
 from roomkit.models.event import EventContent, EventSource, RoomEvent
 from roomkit.models.room import Room, RoomTimers
+from roomkit.models.steering import SteeringDirective
 from roomkit.providers.sms import WebhookMeta
 from roomkit.tasks import DelegatedTask
 from tests.conformance._agent import scripted_agent
@@ -56,6 +57,7 @@ if TYPE_CHECKING:
     from tests.conformance._harness import Harness
 
 _CONTENT = TypeAdapter(EventContent)
+_DIRECTIVE: TypeAdapter[SteeringDirective] = TypeAdapter(SteeringDirective)
 
 # The Python class of each error the suite names (README, "Errors").
 _ERRORS: tuple[tuple[type[Exception], str], ...] = (
@@ -412,6 +414,12 @@ async def _cancel_delivery(kit: RoomKit, harness: Harness, spec: Mapping[str, An
     return await kit.cancel_delivery(spec["key"], **reason, **_org(spec))
 
 
+async def _steer(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
+    directive = _DIRECTIVE.validate_python(spec["directive"])
+    room = {"room_id": spec["room_id"]} if "room_id" in spec else {}
+    return await kit.steer(directive, spec["channel_id"], **room, **_org(spec))
+
+
 CALLS: dict[str, Call] = {
     "process_inbound": _process_inbound,
     "send_event": _send_event,
@@ -440,6 +448,7 @@ CALLS: dict[str, Call] = {
     "process_webhook": _process_webhook,
     "deliver": _deliver,
     "cancel_delivery": _cancel_delivery,
+    "steer": _steer,
 }
 
 

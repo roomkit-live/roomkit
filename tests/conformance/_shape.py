@@ -251,6 +251,7 @@ CALLS: dict[str, set[str]] = {
         "instruction",
     },
     "cancel_delivery": {"key", "reason"},
+    "steer": {"channel_id", "directive", "room_id"},
 }
 CALLS |= STORE_ARGUMENTS | READ_MARKER_ARGUMENTS | TASK_ARGUMENTS | MEMBER_ARGUMENTS
 CALLS |= INPUT_ARGUMENTS
