@@ -1,0 +1,78 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/a-worker-that-never-submits-ends-with-the-missing-payload",
+  "title": "A worker that never calls submit_result is re-prompted max_result_retries times, then the task completes with the delegation's missing payload, naming the attempts and the worker's last words",
+  "rules": [
+    "§23.3"
+  ],
+  "notes": "Python: tests/tasks/test_structured_result.py::TestStructuredResultGuard::test_orchestration_fail_when_never_submits; orchestration/result.py orchestration_fail. The role is the channel's role, its description, else its id: an AI channel has neither.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "First try."
+            },
+            {
+              "text": "Second try."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "room-1",
+      "agent_id": "worker",
+      "task": "Look it up.",
+      "wait": true,
+      "require_structured_result": true,
+      "max_result_retries": 1,
+      "expect": {
+        "result": {
+          "status": "completed",
+          "result": {
+            "status": "completed",
+            "output": "{\"status\": \"failed\", \"by\": \"orchestration\", \"reason\": \"no_structured_result_after_2_attempts\", \"role\": \"worker\", \"last_output\": \"Second try.\"}",
+            "error": null
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "worker": [
+        {
+          "tool_results": []
+        },
+        {
+          "tool_results": []
+        }
+      ]
+    }
+  }
+}
