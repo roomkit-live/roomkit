@@ -61,16 +61,26 @@ HISTORY = [
 class _FailingAt(MockAIProvider):
     """Scripted answers, and a provider error on the given generation."""
 
-    def __init__(self, fail_at: int, answers: list[AIResponse], *, streaming: bool) -> None:
+    def __init__(
+        self,
+        fail_at: int,
+        answers: list[AIResponse],
+        *,
+        streaming: bool,
+        error: Exception | None = None,
+    ) -> None:
         super().__init__(ai_responses=answers, streaming=streaming)
         self._fail_at = fail_at
         self._generations = 0
+        self._error = error
 
     async def generate(self, context: AIContext) -> AIResponse:
         # The mock's stream draws its answers from generate() too: one count
         # per generation, whichever loop runs.
         self._generations += 1
         if self._generations == self._fail_at:
+            if self._error is not None:
+                raise self._error
             raise ProviderError("upstream 500 req_abc123", retryable=False, status_code=500)
         return await super().generate(context)
 
@@ -157,12 +167,23 @@ async def test_an_interrupted_turn_keeps_what_its_rounds_said(streaming: bool) -
     await kit.close()
 
 
-async def test_an_interrupted_turn_is_reported_then_raised(streaming: bool) -> None:
+@pytest.mark.parametrize(
+    "error",
+    [
+        ProviderError("upstream 500 req_abc123", retryable=False, status_code=500),
+        # RMK-1199: a provider fails whatever it raises.
+        ConnectionResetError("connection reset by peer"),
+    ],
+    ids=["provider-error", "any-exception"],
+)
+async def test_an_interrupted_turn_is_reported_then_raised(
+    error: Exception, streaming: bool
+) -> None:
     """RMK-289: the turn is reported on ON_AI_RESPONSE with ``error``
     and what its rounds used, then ON_ERROR fires (RFC §6.4)."""
     used = {"input_tokens": 120, "output_tokens": 7}
     answers = [_looking().model_copy(update={"usage": used}), AIResponse(content="never")]
-    kit, _, responses = await _room(_FailingAt(2, answers, streaming=streaming))
+    kit, _, responses = await _room(_FailingAt(2, answers, streaming=streaming, error=error))
     seen: list[str] = []
 
     @kit.hook(HookTrigger.ON_AI_RESPONSE, execution=HookExecution.ASYNC, name="order_ai")

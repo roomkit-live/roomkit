@@ -593,8 +593,11 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                 async for delta in deltas:
                     streamed = True
                     yield delta
-        except ProviderError as exc:
-            if index == 0 and not streamed and refuses_content(exc):
+        except Exception as exc:
+            # A provider fails whatever it raises (RMK-1199); only its own
+            # error can say it refused the content.
+            first = index == 0 and not streamed
+            if first and isinstance(exc, ProviderError) and refuses_content(exc):
                 self._forget_sent_images(turn, context)
             if not interrupts_turn(exc, after_round=turn.saw_tool_call):
                 raise

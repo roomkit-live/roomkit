@@ -23,7 +23,6 @@ from roomkit.providers.ai.base import (
     AIContext,
     AIMessage,
     AIToolResultPart,
-    ProviderError,
 )
 from roomkit.providers.ai.response_schema import ResponseSchemaError
 from roomkit.providers.ai.tool_calls import (
@@ -125,8 +124,8 @@ def require_schema_answer(context: AIContext, reason: LoopEndReason) -> None:
         )
 
 
-def interrupts_turn(exc: ProviderError, *, after_round: bool) -> bool:
-    """Whether a provider error interrupts the turn rather than failing it.
+def interrupts_turn(exc: Exception, *, after_round: bool) -> bool:
+    """Whether a provider's failure interrupts the turn rather than failing it.
 
     Once a round ran, its calls and text already reached the room: the turn
     is kept, ends ``error`` and is reported (RFC §6.4). A schema check that

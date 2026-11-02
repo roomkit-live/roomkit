@@ -88,6 +88,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A provider that fails after a round of calls, whatever it raises, ends
+  the turn `error`** (RFC §6.4, RMK-1199). Only a `ProviderError` did: a
+  provider raising anything else (an SDK's own error, a dropped connection)
+  in a round after the calls left a turn that fired no `ON_AI_RESPONSE` and
+  wrote no `loop_end_reason` on its last message. Such a turn now reaches its
+  end as for a `ProviderError`: the hook reports it, `error`, its segments
+  the rounds' words the room has, the failed round's included, then the
+  error is raised as before.
+
 - **A member added again without an identity keeps their identification**
   (RFC §5.5). `add_member()` after `remove_member()` of an IDENTIFIED member
   made them PENDING while their record kept its `identity_id`, so
