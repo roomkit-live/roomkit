@@ -26,14 +26,10 @@ from functools import partial
 from typing import Any
 
 from roomkit._media import text_form
-from roomkit.channels._speaker import (
-    labelled_lines,
-    people_taking_part,
-    several_speakers,
-    turn_speakers,
-)
+from roomkit.channels._speaker import labelled_lines
 from roomkit.channels.base import Channel
 from roomkit.core._changes import concerns_change, for_channels
+from roomkit.core._requester import asking_label
 from roomkit.core.lanes import anchor_index
 from roomkit.core.mixins.helpers import _RECENT_EVENTS_LIMIT
 from roomkit.models.channel import ChannelBinding, ChannelOutput
@@ -221,10 +217,11 @@ def steered_message(
     text = text_form(event.content)
     if not text:
         return None
-    speakers = turn_speakers([*context.recent_events, event], context)
-    speaker = speakers.get(event.id)
-    if speaker and several_speakers(speakers.values(), people_taking_part(context, channel_id)):
-        text = labelled_lines(text, speaker.label)
+    # Labelled as the turn's history labels it: the speakers the agent may
+    # read, its own turns and the application's instructions aside.
+    label = asking_label(event, context, channel_id)
+    if label:
+        text = labelled_lines(text, label)
     return InjectMessage(content=text)
 
 
