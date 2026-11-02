@@ -1,0 +1,153 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/two-background-delegations-of-a-room-run-at-once-each-to-its-own-end",
+  "title": "Two background delegations of one room run at once, each in a child room of its own, and each ends completed with its own worker's answer",
+  "rules": [
+    "§23.1",
+    "§23.3 step 1",
+    "§23.3 step 6"
+  ],
+  "notes": "Python: tests/tasks/test_integration.py::TestDelegateIntegration::test_parallel_delegation; tasks/memory.py InMemoryTaskRunner, one run per task id. Both tasks are delegated before either is waited for.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "worker-a",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "Task A."
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Result A."
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "worker-b",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "Task B."
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Result B."
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "main",
+        "type": "ai",
+        "category": "intelligence"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "main"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "room-1",
+      "agent_id": "worker-a",
+      "task": "Task A.",
+      "notify": "main",
+      "as": "a",
+      "expect": {
+        "result": {
+          "child_room_id": "$r1",
+          "agent_id": "worker-a"
+        }
+      }
+    },
+    {
+      "call": "delegate",
+      "room_id": "room-1",
+      "agent_id": "worker-b",
+      "task": "Task B.",
+      "notify": "main",
+      "as": "b",
+      "expect": {
+        "result": {
+          "child_room_id": "$r2",
+          "agent_id": "worker-b"
+        }
+      }
+    },
+    {
+      "call": "task.wait",
+      "task_id": "$a",
+      "expect": {
+        "result": {
+          "status": "completed",
+          "output": "Result A.",
+          "child_room_id": "$r1"
+        }
+      }
+    },
+    {
+      "call": "task.wait",
+      "task_id": "$b",
+      "expect": {
+        "result": {
+          "status": "completed",
+          "output": "Result B.",
+          "child_room_id": "$r2"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "rooms": {
+      "$r1": {
+        "metadata": {
+          "parent_room_id": "room-1",
+          "task_agent_id": "worker-a",
+          "task_status": "completed",
+          "task_result": "Result A."
+        }
+      },
+      "$r2": {
+        "metadata": {
+          "parent_room_id": "room-1",
+          "task_agent_id": "worker-b",
+          "task_status": "completed",
+          "task_result": "Result B."
+        }
+      }
+    }
+  }
+}

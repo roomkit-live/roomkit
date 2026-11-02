@@ -1,0 +1,107 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/a-background-task-s-child-room-reads-in-progress-while-its-worker-runs",
+  "title": "A background task's child room reads in_progress while its worker's turn runs, then how the task ended",
+  "rules": [
+    "§23.1",
+    "§23.3 step 7"
+  ],
+  "notes": "Python: tests/tasks/test_runner.py::TestInMemoryTaskRunner::test_child_room_metadata_updated (the runner patches the child room's task_status in_progress, then its end); tasks/memory.py _run, tasks/_child_status.py record_task_end.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "Look it up."
+            },
+            "gate": "working",
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Found it."
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "room-1",
+      "agent_id": "worker",
+      "task": "Look it up.",
+      "as": "t",
+      "expect": {
+        "result": {
+          "child_room_id": "$r1"
+        }
+      }
+    },
+    {
+      "wait_for": "working"
+    },
+    {
+      "call": "store.get_room",
+      "room_id": "$r1",
+      "expect": {
+        "result": {
+          "metadata": {
+            "task_status": "in_progress",
+            "task_result": {
+              "$absent": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "open": "working"
+    },
+    {
+      "call": "task.wait",
+      "task_id": "$t",
+      "expect": {
+        "result": {
+          "status": "completed",
+          "output": "Found it."
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "rooms": {
+      "$r1": {
+        "metadata": {
+          "task_status": "completed",
+          "task_result": "Found it."
+        }
+      }
+    }
+  }
+}

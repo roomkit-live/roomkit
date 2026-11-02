@@ -1,0 +1,139 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "inputs/a-bound-named-for-a-person-s-tool-still-cuts-its-call",
+  "title": "A bound named for a person's tool (tool_timeouts) cuts its call within that bound, whatever the human-input handler's own timeout: the model reads the call failed as a ToolTimeoutError, and the turn goes on",
+  "rules": [
+    "§21.6",
+    "§9.3",
+    "§10.6.5"
+  ],
+  "notes": "Python: tests/test_human_input_doors.py::test_a_bound_named_for_the_tool_still_applies[text-stream], [text-nostream]; tools/timeout.py ToolTimeouts.for_call (a tool's own bound before a handler that bounds itself). The handler's timeout is 5 s, the tool's bound 20 ms, and nobody answers.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "ask_user",
+                  "arguments": {
+                    "question": "Color?"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Nobody answered."
+            }
+          ]
+        },
+        "human_input": {
+          "tool_names": [
+            "ask_user"
+          ],
+          "timeout_ms": 5000,
+          "tools": [
+            {
+              "name": "ask_user",
+              "description": "Ask the user.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "question": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "tool_timeouts_ms": {
+          "ask_user": 20
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "asked",
+        "trigger": "on_user_input_required"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "ops",
+        "content": {
+          "type": "text",
+          "body": "Hi"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "asked": [
+        {
+          "trigger": "on_user_input_required",
+          "room_id": "room-1",
+          "request": {
+            "pending_id": "$p1",
+            "tool_name": "ask_user",
+            "arguments": {
+              "question": "Color?"
+            },
+            "room_id": "room-1",
+            "tool_call_id": "c1",
+            "channel_id": "agent",
+            "channel_type": "ai"
+          }
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {
+          "tool_results": []
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "{\"error\": \"Tool 'ask_user' failed (ToolTimeoutError)\"}",
+              "is_error": true
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

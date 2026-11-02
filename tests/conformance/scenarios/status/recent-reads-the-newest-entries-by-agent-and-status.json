@@ -5,7 +5,7 @@
   "rules": [
     "§19.8"
   ],
-  "notes": "Python: tests/orchestration/test_status_bus.py::test_backend_publish_and_recent, test_backend_recent_filters, test_bus_post_accepts_string_status.",
+  "notes": "Python: tests/orchestration/test_status_bus.py::test_backend_publish_and_recent, test_backend_recent_filters, test_bus_post_accepts_string_status, test_bus_post_async (with a-status-reaches-the-hooks-of-the-room-it-names, which reads the entry post_async returns); tests/test_framework_status_bus.py::test_status_bus_available_by_default (the kit, built with no bus, posts on its own).",
   "steps": [
     {
       "call": "status.post",

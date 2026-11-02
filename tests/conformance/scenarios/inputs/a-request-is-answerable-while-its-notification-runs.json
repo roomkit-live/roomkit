@@ -6,7 +6,7 @@
     "§10.6.5",
     "§9.3"
   ],
-  "notes": "Python: tests/test_human_input.py (the notification never gates the answer); RFC §9.3: the notification MUST NOT gate whether an answer can be recorded. The hook is held at a gate once it recorded its call; the answer comes from a step meanwhile.",
+  "notes": "Python: tests/test_human_input.py::test_notification_does_not_gate_the_answer; RFC §9.3: the notification MUST NOT gate whether an answer can be recorded. The hook is held at a gate once it recorded its call; the answer comes from a step meanwhile.",
   "setup": {
     "channels": [
       {

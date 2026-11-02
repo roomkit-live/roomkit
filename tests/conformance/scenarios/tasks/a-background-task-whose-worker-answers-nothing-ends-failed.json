@@ -1,0 +1,73 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/a-background-task-whose-worker-answers-nothing-ends-failed",
+  "title": "A background task whose worker answers nothing ends failed, with no output and no error, and its child room says so",
+  "rules": [
+    "§23.3 step 6",
+    "§23.3 step 7"
+  ],
+  "notes": "Python: tests/tasks/test_runner.py::TestInMemoryTaskRunner::test_agent_returns_nothing_fails; tasks/memory.py _run; tasks/models.py finished_task_fields (no response: failed). The worker's turn answers nothing, raising nothing.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "category": "intelligence"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "room-1",
+      "agent_id": "worker",
+      "task": "Look it up.",
+      "as": "t",
+      "expect": {
+        "result": {
+          "child_room_id": "$r1"
+        }
+      }
+    },
+    {
+      "call": "task.wait",
+      "task_id": "$t",
+      "expect": {
+        "result": {
+          "status": "failed",
+          "output": null,
+          "error": null,
+          "child_room_id": "$r1"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "rooms": {
+      "$r1": {
+        "metadata": {
+          "task_status": "failed",
+          "task_result": null
+        }
+      }
+    }
+  }
+}

@@ -6,7 +6,7 @@
     "§10.6.5",
     "§9.3"
   ],
-  "notes": "Python: tests/test_turns_inputs.py::test_the_owner_answers_a_turns_request, test_the_kits_door_says_true_only_for_an_answer_the_tool_reads. The request runs on the turn's executor, the answer comes through the room's owner (§10.6.5): the executor sends input_request before ON_USER_INPUT_REQUIRED fires, so the hook's answer reaches an open request. Requests are $p1, $p2... in the order the run first shows them.",
+  "notes": "Python: tests/test_turns_inputs.py::test_the_owner_answers_a_turns_request, test_the_kits_door_says_true_only_for_an_answer_the_tool_reads; tests/test_human_input.py::test_callback_fires_on_create, test_register_channel_injects_hook_callback (what the registration wires: the channel's request fires the kit's ON_USER_INPUT_REQUIRED and user_input_required); tests/test_human_input_doors.py::test_the_person_s_answer_is_the_call_s_result[text-stream], [text-nostream] (answered here through the kit's door). The request runs on the turn's executor, the answer comes through the room's owner (§10.6.5): the executor sends input_request before ON_USER_INPUT_REQUIRED fires, so the hook's answer reaches an open request. Requests are $p1, $p2... in the order the run first shows them.",
   "setup": {
     "channels": [
       {

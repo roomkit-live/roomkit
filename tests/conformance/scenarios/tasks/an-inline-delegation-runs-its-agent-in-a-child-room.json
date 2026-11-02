@@ -13,7 +13,7 @@
     "§19.8",
     "§17.2"
   ],
-  "notes": "Python: tests/tasks/test_integration.py::test_full_delegate_flow, test_child_metadata_envelope_copied_to_child_room; tests/tasks/test_delegation_organization.py; tests/tasks/test_child_room_trace.py. core/mixins/delegation.py _open_child_room, _announce_task, _complete_inline; tasks/status.py post_task_pending, post_task_ended; tasks/_child_status.py record_task_end. The parent room's _child_metadata envelope is copied onto the child room and stamped again; the delegation's keys are written last.",
+  "notes": "Python: tests/tasks/test_integration.py::test_full_delegate_flow, test_child_metadata_envelope_copied_to_child_room; tests/tasks/test_delegation_organization.py; tests/tasks/test_child_room_trace.py; tests/test_task_status.py::test_a_delegation_posts_pending_then_completed_with_its_task (each entry names the task, $e1 as any id of no timeline). core/mixins/delegation.py _open_child_room, _announce_task, _complete_inline; tasks/status.py post_task_pending, post_task_ended; tasks/_child_status.py record_task_end. The parent room's _child_metadata envelope is copied onto the child room and stamped again; the delegation's keys are written last.",
   "setup": {
     "channels": [
       {
@@ -83,9 +83,7 @@
       },
       "expect": {
         "result": {
-          "id": {
-            "$present": true
-          },
+          "id": "$e1",
           "child_room_id": "$r1",
           "parent_room_id": "room-1",
           "agent_id": "worker",
@@ -94,9 +92,7 @@
           "hand_back": "relay",
           "status": "completed",
           "result": {
-            "task_id": {
-              "$present": true
-            },
+            "task_id": "$e1",
             "child_room_id": "$r1",
             "parent_room_id": "room-1",
             "agent_id": "worker",
@@ -125,9 +121,7 @@
             "detail": "Summarize the call.",
             "metadata": {
               "room_id": "room-1",
-              "task_id": {
-                "$present": true
-              },
+              "task_id": "$e1",
               "child_room_id": "$r1"
             }
           },
@@ -138,9 +132,7 @@
             "detail": "Summary.",
             "metadata": {
               "room_id": "room-1",
-              "task_id": {
-                "$present": true
-              },
+              "task_id": "$e1",
               "child_room_id": "$r1",
               "task_status": "completed",
               "duration_ms": {

@@ -1,13 +1,13 @@
 {
   "$schema": "../../scenario.schema.json",
   "id": "inputs/a-request-names-the-author-of-the-turn",
-  "title": "A turn's human-input request names the participant whose message woke the turn, and no one for a sender the room reached through other channels only",
+  "title": "Each turn's human-input request names the participant whose message woke that turn, and no one for a sender the room reached through other channels only",
   "rules": [
     "§10.6.5",
     "§9.3",
     "§5.5"
   ],
-  "notes": "Python: tools/human_input.py HumanInputToolHandler (actor_id=current_tool_actor_id()); channels/ai.py _make_tool_loop_context (actor_id: None when People.names_another(event)); tools/context.py current_tool_actor_id. The id names the turn without authenticating it (RFC §5.5).",
+  "notes": "Python: tests/test_human_input.py::test_request_names_the_speaker_through_the_framework (two senders in turn, each named by its own turn's request; here each on the binding it speaks through, no group binding); tools/human_input.py HumanInputToolHandler (actor_id=current_tool_actor_id()); channels/ai.py _make_tool_loop_context (actor_id: None when People.names_another(event)); tools/context.py current_tool_actor_id. The id names the turn without authenticating it (RFC §5.5).",
   "setup": {
     "channels": [
       {
@@ -52,6 +52,20 @@
             },
             {
               "text": "Thanks again."
+            },
+            {
+              "calls": [
+                {
+                  "id": "c3",
+                  "name": "ask_user",
+                  "arguments": {
+                    "question": "Where?"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Thanks once more."
             }
           ]
         },
@@ -155,6 +169,21 @@
     },
     {
       "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "ops-2",
+        "content": {
+          "type": "text",
+          "body": "Hi once more"
+        }
+      }
+    },
+    {
+      "idle": true
     }
   ],
   "expect": {
@@ -188,6 +217,21 @@
             "tool_call_id": "c2",
             "channel_id": "agent",
             "actor_id": null
+          }
+        },
+        {
+          "trigger": "on_user_input_required",
+          "room_id": "room-1",
+          "request": {
+            "pending_id": "$p3",
+            "tool_name": "ask_user",
+            "arguments": {
+              "question": "Where?"
+            },
+            "room_id": "room-1",
+            "tool_call_id": "c3",
+            "channel_id": "agent",
+            "actor_id": "ops-2"
           }
         }
       ]

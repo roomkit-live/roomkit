@@ -1,0 +1,151 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/a-result-past-the-summary-is-kept-whole-for-task-status",
+  "title": "A task whose result is longer than a status entry's detail ends with its detail cut at a word and marked, its whole result kept in the entry's metadata, which task_status reads",
+  "rules": [
+    "§19.8",
+    "§23.4",
+    "§23.3 step 7"
+  ],
+  "notes": "Python: tests/test_task_status.py::test_task_status_gives_the_whole_result_the_summary_cut (RMK-556: a summary cut inside « 14,9 » read back as 1 °C); orchestration/status_bus.py post_agent_lifecycle (DETAIL_LIMIT 200, metadata result bounded at RESULT_LIMIT); tasks/status.py room_tasks (a completed line's result from metadata result).",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "La météo ?"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "À Montréal, il fait actuellement 6,5 °C avec un ciel dégagé et un vent de 12,7 km/h. Demain, mercredi 7 octobre, on attend de la pluie, avec 42 % de risque, une minimale de 4,9 °C et une maximale de 14,9 °C."
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "speaker",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "task_status",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "text": "Voilà."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "speaker"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "setup_task_tools",
+      "agent_id": "speaker"
+    },
+    {
+      "call": "delegate",
+      "room_id": "room-1",
+      "agent_id": "worker",
+      "task": "La météo ?",
+      "wait": true,
+      "expect": {
+        "result": {
+          "status": "completed",
+          "result": {
+            "output": "À Montréal, il fait actuellement 6,5 °C avec un ciel dégagé et un vent de 12,7 km/h. Demain, mercredi 7 octobre, on attend de la pluie, avec 42 % de risque, une minimale de 4,9 °C et une maximale de 14,9 °C."
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "status.recent",
+      "agent_id": "worker",
+      "expect": {
+        "result": [
+          {
+            "status": "pending",
+            "detail": "La météo ?"
+          },
+          {
+            "status": "completed",
+            "detail": "À Montréal, il fait actuellement 6,5 °C avec un ciel dégagé et un vent de 12,7 km/h. Demain, mercredi 7 octobre, on attend de la pluie, avec 42 % de risque, une minimale de 4,9 °C et une maximale de…",
+            "metadata": {
+              "task_status": "completed",
+              "result": "À Montréal, il fait actuellement 6,5 °C avec un ciel dégagé et un vent de 12,7 km/h. Demain, mercredi 7 octobre, on attend de la pluie, avec 42 % de risque, une minimale de 4,9 °C et une maximale de 14,9 °C."
+            }
+          }
+        ]
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Alors, la météo ?"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "speaker": [
+        {
+          "tool_results": []
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": {
+                "$contains": "\"result\": \"À Montréal, il fait actuellement 6,5 °C avec un ciel dégagé et un vent de 12,7 km/h. Demain, mercredi 7 octobre, on attend de la pluie, avec 42 % de risque, une minimale de 4,9 °C et une maximale de 14,9 °C.\""
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

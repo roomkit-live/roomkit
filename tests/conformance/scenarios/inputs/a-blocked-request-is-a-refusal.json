@@ -1,12 +1,12 @@
 {
   "$schema": "../../scenario.schema.json",
   "id": "inputs/a-blocked-request-is-a-refusal",
-  "title": "An ON_USER_INPUT_REQUIRED hook that blocks rejects the request: the model reads the denial, user_input_required says so, and the kit takes no answer for it after",
+  "title": "An ON_USER_INPUT_REQUIRED hook that blocks rejects the request: the model reads the denial and the turn goes on to its reply, user_input_required says so, and the kit takes no answer for it after",
   "rules": [
     "§10.6.5",
     "§9.3"
   ],
-  "notes": "Python: tests/test_turns_inputs.py::test_a_request_a_hook_blocks_is_closed_on_the_owner; tests/test_human_input_doors.py::test_a_blocked_request_is_a_refusal. Settled on the executor, the request is closed on the owner (input_closed).",
+  "notes": "Python: tests/test_turns_inputs.py::test_a_request_a_hook_blocks_is_closed_on_the_owner; tests/test_human_input_doors.py::test_a_blocked_request_is_a_refusal; tests/test_human_input.py::test_callback_deny_rejects_the_request, test_hook_deny_blocks_tool_via_framework (the agent's reply is the room's last event). Settled on the executor, the request is closed on the owner (input_closed).",
   "setup": {
     "channels": [
       {
@@ -125,6 +125,37 @@
     }
   ],
   "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "Hi"
+          }
+        },
+        {
+          "index": 1,
+          "type": "tool_call_start"
+        },
+        {
+          "index": 2,
+          "type": "tool_call_end"
+        },
+        {
+          "index": 3,
+          "type": "message",
+          "source": {
+            "channel_id": "agent"
+          },
+          "content": {
+            "type": "text",
+            "body": "Thanks."
+          }
+        }
+      ]
+    },
     "hooks": {
       "asked": [
         {

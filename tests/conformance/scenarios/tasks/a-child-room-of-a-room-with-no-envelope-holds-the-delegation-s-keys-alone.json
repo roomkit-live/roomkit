@@ -1,0 +1,99 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/a-child-room-of-a-room-with-no-envelope-holds-the-delegation-s-keys-alone",
+  "title": "A delegation from a room whose metadata holds no _child_metadata envelope gives its child room an empty envelope and the delegation's own keys, no identity key made up",
+  "rules": [
+    "§23.3 step 1"
+  ],
+  "notes": "Python: tests/tasks/test_integration.py::TestDelegateIntegration::test_delegate_without_envelope_leaves_child_metadata_minimal; core/mixins/delegation.py _open_child_room. An object expectation names the members it checks: the envelope is asserted an object holding none of the identity keys an envelope carries (tests/tasks/test_integration.py::TestDelegateIntegration::test_child_metadata_envelope_copied_to_child_room).",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "Do the work."
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Done."
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "room-1",
+      "agent_id": "worker",
+      "task": "Do the work.",
+      "as": "t",
+      "expect": {
+        "result": {
+          "child_room_id": "$r1"
+        }
+      }
+    },
+    {
+      "call": "task.wait",
+      "task_id": "$t",
+      "expect": {
+        "result": {
+          "status": "completed",
+          "output": "Done."
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "rooms": {
+      "$r1": {
+        "metadata": {
+          "_child_metadata": {
+            "user_id": {
+              "$absent": true
+            },
+            "organization_id": {
+              "$absent": true
+            }
+          },
+          "parent_room_id": "room-1",
+          "task_agent_id": "worker",
+          "user_id": {
+            "$absent": true
+          },
+          "organization_id": {
+            "$absent": true
+          }
+        }
+      }
+    }
+  }
+}

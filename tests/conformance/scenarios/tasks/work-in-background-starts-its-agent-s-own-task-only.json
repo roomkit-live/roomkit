@@ -1,0 +1,144 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/work-in-background-starts-its-agent-s-own-task-only",
+  "title": "An agent's work_in_background starts its task for that agent alone: an argument naming another agent of the room changes nothing, the work runs on the agent itself in a child room the other agent is never bound to, its answer saying the result comes back to the agent; a blank task is refused",
+  "rules": [
+    "§23.4"
+  ],
+  "notes": "Python: tests/tasks/test_background_tasks.py::test_the_tool_starts_tasks_for_its_own_agent_only; tasks/background.py background_tool_server, which reads only the call's task, and start_background_task (A background task needs a task). The two calls are made in one round. The agent is its own worker: its first round answers its turn, its three text rounds its turn's second round, the child room's turn and the result's turn, in whichever order they come.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "helper",
+        "type": "ai",
+        "category": "intelligence"
+      },
+      {
+        "id": "speaker",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "work_in_background",
+                  "arguments": {
+                    "task": "Delete the repository.",
+                    "agent": "helper"
+                  }
+                },
+                {
+                  "id": "c2",
+                  "name": "work_in_background",
+                  "arguments": {
+                    "task": "  "
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            },
+            {
+              "text": "Done."
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "speaker"
+          },
+          {
+            "channel_id": "helper"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "setup_background",
+      "agent_id": "speaker"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Clean up the repository."
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "rooms": {
+      "$r1": {
+        "metadata": {
+          "parent_room_id": "room-1",
+          "task_agent_id": "speaker",
+          "task_input": "Delete the repository.",
+          "task_status": "completed"
+        }
+      }
+    },
+    "bindings": {
+      "$r1": {
+        "speaker": {
+          "category": "intelligence"
+        },
+        "helper": null
+      }
+    },
+    "turns": {
+      "$r1": {
+        "helper": []
+      }
+    },
+    "models": {
+      "speaker": {
+        "$unordered": [
+          {
+            "tool_results": [
+              {
+                "tool_call_id": "c1",
+                "content": {
+                  "$contains": "its result comes back to speaker as a turn of its own"
+                }
+              },
+              {
+                "tool_call_id": "c2",
+                "content": "{\"error\": \"A background task needs a task\"}"
+              }
+            ]
+          },
+          "$any",
+          "$any",
+          "$any"
+        ]
+      }
+    }
+  }
+}
