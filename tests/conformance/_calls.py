@@ -28,6 +28,7 @@ from roomkit.core.exceptions import (
     RoomNotFoundError,
     TaskNotFoundError,
     TransitionRefusedError,
+    VerificationRefusedError,
 )
 from roomkit.models.delivery import DeliveryOutcome, DeliveryStatus, InboundMessage, InboundResult
 from roomkit.models.enums import (
@@ -71,6 +72,7 @@ _ERRORS: tuple[tuple[type[Exception], str], ...] = (
     (ReentryLoopCapError, "reentry_loop_cap"),
     (EventNotFoundError, "event_not_found"),
     (TaskNotFoundError, "task_not_found"),
+    (VerificationRefusedError, "verification_refused"),
     (ValueError, "invalid_argument"),
 )
 

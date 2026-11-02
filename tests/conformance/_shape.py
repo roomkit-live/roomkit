@@ -16,6 +16,7 @@ from tests.conformance._inputs import INPUT_ARGUMENTS
 from tests.conformance._members import MEMBER_ARGUMENTS
 from tests.conformance._store import READ_MARKER_ARGUMENTS, STORE_ARGUMENTS
 from tests.conformance._tasks import TASK_ARGUMENTS
+from tests.conformance._verification import VERIFICATION_ARGUMENTS
 
 TOP = {"$schema", "id", "title", "rules", "reentrancy", "notes", "setup", "steps", "expect"}
 SETUP = {"kit", "channels", "rooms", "hooks", "identity_hooks", "identities"}
@@ -27,6 +28,7 @@ KIT = {
     "identity_channel_types",
     "identity_timeout_ms",
     "delivery_backend",
+    "verification_policy",
 }
 DELIVERY_BACKEND = {
     "retry_delay_ms",
@@ -244,6 +246,7 @@ CALLS: dict[str, set[str]] = {
 }
 CALLS |= STORE_ARGUMENTS | READ_MARKER_ARGUMENTS | TASK_ARGUMENTS | MEMBER_ARGUMENTS
 CALLS |= INPUT_ARGUMENTS
+CALLS |= VERIFICATION_ARGUMENTS
 STEPS = {"await": {"await", "expect"}, "concurrent": {"concurrent"}, "wait_for": {"wait_for"}}
 STEPS |= {"open": {"open"}, "idle": {"idle"}}
 

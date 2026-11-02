@@ -50,6 +50,12 @@ from tests.conformance._normalize import Observed, is_lifecycle_record
 from tests.conformance._script import GATE_BOUND_S, Gates, ScriptedRouter
 from tests.conformance._store import STORE_CALLS
 from tests.conformance._tasks import TASK_CALLS
+from tests.conformance._verification import (
+    VERIFICATION_CALLS,
+    VERIFICATION_EVENTS,
+    opened_labels,
+    verification_options,
+)
 
 # The framework events of the §26.1 table, and Processing timeout's (§8.2).
 LEVEL_0_EVENTS = (
@@ -123,6 +129,7 @@ class Harness:
             kwargs["inbound_router"] = ScriptedRouter(kit_setup["router"]["room_id"])
         kwargs |= kit_options(kit_setup, self)
         kwargs |= delivery_options(kit_setup)
+        kwargs |= verification_options(kit_setup)
         self.kit = RoomKit(**kwargs)
 
     # -- recording --------------------------------------------------------
@@ -242,7 +249,7 @@ class Harness:
 
     async def _setup(self) -> None:
         setup = self.scenario.get("setup", {})
-        for event_type in LEVEL_0_EVENTS + LEVEL_2_EVENTS + INPUT_EVENTS:
+        for event_type in LEVEL_0_EVENTS + LEVEL_2_EVENTS + INPUT_EVENTS + VERIFICATION_EVENTS:
             self.kit.on(event_type)(self._on_framework_event)
         for channel in setup.get("channels", []):
             register_channel(self.kit, self, channel)
@@ -343,7 +350,8 @@ class Harness:
     async def invoke(self, spec: Mapping[str, Any], scope: Mapping[str, str]) -> dict[str, Any]:
         """Makes one call; returns its outcome, its error named, never raising."""
         resolved = await self.resolve(dict(spec), scope)
-        call = (CALLS | STORE_CALLS | TASK_CALLS | MEMBER_CALLS | INPUT_CALLS)[spec["call"]]
+        calls = CALLS | STORE_CALLS | TASK_CALLS | MEMBER_CALLS | INPUT_CALLS
+        call = (calls | VERIFICATION_CALLS)[spec["call"]]
         try:
             result = await asyncio.wait_for(call(self.kit, self, resolved), CALL_BOUND_S)
         except TimeoutError:
@@ -362,6 +370,7 @@ class Harness:
             # A delegation through the turn's host answers its task's id.
             named = result if spec["call"] == "host.delegate" else result_event_id(result)
             self._labels[spec["as"]] = named
+            self._labels |= opened_labels(spec, result)
         return {"result": dump(result), "error": None}
 
     async def idle(self) -> None:
