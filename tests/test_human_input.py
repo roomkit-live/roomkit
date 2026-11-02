@@ -94,6 +94,25 @@ async def test_wait_timeout() -> None:
     assert pending.status == PendingInputStatus.TIMED_OUT
 
 
+async def test_wait_returns_an_answer_accepted_at_the_deadline() -> None:
+    """An answer accepted as the deadline passes is the outcome, not a timeout.
+
+    A zero deadline has passed by the time the waiter listens, and the waiter
+    gives it up across a turn of the loop: the answer lands in that turn, as
+    one does when it falls due with a longer deadline.
+    """
+    handler = HumanInputHandler()
+    pending = await handler.create(
+        "confirm", {}, room_id="r1", tool_call_id="tc1", channel_id="ch1"
+    )
+    waiter = asyncio.create_task(handler.wait(pending.pending_id, timeout=0))
+    await asyncio.sleep(0)  # the waiter's deadline has passed; it is giving up
+
+    assert handler.resolve(pending.pending_id, "yes") is True
+    assert await asyncio.wait_for(waiter, timeout=1) == "yes"
+    assert pending.status == PendingInputStatus.RESOLVED
+
+
 async def test_wait_nonexistent_raises_value_error() -> None:
     handler = HumanInputHandler()
     with pytest.raises(ValueError, match="No pending request"):

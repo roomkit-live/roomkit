@@ -105,6 +105,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   end as for a `ProviderError`: the hook reports it, `error`, its segments
   the rounds' words the room has, the failed round's included, then the
   error is raised as before.
+- **An answer accepted as `HumanInputHandler.wait()`'s deadline passes is
+  returned** (RFC §9.3, RMK-1201). `resolve()` could return `True` in the
+  turn of the loop where the deadline expired, and `wait()` still marked the
+  request `TIMED_OUT` and raised `TimeoutError`: the person's answer was
+  lost. `wait()` now returns it, the request `RESOLVED`.
 
 - **A member added again without an identity keeps their identification**
   (RFC §5.5). `add_member()` after `remove_member()` of an IDENTIFIED member

@@ -420,9 +420,10 @@ class HumanInputHandler:
         try:
             await asyncio.wait_for(pending._event.wait(), timeout=timeout)
         except TimeoutError:
-            pending.status = PendingInputStatus.TIMED_OUT
-            self._retire(pending_id)
-            raise
+            # Settled as the deadline passed: an answer accepted then is the
+            # outcome, never retracted by the timeout (RFC §9.3).
+            if pending.status == PendingInputStatus.PENDING:
+                pending.status = PendingInputStatus.TIMED_OUT
         except asyncio.CancelledError:
             # Nobody waits for the answer any more (the call was cut): the
             # request is withdrawn, so a late answer is not taken for it.
