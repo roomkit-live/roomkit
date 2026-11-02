@@ -17,7 +17,15 @@ from typing import TYPE_CHECKING, Any
 from roomkit.channels.ai import AIChannel
 from roomkit.core.exceptions import ToolFailedError, ToolRefusedError, UnservedToolCallError
 from roomkit.models.tool_call import ToolCallEvent
-from roomkit.providers.ai import AIContext, AIProvider, AIResponse, AITool, AIToolCall
+from roomkit.providers.ai import (
+    AIContext,
+    AIImagePart,
+    AIProvider,
+    AIResponse,
+    AITextPart,
+    AITool,
+    AIToolCall,
+)
 from roomkit.providers.ai.base import (
     ProviderError,
     StreamDone,
@@ -213,11 +221,28 @@ def tool_results(context: AIContext) -> list[dict[str, Any]]:
                 found.append(
                     {
                         "tool_call_id": part.tool_call_id,
-                        "content": part.result,
+                        "content": result_content(part.result),
                         "is_error": part.is_error,
                     }
                 )
     return found
+
+
+def result_content(result: Any) -> Any:
+    """A result as the model reads it: its text, or its text and image
+    parts in order, as a message's ``parts`` are written; anything else (no
+    result yet) as it is."""
+    return _parts_of(result) if isinstance(result, list) else result
+
+
+def _returned_parts(parts: list[Mapping[str, Any]]) -> list[AITextPart | AIImagePart]:
+    """The parts a tool that ``returns_parts`` answers, in order."""
+    return [
+        AITextPart(text=part["text"])
+        if "text" in part
+        else AIImagePart(url=part["image"], mime_type=part.get("mime_type"))
+        for part in parts
+    ]
 
 
 _KINDS: dict[str, type[Exception]] = {}
@@ -245,6 +270,8 @@ def _tool_handler(tools: list[Mapping[str, Any]], gates: Gates) -> Any:
             return str(tool["returns"])
         if "returns_json" in tool:
             return tool["returns_json"]
+        if "returns_parts" in tool:
+            return _returned_parts(tool["returns_parts"])
         if "raises" in tool:
             raise _error_of_kind(tool["raises"]["kind"])(tool["raises"]["message"])
         if "fails" in tool:
@@ -366,7 +393,7 @@ def tool_call_record(payload: ToolCallEvent) -> dict[str, Any]:
         "name": payload.name,
         "tool_call_id": payload.tool_call_id,
         "arguments": payload.arguments,
-        "result": payload.result,
+        "result": result_content(payload.result),
         "is_error": payload.is_error,
         "refused": payload.refused,
         "cancelled": payload.cancelled,

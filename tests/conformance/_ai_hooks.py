@@ -15,7 +15,7 @@ from typing import Any
 
 from roomkit.models.tool_call import AIGenerationEvent, AIResponseEvent, ToolRoundEvent
 from roomkit.providers.ai import AIMessage, AITool
-from tests.conformance._agent import messages
+from tests.conformance._agent import messages, result_content
 
 _GENERATION_PATCH = frozenset({"system_prompt", "messages", "tools", "define"})
 _TOOL_ROUND_PATCH = frozenset({"withdrawn", "messages"})
@@ -93,7 +93,7 @@ def tool_round_record(payload: ToolRoundEvent) -> dict[str, Any]:
         "results": [
             {
                 "tool_call_id": result.tool_call_id,
-                "content": result.result,
+                "content": result_content(result.result),
                 "is_error": result.is_error,
             }
             for result in payload.results

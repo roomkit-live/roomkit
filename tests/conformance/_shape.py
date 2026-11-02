@@ -105,6 +105,7 @@ TOOL = {
     "gate",
     "declared",
     "returns_json",
+    "returns_parts",
 }
 RAISES = {"kind", "message"}
 HUMAN_INPUT = {"tool_names", "timeout_ms", "tools"}
