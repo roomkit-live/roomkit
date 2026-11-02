@@ -35,6 +35,7 @@ _STATUS = {"agent_id", "action", "status", "detail", "metadata"}
 TASK_ARGUMENTS: dict[str, set[str]] = {
     "status.post": _STATUS,
     "status.recent": {"n", "agent_id", "status"},
+    "status.recent_text": {"n"},
     "update_room_metadata": {"room_id", "metadata"},
     "submit_feedback": {
         "room_id",
@@ -113,6 +114,10 @@ async def _status_post(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) 
 
 async def _status_recent(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
     return await kit.status_bus.recent(**_named(spec, {"n", "agent_id", "status"}))
+
+
+async def _status_recent_text(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
+    return await kit.status_bus.recent_text(**_named(spec, {"n"}))
 
 
 async def _update_room_metadata(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
@@ -228,6 +233,7 @@ async def _host_add_observation(kit: RoomKit, harness: Harness, spec: Mapping[st
 TASK_CALLS: dict[str, Call] = {
     "status.post": _status_post,
     "status.recent": _status_recent,
+    "status.recent_text": _status_recent_text,
     "update_room_metadata": _update_room_metadata,
     "submit_feedback": _submit_feedback,
     "list_observations": _list_observations,
