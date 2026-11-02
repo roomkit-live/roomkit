@@ -1,0 +1,69 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "rooms/an-attach-tells-the-channel-before-its-hooks",
+  "title": "An attach hands the channel the stored binding before ON_CHANNEL_ATTACHED runs",
+  "rules": [
+    "§6.1",
+    "§5.7"
+  ],
+  "notes": "Translates roomkit tests/test_channel_attach_contract.py::TestAttachOrder (test_the_channel_is_told_before_anything_else_is, test_the_binding_the_channel_receives_is_the_stored_one).",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "observer",
+        "trigger": "on_channel_attached",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "attach_channel",
+      "room_id": "r1",
+      "channel_id": "sms",
+      "access": "read_only"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "room_callbacks": {
+      "r1": {
+        "sms": [
+          {
+            "call": "on_room_attached",
+            "binding": {
+              "channel_id": "sms",
+              "room_id": "r1",
+              "access": "read_only"
+            }
+          }
+        ]
+      }
+    },
+    "hook_order": [
+      "sms.on_room_attached",
+      "observer"
+    ],
+    "bindings": {
+      "r1": {
+        "sms": {
+          "access": "read_only"
+        }
+      }
+    }
+  }
+}

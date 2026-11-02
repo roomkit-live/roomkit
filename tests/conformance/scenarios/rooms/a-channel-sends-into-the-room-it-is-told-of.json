@@ -1,0 +1,119 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "rooms/a-channel-sends-into-the-room-it-is-told-of",
+  "title": "A channel's room callbacks may send into their room, whose lock they run under",
+  "rules": [
+    "§6.1",
+    "§9.5.1"
+  ],
+  "notes": "Python awaits on_room_attached and on_room_detached under the room's lock, which its own calls take again (RFC §9.5.1, a call under R's lock). Where the event stands against the attach's lifecycle record is not compared here (RMK-1246). Found by the review of RMK-1219.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "on_room_attached": [
+          {
+            "do": [
+              {
+                "call": "send_event",
+                "room_id": "r1",
+                "channel_id": "ws",
+                "content": {
+                  "type": "text",
+                  "body": "set up"
+                },
+                "as": "inside"
+              }
+            ]
+          }
+        ],
+        "on_room_detached": [
+          {
+            "do": [
+              {
+                "call": "send_event",
+                "room_id": "r1",
+                "channel_id": "ws",
+                "content": {
+                  "type": "text",
+                  "body": "torn down"
+                },
+                "as": "leaving"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "attach_channel",
+      "room_id": "r1",
+      "channel_id": "sms"
+    },
+    {
+      "call": "detach_channel",
+      "room_id": "r1",
+      "channel_id": "sms"
+    }
+  ],
+  "expect": {
+    "actions": {
+      "inside": [
+        {
+          "result": {
+            "content": {
+              "body": "set up"
+            }
+          }
+        }
+      ],
+      "leaving": [
+        {
+          "result": {
+            "content": {
+              "body": "torn down"
+            }
+          }
+        }
+      ]
+    },
+    "timeline": {
+      "r1": [
+        {
+          "content": {
+            "body": "set up"
+          }
+        },
+        {
+          "content": {
+            "body": "torn down"
+          }
+        }
+      ]
+    },
+    "bindings": {
+      "r1": {
+        "sms": null
+      }
+    }
+  }
+}

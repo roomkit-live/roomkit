@@ -1,0 +1,41 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "rooms/a-detach-of-nothing-tells-no-one",
+  "title": "Detaching a channel the room does not bind tells the channel nothing",
+  "rules": [
+    "§6.1",
+    "§7.2"
+  ],
+  "notes": "Translates roomkit tests/test_channel_attach_contract.py::TestDetach::test_detaching_nothing_tells_no_one.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "detach_channel",
+      "room_id": "r1",
+      "channel_id": "sms",
+      "expect": {
+        "error": "channel_not_bound"
+      }
+    }
+  ],
+  "expect": {
+    "room_callbacks": {
+      "r1": {
+        "sms": []
+      }
+    }
+  }
+}

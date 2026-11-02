@@ -1,0 +1,66 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "rooms/a-detach-tells-the-channel-before-its-hooks",
+  "title": "A detach tells the channel once the binding is gone, before ON_CHANNEL_DETACHED runs",
+  "rules": [
+    "§6.1",
+    "§7.5"
+  ],
+  "notes": "Translates roomkit tests/test_channel_attach_contract.py::TestDetach::test_the_channel_lets_go_before_the_hooks_run.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "observer",
+        "trigger": "on_channel_detached",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "detach_channel",
+      "room_id": "r1",
+      "channel_id": "sms"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "room_callbacks": {
+      "r1": {
+        "sms": [
+          {
+            "call": "on_room_detached"
+          }
+        ]
+      }
+    },
+    "hook_order": [
+      "sms.on_room_detached",
+      "observer"
+    ],
+    "bindings": {
+      "r1": {
+        "sms": null
+      }
+    }
+  }
+}

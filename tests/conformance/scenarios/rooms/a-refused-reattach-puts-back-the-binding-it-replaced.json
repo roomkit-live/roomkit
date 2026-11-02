@@ -1,0 +1,106 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "rooms/a-refused-reattach-puts-back-the-binding-it-replaced",
+  "title": "A channel that refuses an attach over its live attachment keeps the binding it had, which a detach still reaches",
+  "rules": [
+    "§6.1",
+    "§5.7"
+  ],
+  "notes": "Translates roomkit tests/test_channel_attach_contract.py::TestRefusedReattach (test_the_binding_it_replaced_is_put_back, test_the_attachment_it_could_not_replace_can_still_be_detached).",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "on_room_attached": [
+          {
+            "when": {
+              "room_id": "r1"
+            }
+          },
+          {
+            "when": {
+              "room_id": "r2"
+            }
+          },
+          {
+            "fail": "the outside world said no",
+            "repeat": true
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms",
+            "access": "read_write"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "attach_channel",
+      "room_id": "r1",
+      "channel_id": "sms",
+      "access": "read_only",
+      "expect": {
+        "error": "channel_failed"
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "r2",
+      "channel_id": "sms",
+      "access": "read_only",
+      "expect": {
+        "error": "channel_failed"
+      }
+    },
+    {
+      "call": "detach_channel",
+      "room_id": "r2",
+      "channel_id": "sms"
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "r1": {
+        "sms": {
+          "access": "read_write"
+        }
+      },
+      "r2": {
+        "sms": null
+      }
+    },
+    "room_callbacks": {
+      "r2": {
+        "sms": [
+          {
+            "call": "on_room_attached",
+            "binding": {
+              "access": "read_only"
+            }
+          },
+          {
+            "call": "on_room_detached"
+          }
+        ]
+      }
+    }
+  }
+}

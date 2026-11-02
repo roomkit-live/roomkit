@@ -1,0 +1,88 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "rooms/a-detach-the-channel-fails-still-detaches",
+  "title": "A channel that fails on its detach fails the call, after the binding is gone and the detach announced",
+  "rules": [
+    "§6.1",
+    "§7.5",
+    "§26.1"
+  ],
+  "notes": "Translates roomkit tests/test_channel_attach_contract.py::TestDetach (test_a_failure_reaches_the_caller, test_a_failure_still_tells_the_rooms_observers).",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "on_room_detached": [
+          {
+            "fail": "the outside world said no"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "observer",
+        "trigger": "on_channel_detached",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "detach_channel",
+      "room_id": "r1",
+      "channel_id": "sms",
+      "expect": {
+        "error": "channel_failed"
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "r1": {
+        "sms": null
+      }
+    },
+    "hooks": {
+      "observer": [
+        {
+          "trigger": "on_channel_detached",
+          "room_id": "r1"
+        }
+      ]
+    },
+    "framework_events": {
+      "r1": [
+        {
+          "event": "room_channel_detached",
+          "channel_id": "sms"
+        }
+      ]
+    },
+    "lifecycle": {
+      "r1": [
+        {
+          "type": "channel_attached"
+        },
+        {
+          "type": "channel_detached"
+        }
+      ]
+    }
+  }
+}

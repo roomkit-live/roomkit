@@ -1,0 +1,68 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "rooms/an-agent-that-refuses-its-attach-stays-attached",
+  "title": "An intelligence channel's refusal of its attach is logged on its executor: the binding is kept",
+  "rules": [
+    "§6.1",
+    "§10.6.3"
+  ],
+  "notes": "Translates roomkit tests/test_turns_channel_control.py::test_an_intelligence_channel_s_attach_failure_is_logged_on_its_executor, its kit side.",
+  "setup": {
+    "channels": [
+      {
+        "id": "agent",
+        "type": "ai",
+        "on_room_attached": [
+          {
+            "fail": "the outside world said no"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "attach_channel",
+      "room_id": "r1",
+      "channel_id": "agent",
+      "expect": {
+        "result": {
+          "channel_id": "agent"
+        }
+      }
+    },
+    {
+      "call": "detach_channel",
+      "room_id": "r1",
+      "channel_id": "agent"
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "r1": {
+        "agent": null
+      }
+    },
+    "room_callbacks": {
+      "r1": {
+        "agent": [
+          {
+            "call": "on_room_attached",
+            "binding": {
+              "channel_id": "agent",
+              "category": "intelligence"
+            }
+          },
+          {
+            "call": "on_room_detached"
+          }
+        ]
+      }
+    }
+  }
+}

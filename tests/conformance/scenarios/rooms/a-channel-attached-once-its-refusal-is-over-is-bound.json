@@ -1,0 +1,57 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "rooms/a-channel-attached-once-its-refusal-is-over-is-bound",
+  "title": "A room a channel refused can be attached once the channel accepts",
+  "rules": [
+    "§6.1"
+  ],
+  "notes": "Translates roomkit tests/test_channel_attach_contract.py::TestRefusedAttach::test_the_room_can_be_attached_once_the_backend_recovers.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "on_room_attached": [
+          {
+            "fail": "the outside world said no"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "attach_channel",
+      "room_id": "r1",
+      "channel_id": "sms",
+      "expect": {
+        "error": "channel_failed"
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "r1",
+      "channel_id": "sms",
+      "expect": {
+        "result": {
+          "channel_id": "sms"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "r1": {
+        "sms": {
+          "channel_id": "sms"
+        }
+      }
+    }
+  }
+}

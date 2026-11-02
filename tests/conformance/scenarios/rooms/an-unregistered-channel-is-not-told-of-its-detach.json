@@ -1,0 +1,52 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "rooms/an-unregistered-channel-is-not-told-of-its-detach",
+  "title": "A detach of a channel no longer registered removes its binding and tells it nothing",
+  "rules": [
+    "§6.1",
+    "§7.5"
+  ],
+  "notes": "Translates roomkit tests/test_channel_attach_contract.py::TestDetach::test_an_unregistered_channel_is_not_told.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "unregister_channel",
+      "channel_id": "sms"
+    },
+    {
+      "call": "detach_channel",
+      "room_id": "r1",
+      "channel_id": "sms"
+    }
+  ],
+  "expect": {
+    "room_callbacks": {
+      "r1": {
+        "sms": []
+      }
+    },
+    "bindings": {
+      "r1": {
+        "sms": null
+      }
+    }
+  }
+}

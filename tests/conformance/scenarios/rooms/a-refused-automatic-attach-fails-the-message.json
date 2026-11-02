@@ -1,0 +1,117 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "rooms/a-refused-automatic-attach-fails-the-message",
+  "title": "A message whose channel refuses its automatic attach fails, the room left without the binding",
+  "rules": [
+    "§6.1",
+    "§10.1"
+  ],
+  "notes": "Translates roomkit tests/test_channel_attach_contract.py::TestInboundAutoAttach (test_on_the_existing_room_path, test_on_the_named_but_unknown_room_path: the room is created, the channel not bound; test_a_room_already_attached_is_not_asked_again).",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "on_room_attached": [
+          {
+            "fail": "the outside world said no",
+            "repeat": true
+          }
+        ]
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "on_room_attached": [
+          {
+            "when": {
+              "room_id": "r1"
+            }
+          },
+          {
+            "fail": "the outside world said no"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "error": "channel_failed"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r9",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "error": "channel_failed"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    }
+  ],
+  "expect": {
+    "rooms": {
+      "r9": {
+        "id": "r9"
+      }
+    },
+    "bindings": {
+      "r1": {
+        "sms": null,
+        "ws": {
+          "channel_id": "ws"
+        }
+      },
+      "r9": {
+        "sms": null
+      }
+    }
+  }
+}
