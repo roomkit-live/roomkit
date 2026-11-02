@@ -1,0 +1,162 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "verification/a-hook-past-its-timeout-leaves-the-message-held",
+  "title": "A hook on ON_VERIFICATION_REQUIRED past its timeout fails open, reported hook_timeout on its trigger: the message is held as when no hook passes it",
+  "rules": [
+    "§10.1 step 5b",
+    "§11.7.3",
+    "§9.3",
+    "§8.2"
+  ],
+  "notes": "Python: src/roomkit/core/mixins/verification.py (_apply_verification), src/roomkit/core/hooks.py (run_sync_hooks): a SYNC hook's timeout emits hook_timeout and the chain goes on, ON_VERIFICATION_REQUIRED failing open (RMK-1172, the area's review).",
+  "setup": {
+    "kit": {
+      "identity_resolver": {
+        "answers": [
+          {
+            "repeat": true,
+            "result": {
+              "status": "identified",
+              "identity": {
+                "id": "alice-id"
+              }
+            }
+          }
+        ]
+      },
+      "verification_policy": {}
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      },
+      {
+        "id": "ai",
+        "type": "ai"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "slow",
+        "trigger": "on_verification_required",
+        "timeout_ms": 50,
+        "reactions": [
+          {
+            "gate": "never"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Did my transfer go through?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "content": {
+              "body": "Did my transfer go through?"
+            },
+            "visibility": "transport",
+            "source": {
+              "participant_id": "alice-id",
+              "verification": "unverified"
+            },
+            "metadata": {
+              "roomkit:verification_held": {
+                "visibility": "all",
+                "identity_id": "alice-id",
+                "organization_id": null
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "content": {
+            "body": "Did my transfer go through?"
+          },
+          "visibility": "transport",
+          "source": {
+            "participant_id": "alice-id",
+            "verification": "unverified"
+          },
+          "metadata": {
+            "roomkit:verification_held": {
+              "visibility": "all",
+              "identity_id": "alice-id",
+              "organization_id": null
+            }
+          }
+        }
+      ]
+    },
+    "turns": {
+      "room-1": {
+        "ai": []
+      }
+    },
+    "framework_events": {
+      "room-1": [
+        {
+          "event": "identity_resolved",
+          "identity_id": "alice-id"
+        },
+        {
+          "event": "hook_timeout",
+          "hook_name": "slow",
+          "trigger": "on_verification_required",
+          "timeout": 0.05
+        },
+        {
+          "$unordered": [
+            {
+              "event": "delivery_succeeded",
+              "channel_id": "ws"
+            },
+            {
+              "event": "event_processed"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

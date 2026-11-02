@@ -1,0 +1,145 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "verification/a-code-sent-in-another-room-is-an-ordinary-message",
+  "title": "The code of a request sent in another room than the request's is an ordinary message there: stored, labelled and held, no attempt counted",
+  "rules": [
+    "§10.1 step 5b",
+    "§11.7.4",
+    "§11.7.3"
+  ],
+  "notes": "Python: src/roomkit/core/mixins/verification.py (_consume_code: request.room_id != room_id) (RMK-1172).",
+  "setup": {
+    "kit": {
+      "identity_resolver": {
+        "answers": [
+          {
+            "repeat": true,
+            "result": {
+              "status": "identified",
+              "identity": {
+                "id": "alice-id"
+              }
+            }
+          }
+        ]
+      },
+      "verification_policy": {}
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ai",
+        "type": "ai"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      }
+    },
+    {
+      "call": "request_verification",
+      "identity_id": "alice-id",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "method": "code",
+      "as": "req"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "$req.secret"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "visibility": "transport",
+            "source": {
+              "participant_id": "alice-id",
+              "verification": "pending"
+            },
+            "metadata": {
+              "roomkit:verification_held": {
+                "visibility": "all",
+                "identity_id": "alice-id",
+                "organization_id": null
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "store.get_verification_request",
+      "request_id": "$req",
+      "expect": {
+        "result": {
+          "status": "open",
+          "attempts": 0
+        }
+      }
+    },
+    {
+      "call": "verification_of",
+      "identity_id": "alice-id",
+      "expect": {
+        "result": {
+          "status": "pending",
+          "request_id": {
+            "$present": true
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "turns": {
+      "room-2": {
+        "ai": []
+      }
+    }
+  }
+}

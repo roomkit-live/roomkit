@@ -1,0 +1,133 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "verification/a-reply-of-other-digits-is-a-wrong-code",
+  "title": "A reply of as many digits of another script as the code's length has the code's form: it is attempted, a wrong code counted against the request, and consumed",
+  "rules": [
+    "§10.1 step 5b",
+    "§11.7.4"
+  ],
+  "notes": "Python: src/roomkit/core/mixins/verification.py (_consume_code): str.isdigit() reads every character Unicode gives a digit value, Arabic-Indic digits among them, and a code is drawn in ASCII digits, so such a reply never matches (RMK-1172, the area's review).",
+  "setup": {
+    "kit": {
+      "identity_resolver": {
+        "answers": [
+          {
+            "repeat": true,
+            "result": {
+              "status": "identified",
+              "identity": {
+                "id": "alice-id"
+              }
+            }
+          }
+        ]
+      },
+      "verification_policy": {}
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      },
+      {
+        "id": "ai",
+        "type": "ai"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      }
+    },
+    {
+      "call": "request_verification",
+      "identity_id": "alice-id",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "method": "code",
+      "as": "req"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "١٢٣٤٥٦"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "verification_code",
+          "event": null
+        }
+      }
+    },
+    {
+      "call": "store.get_verification_request",
+      "request_id": "$req",
+      "expect": {
+        "result": {
+          "status": "open",
+          "attempts": 1
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "content": {
+            "body": "hello"
+          },
+          "visibility": "transport",
+          "source": {
+            "participant_id": "alice-id",
+            "verification": "unverified"
+          },
+          "metadata": {
+            "roomkit:verification_held": {
+              "visibility": "all",
+              "identity_id": "alice-id",
+              "organization_id": null
+            }
+          }
+        }
+      ]
+    }
+  }
+}

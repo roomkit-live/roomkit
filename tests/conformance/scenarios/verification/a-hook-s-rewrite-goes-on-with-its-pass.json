@@ -1,0 +1,170 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "verification/a-hook-s-rewrite-goes-on-with-its-pass",
+  "title": "A hook on ON_VERIFICATION_REQUIRED that rewrites the message and passes it: the message goes on as the hook left it, labelled, the trigger's ASYNC hooks observing the rewrite and the agent reading it",
+  "rules": [
+    "§10.1 step 5b",
+    "§11.7.3",
+    "§9.3",
+    "§9.4"
+  ],
+  "notes": "Python: src/roomkit/core/mixins/verification.py (_apply_verification), src/roomkit/core/hooks.py (run_sync_hooks): decided.event replaces the event, whatever the trigger; the ASYNC hooks observe the chain's final payload (RMK-1172, the area's review).",
+  "setup": {
+    "kit": {
+      "identity_resolver": {
+        "answers": [
+          {
+            "repeat": true,
+            "result": {
+              "status": "identified",
+              "identity": {
+                "id": "alice-id"
+              }
+            }
+          }
+        ]
+      },
+      "verification_policy": {}
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      },
+      {
+        "id": "ai",
+        "type": "ai"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "rewrite",
+        "trigger": "on_verification_required",
+        "reactions": [
+          {
+            "result": {
+              "action": "modify",
+              "event": {
+                "content": {
+                  "type": "text",
+                  "body": "My card is [redacted]"
+                }
+              },
+              "metadata": {
+                "roomkit:verification": "pass"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "name": "watch",
+        "trigger": "on_verification_required",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "My card is 4417"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "content": {
+              "body": "My card is [redacted]"
+            },
+            "visibility": "all",
+            "source": {
+              "verification": "unverified"
+            },
+            "metadata": {
+              "roomkit:verification_held": null
+            }
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "content": {
+            "body": "My card is [redacted]"
+          },
+          "visibility": "all",
+          "source": {
+            "participant_id": "alice-id",
+            "verification": "unverified"
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "rewrite": [
+        {
+          "trigger": "on_verification_required",
+          "room_id": "room-1",
+          "event": {
+            "content": {
+              "body": "My card is 4417"
+            }
+          }
+        }
+      ],
+      "watch": [
+        {
+          "trigger": "on_verification_required",
+          "room_id": "room-1",
+          "event": {
+            "content": {
+              "body": "My card is [redacted]"
+            }
+          }
+        }
+      ]
+    },
+    "turns": {
+      "room-1": {
+        "ai": [
+          {
+            "content": {
+              "body": "My card is [redacted]"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

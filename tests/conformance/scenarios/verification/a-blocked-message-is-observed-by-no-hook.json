@@ -1,0 +1,113 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "verification/a-blocked-message-is-observed-by-no-hook",
+  "title": "A message a hook on ON_VERIFICATION_REQUIRED blocks is heard by none of the trigger's ASYNC hooks: they observe what the chain let through",
+  "rules": [
+    "§10.1 step 5b",
+    "§11.7.3",
+    "§9.3"
+  ],
+  "notes": "Python: src/roomkit/core/mixins/verification.py (_apply_verification), src/roomkit/core/hooks.py (run_sync_hooks): a block returns before the ASYNC observers are started (RMK-1172, the area's review).",
+  "setup": {
+    "kit": {
+      "identity_resolver": {
+        "answers": [
+          {
+            "repeat": true,
+            "result": {
+              "status": "identified",
+              "identity": {
+                "id": "alice-id"
+              }
+            }
+          }
+        ]
+      },
+      "verification_policy": {}
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      },
+      {
+        "id": "ai",
+        "type": "ai"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "refuse",
+        "trigger": "on_verification_required",
+        "reactions": [
+          {
+            "result": {
+              "action": "block",
+              "reason": "verify first"
+            }
+          }
+        ]
+      },
+      {
+        "name": "watch",
+        "trigger": "on_verification_required",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Close my account"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "verify first",
+          "event": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": []
+    },
+    "hooks": {
+      "refuse": [
+        {
+          "trigger": "on_verification_required",
+          "room_id": "room-1"
+        }
+      ],
+      "watch": []
+    }
+  }
+}
