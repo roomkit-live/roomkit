@@ -1,0 +1,134 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/an-agent-s-turn-prompt-ends-with-its-identity",
+  "title": "An agent's turns end their system prompt with its identity block, in the language the room's conversation state sets, unless the agent keeps its identity out of the prompt",
+  "rules": [
+    "§19.1",
+    "§19.2",
+    "§6.4"
+  ],
+  "notes": "Python's Agent writes its role, description and scope, then its language, under an identity header after everything else of the turn's prompt; the room's conversation state (metadata _conversation_state, context.language) gives the language over the agent's own.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket"
+      },
+      {
+        "id": "advisor",
+        "type": "ai",
+        "agent": {
+          "role": "Advisor",
+          "description": "Gives financial advice",
+          "scope": "Personal finance",
+          "language": "English"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Bonjour."
+            }
+          ]
+        }
+      },
+      {
+        "id": "quiet",
+        "type": "ai",
+        "agent": {
+          "role": "Advisor",
+          "language": "English",
+          "identity_in_prompt": false
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Hello."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "metadata": {
+          "_conversation_state": {
+            "context": {
+              "language": "French"
+            }
+          }
+        },
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "advisor",
+            "category": "intelligence",
+            "metadata": {
+              "system_prompt": "Be helpful."
+            }
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "quiet",
+            "category": "intelligence",
+            "metadata": {
+              "system_prompt": "Be helpful."
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ana",
+        "content": {
+          "type": "text",
+          "body": "Can I save more?"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r2",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ana",
+        "content": {
+          "type": "text",
+          "body": "Can I save more?"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "advisor": [
+        {
+          "system_prompt": "Be helpful.\n--- Agent Identity ---\nRole: Advisor\nDescription: Gives financial advice\nScope: Personal finance\nLanguage: Always respond in French"
+        }
+      ],
+      "quiet": [
+        {
+          "system_prompt": "Be helpful."
+        }
+      ]
+    }
+  }
+}

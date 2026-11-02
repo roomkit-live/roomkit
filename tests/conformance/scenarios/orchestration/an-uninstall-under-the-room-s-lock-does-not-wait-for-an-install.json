@@ -1,0 +1,119 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/an-uninstall-under-the-room-s-lock-does-not-wait-for-an-install",
+  "title": "An uninstall made by code holding the room's lock does not wait for an install that waits for that lock: it answers false, and the install ends once the lock is free",
+  "rules": [
+    "§19.7",
+    "§13.5"
+  ],
+  "notes": "RFC §19.7: a host may install and uninstall a strategy while it holds the room's lock, and neither waits on work that needs it. Here a SYNC BEFORE_BROADCAST hook, under the lock, uninstalls while an install claimed the room and waits for the lock.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket"
+      },
+      {
+        "id": "sales",
+        "type": "ai"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "undo",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "gate": "hooked",
+            "do": [
+              {
+                "call": "uninstall_strategy",
+                "room_id": "r1",
+                "as": "inner"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "plain",
+        "agents": [
+          "sales"
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ana",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      },
+      "background": true,
+      "as": "message"
+    },
+    {
+      "wait_for": "hooked"
+    },
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "plain",
+      "background": true,
+      "as": "install"
+    },
+    {
+      "wait_for_lock": "r1"
+    },
+    {
+      "open": "hooked"
+    },
+    {
+      "await": "message"
+    },
+    {
+      "await": "install"
+    },
+    {
+      "call": "room_strategy",
+      "room_id": "r1",
+      "expect": {
+        "result": "plain"
+      }
+    }
+  ],
+  "expect": {
+    "actions": {
+      "inner": [
+        {
+          "result": false
+        }
+      ]
+    },
+    "bindings": {
+      "r1": {
+        "sales": {
+          "$present": true
+        }
+      }
+    }
+  }
+}

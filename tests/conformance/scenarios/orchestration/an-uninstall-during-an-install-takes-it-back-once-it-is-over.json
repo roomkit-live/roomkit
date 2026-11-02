@@ -1,0 +1,88 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/an-uninstall-during-an-install-takes-it-back-once-it-is-over",
+  "title": "An uninstall called while an install runs waits for the install's end, then takes it back whole: it answers true, and the room holds no strategy and none of its agents",
+  "rules": [
+    "§19.7"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket"
+      },
+      {
+        "id": "sales",
+        "type": "ai"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "slow",
+        "agents": [
+          "sales"
+        ],
+        "install": {
+          "gate": "installing"
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "slow",
+      "background": true,
+      "as": "install"
+    },
+    {
+      "wait_for": "installing"
+    },
+    {
+      "call": "uninstall_strategy",
+      "room_id": "r1",
+      "background": true,
+      "as": "uninstall"
+    },
+    {
+      "open": "installing"
+    },
+    {
+      "await": "install"
+    },
+    {
+      "await": "uninstall",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "call": "room_strategy",
+      "room_id": "r1",
+      "expect": {
+        "result": null
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "r1": {
+        "ops": {
+          "$present": true
+        },
+        "sales": null
+      }
+    }
+  }
+}

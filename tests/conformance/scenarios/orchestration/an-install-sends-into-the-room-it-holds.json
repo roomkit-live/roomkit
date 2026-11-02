@@ -1,0 +1,84 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/an-install-sends-into-the-room-it-holds",
+  "title": "A strategy's install may send into the room it installs in, whose lock it runs under: the event is stored and the install ends",
+  "rules": [
+    "§19.7",
+    "§13.5",
+    "§9.5.1"
+  ],
+  "notes": "Python's install runs under the room's lock, which the calls it makes take again (RFC §13.5: the lock is reentrant within one execution context).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "greeter",
+        "install": {
+          "do": [
+            {
+              "call": "send_event",
+              "room_id": "$room",
+              "channel_id": "ws",
+              "content": {
+                "type": "text",
+                "body": "welcome"
+              },
+              "as": "greeting"
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "greeter"
+    },
+    {
+      "call": "room_strategy",
+      "room_id": "r1",
+      "expect": {
+        "result": "greeter"
+      }
+    }
+  ],
+  "expect": {
+    "actions": {
+      "greeting": [
+        {
+          "result": {
+            "content": {
+              "body": "welcome"
+            }
+          }
+        }
+      ]
+    },
+    "timeline": {
+      "r1": [
+        {
+          "content": {
+            "body": "welcome"
+          }
+        }
+      ]
+    }
+  }
+}
