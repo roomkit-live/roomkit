@@ -1,0 +1,261 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "author-images/an-error-that-may-not-be-the-content-s-refuses-nothing",
+  "title": "A failed request refuses none of its images when its error cannot be about its content: a status about the key, the bill, a permission, the model or the rate, a later round of the turn, or a stream under way",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python's refuses_content and _stream_generation: only the turn's first request, before anything streamed, failing on an error not retried of another status than 401, 402, 403, 404 and 429, marks its images refused. A later round, or a stream under way, shows the provider took the content.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "vision": true,
+          "rounds": [
+            {
+              "refuses": {
+                "status": 401,
+                "message": "invalid x-api-key"
+              }
+            },
+            {
+              "calls": [
+                {
+                  "id": "c0",
+                  "name": "lookup"
+                }
+              ]
+            },
+            {
+              "refuses": {
+                "status": 400,
+                "message": "bad request"
+              }
+            },
+            {
+              "text": "Let me look",
+              "refuses": {
+                "status": 400,
+                "message": "overloaded mid-answer"
+              }
+            },
+            {
+              "text": "Seen 4."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look something up",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "found"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "media",
+          "url": "https://cdn.example.com/lamp.png",
+          "mime_type": "image/png",
+          "filename": "lamp.png"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": "invalid x-api-key"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "first?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": "bad request"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "second?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": "overloaded mid-answer"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "third?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "",
+              "parts": [
+                {
+                  "image": "https://cdn.example.com/lamp.png",
+                  "mime_type": "image/png"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "",
+              "parts": [
+                {
+                  "image": "https://cdn.example.com/lamp.png",
+                  "mime_type": "image/png"
+                }
+              ]
+            },
+            {
+              "role": "user",
+              "text": "first?",
+              "parts": {
+                "$absent": true
+              }
+            }
+          ]
+        },
+        {},
+        {
+          "messages": [
+            "$any",
+            "$any",
+            "$any",
+            "$any",
+            {
+              "role": "user",
+              "text": "second?",
+              "parts": {
+                "$absent": true
+              }
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "",
+              "parts": [
+                {
+                  "image": "https://cdn.example.com/lamp.png",
+                  "mime_type": "image/png"
+                }
+              ]
+            },
+            "$any",
+            "$any",
+            "$any",
+            {
+              "role": "user",
+              "text": "second?",
+              "parts": {
+                "$absent": true
+              }
+            },
+            {
+              "role": "assistant",
+              "text": "Let me look"
+            },
+            {
+              "role": "user",
+              "text": "third?",
+              "parts": {
+                "$absent": true
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

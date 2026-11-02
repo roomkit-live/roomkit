@@ -1,0 +1,130 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "author-images/attached-images-count-in-the-bound",
+  "title": "The images an application keeps beside an event's content count in the turn's bound with the others, the oldest past it read as an earlier image not shown",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python's author_images over the events with_attached_media reads: the newest max_author_images images go, an event's own media before the ones attached to it.",
+  "setup": {
+    "kit": {
+      "attached_media": {
+        "key": "files"
+      }
+    },
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "vision": true,
+          "rounds": [
+            {
+              "text": "Seen 0."
+            }
+          ]
+        },
+        "max_author_images": 2
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "composite",
+        "parts": [
+          {
+            "type": "text",
+            "body": "all of them"
+          },
+          {
+            "type": "media",
+            "url": "data:image/png;base64,AQIDBA==",
+            "mime_type": "image/png",
+            "filename": "own.png"
+          }
+        ]
+      },
+      "metadata": {
+        "files": [
+          {
+            "type": "media",
+            "url": "https://cdn.example.com/p0.png",
+            "mime_type": "image/png",
+            "filename": "p0.png"
+          },
+          {
+            "type": "media",
+            "url": "https://cdn.example.com/p1.png",
+            "mime_type": "image/png",
+            "filename": "p1.png"
+          },
+          {
+            "type": "media",
+            "url": "https://cdn.example.com/p2.png",
+            "mime_type": "image/png",
+            "filename": "p2.png"
+          }
+        ]
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "all of them[Earlier image not shown: “own.png”][Earlier image not shown: “p0.png”]",
+              "parts": [
+                {
+                  "text": "all of them"
+                },
+                {
+                  "text": "[Earlier image not shown: “own.png”]"
+                },
+                {
+                  "text": "[Earlier image not shown: “p0.png”]"
+                },
+                {
+                  "image": "https://cdn.example.com/p1.png",
+                  "mime_type": "image/png"
+                },
+                {
+                  "image": "https://cdn.example.com/p2.png",
+                  "mime_type": "image/png"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

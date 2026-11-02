@@ -1,0 +1,205 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "author-images/a-reference-reaches-the-model-as-the-kit-s-image",
+  "title": "A reference an author sent reaches a model that sees as the image the kit's media resolver gives for it, asked afresh each turn, while the store keeps the reference; one it gives nothing for reads as an image unavailable",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python's RoomKit(media_resolver=...) and _resolved: the resolver, serving every AI channel registered on the kit, gives a reference's bytes, sent as a data URI of the media's type; none, or none past 5 MiB, takes the mention [Image unavailable: “<name>”].",
+  "setup": {
+    "kit": {
+      "media_resolver": {
+        "media": {
+          "app-media://photo-1": "AQIDBA=="
+        }
+      }
+    },
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "vision": true,
+          "rounds": [
+            {
+              "text": "Seen 0."
+            },
+            {
+              "text": "Seen 1."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "composite",
+          "parts": [
+            {
+              "type": "text",
+              "body": "compare with mine"
+            },
+            {
+              "type": "media",
+              "url": "app-media://photo-1",
+              "mime_type": "image/png",
+              "filename": "lamp.png"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "media",
+          "url": "app-media://gone",
+          "mime_type": "image/png",
+          "filename": "gone.png"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "composite",
+            "parts": [
+              {
+                "type": "text",
+                "body": "compare with mine"
+              },
+              {
+                "type": "media",
+                "url": "app-media://photo-1",
+                "mime_type": "image/png",
+                "filename": "lamp.png"
+              }
+            ]
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Seen 0."
+          }
+        },
+        {
+          "content": {
+            "type": "media",
+            "url": "app-media://gone",
+            "mime_type": "image/png",
+            "filename": "gone.png"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Seen 1."
+          }
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "compare with mine",
+              "parts": [
+                {
+                  "text": "compare with mine"
+                },
+                {
+                  "image": "data:image/png;base64,AQIDBA==",
+                  "mime_type": "image/png"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "compare with mine",
+              "parts": [
+                {
+                  "text": "compare with mine"
+                },
+                {
+                  "image": "data:image/png;base64,AQIDBA==",
+                  "mime_type": "image/png"
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "text": "Seen 0."
+            },
+            {
+              "role": "user",
+              "text": "[Image unavailable: “gone.png”]",
+              "parts": [
+                {
+                  "text": "[Image unavailable: “gone.png”]"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

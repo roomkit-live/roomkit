@@ -1,0 +1,90 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "author-images/an-attached-image-a-model-does-not-see-reads-a-mention",
+  "title": "A model that does not see reads an image the application keeps beside an event's content as a mention that it does not see it, after the event's words",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python's with_attached_media then unseen_images: the attached media are the event's parts, an image among them read as the mention a model that does not see reads.",
+  "setup": {
+    "kit": {
+      "attached_media": {
+        "key": "files"
+      }
+    },
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "vision": false,
+          "rounds": [
+            {
+              "text": "Seen 0."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "look"
+      },
+      "metadata": {
+        "files": [
+          {
+            "type": "media",
+            "url": "https://cdn.example.com/lamp.png",
+            "mime_type": "image/png",
+            "filename": "lamp.png"
+          }
+        ]
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "look\n[Image not shown, this model does not see images: “lamp.png”]",
+              "parts": {
+                "$absent": true
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

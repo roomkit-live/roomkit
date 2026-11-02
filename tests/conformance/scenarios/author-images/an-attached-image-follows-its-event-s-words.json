@@ -1,0 +1,179 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "author-images/an-attached-image-follows-its-event-s-words",
+  "title": "An image the application keeps beside an event's content reaches a model that sees after the event's words, in the turn's input and in its history alike, while the store keeps the event as it was",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python's with_attached_media: the kit's attached-media reader names the media an event carries outside its content; the AI channel reads the event as its content's parts, then those media, the store and the broadcasts keeping the event as stored.",
+  "setup": {
+    "kit": {
+      "attached_media": {
+        "key": "files"
+      }
+    },
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "vision": true,
+          "rounds": [
+            {
+              "text": "Seen 0."
+            },
+            {
+              "text": "Seen 1."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "compare with mine"
+      },
+      "metadata": {
+        "files": [
+          {
+            "type": "media",
+            "url": "https://cdn.example.com/lamp.png",
+            "mime_type": "image/png",
+            "filename": "lamp.png"
+          }
+        ]
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "what colour is its foot?"
+      },
+      "metadata": {}
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "compare with mine"
+          },
+          "metadata": {
+            "files": [
+              {
+                "type": "media",
+                "url": "https://cdn.example.com/lamp.png",
+                "mime_type": "image/png",
+                "filename": "lamp.png"
+              }
+            ]
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Seen 0."
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "what colour is its foot?"
+          },
+          "metadata": {}
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Seen 1."
+          }
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "compare with mine",
+              "parts": [
+                {
+                  "text": "compare with mine"
+                },
+                {
+                  "image": "https://cdn.example.com/lamp.png",
+                  "mime_type": "image/png"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "compare with mine",
+              "parts": [
+                {
+                  "text": "compare with mine"
+                },
+                {
+                  "image": "https://cdn.example.com/lamp.png",
+                  "mime_type": "image/png"
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "text": "Seen 0."
+            },
+            {
+              "role": "user",
+              "text": "what colour is its foot?",
+              "parts": {
+                "$absent": true
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

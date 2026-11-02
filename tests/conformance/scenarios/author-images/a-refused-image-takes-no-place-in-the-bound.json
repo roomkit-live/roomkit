@@ -1,0 +1,180 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "author-images/a-refused-image-takes-no-place-in-the-bound",
+  "title": "An image its provider refused takes no place among the newest images a turn sends: an older image it had pushed past the bound goes again",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python's _decide: an image refused in the room reads as refused before the bound is counted, and is not counted.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "vision": true,
+          "rounds": [
+            {
+              "text": "Seen 0."
+            },
+            {
+              "refuses": {
+                "status": 400,
+                "message": "the image could not be processed"
+              }
+            },
+            {
+              "text": "Seen 2."
+            }
+          ]
+        },
+        "max_author_images": 1
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "https://cdn.example.com/a.png",
+        "mime_type": "image/png",
+        "filename": "a.png"
+      },
+      "metadata": {}
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "https://cdn.example.com/b.png",
+        "mime_type": "image/png",
+        "filename": "b.png"
+      },
+      "metadata": {}
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "?"
+      },
+      "metadata": {}
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "",
+              "parts": [
+                {
+                  "image": "https://cdn.example.com/a.png",
+                  "mime_type": "image/png"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "[Earlier image not shown: “a.png”]",
+              "parts": [
+                {
+                  "text": "[Earlier image not shown: “a.png”]"
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "text": "Seen 0."
+            },
+            {
+              "role": "user",
+              "text": "",
+              "parts": [
+                {
+                  "image": "https://cdn.example.com/b.png",
+                  "mime_type": "image/png"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "",
+              "parts": [
+                {
+                  "image": "https://cdn.example.com/a.png",
+                  "mime_type": "image/png"
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "text": "Seen 0."
+            },
+            {
+              "role": "user",
+              "text": "[Image refused by the model's provider: “b.png”]",
+              "parts": [
+                {
+                  "text": "[Image refused by the model's provider: “b.png”]"
+                }
+              ]
+            },
+            {
+              "role": "user",
+              "text": "?",
+              "parts": {
+                "$absent": true
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

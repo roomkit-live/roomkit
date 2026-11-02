@@ -1,0 +1,156 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "author-images/an-image-the-provider-refused-reads-as-refused-after",
+  "title": "When a turn's first request, carrying author images, is refused by its provider with an error that may be about its content, those images read in the room's later turns as refused by the provider, attached ones alike",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python's RefusedImages: a provider error not retried, of no status about the key, the bill, a permission, the model or the rate (401, 402, 403, 404, 429), on the turn's first request before anything streamed, marks the images that request sent refused in the room: [Image refused by the model's provider: “<name>”] in their place.",
+  "setup": {
+    "kit": {
+      "attached_media": {
+        "key": "files"
+      }
+    },
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "vision": true,
+          "rounds": [
+            {
+              "refuses": {
+                "status": 400,
+                "message": "the image could not be processed"
+              }
+            },
+            {
+              "text": "Seen 1."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "composite",
+        "parts": [
+          {
+            "type": "text",
+            "body": "my lamps"
+          },
+          {
+            "type": "media",
+            "url": "data:image/png;base64,AQIDBA==",
+            "mime_type": "image/png",
+            "filename": "lamp.png"
+          }
+        ]
+      },
+      "metadata": {
+        "files": [
+          {
+            "type": "media",
+            "url": "https://cdn.example.com/lamp.png",
+            "mime_type": "image/png",
+            "filename": "other.png"
+          }
+        ]
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "and now?"
+      },
+      "metadata": {}
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "my lamps",
+              "parts": [
+                {
+                  "text": "my lamps"
+                },
+                {
+                  "image": "data:image/png;base64,AQIDBA==",
+                  "mime_type": "image/png"
+                },
+                {
+                  "image": "https://cdn.example.com/lamp.png",
+                  "mime_type": "image/png"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "my lamps[Image refused by the model's provider: “lamp.png”][Image refused by the model's provider: “other.png”]",
+              "parts": [
+                {
+                  "text": "my lamps"
+                },
+                {
+                  "text": "[Image refused by the model's provider: “lamp.png”]"
+                },
+                {
+                  "text": "[Image refused by the model's provider: “other.png”]"
+                }
+              ]
+            },
+            {
+              "role": "user",
+              "text": "and now?",
+              "parts": {
+                "$absent": true
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
