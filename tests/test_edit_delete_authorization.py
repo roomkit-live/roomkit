@@ -47,6 +47,7 @@ from roomkit.models.event import (
 from roomkit.models.hook import HookResult, InjectedEvent
 from roomkit.models.store_filter import PersistencePolicy
 from roomkit.providers.ai.mock import MockAIProvider
+from roomkit.speaking import MockSpeakPolicy, MockThinker, SpeakDecisionEvent
 from roomkit.store.memory import InMemoryStore
 
 
@@ -1062,6 +1063,36 @@ class TestNoTurnOnAChange:
         kinds = [call.event.type for call in memory.ingest_calls]
         assert kinds == [EventType.MESSAGE, EventType(change)]
         await kit.close()
+
+    @pytest.mark.parametrize("change", ["edit", "delete"])
+    async def test_no_speak_policy_nor_thinker_is_asked_about_a_change(self, change: str) -> None:
+        """No turn is opened on a change: its speak policy is not asked,
+        ON_SPEAK_DECISION does not fire and its thinker does not run (RFC
+        §6.4, §10.3)."""
+        policy = MockSpeakPolicy(["silent"])
+        thinker = MockThinker()
+        kit = RoomKit()
+        kit.register_channel(_Transport("src"))
+        kit.register_channel(
+            AIChannel("ai", provider=MockAIProvider(), speak_policy=policy, thinker=thinker)
+        )
+        await kit.create_room(room_id="r1")
+        await kit.attach_channel("r1", "src")
+        await kit.attach_channel("r1", "ai", category=ChannelCategory.INTELLIGENCE)
+        decided: list[SpeakDecisionEvent] = []
+
+        @kit.hook(HookTrigger.ON_SPEAK_DECISION, execution=HookExecution.ASYNC)
+        async def observe(event: SpeakDecisionEvent, ctx: object) -> None:
+            decided.append(event)
+
+        oops = await _post(kit, "Oops", sender_id="alice")
+        if change == "edit":
+            await _edit(kit, oops, sender_id="alice", edit_source="sender")
+        else:
+            await _delete(kit, oops, sender_id="alice", delete_type=DeleteType.SENDER)
+        await kit.close()
+
+        assert (len(policy.turns), len(thinker.calls), len(decided)) == (1, 1, 1)
 
 
 class TestNoReplayOfAWithdrawnMessage:
