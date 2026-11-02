@@ -153,6 +153,7 @@ class _Room:
             self.kit.register_channel(AIChannel("ai-1", provider=ai))
         self.transcriptions: list[Any] = []
         self.speaker_changes: list[Any] = []
+        self._speaker_changed = asyncio.Condition()
         self.rename: dict[str, str] = {}
         self.participants: dict[str, str] = {}
         self.hold: dict[str, Callable[[], Awaitable[None]]] = {}
@@ -177,7 +178,9 @@ class _Room:
 
         @self.kit.hook(HookTrigger.ON_SPEAKER_CHANGE, execution=HookExecution.ASYNC)
         async def on_speaker_change(event: Any, ctx: Any) -> None:
-            self.speaker_changes.append(event)
+            async with self._speaker_changed:
+                self.speaker_changes.append(event)
+                self._speaker_changed.notify_all()
 
     async def start(self) -> None:
         room = await self.kit.create_room()
@@ -205,6 +208,15 @@ class _Room:
             if len(found) >= count or loop.time() > deadline:
                 return found
             await asyncio.sleep(0.02)
+
+    async def changes(self, count: int, timeout: float = 3.0) -> list[Any]:
+        """The ON_SPEAKER_CHANGE events, once ``count`` reached their observer.
+        Each is fired from a task of the channel's own, apart from the words'
+        way to the room, and the channel's close cuts it: a test waits for
+        them before it closes (RMK-953)."""
+        async with asyncio.timeout(timeout), self._speaker_changed:
+            await self._speaker_changed.wait_for(lambda: len(self.speaker_changes) >= count)
+        return list(self.speaker_changes)
 
 
 def _said(messages: list[Any]) -> list[tuple[str | None, str]]:
@@ -258,7 +270,8 @@ class TestVoiceChannelCarriesLabels:
         await room.speak()
         await _eventually(lambda: len(room.transcriptions) == 2)
         messages = await room.messages(2)
-        await room.channel.close()
+        changes = await room.changes(2)
+        await room.kit.close()
 
         # The stream was kept across the turn: the labels compare.
         assert stt.streams == 1
@@ -272,11 +285,10 @@ class TestVoiceChannelCarriesLabels:
             ("A", 0, "Speaker A"),
             ("B", 0, "Speaker B"),
         ]
-        await _eventually(lambda: len(room.speaker_changes) == 2)
-        assert [
-            (c.speaker_id, c.is_new_speaker, c.source, c.speaker_epoch)
-            for c in room.speaker_changes
-        ] == [("A", True, "stt", 0), ("B", True, "stt", 0)]
+        assert [(c.speaker_id, c.is_new_speaker, c.source, c.speaker_epoch) for c in changes] == [
+            ("A", True, "stt", 0),
+            ("B", True, "stt", 0),
+        ]
 
     async def test_a_final_mixing_speakers_becomes_one_message_each_in_order(self) -> None:
         stt = _DiarizingSTT(
@@ -347,13 +359,13 @@ class TestVoiceChannelCarriesLabels:
         # Spoken while the channel reconnects: carried over to the new stream.
         await room.speak()
         messages = await room.messages(2)
-        await room.channel.close()
+        changes = await room.changes(2)
+        await room.kit.close()
 
         assert stt.streams == 2
         assert _said(messages) == [("Speaker A", "Premier."), ("Speaker A#1", "Second.")]
         assert [m.metadata["speaker_epoch"] for m in messages] == [0, 1]
-        await _eventually(lambda: len(room.speaker_changes) == 2)
-        assert all(c.is_new_speaker for c in room.speaker_changes)
+        assert all(c.is_new_speaker for c in changes)
 
     @pytest.mark.wallclock
     async def test_silence_keeps_the_stream_alive_through_a_quiet_spell(
