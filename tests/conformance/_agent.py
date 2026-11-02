@@ -24,11 +24,13 @@ from roomkit.providers.ai.base import (
     StreamTextDelta,
     response_stream_events,
 )
+from roomkit.tasks import CancelTaskTool, TaskStatusTool
 from roomkit.tools.human_input import HumanInputToolHandler
 from roomkit.tools.policy import ToolPolicy
 from tests.conformance._memory import scripted_memory
 
 if TYPE_CHECKING:
+    from roomkit.core.framework import RoomKit
     from tests.conformance._script import Gates
 
 
@@ -166,7 +168,11 @@ def _tool_handler(tools: list[Mapping[str, Any]], gates: Gates) -> Any:
     by_name = {tool["name"]: tool for tool in tools}
 
     async def handler(name: str, arguments: dict[str, Any]) -> str:
-        tool = by_name[name]
+        tool = by_name.get(name)
+        if tool is None:
+            # A name the scripted tools do not define: the kit's tools the
+            # agent is given serve it (README, "Scripted agents").
+            raise UnservedToolCallError(f"{name} is not this handler's")
         if (gate := tool.get("gate")) is not None:
             await gates.hold(gate)
         if "returns" in tool:
@@ -186,12 +192,12 @@ def _tool_handler(tools: list[Mapping[str, Any]], gates: Gates) -> Any:
 
 
 def scripted_agent(
-    spec: Mapping[str, Any], gates: Gates
+    spec: Mapping[str, Any], gates: Gates, kit: RoomKit
 ) -> tuple[AIChannel, dict[str, ScriptedModel]]:
     """The AI channel of a scripted agent, and its models by the name
     ``expect.models`` gives them: its own under its id, its memory's
     summarizer under ``<id>/summarizer``; a round or a tool with a ``gate``
-    holds at it."""
+    holds at it; the tools *kit* makes that it is given, after its own."""
     model = ScriptedModel(spec["model"]["rounds"], gates)
     models = {spec["id"]: model}
     tools = spec.get("tools", [])
@@ -227,11 +233,19 @@ def scripted_agent(
                 parameters=dict(tool.get("parameters", {})),
             )
             for tool in tools
-        ],
+        ]
+        + _kit_tools(spec.get("kit_tools", []), kit),
         tool_handler=_tool_handler(tools, gates),
         **kwargs,
     )
     return channel, models
+
+
+def _kit_tools(names: list[str], kit: RoomKit) -> list[Any]:
+    """The tools the kit makes that a scripted agent is given as its own
+    (README, "Scripted agents")."""
+    made = {"task_status": TaskStatusTool, "cancel_task": CancelTaskTool}
+    return [made[name](kit) for name in names]
 
 
 def _human_input(spec: Mapping[str, Any]) -> HumanInputToolHandler:
