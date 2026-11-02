@@ -1,0 +1,144 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-round-that-only-replays-the-prefix-is-delivered-whole",
+  "title": "A round whose whole text replays the text of the round of calls before it, with nothing after it, is delivered whole: it may be the whole answer",
+  "rules": [
+    "§6.4",
+    "§9.2"
+  ],
+  "notes": "Python's _PrefixDeduplicator.finish: a generation ending inside the prefix gets its withheld text back.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Let me look.",
+              "calls": [
+                {
+                  "id": "call-1",
+                  "name": "search"
+                }
+              ]
+            },
+            {
+              "text": "Let me look."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "search",
+            "description": "Search",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "found"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "seen",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "Go."
+          }
+        },
+        {
+          "index": 1,
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "Let me look."
+          }
+        },
+        {
+          "index": 2,
+          "type": "tool_call_start"
+        },
+        {
+          "index": 3,
+          "type": "tool_call_end"
+        },
+        {
+          "index": 4,
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "Let me look."
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "seen": [
+        {
+          "trigger": "on_ai_response",
+          "response": {
+            "segments": [
+              "Let me look.",
+              "Let me look."
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

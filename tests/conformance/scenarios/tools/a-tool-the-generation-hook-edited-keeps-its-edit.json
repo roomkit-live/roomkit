@@ -1,0 +1,198 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-tool-the-generation-hook-edited-keeps-its-edit",
+  "title": "A tool a BEFORE_AI_GENERATION hook redefines is declared as the hook left it at every round, and its calls are checked against the schema it left",
+  "rules": [
+    "§6.4",
+    "§9.2",
+    "§21.1"
+  ],
+  "notes": "Python's _adopt_hook_toolset: the hook's definition replaces the tool's in the turn's base toolset (tests/test_hook_tool_restrictions.py test_a_tool_the_hook_edited_keeps_its_edit); the call's arguments are then checked against it (RFC §21.1).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "call-1",
+                  "name": "safe_read"
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "call-2",
+                  "name": "safe_read",
+                  "arguments": {
+                    "record": "r1"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "safe_read",
+            "description": "Read a record",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "read"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "audit",
+        "trigger": "before_ai_generation",
+        "reactions": [
+          {
+            "result": {
+              "action": "modify",
+              "event": {
+                "define": [
+                  {
+                    "name": "safe_read",
+                    "description": "Read a record (audited)",
+                    "parameters": {
+                      "type": "object",
+                      "properties": {
+                        "record": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "record"
+                      ]
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      {
+        "name": "seen",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "tools": {
+            "safe_read": 0
+          }
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "call-1",
+              "content": "{\"error\": \"Invalid arguments for 'safe_read': missing required argument 'record'\"}",
+              "is_error": true
+            }
+          ]
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "call-1",
+              "is_error": true
+            },
+            {
+              "tool_call_id": "call-2",
+              "content": "read",
+              "is_error": false
+            }
+          ]
+        }
+      ]
+    },
+    "hooks": {
+      "audit": [
+        {
+          "trigger": "before_ai_generation"
+        }
+      ],
+      "seen": [
+        {
+          "trigger": "on_ai_response",
+          "response": {
+            "declared_tools": {
+              "safe_read": {
+                "position": 0,
+                "description": "Read a record (audited)",
+                "parameters": {
+                  "type": "object",
+                  "properties": {
+                    "record": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "record"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

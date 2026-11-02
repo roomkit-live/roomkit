@@ -1,0 +1,190 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-tool-the-generation-hook-added-stays-declared",
+  "title": "A tool a BEFORE_AI_GENERATION hook adds stays declared at every round of the turn, served by the agent's tool handler, while one it took out stays out",
+  "rules": [
+    "§6.4",
+    "§9.2",
+    "§21.1"
+  ],
+  "notes": "Python's _adopt_hook_toolset (channels/_ai_generation.py): what the hook left is the turn's base toolset; a tool it adds is declared at every round and its calls go to the tool handler (tests/test_hook_tool_restrictions.py test_a_tool_the_hook_added_stays_declared).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "call-1",
+                  "name": "safe_read"
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "call-2",
+                  "name": "export_report"
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "safe_read",
+            "description": "Read a record",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "read"
+          },
+          {
+            "name": "delete_account",
+            "description": "Delete the account",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "deleted"
+          },
+          {
+            "name": "export_report",
+            "description": "Export a report",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "exported",
+            "declared": false
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "export",
+        "trigger": "before_ai_generation",
+        "reactions": [
+          {
+            "result": {
+              "action": "modify",
+              "event": {
+                "tools": [
+                  "safe_read"
+                ],
+                "define": [
+                  {
+                    "name": "export_report",
+                    "description": "Export a report",
+                    "parameters": {
+                      "type": "object"
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "tools": {
+            "safe_read": 0,
+            "export_report": 1,
+            "delete_account": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "tools": {
+            "safe_read": 0,
+            "export_report": 1,
+            "delete_account": {
+              "$absent": true
+            }
+          },
+          "tool_results": [
+            {
+              "tool_call_id": "call-1",
+              "content": "read",
+              "is_error": false
+            }
+          ]
+        },
+        {
+          "tools": {
+            "safe_read": 0,
+            "export_report": 1,
+            "delete_account": {
+              "$absent": true
+            }
+          },
+          "tool_results": [
+            {
+              "tool_call_id": "call-1",
+              "content": "read",
+              "is_error": false
+            },
+            {
+              "tool_call_id": "call-2",
+              "content": "exported",
+              "is_error": false
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

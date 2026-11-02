@@ -1,0 +1,166 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-replayed-prefix-is-withheld-from-the-room",
+  "title": "A round's text that opens by replaying the text of the round of calls before it is withheld from the room up to that prefix: the room stores and ON_AI_RESPONSE reports what follows it, while the model reads its own text whole",
+  "rules": [
+    "§6.4",
+    "§9.2"
+  ],
+  "notes": "Python's _PrefixDeduplicator (channels/_ai_stream_round.py): the text of the last round of calls that said something is the next rounds' prefix; a round's text that repeats it then goes on is delivered from where it goes on (tests/test_ai_response_transcript.py test_the_streaming_transcript_reports_what_the_room_saw).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Let me look.",
+              "calls": [
+                {
+                  "id": "call-1",
+                  "name": "search"
+                }
+              ]
+            },
+            {
+              "text": "Let me look.Done."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "search",
+            "description": "Search",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "found"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "seen",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "Go."
+          }
+        },
+        {
+          "index": 1,
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "Let me look."
+          }
+        },
+        {
+          "index": 2,
+          "type": "tool_call_start"
+        },
+        {
+          "index": 3,
+          "type": "tool_call_end"
+        },
+        {
+          "index": 4,
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "Done."
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "seen": [
+        {
+          "trigger": "on_ai_response",
+          "response": {
+            "segments": [
+              "Let me look.",
+              "Done."
+            ],
+            "response_content": "Let me look.\n\nDone."
+          }
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {},
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Go."
+            },
+            {
+              "role": "assistant",
+              "text": "Let me look."
+            },
+            {
+              "role": "tool",
+              "text": ""
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
