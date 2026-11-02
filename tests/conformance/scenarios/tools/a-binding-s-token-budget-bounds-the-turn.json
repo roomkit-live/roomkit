@@ -1,0 +1,351 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-binding-s-token-budget-bounds-the-turn",
+  "title": "A turn's token budget its binding's metadata sets bounds the turn over the channel's; one that is not a positive integer fails the turn before its model is asked",
+  "rules": [
+    "§6.4",
+    "Appendix A.9"
+  ],
+  "notes": "Python: channels/_ai_context.py _turn_budget resolves turn_budget_tokens as the turn's other settings (binding metadata, config provider, channel), and _turn_budget.py turn_budget checks it strictly: an int, no boolean, above zero, else ValueError 'turn_budget_tokens must be a positive number, got <repr>'. The channel's budget is 100000; room-1's binding sets 1200, reached by the third generation (500 tokens each), whose calls do not run; room-2 '1200', room-3 64.0 and room-4 0 fail.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "main",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c0",
+                  "name": "lookup",
+                  "arguments": {
+                    "n": 0
+                  }
+                }
+              ],
+              "usage": {
+                "input_tokens": 300,
+                "cache_read_input_tokens": 100,
+                "output_tokens": 100
+              }
+            },
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup",
+                  "arguments": {
+                    "n": 1
+                  }
+                }
+              ],
+              "usage": {
+                "input_tokens": 300,
+                "cache_read_input_tokens": 100,
+                "output_tokens": 100
+              }
+            },
+            {
+              "calls": [
+                {
+                  "id": "c2",
+                  "name": "lookup",
+                  "arguments": {
+                    "n": 2
+                  }
+                }
+              ],
+              "usage": {
+                "input_tokens": 300,
+                "cache_read_input_tokens": 100,
+                "output_tokens": 100
+              },
+              "text": "Looking again."
+            },
+            {
+              "text": "done",
+              "usage": {
+                "input_tokens": 300,
+                "cache_read_input_tokens": 100,
+                "output_tokens": 100
+              }
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look up an item",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "n": {
+                  "type": "integer"
+                }
+              }
+            },
+            "returns": "ok"
+          }
+        ],
+        "turn_budget_tokens": 100000
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "main",
+            "category": "intelligence",
+            "metadata": {
+              "turn_budget_tokens": 1200
+            }
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "main",
+            "category": "intelligence",
+            "metadata": {
+              "turn_budget_tokens": "1200"
+            }
+          }
+        ]
+      },
+      {
+        "id": "room-3",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "main",
+            "category": "intelligence",
+            "metadata": {
+              "turn_budget_tokens": 64.0
+            }
+          }
+        ]
+      },
+      {
+        "id": "room-4",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "main",
+            "category": "intelligence",
+            "metadata": {
+              "turn_budget_tokens": 0
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": "turn_budget_tokens must be a positive number, got '1200'",
+          "delivery_results": {
+            "main": {
+              "status": "failed",
+              "error": {
+                "code": "ValueError",
+                "message": "turn_budget_tokens must be a positive number, got '1200'"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-3",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": "turn_budget_tokens must be a positive number, got 64.0",
+          "delivery_results": {
+            "main": {
+              "status": "failed",
+              "error": {
+                "code": "ValueError",
+                "message": "turn_budget_tokens must be a positive number, got 64.0"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-4",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": "turn_budget_tokens must be a positive number, got 0",
+          "delivery_results": {
+            "main": {
+              "status": "failed",
+              "error": {
+                "code": "ValueError",
+                "message": "turn_budget_tokens must be a positive number, got 0"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "type": "message"
+        },
+        {
+          "index": 1,
+          "type": "tool_call_start"
+        },
+        {
+          "index": 2,
+          "type": "tool_call_end",
+          "content": {
+            "tool_id": "c0",
+            "outcome": "served"
+          }
+        },
+        {
+          "index": 3,
+          "type": "tool_call_start"
+        },
+        {
+          "index": 4,
+          "type": "tool_call_end",
+          "content": {
+            "tool_id": "c1",
+            "outcome": "served"
+          }
+        },
+        {
+          "index": 5,
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "Looking again."
+          },
+          "metadata": {
+            "loop_end_reason": "budget_exceeded"
+          }
+        }
+      ],
+      "room-2": [
+        {
+          "index": 0,
+          "type": "message"
+        }
+      ],
+      "room-3": [
+        {
+          "index": 0,
+          "type": "message"
+        }
+      ],
+      "room-4": [
+        {
+          "index": 0,
+          "type": "message"
+        }
+      ]
+    },
+    "models": {
+      "main": [
+        {
+          "tool_results": []
+        },
+        {
+          "tool_results": "$any"
+        },
+        {
+          "tool_results": "$any"
+        }
+      ]
+    }
+  }
+}

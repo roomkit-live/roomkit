@@ -1,0 +1,213 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "inbound/a-binding-s-setting-is-read-as-pydantic-reads-it",
+  "title": "An agent's turn reads the temperature and the max tokens its binding's metadata sets as pydantic's lax mode reads a float and an integer: a numeric text, a whole float, a boolean",
+  "rules": [
+    "§6.4",
+    "Appendix A.9"
+  ],
+  "notes": "Python: channels/_ai_context.py _turn_settings hands the binding's values to AIContext(temperature: float, max_tokens: int | None), which pydantic validates in its lax mode: a float from a number, a boolean or a text that parses as one, blanks around it and underscores between digits taken; an integer from an integer, a boolean, a float with no fraction, or a text that parses as one, a fraction of zeros after it taken. room-1 '0.3' and '100'; room-2 1 and 64.0; room-3 true and false; room-4 ' 1e-1 ' and ' 1_000.00 '.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "main",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "ok"
+            },
+            {
+              "text": "ok"
+            },
+            {
+              "text": "ok"
+            },
+            {
+              "text": "ok"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "main",
+            "category": "intelligence",
+            "metadata": {
+              "temperature": "0.3",
+              "max_tokens": "100"
+            }
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "main",
+            "category": "intelligence",
+            "metadata": {
+              "temperature": 1,
+              "max_tokens": 64.0
+            }
+          }
+        ]
+      },
+      {
+        "id": "room-3",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "main",
+            "category": "intelligence",
+            "metadata": {
+              "temperature": true,
+              "max_tokens": false
+            }
+          }
+        ]
+      },
+      {
+        "id": "room-4",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "main",
+            "category": "intelligence",
+            "metadata": {
+              "temperature": " 1e-1 ",
+              "max_tokens": " 1_000.00 "
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-3",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-4",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "main": [
+        {
+          "temperature": 0.3,
+          "max_tokens": 100
+        },
+        {
+          "temperature": 1.0,
+          "max_tokens": 64
+        },
+        {
+          "temperature": 1.0,
+          "max_tokens": 0
+        },
+        {
+          "temperature": 0.1,
+          "max_tokens": 1000
+        }
+      ]
+    }
+  }
+}

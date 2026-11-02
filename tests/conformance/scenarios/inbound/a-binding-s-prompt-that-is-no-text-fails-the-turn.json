@@ -1,0 +1,188 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "inbound/a-binding-s-prompt-that-is-no-text-fails-the-turn",
+  "title": "An agent's turn whose binding's metadata sets a system prompt that is no text fails before it reads anything, with pydantic's validation error naming every setting the turn's context refuses",
+  "rules": [
+    "§6.4",
+    "Appendix A.9"
+  ],
+  "notes": "Python: channels/_ai_context.py _turn_settings reads a resolved system prompt that is no text as AIContext reads it, before the turn reads it as a text (RMK-1237, maintainer's decision): AIContext(**settings) raises pydantic's ValidationError, each refused setting named in the model's order, ahead of the token budget's check. room-1 5; room-2 0 and the temperature 'hot', both named; room-3 false and the token budget '1200', the prompt's refusal first.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "main",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "ok"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "main",
+            "category": "intelligence",
+            "metadata": {
+              "system_prompt": 5
+            }
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "main",
+            "category": "intelligence",
+            "metadata": {
+              "system_prompt": 0,
+              "temperature": "hot"
+            }
+          }
+        ]
+      },
+      {
+        "id": "room-3",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "main",
+            "category": "intelligence",
+            "metadata": {
+              "system_prompt": false,
+              "turn_budget_tokens": "1200"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": {
+            "$contains": "1 validation error for AIContext\nsystem_prompt\n  Input should be a valid string [type=string_type, input_value=5, input_type=int]"
+          },
+          "delivery_results": {
+            "main": {
+              "status": "failed",
+              "error": {
+                "code": "ValidationError",
+                "message": {
+                  "$contains": "1 validation error for AIContext\nsystem_prompt\n  Input should be a valid string [type=string_type, input_value=5, input_type=int]"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": {
+            "$contains": "2 validation errors for AIContext\nsystem_prompt\n  Input should be a valid string [type=string_type, input_value=0, input_type=int]"
+          },
+          "delivery_results": {
+            "main": {
+              "status": "failed",
+              "error": {
+                "code": "ValidationError",
+                "message": {
+                  "$contains": "\ntemperature\n  Input should be a valid number, unable to parse string as a number [type=float_parsing, input_value='hot', input_type=str]"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-3",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": {
+            "$contains": "1 validation error for AIContext\nsystem_prompt\n  Input should be a valid string [type=string_type, input_value=False, input_type=bool]"
+          },
+          "delivery_results": {
+            "main": {
+              "status": "failed",
+              "error": {
+                "code": "ValidationError",
+                "message": {
+                  "$contains": "1 validation error for AIContext\nsystem_prompt\n  Input should be a valid string [type=string_type, input_value=False, input_type=bool]"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "main": []
+    }
+  }
+}

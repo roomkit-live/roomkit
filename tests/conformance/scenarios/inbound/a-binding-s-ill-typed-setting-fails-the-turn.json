@@ -1,0 +1,189 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "inbound/a-binding-s-ill-typed-setting-fails-the-turn",
+  "title": "An agent's turn whose binding's metadata sets a temperature or a max tokens pydantic does not read as a float or an integer fails, with pydantic's validation error, every refused setting named, and its model is not asked",
+  "rules": [
+    "§6.4",
+    "Appendix A.9"
+  ],
+  "notes": "Python: channels/_ai_context.py _build_context builds AIContext(**settings), whose validation raises pydantic's ValidationError: the turn fails with it, the trigger's delivery result for the agent failed under its class's name. Its text names each refused field in the model's order, then pydantic's words, type, input and input type; the line pydantic adds after each, a link to its documentation, is not asserted. room-1 'hot'; room-2 1.5; room-3 [1] and '1.5', both named.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "main",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "ok"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "main",
+            "category": "intelligence",
+            "metadata": {
+              "temperature": "hot"
+            }
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "main",
+            "category": "intelligence",
+            "metadata": {
+              "max_tokens": 1.5
+            }
+          }
+        ]
+      },
+      {
+        "id": "room-3",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "main",
+            "category": "intelligence",
+            "metadata": {
+              "temperature": [
+                1
+              ],
+              "max_tokens": "1.5"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": {
+            "$contains": "1 validation error for AIContext\ntemperature\n  Input should be a valid number, unable to parse string as a number [type=float_parsing, input_value='hot', input_type=str]"
+          },
+          "delivery_results": {
+            "main": {
+              "status": "failed",
+              "error": {
+                "code": "ValidationError",
+                "message": {
+                  "$contains": "1 validation error for AIContext\ntemperature\n  Input should be a valid number, unable to parse string as a number [type=float_parsing, input_value='hot', input_type=str]"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": {
+            "$contains": "1 validation error for AIContext\nmax_tokens\n  Input should be a valid integer, got a number with a fractional part [type=int_from_float, input_value=1.5, input_type=float]"
+          },
+          "delivery_results": {
+            "main": {
+              "status": "failed",
+              "error": {
+                "code": "ValidationError",
+                "message": {
+                  "$contains": "1 validation error for AIContext\nmax_tokens\n  Input should be a valid integer, got a number with a fractional part [type=int_from_float, input_value=1.5, input_type=float]"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-3",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": {
+            "$contains": "2 validation errors for AIContext\ntemperature\n  Input should be a valid number [type=float_type, input_value=[1], input_type=list]"
+          },
+          "delivery_results": {
+            "main": {
+              "status": "failed",
+              "error": {
+                "code": "ValidationError",
+                "message": {
+                  "$contains": "\nmax_tokens\n  Input should be a valid integer, unable to parse string as an integer [type=int_parsing, input_value='1.5', input_type=str]"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "main": []
+    }
+  }
+}
