@@ -1,0 +1,222 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "steering/a-message-during-a-tool-round-is-read-by-the-running-turn",
+  "title": "With steer_room_turns, a message that comes while the agent's tool runs is stored once and read by the running turn at its next round; no turn of its own starts",
+  "rules": [
+    "§6.4",
+    "§21.3",
+    "§10.1"
+  ],
+  "notes": "The message is committed and delivered as any message (§10.1); the room's owner steers it into the turn its line holds alone, as an InjectMessage of its text, read after the round's results (§21.3). The model is asked twice, once per round of the one turn: a second turn would ask a third generation, past the script.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "list_files"
+                }
+              ]
+            },
+            {
+              "text": "a.py"
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "list_files",
+            "description": "List the project's files.",
+            "parameters": {
+              "type": "object"
+            },
+            "gate": "tool",
+            "returns": "a.py b.txt"
+          }
+        ],
+        "steer_room_turns": true
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "dev",
+        "content": {
+          "type": "text",
+          "body": "List the files."
+        }
+      },
+      "background": true,
+      "as": "first"
+    },
+    {
+      "wait_for": "tool"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "dev",
+        "content": {
+          "type": "text",
+          "body": "Only the .py files."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "open": "tool"
+    },
+    {
+      "await": "first",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "type": "message",
+          "source": {
+            "channel_id": "ws"
+          },
+          "content": {
+            "type": "text",
+            "body": "List the files."
+          }
+        },
+        {
+          "index": 1,
+          "type": "tool_call_start",
+          "source": {
+            "channel_id": "agent"
+          },
+          "content": {
+            "type": "tool_call",
+            "tool_name": "list_files",
+            "tool_id": "c1"
+          }
+        },
+        {
+          "index": 2,
+          "type": "message",
+          "source": {
+            "channel_id": "ws"
+          },
+          "content": {
+            "type": "text",
+            "body": "Only the .py files."
+          }
+        },
+        {
+          "index": 3,
+          "type": "tool_call_end",
+          "source": {
+            "channel_id": "agent"
+          },
+          "content": {
+            "type": "tool_call",
+            "tool_name": "list_files",
+            "tool_id": "c1",
+            "status": "completed",
+            "result": "a.py b.txt"
+          }
+        },
+        {
+          "index": 4,
+          "type": "message",
+          "source": {
+            "channel_id": "agent",
+            "direction": "outbound"
+          },
+          "content": {
+            "type": "text",
+            "body": "a.py"
+          },
+          "metadata": {
+            "loop_end_reason": "completed"
+          }
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "List the files."
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "List the files."
+            },
+            {
+              "role": "assistant",
+              "text": ""
+            },
+            {
+              "role": "tool",
+              "text": ""
+            },
+            {
+              "role": "user",
+              "text": "Only the .py files."
+            }
+          ],
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "a.py b.txt",
+              "is_error": false
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
