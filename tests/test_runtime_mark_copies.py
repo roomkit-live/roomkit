@@ -248,12 +248,13 @@ def test_prose_with_a_mark_s_words_is_kept(prose: str) -> None:
         ("x context compacted - earlier conversation summary.", "."),
         ("x conversation summary - earlier messages compacted.", "."),
         (f"x {INSTRUCTION_MARKER[1:-1]}.!?", "!?"),
+        (f"x {INSTRUCTION_MARKER[1:-1]}., and more", " and more"),
     ],
-    ids=["compaction", "memory summary", "instruction"],
+    ids=["compaction", "memory summary", "instruction", "the mark's own comma"],
 )
 def test_a_whole_copy_keeps_the_punctuation_after_it(copy: str, after: str) -> None:
-    """A whole copy takes the mark's own punctuation with it, never the
-    sentence's that follows (RMK-1231)."""
+    """A whole copy takes the punctuation the mark itself holds with it, the
+    rest of the sentence's left as it is (RMK-1231)."""
     assert without_mark_copies(copy) == f"x {COPIED_MARK}{after}"
 
 
