@@ -3,7 +3,9 @@
 
 ``request_verification`` answers the request and its secret; its ``as``
 label names the request's id, and ``<label>.secret`` its secret, which a later
-step completes it with. The kit's verification policy comes from
+step completes it with. ``sender_verification``, an action of a scripted
+hook, reads the verification of the sender of the event the hook was handed,
+with the hook's context. The kit's verification policy comes from
 ``setup.kit.verification_policy``, its lifetimes in milliseconds.
 """
 
@@ -14,7 +16,8 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from roomkit import RoomKit, VerificationPolicy
-from tests.conformance._calls import Call, read
+from tests.conformance._calls import Call, UnreadableError, read
+from tests.conformance._script import HOOKED
 
 if TYPE_CHECKING:
     from tests.conformance._harness import Harness
@@ -30,6 +33,7 @@ VERIFICATION_ARGUMENTS: dict[str, set[str]] = {
     "revoke_verification": {"identity_id", "reason"},
     "verification_of": {"identity_id"},
     "check_verifications": set(),
+    "sender_verification": set(),
 }
 
 # The policy's members a scenario names, each in milliseconds when its
@@ -103,6 +107,14 @@ async def _check(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any
     return await kit.check_verifications()
 
 
+async def _sender_verification(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
+    hooked = HOOKED.get()
+    if hooked is None:
+        raise UnreadableError("sender_verification outside a scripted hook's action")
+    event, context = hooked
+    return await kit.sender_verification(event, context)
+
+
 VERIFICATION_CALLS: dict[str, Call] = {
     "request_verification": _request,
     "complete_verification": _complete,
@@ -110,4 +122,5 @@ VERIFICATION_CALLS: dict[str, Call] = {
     "revoke_verification": _revoke,
     "verification_of": _verification_of,
     "check_verifications": _check,
+    "sender_verification": _sender_verification,
 }

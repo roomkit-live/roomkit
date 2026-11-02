@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
+from contextvars import ContextVar
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
@@ -34,6 +35,10 @@ if TYPE_CHECKING:
 
 # How long a step waits for a call to reach a gate before the scenario fails.
 GATE_BOUND_S = 5.0
+
+# The payload and the context of the scripted hook whose actions run, which
+# ``sender_verification`` reads (identity verification, §11.7.3).
+HOOKED: ContextVar[tuple[Any, RoomContext] | None] = ContextVar("hooked", default=None)
 
 
 class ScriptedFailureError(Exception):
@@ -394,7 +399,11 @@ def hook_handler(spec: Mapping[str, Any], harness: Harness) -> HookHandler:
             scope["event"] = payload.id
         if isinstance(payload, PendingInputEvent):
             scope["request"] = payload.pending_id
-        await perform(harness, reaction, scope)
+        hooked = HOOKED.set((payload, context))
+        try:
+            await perform(harness, reaction, scope)
+        finally:
+            HOOKED.reset(hooked)
         return hook_result(reaction.get("result"), payload, room_id)
 
     return handler
