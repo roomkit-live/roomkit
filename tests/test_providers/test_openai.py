@@ -219,6 +219,46 @@ class TestOpenAIAIProvider:
             assert call_kwargs["max_tokens"] == 4096
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("streaming", [False, True], ids=["generate", "stream"])
+    async def test_no_cap_is_sent_when_none_is_set(self, streaming: bool) -> None:
+        # max_tokens=None leaves the cap to the endpoint, on both paths, under
+        # either name; a turn's own cap still applies (RMK-1177).
+        with patch.dict("sys.modules", {"openai": _mock_openai_module()}):
+            from roomkit.providers.openai.ai import OpenAIAIProvider
+
+            async def _chunks() -> Any:
+                yield SimpleNamespace(
+                    choices=[
+                        SimpleNamespace(
+                            delta=SimpleNamespace(content="hi", tool_calls=None),
+                            finish_reason="stop",
+                        )
+                    ],
+                    usage=None,
+                )
+
+            sent: list[dict[str, Any]] = []
+            for flag in (False, True):
+                for cap in (None, 321):
+                    provider = OpenAIAIProvider(
+                        _config(max_tokens=None, use_max_completion_tokens=flag)
+                    )
+                    provider._client = MagicMock()
+                    create = AsyncMock(return_value=_chunks() if streaming else _mock_response())
+                    provider._client.chat.completions.create = create
+                    turn = _context(max_tokens=cap)
+                    if streaming:
+                        async for _ in provider.generate_structured_stream(turn):
+                            pass
+                    else:
+                        await provider.generate(turn)
+                    kwargs = create.call_args[1]
+                    names = ("max_tokens", "max_completion_tokens")
+                    sent.append({k: kwargs[k] for k in names if k in kwargs})
+
+            assert sent == [{}, {"max_tokens": 321}, {}, {"max_completion_tokens": 321}]
+
+    @pytest.mark.asyncio
     async def test_official_default_model_uses_compatible_request_shape(self) -> None:
         with patch.dict("sys.modules", {"openai": _mock_openai_module()}):
             from roomkit.providers.openai.ai import OpenAIAIProvider

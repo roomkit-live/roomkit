@@ -261,14 +261,17 @@ class OpenAIAIProvider(AIProvider):
             messages, system_prompt, self._chat_dialect, provider=self._provider_name
         )
 
-    def _token_limit_kwarg(self, value: int) -> dict[str, int]:
-        """Build the output-cap kwarg under the name the endpoint expects.
+    def _token_limit_kwarg(self, value: int | None) -> dict[str, int]:
+        """Build the output-cap kwarg under the name the endpoint expects;
+        none for no cap (``max_tokens=None``), which leaves it to the endpoint.
 
         OpenAI's newer models reject the deprecated ``max_tokens`` and require
         ``max_completion_tokens``; OpenAI-compatible servers (vLLM, older Azure)
         only understand ``max_tokens``. ``use_max_completion_tokens`` on the
         config selects between them.
         """
+        if value is None:
+            return {}
         key = "max_completion_tokens" if self._config.use_max_completion_tokens else "max_tokens"
         return {key: value}
 

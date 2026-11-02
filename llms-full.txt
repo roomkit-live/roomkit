@@ -3155,7 +3155,12 @@ empty-response retry, which would only truncate again under the same cap.
 `context.max_tokens or self._config.max_tokens`, so a non-`None` default here
 would shadow the provider config and make a configured cap unreachable.
 Providers whose config also defaults it to `None` (Ollama, PolarGrid) send no
-cap at all, letting the server pick its own.
+cap at all, letting the server pick its own. `OpenAIConfig` and the configs
+built on it default to 1024 and take `max_tokens=None` for no cap: a coding
+agent whose tool calls write whole files, or a reasoning model that thinks
+past 1024 tokens, then answers under the endpoint's own limit. A cap that
+differs per model stays one setting away, on the config or on the channel
+(`AIChannel(max_tokens=...)`).
 
 ### vLLM reasoning and sampling
 

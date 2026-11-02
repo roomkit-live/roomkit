@@ -20,7 +20,9 @@ class OpenAIConfig(BaseModel):
         base_url: Custom base URL for OpenAI-compatible APIs (e.g., Ollama, LM Studio,
             Azure OpenAI, or other providers). If None, uses the default OpenAI API.
         model: Model identifier to use.
-        max_tokens: Maximum tokens in the response.
+        max_tokens: Maximum tokens in the response; ``None`` sends no cap,
+            and the endpoint decides. ``AIChannel(max_tokens=...)`` and a
+            turn's own cap still set one.
     """
 
     _vendor_rule_on_tool_turns: ClassVar[bool] = False
@@ -34,7 +36,7 @@ class OpenAIConfig(BaseModel):
     model: str
     """Model identifier. Required so upgrading RoomKit cannot silently change
     a caller's model, cost, latency, or behavior."""
-    max_tokens: int = 1024
+    max_tokens: int | None = 1024
     timeout: float = 30.0
     """HTTP request timeout in seconds. Override for servers that need
     longer (e.g. Ollama cold-starting a model on first request)."""

@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`OpenAIConfig(max_tokens=None)` sends no output cap** (RMK-1177). Every
+  Chat Completions request of the OpenAI provider and the configs built on it
+  carried `max_tokens` (or `max_completion_tokens`) at 1024, and a channel or
+  a turn could replace the value, not drop it. A coding agent's tool call
+  that writes a file past 1024 tokens came back cut (`finish_reason=length`),
+  and a reasoning model could spend the cap before it answered. With
+  `max_tokens=None` the request carries no cap and the endpoint decides; the
+  default stays 1024, and a cap that differs per model is still set on the
+  config or with `AIChannel(max_tokens=...)`.
+
 - **`AIChannel(steer_room_turns=True)`: write to an agent while it works**
   (RFC §6.4, §21.3, RMK-1160). A person's second message during an agent's
   turn started a second turn beside the first, which did not read the answer
