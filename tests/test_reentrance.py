@@ -1003,14 +1003,37 @@ _SPEAKERS: dict[str, Callable[[], Awaitable[RoomKit]]] = {
 }
 
 
-async def _until_the_model_rests(kit: RoomKit, model: _AnsweringModel, room_id: str) -> None:
+class _Ended:
+    """How many runs of an observer have ended, waited on rather than polled."""
+
+    def __init__(self) -> None:
+        self.count = 0
+        self._changed = asyncio.Condition()
+
+    async def one(self) -> None:
+        async with self._changed:
+            self.count += 1
+            self._changed.notify_all()
+
+    async def reach(self, count: int) -> None:
+        async with self._changed:
+            await self._changed.wait_for(lambda: self.count >= count)
+
+
+async def _until_the_model_rests(
+    kit: RoomKit, model: _AnsweringModel, room_id: str, observed: _Ended
+) -> None:
     """Wait until every call the model made is answered (a delegation to
-    its hosted backend waits for nothing), its observers have run and its
-    room's lane is drained, and it made no call since."""
+    its hosted backend waits for nothing), the observer of each has ended,
+    its room's lane is drained, and it made no call since. Each answer's
+    observer is waited for by count: its host fires the hooks from a task of
+    its own, which may not have started them when the running observers are
+    looked at (RMK-1224)."""
     while True:
         made = len(model.answers)
         await asyncio.gather(*model.answers)
         await until(lambda made=made: model.delegates or len(model.tool_results) == made)
+        await observed.reach(made)
         await _observed(kit, room_id)
         if len(model.answers) == made:
             return
@@ -1302,17 +1325,23 @@ class TestACallFromAnAsyncHook:
         )
         kit, room_id, poster, channel, session = await _MODEL_HOSTS[door](model)
         posted: list[RoomEvent] = []
+        audited = _Ended()
 
         @kit.hook(trigger, execution=HookExecution.ASYNC, name="audit")
         async def audit(event: Any, ctx: RoomContext) -> None:
-            if tells == "a post":
-                posted.append(await kit.send_event(room_id, poster, TextContent(body="called")))
-            else:
-                await channel.inject_text(session, "called")
+            try:
+                if tells == "a post":
+                    posted.append(
+                        await kit.send_event(room_id, poster, TextContent(body="called"))
+                    )
+                else:
+                    await channel.inject_text(session, "called")
+            finally:
+                await audited.one()
 
         try:
             model.answer(session)
-            await asyncio.wait_for(_until_the_model_rests(kit, model, room_id), 5)
+            await asyncio.wait_for(_until_the_model_rests(kit, model, room_id, audited), 5)
             assert (len(model.answers), model.silences) == (3, [False, False, True])
             depths = [e.chain_depth for e in sorted(posted, key=lambda e: e.index)]
             assert depths == ([1, 2, 3] if tells == "a post" else [])
