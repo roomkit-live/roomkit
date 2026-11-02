@@ -15,7 +15,7 @@ from typing import Any
 
 import pytest
 
-from roomkit import ChannelCategory, InboundMessage, RoomKit, TextContent
+from roomkit import ChannelCategory, ChannelDeclaration, InboundMessage, RoomKit, TextContent
 from roomkit.channels import SMSChannel
 from roomkit.channels.agent import Agent
 from roomkit.channels.ai import AIChannel
@@ -25,7 +25,9 @@ from roomkit.models.event import DeleteContent, EditContent, EventContent
 from roomkit.models.steering import InjectMessage
 from roomkit.providers.ai.base import AIContext, AIResponse, AITool, AIToolCall
 from roomkit.providers.ai.mock import MockAIProvider
+from roomkit.store.memory import InMemoryStore
 from roomkit.tools.context import _ToolLoopContext
+from roomkit.turns import InMemoryTurnBackend, TurnExecutor
 from tests.test_framework import SimpleChannel
 
 WAIT = AITool(name="wait_here", description="Wait.", parameters={"type": "object"})
@@ -91,8 +93,8 @@ async def _done(name: str, arguments: dict[str, Any]) -> str:
     return "a.py b.txt"
 
 
-async def _kit(provider: MockAIProvider, tool: Any = _done, *, steer: bool = False) -> RoomKit:
-    agent = Agent(
+def _agent(provider: MockAIProvider, tool: Any, *, steer: bool) -> Agent:
+    return Agent(
         "agent",
         provider=provider,
         role="agent",
@@ -100,9 +102,33 @@ async def _kit(provider: MockAIProvider, tool: Any = _done, *, steer: bool = Fal
         tool_handler=tool,
         steer_room_turns=steer,
     )
+
+
+async def _kit(provider: MockAIProvider, tool: Any = _done, *, steer: bool = False) -> RoomKit:
     kit = RoomKit()
+    kit.register_channel(_agent(provider, tool, steer=steer))
+    return await _with_room(kit)
+
+
+async def _steering_kit(
+    where: str, provider: MockAIProvider, tool: Any
+) -> tuple[RoomKit, TurnExecutor | None]:
+    """A kit with a steering agent in its own process, or on an executor that
+    builds it while the kit holds a declaration that says only that it steers
+    (RFC §10.6.2)."""
+    if where == "live":
+        return await _kit(provider, tool, steer=True), None
+    agent = _agent(provider, tool, steer=True)
+    store, backend = InMemoryStore(), InMemoryTurnBackend()
+    executor = TurnExecutor(lambda channel_id: agent, hosts={"agent"}.__contains__, store=store)
+    await backend.serve(executor)
+    kit = RoomKit(store=store, turn_backend=backend)
+    kit.register_channel(ChannelDeclaration(channel_id="agent", steers_room_turns=True))
+    return await _with_room(kit), executor
+
+
+async def _with_room(kit: RoomKit) -> RoomKit:
     kit.register_channel(SimpleChannel("ops"))
-    kit.register_channel(agent)
     await kit.create_room(room_id="r1")
     await kit.attach_channel("r1", "ops")
     await kit.attach_channel("r1", "agent", category=ChannelCategory.INTELLIGENCE)
@@ -172,12 +198,13 @@ def test_a_loop_that_read_its_queue_for_the_last_time_is_reached_by_nothing() ->
 # -- steer_room_turns: the next message goes to the running turn -----------------
 
 
+@pytest.mark.parametrize("where", ["live", "declared"])
 async def test_a_message_during_a_tool_round_is_stored_and_read_by_the_running_turn(
-    streaming: bool,
+    streaming: bool, where: str
 ) -> None:
     provider = _Gated([CALL, AIResponse(content="a.py")], held=-1, streaming=streaming)
     tool = _Paused()
-    kit = await _kit(provider, tool, steer=True)
+    kit, executor = await _steering_kit(where, provider, tool)
     turn = asyncio.create_task(kit.process_inbound(_message("List the files."), room_id="r1"))
     await asyncio.wait_for(tool.started.wait(), 2)
 
@@ -191,6 +218,8 @@ async def test_a_message_during_a_tool_round_is_stored_and_read_by_the_running_t
     assert await _bodies(kit, "ops") == ["List the files.", STEERED]
     assert await _bodies(kit, "agent") == ["a.py"]
     await kit.close()
+    if executor is not None:
+        await executor.close()
 
 
 async def test_a_message_while_the_model_answers_is_answered_by_the_same_turn(
