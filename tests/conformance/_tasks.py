@@ -63,6 +63,8 @@ TASK_ARGUMENTS: dict[str, set[str]] = {
     "task.wait": {"task_id"},
     "cancel_task": {"task_id"},
     "start_task": {"room_id", "agent_id", "task", "hand_back"},
+    "setup_background": {"agent_id", "worker", "hand_back"},
+    "setup_task_tools": {"agent_id"},
     "host.send_event": {
         "room_id",
         "channel_id",
@@ -160,6 +162,14 @@ async def _start_task(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -
     return task
 
 
+async def _setup_background(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
+    kit.setup_background(spec["agent_id"], **_named(spec, {"worker", "hand_back"}))
+
+
+async def _setup_task_tools(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
+    kit.setup_task_tools(spec["agent_id"])
+
+
 def _host() -> Any:
     host = current_turn_host()
     if host is None:
@@ -226,6 +236,8 @@ TASK_CALLS: dict[str, Call] = {
     "task.wait": _task_wait,
     "cancel_task": _cancel_task,
     "start_task": _start_task,
+    "setup_background": _setup_background,
+    "setup_task_tools": _setup_task_tools,
     "host.send_event": _host_send_event,
     "host.delegate": _host_delegate,
     "host.wait_task": _host_wait_task,
