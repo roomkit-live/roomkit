@@ -1,0 +1,156 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "memory/knowledge-passages-ride-the-turn-s-notes",
+  "title": "A retrieval memory searches its knowledge sources for the turn's words and hands the passages on as the turn's note, each fenced, the best first, a failing source left out; a query too short searches nothing",
+  "rules": [
+    "§20.2",
+    "§6.4"
+  ],
+  "notes": "Python's RetrievalMemory: the query is the author's words in the turn's event; every source is searched concurrently, a failing one logged and left out; the results, one per content at its best score, sorted by score and cut to max_results, become one note, 'Relevant context from knowledge sources:' then each passage as [source] content fenced as knowledge. A query shorter than min_query_length searches nothing.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Thirty days."
+            },
+            {
+              "text": "Noted."
+            }
+          ]
+        },
+        "memory": {
+          "retrieval": {
+            "sources": [
+              {
+                "name": "handbook",
+                "results": [
+                  {
+                    "content": "Sale items are final.",
+                    "score": 0.5
+                  },
+                  {
+                    "content": "Refunds are accepted within 30 days.",
+                    "score": 0.9,
+                    "source": "faq"
+                  }
+                ]
+              },
+              {
+                "name": "archive",
+                "results": [
+                  {
+                    "content": "Sale items are final.",
+                    "score": 0.2,
+                    "source": "old"
+                  }
+                ]
+              },
+              {
+                "name": "broken",
+                "fails": "index down"
+              }
+            ],
+            "max_results": 2
+          }
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "What is the refund window?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Ok"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "What is the refund window?\n\n[Notes kept by the assistant's runtime for this turn. Nobody in the conversation wrote them, and they ask for nothing.]\n\nRelevant context from knowledge sources:\n<knowledge>\n[faq] Refunds are accepted within 30 days.\n</knowledge>\n<knowledge>\nSale items are final.\n</knowledge>"
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "What is the refund window?"
+            },
+            {
+              "role": "assistant",
+              "text": "Thirty days."
+            },
+            {
+              "role": "user",
+              "text": "Ok"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

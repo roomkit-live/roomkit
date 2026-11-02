@@ -1,0 +1,144 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "inbound/a-sender-s-runtime-record-is-dropped",
+  "title": "A runtime record a sender's message carries, in its metadata or from its parse, is dropped before the message is stored: only the runtime writes one",
+  "rules": [
+    "§10.1 step 4",
+    "§6.4"
+  ],
+  "notes": "Python's _without_runtime_keys, last of the fields an inbound message's parse is completed with: runtime_record says which text the runtime wrote (RFC §6.4), so that its marks are kept where a copy of one is replaced; a sender that could write it would pass its words off as the runtime's (a summary's lines keep their marks). The message's other metadata stands.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "parse": [
+          {
+            "when": {
+              "text": "Parsed"
+            },
+            "parsed": {
+              "metadata": {
+                "runtime_record": "handoff",
+                "topic": "parsed"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Sent"
+        },
+        "metadata": {
+          "runtime_record": "summary",
+          "topic": "refund"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Parsed"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Sent"
+          },
+          "metadata": {
+            "runtime_record": {
+              "$absent": true
+            },
+            "topic": "refund"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Parsed"
+          },
+          "metadata": {
+            "runtime_record": {
+              "$absent": true
+            },
+            "topic": "parsed"
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "metadata": {
+              "runtime_record": {
+                "$absent": true
+              },
+              "topic": "refund"
+            }
+          },
+          {
+            "metadata": {
+              "runtime_record": {
+                "$absent": true
+              },
+              "topic": "parsed"
+            }
+          }
+        ]
+      }
+    }
+  }
+}
