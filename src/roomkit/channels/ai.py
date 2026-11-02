@@ -609,18 +609,19 @@ class AIChannel(
     ) -> ChannelOutput:
         """React to an event: the channel answers, as its speak policy decides.
 
-        An edit or a delete opens no turn: it is no message a turn may answer
-        (RFC §10.3), and the next message is answered in the room it left.
+        An edit or a delete opens no turn, a strategy's included: it is no
+        message a turn may answer (RFC §10.3), and the next message is
+        answered in the room it left.
 
         A strategy that takes the agent's turns in a room (a loop, a
         supervisor's delegation passes) runs on the room's owner and asks each
         generation as a strategy turn, which the channel answers past its
         speak policy and its thinker (RFC §10.6.1).
         """
-        if in_strategy_turn():
-            return await self._respond(event, binding, context)
         if concerns_change(event):
             return await self._read_change(event, context)
+        if in_strategy_turn():
+            return await self._respond(event, binding, context)
         room_id = context.room.id if context.room else event.room_id
         decision = await self._speak_decision(event, context, self._thought_of(room_id))
         if decision is None or decision.mode != "silent":

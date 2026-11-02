@@ -47,10 +47,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **An edit or a delete opens no agent turn** (RFC §10.3, RMK-1226). A
   sender's edit or delete reached `AIChannel.on_event()` as any event and
-  opened a turn: the model answered `[Message deleted]`, or the edit, a
-  generation paid for each change, though a change is no message a turn may
-  answer. The channel now answers the next message, in the room the change
-  left; a hook on `ON_EVENT_UPDATED` or `ON_EVENT_DELETED` still reacts to it.
+  opened a turn: the model answered `[Message deleted]`, or the edit, and a
+  `Loop` or an auto-delegating `Supervisor` ran its producer, reviewers or
+  workers on that text, a generation paid for each change, though a change
+  is no message a turn may answer. The agent now answers the next message,
+  in the room the change left; its memory still ingests the change, and a
+  hook on `ON_EVENT_UPDATED` or `ON_EVENT_DELETED` still reacts to it.
   roomkit-rs answers a message or an instruction only.
 
 - **`MCPToolProvider.call_tool()` notes what is not text, and reads a text

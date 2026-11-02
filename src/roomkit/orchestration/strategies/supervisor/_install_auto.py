@@ -13,6 +13,7 @@ import json
 from typing import TYPE_CHECKING, Any
 
 from roomkit.channels._tool_registry import orchestration_tool, schema_tool
+from roomkit.core._changes import concerns_change
 from roomkit.models.channel import ChannelBinding, ChannelOutput
 from roomkit.models.context import RoomContext
 from roomkit.models.enums import ChannelType as _ChannelType
@@ -144,6 +145,10 @@ class _DelegatingTurns:
             return ChannelOutput.empty()
         if event.source.channel_type == _ChannelType.AI:
             return ChannelOutput.empty()
+        if concerns_change(event):
+            # An edit or a delete is no request to delegate (RFC §10.3): the
+            # supervisor's own channel reads it, and takes no turn.
+            return await self._kit._strategy_turn(event, binding, context)
         rid = context.room.id if context.room else event.room_id
         if self._refine:
             return await _two_pass_delegate(

@@ -12,6 +12,7 @@ import pytest
 from roomkit import RoomKit
 from roomkit.channels._strategy_turn import in_strategy_turn
 from roomkit.channels.agent import Agent
+from roomkit.channels.websocket import WebSocketChannel
 from roomkit.memory.sliding_window import SlidingWindowMemory
 from roomkit.models.channel import ChannelBinding, ChannelOutput
 from roomkit.models.context import RoomContext
@@ -19,12 +20,21 @@ from roomkit.models.delivery import InboundMessage, InboundResult
 from roomkit.models.enums import (
     ChannelCategory,
     ChannelType,
+    DeleteType,
     EventType,
     HookExecution,
     HookTrigger,
 )
-from roomkit.models.event import EventSource, RoomEvent, TextContent
+from roomkit.models.event import (
+    DeleteContent,
+    EditContent,
+    EventContent,
+    EventSource,
+    RoomEvent,
+    TextContent,
+)
 from roomkit.models.hook import HookResult, InjectedEvent
+from roomkit.orchestration import Loop, Orchestration
 from roomkit.orchestration.strategies.supervisor import Supervisor, _install_auto
 from roomkit.providers.ai.base import AIResponse
 from roomkit.providers.ai.mock import MockAIProvider
@@ -198,6 +208,54 @@ async def test_the_workers_results_reach_the_supervisors_memory_once(refine_task
     # The results stand in for the event the supervisor answers; the turn
     # that presents them hands them to memory, nothing else does.
     assert memory.sources.count("system") == 1
+    await kit.close()
+
+
+def _strategy(name: str, lead: Agent, helper: Agent) -> Orchestration:
+    if name == "loop":
+        return Loop(agent=lead, reviewers=[helper], max_iterations=1)
+    return _supervisor(lead, helper, refine_task=name == "two-pass")
+
+
+def _change(kind: EventType, target: RoomEvent) -> EventContent:
+    if kind == EventType.EDIT:
+        return EditContent(target_event_id=target.id, new_content=TextContent(body="Why not?"))
+    return DeleteContent(target_event_id=target.id, delete_type=DeleteType.SENDER)
+
+
+async def _from_ws(kit: RoomKit, kind: EventType, content: EventContent) -> InboundResult:
+    return await kit.process_inbound(
+        InboundMessage(channel_id="ws", sender_id="alice", event_type=kind, content=content),
+        room_id="r1",
+    )
+
+
+@pytest.mark.parametrize("kind", [EventType.EDIT, EventType.DELETE], ids=["edit", "delete"])
+@pytest.mark.parametrize("name", ["loop", "one-pass", "two-pass"])
+async def test_a_strategy_takes_no_turn_on_an_edit_or_a_delete(name: str, kind: EventType) -> None:
+    """RFC §10.3 (RMK-1226): a strategy that takes the agent's turns asks
+    none on a change, as the agent's own channel answers none."""
+    memory = CountingMemory()
+    lead = _agent("lead", *["lead answer"] * 4, memory=memory)
+    helper = _agent("helper", *["APPROVED"] * 4)
+    kit = RoomKit()
+    for channel in (WebSocketChannel("ws"), lead, helper):
+        kit.register_channel(channel)
+    await kit.create_room(room_id="r1")
+    await kit.attach_channel("r1", "ws")
+    await kit.install_strategy("r1", _strategy(name, lead, helper))
+    said = (await _from_ws(kit, EventType.MESSAGE, TextContent(body="Why?"))).event
+    assert said is not None
+    asked = (len(lead.provider.calls), len(helper.provider.calls))
+    ingested = len(memory.sources)
+
+    result = await _from_ws(kit, kind, _change(kind, said))
+
+    assert not result.blocked
+    assert (len(lead.provider.calls), len(helper.provider.calls)) == asked
+    assert result.response_events == []
+    # The lead's memory still learns the change.
+    assert memory.sources[ingested:] == ["ws"]
     await kit.close()
 
 
