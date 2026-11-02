@@ -41,43 +41,105 @@
           }
         ]
       }
+    ],
+    "hooks": [
+      {
+        "name": "hold",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "hold"
+            },
+            "gate": "held"
+          }
+        ]
+      }
     ]
   },
   "steps": [
     {
-      "concurrent": [
-        {
-          "call": "deliver",
-          "room_id": "room-1",
-          "content": "done",
-          "channel_id": "human",
-          "idempotency_key": "k",
-          "expect": {
-            "result": {
-              "status": "sent",
-              "event_id": "room-1#0"
-            }
-          }
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "human",
+        "sender_id": "u",
+        "content": {
+          "type": "text",
+          "body": "hold"
         },
-        {
-          "call": "deliver",
-          "room_id": "room-1",
-          "content": "done",
-          "channel_id": "web",
-          "idempotency_key": "k",
-          "expect": {
-            "result": {
-              "status": "sent",
-              "event_id": "room-1#0"
-            }
+        "addressed_to": []
+      },
+      "background": true,
+      "as": "hold"
+    },
+    {
+      "wait_for": "held"
+    },
+    {
+      "call": "deliver",
+      "room_id": "room-1",
+      "content": "done",
+      "idempotency_key": "k",
+      "background": true,
+      "as": "human",
+      "channel_id": "human"
+    },
+    {
+      "call": "deliver",
+      "room_id": "room-1",
+      "content": "done",
+      "idempotency_key": "k",
+      "background": true,
+      "as": "web",
+      "channel_id": "web"
+    },
+    {
+      "wait_for_lock": "room-1",
+      "waiters": 2
+    },
+    {
+      "open": "held"
+    },
+    {
+      "await": "hold",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "id": "room-1#0"
           }
         }
-      ]
+      }
+    },
+    {
+      "await": "human",
+      "expect": {
+        "result": {
+          "status": "sent",
+          "event_id": "room-1#1"
+        }
+      }
+    },
+    {
+      "await": "web",
+      "expect": {
+        "result": {
+          "status": "sent",
+          "event_id": "room-1#1"
+        }
+      }
     }
   ],
   "expect": {
     "timeline": {
       "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "hold"
+          }
+        },
         {
           "idempotency_key": "roomkit:publication:k"
         }
@@ -95,5 +157,6 @@
         ]
       }
     }
-  }
+  },
+  "notes": "Each call names its transport; the key is looked up under the room lock within the room, whatever channel committed it. A message's pass holds the lock until both calls wait for it, so they overlap."
 }

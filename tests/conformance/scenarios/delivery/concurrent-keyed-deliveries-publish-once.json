@@ -7,7 +7,7 @@
     "§13.4",
     "§13.5"
   ],
-  "notes": "The key is looked up under the room lock within the room, so a concurrent replay waits for the first publication and finds its key.",
+  "notes": "The key is looked up under the room lock within the room, so a concurrent replay waits for the first publication and finds its key. A message's pass holds the lock until the three calls wait for it, so they overlap.",
   "setup": {
     "channels": [
       {
@@ -34,62 +34,129 @@
           }
         ]
       }
+    ],
+    "hooks": [
+      {
+        "name": "hold",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "hold"
+            },
+            "gate": "held"
+          }
+        ]
+      }
     ]
   },
   "steps": [
     {
-      "concurrent": [
-        {
-          "call": "deliver",
-          "room_id": "room-1",
-          "content": "done",
-          "addressed_to": [
-            "a"
-          ],
-          "idempotency_key": "k",
-          "expect": {
-            "result": {
-              "status": "sent",
-              "event_id": "room-1#0"
-            }
-          }
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "human",
+        "sender_id": "u",
+        "content": {
+          "type": "text",
+          "body": "hold"
         },
-        {
-          "call": "deliver",
-          "room_id": "room-1",
-          "content": "done",
-          "addressed_to": [
-            "a"
-          ],
-          "idempotency_key": "k",
-          "expect": {
-            "result": {
-              "status": "sent",
-              "event_id": "room-1#0"
-            }
-          }
-        },
-        {
-          "call": "deliver",
-          "room_id": "room-1",
-          "content": "done",
-          "addressed_to": [
-            "a"
-          ],
-          "idempotency_key": "k",
-          "expect": {
-            "result": {
-              "status": "sent",
-              "event_id": "room-1#0"
-            }
+        "addressed_to": []
+      },
+      "background": true,
+      "as": "hold"
+    },
+    {
+      "wait_for": "held"
+    },
+    {
+      "call": "deliver",
+      "room_id": "room-1",
+      "content": "done",
+      "idempotency_key": "k",
+      "background": true,
+      "as": "d1",
+      "addressed_to": [
+        "a"
+      ]
+    },
+    {
+      "call": "deliver",
+      "room_id": "room-1",
+      "content": "done",
+      "idempotency_key": "k",
+      "background": true,
+      "as": "d2",
+      "addressed_to": [
+        "a"
+      ]
+    },
+    {
+      "call": "deliver",
+      "room_id": "room-1",
+      "content": "done",
+      "idempotency_key": "k",
+      "background": true,
+      "as": "d3",
+      "addressed_to": [
+        "a"
+      ]
+    },
+    {
+      "wait_for_lock": "room-1",
+      "waiters": 3
+    },
+    {
+      "open": "held"
+    },
+    {
+      "await": "hold",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "id": "room-1#0"
           }
         }
-      ]
+      }
+    },
+    {
+      "await": "d1",
+      "expect": {
+        "result": {
+          "status": "sent",
+          "event_id": "room-1#1"
+        }
+      }
+    },
+    {
+      "await": "d2",
+      "expect": {
+        "result": {
+          "status": "sent",
+          "event_id": "room-1#1"
+        }
+      }
+    },
+    {
+      "await": "d3",
+      "expect": {
+        "result": {
+          "status": "sent",
+          "event_id": "room-1#1"
+        }
+      }
     }
   ],
   "expect": {
     "timeline": {
       "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "hold"
+          }
+        },
         {
           "idempotency_key": "roomkit:publication:k"
         }

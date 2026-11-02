@@ -1,0 +1,175 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-keyed-delivery-whose-transport-is-detached-before-its-section-writes-nothing",
+  "title": "A keyed delivery whose transport is detached while it waits for the room lock is unavailable, nothing written; its retry once the transport is back publishes",
+  "rules": [
+    "§22.1",
+    "§13.5"
+  ],
+  "notes": "The lookup, the transport's check and the commit run in one section under the room lock: the detach, ahead of the delivery in the lock's queue, is seen by the check. No record is stored under the key, so the retry is a first publication.",
+  "setup": {
+    "channels": [
+      {
+        "id": "human",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "category": "intelligence"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "human"
+          },
+          {
+            "channel_id": "a",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "hold",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "hold"
+            },
+            "gate": "held"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "human",
+        "sender_id": "u",
+        "content": {
+          "type": "text",
+          "body": "hold"
+        },
+        "addressed_to": []
+      },
+      "background": true,
+      "as": "hold"
+    },
+    {
+      "wait_for": "held"
+    },
+    {
+      "call": "detach_channel",
+      "room_id": "room-1",
+      "channel_id": "human",
+      "background": true,
+      "as": "detach"
+    },
+    {
+      "wait_for_lock": "room-1"
+    },
+    {
+      "call": "deliver",
+      "room_id": "room-1",
+      "content": "done",
+      "idempotency_key": "k",
+      "background": true,
+      "as": "late",
+      "addressed_to": [
+        "a"
+      ]
+    },
+    {
+      "wait_for_lock": "room-1",
+      "waiters": 2
+    },
+    {
+      "open": "held"
+    },
+    {
+      "await": "hold",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "id": "room-1#0"
+          }
+        }
+      }
+    },
+    {
+      "await": "detach"
+    },
+    {
+      "await": "late",
+      "expect": {
+        "result": {
+          "status": "unavailable",
+          "reason": "channel_unavailable",
+          "unavailable_targets": [
+            "human"
+          ],
+          "event_id": null
+        }
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "room-1",
+      "channel_id": "human"
+    },
+    {
+      "call": "deliver",
+      "room_id": "room-1",
+      "content": "done",
+      "addressed_to": [
+        "a"
+      ],
+      "idempotency_key": "k",
+      "expect": {
+        "result": {
+          "status": "sent",
+          "event_id": "room-1#1",
+          "duplicate": false
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "hold"
+          }
+        },
+        {
+          "idempotency_key": "roomkit:publication:k"
+        }
+      ]
+    },
+    "turns": {
+      "room-1": {
+        "a": [
+          {
+            "content": {
+              "type": "text",
+              "body": "done"
+            }
+          }
+        ]
+      }
+    }
+  }
+}
