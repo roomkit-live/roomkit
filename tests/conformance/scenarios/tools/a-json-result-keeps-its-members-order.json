@@ -1,0 +1,105 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-json-result-keeps-its-members-order",
+  "title": "A tool that answers a JSON object reaches the model as its JSON serialization, its members in the order the tool gave them, never sorted",
+  "rules": [
+    "§21.4"
+  ],
+  "notes": "Python's as_tool_result writes json.dumps of the mapping, which keeps a dict's order (RMK-1198, HITL e91c8d89: roomkit-rs keeps it with serde_json's preserve_order).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "call-1",
+                  "name": "basket"
+                }
+              ]
+            },
+            {
+              "text": "Three lamps."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "basket",
+            "description": "The basket",
+            "parameters": {
+              "type": "object"
+            },
+            "returns_json": {
+              "total": 3,
+              "items": [
+                "lamp"
+              ],
+              "currency": "EUR",
+              "applied": {
+                "b": 1,
+                "a": 2
+              }
+            }
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "My basket?"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "tool_results": []
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "call-1",
+              "content": "{\"total\": 3, \"items\": [\"lamp\"], \"currency\": \"EUR\", \"applied\": {\"b\": 1, \"a\": 2}}"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
