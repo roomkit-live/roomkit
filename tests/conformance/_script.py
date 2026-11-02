@@ -359,7 +359,9 @@ class ScriptedChannel(Channel):
 
     def _side_effects(self, output: Mapping[str, Any], room_id: str) -> ChannelOutput:
         """The output a reaction's ``output`` gives: its tasks, observations
-        and room metadata updates, completed for *room_id*."""
+        and room metadata updates, completed for *room_id*, and the error the
+        channel met, a ``RuntimeError`` of its message."""
+        error = output.get("error")
         return ChannelOutput(
             tasks=[complete_task(t, room_id) for t in output.get("tasks", [])],
             observations=[
@@ -367,6 +369,7 @@ class ScriptedChannel(Channel):
                 for o in output.get("observations", [])
             ],
             metadata_updates=output.get("metadata_updates", {}),
+            error=RuntimeError(error) if error is not None else None,
         )
 
 
