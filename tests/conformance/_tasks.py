@@ -95,7 +95,7 @@ TASK_ARGUMENTS: dict[str, set[str]] = {
         "conversation",
         "hand_back",
     },
-    "host.wait_task": {"task_id"},
+    "host.wait_task": {"task_id", "timeout_ms"},
     "host.room_tasks": set(),
     "host.post_status": _STATUS,
     "host.update_room_metadata": {"room_id", "metadata"},
@@ -198,7 +198,8 @@ async def _host_delegate(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]
 
 
 async def _host_wait_task(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
-    result = await _host().wait_task(spec["task_id"])
+    timeout = spec["timeout_ms"] / 1000 if "timeout_ms" in spec else None
+    result = await _host().wait_task(spec["task_id"], timeout=timeout)
     if result is None:
         return None
     failure = result.exception
