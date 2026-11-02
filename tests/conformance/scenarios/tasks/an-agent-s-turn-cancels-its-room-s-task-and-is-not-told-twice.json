@@ -1,0 +1,160 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/an-agent-s-turn-cancels-its-room-s-task-and-is-not-told-twice",
+  "title": "An agent whose turn cancels a running task of its room with the cancel_task setup_task_tools gave it is answered that it cancelled it; the task ends cancelled once and the agent, its result's channel, is not handed the cancellation back",
+  "rules": [
+    "§23.4",
+    "§23.3 step 8",
+    "§10.6.5"
+  ],
+  "notes": "Python: tests/tasks/test_cancel_task.py::test_a_turn_s_cancel_task_is_served_by_the_owner (which room owner's task serves the call is each implementation's); core/mixins/delegation.py _cancel_task_for, _cancelled_by_notified. The agent's model is asked twice only: a hand-back would ask it a third time.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "Count to a thousand."
+            },
+            "gate": "counting",
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "A thousand."
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "speaker",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "cancel_task",
+                  "arguments": {
+                    "task_id": "$t"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Cancelled."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "speaker"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "completed",
+        "trigger": "on_task_completed",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "setup_task_tools",
+      "agent_id": "speaker"
+    },
+    {
+      "call": "delegate",
+      "room_id": "room-1",
+      "agent_id": "worker",
+      "task": "Count to a thousand.",
+      "notify": "speaker",
+      "as": "t"
+    },
+    {
+      "wait_for": "counting"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Cancel it."
+        }
+      }
+    },
+    {
+      "call": "task.wait",
+      "task_id": "$t",
+      "expect": {
+        "result": {
+          "status": "cancelled",
+          "output": null
+        }
+      }
+    },
+    {
+      "open": "counting"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "completed": [
+        {
+          "trigger": "on_task_completed",
+          "room_id": "room-1",
+          "event": {
+            "metadata": {
+              "task_status": "cancelled"
+            }
+          }
+        }
+      ]
+    },
+    "models": {
+      "speaker": [
+        {
+          "tool_results": []
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": {
+                "$contains": "\"status\": \"cancelled\", \"message\": \"Cancelled: its result will not come back.\"}"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

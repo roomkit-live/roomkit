@@ -1,0 +1,104 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/a-line-the-bus-lists-ended-is-answered-as-it-lists-it",
+  "title": "An agent's cancel_task answers a task its room's bus lists ended as the bus lists it, whoever posted the line: nothing is left to act on",
+  "rules": [
+    "§23.4",
+    "§19.8"
+  ],
+  "notes": "Python: tests/tasks/test_cancel_task.py::test_a_line_the_bus_lists_ended_is_answered_as_it_lists_it[a forged ended line]; tasks/status.py CancelTaskTool.handler. The other kit's ended task, on a bus two kits share, is roomkit-rs's test.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "speaker",
+        "type": "ai",
+        "kit_tools": [
+          "task_status",
+          "cancel_task"
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "cancel_task",
+                  "arguments": {
+                    "task_id": "task-never-run"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "It had ended."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "speaker"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "status.post",
+      "agent_id": "worker",
+      "action": "task",
+      "status": "completed",
+      "detail": "Done.",
+      "metadata": {
+        "room_id": "room-1",
+        "task_id": "task-never-run",
+        "task_status": "completed"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Cancel it."
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "speaker": [
+        {
+          "tool_results": []
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "{\"task_id\": \"task-never-run\", \"status\": \"completed\", \"message\": \"The task had already ended.\"}"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

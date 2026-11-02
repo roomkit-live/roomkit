@@ -1,0 +1,234 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/a-line-for-a-task-the-room-does-not-hold-is-no-task-here",
+  "title": "An agent's cancel_task answers no task here for a line its room's bus lists running that names a task the kit does not run for the room, another room's task running or ended or a task never run, and cancels nothing",
+  "rules": [
+    "§23.4",
+    "§19.8"
+  ],
+  "notes": "Python: tests/tasks/test_cancel_task.py::test_a_forged_status_line_reaches_no_other_rooms_task, test_a_line_for_a_task_the_room_does_not_hold_is_no_task_here; tasks/status.py CancelTaskTool._answer_running, _out_of_reach; tasks/_room_tasks.py RoomTaskRecord.reach. What the room holds is the kit's record, never what the bus lists: any code holding the kit may post a line. The agent's turn answers before the kit cancels the other room's task, its second round held until then.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "Count to a thousand."
+            },
+            "gate": "counting",
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "A thousand."
+                }
+              }
+            ]
+          },
+          {
+            "when": {
+              "text": "Look it up."
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Found it."
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "speaker",
+        "type": "ai",
+        "kit_tools": [
+          "task_status",
+          "cancel_task"
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "cancel_task",
+                  "arguments": {
+                    "task_id": "$running"
+                  }
+                },
+                {
+                  "id": "c2",
+                  "name": "cancel_task",
+                  "arguments": {
+                    "task_id": "$ended"
+                  }
+                },
+                {
+                  "id": "c3",
+                  "name": "cancel_task",
+                  "arguments": {
+                    "task_id": "task-never-run"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Nothing of ours to cancel.",
+              "gate": "answered"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "speaker"
+          }
+        ]
+      },
+      {
+        "id": "other"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "other",
+      "agent_id": "worker",
+      "task": "Count to a thousand.",
+      "as": "running"
+    },
+    {
+      "wait_for": "counting"
+    },
+    {
+      "call": "delegate",
+      "room_id": "other",
+      "agent_id": "worker",
+      "task": "Look it up.",
+      "wait": true,
+      "as": "ended",
+      "expect": {
+        "result": {
+          "status": "completed"
+        }
+      }
+    },
+    {
+      "call": "status.post",
+      "agent_id": "worker",
+      "action": "task",
+      "status": "pending",
+      "detail": "Count to a thousand.",
+      "metadata": {
+        "room_id": "room-1",
+        "task_id": "$running",
+        "task_status": "running"
+      }
+    },
+    {
+      "call": "status.post",
+      "agent_id": "worker",
+      "action": "task",
+      "status": "pending",
+      "detail": "Look it up.",
+      "metadata": {
+        "room_id": "room-1",
+        "task_id": "$ended"
+      }
+    },
+    {
+      "call": "status.post",
+      "agent_id": "worker",
+      "action": "task",
+      "status": "pending",
+      "detail": "Count.",
+      "metadata": {
+        "room_id": "room-1",
+        "task_id": "task-never-run"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Cancel them all."
+        }
+      },
+      "background": true,
+      "as": "asked"
+    },
+    {
+      "wait_for": "answered"
+    },
+    {
+      "call": "cancel_task",
+      "task_id": "$running",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "open": "answered"
+    },
+    {
+      "await": "asked"
+    },
+    {
+      "open": "counting"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "speaker": [
+        {
+          "tool_results": []
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": {
+                "$contains": "\"status\": \"unknown\", \"message\": \"No task task-"
+              }
+            },
+            {
+              "tool_call_id": "c2",
+              "content": {
+                "$contains": "\"status\": \"unknown\", \"message\": \"No task task-"
+              }
+            },
+            {
+              "tool_call_id": "c3",
+              "content": "{\"task_id\": \"task-never-run\", \"status\": \"unknown\", \"message\": \"No task task-never-run here.\"}"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

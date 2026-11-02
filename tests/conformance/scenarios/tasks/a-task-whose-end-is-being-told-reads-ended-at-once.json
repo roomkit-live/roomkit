@@ -1,0 +1,242 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/a-task-whose-end-is-being-told-reads-ended-at-once",
+  "title": "While a task's ON_TASK_COMPLETED hooks still run, inline or in the background, its room's line reads it ended with the status it ended with, and cancel_task answers at once that it had already ended",
+  "rules": [
+    "§23.4",
+    "§23.5",
+    "§9.3"
+  ],
+  "notes": "Python: tests/tasks/test_cancel_task.py::test_a_task_whose_end_is_being_told_reads_ended_at_once (inline failed and background completed here); tasks/_room_tasks.py RoomTaskRecord.end; core/mixins/delegation.py, a task's end recorded before its hooks run, which are not waited for. The hooks are held at a gate while the agent's turn reads and cancels both tasks, its second round held until the hooks are let go.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "Look it up."
+            },
+            "fail": "The worker broke."
+          },
+          {
+            "when": {
+              "text": "Count."
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "A thousand."
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "speaker",
+        "type": "ai",
+        "kit_tools": [
+          "task_status",
+          "cancel_task"
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "task_status",
+                  "arguments": {
+                    "task_id": "$failed"
+                  }
+                },
+                {
+                  "id": "c2",
+                  "name": "cancel_task",
+                  "arguments": {
+                    "task_id": "$failed"
+                  }
+                },
+                {
+                  "id": "c3",
+                  "name": "task_status",
+                  "arguments": {
+                    "task_id": "$completed"
+                  }
+                },
+                {
+                  "id": "c4",
+                  "name": "cancel_task",
+                  "arguments": {
+                    "task_id": "$completed"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Both had ended.",
+              "gate": "answered"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "speaker"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "telling",
+        "trigger": "on_task_completed",
+        "execution": "async",
+        "reactions": [
+          {
+            "gate": "telling",
+            "repeat": true
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "room-1",
+      "agent_id": "worker",
+      "task": "Look it up.",
+      "wait": true,
+      "as": "failed",
+      "expect": {
+        "result": {
+          "status": "failed"
+        }
+      }
+    },
+    {
+      "wait_for": "telling"
+    },
+    {
+      "call": "delegate",
+      "room_id": "room-1",
+      "agent_id": "worker",
+      "task": "Count.",
+      "as": "completed"
+    },
+    {
+      "call": "task.wait",
+      "task_id": "$completed",
+      "expect": {
+        "result": {
+          "status": "completed"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Where are they?"
+        }
+      },
+      "background": true,
+      "as": "asked"
+    },
+    {
+      "wait_for": "answered"
+    },
+    {
+      "open": "telling"
+    },
+    {
+      "open": "answered"
+    },
+    {
+      "await": "asked"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "telling": [
+        {
+          "trigger": "on_task_completed",
+          "room_id": "room-1",
+          "event": {
+            "metadata": {
+              "task_status": "failed"
+            }
+          }
+        },
+        {
+          "trigger": "on_task_completed",
+          "room_id": "room-1",
+          "event": {
+            "metadata": {
+              "task_status": "completed"
+            }
+          }
+        }
+      ]
+    },
+    "models": {
+      "speaker": [
+        {
+          "tool_results": []
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": {
+                "$contains": "\"status\": \"failed\""
+              }
+            },
+            {
+              "tool_call_id": "c2",
+              "content": {
+                "$contains": "\"status\": \"failed\", \"message\": \"The task had already ended.\""
+              }
+            },
+            {
+              "tool_call_id": "c3",
+              "content": {
+                "$contains": "\"status\": \"completed\""
+              }
+            },
+            {
+              "tool_call_id": "c4",
+              "content": {
+                "$contains": "\"status\": \"completed\", \"message\": \"The task had already ended.\""
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

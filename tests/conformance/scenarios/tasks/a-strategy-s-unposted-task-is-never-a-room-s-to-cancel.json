@@ -1,0 +1,161 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/a-strategy-s-unposted-task-is-never-a-room-s-to-cancel",
+  "title": "An agent's cancel_task answers a task a strategy runs without posting it that it still runs and is the strategy's to follow, though the strategy's follower posts its line, and the task goes on",
+  "rules": [
+    "§23.4",
+    "§19.8"
+  ],
+  "notes": "Python: tests/tasks/test_cancel_task.py::test_a_strategy_s_unposted_worker_is_never_a_room_s_to_cancel; tasks/_room_tasks.py TaskReach (strategy), why_not_cancelled; orchestration/_worker_run.py follow_worker, whose pending line the status.post step writes. The agent's turn answers before the kit cancels the task, its second round held until then.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "Count."
+            },
+            "gate": "counting",
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "A thousand."
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "speaker",
+        "type": "ai",
+        "kit_tools": [
+          "task_status",
+          "cancel_task"
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "cancel_task",
+                  "arguments": {
+                    "task_id": "$t"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "The strategy follows it.",
+              "gate": "answered"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "speaker"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "room-1",
+      "agent_id": "worker",
+      "task": "Count.",
+      "post_status": false,
+      "as": "t"
+    },
+    {
+      "wait_for": "counting"
+    },
+    {
+      "call": "status.post",
+      "agent_id": "worker",
+      "action": "task",
+      "status": "pending",
+      "detail": "Count.",
+      "metadata": {
+        "room_id": "room-1",
+        "mode": "per_worker_async",
+        "task_run": true,
+        "task_id": "$t"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Cancel it."
+        }
+      },
+      "background": true,
+      "as": "asked"
+    },
+    {
+      "wait_for": "answered"
+    },
+    {
+      "call": "cancel_task",
+      "task_id": "$t",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "open": "answered"
+    },
+    {
+      "await": "asked"
+    },
+    {
+      "open": "counting"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "speaker": [
+        {
+          "tool_results": []
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": {
+                "$contains": "\"status\": \"running\", \"message\": \"Still running, and not cancellable here: the strategy that runs it follows it.\"}"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
