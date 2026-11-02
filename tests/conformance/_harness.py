@@ -48,7 +48,12 @@ from tests.conformance._calls import (
     result_event_id,
 )
 from tests.conformance._compare import Check, compare
-from tests.conformance._delivery import backend_busy, delivery_options, start_backend
+from tests.conformance._delivery import (
+    backend_busy,
+    delivery_options,
+    start_backend,
+    wait_for_lock,
+)
 from tests.conformance._identity import kit_options, register_identity_hook
 from tests.conformance._inputs import INPUT_CALLS, request_record
 from tests.conformance._members import MEMBER_CALLS, store_identities
@@ -323,6 +328,12 @@ class Harness:
                 await self.gates.wait_for(step["wait_for"])
             except TimeoutError:
                 self._problems.append(f"{path}: no call reached the gate {step['wait_for']}")
+        elif "wait_for_lock" in step:
+            room_id, waiters = step["wait_for_lock"], step.get("waiters", 1)
+            try:
+                await wait_for_lock(self.kit, room_id, waiters)
+            except TimeoutError:
+                self._problems.append(f"{path}: {waiters} calls never waited for {room_id}'s lock")
         elif "open" in step:
             self.gates.open(step["open"])
         elif "idle" in step:

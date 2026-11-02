@@ -259,7 +259,7 @@ CALLS |= STORE_ARGUMENTS | READ_MARKER_ARGUMENTS | TASK_ARGUMENTS | MEMBER_ARGUM
 CALLS |= INPUT_ARGUMENTS
 CALLS |= VERIFICATION_ARGUMENTS
 STEPS = {"await": {"await", "expect"}, "concurrent": {"concurrent"}, "wait_for": {"wait_for"}}
-STEPS |= {"open": {"open"}, "idle": {"idle"}}
+STEPS |= {"open": {"open"}, "idle": {"idle"}, "wait_for_lock": {"wait_for_lock", "waiters"}}
 
 
 def unknown_members(scenario: Mapping[str, Any]) -> list[str]:
