@@ -19,6 +19,7 @@ from roomkit.channels.base import Channel
 from roomkit.core.exceptions import ChangeRefusedError
 from roomkit.core.framework import RoomKit
 from roomkit.core.visibility import visible_events
+from roomkit.memory import MockMemoryProvider
 from roomkit.models.channel import ChannelBinding, ChannelCapabilities, ChannelOutput
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundMessage
@@ -1036,20 +1037,30 @@ def _last_prompt(provider: MockAIProvider) -> str:
 
 
 class TestNoTurnOnAChange:
-    """RFC §10.3 (RMK-1226): an edit or a delete is no message a turn may
-    answer; the agent answers the next message, as roomkit-rs's does."""
+    """RFC §10.3 (RMK-1226): an edit or a delete opens no turn (the shared
+    scenarios inbound/an-edit-opens-no-agent-turn and
+    inbound/a-deletion-opens-no-agent-turn); the agent's memory learns it
+    all the same, as roomkit-rs's does."""
 
     @pytest.mark.parametrize("change", ["edit", "delete"])
-    async def test_an_edit_or_a_delete_opens_no_agent_turn(self, change: str) -> None:
-        kit, provider = await _agent_room()
+    async def test_the_memory_learns_a_change_no_turn_answers(self, change: str) -> None:
+        memory = MockMemoryProvider()
+        provider = MockAIProvider(responses=["noted"] * 10)
+        kit = RoomKit()
+        kit.register_channel(_Transport("src"))
+        kit.register_channel(AIChannel("ai", provider=provider, memory=memory))
+        await kit.create_room(room_id="r1")
+        await kit.attach_channel("r1", "src")
+        await kit.attach_channel("r1", "ai", category=ChannelCategory.INTELLIGENCE)
         oops = await _post(kit, "Oops", sender_id="alice")
         if change == "edit":
             await _edit(kit, oops, sender_id="alice", edit_source="sender")
         else:
             await _delete(kit, oops, sender_id="alice", delete_type=DeleteType.SENDER)
-        await _post(kit, "hello", sender_id="alice")
 
-        assert len(provider.calls) == 2
+        assert len(provider.calls) == 1
+        kinds = [call.event.type for call in memory.ingest_calls]
+        assert kinds == [EventType.MESSAGE, EventType(change)]
         await kit.close()
 
 

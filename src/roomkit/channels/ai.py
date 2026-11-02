@@ -620,10 +620,7 @@ class AIChannel(
         if in_strategy_turn():
             return await self._respond(event, binding, context)
         if concerns_change(event):
-            # An edit or a delete is no message a turn may answer (RFC
-            # §10.3): step 8a applied it, and the next message is answered
-            # in the room it left.
-            return ChannelOutput.empty()
+            return await self._read_change(event, context)
         room_id = context.room.id if context.room else event.room_id
         decision = await self._speak_decision(event, context, self._thought_of(room_id))
         if decision is None or decision.mode != "silent":
@@ -638,6 +635,14 @@ class AIChannel(
             return ChannelOutput.empty()
         notes = await self._speaking_notes(room_id, decision)
         return await self._respond(event, binding, context, notes=notes, ingested=True)
+
+    async def _read_change(self, event: RoomEvent, context: RoomContext) -> ChannelOutput:
+        """No turn on an edit or a delete (RFC §10.3): step 8a applied it.
+        The memory learns it as it learns every event the channel is handed,
+        but the channel's own."""
+        if event.source.channel_id != self.channel_id and discussion_turn(event) is None:
+            await self._ingest_event(event, context)
+        return ChannelOutput.empty()
 
     async def _speaking_notes(
         self, room_id: str, decision: SpeakDecision | None
