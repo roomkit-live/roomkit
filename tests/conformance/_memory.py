@@ -11,11 +11,13 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+from roomkit.knowledge import KnowledgeResult, KnowledgeSource
 from roomkit.memory import (
     BudgetAwareMemory,
     CompactingMemory,
     MemoryProvider,
     MemoryResult,
+    RetrievalMemory,
     SlidingWindowMemory,
     SummarizingMemory,
 )
@@ -95,7 +97,42 @@ def scripted_memory(
             summary_max_tokens=summarizing.get("summary_max_tokens", 1000),
             min_events=summarizing.get("min_events", 5),
         )
+    if (retrieval := spec.get("retrieval")) is not None:
+        memory = RetrievalMemory(
+            [ScriptedSource(source) for source in retrieval["sources"]],
+            memory,
+            max_results=retrieval.get("max_results", 5),
+            min_query_length=retrieval.get("min_query_length", 3),
+        )
     return memory
+
+
+class ScriptedSource(KnowledgeSource):
+    """A knowledge source answering every search with its results, at most
+    the search's limit, or failing with its ``fails``."""
+
+    def __init__(self, spec: Mapping[str, Any]) -> None:
+        self._name = spec["name"]
+        self._results = [
+            KnowledgeResult(
+                content=result["content"],
+                score=float(result.get("score", 0.0)),
+                source=result.get("source", ""),
+            )
+            for result in spec.get("results", [])
+        ]
+        self._fails = spec.get("fails")
+
+    @property
+    def name(self) -> str:
+        return self._name
+
+    async def search(
+        self, query: str, *, room_id: str | None = None, limit: int = 5
+    ) -> list[KnowledgeResult]:
+        if self._fails is not None:
+            raise RuntimeError(self._fails)
+        return self._results[:limit]
 
 
 def _summarizer(summarizer: AIProvider | None) -> AIProvider:

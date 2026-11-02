@@ -94,10 +94,14 @@ MEMORY = {
     "compacting",
     "summarizing",
     "summarizer",
+    "retrieval",
 }
 MEMORY_MESSAGE = {"role", "text"}
 BUDGET_AWARE = {"max_context_tokens", "safety_margin_ratio", "min_events", "reserved_tokens"}
 COMPACTING = {"max_context_tokens", "summary_ratio", "safety_margin_ratio", "min_events"}
+RETRIEVAL = {"sources", "max_results", "min_query_length"}
+SOURCE = {"name", "results", "fails"}
+SOURCE_RESULT = {"content", "score", "source"}
 SUMMARIZING = {
     "max_context_tokens",
     "tier1_ratio",
@@ -334,6 +338,16 @@ def _memory(memory: Mapping[str, Any], path: str, found: list[str]) -> None:
         _members(memory["summarizing"], SUMMARIZING, f"{path}.summarizing", found)
     if "summarizer" in memory:
         _model(memory["summarizer"], f"{path}.summarizer", found)
+    if "retrieval" in memory:
+        _retrieval(memory["retrieval"], f"{path}.retrieval", found)
+
+
+def _retrieval(retrieval: Mapping[str, Any], path: str, found: list[str]) -> None:
+    _members(retrieval, RETRIEVAL, path, found)
+    for index, source in enumerate(retrieval.get("sources", [])):
+        _members(source, SOURCE, f"{path}.sources[{index}]", found)
+        for position, result in enumerate(source.get("results", [])):
+            _members(result, SOURCE_RESULT, f"{path}.sources[{index}].results[{position}]", found)
 
 
 def _model(model: Mapping[str, Any], path: str, found: list[str]) -> None:
