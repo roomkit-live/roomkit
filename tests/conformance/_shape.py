@@ -171,7 +171,7 @@ REACTION = {
 }
 REFUSE = {"error", "code", "retryable", "provider_message_id"}
 WHEN = {"room_id", "text", "type", "source_channel_id", "chain_depth"}
-OUTPUT = {"tasks", "observations", "metadata_updates", "error"}
+OUTPUT = {"tasks", "observations", "metadata_updates", "response_metadata", "error"}
 RESULT = {"action", "event", "reason", "injected_events", "tasks", "observations", "metadata"}
 INJECTED = {"event", "target_channel_ids"}
 OUTCOME = {"result", "error"}

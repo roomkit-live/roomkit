@@ -124,6 +124,8 @@ class ScriptedModel(AIProvider):
                 "messages": messages(context),
                 "tool_results": tool_results(context),
                 "system_prompt": context.system_prompt,
+                "temperature": context.temperature,
+                "max_tokens": context.max_tokens,
                 "tools": {
                     tool.name: position for position, tool in enumerate(context.tools or [])
                 },
