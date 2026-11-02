@@ -1,0 +1,109 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/a-result-call-an-on-tool-call-hook-blocks-is-no-result",
+  "title": "A structured delegation whose worker's submit_result calls an ON_TOOL_CALL hook blocks has no result: it re-prompts the worker, then completes with the missing payload, never the payload the blocked calls carried",
+  "rules": [
+    "§23.3",
+    "§9.4"
+  ],
+  "notes": "Python: tests/tasks/test_structured_result.py::TestAResultTheHooksBlockedIsNone::test_a_blocked_call_is_no_result; core/mixins/_child_execution.py _scan_for_submitted_result (only the worker's served call counts, RMK-396).",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "s1",
+                  "name": "submit_result",
+                  "arguments": {
+                    "status": "completed",
+                    "summary": "the worker's result",
+                    "data": {}
+                  }
+                }
+              ]
+            },
+            {
+              "text": "ok"
+            },
+            {
+              "calls": [
+                {
+                  "id": "s1",
+                  "name": "submit_result",
+                  "arguments": {
+                    "status": "completed",
+                    "summary": "the worker's result",
+                    "data": {}
+                  }
+                }
+              ]
+            },
+            {
+              "text": "ok"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "refuse",
+        "trigger": "on_tool_call",
+        "reactions": [
+          {
+            "repeat": true,
+            "result": {
+              "action": "block",
+              "reason": "not now"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "room-1",
+      "agent_id": "worker",
+      "task": "Look it up.",
+      "wait": true,
+      "require_structured_result": true,
+      "max_result_retries": 1,
+      "expect": {
+        "result": {
+          "status": "completed",
+          "result": {
+            "status": "completed",
+            "output": "{\"status\": \"failed\", \"by\": \"orchestration\", \"reason\": \"no_structured_result_after_2_attempts\", \"role\": \"worker\", \"last_output\": \"ok\"}",
+            "error": null
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {}
+}

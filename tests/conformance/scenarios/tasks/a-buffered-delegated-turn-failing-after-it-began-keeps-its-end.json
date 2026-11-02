@@ -1,0 +1,163 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/a-buffered-delegated-turn-failing-after-it-began-keeps-its-end",
+  "title": "A delegated agent that answers at once with a narration its turn's record ends in error, and the error it met, fails the task with that error and keeps its end: loop_end_reason error and the narration as the output, on ON_TASK_COMPLETED too, whether a transport is shared into the child room or not",
+  "rules": [
+    "§23.3 step 6",
+    "§6.4"
+  ],
+  "notes": "Python: tests/tasks/test_failed_worker_turn.py::test_a_buffered_worker_turn_failed_after_it_began_keeps_its_end; core/mixins/_child_execution.py _buffered_outcome (_turn_end reads the end off the last message's loop_end_reason when the output's record names none), _turn_failure. worker answers on the trace, writer with email shared. Python's test hands the end in the output's response_metadata; a scripted channel writes it on its message.",
+  "setup": {
+    "channels": [
+      {
+        "id": "email",
+        "type": "email",
+        "category": "transport"
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "Find it."
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Still checking."
+                },
+                "metadata": {
+                  "loop_end_reason": "error"
+                }
+              }
+            ],
+            "output": {
+              "error": "upstream 400"
+            }
+          }
+        ]
+      },
+      {
+        "id": "writer",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "Find it."
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Still checking."
+                },
+                "metadata": {
+                  "loop_end_reason": "error"
+                }
+              }
+            ],
+            "output": {
+              "error": "upstream 400"
+            }
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "parent",
+        "bindings": [
+          {
+            "channel_id": "email"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "done",
+        "trigger": "on_task_completed",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "parent",
+      "agent_id": "worker",
+      "task": "Find it.",
+      "wait": true,
+      "expect": {
+        "result": {
+          "status": "failed",
+          "result": {
+            "status": "failed",
+            "error": "upstream 400",
+            "output": "Still checking.",
+            "metadata": {
+              "loop_end_reason": "error"
+            }
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "delegate",
+      "room_id": "parent",
+      "agent_id": "writer",
+      "task": "Find it.",
+      "share_channels": [
+        "email"
+      ],
+      "wait": true,
+      "expect": {
+        "result": {
+          "status": "failed",
+          "result": {
+            "status": "failed",
+            "error": "upstream 400",
+            "output": "Still checking.",
+            "metadata": {
+              "loop_end_reason": "error"
+            }
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "done": [
+        {
+          "trigger": "on_task_completed",
+          "room_id": "parent",
+          "event": {
+            "metadata": {
+              "loop_end_reason": "error"
+            }
+          }
+        },
+        {
+          "trigger": "on_task_completed",
+          "room_id": "parent",
+          "event": {
+            "metadata": {
+              "loop_end_reason": "error"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

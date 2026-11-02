@@ -1,0 +1,313 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/a-delegated-turn-failing-after-a-tool-round-keeps-its-end",
+  "title": "A delegated agent whose model fails on the generation after a tool round fails the task with its error and keeps its turn's end: its loop_end_reason error and its last narration as the output, on ON_TASK_COMPLETED too, inline or in the background, whether a transport is shared into the child room or not",
+  "rules": [
+    "§23.3 step 6",
+    "§6.4",
+    "§12.2 step 13s"
+  ],
+  "notes": "Python: tests/tasks/test_failed_worker_turn.py::test_a_worker_turn_failed_after_a_round_keeps_its_end; core/mixins/_child_execution.py _turn_failure (TaskTurnFailedError: the end and the narration the child room's record holds), tasks/models.py finished_task_fields. worker runs inline on the trace, writer inline with email shared, seeker in the background on the trace, finder in the background with email shared. Python's test fails with a ProviderError whose text leads with its provider and status (mock (400): upstream 400, providers/ai/base.py ProviderError.__str__); a scripted model names no provider, so the error is its message. The provider refuses the second generation (an error it does not retry, a ProviderError as in Python's test), after the tool round: the turn's end is error (channels/_ai_streaming.py _stream_generation).",
+  "setup": {
+    "channels": [
+      {
+        "id": "email",
+        "type": "email",
+        "category": "transport"
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Still checking.",
+              "calls": [
+                {
+                  "id": "c",
+                  "name": "lookup"
+                }
+              ]
+            },
+            {
+              "refuses": {
+                "status": 400,
+                "message": "upstream 400"
+              }
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "look up",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "found"
+          }
+        ]
+      },
+      {
+        "id": "writer",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Still checking.",
+              "calls": [
+                {
+                  "id": "c",
+                  "name": "lookup"
+                }
+              ]
+            },
+            {
+              "refuses": {
+                "status": 400,
+                "message": "upstream 400"
+              }
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "look up",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "found"
+          }
+        ]
+      },
+      {
+        "id": "seeker",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Still checking.",
+              "calls": [
+                {
+                  "id": "c",
+                  "name": "lookup"
+                }
+              ]
+            },
+            {
+              "refuses": {
+                "status": 400,
+                "message": "upstream 400"
+              }
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "look up",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "found"
+          }
+        ]
+      },
+      {
+        "id": "finder",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Still checking.",
+              "calls": [
+                {
+                  "id": "c",
+                  "name": "lookup"
+                }
+              ]
+            },
+            {
+              "refuses": {
+                "status": 400,
+                "message": "upstream 400"
+              }
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "look up",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "found"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "parent",
+        "bindings": [
+          {
+            "channel_id": "email"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "done",
+        "trigger": "on_task_completed",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "parent",
+      "agent_id": "worker",
+      "task": "Find it.",
+      "wait": true,
+      "expect": {
+        "result": {
+          "status": "failed",
+          "result": {
+            "status": "failed",
+            "error": "upstream 400",
+            "output": "Still checking.",
+            "metadata": {
+              "loop_end_reason": "error"
+            }
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "delegate",
+      "room_id": "parent",
+      "agent_id": "writer",
+      "task": "Find it.",
+      "share_channels": [
+        "email"
+      ],
+      "wait": true,
+      "expect": {
+        "result": {
+          "status": "failed",
+          "result": {
+            "status": "failed",
+            "error": "upstream 400",
+            "output": "Still checking.",
+            "metadata": {
+              "loop_end_reason": "error"
+            }
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "delegate",
+      "room_id": "parent",
+      "agent_id": "seeker",
+      "task": "Find it.",
+      "as": "s"
+    },
+    {
+      "call": "task.wait",
+      "task_id": "$s",
+      "expect": {
+        "result": {
+          "status": "failed",
+          "error": "upstream 400",
+          "output": "Still checking.",
+          "metadata": {
+            "loop_end_reason": "error"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "delegate",
+      "room_id": "parent",
+      "agent_id": "finder",
+      "task": "Find it.",
+      "share_channels": [
+        "email"
+      ],
+      "as": "f"
+    },
+    {
+      "call": "task.wait",
+      "task_id": "$f",
+      "expect": {
+        "result": {
+          "status": "failed",
+          "error": "upstream 400",
+          "output": "Still checking.",
+          "metadata": {
+            "loop_end_reason": "error"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "done": [
+        {
+          "trigger": "on_task_completed",
+          "room_id": "parent",
+          "event": {
+            "metadata": {
+              "loop_end_reason": "error"
+            }
+          }
+        },
+        {
+          "trigger": "on_task_completed",
+          "room_id": "parent",
+          "event": {
+            "metadata": {
+              "loop_end_reason": "error"
+            }
+          }
+        },
+        {
+          "trigger": "on_task_completed",
+          "room_id": "parent",
+          "event": {
+            "metadata": {
+              "loop_end_reason": "error"
+            }
+          }
+        },
+        {
+          "trigger": "on_task_completed",
+          "room_id": "parent",
+          "event": {
+            "metadata": {
+              "loop_end_reason": "error"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

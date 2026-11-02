@@ -1,0 +1,88 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/a-worker-whose-trace-holds-only-another-tool-s-call-ends-with-the-missing-payload",
+  "title": "A structured delegation whose worker calls another tool, never submit_result, re-prompts it, then completes with the delegation's missing payload: a call of another tool in the trace is no result",
+  "rules": [
+    "§23.3"
+  ],
+  "notes": "Python: tests/tasks/test_structured_result.py::TestStructuredResultViaTrace::test_fails_when_trace_has_no_submit_result; core/mixins/_child_execution.py _scan_for_submitted_result, orchestration/result.py is_submit_result (the result tool's name, bare or as an MCP server prefixes it).",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "w1",
+                  "name": "mcp__gateway__web_search",
+                  "arguments": {
+                    "q": "x"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Searched."
+            },
+            {
+              "text": "Nothing to submit."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "mcp__gateway__web_search",
+            "description": "Search the web",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "results"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "room-1",
+      "agent_id": "worker",
+      "task": "Look it up.",
+      "wait": true,
+      "require_structured_result": true,
+      "max_result_retries": 1,
+      "expect": {
+        "result": {
+          "status": "completed",
+          "result": {
+            "status": "completed",
+            "output": "{\"status\": \"failed\", \"by\": \"orchestration\", \"reason\": \"no_structured_result_after_2_attempts\", \"role\": \"worker\", \"last_output\": \"Nothing to submit.\"}",
+            "error": null
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {}
+}

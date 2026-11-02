@@ -5,7 +5,7 @@
   "rules": [
     "§23.3"
   ],
-  "notes": "Python: tests/tasks/test_structured_result.py::TestStructuredResultGuard::test_orchestration_fail_when_never_submits; orchestration/result.py orchestration_fail. The role is the channel's role, its description, else its id: an AI channel has neither.",
+  "notes": "Python: tests/tasks/test_structured_result.py::TestStructuredResultGuard::test_orchestration_fail_when_never_submits, TestResultHelpers::test_orchestration_fail_shape; orchestration/result.py orchestration_fail. The role is the channel's role, its description, else its id: an AI channel has neither.",
   "setup": {
     "channels": [
       {

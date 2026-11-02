@@ -1,0 +1,145 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-delivery-naming-a-chain-depth-continues-that-chain-queued-or-not",
+  "title": "A delivery that names a chain depth enters the room at that depth, at once or through the delivery backend's queue, and an agent's answer to it is one deeper",
+  "rules": [
+    "§22.1",
+    "§22.2",
+    "§8.3"
+  ],
+  "notes": "Python: tests/tasks/test_delegation_chain_depth.py::test_delivered_content_continues_the_chain_it_names, test_a_queued_delivery_keeps_the_chain_it_names; delivery/base.py DeliveryItem (chain_depth), delivery/worker.py execute_delivery. The queued item's JSON round trip is the store's (a Rust unit test, delivery/item.rs).",
+  "setup": {
+    "kit": {
+      "delivery_backend": {}
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "a result"
+            },
+            "repeat": true,
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "noted"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "deliver",
+      "room_id": "room-1",
+      "content": "a result",
+      "channel_id": "sms",
+      "strategy": "immediate",
+      "chain_depth": 2
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "deliver",
+      "room_id": "room-2",
+      "content": "a result",
+      "channel_id": "sms",
+      "strategy": "queued",
+      "chain_depth": 2,
+      "expect": {
+        "result": {
+          "status": "queued"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "source": {
+            "channel_id": "sms"
+          },
+          "chain_depth": 2,
+          "content": {
+            "type": "text",
+            "body": "a result"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "ai"
+          },
+          "chain_depth": 3,
+          "content": {
+            "type": "text",
+            "body": "noted"
+          }
+        }
+      ],
+      "room-2": [
+        {
+          "source": {
+            "channel_id": "sms"
+          },
+          "chain_depth": 2,
+          "content": {
+            "type": "text",
+            "body": "a result"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "ai"
+          },
+          "chain_depth": 3,
+          "content": {
+            "type": "text",
+            "body": "noted"
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,202 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/one-agent-s-failure-in-a-delegated-room-never-carries-another-s-end",
+  "title": "In a delegated room another agent is shared into, that agent's failure is its own turn's: the task ends as its delegated agent's turn did, cut at its round cap with its own end, or completed with its answer",
+  "rules": [
+    "§23.3 step 6",
+    "§6.4"
+  ],
+  "notes": "Python: tests/tasks/test_failed_worker_turn.py::test_one_agents_failure_never_carries_anothers_end, the task's part of test_another_agent_s_provider_failure_is_logged_once_as_its_turn[trace], [transport] (its log line is no scenario's); core/mixins/_child_execution.py _responder_failures (RMK-879: the task is its delegated agent's). helper fails on the task, before any end, on each delegation: worker loops on lookup past max_tool_rounds 1, finder answers.",
+  "setup": {
+    "channels": [
+      {
+        "id": "email",
+        "type": "email",
+        "category": "transport"
+      },
+      {
+        "id": "helper",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "source_channel_id": "system"
+            },
+            "repeat": true,
+            "respond": [],
+            "output": {
+              "error": "The helper's upstream failed."
+            }
+          }
+        ]
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Still checking.",
+              "calls": [
+                {
+                  "id": "c",
+                  "name": "lookup"
+                }
+              ]
+            },
+            {
+              "text": "Still checking.",
+              "calls": [
+                {
+                  "id": "c",
+                  "name": "lookup"
+                }
+              ]
+            },
+            {
+              "text": "Still checking.",
+              "calls": [
+                {
+                  "id": "c",
+                  "name": "lookup"
+                }
+              ]
+            },
+            {
+              "text": "Still checking.",
+              "calls": [
+                {
+                  "id": "c",
+                  "name": "lookup"
+                }
+              ]
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "look up",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "found"
+          }
+        ],
+        "max_tool_rounds": 1
+      },
+      {
+        "id": "finder",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "Find it."
+            },
+            "repeat": true,
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Found it."
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "parent",
+        "bindings": [
+          {
+            "channel_id": "email"
+          },
+          {
+            "channel_id": "helper",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "parent",
+      "agent_id": "worker",
+      "task": "Find it.",
+      "share_channels": [
+        "helper",
+        "email"
+      ],
+      "wait": true,
+      "expect": {
+        "result": {
+          "status": "failed",
+          "result": {
+            "status": "failed",
+            "error": "The worker's turn ended max_rounds before its answer",
+            "metadata": {
+              "loop_end_reason": "max_rounds"
+            }
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "delegate",
+      "room_id": "parent",
+      "agent_id": "finder",
+      "task": "Find it.",
+      "share_channels": [
+        "helper"
+      ],
+      "wait": true,
+      "expect": {
+        "result": {
+          "status": "completed",
+          "result": {
+            "status": "completed",
+            "output": "Found it.",
+            "error": null
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "delegate",
+      "room_id": "parent",
+      "agent_id": "finder",
+      "task": "Find it.",
+      "share_channels": [
+        "helper",
+        "email"
+      ],
+      "wait": true,
+      "expect": {
+        "result": {
+          "status": "completed",
+          "result": {
+            "status": "completed",
+            "output": "Found it.",
+            "error": null
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {}
+}

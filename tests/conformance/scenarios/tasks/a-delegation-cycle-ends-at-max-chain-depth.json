@@ -1,0 +1,182 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/a-delegation-cycle-ends-at-max-chain-depth",
+  "title": "An agent that delegates again on every result handed back stops at max_chain_depth: each result reaches it at the depth of the answer whose turn delegated, it answers at depths 1 and 2, and its answer at the limit is refused, so only two child rooms are made",
+  "rules": [
+    "§23.3 step 8",
+    "§8.3"
+  ],
+  "notes": "Python: tests/tasks/test_delegation_chain_depth.py::test_a_delegation_cycle_ends_at_max_chain_depth; core/_turn_host.py _delegate (setup_delegation's delegate_task tool in Python's test, the turn's host here: both delegate from the turn), tasks/handback.py hand_back: the result handed back is an instruction at the depth of the answer whose turn delegated (never stored, RMK-310), and front's turn on the one at depth 2 is not asked, its answer at the limit stored BLOCKED (§8.3). A result can come back before the turn that delegated it committed its answer, so front's rows are matched in any order.",
+  "setup": {
+    "kit": {
+      "max_chain_depth": 3
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "repeat": true,
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "found"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "front",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "repeat": true,
+            "do": [
+              {
+                "call": "host.delegate",
+                "room_id": "room-1",
+                "agent_id": "worker",
+                "task": "X",
+                "notify": "front"
+              }
+            ],
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "delegated"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "front"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": {
+        "$unordered": [
+          {
+            "source": {
+              "channel_id": "sms"
+            },
+            "chain_depth": 0,
+            "content": {
+              "type": "text",
+              "body": "go"
+            }
+          },
+          {
+            "type": "message",
+            "status": "delivered",
+            "source": {
+              "channel_id": "front"
+            },
+            "chain_depth": 1,
+            "content": {
+              "type": "text",
+              "body": "delegated"
+            }
+          },
+          {
+            "type": "message",
+            "status": "delivered",
+            "source": {
+              "channel_id": "front"
+            },
+            "chain_depth": 2,
+            "content": {
+              "type": "text",
+              "body": "delegated"
+            }
+          },
+          {
+            "status": "blocked",
+            "blocked_by": "event_chain_depth_limit",
+            "source": {
+              "channel_id": "front"
+            },
+            "chain_depth": 3
+          }
+        ]
+      }
+    },
+    "turns": {
+      "room-1": {
+        "front": [
+          {
+            "type": "message",
+            "chain_depth": 0,
+            "content": {
+              "type": "text",
+              "body": "go"
+            }
+          },
+          {
+            "type": "instruction",
+            "chain_depth": 1,
+            "metadata": {
+              "agent_id": "worker",
+              "task_status": "completed"
+            }
+          }
+        ]
+      }
+    },
+    "rooms": {
+      "$r1": {
+        "metadata": {
+          "parent_room_id": "room-1"
+        }
+      },
+      "$r2": {
+        "metadata": {
+          "parent_room_id": "room-1"
+        }
+      },
+      "$r3": null
+    }
+  }
+}

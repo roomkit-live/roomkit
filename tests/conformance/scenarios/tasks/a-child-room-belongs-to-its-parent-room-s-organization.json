@@ -1,0 +1,131 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/a-child-room-belongs-to-its-parent-room-s-organization",
+  "title": "A delegation's child room belongs to its parent room's organization: a read for that organization reaches it and another's does not, a delegation from it stays in the organization, and an unscoped parent's child room is unscoped",
+  "rules": [
+    "§23.3 step 1",
+    "§17.2"
+  ],
+  "notes": "Python: tests/tasks/test_delegation_organization.py::test_a_read_scoped_to_the_parents_organization_finds_the_child_room, test_a_delegation_from_a_child_room_stays_in_the_organization, test_an_unscoped_parent_has_an_unscoped_child_room; core/mixins/delegation.py _create_child_room (organization_id=parent.organization_id). The scoped read is list_tasks, which reads the room for the caller's organization as get_room does; store.find_rooms(organization_id) is not a call of the suite.",
+  "setup": {
+    "channels": [
+      {
+        "id": "worker",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "repeat": true,
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "done"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "parent",
+        "organization_id": "acme"
+      },
+      {
+        "id": "elsewhere",
+        "organization_id": "globex"
+      },
+      {
+        "id": "plain"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "parent",
+      "agent_id": "worker",
+      "task": "Look the record up.",
+      "wait": true,
+      "expect": {
+        "result": {
+          "child_room_id": "$r1",
+          "result": {
+            "status": "completed"
+          }
+        }
+      }
+    },
+    {
+      "call": "list_tasks",
+      "room_id": "$r1",
+      "organization_id": "acme"
+    },
+    {
+      "call": "list_tasks",
+      "room_id": "$r1",
+      "organization_id": "globex",
+      "expect": {
+        "error": "room_not_found"
+      }
+    },
+    {
+      "call": "delegate",
+      "room_id": "$r1",
+      "agent_id": "worker",
+      "task": "Look the record up.",
+      "wait": true,
+      "expect": {
+        "result": {
+          "child_room_id": "$r2",
+          "parent_room_id": "$r1",
+          "result": {
+            "status": "completed"
+          }
+        }
+      }
+    },
+    {
+      "call": "delegate",
+      "room_id": "plain",
+      "agent_id": "worker",
+      "task": "Look the record up.",
+      "wait": true,
+      "expect": {
+        "result": {
+          "child_room_id": "$r3",
+          "result": {
+            "status": "completed"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "rooms": {
+      "$r1": {
+        "organization_id": "acme",
+        "metadata": {
+          "parent_room_id": "parent"
+        }
+      },
+      "$r2": {
+        "organization_id": "acme",
+        "metadata": {
+          "parent_room_id": "$r1"
+        }
+      },
+      "$r3": {
+        "organization_id": null,
+        "metadata": {
+          "parent_room_id": "plain"
+        }
+      }
+    }
+  }
+}

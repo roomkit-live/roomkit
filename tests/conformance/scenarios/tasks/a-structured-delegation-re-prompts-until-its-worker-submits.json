@@ -5,7 +5,7 @@
   "rules": [
     "§23.3"
   ],
-  "notes": "Python: tests/tasks/test_structured_result.py::TestStructuredResultGuard::test_reprompts_until_worker_submits, test_returns_structured_payload_when_worker_submits; core/mixins/_child_execution.py _run_with_structured_result, _scan_for_submitted_result; orchestration/result.py SUBMIT_RESULT, normalize_result. The tool answers the call {\"status\": \"received\"}; the payload is read from the worker's served call in the child room's trace. A turn that ends without the call is answered with the result tool's reminder, a message of the child room the worker reads as the user's (orchestration/result.py SUBMIT_RESULT.reminder).",
+  "notes": "Python: tests/tasks/test_structured_result.py::TestStructuredResultGuard::test_reprompts_until_worker_submits, test_returns_structured_payload_when_worker_submits, TestAResultTheHooksBlockedIsNone::test_a_served_call_is_the_result; core/mixins/_child_execution.py _run_with_structured_result, _scan_for_submitted_result; orchestration/result.py SUBMIT_RESULT, normalize_result. The tool answers the call {\"status\": \"received\"}; the payload is read from the worker's served call in the child room's trace. A turn that ends without the call is answered with the result tool's reminder, a message of the child room the worker reads as the user's (orchestration/result.py SUBMIT_RESULT.reminder).",
   "setup": {
     "channels": [
       {

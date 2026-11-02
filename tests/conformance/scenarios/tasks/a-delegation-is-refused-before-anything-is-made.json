@@ -7,7 +7,7 @@
     "§23.3 step 8",
     "§17.2"
   ],
-  "notes": "Python: tests/tasks/test_integration.py::test_invalid_room_raises, test_invalid_agent_raises; core/mixins/delegation.py delegate, _check_hand_back. A hand_back of post needs a background task and an intelligence channel attached to the room as the notified one.",
+  "notes": "Python: tests/tasks/test_integration.py::test_invalid_room_raises, test_invalid_agent_raises; tests/tasks/test_delegation_brief_and_hand_back.py::test_post_is_refused_for_an_inline_task, test_post_is_refused_for_a_channel_that_is_no_agent_of_the_room; core/mixins/delegation.py delegate, _check_hand_back. A hand_back of post needs a background task and an intelligence channel attached to the room as the notified one. The notified one defaults to the agent itself, here no channel of the room.",
   "setup": {
     "channels": [
       {
@@ -122,6 +122,16 @@
       "task": "Look it up.",
       "hand_back": "post",
       "notify": "worker",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "delegate",
+      "room_id": "room-1",
+      "agent_id": "worker",
+      "task": "Look it up.",
+      "hand_back": "post",
       "expect": {
         "error": "invalid_argument"
       }

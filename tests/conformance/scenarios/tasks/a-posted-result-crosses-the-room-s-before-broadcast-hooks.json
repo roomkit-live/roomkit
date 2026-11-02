@@ -1,0 +1,133 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/a-posted-result-crosses-the-room-s-before-broadcast-hooks",
+  "title": "A background result posted as the notified agent's message crosses the room's BEFORE_BROADCAST hooks as that agent's response would: one that blocks it leaves its BLOCKED record in the room, delivered to no one",
+  "rules": [
+    "§23.3 step 8",
+    "§9.4"
+  ],
+  "notes": "Python: tests/tasks/test_delegation_brief_and_hand_back.py::test_a_posted_result_crosses_before_broadcast; tasks/posting.py post_result, send_posted (through the room's pipeline). The hook blocks what room-1 broadcasts, never the child room's events.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "Count."
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Found it."
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "main",
+        "type": "ai",
+        "category": "intelligence"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "main"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "refuse",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "room_id": "room-1"
+            },
+            "repeat": true,
+            "result": {
+              "action": "block",
+              "reason": "not here"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "room-1",
+      "agent_id": "worker",
+      "task": "Count.",
+      "notify": "main",
+      "hand_back": "post",
+      "as": "t"
+    },
+    {
+      "call": "task.wait",
+      "task_id": "$t",
+      "expect": {
+        "result": {
+          "status": "completed"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "type": "message",
+          "status": "blocked",
+          "blocked_by": "refuse",
+          "source": {
+            "channel_id": "main"
+          },
+          "content": {
+            "type": "text",
+            "body": "Result of the task “Count.”:\n\nFound it."
+          },
+          "metadata": {
+            "task_id": {
+              "$present": true
+            },
+            "task_status": "completed"
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "sms": []
+      }
+    },
+    "turns": {
+      "room-1": {
+        "main": []
+      }
+    }
+  }
+}

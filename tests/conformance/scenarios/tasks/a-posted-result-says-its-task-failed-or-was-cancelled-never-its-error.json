@@ -1,0 +1,210 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/a-posted-result-says-its-task-failed-or-was-cancelled-never-its-error",
+  "title": "A posted result says that its task failed, never its error, or that it was cancelled; a task that completed with nothing to say posts nothing",
+  "rules": [
+    "§23.3 step 8",
+    "§9.3"
+  ],
+  "notes": "Python: tests/tasks/test_delegation_brief_and_hand_back.py::test_a_failed_task_posts_that_it_failed_without_its_error, test_a_completed_task_with_nothing_to_say_posts_nothing, test_a_cancelled_task_posts_that_it_was_cancelled; tasks/posting.py posted_text (the output stripped: nothing left posts nothing). counter's turn is held at a gate while the host cancels its task.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "Look it up."
+            },
+            "fail": "Traceback: secret"
+          }
+        ]
+      },
+      {
+        "id": "quiet",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "Say nothing."
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "  "
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "counter",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "Count."
+            },
+            "gate": "counting",
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "late"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "main",
+        "type": "ai",
+        "category": "intelligence"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "main"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "room-1",
+      "agent_id": "worker",
+      "task": "Look it up.",
+      "notify": "main",
+      "hand_back": "post",
+      "as": "failing"
+    },
+    {
+      "call": "task.wait",
+      "task_id": "$failing",
+      "expect": {
+        "result": {
+          "status": "failed"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "delegate",
+      "room_id": "room-1",
+      "agent_id": "quiet",
+      "task": "Say nothing.",
+      "notify": "main",
+      "hand_back": "post",
+      "as": "silent"
+    },
+    {
+      "call": "task.wait",
+      "task_id": "$silent",
+      "expect": {
+        "result": {
+          "status": "completed"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "delegate",
+      "room_id": "room-1",
+      "agent_id": "counter",
+      "task": "Count.",
+      "notify": "main",
+      "hand_back": "post",
+      "as": "counted"
+    },
+    {
+      "wait_for": "counting"
+    },
+    {
+      "call": "cancel_task",
+      "task_id": "$counted",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "call": "task.wait",
+      "task_id": "$counted",
+      "expect": {
+        "result": {
+          "status": "cancelled"
+        }
+      }
+    },
+    {
+      "open": "counting"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "source": {
+            "channel_id": "main"
+          },
+          "addressed_to": [],
+          "content": {
+            "type": "text",
+            "body": "The task “Look it up.” failed."
+          },
+          "metadata": {
+            "task_status": "failed",
+            "agent_id": "worker"
+          }
+        },
+        {
+          "index": 1,
+          "source": {
+            "channel_id": "main"
+          },
+          "addressed_to": [],
+          "content": {
+            "type": "text",
+            "body": "The task “Count.” was cancelled."
+          },
+          "metadata": {
+            "task_status": "cancelled",
+            "agent_id": "counter"
+          }
+        }
+      ]
+    },
+    "turns": {
+      "room-1": {
+        "main": []
+      }
+    }
+  }
+}
