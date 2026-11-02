@@ -54,6 +54,7 @@ CHANNEL = {
     "tools",
     "tool_policy",
     "max_tool_rounds",
+    "max_context_events",
     "addresses",
     "streams_in",
     "recent_events_window",

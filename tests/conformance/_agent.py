@@ -70,7 +70,9 @@ class ScriptedModel(AIProvider):
             yield event
 
     def _next_round(self, context: AIContext) -> Mapping[str, Any]:
-        self.requests.append({"tool_results": tool_results(context)})
+        self.requests.append(
+            {"messages": messages(context), "tool_results": tool_results(context)}
+        )
         position = len(self.requests) - 1
         if position >= len(self._rounds):
             raise ModelPastItsScriptError(f"generation {position + 1} is past the script")
@@ -101,6 +103,20 @@ def _response(round_: Mapping[str, Any]) -> AIResponse:
         usage=dict(round_.get("usage", {})),
         tool_calls=calls,
     )
+
+
+def messages(context: AIContext) -> list[dict[str, Any]]:
+    """The messages a request carries, in order: each one's role and its text
+    parts joined, empty for a message that has none."""
+    return [
+        {"role": message.role, "text": _text_of(message.content)} for message in context.messages
+    ]
+
+
+def _text_of(content: Any) -> str:
+    if isinstance(content, str):
+        return content
+    return "".join(part.text for part in content if getattr(part, "type", None) == "text")
 
 
 def tool_results(context: AIContext) -> list[dict[str, Any]]:
@@ -165,6 +181,8 @@ def scripted_agent(spec: Mapping[str, Any]) -> tuple[AIChannel, ScriptedModel]:
         )
     if "max_tool_rounds" in spec:
         kwargs["max_tool_rounds"] = spec["max_tool_rounds"]
+    if "max_context_events" in spec:
+        kwargs["max_context_events"] = spec["max_context_events"]
     channel = AIChannel(
         spec["id"],
         provider=model,
