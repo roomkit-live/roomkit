@@ -1,0 +1,163 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "memory/the-window-holds-the-turn-s-event",
+  "title": "The default memory, a sliding window of max_context_events, reads that many of the room's latest events with the turn's own among them: the turn reads one fewer before its input",
+  "rules": [
+    "§20.3",
+    "§20.1",
+    "§6.4"
+  ],
+  "notes": "Python's SlidingWindowMemory(max_events=max_context_events) slices the context's last max_events events, the turn's event the newest, then leaves the turn's event out: the channel places it as the input (RFC §20.1).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "One."
+            },
+            {
+              "text": "Two."
+            },
+            {
+              "text": "Three."
+            }
+          ]
+        },
+        "max_context_events": 3
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "First?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Second?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Third?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "First?"
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "First?"
+            },
+            {
+              "role": "assistant",
+              "text": "One."
+            },
+            {
+              "role": "user",
+              "text": "Second?"
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Second?"
+            },
+            {
+              "role": "assistant",
+              "text": "Two."
+            },
+            {
+              "role": "user",
+              "text": "Third?"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
