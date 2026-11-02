@@ -1,0 +1,116 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-refused-install-takes-back-what-it-added",
+  "title": "An install its strategy refuses takes back what it added, the agents it attached, its room hook and its metadata, and leaves the room holding none",
+  "rules": [
+    "§19.7",
+    "§9.1"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "phone",
+        "type": "voice"
+      },
+      {
+        "id": "a",
+        "type": "ai"
+      },
+      {
+        "id": "b",
+        "type": "ai"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "phone"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "picky",
+        "agents": [
+          "a",
+          "b"
+        ],
+        "install": {
+          "do": [
+            {
+              "call": "add_room_hook",
+              "room_id": "$room",
+              "hook": {
+                "name": "picky_tag",
+                "trigger": "before_broadcast"
+              }
+            },
+            {
+              "call": "update_room_metadata",
+              "room_id": "$room",
+              "metadata": {
+                "picky": 1
+              }
+            }
+          ],
+          "refuse": "a voice or realtime channel is bound"
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "picky",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "room_strategy",
+      "room_id": "r1",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "phone",
+        "sender_id": "+15550001111",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "r1": {
+        "phone": {
+          "$present": true
+        },
+        "a": null,
+        "b": null
+      }
+    },
+    "hooks": {
+      "picky_tag": []
+    },
+    "rooms": {
+      "r1": {
+        "metadata": {
+          "picky": {
+            "$absent": true
+          }
+        }
+      }
+    }
+  }
+}

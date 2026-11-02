@@ -1,0 +1,49 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-room-created-with-a-strategy-is-announced-once-it-is-installed",
+  "title": "A room created with a strategy runs its ON_ROOM_CREATED hooks once the strategy is installed: a room hook the install added is among them",
+  "rules": [
+    "§19.7",
+    "§9.1"
+  ],
+  "notes": "create_room(orchestration=...) installs through install_strategy's path before the room's creation is announced, so what the install set up (its agents, its room hooks) is in place when the ON_ROOM_CREATED hooks run.",
+  "setup": {
+    "strategies": [
+      {
+        "id": "greeter",
+        "install": {
+          "do": [
+            {
+              "call": "add_room_hook",
+              "room_id": "$room",
+              "hook": {
+                "name": "greeter",
+                "trigger": "on_room_created",
+                "execution": "async"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "create_room",
+      "room": {
+        "id": "r1"
+      },
+      "orchestration": "greeter"
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "greeter": [
+        {
+          "trigger": "on_room_created",
+          "room_id": "r1"
+        }
+      ]
+    }
+  }
+}

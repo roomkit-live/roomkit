@@ -1,0 +1,64 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/the-kit-s-default-strategy-unless-the-room-names-another-or-none",
+  "title": "A kit built with a strategy installs it in each room it creates, unless the creation names another strategy, or none",
+  "rules": [
+    "§19.7"
+  ],
+  "setup": {
+    "kit": {
+      "orchestration": "default"
+    },
+    "strategies": [
+      {
+        "id": "default"
+      },
+      {
+        "id": "other"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "create_room",
+      "room": {
+        "id": "r1"
+      }
+    },
+    {
+      "call": "create_room",
+      "room": {
+        "id": "r2"
+      },
+      "orchestration": "other"
+    },
+    {
+      "call": "create_room",
+      "room": {
+        "id": "r3"
+      },
+      "orchestration": null
+    },
+    {
+      "call": "room_strategy",
+      "room_id": "r1",
+      "expect": {
+        "result": "default"
+      }
+    },
+    {
+      "call": "room_strategy",
+      "room_id": "r2",
+      "expect": {
+        "result": "other"
+      }
+    },
+    {
+      "call": "room_strategy",
+      "room_id": "r3",
+      "expect": {
+        "result": null
+      }
+    }
+  ]
+}

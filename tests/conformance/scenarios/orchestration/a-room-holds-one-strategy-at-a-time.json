@@ -1,0 +1,114 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-room-holds-one-strategy-at-a-time",
+  "title": "A room holds one strategy: another, or the same one again, is refused until uninstall_strategy; a claim for its own strategy holds",
+  "rules": [
+    "§19.7"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "first"
+      },
+      {
+        "id": "second"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "first"
+    },
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "second",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "first",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "claim_room_strategy",
+      "room_id": "r1",
+      "strategy": "second",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "claim_room_strategy",
+      "room_id": "r1",
+      "strategy": "first",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "room_strategy",
+      "room_id": "r1",
+      "expect": {
+        "result": "first"
+      }
+    },
+    {
+      "call": "uninstall_strategy",
+      "room_id": "r1",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "call": "claim_room_strategy",
+      "room_id": "r1",
+      "strategy": "second",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "room_strategy",
+      "room_id": "r1",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "second"
+    },
+    {
+      "call": "room_strategy",
+      "room_id": "r1",
+      "expect": {
+        "result": "second"
+      }
+    }
+  ]
+}

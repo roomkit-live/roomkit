@@ -1,0 +1,86 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/an-agent-bound-before-the-install-stays-bound",
+  "title": "An install attaches its agents as intelligence channels; its uninstall detaches those it attached, never one the room bound before",
+  "rules": [
+    "§19.7"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket"
+      },
+      {
+        "id": "assistant",
+        "type": "ai"
+      },
+      {
+        "id": "helper",
+        "type": "ai"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          },
+          {
+            "channel_id": "assistant",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "team",
+        "agents": [
+          "assistant",
+          "helper"
+        ],
+        "install": {
+          "do": [
+            {
+              "call": "store.binding_exists",
+              "room_id": "$room",
+              "channel_id": "helper",
+              "expect": {
+                "result": true
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "team"
+    },
+    {
+      "call": "uninstall_strategy",
+      "room_id": "r1",
+      "expect": {
+        "result": true
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "r1": {
+        "ops": {
+          "$present": true
+        },
+        "assistant": {
+          "category": "intelligence"
+        },
+        "helper": null
+      }
+    }
+  }
+}

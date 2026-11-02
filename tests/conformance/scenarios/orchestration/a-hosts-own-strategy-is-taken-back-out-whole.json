@@ -1,0 +1,140 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-hosts-own-strategy-is-taken-back-out-whole",
+  "title": "A host's own strategy is taken back out whole: the room hook and the room metadata its install added go with it",
+  "rules": [
+    "§19.7",
+    "§9.1"
+  ],
+  "notes": "What an install adds is recorded from the room before and after it, so a strategy that undoes nothing itself is taken back out all the same.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "custom",
+        "install": {
+          "do": [
+            {
+              "call": "add_room_hook",
+              "room_id": "$room",
+              "hook": {
+                "name": "custom_tag",
+                "trigger": "before_broadcast"
+              }
+            },
+            {
+              "call": "update_room_metadata",
+              "room_id": "$room",
+              "metadata": {
+                "custom_state": {
+                  "on": true
+                }
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "custom",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "room_strategy",
+      "room_id": "r1",
+      "expect": {
+        "result": "custom"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "+15550001111",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      }
+    },
+    {
+      "call": "uninstall_strategy",
+      "room_id": "r1",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "+15550001111",
+        "content": {
+          "type": "text",
+          "body": "again"
+        }
+      }
+    },
+    {
+      "call": "room_strategy",
+      "room_id": "r1",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "uninstall_strategy",
+      "room_id": "r1",
+      "expect": {
+        "result": false
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "custom_tag": [
+        {
+          "trigger": "before_broadcast",
+          "room_id": "r1",
+          "event": {
+            "content": {
+              "body": "hello"
+            }
+          }
+        }
+      ]
+    },
+    "rooms": {
+      "r1": {
+        "metadata": {
+          "custom_state": {
+            "$absent": true
+          }
+        }
+      }
+    }
+  }
+}

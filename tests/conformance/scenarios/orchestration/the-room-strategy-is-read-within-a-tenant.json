@@ -1,0 +1,90 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/the-room-strategy-is-read-within-a-tenant",
+  "title": "A room's strategy is read, installed, claimed and uninstalled within the organization the call acts for: another's room is not found",
+  "rules": [
+    "§19.7",
+    "§17.2"
+  ],
+  "setup": {
+    "rooms": [
+      {
+        "id": "r1",
+        "organization_id": "acme"
+      }
+    ],
+    "strategies": [
+      {
+        "id": "s"
+      },
+      {
+        "id": "t"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "s",
+      "organization_id": "acme"
+    },
+    {
+      "call": "room_strategy",
+      "room_id": "r1",
+      "organization_id": "acme",
+      "expect": {
+        "result": "s"
+      }
+    },
+    {
+      "call": "room_strategy",
+      "room_id": "r1",
+      "organization_id": "other",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "uninstall_strategy",
+      "room_id": "r1",
+      "organization_id": "other",
+      "expect": {
+        "error": "room_not_found"
+      }
+    },
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "t",
+      "organization_id": "other",
+      "expect": {
+        "error": "room_not_found"
+      }
+    },
+    {
+      "call": "claim_room_strategy",
+      "room_id": "r1",
+      "strategy": "t",
+      "organization_id": "other",
+      "expect": {
+        "error": "room_not_found"
+      }
+    },
+    {
+      "call": "room_strategy",
+      "room_id": "r1",
+      "expect": {
+        "result": "s"
+      }
+    },
+    {
+      "call": "uninstall_strategy",
+      "room_id": "r1",
+      "organization_id": "acme",
+      "expect": {
+        "result": true
+      }
+    }
+  ]
+}

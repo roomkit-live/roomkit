@@ -1,0 +1,87 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/create-room-installs-through-the-same-path",
+  "title": "A room created with a strategy installs it as install_strategy does: its agents attached before its install runs, and taken back by uninstall_strategy",
+  "rules": [
+    "§19.7"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "sales",
+        "type": "ai"
+      },
+      {
+        "id": "billing",
+        "type": "ai"
+      }
+    ],
+    "strategies": [
+      {
+        "id": "swarm",
+        "agents": [
+          "sales",
+          "billing"
+        ],
+        "install": {
+          "do": [
+            {
+              "call": "store.binding_exists",
+              "room_id": "$room",
+              "channel_id": "sales",
+              "expect": {
+                "result": true
+              }
+            },
+            {
+              "call": "store.binding_exists",
+              "room_id": "$room",
+              "channel_id": "billing",
+              "expect": {
+                "result": true
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "create_room",
+      "room": {
+        "id": "r1"
+      },
+      "orchestration": "swarm"
+    },
+    {
+      "call": "room_strategy",
+      "room_id": "r1",
+      "expect": {
+        "result": "swarm"
+      }
+    },
+    {
+      "call": "uninstall_strategy",
+      "room_id": "r1",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "call": "room_strategy",
+      "room_id": "r1",
+      "expect": {
+        "result": null
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "r1": {
+        "sales": null,
+        "billing": null
+      }
+    }
+  }
+}

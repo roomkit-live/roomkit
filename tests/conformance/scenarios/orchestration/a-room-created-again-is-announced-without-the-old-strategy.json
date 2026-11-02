@@ -1,0 +1,58 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-room-created-again-is-announced-without-the-old-strategy",
+  "title": "A room id created again after its room was deleted is announced without the old room's strategy: none of its room hooks runs for the new room",
+  "rules": [
+    "§19.7",
+    "§9.1"
+  ],
+  "setup": {
+    "strategies": [
+      {
+        "id": "greeter",
+        "install": {
+          "do": [
+            {
+              "call": "add_room_hook",
+              "room_id": "$room",
+              "hook": {
+                "name": "greeter",
+                "trigger": "on_room_created",
+                "execution": "async"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "create_room",
+      "room": {
+        "id": "r1"
+      }
+    },
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "greeter"
+    },
+    {
+      "call": "store.delete_room",
+      "room_id": "r1"
+    },
+    {
+      "call": "create_room",
+      "room": {
+        "id": "r1"
+      },
+      "orchestration": null
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "greeter": []
+    }
+  }
+}

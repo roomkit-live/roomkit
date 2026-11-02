@@ -1,0 +1,103 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-room-created-again-without-a-strategy-keeps-none-of-the-old",
+  "title": "A room id created again with no strategy keeps nothing of the strategy its old room held: no strategy, no room hook",
+  "rules": [
+    "§19.7",
+    "§9.1"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket"
+      }
+    ],
+    "strategies": [
+      {
+        "id": "tagger",
+        "install": {
+          "do": [
+            {
+              "call": "add_room_hook",
+              "room_id": "$room",
+              "hook": {
+                "name": "custom_tag",
+                "trigger": "before_broadcast"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "id": "tagger_again",
+        "install": {
+          "do": [
+            {
+              "call": "add_room_hook",
+              "room_id": "$room",
+              "hook": {
+                "name": "custom_tag",
+                "trigger": "before_broadcast"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "create_room",
+      "room": {
+        "id": "r1"
+      },
+      "orchestration": "tagger"
+    },
+    {
+      "call": "store.delete_room",
+      "room_id": "r1"
+    },
+    {
+      "call": "create_room",
+      "room": {
+        "id": "r1"
+      },
+      "orchestration": null
+    },
+    {
+      "call": "room_strategy",
+      "room_id": "r1",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "r1",
+      "channel_id": "ops"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "+15550001111",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      }
+    },
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "tagger_again"
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "custom_tag": []
+    }
+  }
+}

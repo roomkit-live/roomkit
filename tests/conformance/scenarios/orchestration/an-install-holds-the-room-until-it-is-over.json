@@ -1,0 +1,94 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/an-install-holds-the-room-until-it-is-over",
+  "title": "An install holds the room's lock while it runs: a channel attached meanwhile waits for its end, is no part of it, and stays bound after the uninstall",
+  "rules": [
+    "§19.7",
+    "§13.5"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket"
+      },
+      {
+        "id": "sales",
+        "type": "ai"
+      },
+      {
+        "id": "crm",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "slow",
+        "agents": [
+          "sales"
+        ],
+        "install": {
+          "gate": "installing"
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "slow",
+      "background": true,
+      "as": "install"
+    },
+    {
+      "wait_for": "installing"
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "r1",
+      "channel_id": "crm",
+      "background": true,
+      "as": "attach"
+    },
+    {
+      "wait_for_lock": "r1"
+    },
+    {
+      "open": "installing"
+    },
+    {
+      "await": "install"
+    },
+    {
+      "await": "attach"
+    },
+    {
+      "call": "uninstall_strategy",
+      "room_id": "r1",
+      "expect": {
+        "result": true
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "r1": {
+        "crm": {
+          "$present": true
+        },
+        "sales": null
+      }
+    }
+  }
+}
