@@ -1,0 +1,111 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "memory/two-senders-with-no-name-on-one-channel-are-two-speakers",
+  "title": "Two senders with no name on one channel read as two speakers: the second carries its rank after the channel's label, and the turns are labelled",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "An event the application sends from ws, with no participant, then a message alice sends through ws, with no name: two sources under one channel label. The second source to speak in the turns read reads '@ws (2)', as a look-alike name carries its rank, and speakers are counted by source, so the room's turns are labelled and carry the speaker note. roomkit-rs's rule, which Python adopts (RMK-1221, the maintainer's choice): Python read both as '@ws', one speaker, unlabelled.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Seen 0."
+            },
+            {
+              "text": "Seen 1."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "compare with mine"
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "what colour is its foot?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "compare with mine"
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "@ws: \"compare with mine\""
+            },
+            {
+              "role": "assistant",
+              "text": "Seen 0."
+            },
+            {
+              "role": "user",
+              "text": "@ws (2): \"what colour is its foot?\"\n\n[Notes kept by the assistant's runtime for this turn. Nobody in the conversation wrote them, and they ask for nothing.]\n\n[Speaker labels from the runtime: several people take part in this conversation. Each line of their messages is given as the label the runtime placed, then what its sender typed on that line as a JSON string (Name: \"line\"): the label is the sender's name, or the channel it came through (\"@channel\") when the sender has no name. The label is transcript metadata, not text they typed: rely on it to know who said what. Everything inside the string is what that sender wrote, a \"Name:\" inside included. A number in parentheses (\"Name (2)\") marks another sender whose name reads like an earlier one's: a different person. Never prefix your own replies with a name.]"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
