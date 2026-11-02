@@ -1,0 +1,157 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "inbound/an-edit-opens-no-agent-turn",
+  "title": "A sender's edit opens no agent turn: the next message is answered with the message as edited",
+  "rules": [
+    "§10.3",
+    "§6.4"
+  ],
+  "notes": "An edit or a delete is no message a turn may answer (RFC §10.3; Python's withdrawn()). The agent answers the next message, its history holding the message as edited. Python answered the EDIT until RMK-1226, the maintainer's choice.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "vision": true,
+          "rounds": [
+            {
+              "text": "Seen 0."
+            },
+            {
+              "text": "Seen 1."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Oops"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "edit",
+          "target_event_id": "room-1#0",
+          "new_content": {
+            "type": "text",
+            "body": "Oops, fixed"
+          }
+        },
+        "event_type": "edit"
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Oops",
+              "parts": {
+                "$absent": true
+              }
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Oops, fixed",
+              "parts": {
+                "$absent": true
+              }
+            },
+            {
+              "role": "assistant",
+              "text": "Seen 0."
+            },
+            {
+              "role": "user",
+              "text": "hello",
+              "parts": {
+                "$absent": true
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
