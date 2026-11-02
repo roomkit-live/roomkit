@@ -1,0 +1,187 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "verification/a-hook-reads-whose-verification-to-ask-for",
+  "title": "A hook on ON_VERIFICATION_REQUIRED reads the sender's verification, its identity and whether a request is open, on the sender's first message too, before they are a participant, and opens a request once",
+  "rules": [
+    "§10.1 step 5b",
+    "§11.7.3",
+    "§11.7.2"
+  ],
+  "notes": "Python: src/roomkit/core/mixins/verification.py (_apply_verification), src/roomkit/core/mixins/inbound.py (sender_verification); tests/test_verification_inbound.py::test_a_hook_reads_whose_verification_to_ask_for (RMK-1172). The hook opens a request on the first message only, as a hook that opens one when none is open does.",
+  "setup": {
+    "kit": {
+      "identity_resolver": {
+        "answers": [
+          {
+            "repeat": true,
+            "result": {
+              "status": "identified",
+              "identity": {
+                "id": "alice-id"
+              }
+            }
+          }
+        ]
+      },
+      "verification_policy": {}
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      },
+      {
+        "id": "ai",
+        "type": "ai"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "ask",
+        "trigger": "on_verification_required",
+        "reactions": [
+          {
+            "do": [
+              {
+                "call": "sender_verification",
+                "as": "first",
+                "expect": {
+                  "result": {
+                    "identity_id": "alice-id",
+                    "status": "unverified",
+                    "request_id": null
+                  }
+                }
+              },
+              {
+                "call": "request_verification",
+                "identity_id": "alice-id",
+                "room_id": "$room",
+                "channel_id": "sms"
+              }
+            ]
+          },
+          {
+            "do": [
+              {
+                "call": "sender_verification",
+                "as": "second",
+                "expect": {
+                  "result": {
+                    "identity_id": "alice-id",
+                    "status": "pending",
+                    "request_id": {
+                      "$present": true
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Did my transfer go through?"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Hello?"
+        }
+      }
+    },
+    {
+      "call": "verification_of",
+      "identity_id": "alice-id",
+      "expect": {
+        "result": {
+          "status": "pending",
+          "request_id": {
+            "$present": true
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "content": {
+            "body": "Did my transfer go through?"
+          },
+          "visibility": "transport",
+          "source": {
+            "channel_id": "sms",
+            "participant_id": "alice-id",
+            "verification": "unverified"
+          },
+          "metadata": {
+            "roomkit:verification_held": {
+              "visibility": "all",
+              "identity_id": "alice-id",
+              "organization_id": null
+            }
+          }
+        },
+        {
+          "index": 1,
+          "content": {
+            "body": "Hello?"
+          },
+          "visibility": "transport",
+          "source": {
+            "channel_id": "sms",
+            "participant_id": "alice-id",
+            "verification": "pending"
+          },
+          "metadata": {
+            "roomkit:verification_held": {
+              "visibility": "all",
+              "identity_id": "alice-id",
+              "organization_id": null
+            }
+          }
+        }
+      ]
+    }
+  }
+}

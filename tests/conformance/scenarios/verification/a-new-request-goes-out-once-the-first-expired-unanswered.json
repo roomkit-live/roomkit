@@ -1,0 +1,173 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "verification/a-new-request-goes-out-once-the-first-expired-unanswered",
+  "title": "A request left unanswered past its expiry is not open: the sender's next message reads none open, and the hook opens a new one",
+  "rules": [
+    "§10.1 step 5b",
+    "§11.7.3",
+    "§11.7.5"
+  ],
+  "notes": "Python: src/roomkit/core/mixins/verification.py (_apply_verification), src/roomkit/core/mixins/inbound.py; tests/test_verification_inbound.py::test_a_new_link_goes_out_once_the_first_expired_unanswered (RMK-1172). The ended hook holds at its gate until the step opens it: the first request's timer ran by then. The first request is a code, short-lived, the second a link, which lives on past the run.",
+  "setup": {
+    "kit": {
+      "identity_resolver": {
+        "answers": [
+          {
+            "repeat": true,
+            "result": {
+              "status": "identified",
+              "identity": {
+                "id": "alice-id"
+              }
+            }
+          }
+        ]
+      },
+      "verification_policy": {
+        "code_request_ttl_ms": 30
+      }
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      },
+      {
+        "id": "ai",
+        "type": "ai"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "required",
+        "trigger": "on_verification_required",
+        "reactions": [
+          {
+            "do": [
+              {
+                "call": "request_verification",
+                "identity_id": "alice-id",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "method": "code"
+              }
+            ]
+          },
+          {
+            "do": [
+              {
+                "call": "sender_verification",
+                "as": "state",
+                "expect": {
+                  "result": {
+                    "status": "unverified",
+                    "request_id": null
+                  }
+                }
+              },
+              {
+                "call": "request_verification",
+                "identity_id": "alice-id",
+                "room_id": "$room",
+                "channel_id": "sms"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "ended",
+        "trigger": "on_verification_ended",
+        "execution": "async",
+        "reactions": [
+          {
+            "gate": "ended"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      }
+    },
+    {
+      "wait_for": "ended"
+    },
+    {
+      "open": "ended"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "still there?"
+        }
+      }
+    },
+    {
+      "call": "verification_of",
+      "identity_id": "alice-id",
+      "expect": {
+        "result": {
+          "status": "pending",
+          "request_id": {
+            "$present": true
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "ended": [
+        {
+          "trigger": "on_verification_ended",
+          "room_id": "room-1",
+          "event": {
+            "content": {
+              "data": {
+                "identity_id": "alice-id",
+                "reason": "expired",
+                "ended": "request"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

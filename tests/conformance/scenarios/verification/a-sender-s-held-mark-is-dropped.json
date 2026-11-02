@@ -1,0 +1,81 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "verification/a-sender-s-held-mark-is-dropped",
+  "title": "A message that carries the runtime's held mark of its own is stored without it: the mark is the pipeline's alone",
+  "rules": [
+    "§11.7.3",
+    "§10.1 step 4"
+  ],
+  "notes": "Python: src/roomkit/core/mixins/verification.py (_apply_verification), src/roomkit/core/mixins/inbound.py (_RUNTIME_KEYS, _without_runtime_keys); the release that a copied mark would otherwise trigger is lot 4's (RMK-1172, RMK-1173).",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      },
+      {
+        "id": "ai",
+        "type": "ai"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        },
+        "metadata": {
+          "roomkit:verification_held": {
+            "visibility": "all",
+            "identity_id": "alice-id",
+            "organization_id": null
+          },
+          "kept": "yes"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "content": {
+            "body": "hello"
+          },
+          "visibility": "all",
+          "metadata": {
+            "roomkit:verification_held": null,
+            "kept": "yes"
+          }
+        }
+      ]
+    }
+  }
+}

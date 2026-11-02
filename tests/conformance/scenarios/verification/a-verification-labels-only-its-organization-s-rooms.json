@@ -1,0 +1,168 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "verification/a-verification-labels-only-its-organization-s-rooms",
+  "title": "A sender verified by one organization writes to another organization's room: the message is labelled by that room's organization, unverified there, and held",
+  "rules": [
+    "§10.1 step 5b",
+    "§11.7.3",
+    "§11.7.7",
+    "§17.2"
+  ],
+  "notes": "Python: src/roomkit/core/mixins/verification.py (_apply_verification), src/roomkit/core/mixins/inbound.py (_sender_identity); tests/test_verification_inbound.py::test_a_verification_in_one_organization_does_not_label_another (RMK-1172). The resolver's identity names organization A in both rooms: the room's organization decides.",
+  "setup": {
+    "kit": {
+      "identity_resolver": {
+        "answers": [
+          {
+            "repeat": true,
+            "result": {
+              "status": "identified",
+              "identity": {
+                "id": "alice-id",
+                "organization_id": "org-a"
+              }
+            }
+          }
+        ]
+      },
+      "verification_policy": {}
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ai",
+        "type": "ai"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-a",
+        "organization_id": "org-a",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      },
+      {
+        "id": "room-b",
+        "organization_id": "org-b",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-a",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      },
+      "organization_id": "org-a"
+    },
+    {
+      "call": "request_verification",
+      "identity_id": "alice-id",
+      "room_id": "room-a",
+      "channel_id": "sms",
+      "organization_id": "org-a",
+      "as": "req"
+    },
+    {
+      "call": "complete_verification",
+      "request_id": "$req",
+      "secret": "$req.secret",
+      "organization_id": "org-a",
+      "expect": {
+        "result": {
+          "status": "verified",
+          "organization_id": "org-a"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-b",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "What's my balance?"
+        }
+      },
+      "organization_id": "org-b",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "content": {
+              "body": "What's my balance?"
+            },
+            "visibility": "transport",
+            "source": {
+              "channel_id": "sms",
+              "participant_id": "alice-id",
+              "verification": "unverified"
+            },
+            "metadata": {
+              "roomkit:verification_held": {
+                "visibility": "all",
+                "identity_id": "alice-id",
+                "organization_id": "org-b"
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-b": [
+        {
+          "index": 0,
+          "content": {
+            "body": "What's my balance?"
+          },
+          "visibility": "transport",
+          "source": {
+            "channel_id": "sms",
+            "participant_id": "alice-id",
+            "verification": "unverified"
+          },
+          "metadata": {
+            "roomkit:verification_held": {
+              "visibility": "all",
+              "identity_id": "alice-id",
+              "organization_id": "org-b"
+            }
+          }
+        }
+      ]
+    },
+    "turns": {
+      "room-b": {
+        "ai": []
+      }
+    }
+  }
+}

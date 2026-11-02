@@ -1,0 +1,144 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "verification/a-policy-that-does-not-hold-only-labels",
+  "title": "A policy with hold_unverified false labels an unverified sender's message and fires ON_VERIFICATION_REQUIRED, but holds nothing: the message reaches the agent",
+  "rules": [
+    "§10.1 step 5b",
+    "§11.7.3"
+  ],
+  "notes": "Python: src/roomkit/core/mixins/verification.py (_apply_verification), src/roomkit/core/mixins/inbound.py; tests/test_verification_inbound.py::test_a_policy_that_does_not_hold_only_labels (RMK-1172).",
+  "setup": {
+    "kit": {
+      "identity_resolver": {
+        "answers": [
+          {
+            "repeat": true,
+            "result": {
+              "status": "identified",
+              "identity": {
+                "id": "alice-id"
+              }
+            }
+          }
+        ]
+      },
+      "verification_policy": {
+        "hold_unverified": false
+      }
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      },
+      {
+        "id": "ai",
+        "type": "ai"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "required",
+        "trigger": "on_verification_required"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Did my transfer go through?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "content": {
+              "body": "Did my transfer go through?"
+            },
+            "visibility": "all",
+            "source": {
+              "channel_id": "sms",
+              "participant_id": "alice-id",
+              "verification": "unverified"
+            },
+            "metadata": {
+              "roomkit:verification_held": null
+            }
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "content": {
+            "body": "Did my transfer go through?"
+          },
+          "visibility": "all",
+          "source": {
+            "channel_id": "sms",
+            "participant_id": "alice-id",
+            "verification": "unverified"
+          },
+          "metadata": {
+            "roomkit:verification_held": null
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "required": [
+        {
+          "trigger": "on_verification_required",
+          "room_id": "room-1",
+          "event": {
+            "content": {
+              "body": "Did my transfer go through?"
+            }
+          }
+        }
+      ]
+    },
+    "turns": {
+      "room-1": {
+        "ai": [
+          {
+            "content": {
+              "body": "Did my transfer go through?"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

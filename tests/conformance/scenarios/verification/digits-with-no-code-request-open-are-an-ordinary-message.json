@@ -1,0 +1,121 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "verification/digits-with-no-code-request-open-are-an-ordinary-message",
+  "title": "A text of digits from a sender with no code request open is an ordinary message: stored, labelled, and held as any unverified sender's",
+  "rules": [
+    "§10.1 step 5b",
+    "§11.7.4",
+    "§11.7.3"
+  ],
+  "notes": "Python: src/roomkit/core/mixins/verification.py (_apply_verification), src/roomkit/core/mixins/inbound.py; tests/test_verification_inbound.py::test_digits_with_no_code_request_open_are_an_ordinary_message (RMK-1172).",
+  "setup": {
+    "kit": {
+      "identity_resolver": {
+        "answers": [
+          {
+            "repeat": true,
+            "result": {
+              "status": "identified",
+              "identity": {
+                "id": "alice-id"
+              }
+            }
+          }
+        ]
+      },
+      "verification_policy": {}
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      },
+      {
+        "id": "ai",
+        "type": "ai"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "123456"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "content": {
+              "body": "123456"
+            },
+            "visibility": "transport",
+            "source": {
+              "channel_id": "sms",
+              "participant_id": "alice-id",
+              "verification": "unverified"
+            },
+            "metadata": {
+              "roomkit:verification_held": {
+                "visibility": "all",
+                "identity_id": "alice-id",
+                "organization_id": null
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "content": {
+            "body": "123456"
+          },
+          "visibility": "transport",
+          "source": {
+            "channel_id": "sms",
+            "participant_id": "alice-id",
+            "verification": "unverified"
+          },
+          "metadata": {
+            "roomkit:verification_held": {
+              "visibility": "all",
+              "identity_id": "alice-id",
+              "organization_id": null
+            }
+          }
+        }
+      ]
+    }
+  }
+}

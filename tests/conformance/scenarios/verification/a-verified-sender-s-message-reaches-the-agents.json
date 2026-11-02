@@ -1,0 +1,194 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "verification/a-verified-sender-s-message-reaches-the-agents",
+  "title": "Once the identity is verified, its message is labelled verified, fires no ON_VERIFICATION_REQUIRED, and reaches the agent as sent",
+  "rules": [
+    "§10.1 step 5b",
+    "§11.7.3",
+    "§11.7.2"
+  ],
+  "notes": "Python: src/roomkit/core/mixins/verification.py (_apply_verification), src/roomkit/core/mixins/inbound.py; tests/test_verification_inbound.py::test_a_verified_sender_reaches_the_agent (RMK-1172). The first message, held, was received before the request: its completion releases nothing (§11.7.6).",
+  "setup": {
+    "kit": {
+      "identity_resolver": {
+        "answers": [
+          {
+            "repeat": true,
+            "result": {
+              "status": "identified",
+              "identity": {
+                "id": "alice-id"
+              }
+            }
+          }
+        ]
+      },
+      "verification_policy": {}
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      },
+      {
+        "id": "ai",
+        "type": "ai"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "required",
+        "trigger": "on_verification_required"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      }
+    },
+    {
+      "call": "request_verification",
+      "identity_id": "alice-id",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "as": "req"
+    },
+    {
+      "call": "complete_verification",
+      "request_id": "$req",
+      "secret": "$req.secret",
+      "expect": {
+        "result": {
+          "status": "verified"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Did my transfer go through?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "content": {
+              "body": "Did my transfer go through?"
+            },
+            "visibility": "all",
+            "source": {
+              "channel_id": "sms",
+              "participant_id": "alice-id",
+              "verification": "verified"
+            },
+            "metadata": {
+              "roomkit:verification_held": null
+            }
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "content": {
+            "body": "hello"
+          },
+          "visibility": "transport",
+          "source": {
+            "channel_id": "sms",
+            "participant_id": "alice-id",
+            "verification": "unverified"
+          },
+          "metadata": {
+            "roomkit:verification_held": {
+              "visibility": "all",
+              "identity_id": "alice-id",
+              "organization_id": null
+            }
+          }
+        },
+        {
+          "index": 1,
+          "content": {
+            "body": "Did my transfer go through?"
+          },
+          "visibility": "all",
+          "source": {
+            "channel_id": "sms",
+            "participant_id": "alice-id",
+            "verification": "verified"
+          },
+          "metadata": {
+            "roomkit:verification_held": null
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "required": [
+        {
+          "trigger": "on_verification_required",
+          "room_id": "room-1",
+          "event": {
+            "content": {
+              "body": "hello"
+            }
+          }
+        }
+      ]
+    },
+    "turns": {
+      "room-1": {
+        "ai": [
+          {
+            "content": {
+              "body": "Did my transfer go through?"
+            },
+            "source": {
+              "verification": "verified"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

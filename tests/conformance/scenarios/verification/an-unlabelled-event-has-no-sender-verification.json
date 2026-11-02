@@ -1,0 +1,101 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "verification/an-unlabelled-event-has-no-sender-verification",
+  "title": "The sender's verification of an event the pipeline did not label, the kit having no verification policy, is none",
+  "rules": [
+    "§11.7.3"
+  ],
+  "notes": "Python: src/roomkit/core/mixins/verification.py (_apply_verification), src/roomkit/core/mixins/inbound.py (sender_verification); tests/test_verification_inbound.py::test_an_unlabelled_event_has_no_sender_verification (RMK-1172).",
+  "setup": {
+    "kit": {
+      "identity_resolver": {
+        "answers": [
+          {
+            "repeat": true,
+            "result": {
+              "status": "identified",
+              "identity": {
+                "id": "alice-id"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      },
+      {
+        "id": "ai",
+        "type": "ai"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "read",
+        "trigger": "before_broadcast",
+        "channel_ids": [
+          "sms"
+        ],
+        "reactions": [
+          {
+            "do": [
+              {
+                "call": "sender_verification",
+                "as": "seen",
+                "expect": {
+                  "result": null
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "actions": {
+      "seen": [
+        {
+          "result": null
+        }
+      ]
+    }
+  }
+}

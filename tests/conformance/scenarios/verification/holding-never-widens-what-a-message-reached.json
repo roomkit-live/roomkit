@@ -1,0 +1,146 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "verification/holding-never-widens-what-a-message-reached",
+  "title": "A held message keeps the transports its committed scope reached, its own visibility within its source binding's, and gains none: a source binding that writes to one console holds the message there",
+  "rules": [
+    "§10.1 step 5b",
+    "§11.7.3",
+    "§7.3"
+  ],
+  "notes": "Python: src/roomkit/core/mixins/verification.py (_apply_verification), src/roomkit/core/mixins/inbound.py (_held, _transport_part); tests/test_verification_inbound.py::test_holding_never_widens_what_a_message_reached (RMK-1172).",
+  "setup": {
+    "kit": {
+      "identity_resolver": {
+        "answers": [
+          {
+            "repeat": true,
+            "result": {
+              "status": "identified",
+              "identity": {
+                "id": "alice-id"
+              }
+            }
+          }
+        ]
+      },
+      "verification_policy": {}
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "advisor",
+        "type": "websocket"
+      },
+      {
+        "id": "other",
+        "type": "websocket"
+      },
+      {
+        "id": "ai",
+        "type": "ai"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms",
+            "visibility": "advisor"
+          },
+          {
+            "channel_id": "advisor"
+          },
+          {
+            "channel_id": "other"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Did my transfer go through?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "content": {
+              "body": "Did my transfer go through?"
+            },
+            "visibility": "advisor",
+            "source": {
+              "channel_id": "sms",
+              "participant_id": "alice-id",
+              "verification": "unverified"
+            },
+            "metadata": {
+              "roomkit:verification_held": {
+                "visibility": "advisor",
+                "identity_id": "alice-id",
+                "organization_id": null
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "content": {
+            "body": "Did my transfer go through?"
+          },
+          "visibility": "advisor",
+          "source": {
+            "channel_id": "sms",
+            "participant_id": "alice-id",
+            "verification": "unverified"
+          },
+          "metadata": {
+            "roomkit:verification_held": {
+              "visibility": "advisor",
+              "identity_id": "alice-id",
+              "organization_id": null
+            }
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "advisor": [
+          {
+            "content": {
+              "body": "Did my transfer go through?"
+            }
+          }
+        ],
+        "other": []
+      }
+    },
+    "turns": {
+      "room-1": {
+        "ai": []
+      }
+    }
+  }
+}

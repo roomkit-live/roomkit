@@ -1,0 +1,168 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "verification/an-unverified-sender-s-edit-is-refused",
+  "title": "An edit from a sender whose verification was revoked is refused verification_required before anything is stored: the message it targets keeps its words",
+  "rules": [
+    "§10.1 step 5b",
+    "§11.7.3",
+    "§10.3"
+  ],
+  "notes": "Python: src/roomkit/core/mixins/verification.py (_apply_verification), src/roomkit/core/mixins/inbound.py; tests/test_verification_inbound.py::test_an_unverified_edit_cannot_rewrite_a_message (RMK-1172).",
+  "setup": {
+    "kit": {
+      "identity_resolver": {
+        "answers": [
+          {
+            "repeat": true,
+            "result": {
+              "status": "identified",
+              "identity": {
+                "id": "alice-id"
+              }
+            }
+          }
+        ]
+      },
+      "verification_policy": {}
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      },
+      {
+        "id": "ai",
+        "type": "ai"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      }
+    },
+    {
+      "call": "request_verification",
+      "identity_id": "alice-id",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "as": "req"
+    },
+    {
+      "call": "complete_verification",
+      "request_id": "$req",
+      "secret": "$req.secret",
+      "expect": {
+        "result": {
+          "status": "verified"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Please transfer 100 dollars"
+        }
+      },
+      "as": "original"
+    },
+    {
+      "call": "revoke_verification",
+      "identity_id": "alice-id"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "event_type": "edit",
+        "content": {
+          "type": "edit",
+          "target_event_id": "$original",
+          "new_content": {
+            "type": "text",
+            "body": "Please transfer 10000 dollars"
+          }
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "verification_required",
+          "event": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "content": {
+            "body": "hello"
+          },
+          "visibility": "transport",
+          "source": {
+            "channel_id": "sms",
+            "participant_id": "alice-id",
+            "verification": "unverified"
+          },
+          "metadata": {
+            "roomkit:verification_held": {
+              "visibility": "all",
+              "identity_id": "alice-id",
+              "organization_id": null
+            }
+          }
+        },
+        {
+          "index": 1,
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "Please transfer 100 dollars"
+          },
+          "visibility": "all",
+          "source": {
+            "verification": "verified"
+          }
+        }
+      ]
+    }
+  }
+}
