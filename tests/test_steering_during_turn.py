@@ -205,21 +205,24 @@ async def test_a_message_during_a_tool_round_is_stored_and_read_by_the_running_t
     provider = _Gated([CALL, AIResponse(content="a.py")], held=-1, streaming=streaming)
     tool = _Paused()
     kit, executor = await _steering_kit(where, provider, tool)
-    turn = asyncio.create_task(kit.process_inbound(_message("List the files."), room_id="r1"))
-    await asyncio.wait_for(tool.started.wait(), 2)
+    try:
+        turn = asyncio.create_task(kit.process_inbound(_message("List the files."), room_id="r1"))
+        await asyncio.wait_for(tool.started.wait(), 2)
 
-    sent = await kit.process_inbound(_message(STEERED), room_id="r1")
-    tool.release.set()
-    await asyncio.wait_for(turn, 5)
+        sent = await kit.process_inbound(_message(STEERED), room_id="r1")
+        tool.release.set()
+        await asyncio.wait_for(turn, 5)
 
-    assert not sent.blocked
-    assert len(provider.calls) == 2
-    assert _read(provider.calls[1], STEERED)
-    assert await _bodies(kit, "ops") == ["List the files.", STEERED]
-    assert await _bodies(kit, "agent") == ["a.py"]
-    await kit.close()
-    if executor is not None:
-        await executor.close()
+        assert not sent.blocked
+        assert len(provider.calls) == 2
+        assert _read(provider.calls[1], STEERED)
+        assert await _bodies(kit, "ops") == ["List the files.", STEERED]
+        assert await _bodies(kit, "agent") == ["a.py"]
+    finally:
+        tool.release.set()
+        await kit.close()
+        if executor is not None:
+            await executor.close()
 
 
 async def test_a_message_while_the_model_answers_is_answered_by_the_same_turn(
