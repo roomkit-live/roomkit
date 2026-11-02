@@ -1,0 +1,140 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-tool-s-own-bound-cuts-its-call",
+  "title": "A tool's own bound (tool_timeouts) cuts a call that does not answer within it, whatever the agent's default: the call fails as a raise the model reads, and the turn goes on",
+  "rules": [
+    "§21.6",
+    "§9.3"
+  ],
+  "notes": "Python's ToolTimeouts.for_call reads a tool's own bound before the default (tools/timeout.py); answer_within cancels the handler past it and the call fails as a ToolTimeoutError (test_tool_timeout.py).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "report",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "text": "The report took too long."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "report",
+            "description": "Build the report",
+            "parameters": {
+              "type": "object",
+              "properties": {}
+            },
+            "hangs": true
+          }
+        ],
+        "tool_timeouts_ms": {
+          "report": 30
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": []
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Run the report."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "type": "message"
+        },
+        {
+          "index": 1,
+          "type": "tool_call_start"
+        },
+        {
+          "index": 2,
+          "type": "tool_call_end",
+          "content": {
+            "type": "tool_call",
+            "tool_name": "report",
+            "tool_id": "c1",
+            "outcome": "failed",
+            "result": "{\"error\": \"Tool 'report' failed (ToolTimeoutError)\"}"
+          }
+        },
+        {
+          "index": 3,
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "The report took too long."
+          }
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {
+          "tool_results": []
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "{\"error\": \"Tool 'report' failed (ToolTimeoutError)\"}",
+              "is_error": true
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
