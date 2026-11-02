@@ -17,7 +17,7 @@ from pydantic_core import to_jsonable_python
 
 from roomkit import RoomKit, current_turn_host
 from roomkit.models.context import RoomContext
-from roomkit.models.delivery import DeliveryStatus
+from roomkit.models.delivery import DeliveryHandle, DeliveryStatus
 from roomkit.models.event import RoomEvent
 from roomkit.models.framework_event import FrameworkEvent
 from roomkit.models.pending_input import PendingInputEvent
@@ -119,6 +119,8 @@ class Harness:
         self.observed = Observed(literal_rooms=_literal_rooms(scenario))
         self._recording = False
         self._labels: dict[str, str | None] = {}
+        # The completion handles of deferred calls, by their call's label.
+        self.handles: dict[str, DeliveryHandle] = {}
         self._background: dict[str, asyncio.Task[dict[str, Any]]] = {}
         self._after_turn: list[asyncio.Task[None]] = []
         self.tasks: dict[str, DelegatedTask] = {}

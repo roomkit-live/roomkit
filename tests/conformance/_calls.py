@@ -59,6 +59,11 @@ if TYPE_CHECKING:
 _CONTENT = TypeAdapter(EventContent)
 _DIRECTIVE: TypeAdapter[SteeringDirective] = TypeAdapter(SteeringDirective)
 
+
+class HandleWaitsForItselfError(Exception):
+    """A handle's cancel from where its cleanup would wait for its caller."""
+
+
 # The Python class of each error the suite names (README, "Errors").
 _ERRORS: tuple[tuple[type[Exception], str], ...] = (
     (RoomNotFoundError, "room_not_found"),
@@ -76,6 +81,7 @@ _ERRORS: tuple[tuple[type[Exception], str], ...] = (
     (TaskNotFoundError, "task_not_found"),
     (VerificationRefusedError, "verification_refused"),
     (ValueError, "invalid_argument"),
+    (HandleWaitsForItselfError, "waits_for_itself"),
 )
 
 
@@ -165,7 +171,31 @@ def _org(spec: Mapping[str, Any]) -> dict[str, Any]:
 
 async def _process_inbound(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
     message = read(lambda: InboundMessage.model_validate(spec["message"]))
-    return await kit.process_inbound(message, room_id=spec.get("room_id"), **_org(spec))
+    if not spec.get("defer_delivery"):
+        return await kit.process_inbound(message, room_id=spec.get("room_id"), **_org(spec))
+    result = await kit.process_inbound(
+        message, room_id=spec.get("room_id"), defer_delivery=True, **_org(spec)
+    )
+    # Its completion handle (RFC §10.1 step 18), which `delivery.*` calls
+    # name by the call's label.
+    if "as" in spec and result.delivery is not None:
+        harness.handles[spec["as"]] = result.delivery
+    return result
+
+
+async def _delivery_cancel(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
+    handle = harness.handles[spec["of"]]
+    options: dict[str, Any] = {"reason": spec["reason"]} if "reason" in spec else {}
+    if "timeout_ms" in spec:
+        options["timeout"] = spec["timeout_ms"] / 1000
+    try:
+        return await handle.cancel(**options)
+    except RuntimeError as error:
+        raise HandleWaitsForItselfError(str(error)) from error
+
+
+async def _delivery_wait(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
+    return await harness.handles[spec["of"]].wait()
 
 
 _SEND_ARGS = (
@@ -448,6 +478,8 @@ CALLS: dict[str, Call] = {
     "process_webhook": _process_webhook,
     "deliver": _deliver,
     "cancel_delivery": _cancel_delivery,
+    "delivery.cancel": _delivery_cancel,
+    "delivery.wait": _delivery_wait,
     "steer": _steer,
 }
 

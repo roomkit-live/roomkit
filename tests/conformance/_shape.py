@@ -181,7 +181,9 @@ NEW_ROOM = {"id", "organization_id", "metadata", "timers"}
 
 # Each call's arguments, beside `call` and `organization_id`.
 CALLS: dict[str, set[str]] = {
-    "process_inbound": {"message", "room_id"},
+    "process_inbound": {"message", "room_id", "defer_delivery"},
+    "delivery.cancel": {"of", "reason", "timeout_ms"},
+    "delivery.wait": {"of"},
     "send_event": {
         "room_id",
         "channel_id",
