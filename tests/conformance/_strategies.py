@@ -21,6 +21,7 @@ if TYPE_CHECKING:
 
 STRATEGY = {"id", "agents", "install", "uninstall"}
 STRATEGY_STEP = {"gate", "do", "refuse"}
+STRATEGY_UNINSTALL = {"gate", "do"}
 
 
 class ScriptedStrategy(Orchestration):

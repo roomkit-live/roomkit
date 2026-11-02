@@ -16,7 +16,12 @@ from tests.conformance._inputs import INPUT_ARGUMENTS
 from tests.conformance._media import ATTACHED_MEDIA, MEDIA_RESOLVER
 from tests.conformance._members import MEMBER_ARGUMENTS
 from tests.conformance._store import READ_MARKER_ARGUMENTS, STORE_ARGUMENTS
-from tests.conformance._strategies import STRATEGY, STRATEGY_ARGUMENTS, STRATEGY_STEP
+from tests.conformance._strategies import (
+    STRATEGY,
+    STRATEGY_ARGUMENTS,
+    STRATEGY_STEP,
+    STRATEGY_UNINSTALL,
+)
 from tests.conformance._tasks import TASK_ARGUMENTS
 from tests.conformance._verification import VERIFICATION_ARGUMENTS
 
@@ -326,9 +331,9 @@ def unknown_members(scenario: Mapping[str, Any]) -> list[str]:
 def _strategy(strategy: Mapping[str, Any], path: str, found: list[str]) -> None:
     """The members of a scripted strategy, and of its install and uninstall."""
     _members(strategy, STRATEGY, path, found)
-    for member in ("install", "uninstall"):
+    for member, known in (("install", STRATEGY_STEP), ("uninstall", STRATEGY_UNINSTALL)):
         step = strategy.get(member, {})
-        _members(step, STRATEGY_STEP, f"{path}.{member}", found)
+        _members(step, known, f"{path}.{member}", found)
         for index, action in enumerate(step.get("do", [])):
             _call(action, {"as", "expect"}, f"{path}.{member}.do[{index}]", found)
 
