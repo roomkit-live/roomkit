@@ -1,0 +1,177 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-model-that-does-not-see-reads-a-tool-s-parts-as-text",
+  "title": "A model that does not see reads a tool's parts as their text, an image as [image], the ON_TOOL_CALL hook reads that text, and no image the tool returned rides a later turn's input",
+  "rules": [
+    "§6.4",
+    "§9.3"
+  ],
+  "notes": "Python's _shape_for_model flattens a part list for a provider without vision (AIToolResultPart.as_text: texts and [image] joined by new lines) before the hook, and _turn_images replays nothing to a model that does not see (tests/test_channels/test_multimodal_tool_result.py::test_a_text_only_model_gets_the_text_of_a_part_list, test_the_hook_sees_the_text_a_text_only_model_reads; tests/test_tool_result_images.py::test_a_model_that_does_not_see_reads_only_the_text).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "vision": false,
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "generate_image",
+                  "arguments": {
+                    "prompt": "a red fox"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "done"
+            },
+            {
+              "text": "ok"
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "generate_image",
+            "description": "Draw an image",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "prompt": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns_parts": [
+              {
+                "text": "here"
+              },
+              {
+                "image": "data:image/png;base64,AAAA",
+                "mime_type": "image/png"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "audit",
+        "trigger": "on_tool_call",
+        "execution": "sync"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "draw a red fox"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "set my lights to its colours"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "here\n[image]",
+              "is_error": false
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "draw a red fox",
+              "parts": null
+            },
+            {
+              "role": "assistant",
+              "text": ""
+            },
+            {
+              "role": "tool",
+              "text": ""
+            },
+            {
+              "role": "assistant",
+              "text": "done"
+            },
+            {
+              "role": "user",
+              "text": "set my lights to its colours",
+              "parts": null
+            }
+          ]
+        }
+      ]
+    },
+    "hooks": {
+      "audit": [
+        {
+          "trigger": "on_tool_call",
+          "room_id": "room-1",
+          "tool_call": {
+            "name": "generate_image",
+            "tool_call_id": "c1",
+            "result": "here\n[image]",
+            "is_error": false
+          }
+        }
+      ]
+    }
+  }
+}

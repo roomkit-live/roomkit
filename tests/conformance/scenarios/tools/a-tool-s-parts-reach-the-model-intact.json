@@ -1,0 +1,196 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-tool-s-parts-reach-the-model-intact",
+  "title": "A tool that answers a text and an image reaches a model that sees with both parts, in order, in the round itself; the room's end row and the ON_TOOL_CALL hook read the same parts",
+  "rules": [
+    "§6.4",
+    "§9.3",
+    "§21.4"
+  ],
+  "notes": "Python's ToolResult is str | list[AITextPart | AIImagePart]: AIToolResultPart.result keeps the list (tests/test_channels/test_multimodal_tool_result.py::test_a_part_list_result_reaches_the_provider_intact, test_streaming_loop_carries_the_part_list_too), the end row stores it (call_end_marker) and ToolCallEvent.result carries it.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "vision": true,
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "generate_image",
+                  "arguments": {
+                    "prompt": "a red fox"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "done"
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "generate_image",
+            "description": "Draw an image",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "prompt": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns_parts": [
+              {
+                "text": "here"
+              },
+              {
+                "image": "data:image/png;base64,AAAA",
+                "mime_type": "image/png"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "audit",
+        "trigger": "on_tool_call",
+        "execution": "sync"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "draw a red fox"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": [
+                {
+                  "text": "here"
+                },
+                {
+                  "image": "data:image/png;base64,AAAA",
+                  "mime_type": "image/png"
+                }
+              ],
+              "is_error": false
+            }
+          ]
+        }
+      ]
+    },
+    "hooks": {
+      "audit": [
+        {
+          "trigger": "on_tool_call",
+          "room_id": "room-1",
+          "tool_call": {
+            "name": "generate_image",
+            "tool_call_id": "c1",
+            "arguments": {
+              "prompt": "a red fox"
+            },
+            "result": [
+              {
+                "text": "here"
+              },
+              {
+                "image": "data:image/png;base64,AAAA",
+                "mime_type": "image/png"
+              }
+            ],
+            "is_error": false
+          }
+        }
+      ]
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "type": "message"
+        },
+        {
+          "index": 1,
+          "type": "tool_call_start"
+        },
+        {
+          "index": 2,
+          "type": "tool_call_end",
+          "content": {
+            "type": "tool_call",
+            "tool_name": "generate_image",
+            "tool_id": "c1",
+            "status": "completed",
+            "outcome": "served",
+            "result": [
+              {
+                "type": "text",
+                "text": "here"
+              },
+              {
+                "type": "image",
+                "url": "data:image/png;base64,AAAA",
+                "mime_type": "image/png"
+              }
+            ],
+            "error": null
+          }
+        },
+        {
+          "index": 3,
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "done"
+          }
+        }
+      ]
+    }
+  }
+}

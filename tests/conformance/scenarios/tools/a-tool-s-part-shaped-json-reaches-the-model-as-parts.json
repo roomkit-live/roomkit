@@ -1,0 +1,163 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-tool-s-part-shaped-json-reaches-the-model-as-parts",
+  "title": "A tool that answers a list of mappings each in a part's exact shape reaches the model with those parts; a list of other mappings, one with a part's type among other data included, reaches it as JSON",
+  "rules": [
+    "§6.4",
+    "§21.4"
+  ],
+  "notes": "Python's as_tool_result reads a list whose every item is a part, or a mapping in a part's exact shape, as content parts (tests/test_tool_results.py::test_content_parts_given_as_mappings_stay_content_parts, test_a_list_of_plain_mappings_is_json).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "vision": true,
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "take_screenshot",
+                  "arguments": {}
+                },
+                {
+                  "id": "c2",
+                  "name": "list_orders",
+                  "arguments": {}
+                },
+                {
+                  "id": "c3",
+                  "name": "read_note",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "text": "done"
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "take_screenshot",
+            "description": "Capture the screen",
+            "parameters": {
+              "type": "object",
+              "properties": {}
+            },
+            "returns_json": [
+              {
+                "type": "text",
+                "text": "a screenshot"
+              },
+              {
+                "type": "image",
+                "url": "data:image/png;base64,AAAA"
+              }
+            ]
+          },
+          {
+            "name": "list_orders",
+            "description": "List the orders",
+            "parameters": {
+              "type": "object",
+              "properties": {}
+            },
+            "returns_json": [
+              {
+                "id": 1
+              }
+            ]
+          },
+          {
+            "name": "read_note",
+            "description": "Read a note",
+            "parameters": {
+              "type": "object",
+              "properties": {}
+            },
+            "returns_json": [
+              {
+                "type": "text",
+                "text": "a note",
+                "author": "bob"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "show me"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": [
+                {
+                  "text": "a screenshot"
+                },
+                {
+                  "image": "data:image/png;base64,AAAA",
+                  "mime_type": null
+                }
+              ],
+              "is_error": false
+            },
+            {
+              "tool_call_id": "c2",
+              "content": "[{\"id\": 1}]",
+              "is_error": false
+            },
+            {
+              "tool_call_id": "c3",
+              "content": "[{\"type\": \"text\", \"text\": \"a note\", \"author\": \"bob\"}]",
+              "is_error": false
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

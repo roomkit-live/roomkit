@@ -1,0 +1,200 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-call-id-used-again-keeps-each-call-s-result",
+  "title": "A call id a later round or turn uses again keeps each call's own result: a text stays text, a result of parts stays its parts, and the history replays each as stored",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "A model may give a call the id an earlier round's call had (a server that numbers the calls of each response): Python's tool loop appends each round's results as they came and _tool_history replays each stored row, so a result of parts never stands for an earlier call of the same id.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "vision": true,
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "generate_image",
+                  "arguments": {
+                    "prompt": "a red fox"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "done"
+            },
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "generate_image",
+                  "arguments": {
+                    "prompt": "a lamp"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "again"
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look something up",
+            "parameters": {
+              "type": "object",
+              "properties": {}
+            },
+            "returns": "shipped"
+          },
+          {
+            "name": "generate_image",
+            "description": "Draw an image",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "prompt": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns_parts": [
+              {
+                "text": "here"
+              },
+              {
+                "image": "data:image/png;base64,AAAA",
+                "mime_type": "image/png"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "look it up, then draw"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "draw a lamp"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "shipped",
+              "is_error": false
+            },
+            {
+              "tool_call_id": "c1",
+              "content": [
+                {
+                  "text": "here"
+                },
+                {
+                  "image": "data:image/png;base64,AAAA",
+                  "mime_type": "image/png"
+                }
+              ],
+              "is_error": false
+            }
+          ]
+        },
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "shipped",
+              "is_error": false
+            },
+            {
+              "tool_call_id": "c1_5",
+              "content": "here [non-text part]",
+              "is_error": false
+            },
+            {
+              "tool_call_id": "c1",
+              "content": [
+                {
+                  "text": "here"
+                },
+                {
+                  "image": "data:image/png;base64,AAAA",
+                  "mime_type": "image/png"
+                }
+              ],
+              "is_error": false
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
