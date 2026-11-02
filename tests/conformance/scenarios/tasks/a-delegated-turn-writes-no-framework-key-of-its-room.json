@@ -1,0 +1,89 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/a-delegated-turn-writes-no-framework-key-of-its-room",
+  "title": "The room metadata updates a delegated turn's agent returns are written on its child room as a room's turn writes them: a key only the framework writes is dropped, the others kept",
+  "rules": [
+    "§23.3 step 5",
+    "§10.1 step 15",
+    "§5.1"
+  ],
+  "notes": "Python: core/event_router.py collects each output's metadata_updates through without_framework_keys (core/_room_metadata.py), and core/mixins/helpers.py _write_metadata_updates patches the room (patch_room_metadata, which stamps updated_at) under its lock; _child_execution.py _broadcast_and_collect persists them as a room's (_persist_side_effects). RMK-1188.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "Look it up."
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Found it."
+                }
+              }
+            ],
+            "output": {
+              "metadata_updates": {
+                "stage": "found",
+                "roomkit:held": true
+              }
+            }
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "parent",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "parent",
+      "agent_id": "worker",
+      "task": "Look it up.",
+      "wait": true,
+      "expect": {
+        "result": {
+          "status": "completed",
+          "result": {
+            "status": "completed",
+            "output": "Found it."
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "rooms": {
+      "$r1": {
+        "metadata": {
+          "stage": "found",
+          "roomkit:held": {
+            "$absent": true
+          }
+        }
+      }
+    }
+  }
+}

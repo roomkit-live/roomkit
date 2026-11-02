@@ -1,0 +1,128 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/a-delegated-turn-past-the-depth-limit-is-not-asked",
+  "title": "A delegated turn whose answer would reach max_chain_depth is not asked, as a room's turn is: the child room keeps its BLOCKED record and an observation, chain_depth_exceeded is emitted there, the worker never generates, and the task fails with no answer",
+  "rules": [
+    "§23.3 step 5",
+    "§8.3",
+    "§8.2"
+  ],
+  "notes": "Python: tests/tasks/test_delegation_chain_depth.py::test_a_child_room_keeps_what_its_broadcast_blocked; core/event_router.py, whose delivery plan leaves out an agent whose answer would reach the limit and stores its record (_commit_blocked_events) and observation. With max_chain_depth 1, the description at depth 0 cannot be answered. RMK-1188. The observation's text is each implementation's (roomkit-rs gap G-016).",
+  "setup": {
+    "kit": {
+      "max_chain_depth": 1
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "never"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "parent",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "parent",
+      "agent_id": "worker",
+      "task": "Look it up.",
+      "wait": true,
+      "expect": {
+        "result": {
+          "status": "failed",
+          "result": {
+            "status": "failed",
+            "output": null,
+            "error": null
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "$r1": [
+        {
+          "index": 0,
+          "type": "message",
+          "status": "delivered",
+          "chain_depth": 0,
+          "source": {
+            "channel_id": "system"
+          },
+          "visibility": "intelligence",
+          "content": {
+            "type": "text",
+            "body": "Look it up."
+          }
+        },
+        {
+          "index": 1,
+          "status": "blocked",
+          "blocked_by": "event_chain_depth_limit",
+          "chain_depth": 1,
+          "source": {
+            "channel_id": "worker"
+          },
+          "responds_to": "$r1#0",
+          "visibility": "all"
+        }
+      ]
+    },
+    "observations": {
+      "$r1": [
+        {
+          "channel_id": "worker",
+          "category": "event_chain_depth_exceeded",
+          "metadata": {
+            "chain_depth": 1,
+            "max_chain_depth": 1,
+            "source_channel": "worker"
+          }
+        }
+      ]
+    },
+    "framework_events": {
+      "$r1": [
+        "room_created",
+        "room_channel_attached",
+        {
+          "event": "chain_depth_exceeded",
+          "channel_id": "worker",
+          "event_id": "$r1#1",
+          "data": {
+            "chain_depth": 1,
+            "max_chain_depth": 1
+          }
+        }
+      ]
+    },
+    "models": {
+      "worker": []
+    }
+  }
+}
