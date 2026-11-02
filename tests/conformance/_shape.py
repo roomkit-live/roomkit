@@ -104,6 +104,7 @@ TOOL = {
     "declines",
     "gate",
     "declared",
+    "returns_json",
 }
 RAISES = {"kind", "message"}
 HUMAN_INPUT = {"tool_names", "timeout_ms", "tools"}

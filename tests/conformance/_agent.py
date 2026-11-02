@@ -233,7 +233,7 @@ def _error_of_kind(kind: str) -> type[Exception]:
 def _tool_handler(tools: list[Mapping[str, Any]], gates: Gates) -> Any:
     by_name = {tool["name"]: tool for tool in tools}
 
-    async def handler(name: str, arguments: dict[str, Any]) -> str:
+    async def handler(name: str, arguments: dict[str, Any]) -> Any:
         tool = by_name.get(name)
         if tool is None:
             # A name the scripted tools do not define: the kit's tools the
@@ -243,6 +243,8 @@ def _tool_handler(tools: list[Mapping[str, Any]], gates: Gates) -> Any:
             await gates.hold(gate)
         if "returns" in tool:
             return str(tool["returns"])
+        if "returns_json" in tool:
+            return tool["returns_json"]
         if "raises" in tool:
             raise _error_of_kind(tool["raises"]["kind"])(tool["raises"]["message"])
         if "fails" in tool:
