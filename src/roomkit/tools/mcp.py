@@ -772,9 +772,9 @@ class MCPToolProvider:
         content the model cannot take (another image format, audio, a blob
         resource) becomes a one-line note rather than its base64. Such a
         result keeps its texts within 100,000 characters in all, the text past
-        the bound cut with a note, and at most four of its images within 5 MiB
-        of data URL in all, each image past either a note that counts as a
-        text.
+        the bound cut with a note when the note fits, and at most four of its
+        images within 5 MiB of data URL in all, each image past either a note
+        that counts as a text.
         """
         self._ensure_connected()
 

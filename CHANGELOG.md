@@ -93,8 +93,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   to the model whole: a server answering 30 screenshots of 1 MB put 40 MB of
   base64 in the model's request, and a text of any length rode beside them.
   Its texts now hold within 100,000 characters in all, the text past the
-  bound cut with a note saying how long it was and the texts after it left
-  out, and at most four of its images within 5 MiB of data URL in all reach
+  bound cut with a note saying how long it was, when the note fits, and the
+  texts after it left out, and at most four of its images within 5 MiB of data URL in all reach
   the model; each image past either reads `[image content (image/png) not
   shown to the model]`, a note that counts as a text. roomkit-rs holds the
   same bounds.
