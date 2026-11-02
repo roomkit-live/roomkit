@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Any
 
 from roomkit.channels._tool_registry import ChannelRegistry
 from roomkit.channels.declared import id_of, register_strategy_agents
+from roomkit.core.locks import _has_room_lock
 from roomkit.core.mixins.helpers import HelpersMixin
 from roomkit.models.enums import ChannelCategory
 
@@ -179,6 +180,10 @@ class StrategyMixin(HelpersMixin):
         strategy was installed."""
         room = await self.get_room(room_id, organization_id=organization_id)
         installed = await self._installed_once_over(room_id)
+        if installed is not None and installed.installing and not installed.ended.is_set():
+            # An install the caller holds the room's lock against, or runs
+            # within: nothing is installed yet (RFC §19.7).
+            return False
         if installed is None:
             return await self._uninstall_stored_discussion(room)
         await installed.strategy.uninstall(self, room_id)  # ty: ignore[invalid-argument-type]
@@ -194,9 +199,15 @@ class StrategyMixin(HelpersMixin):
         """The record of *room_id*'s strategy once no install of it runs: an
         install under way is waited for, so an uninstall called meanwhile
         takes back what it installed rather than let it record itself again
-        (RFC §19.7)."""
+        (RFC §19.7). An install is not waited for by code that holds the
+        room's lock, which that install waits for or runs under: the
+        record is returned as it stands. An install over that left its
+        claim (one that failed before it could take it back) ends the
+        wait too."""
         installed = self._room_strategies.get(room_id)
-        while installed is not None and installed.installing:
+        while installed is not None and installed.installing and not installed.ended.is_set():
+            if _has_room_lock(room_id, self._lock_manager):
+                break
             await installed.ended.wait()
             installed = self._room_strategies.get(room_id)
         return installed

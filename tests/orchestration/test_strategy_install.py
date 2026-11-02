@@ -181,6 +181,28 @@ async def test_a_hosts_own_strategy_is_taken_back_out_whole() -> None:
     await kit.close()
 
 
+async def test_an_uninstall_after_an_install_the_store_cut_short_frees_the_room(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    kit = RoomKit()
+    await kit.create_room(room_id="r1")
+    real = kit.store.list_bindings
+    failures = iter([True])
+
+    async def fails_once(room_id: str) -> Any:
+        if next(failures, False):
+            raise RuntimeError("store down")
+        return await real(room_id)
+
+    monkeypatch.setattr(kit.store, "list_bindings", fails_once)
+    with pytest.raises(RuntimeError, match="store down"):
+        await kit.install_strategy("r1", _Custom())
+
+    assert await asyncio.wait_for(kit.uninstall_strategy("r1"), 1) is True
+    assert kit.room_strategy("r1") is None
+    await kit.close()
+
+
 async def test_a_refused_install_takes_back_what_it_attached() -> None:
     kit = RoomKit()
     kit.register_channel(SimpleChannel("phone", channel_type=ChannelType.VOICE))
