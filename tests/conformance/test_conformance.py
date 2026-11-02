@@ -18,6 +18,7 @@ from typing import Any
 
 import pytest
 
+from roomkit.channels._mark_copies import compile_mark_patterns
 from roomkit.store.sqlite import SQLiteStore
 from tests.conformance._harness import Harness
 from tests.conformance._shape import unknown_members
@@ -123,6 +124,15 @@ def test_the_copy_is_the_one_synced_from_its_specs_commit() -> None:
     assert hashlib.sha256(lines.encode()).hexdigest() == recorded, (
         "tests/conformance/scenarios differs from its sync: run make conformance-sync"
     )
+
+
+@pytest.fixture(autouse=True)
+async def _compiled_mark_patterns() -> None:
+    """The patterns that find a copy of a runtime mark compile once per
+    process, as the first agent joins a room (RMK-888): about a second, many
+    on a loaded machine. Compiled before the scenario's calls, so a call's
+    bound measures the call, not that compilation (RMK-1202)."""
+    await compile_mark_patterns()
 
 
 @pytest.mark.parametrize(("path", "store"), _cases())
