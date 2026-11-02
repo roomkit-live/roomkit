@@ -1,0 +1,152 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/a-shared-agent-reads-the-task-and-the-trace-crosses-no-hook",
+  "title": "A delegated room no transport is shared into keeps its trace past no hook, the parent's other transports told nothing; an agent shared into it is handed the task as the worker is",
+  "rules": [
+    "§23.3 step 3",
+    "§23.3 step 4",
+    "§23.3 step 5"
+  ],
+  "notes": "Python: tests/tasks/test_shared_transport_delegation.py::TestWithoutASharedTransport::test_the_trace_crosses_no_hook, test_a_shared_agent_still_reads_the_task; core/mixins/_child_execution.py _collect_answer. The task is scoped to the room's agents, not hidden from them.",
+  "setup": {
+    "channels": [
+      {
+        "id": "email",
+        "type": "email",
+        "category": "transport"
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "Summarise the ticket and email the customer."
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Done."
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "observer",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "Summarise the ticket and email the customer."
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Noted."
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "parent",
+        "bindings": [
+          {
+            "channel_id": "email"
+          },
+          {
+            "channel_id": "observer",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "gate",
+        "trigger": "before_broadcast"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "parent",
+      "agent_id": "worker",
+      "task": "Summarise the ticket and email the customer.",
+      "share_channels": [
+        "observer"
+      ],
+      "wait": true,
+      "expect": {
+        "result": {
+          "status": "completed",
+          "result": {
+            "status": "completed",
+            "output": "Done.",
+            "error": null
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "$r1": {
+        "worker": {
+          "category": "intelligence"
+        },
+        "observer": {
+          "category": "intelligence"
+        },
+        "email": null
+      }
+    },
+    "turns": {
+      "$r1": {
+        "worker": [
+          {
+            "source": {
+              "channel_id": "system"
+            },
+            "content": {
+              "type": "text",
+              "body": "Summarise the ticket and email the customer."
+            }
+          }
+        ],
+        "observer": [
+          {
+            "source": {
+              "channel_id": "system"
+            },
+            "content": {
+              "type": "text",
+              "body": "Summarise the ticket and email the customer."
+            }
+          }
+        ]
+      }
+    },
+    "deliveries": {
+      "parent": {
+        "email": []
+      }
+    },
+    "hooks": {
+      "gate": []
+    }
+  }
+}

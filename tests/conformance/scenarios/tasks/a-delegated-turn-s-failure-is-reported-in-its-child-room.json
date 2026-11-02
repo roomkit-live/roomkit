@@ -1,0 +1,223 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/a-delegated-turn-s-failure-is-reported-in-its-child-room",
+  "title": "A delegated turn that fails fires ON_ERROR once in its child room, as a room's turn does, one deeper than the task it answers, whether a transport is shared into the room or not: a stream that fails as streaming, a turn that raises as generation; the task fails, with the stream's error and without the raise's, and a shared transport is told the text the room kept",
+  "rules": [
+    "§23.3 step 5",
+    "§23.3 step 6",
+    "§12.2 step 13s",
+    "§9.3"
+  ],
+  "notes": "Python: tests/test_turn_end_doors.py::test_a_delegated_turn_s_failure_is_reported_in_the_turn_s_scope[trace], [shared]; tests/tasks/test_delegation_ends_failed.py; core/mixins/_child_execution.py _broadcast_and_collect (_report_intelligence_errors), _persist_child_stream (_report_turn_failure) on the trace, _deliver_answer (the room's reader) with a shared transport. worker's and helper's rooms share email, writer's shares nothing. A failure before the turn's record names an end is handed on as it is (_turn_failure): no narration, no loop_end_reason; a turn that raised is not responded and carries no error to the task.",
+  "setup": {
+    "channels": [
+      {
+        "id": "email",
+        "type": "email",
+        "category": "transport"
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "Checking."
+              ],
+              "fails": "upstream 400"
+            }
+          ]
+        }
+      },
+      {
+        "id": "writer",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "Checking."
+              ],
+              "fails": "upstream 400"
+            }
+          ]
+        }
+      },
+      {
+        "id": "helper",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "Summarise the ticket and email the customer."
+            },
+            "fail": "The helper broke."
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "parent",
+        "bindings": [
+          {
+            "channel_id": "email"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "errors",
+        "trigger": "on_error",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "parent",
+      "agent_id": "worker",
+      "task": "Summarise the ticket and email the customer.",
+      "wait": true,
+      "expect": {
+        "result": {
+          "status": "failed",
+          "result": {
+            "status": "failed",
+            "output": null,
+            "error": "upstream 400"
+          }
+        }
+      },
+      "share_channels": [
+        "email"
+      ]
+    },
+    {
+      "call": "delegate",
+      "room_id": "parent",
+      "agent_id": "writer",
+      "task": "Summarise the ticket and email the customer.",
+      "wait": true,
+      "expect": {
+        "result": {
+          "status": "failed",
+          "result": {
+            "status": "failed",
+            "output": null,
+            "error": "upstream 400"
+          }
+        }
+      }
+    },
+    {
+      "call": "delegate",
+      "room_id": "parent",
+      "agent_id": "helper",
+      "task": "Summarise the ticket and email the customer.",
+      "wait": true,
+      "expect": {
+        "result": {
+          "status": "failed",
+          "result": {
+            "status": "failed",
+            "output": null,
+            "error": null
+          }
+        }
+      },
+      "share_channels": [
+        "email"
+      ]
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "errors": [
+        {
+          "trigger": "on_error",
+          "room_id": "$r1",
+          "event": {
+            "chain_depth": 1,
+            "responds_to": "$r1#0",
+            "source": {
+              "channel_id": "worker"
+            },
+            "content": {
+              "type": "text",
+              "body": "upstream 400"
+            },
+            "metadata": {
+              "error": "upstream 400",
+              "error_category": "streaming"
+            }
+          }
+        },
+        {
+          "trigger": "on_error",
+          "room_id": "$r2",
+          "event": {
+            "chain_depth": 1,
+            "responds_to": "$r2#0",
+            "source": {
+              "channel_id": "writer"
+            },
+            "content": {
+              "type": "text",
+              "body": "upstream 400"
+            },
+            "metadata": {
+              "error": "upstream 400",
+              "error_category": "streaming"
+            }
+          }
+        },
+        {
+          "trigger": "on_error",
+          "room_id": "$r3",
+          "event": {
+            "chain_depth": 1,
+            "responds_to": "$r3#0",
+            "source": {
+              "channel_id": "helper"
+            },
+            "content": {
+              "type": "text",
+              "body": "The helper broke."
+            },
+            "metadata": {
+              "error": "The helper broke.",
+              "error_category": "generation"
+            }
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "$r1": {
+        "email": [
+          {
+            "type": "message",
+            "source": {
+              "channel_id": "worker"
+            },
+            "content": {
+              "type": "text",
+              "body": "Checking."
+            }
+          }
+        ]
+      },
+      "$r3": {
+        "email": []
+      }
+    }
+  }
+}

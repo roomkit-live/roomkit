@@ -1,0 +1,161 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/a-re-prompt-never-reaches-a-shared-transport",
+  "title": "A delegation that requires a structured result, with a transport shared into its room, re-prompts its worker by a system message only intelligence reads: the transport is delivered each of the worker's answers, never the task nor the re-prompt",
+  "rules": [
+    "§23.3 step 4",
+    "§23.3 step 5"
+  ],
+  "notes": "Python: tests/tasks/test_shared_transport_delegation.py::TestASharedTransportIsToldTheAnswer::test_a_result_tool_reprompt_never_reaches_it; core/mixins/_child_execution.py _broadcast_and_collect, _run_with_structured_result; orchestration/result.py SUBMIT_RESULT.reminder.",
+  "setup": {
+    "channels": [
+      {
+        "id": "email",
+        "type": "email",
+        "category": "transport"
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "First try."
+            },
+            {
+              "text": "Second try."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "parent",
+        "bindings": [
+          {
+            "channel_id": "email"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "parent",
+      "agent_id": "worker",
+      "task": "Summarise the ticket and email the customer.",
+      "share_channels": [
+        "email"
+      ],
+      "wait": true,
+      "require_structured_result": true,
+      "max_result_retries": 1,
+      "expect": {
+        "result": {
+          "status": "completed",
+          "result": {
+            "status": "completed",
+            "output": "{\"status\": \"failed\", \"by\": \"orchestration\", \"reason\": \"no_structured_result_after_2_attempts\", \"role\": \"worker\", \"last_output\": \"Second try.\"}",
+            "error": null
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "$r1": [
+        {
+          "index": 0,
+          "type": "message",
+          "source": {
+            "channel_id": "system",
+            "channel_type": "system"
+          },
+          "visibility": "intelligence",
+          "status": "delivered",
+          "chain_depth": 0,
+          "content": {
+            "type": "text",
+            "body": "Summarise the ticket and email the customer."
+          }
+        },
+        {
+          "index": 1,
+          "type": "message",
+          "source": {
+            "channel_id": "worker"
+          },
+          "status": "delivered",
+          "chain_depth": 1,
+          "responds_to": "$r1#0",
+          "content": {
+            "type": "text",
+            "body": "First try."
+          }
+        },
+        {
+          "index": 2,
+          "type": "message",
+          "source": {
+            "channel_id": "system",
+            "channel_type": "system"
+          },
+          "visibility": "intelligence",
+          "chain_depth": 0,
+          "content": {
+            "type": "text",
+            "body": {
+              "$contains": "call submit_result"
+            }
+          }
+        },
+        {
+          "index": 3,
+          "type": "message",
+          "source": {
+            "channel_id": "worker"
+          },
+          "status": "delivered",
+          "chain_depth": 1,
+          "responds_to": "$r1#2",
+          "content": {
+            "type": "text",
+            "body": "Second try."
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "$r1": {
+        "email": [
+          {
+            "type": "message",
+            "source": {
+              "channel_id": "worker"
+            },
+            "content": {
+              "type": "text",
+              "body": "First try."
+            }
+          },
+          {
+            "type": "message",
+            "source": {
+              "channel_id": "worker"
+            },
+            "content": {
+              "type": "text",
+              "body": "Second try."
+            }
+          }
+        ]
+      }
+    }
+  }
+}

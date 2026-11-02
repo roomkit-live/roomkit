@@ -1,0 +1,147 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/a-shared-binding-s-access-decides-what-it-is-told",
+  "title": "A transport shared into a delegated room keeps its parent binding's access and mute, and is told the agent's answer as that binding reads: read-only and muted bindings are told, a write-only one is not; the task's output is the answer all the same",
+  "rules": [
+    "§23.3 step 3",
+    "§23.3 step 5",
+    "§7.5 rule 1",
+    "§7.5 rule 6"
+  ],
+  "notes": "Python: tests/tasks/test_shared_transport_delegation.py::TestASharedTransportIsToldTheAnswer::test_its_binding_decides_what_it_reads[READ_ONLY-False-True], [READ_WRITE-True-True], [WRITE_ONLY-False-False]; core/mixins/delegation.py _share_channels.",
+  "setup": {
+    "channels": [
+      {
+        "id": "webhook",
+        "type": "webhook",
+        "category": "transport"
+      },
+      {
+        "id": "email",
+        "type": "email",
+        "category": "transport"
+      },
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "Summarise the ticket and email the customer."
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Done."
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "parent",
+        "bindings": [
+          {
+            "channel_id": "webhook",
+            "access": "read_only"
+          },
+          {
+            "channel_id": "email",
+            "muted": true
+          },
+          {
+            "channel_id": "sms",
+            "access": "write_only"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "parent",
+      "agent_id": "worker",
+      "task": "Summarise the ticket and email the customer.",
+      "share_channels": [
+        "webhook",
+        "email",
+        "sms"
+      ],
+      "wait": true,
+      "expect": {
+        "result": {
+          "status": "completed",
+          "result": {
+            "status": "completed",
+            "output": "Done.",
+            "error": null
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "$r1": {
+        "webhook": {
+          "category": "transport",
+          "access": "read_only",
+          "muted": false
+        },
+        "email": {
+          "category": "transport",
+          "access": "read_write",
+          "muted": true
+        },
+        "sms": {
+          "category": "transport",
+          "access": "write_only",
+          "muted": false
+        }
+      }
+    },
+    "deliveries": {
+      "$r1": {
+        "webhook": [
+          {
+            "type": "message",
+            "source": {
+              "channel_id": "worker"
+            },
+            "content": {
+              "type": "text",
+              "body": "Done."
+            }
+          }
+        ],
+        "email": [
+          {
+            "type": "message",
+            "source": {
+              "channel_id": "worker"
+            },
+            "content": {
+              "type": "text",
+              "body": "Done."
+            }
+          }
+        ],
+        "sms": []
+      }
+    }
+  }
+}
