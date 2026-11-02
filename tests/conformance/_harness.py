@@ -60,6 +60,7 @@ from tests.conformance._inputs import INPUT_CALLS, request_record
 from tests.conformance._media import media_options
 from tests.conformance._members import MEMBER_CALLS, store_identities
 from tests.conformance._normalize import Observed, is_lifecycle_record
+from tests.conformance._routing import ROUTING_CALLS
 from tests.conformance._script import GATE_BOUND_S, Gates, ScriptedRouter
 from tests.conformance._store import STORE_CALLS
 from tests.conformance._strategies import (
@@ -424,7 +425,7 @@ class Harness:
         """Makes one call; returns its outcome, its error named, never raising."""
         resolved = await self.resolve(dict(spec), scope)
         calls = CALLS | STORE_CALLS | TASK_CALLS | MEMBER_CALLS | INPUT_CALLS | STRATEGY_CALLS
-        call = (calls | VERIFICATION_CALLS)[spec["call"]]
+        call = (calls | VERIFICATION_CALLS | ROUTING_CALLS)[spec["call"]]
         try:
             result = await asyncio.wait_for(call(self.kit, self, resolved), CALL_BOUND_S)
         except TimeoutError:

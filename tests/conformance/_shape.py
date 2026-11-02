@@ -15,6 +15,13 @@ from typing import Any
 from tests.conformance._inputs import INPUT_ARGUMENTS
 from tests.conformance._media import ATTACHED_MEDIA, MEDIA_RESOLVER
 from tests.conformance._members import MEMBER_ARGUMENTS
+from tests.conformance._routing import (
+    CONDITIONS,
+    ROUTER,
+    ROUTING_ARGUMENTS,
+    ROUTING_RULE,
+    TRANSITION,
+)
 from tests.conformance._store import READ_MARKER_ARGUMENTS, STORE_ARGUMENTS
 from tests.conformance._strategies import (
     STRATEGY,
@@ -161,6 +168,7 @@ HOOK = {
     "fail_closed",
     "needs_lock",
     "reactions",
+    "router",
 }
 # A hook added for one room declares no filter and no timeout.
 ROOM_HOOK = HOOK - {"timeout_ms", "channel_types", "channel_ids", "directions"}
@@ -289,6 +297,7 @@ CALLS |= STORE_ARGUMENTS | READ_MARKER_ARGUMENTS | TASK_ARGUMENTS | MEMBER_ARGUM
 CALLS |= INPUT_ARGUMENTS
 CALLS |= VERIFICATION_ARGUMENTS
 CALLS |= STRATEGY_ARGUMENTS
+CALLS |= ROUTING_ARGUMENTS
 STEPS = {"await": {"await", "expect"}, "concurrent": {"concurrent"}, "wait_for": {"wait_for"}}
 STEPS |= {"open": {"open"}, "idle": {"idle"}, "wait_for_lock": {"wait_for_lock", "waiters"}}
 
@@ -435,6 +444,17 @@ def _hook(hook: Mapping[str, Any], path: str, found: list[str], members: set[str
     _members(hook, members, path, found)
     for index, reaction in enumerate(hook.get("reactions", [])):
         _reaction(reaction, f"{path}.reactions[{index}]", found)
+    if "router" in hook:
+        _router(hook["router"], f"{path}.router", found)
+
+
+def _router(router: Mapping[str, Any], path: str, found: list[str]) -> None:
+    _members(router, ROUTER, path, found)
+    for index, rule in enumerate(router.get("rules", [])):
+        _members(rule, ROUTING_RULE, f"{path}.rules[{index}]", found)
+        _members(
+            rule.get("conditions", {}), CONDITIONS, f"{path}.rules[{index}].conditions", found
+        )
 
 
 def _reaction(reaction: Mapping[str, Any], path: str, found: list[str]) -> None:
@@ -482,6 +502,9 @@ def _call(call: Mapping[str, Any], extra: set[str], path: str, found: list[str])
         _hook(call.get("hook", {}), f"{path}.hook", found)
     if name == "add_room_hook":
         _hook(call.get("hook", {}), f"{path}.hook", found, ROOM_HOOK)
+    if name == "save_conversation_state":
+        for index, transition in enumerate(call.get("transitions", [])):
+            _members(transition, TRANSITION, f"{path}.transitions[{index}]", found)
 
 
 def _outcome(outcome: Any, path: str, found: list[str]) -> None:

@@ -30,6 +30,7 @@ from roomkit.models.task import Observation, Task
 from roomkit.models.tool_call import AIGenerationEvent, ToolCallEvent, ToolRoundEvent
 from tests.conformance._agent import patched_tool_call
 from tests.conformance._ai_hooks import patched_generation, patched_tool_round
+from tests.conformance._routing import router_hook
 
 if TYPE_CHECKING:
     from tests.conformance._harness import Harness
@@ -419,7 +420,10 @@ HookHandler = Callable[[Any, RoomContext], Awaitable[HookResult | None]]
 
 
 def hook_handler(spec: Mapping[str, Any], harness: Harness) -> HookHandler:
-    """The handler of a scripted hook: it records its call, then reacts."""
+    """The handler of a scripted hook: it records its call, then reacts; a
+    conversation router's hook instead for a hook with a ``router``."""
+    if "router" in spec:
+        return router_hook(spec["router"])
     reactions = Reactions(spec.get("reactions"))
     name = spec["name"]
 
