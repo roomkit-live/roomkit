@@ -1,0 +1,158 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-task-delegated-from-a-delivery-is-not-its-turn-work",
+  "title": "A task an AFTER_BROADCAST hook delegates runs on its own: cancelling the delivery whose broadcast fired the hook cuts the delivery's turns, never the delegated task's",
+  "rules": [
+    "§10.1 Explicit delivery cancellation",
+    "§23.3"
+  ],
+  "notes": "Python: src/roomkit/core/_delivery_keys.py, src/roomkit/core/mixins/inbound.py (cancel_delivery); tests/test_delivery_cancel_turns.py::test_a_task_delegated_from_a_delivery_is_not_its_turn_work (RMK-1152).",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "gate": "a-runs",
+              "text": "answer to task A"
+            }
+          ]
+        }
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "child task"
+            },
+            "gate": "worker-runs",
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "done"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "ai",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "delegate",
+        "trigger": "after_broadcast",
+        "execution": "async",
+        "reactions": [
+          {
+            "when": {
+              "text": "task A"
+            },
+            "do": [
+              {
+                "call": "delegate",
+                "room_id": "$room",
+                "agent_id": "worker",
+                "task": "child task",
+                "as": "t"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "task A"
+        },
+        "delivery_key": "a"
+      },
+      "background": true,
+      "as": "a"
+    },
+    {
+      "wait_for": "a-runs"
+    },
+    {
+      "wait_for": "worker-runs"
+    },
+    {
+      "call": "cancel_delivery",
+      "key": "a",
+      "expect": {
+        "result": 1
+      }
+    },
+    {
+      "await": "a",
+      "expect": {
+        "result": {
+          "cancellation_reason": "caller_cancelled"
+        }
+      }
+    },
+    {
+      "open": "worker-runs"
+    },
+    {
+      "call": "task.wait",
+      "task_id": "$t",
+      "expect": {
+        "result": {
+          "status": "completed",
+          "output": "done",
+          "child_room_id": "$r1"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "task A"
+          }
+        }
+      ]
+    }
+  }
+}

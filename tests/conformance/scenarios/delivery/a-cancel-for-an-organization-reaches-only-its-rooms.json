@@ -1,0 +1,184 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-cancel-for-an-organization-reaches-only-its-rooms",
+  "title": "Two organizations that chose the same key never cancel each other's deliveries",
+  "rules": [
+    "§10.1 Explicit delivery cancellation",
+    "§17.2"
+  ],
+  "notes": "Python: src/roomkit/core/_delivery_keys.py, src/roomkit/core/mixins/inbound.py (cancel_delivery); tests/test_delivery_cancel_turns.py::test_a_cancel_for_an_organization_reaches_only_its_rooms (RMK-1152).",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "on_event": [
+          {
+            "when": {
+              "text": "task A"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "answer to task A"
+                }
+              }
+            ],
+            "gate": "a-runs"
+          },
+          {
+            "when": {
+              "text": "task B"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "answer to task B"
+                }
+              }
+            ],
+            "gate": "b-runs"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ],
+        "organization_id": "org-1"
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ],
+        "organization_id": "org-2"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "task A"
+        },
+        "delivery_key": "t"
+      },
+      "background": true,
+      "as": "a"
+    },
+    {
+      "wait_for": "a-runs"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "task B"
+        },
+        "delivery_key": "t"
+      },
+      "background": true,
+      "as": "b"
+    },
+    {
+      "wait_for": "b-runs"
+    },
+    {
+      "call": "cancel_delivery",
+      "key": "t",
+      "organization_id": "org-2",
+      "expect": {
+        "result": 1
+      }
+    },
+    {
+      "await": "b",
+      "expect": {
+        "result": {
+          "cancellation_reason": "caller_cancelled"
+        }
+      }
+    },
+    {
+      "open": "a-runs"
+    },
+    {
+      "await": "a",
+      "expect": {
+        "result": {
+          "cancellation_reason": null
+        }
+      }
+    },
+    {
+      "call": "cancel_delivery",
+      "key": "t",
+      "organization_id": "org-1",
+      "expect": {
+        "result": 0
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "task A"
+          }
+        },
+        {
+          "content": {
+            "body": "answer to task A"
+          }
+        }
+      ],
+      "room-2": [
+        {
+          "content": {
+            "body": "task B"
+          }
+        }
+      ]
+    }
+  }
+}

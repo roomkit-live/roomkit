@@ -1,0 +1,162 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-cancel-under-the-room-lock-returns-at-once",
+  "title": "A cancel made under the room's lock, from a SYNC hook, returns at once, and the turn of the delivery it names never starts",
+  "rules": [
+    "§10.1 Explicit delivery cancellation",
+    "§9.5.1"
+  ],
+  "notes": "Python: src/roomkit/core/_delivery_keys.py, src/roomkit/core/mixins/inbound.py (cancel_delivery); tests/test_delivery_cancel_turns.py::test_a_cancel_under_the_room_lock_returns_at_once (RMK-1152).",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "parse": [
+          {
+            "when": {
+              "text": "task B"
+            },
+            "gate": "b-parsing"
+          }
+        ]
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "on_event": [
+          {
+            "when": {
+              "text": "task B"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "answer to task B"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "stop",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "stop B"
+            },
+            "do": [
+              {
+                "call": "cancel_delivery",
+                "key": "b",
+                "as": "cancelled"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "task B"
+        },
+        "delivery_key": "b"
+      },
+      "background": true,
+      "as": "b"
+    },
+    {
+      "wait_for": "b-parsing"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "stop B"
+        }
+      }
+    },
+    {
+      "open": "b-parsing"
+    },
+    {
+      "await": "b",
+      "expect": {
+        "result": {
+          "cancellation_reason": "caller_cancelled"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "stop B"
+          }
+        },
+        {
+          "content": {
+            "body": "task B"
+          }
+        }
+      ]
+    },
+    "turns": {
+      "room-1": {
+        "ai": [
+          {
+            "content": {
+              "body": "stop B"
+            }
+          }
+        ]
+      }
+    },
+    "actions": {
+      "cancelled": [
+        {
+          "result": 1
+        }
+      ]
+    }
+  }
+}

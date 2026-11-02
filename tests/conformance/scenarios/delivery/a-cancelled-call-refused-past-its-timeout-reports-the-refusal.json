@@ -1,0 +1,126 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-cancelled-call-refused-past-its-timeout-reports-the-refusal",
+  "title": "A call cancelled before its commit, then refused past its process_timeout, reports its refusal and no cancellation, and its key names nothing after",
+  "rules": [
+    "§10.1 Explicit delivery cancellation",
+    "§13.6"
+  ],
+  "notes": "Python: src/roomkit/core/_delivery_keys.py, src/roomkit/core/mixins/inbound.py (cancel_delivery); tests/test_delivery_cancel_turns.py::test_a_cancelled_call_that_times_out_before_its_commit_names_nothing_after[parsing] (RMK-1152); its [context] and [identity] cases come to the same.",
+  "setup": {
+    "kit": {
+      "process_timeout_ms": 50
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "parse": [
+          {
+            "when": {
+              "text": "task A"
+            },
+            "gate": "parsing"
+          }
+        ]
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "on_event": [
+          {
+            "when": {
+              "text": "task A"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "answer to task A"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "task A"
+        },
+        "delivery_key": "a"
+      },
+      "background": true,
+      "as": "a"
+    },
+    {
+      "wait_for": "parsing"
+    },
+    {
+      "call": "cancel_delivery",
+      "key": "a",
+      "expect": {
+        "result": 1
+      }
+    },
+    {
+      "await": "a",
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "process_timeout",
+          "event": null,
+          "cancellation_reason": null
+        }
+      }
+    },
+    {
+      "call": "cancel_delivery",
+      "key": "a",
+      "expect": {
+        "result": 0
+      }
+    },
+    {
+      "open": "parsing"
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": []
+    },
+    "turns": {
+      "room-1": {
+        "ai": []
+      }
+    }
+  }
+}

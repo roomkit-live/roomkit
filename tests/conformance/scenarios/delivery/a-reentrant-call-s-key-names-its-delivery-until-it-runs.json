@@ -1,0 +1,180 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-reentrant-call-s-key-names-its-delivery-until-it-runs",
+  "title": "A message sent under the room's lock returns before its delivery runs, behind the section's own: its key names that delivery, whose turn never starts once cancelled",
+  "rules": [
+    "§10.1 Explicit delivery cancellation",
+    "§9.5.1 Reentrance"
+  ],
+  "notes": "Python: src/roomkit/core/_delivery_keys.py, src/roomkit/core/mixins/inbound.py (cancel_delivery); tests/test_delivery_cancel_turns.py::test_a_reentrant_call_s_key_names_its_delivery_until_it_runs (RMK-1152).",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "on_event": [
+          {
+            "when": {
+              "text": "task B"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "answer to task B"
+                }
+              }
+            ]
+          },
+          {
+            "when": {
+              "text": "lead"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "answer to lead"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "post",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "lead"
+            },
+            "do": [
+              {
+                "call": "process_inbound",
+                "room_id": "$room",
+                "message": {
+                  "channel_id": "sms",
+                  "sender_id": "+15551234567",
+                  "content": {
+                    "type": "text",
+                    "body": "task B"
+                  },
+                  "delivery_key": "b"
+                }
+              },
+              {
+                "call": "cancel_delivery",
+                "key": "b",
+                "as": "cancelled"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "lead"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "task B"
+          },
+          "index": 0
+        },
+        {
+          "content": {
+            "body": "lead"
+          },
+          "index": 1
+        },
+        {
+          "content": {
+            "body": "answer to lead"
+          },
+          "index": 2
+        }
+      ]
+    },
+    "turns": {
+      "room-1": {
+        "ai": [
+          {
+            "content": {
+              "body": "lead"
+            }
+          }
+        ]
+      }
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "content": {
+              "body": "task B"
+            }
+          },
+          {
+            "content": {
+              "body": "lead"
+            }
+          },
+          {
+            "content": {
+              "body": "answer to lead"
+            }
+          }
+        ]
+      }
+    },
+    "actions": {
+      "cancelled": [
+        {
+          "result": 1
+        }
+      ]
+    }
+  }
+}

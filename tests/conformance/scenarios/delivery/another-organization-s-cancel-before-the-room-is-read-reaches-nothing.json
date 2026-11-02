@@ -1,0 +1,132 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/another-organization-s-cancel-before-the-room-is-read-reaches-nothing",
+  "title": "A cancel for another organization reaching a delivery before its room is read counts nothing, and the room proving its own organization's, the turn runs",
+  "rules": [
+    "§10.1 Explicit delivery cancellation",
+    "§17.2",
+    "§10.1 step 2"
+  ],
+  "notes": "Python: src/roomkit/core/_delivery_keys.py, src/roomkit/core/mixins/inbound.py (cancel_delivery); tests/test_delivery_cancel_turns.py::test_a_scoped_cancel_before_the_commit_reaches_only_its_organization[unread-other-organization] (RMK-1152); its case at the room's read, [room-being-read], comes to the same: the call is located once the read is over.",
+  "setup": {
+    "kit": {
+      "router": {
+        "room_id": "room-1",
+        "gate": "routing"
+      }
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "on_event": [
+          {
+            "when": {
+              "text": "task A"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "answer to task A"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ],
+        "organization_id": "org-1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "task A"
+        },
+        "delivery_key": "t"
+      },
+      "background": true,
+      "as": "a"
+    },
+    {
+      "wait_for": "routing"
+    },
+    {
+      "call": "cancel_delivery",
+      "key": "t",
+      "reason": "stopped",
+      "organization_id": "org-2",
+      "expect": {
+        "result": 0
+      }
+    },
+    {
+      "open": "routing"
+    },
+    {
+      "await": "a",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "cancellation_reason": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "task A"
+          }
+        },
+        {
+          "content": {
+            "body": "answer to task A"
+          }
+        }
+      ]
+    },
+    "turns": {
+      "room-1": {
+        "ai": [
+          {
+            "content": {
+              "body": "task A"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

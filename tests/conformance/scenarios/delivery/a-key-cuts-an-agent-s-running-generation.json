@@ -1,0 +1,151 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-key-cuts-an-agent-s-running-generation",
+  "title": "Cancelling a key cuts the running generation of an agent the delivery asked, which answers nothing, and the agent's next turn runs",
+  "rules": [
+    "§10.1 Explicit delivery cancellation",
+    "§10.6.8"
+  ],
+  "notes": "Python: src/roomkit/core/_delivery_keys.py, src/roomkit/core/mixins/inbound.py (cancel_delivery); tests/test_delivery_cancel_turns.py::test_a_running_turn_is_cut_and_the_room_s_next_turn_runs[agent], ::test_an_awaited_call_reads_its_cancelled_end (RMK-1152).",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "gate": "generating",
+              "text": "first"
+            },
+            {
+              "text": "second"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "task A"
+        },
+        "delivery_key": "a"
+      },
+      "background": true,
+      "as": "a"
+    },
+    {
+      "wait_for": "generating"
+    },
+    {
+      "call": "cancel_delivery",
+      "key": "a",
+      "reason": "stopped",
+      "expect": {
+        "result": 1
+      }
+    },
+    {
+      "await": "a",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "cancellation_reason": "stopped"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "task B"
+        },
+        "delivery_key": "b"
+      },
+      "expect": {
+        "result": {
+          "cancellation_reason": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "task A"
+          }
+        },
+        {
+          "content": {
+            "body": "task B"
+          }
+        },
+        {
+          "content": {
+            "body": "second"
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "content": {
+              "body": "task A"
+            }
+          },
+          {
+            "content": {
+              "body": "task B"
+            }
+          },
+          {
+            "content": {
+              "body": "second"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

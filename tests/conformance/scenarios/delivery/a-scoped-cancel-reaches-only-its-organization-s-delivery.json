@@ -1,0 +1,454 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-scoped-cancel-reaches-only-its-organization-s-delivery",
+  "title": "A cancel for an organization reaches a delivery from its call's start when the call names that organization, once its room is read otherwise; another organization's never reaches it",
+  "rules": [
+    "§10.1 Explicit delivery cancellation",
+    "§17.2"
+  ],
+  "notes": "Python: src/roomkit/core/_delivery_keys.py, src/roomkit/core/mixins/inbound.py (cancel_delivery); tests/test_delivery_cancel_turns.py::test_a_scoped_cancel_before_the_commit_reaches_only_its_organization[named-its-organization], [room-read], [room-read-identifying], [read-other-organization], [named-other-organization] (RMK-1152): one, two, three, four and five in that order of cases, each held at its parse or its sender's resolution.",
+  "setup": {
+    "kit": {
+      "identity_resolver": {
+        "answers": [
+          {
+            "when": {
+              "text": "five"
+            },
+            "gate": "five-held",
+            "result": {
+              "status": "unknown"
+            }
+          },
+          {
+            "repeat": true,
+            "result": {
+              "status": "unknown"
+            }
+          }
+        ]
+      }
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "parse": [
+          {
+            "when": {
+              "text": "one"
+            },
+            "gate": "one-held"
+          },
+          {
+            "when": {
+              "text": "two"
+            },
+            "gate": "two-held"
+          },
+          {
+            "when": {
+              "text": "three"
+            },
+            "gate": "three-held"
+          },
+          {
+            "when": {
+              "text": "four"
+            },
+            "gate": "four-held"
+          }
+        ]
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "on_event": [
+          {
+            "when": {
+              "text": "one"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "answer to one"
+                }
+              }
+            ]
+          },
+          {
+            "when": {
+              "text": "two"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "answer to two"
+                }
+              }
+            ]
+          },
+          {
+            "when": {
+              "text": "three"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "answer to three"
+                }
+              }
+            ]
+          },
+          {
+            "when": {
+              "text": "four"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "answer to four"
+                }
+              }
+            ]
+          },
+          {
+            "when": {
+              "text": "five"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "answer to five"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ],
+        "organization_id": "org-1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "one"
+        },
+        "delivery_key": "one"
+      },
+      "background": true,
+      "as": "one"
+    },
+    {
+      "wait_for": "one-held"
+    },
+    {
+      "call": "cancel_delivery",
+      "key": "one",
+      "reason": "stopped",
+      "organization_id": "org-1",
+      "expect": {
+        "result": 1
+      }
+    },
+    {
+      "open": "one-held"
+    },
+    {
+      "await": "one",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "cancellation_reason": "stopped"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "two"
+        },
+        "delivery_key": "two"
+      },
+      "background": true,
+      "as": "two"
+    },
+    {
+      "wait_for": "two-held"
+    },
+    {
+      "call": "cancel_delivery",
+      "key": "two",
+      "reason": "stopped",
+      "organization_id": "org-2",
+      "expect": {
+        "result": 0
+      }
+    },
+    {
+      "open": "two-held"
+    },
+    {
+      "await": "two",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "cancellation_reason": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "three"
+        },
+        "delivery_key": "three"
+      },
+      "background": true,
+      "as": "three",
+      "organization_id": "org-1"
+    },
+    {
+      "wait_for": "three-held"
+    },
+    {
+      "call": "cancel_delivery",
+      "key": "three",
+      "reason": "stopped",
+      "organization_id": "org-1",
+      "expect": {
+        "result": 1
+      }
+    },
+    {
+      "open": "three-held"
+    },
+    {
+      "await": "three",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "cancellation_reason": "stopped"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "four"
+        },
+        "delivery_key": "four"
+      },
+      "background": true,
+      "as": "four",
+      "organization_id": "org-1"
+    },
+    {
+      "wait_for": "four-held"
+    },
+    {
+      "call": "cancel_delivery",
+      "key": "four",
+      "reason": "stopped",
+      "organization_id": "org-2",
+      "expect": {
+        "result": 0
+      }
+    },
+    {
+      "open": "four-held"
+    },
+    {
+      "await": "four",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "cancellation_reason": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "five"
+        },
+        "delivery_key": "five"
+      },
+      "background": true,
+      "as": "five"
+    },
+    {
+      "wait_for": "five-held"
+    },
+    {
+      "call": "cancel_delivery",
+      "key": "five",
+      "reason": "stopped",
+      "organization_id": "org-1",
+      "expect": {
+        "result": 1
+      }
+    },
+    {
+      "open": "five-held"
+    },
+    {
+      "await": "five",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "cancellation_reason": "stopped"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "one"
+          }
+        },
+        {
+          "content": {
+            "body": "two"
+          }
+        },
+        {
+          "content": {
+            "body": "answer to two"
+          }
+        },
+        {
+          "content": {
+            "body": "three"
+          }
+        },
+        {
+          "content": {
+            "body": "four"
+          }
+        },
+        {
+          "content": {
+            "body": "answer to four"
+          }
+        },
+        {
+          "content": {
+            "body": "five"
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "content": {
+              "body": "one"
+            }
+          },
+          {
+            "content": {
+              "body": "two"
+            }
+          },
+          {
+            "content": {
+              "body": "answer to two"
+            }
+          },
+          {
+            "content": {
+              "body": "three"
+            }
+          },
+          {
+            "content": {
+              "body": "four"
+            }
+          },
+          {
+            "content": {
+              "body": "answer to four"
+            }
+          },
+          {
+            "content": {
+              "body": "five"
+            }
+          }
+        ]
+      }
+    },
+    "turns": {
+      "room-1": {
+        "ai": [
+          {
+            "content": {
+              "body": "two"
+            }
+          },
+          {
+            "content": {
+              "body": "four"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

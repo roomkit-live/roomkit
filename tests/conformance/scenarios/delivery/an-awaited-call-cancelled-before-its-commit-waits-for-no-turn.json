@@ -1,0 +1,209 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/an-awaited-call-cancelled-before-its-commit-waits-for-no-turn",
+  "title": "An awaited call whose delivery is cancelled returns once its own turns are over, not behind the room's running turn its delivery set waits for in the lane; that set delivers in lane order",
+  "rules": [
+    "§10.1 Explicit delivery cancellation",
+    "§10.2"
+  ],
+  "notes": "Python: src/roomkit/core/_delivery_keys.py, src/roomkit/core/mixins/inbound.py (cancel_delivery); tests/test_delivery_cancel_turns.py::test_an_awaited_call_cancelled_before_its_commit_waits_for_no_turn, ::test_a_turn_queued_behind_the_room_s_turn_never_starts[steerless] (RMK-1152).",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "parse": [
+          {
+            "when": {
+              "text": "task B"
+            },
+            "gate": "b-parsing"
+          }
+        ]
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "on_event": [
+          {
+            "when": {
+              "text": "task A"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "answer to task A"
+                }
+              }
+            ],
+            "gate": "a-runs"
+          },
+          {
+            "when": {
+              "text": "task B"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "answer to task B"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "task A"
+        },
+        "delivery_key": "a"
+      },
+      "background": true,
+      "as": "a"
+    },
+    {
+      "wait_for": "a-runs"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "task B"
+        },
+        "delivery_key": "b"
+      },
+      "background": true,
+      "as": "b"
+    },
+    {
+      "wait_for": "b-parsing"
+    },
+    {
+      "call": "cancel_delivery",
+      "key": "b",
+      "reason": "stopped",
+      "expect": {
+        "result": 1
+      }
+    },
+    {
+      "open": "b-parsing"
+    },
+    {
+      "await": "b",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "content": {
+              "body": "task B"
+            }
+          },
+          "cancellation_reason": "stopped"
+        }
+      }
+    },
+    {
+      "open": "a-runs"
+    },
+    {
+      "await": "a",
+      "expect": {
+        "result": {
+          "cancellation_reason": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "task A"
+          },
+          "index": 0
+        },
+        {
+          "content": {
+            "body": "task B"
+          },
+          "index": 1
+        },
+        {
+          "content": {
+            "body": "answer to task A"
+          },
+          "index": 2
+        }
+      ]
+    },
+    "turns": {
+      "room-1": {
+        "ai": [
+          {
+            "content": {
+              "body": "task A"
+            }
+          }
+        ]
+      }
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "content": {
+              "body": "task A"
+            }
+          },
+          {
+            "content": {
+              "body": "task B"
+            }
+          },
+          {
+            "content": {
+              "body": "answer to task A"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

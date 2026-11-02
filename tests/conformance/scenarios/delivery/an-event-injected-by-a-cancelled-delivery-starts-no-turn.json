@@ -1,0 +1,170 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/an-event-injected-by-a-cancelled-delivery-starts-no-turn",
+  "title": "An event a hook injects is delivered by the delivery of the message that fired it: once that delivery is cancelled, its turn never starts either",
+  "rules": [
+    "§10.1 Explicit delivery cancellation",
+    "§9.4"
+  ],
+  "notes": "Python: src/roomkit/core/_delivery_keys.py, src/roomkit/core/mixins/inbound.py (cancel_delivery); tests/test_delivery_cancel_turns.py::test_an_event_injected_by_a_cancelled_delivery_starts_no_turn (RMK-1152).",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "parse": [
+          {
+            "when": {
+              "text": "task B"
+            },
+            "gate": "b-parsing"
+          }
+        ]
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "on_event": [
+          {
+            "when": {
+              "text": "task B"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "answer to task B"
+                }
+              }
+            ]
+          },
+          {
+            "when": {
+              "text": "task C"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "answer to task C"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "inject",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "task B"
+            },
+            "result": {
+              "action": "allow",
+              "injected_events": [
+                {
+                  "event": {
+                    "content": {
+                      "type": "text",
+                      "body": "task C"
+                    },
+                    "source": {
+                      "channel_id": "sms",
+                      "channel_type": "sms"
+                    }
+                  },
+                  "target_channel_ids": [
+                    "ai"
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "task B"
+        },
+        "delivery_key": "b"
+      },
+      "background": true,
+      "as": "b"
+    },
+    {
+      "wait_for": "b-parsing"
+    },
+    {
+      "call": "cancel_delivery",
+      "key": "b",
+      "expect": {
+        "result": 1
+      }
+    },
+    {
+      "open": "b-parsing"
+    },
+    {
+      "await": "b",
+      "expect": {
+        "result": {
+          "cancellation_reason": "caller_cancelled"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "task B"
+          }
+        },
+        {
+          "content": {
+            "body": "task C"
+          }
+        }
+      ]
+    },
+    "turns": {
+      "room-1": {
+        "ai": []
+      }
+    }
+  }
+}
