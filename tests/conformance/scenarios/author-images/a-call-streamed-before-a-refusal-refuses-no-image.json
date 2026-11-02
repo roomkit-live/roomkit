@@ -1,0 +1,153 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "author-images/a-call-streamed-before-a-refusal-refuses-no-image",
+  "title": "When a turn's first request, carrying an author image, has its provider stream a call before it refuses the request, the image is not refused: later turns send it",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "RFC §6.4: a stream already under way shows the images were taken. Any event the provider handed counts, a call the loop serves included, though it reaches no reader (RMK-1220, HITL 449aa7ac).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "vision": true,
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "call-1",
+                  "name": "lookup"
+                }
+              ],
+              "refuses": {
+                "status": 400,
+                "message": "bad request"
+              },
+              "failure_after_calls": true
+            },
+            {
+              "text": "Seen."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look something up",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "found"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "composite",
+        "parts": [
+          {
+            "type": "text",
+            "body": "my lamp"
+          },
+          {
+            "type": "media",
+            "url": "data:image/png;base64,AQIDBA==",
+            "mime_type": "image/png",
+            "filename": "lamp.png"
+          }
+        ]
+      },
+      "metadata": {}
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "and now?"
+      },
+      "metadata": {}
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "my lamp",
+              "parts": [
+                {
+                  "text": "my lamp"
+                },
+                {
+                  "image": "data:image/png;base64,AQIDBA==",
+                  "mime_type": "image/png"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "my lamp",
+              "parts": [
+                {
+                  "text": "my lamp"
+                },
+                {
+                  "image": "data:image/png;base64,AQIDBA==",
+                  "mime_type": "image/png"
+                }
+              ]
+            },
+            {
+              "role": "user",
+              "text": "and now?",
+              "parts": {
+                "$absent": true
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
