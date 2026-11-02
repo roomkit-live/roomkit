@@ -1,0 +1,156 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-room-the-agent-joins-again-replays-no-tool-image",
+  "title": "An agent detached from a room and attached again replays none of the images its tools returned there",
+  "rules": [
+    "§6.1",
+    "§6.4",
+    "§10.6.3"
+  ],
+  "notes": "Python's AIChannel._forget_room, which on_room_attached and on_room_detached call, drops the room's ToolUsageMemory; its next turn seeds the record from the store without images (RMK-1240).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "vision": true,
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "generate_image",
+                  "arguments": {
+                    "prompt": "a red fox"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "done"
+            },
+            {
+              "text": "warm reds"
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "generate_image",
+            "description": "Draw an image",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "prompt": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns_parts": [
+              {
+                "text": "here"
+              },
+              {
+                "image": "data:image/png;base64,AAAA",
+                "mime_type": "image/png"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "draw a red fox"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "detach_channel",
+      "room_id": "room-1",
+      "channel_id": "agent"
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "room-1",
+      "channel_id": "agent",
+      "category": "intelligence"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "its colours?"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {},
+        {
+          "messages": [
+            {
+              "role": "user"
+            },
+            {
+              "role": "assistant"
+            },
+            {
+              "role": "tool"
+            },
+            {
+              "role": "assistant",
+              "text": "done"
+            },
+            {
+              "role": "user",
+              "text": "its colours?",
+              "parts": null
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

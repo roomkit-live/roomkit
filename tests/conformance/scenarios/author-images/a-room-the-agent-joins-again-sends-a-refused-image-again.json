@@ -1,0 +1,131 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "author-images/a-room-the-agent-joins-again-sends-a-refused-image-again",
+  "title": "An agent detached from a room and attached again sends the author images its provider refused there, as it never refused them",
+  "rules": [
+    "§6.1",
+    "§6.4",
+    "§10.6.3"
+  ],
+  "notes": "Python's AIChannel._forget_room, which on_room_attached and on_room_detached call, drops the room's RefusedImages (RMK-1219). Translates the refused images of tests/test_ai_author_images.py with the detach of tests/test_channel_attach_contract.py.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "vision": true,
+          "rounds": [
+            {
+              "refuses": {
+                "status": 400,
+                "message": "the image could not be processed"
+              }
+            },
+            {
+              "text": "Seen."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "composite",
+        "parts": [
+          {
+            "type": "text",
+            "body": "my lamps"
+          },
+          {
+            "type": "media",
+            "url": "data:image/png;base64,AQIDBA==",
+            "mime_type": "image/png",
+            "filename": "lamp.png"
+          }
+        ]
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "detach_channel",
+      "room_id": "room-1",
+      "channel_id": "agent"
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "room-1",
+      "channel_id": "agent",
+      "category": "intelligence"
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "and now?"
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "my lamps",
+              "parts": [
+                {
+                  "text": "my lamps"
+                },
+                {
+                  "image": "data:image/png;base64,AQIDBA==",
+                  "mime_type": "image/png"
+                }
+              ]
+            },
+            {
+              "role": "user",
+              "text": "and now?",
+              "parts": {
+                "$absent": true
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
