@@ -1,0 +1,128 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "store/a-verification-request-is-read-by-its-id-and-rewritten-whole",
+  "title": "A verification request is read back by its id, none for an id the store lacks, and an update rewrites it whole, the identity's other requests left as they are",
+  "rules": [
+    "§11.7.2",
+    "§14.1"
+  ],
+  "notes": "Python: the verification requests of src/roomkit/store/memory.py and sqlite.py, which tests/test_identity_verification.py::test_a_wrong_secret_counts_and_the_last_attempt_fails_the_request and test_the_secret_is_returned_once_and_never_stored read back from the store (RMK-1122). A request's id is normalized as any id of no timeline ($e1, $e2... by first appearance). What a store does with a second creation under an id it holds, or an update of a request it lacks, differs between Python's stores, and is not asserted.",
+  "steps": [
+    {
+      "call": "store.create_verification_request",
+      "request": {
+        "id": "req-1",
+        "identity_id": "alice",
+        "organization_id": "org-a",
+        "room_id": "room-1",
+        "channel_id": "sms",
+        "method": "link",
+        "secret_hash": "scrypt$16384$8$1$c2FsdA$aGFzaA",
+        "window_start": "2030-01-01T00:00:00Z",
+        "created_at": "2030-01-01T00:00:01Z",
+        "expires_at": "2030-01-01T00:10:01Z",
+        "max_attempts": 3
+      },
+      "expect": {
+        "result": {
+          "id": "$e1",
+          "status": "open",
+          "attempts": 0
+        }
+      }
+    },
+    {
+      "call": "store.get_verification_request",
+      "request_id": "req-1",
+      "expect": {
+        "result": {
+          "id": "$e1",
+          "identity_id": "alice",
+          "organization_id": "org-a",
+          "room_id": "room-1",
+          "channel_id": "sms",
+          "method": "link",
+          "secret_hash": "scrypt$16384$8$1$c2FsdA$aGFzaA",
+          "window_start": "@1",
+          "created_at": "@2",
+          "expires_at": "@3",
+          "attempts": 0,
+          "max_attempts": 3,
+          "status": "open"
+        }
+      }
+    },
+    {
+      "call": "store.get_verification_request",
+      "request_id": "nope",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "store.create_verification_request",
+      "request": {
+        "id": "req-2",
+        "identity_id": "alice",
+        "organization_id": "org-a",
+        "room_id": "room-1",
+        "channel_id": "sms",
+        "method": "code",
+        "secret_hash": "scrypt$16384$8$1$c2FsdDI$aGFzaDI",
+        "window_start": "2030-01-01T00:00:00Z",
+        "created_at": "2030-01-01T00:00:01Z",
+        "expires_at": "2030-01-01T00:15:01Z",
+        "max_attempts": 3
+      }
+    },
+    {
+      "call": "store.update_verification_request",
+      "request": {
+        "id": "req-1",
+        "identity_id": "alice",
+        "organization_id": "org-a",
+        "room_id": "room-1",
+        "channel_id": "sms",
+        "method": "link",
+        "secret_hash": "scrypt$16384$8$1$c2FsdA$aGFzaA",
+        "window_start": "2030-01-01T00:00:00Z",
+        "created_at": "2030-01-01T00:00:01Z",
+        "expires_at": "2030-01-01T00:10:01Z",
+        "attempts": 3,
+        "max_attempts": 3,
+        "status": "failed"
+      },
+      "expect": {
+        "result": {
+          "id": "$e1",
+          "status": "failed",
+          "attempts": 3
+        }
+      }
+    },
+    {
+      "call": "store.get_verification_request",
+      "request_id": "req-1",
+      "expect": {
+        "result": {
+          "id": "$e1",
+          "method": "link",
+          "attempts": 3,
+          "status": "failed"
+        }
+      }
+    },
+    {
+      "call": "store.get_verification_request",
+      "request_id": "req-2",
+      "expect": {
+        "result": {
+          "id": "$e2",
+          "method": "code",
+          "attempts": 0,
+          "status": "open"
+        }
+      }
+    }
+  ]
+}

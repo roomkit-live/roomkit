@@ -1,0 +1,107 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "store/the-verifications-in-force-are-the-verified-with-an-expiry",
+  "title": "The verifications in force are those verified with an expiry, across organizations: none ended, pending or without an expiry",
+  "rules": [
+    "§11.7.5",
+    "§14.1"
+  ],
+  "notes": "Python: tests/test_identity_verification.py::test_the_store_lists_the_verifications_in_force, its store part (RMK-1122). The list is read when the framework starts, to arm the timers that end them (§11.7.5); a verification without an expiry has no timer to arm.",
+  "steps": [
+    {
+      "call": "store.put_verification",
+      "verification": {
+        "identity_id": "alice",
+        "status": "verified",
+        "verified_at": "2030-01-01T00:00:00Z",
+        "expires_at": "2030-01-01T00:15:00Z"
+      }
+    },
+    {
+      "call": "store.put_verification",
+      "verification": {
+        "identity_id": "carol",
+        "organization_id": "org-a",
+        "status": "verified",
+        "verified_at": "2030-01-01T00:00:00Z",
+        "expires_at": "2030-01-01T00:15:00Z"
+      }
+    },
+    {
+      "call": "store.put_verification",
+      "verification": {
+        "identity_id": "bob",
+        "status": "verified",
+        "verified_at": "2030-01-01T00:00:00Z"
+      }
+    },
+    {
+      "call": "store.put_verification",
+      "verification": {
+        "identity_id": "dave",
+        "status": "revoked",
+        "verified_at": "2030-01-01T00:00:00Z",
+        "expires_at": "2030-01-01T00:15:00Z",
+        "ended_reason": "revoked"
+      }
+    },
+    {
+      "call": "store.put_verification",
+      "verification": {
+        "identity_id": "erin",
+        "status": "expired",
+        "verified_at": "2030-01-01T00:00:00Z",
+        "expires_at": "2030-01-01T00:15:00Z",
+        "ended_reason": "expired"
+      }
+    },
+    {
+      "call": "store.put_verification",
+      "verification": {
+        "identity_id": "frank",
+        "status": "pending",
+        "request_id": "req-1"
+      }
+    },
+    {
+      "call": "store.list_verifications_in_force",
+      "expect": {
+        "result": {
+          "$unordered": [
+            {
+              "identity_id": "alice",
+              "organization_id": null,
+              "status": "verified"
+            },
+            {
+              "identity_id": "carol",
+              "organization_id": "org-a",
+              "status": "verified"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "store.put_verification",
+      "verification": {
+        "identity_id": "alice",
+        "status": "revoked",
+        "verified_at": "2030-01-01T00:00:00Z",
+        "expires_at": "2030-01-01T00:15:00Z",
+        "ended_reason": "revoked"
+      }
+    },
+    {
+      "call": "store.list_verifications_in_force",
+      "expect": {
+        "result": [
+          {
+            "identity_id": "carol",
+            "organization_id": "org-a"
+          }
+        ]
+      }
+    }
+  ]
+}

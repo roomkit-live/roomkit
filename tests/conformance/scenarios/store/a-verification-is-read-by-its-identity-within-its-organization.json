@@ -1,0 +1,126 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "store/a-verification-is-read-by-its-identity-within-its-organization",
+  "title": "A verification is read back by its identity within its organization, none for another organization or an identity it lacks, and a put replaces it there alone",
+  "rules": [
+    "§11.7.1",
+    "§11.7.7",
+    "§14.1"
+  ],
+  "notes": "Python: the verification records of src/roomkit/store/memory.py and sqlite.py, which tests/test_identity_verification.py::test_organizations_are_kept_apart and test_a_request_is_scoped_to_its_rooms_organization read through the kit (RMK-1122). A verification is keyed by its identity and its organization, none being an organization of its own.",
+  "steps": [
+    {
+      "call": "store.put_verification",
+      "verification": {
+        "identity_id": "alice",
+        "status": "verified",
+        "method": "link",
+        "verified_via": "sms",
+        "verified_at": "2030-01-01T00:00:00Z",
+        "expires_at": "2030-01-01T00:15:00Z",
+        "completed_request_id": "req-1"
+      },
+      "expect": {
+        "result": {
+          "identity_id": "alice",
+          "status": "verified"
+        }
+      }
+    },
+    {
+      "call": "store.put_verification",
+      "verification": {
+        "identity_id": "alice",
+        "organization_id": "org-a",
+        "status": "pending",
+        "request_id": "req-2"
+      }
+    },
+    {
+      "call": "store.get_verification",
+      "identity_id": "alice",
+      "expect": {
+        "result": {
+          "identity_id": "alice",
+          "organization_id": null,
+          "status": "verified",
+          "method": "link",
+          "verified_via": "sms",
+          "verified_at": "@1",
+          "expires_at": "@2",
+          "ended_reason": null,
+          "request_id": null,
+          "completed_request_id": "req-1"
+        }
+      }
+    },
+    {
+      "call": "store.get_verification",
+      "identity_id": "alice",
+      "organization_id": "org-a",
+      "expect": {
+        "result": {
+          "identity_id": "alice",
+          "organization_id": "org-a",
+          "status": "pending",
+          "method": null,
+          "verified_via": null,
+          "verified_at": null,
+          "expires_at": null,
+          "ended_reason": null,
+          "request_id": "req-2",
+          "completed_request_id": null
+        }
+      }
+    },
+    {
+      "call": "store.get_verification",
+      "identity_id": "alice",
+      "organization_id": "org-b",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "store.get_verification",
+      "identity_id": "bob",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "store.put_verification",
+      "verification": {
+        "identity_id": "alice",
+        "status": "revoked",
+        "method": "link",
+        "verified_via": "sms",
+        "verified_at": "2030-01-01T00:00:00Z",
+        "expires_at": "2030-01-01T00:15:00Z",
+        "ended_reason": "advisor",
+        "completed_request_id": "req-1"
+      }
+    },
+    {
+      "call": "store.get_verification",
+      "identity_id": "alice",
+      "expect": {
+        "result": {
+          "status": "revoked",
+          "ended_reason": "advisor"
+        }
+      }
+    },
+    {
+      "call": "store.get_verification",
+      "identity_id": "alice",
+      "organization_id": "org-a",
+      "expect": {
+        "result": {
+          "status": "pending",
+          "request_id": "req-2"
+        }
+      }
+    }
+  ]
+}
