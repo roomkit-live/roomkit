@@ -130,6 +130,7 @@ def dump(value: Any) -> Any:
             "error": None if value.error is None else str(value.error),
             "response_metadata": value.response_metadata,
             "delivery_results": {k: dump(v) for k, v in (value.delivery_results or {}).items()},
+            "cancellation_reason": value.cancellation_reason,
         }
     if isinstance(value, DelegatedTask):
         return {
@@ -406,6 +407,11 @@ async def _deliver(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> A
     return await kit.deliver(spec["room_id"], spec["content"], **kwargs, **_org(spec))
 
 
+async def _cancel_delivery(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
+    reason = {"reason": spec["reason"]} if "reason" in spec else {}
+    return await kit.cancel_delivery(spec["key"], **reason, **_org(spec))
+
+
 CALLS: dict[str, Call] = {
     "process_inbound": _process_inbound,
     "send_event": _send_event,
@@ -433,6 +439,7 @@ CALLS: dict[str, Call] = {
     "process_delivery_status": _process_delivery_status,
     "process_webhook": _process_webhook,
     "deliver": _deliver,
+    "cancel_delivery": _cancel_delivery,
 }
 
 

@@ -250,6 +250,7 @@ CALLS: dict[str, set[str]] = {
         "chain_depth",
         "instruction",
     },
+    "cancel_delivery": {"key", "reason"},
 }
 CALLS |= STORE_ARGUMENTS | READ_MARKER_ARGUMENTS | TASK_ARGUMENTS | MEMBER_ARGUMENTS
 CALLS |= INPUT_ARGUMENTS

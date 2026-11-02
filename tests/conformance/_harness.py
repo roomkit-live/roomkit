@@ -136,7 +136,10 @@ class Harness:
         if store is not None:
             kwargs["store"] = store
         if "router" in kit_setup:
-            kwargs["inbound_router"] = ScriptedRouter(kit_setup["router"]["room_id"])
+            router = kit_setup["router"]
+            kwargs["inbound_router"] = ScriptedRouter(
+                router["room_id"], router.get("gate"), self.gates
+            )
         kwargs |= kit_options(kit_setup, self)
         kwargs |= delivery_options(kit_setup)
         kwargs |= verification_options(kit_setup)
