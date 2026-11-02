@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import collections
+import gc
 import os
 import traceback
 from collections.abc import AsyncIterator, Callable, Coroutine, Iterator
@@ -174,6 +175,20 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
                 raise pytest.UsageError(
                     f"{item.nodeid}: @{name} applies only to a test that takes `streaming`"
                 )
+
+
+def pytest_collection_finish(session: pytest.Session) -> None:
+    """Keep what the collection built out of the collector's reach.
+
+    The modules, the tests and their parameters, about a million objects in
+    a worker of the whole suite, live until the run ends. Rescanned by every
+    full collection, they made each one pause the worker 0.25 to 0.4 s (on
+    Python 3.12), longer on a loaded CI runner: enough to run out a test's
+    sub-second bound on real work (RMK-1224). Frozen, they are never scanned
+    again; what the tests allocate is collected as before.
+    """
+    gc.collect()
+    gc.freeze()
 
 
 class PoolCheckoutRecorder:
