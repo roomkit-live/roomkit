@@ -46,14 +46,21 @@ class ScriptedModel(AIProvider):
     """A provider answering each generation with the next round of a script,
     and keeping what each request carried."""
 
-    def __init__(self, rounds: list[Mapping[str, Any]], gates: Gates) -> None:
+    def __init__(
+        self, rounds: list[Mapping[str, Any]], gates: Gates, *, vision: bool = False
+    ) -> None:
         self._rounds = list(rounds)
         self._gates = gates
+        self._vision = vision
         self.requests: list[dict[str, Any]] = []
 
     @property
     def model_name(self) -> str:
         return "scripted"
+
+    @property
+    def supports_vision(self) -> bool:
+        return self._vision
 
     async def generate(self, context: AIContext) -> AIResponse:
         round_ = self._next_round(context)
@@ -129,11 +136,30 @@ def _response(round_: Mapping[str, Any]) -> AIResponse:
 
 
 def messages(context: AIContext) -> list[dict[str, Any]]:
-    """The messages a request carries, in order: each one's role and its text
-    parts joined, empty for a message that has none."""
+    """The messages a request carries, in order: each one's role, its text
+    parts joined, empty for a message that has none, and its text and image
+    parts in order, None for a text content."""
     return [
-        {"role": message.role, "text": _text_of(message.content)} for message in context.messages
+        {
+            "role": message.role,
+            "text": _text_of(message.content),
+            "parts": _parts_of(message.content),
+        }
+        for message in context.messages
     ]
+
+
+def _parts_of(content: Any) -> list[dict[str, Any]] | None:
+    if isinstance(content, str):
+        return None
+    parts: list[dict[str, Any]] = []
+    for part in content:
+        kind = getattr(part, "type", None)
+        if kind == "text":
+            parts.append({"text": part.text})
+        elif kind == "image":
+            parts.append({"image": part.url, "mime_type": part.mime_type})
+    return parts
 
 
 def _text_of(content: Any) -> str:
@@ -205,7 +231,9 @@ def scripted_agent(
     ``expect.models`` gives them: its own under its id, its memory's
     summarizer under ``<id>/summarizer``; a round or a tool with a ``gate``
     holds at it; the tools *kit* makes that it is given, after its own."""
-    model = ScriptedModel(spec["model"]["rounds"], gates)
+    model = ScriptedModel(
+        spec["model"]["rounds"], gates, vision=bool(spec["model"].get("vision", False))
+    )
     models = {spec["id"]: model}
     tools = spec.get("tools", [])
     kwargs: dict[str, Any] = {}
@@ -222,6 +250,11 @@ def scripted_agent(
         kwargs["tool_timeout_seconds"] = _seconds(spec["tool_timeout_ms"])
     if "turn_budget_tokens" in spec:
         kwargs["turn_budget_tokens"] = spec["turn_budget_tokens"]
+    if "max_author_images" in spec:
+        kwargs["max_author_images"] = spec["max_author_images"]
+    if "describe_empty_event" in spec:
+        says = spec["describe_empty_event"]["says"]
+        kwargs["describe_empty_event"] = lambda event: says
     if "tool_timeouts_ms" in spec:
         kwargs["tool_timeouts"] = {
             name: _seconds(bound) for name, bound in spec["tool_timeouts_ms"].items()

@@ -61,6 +61,8 @@ CHANNEL = {
     "tool_timeout_ms",
     "tool_timeouts_ms",
     "turn_budget_tokens",
+    "max_author_images",
+    "describe_empty_event",
     "serialize_room_turns",
     "steer_room_turns",
     "human_input",
@@ -72,7 +74,7 @@ CHANNEL = {
     "memory",
 }
 ADDRESSES = {"normalizes", "conversation_key"}
-MODEL = {"rounds"}
+MODEL = {"rounds", "vision"}
 MODEL_ROUND = {"text", "deltas", "calls", "finish_reason", "usage", "fails", "done", "gate"}
 MODEL_CALL = {"id", "name", "arguments", "cut"}
 TOOL = {
