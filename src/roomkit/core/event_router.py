@@ -16,6 +16,7 @@ from roomkit.core._instructions import response_metadata
 from roomkit.core._reentrance import answers_past_limit, within_turn
 from roomkit.core._room_metadata import without_framework_keys
 from roomkit.core._room_turns import RoomTurns
+from roomkit.core._routing_stamps import ALWAYS_PROCESS, ROUTED_TO
 from roomkit.core._turn_runners import TurnRunner
 from roomkit.core._voice_delivery import delivering_injected
 from roomkit.core.circuit_breaker import CircuitBreaker
@@ -89,7 +90,7 @@ def _solicits(
         return False
     metadata = event.metadata or {}
     # A router writes a list; a stamp written otherwise names no one.
-    listed = metadata.get("_always_process")
+    listed = metadata.get(ALWAYS_PROCESS)
     always_process = listed if isinstance(listed, list) else []
 
     addressed = event.addressed_to
@@ -105,7 +106,7 @@ def _solicits(
         # unaddressed agent-to-agent exchange.
         return channel_id in always_process
 
-    routed_to = metadata.get("_routed_to")
+    routed_to = metadata.get(ROUTED_TO)
     if routed_to is None:
         return True
     return channel_id == routed_to or channel_id in always_process

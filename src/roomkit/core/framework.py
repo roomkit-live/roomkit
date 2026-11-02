@@ -35,6 +35,7 @@ from roomkit.core._kit_turn_hooks import KitTurnHooks
 from roomkit.core._kit_wiring import KitEvents, KitWiringEnv
 from roomkit.core._publication_keys import refuse_reserved
 from roomkit.core._reentrance import REENTRY_LOOP_CAP, Entry, RoomWork, chain_floor
+from roomkit.core._routing_stamps import without_routing_stamps
 from roomkit.core._timer_transitions import TimerTransitions
 from roomkit.core._turn_host import KitHost
 from roomkit.core._turn_runners import TurnRunners
@@ -1771,6 +1772,8 @@ class RoomKit(
         spend the same pre-commit budget as the locked gates (§13.6).
         """
         room_id = event.room_id
+        # Only a hook writes the routing stamps (RFC §19.4).
+        event = without_routing_stamps(event)
         queued = self._queue_of(entry)
         async with contextlib.AsyncExitStack() as stack:
             try:

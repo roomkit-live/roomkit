@@ -121,6 +121,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A sender's routing stamps are dropped** (RFC §19.4, RMK-1233). A
+  message that arrived with `_routed_to` or `_always_process` in its
+  metadata chose the agent that answered it, or added one to its address:
+  the kit now drops both before an event's `BEFORE_BROADCAST` hooks run,
+  with a warning, so only a hook, the conversation router among them,
+  writes them.
 - **A supervisor stamp that is no list asks no one more** (RFC §19.4,
   RMK-1233). `_always_process` written as a `str` solicited every agent
   whose id it contains, a `dict` its keys, and `None` failed the broadcast

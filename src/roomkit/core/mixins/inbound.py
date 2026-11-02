@@ -25,6 +25,7 @@ from roomkit.core._reentrance import (
     admission_order,
     chain_floor,
 )
+from roomkit.core._routing_stamps import without_routing_stamps
 from roomkit.core.exceptions import (
     ChannelNotRegisteredError,
     RoomAlreadyExistsError,
@@ -766,6 +767,8 @@ class InboundMixin(HelpersMixin):
         *,
         defer_delivery: bool,
     ) -> InboundResult:
+        # Only a hook writes the routing stamps (RFC §19.4).
+        event = without_routing_stamps(event)
         # A message nested in a pass's section (code under the lock) queues
         # what its hooks inject on that section's queue (RFC §9.4).
         queued = self._queue_of(entry)

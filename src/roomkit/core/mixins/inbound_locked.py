@@ -34,6 +34,7 @@ from roomkit.core._observed import Observed, observed_once_over
 from roomkit.core._queued_injections import QueuedInjections
 from roomkit.core._reentrance import section
 from roomkit.core._room_timers import due_transitions
+from roomkit.core._routing_stamps import without_routing_stamps
 from roomkit.core.exceptions import RoomNotFoundError
 from roomkit.core.hooks import kept_identity
 from roomkit.core.lanes import DeliveryPlan
@@ -673,6 +674,9 @@ class InboundLockedMixin(HelpersMixin):
         observers that event, as its SYNC hooks left it, on *observed*: its
         pass starts them once it is over (RFC §10.1).
         """
+        # Only a hook writes the routing stamps (RFC §19.4): a precheck's
+        # outcome keeps those its off-lock hooks wrote.
+        event = without_routing_stamps(event)
         ran = self._hooks_run_here(room_id, event, precheck)
         # Run sync hooks (before_broadcast). After an off-lock check (RFC
         # §9.5.1) its outcome comes first and only the locked hooks run here.
