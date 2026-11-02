@@ -1,0 +1,116 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-tool-the-generation-hook-adds-is-declared-without-tools-of-its-own",
+  "title": "A tool a BEFORE_AI_GENERATION hook adds to an agent that has no tool of its own is declared at every round of the turn, its call going to the tool handler",
+  "rules": [
+    "§6.4",
+    "§9.2"
+  ],
+  "notes": "Python's _adopt_hook_toolset adds the hook's tool to the turn's base toolset whatever the channel serves; a call nothing serves is answered as unserved (RFC §9.3).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "call-1",
+                  "name": "export_report"
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "export",
+        "trigger": "before_ai_generation",
+        "reactions": [
+          {
+            "result": {
+              "action": "modify",
+              "event": {
+                "define": [
+                  {
+                    "name": "export_report",
+                    "description": "Export a report",
+                    "parameters": {
+                      "type": "object"
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "tools": {
+            "export_report": 0
+          }
+        },
+        {
+          "tools": {
+            "export_report": 0
+          },
+          "tool_results": [
+            {
+              "tool_call_id": "call-1",
+              "content": "{\"error\": \"No handler for tool export_report\"}",
+              "is_error": true
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
