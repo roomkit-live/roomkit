@@ -770,7 +770,11 @@ class MCPToolProvider:
         :class:`~roomkit.providers.ai.base.AIImagePart`), so the model sees the
         image; any other result is the string :meth:`call_tool` returns. Binary
         content the model cannot take (another image format, audio, a blob
-        resource) becomes a one-line note rather than its base64.
+        resource) becomes a one-line note rather than its base64. Such a
+        result keeps its texts within 100,000 characters in all, the text past
+        the bound cut with a note, and at most four of its images within 5 MiB
+        of data URL in all, each image past either a note that counts as a
+        text.
         """
         self._ensure_connected()
 
@@ -790,6 +794,6 @@ class MCPToolProvider:
                 # returning a body the loop would have to recognise, and keep
                 # the server's words: they are what the model is meant to read.
                 raise ToolFailedError(error_text(result))
-            return handler_result(result)
+            return handler_result(result, name)
 
         return _handler

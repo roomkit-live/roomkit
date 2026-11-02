@@ -275,6 +275,77 @@ async def test_tool_handler_returns_an_image_as_an_image_part() -> None:
     ]
 
 
+async def _parts(content: list[Any]) -> list[Any]:
+    """What the tool handler answers for a result holding *content*."""
+    provider = _make_provider_connected(
+        [SEARCH_TOOL],
+        call_tool_side_effect=lambda name, args: MockCallToolResult(content),
+    )
+    result = await provider.as_tool_handler()("search", {"query": "hello"})
+    assert isinstance(result, list)
+    return result
+
+
+def _shown(parts: list[Any]) -> list[str]:
+    return ["image" if isinstance(p, AIImagePart) else p.text for p in parts]
+
+
+_TINY_PNG = "iVBORw0KGgo"
+_PNG_NOTE = "[image content (image/png) not shown to the model]"
+
+
+async def test_an_image_s_result_keeps_its_texts_within_the_bound() -> None:
+    """A result the model sees an image of holds its texts within the
+    100,000 characters a text result is cut to: the text past the bound cut
+    with a note, the texts after it left out, the image kept."""
+    parts = await _parts(
+        [
+            MockTextContent("x" * 150_000),
+            MockImageContent(_TINY_PNG, "image/png"),
+            MockTextContent("after"),
+        ]
+    )
+
+    texts = [p.text for p in parts if isinstance(p, AITextPart)]
+    assert (len(parts) - len(texts), len(texts), len(texts[0])) == (1, 1, 100_000)
+    assert texts[0].endswith("\n... [truncated: the result was 150000 characters]")
+
+
+@pytest.mark.parametrize(
+    ("content", "shown"),
+    [
+        (
+            [MockImageContent(_TINY_PNG, "image/png") for _ in range(6)],
+            ["image"] * 4 + [_PNG_NOTE] * 2,
+        ),
+        (
+            [MockImageContent("A" * (3 * 1024 * 1024), "image/jpeg") for _ in range(2)],
+            ["image", "[image content (image/jpeg) not shown to the model]"],
+        ),
+    ],
+    ids=["six-images", "two-of-3-mib"],
+)
+async def test_a_result_s_images_are_bounded_in_number_and_size(
+    content: list[Any], shown: list[str]
+) -> None:
+    """At most four of a result's images, within 5 MiB of data URL in all,
+    reach the model; each image past either reads as its note."""
+    assert _shown(await _parts(content)) == shown
+
+
+async def test_a_held_back_image_s_note_counts_within_the_texts_bound() -> None:
+    """The note of an image held back counts as a text: a result whose text
+    fills the bound shows its first four images and no note past it."""
+    content: list[Any] = [MockTextContent("x" * 100_000)]
+    content += [MockImageContent(_TINY_PNG, "image/png") for _ in range(5)]
+
+    parts = await _parts(content)
+
+    images = sum(isinstance(p, AIImagePart) for p in parts)
+    texts = sum(len(p.text) for p in parts if isinstance(p, AITextPart))
+    assert (images, texts) == (4, 100_000)
+
+
 async def test_call_tool_keeps_its_string_contract_for_an_image() -> None:
     """``call_tool`` returns a string whatever the server sent."""
     provider = _make_provider_connected(

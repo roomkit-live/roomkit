@@ -8,11 +8,20 @@ from typing import Any
 from roomkit.providers.ai.base import AIImagePart, AITextPart
 from roomkit.providers.utils import parse_data_uri
 from roomkit.tools.compose import ToolResult
+from roomkit.tools.result import bounded_result
 
 # The raster formats every vision vendor accepts. Anything else (an SVG, a
 # TIFF) would fail the whole request at the vendor, so it reaches the model as
 # a note instead of an image.
 _MODEL_IMAGE_TYPES = frozenset({"image/png", "image/jpeg", "image/gif", "image/webp"})
+
+# The bounds of a result the model sees an image of (RFC §21.2): its texts,
+# the notes of the images held back among them, within this many characters
+# in all; at most this many of its images, within this many bytes of data URL
+# in all. Four is an agent's default ``max_author_images``.
+_RESULT_TEXT_LIMIT = 100_000
+_MODEL_IMAGES_MAX = 4
+_MODEL_IMAGE_BYTES_MAX = 5 * 1024 * 1024
 
 
 def _content_text(content: Any) -> str:
@@ -57,7 +66,39 @@ def _model_part(content: Any) -> AITextPart | AIImagePart:
         mime = getattr(content.resource, "mimeType", None) or "binary"
     else:
         return AITextPart(text=_content_text(content))
+    return _note(kind, mime)
+
+
+def _note(kind: str, mime: str) -> AITextPart:
     return AITextPart(text=f"[{kind} content ({mime}) not shown to the model]")
+
+
+def _bounded_parts(parts: list[AITextPart | AIImagePart], name: str) -> ToolResult:
+    """*parts* within the bounds of a result the model sees an image of.
+
+    An image past the count or the bytes reads as its note, which counts as
+    a text. Each text is kept whole while it fits; the one past the bound is
+    cut with a note saying how long it was, and the texts after it are left
+    out. The images that fit stay in place.
+    """
+    left = _RESULT_TEXT_LIMIT
+    images = image_bytes = 0
+    kept: list[AITextPart | AIImagePart] = []
+    for part in parts:
+        if isinstance(part, AIImagePart):
+            size = len(part.url)
+            if images < _MODEL_IMAGES_MAX and image_bytes + size <= _MODEL_IMAGE_BYTES_MAX:
+                images += 1
+                image_bytes += size
+                kept.append(part)
+                continue
+            part = _note("image", part.mime_type or "image/png")
+        if left == 0:
+            continue
+        text = bounded_result(part.text, left, name)
+        left = left - len(text) if text == part.text else 0
+        kept.append(AITextPart(text=text))
+    return kept
 
 
 def error_text(result: Any) -> str:
@@ -70,16 +111,17 @@ def text_body(result: Any) -> str:
     return _join([_content_text(c) for c in result.content])
 
 
-def handler_result(result: Any) -> ToolResult:
-    """A successful result as the tool handler returns it.
+def handler_result(result: Any, name: str) -> ToolResult:
+    """A successful result of the tool *name* as the tool handler returns it.
 
-    Content parts when an image survives, so the model sees it; otherwise one
-    string, the shape :func:`text_body` gives, with binary content noted
-    rather than spelled out in base64.
+    Content parts when an image survives, so the model sees it, within the
+    bounds of :func:`_bounded_parts`; otherwise one string, the shape
+    :func:`text_body` gives, with binary content noted rather than spelled
+    out in base64.
     """
     parts = [_model_part(c) for c in result.content]
     if any(isinstance(p, AIImagePart) for p in parts):
-        return parts
+        return _bounded_parts(parts, name)
     return _join([p.text for p in parts if isinstance(p, AITextPart)])
 
 

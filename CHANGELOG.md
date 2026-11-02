@@ -88,6 +88,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **An MCP tool's result the model sees an image of is bounded** (RFC §21.2,
+  RMK-1249). `MCPToolProvider.as_tool_handler()` handed such a result's parts
+  to the model whole: a server answering 30 screenshots of 1 MB put 30 MB of
+  base64 in the model's request, and a text of any length rode beside them.
+  Its texts now hold within 100,000 characters in all, the text past the
+  bound cut with the note a large result gets and the texts after it left
+  out, and at most four of its images within 5 MiB of data URL in all reach
+  the model; each image past either reads `[image content (image/png) not
+  shown to the model]`, a note that counts as a text. roomkit-rs holds the
+  same bounds.
+
 - **A strategy's live agent under a transport's id is refused** (RMK-1233).
   `install_strategy` and `create_room(orchestration=...)` kept the channel the
   kit held under a live agent's id and attached it as an intelligence channel,
