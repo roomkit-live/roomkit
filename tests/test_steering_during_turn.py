@@ -13,11 +13,15 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
+import pytest
+
 from roomkit import ChannelCategory, InboundMessage, RoomKit, TextContent
 from roomkit.channels import SMSChannel
 from roomkit.channels.agent import Agent
 from roomkit.channels.ai import AIChannel
-from roomkit.models.enums import EventType
+from roomkit.channels.websocket import WebSocketChannel
+from roomkit.models.enums import DeleteType, EventType
+from roomkit.models.event import DeleteContent, EditContent, EventContent
 from roomkit.models.steering import InjectMessage
 from roomkit.providers.ai.base import AIContext, AIResponse, AITool, AIToolCall
 from roomkit.providers.ai.mock import MockAIProvider
@@ -210,6 +214,49 @@ async def test_a_message_while_the_model_answers_is_answered_by_the_same_turn(
     assert len(provider.calls) == 2
     assert _read(provider.calls[1], STEERED)
     assert await _bodies(kit, "agent") == ["a.py, b.txt", "a.py"]
+
+
+@pytest.mark.parametrize("kind", [EventType.EDIT, EventType.DELETE], ids=["edit", "delete"])
+async def test_an_edit_or_a_delete_while_the_model_answers_is_not_steered(
+    kind: EventType, streaming: bool
+) -> None:
+    """A change is no message a turn may answer (RFC §10.3, RMK-1226): it is
+    not handed to the running turn, and waits its place for a turn the
+    agent does not take."""
+    provider = _Gated(
+        [AIResponse(content="Seen 0."), AIResponse(content="Seen 1.")], held=0, streaming=streaming
+    )
+    agent = Agent("agent", provider=provider, steer_room_turns=True)
+    kit = RoomKit()
+    kit.register_channel(WebSocketChannel("ws"))
+    kit.register_channel(agent)
+    await kit.create_room(room_id="r1")
+    await kit.attach_channel("r1", "ws")
+    await kit.attach_channel("r1", "agent", category=ChannelCategory.INTELLIGENCE)
+    said = InboundMessage(channel_id="ws", sender_id="u1", content=TextContent(body="Oops"))
+    turn = asyncio.create_task(kit.process_inbound(said, room_id="r1"))
+    await asyncio.wait_for(provider.answering.wait(), 2)
+    [oops] = [e for e in await kit.store.list_events("r1") if e.type == EventType.MESSAGE]
+    if kind == EventType.EDIT:
+        content: EventContent = EditContent(
+            target_event_id=oops.id, new_content=TextContent(body="Oops, fixed")
+        )
+    else:
+        content = DeleteContent(target_event_id=oops.id, delete_type=DeleteType.SENDER)
+    change = asyncio.create_task(
+        kit.process_inbound(
+            InboundMessage(channel_id="ws", sender_id="u1", event_type=kind, content=content),
+            room_id="r1",
+        )
+    )
+    # Steered, the change returns at once; waiting its place, once the turn ends.
+    await asyncio.wait({change}, timeout=0.05)
+    provider.release.set()
+    await asyncio.wait_for(asyncio.gather(turn, change), 5)
+    await kit.close()
+
+    assert not change.result().blocked
+    assert len(provider.calls) == 1
 
 
 async def test_off_a_message_during_a_turn_starts_its_own(streaming: bool) -> None:
