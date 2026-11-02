@@ -1,0 +1,233 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "streaming/what-a-target-s-outputs-leave-in-the-room",
+  "title": "Of what a transport returns for a streamed row, the room keeps on_event()'s tasks, observations and metadata updates, deliver()'s metadata updates alone, and nothing of a streaming target's deliver_stream(): ON_TASK_CREATED fires for on_event()'s task only, with the row",
+  "rules": [
+    "§6.1",
+    "§12.2 step 13s",
+    "§10.1 step 15"
+  ],
+  "notes": "Python: core/event_router.py _merged keeps each target's on_event() tasks and observations and both outputs' metadata updates, deliver()'s tasks and observations dropped; core/mixins/inbound_streaming.py _deliver_segments awaits deliver_stream() and keeps none of its ChannelOutput, only what it raises; the row the stream commits reaches web through the room's lane, whose delivery set's side effects are kept with the row (lane_execution.py _post_plan_effects). ws streams the row and is not delivered it again.",
+  "setup": {
+    "channels": [
+      {
+        "id": "web",
+        "type": "webhook",
+        "category": "transport",
+        "on_event": [
+          {
+            "output": {
+              "tasks": [
+                {
+                  "title": "Told"
+                }
+              ],
+              "observations": [
+                {
+                  "category": "told",
+                  "content": "on_event"
+                }
+              ],
+              "metadata_updates": {
+                "told": true
+              }
+            }
+          }
+        ],
+        "deliver": [
+          {
+            "output": {
+              "tasks": [
+                {
+                  "title": "Delivered"
+                }
+              ],
+              "observations": [
+                {
+                  "category": "delivered",
+                  "content": "deliver"
+                }
+              ],
+              "metadata_updates": {
+                "delivered": true
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true,
+        "deliver_stream": [
+          {
+            "output": {
+              "tasks": [
+                {
+                  "title": "Streamed"
+                }
+              ],
+              "observations": [
+                {
+                  "category": "streamed",
+                  "content": "deliver_stream"
+                }
+              ],
+              "metadata_updates": {
+                "streamed": true
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "All ",
+                "done."
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "web"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "tasks",
+        "trigger": "on_task_created",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "web",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Done yet?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "streamed": {
+      "room-1": {
+        "ws": [
+          {
+            "text": "All "
+          },
+          {
+            "text": "done."
+          },
+          {
+            "row": {
+              "id": "room-1#1",
+              "content": {
+                "body": "All done."
+              }
+            }
+          }
+        ]
+      }
+    },
+    "deliveries": {
+      "room-1": {
+        "web": [
+          {
+            "id": "room-1#1",
+            "content": {
+              "body": "All done."
+            }
+          }
+        ],
+        "ws": [
+          {
+            "index": 0
+          }
+        ]
+      }
+    },
+    "tasks": {
+      "room-1": [
+        {
+          "title": "Told"
+        }
+      ]
+    },
+    "observations": {
+      "room-1": [
+        {
+          "category": "told",
+          "content": "on_event"
+        }
+      ]
+    },
+    "rooms": {
+      "room-1": {
+        "metadata": {
+          "told": true,
+          "delivered": true,
+          "streamed": {
+            "$absent": true
+          }
+        }
+      }
+    },
+    "hooks": {
+      "tasks": [
+        {
+          "trigger": "on_task_created",
+          "room_id": "room-1",
+          "event": {
+            "type": "task_created",
+            "source": {
+              "channel_id": "agent"
+            },
+            "content": {
+              "type": "text",
+              "body": "All done."
+            },
+            "metadata": {
+              "task_title": "Told"
+            }
+          }
+        }
+      ]
+    }
+  }
+}
